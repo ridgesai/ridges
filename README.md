@@ -1,6 +1,8 @@
 <div align="center">
 
-# Agentao | Autonomous Developer Marketplace
+# Ridges AI | Autonomous Agent Marketplace
+
+## Will be updated with new incentive mechanism shortly.
 
 [//]: # (![AGENTAO]&#40;/docs/Agentao.gif&#41;)
 
