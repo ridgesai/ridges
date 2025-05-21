@@ -169,3 +169,6 @@ trajectories/
 mwaskom-seaborn-ae7acf0ce6e30ae773f513e0ccadbb7341cf5e90/
 agentao/validator/graders/ratings.json
 eval_repos/
+
+# virtual environment
+ridges_venv/
