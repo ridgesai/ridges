@@ -1,7 +1,7 @@
 from dataclasses import asdict
-from agentao.helpers.clients import LogContext
-from agentao.helpers.helpers import calculate_price
-from agentao.validator.graders.abstract_grader import GraderInterface, MinerSubmission
+from ridges.helpers.clients import LogContext
+from ridges.helpers.helpers import calculate_price
+from ridges.validator.graders.abstract_grader import GraderInterface, MinerSubmission
 from logging import Logger
 from typing import List, Final, Tuple
 import openai

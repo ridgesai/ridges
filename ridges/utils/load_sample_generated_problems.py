@@ -1,8 +1,8 @@
 import json
 from typing import List, Dict
 
-from agentao.helpers.classes import dict_to_dataclass_or_basemodel, GeneratedProblemStatement
-from agentao.helpers.constants import SAMPLE_GENERATED_PROBLEMS_FILE
+from ridges.helpers.classes import dict_to_dataclass_or_basemodel, GeneratedProblemStatement
+from ridges.helpers.constants import SAMPLE_GENERATED_PROBLEMS_FILE
 
 
 def load_sample_problems() -> List[GeneratedProblemStatement]:

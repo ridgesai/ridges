@@ -25,4 +25,4 @@ jobs:
     - name: Analysing the code with pylint
       run: |
         # TODO: Improve how we keep track of these files
-        pylint --errors-only agentao/validator agentao/helpers agentao/miner agentao/utils setup.py scripts neurons agentao/protocol.py agentao/repo_environment.py agentao/subnet_links.py agentao/synthetic_testing.py
+        pylint --errors-only ridges/validator ridges/helpers ridges/miner ridges/utils setup.py scripts neurons ridges/protocol.py ridges/repo_environment.py ridges/subnet_links.py ridges/synthetic_testing.py

@@ -1,13 +1,13 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# Copyright © 2023 Agentao
+# Copyright © 2023 Ridges
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# documentation files (the "Software"), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 # The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 # the Software.
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 # THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
@@ -16,9 +16,9 @@ import os
 
 from dotenv import load_dotenv
 
-from agentao.utils.load_sample_generated_problems import load_sample_problems
-from agentao.validator.github.git_handler import GitHubOpenIssue
-from agentao.validator.graders.helpers import preprocess_patch, run_tests
+from ridges.utils.load_sample_generated_problems import load_sample_problems
+from ridges.validator.github.git_handler import GitHubOpenIssue
+from ridges.validator.graders.helpers import preprocess_patch, run_tests
 
 load_dotenv()
 
@@ -34,18 +34,18 @@ import uuid
 import numpy as np
 from aiohttp import BasicAuth, ClientSession
 
-from agentao.base.validator import BaseValidatorNeuron, TaskType
-from agentao.helpers.classes import GeneratedProblemStatement, IssueSolution
-from agentao.helpers.clients import LogContext
-from agentao.helpers.constants import SUPPORTED_VALIDATOR_MODELS
-from agentao.helpers.helpers import clone_repo, exponential_decay
-from agentao.protocol import CodingTask
-from agentao.repo_environment import SUPPORTED_SWEBENCH_REPOS
-from agentao.utils.uids import check_uid_availability
-from agentao.validator.generate_problem import create_problem_statements
-from agentao.validator.graders.abstract_grader import MinerSubmission
-from agentao.validator.graders.trueskill_grader import TrueSkillGrader, MockTrueSkillGrader
-from agentao.validator.github.git_handler import GitHubIssueHandler, PrMetadata
+from ridges.base.validator import BaseValidatorNeuron, TaskType
+from ridges.helpers.classes import GeneratedProblemStatement, IssueSolution
+from ridges.helpers.clients import LogContext
+from ridges.helpers.constants import SUPPORTED_VALIDATOR_MODELS
+from ridges.helpers.helpers import clone_repo, exponential_decay
+from ridges.protocol import CodingTask
+from ridges.repo_environment import SUPPORTED_SWEBENCH_REPOS
+from ridges.utils.uids import check_uid_availability
+from ridges.validator.generate_problem import create_problem_statements
+from ridges.validator.graders.abstract_grader import MinerSubmission
+from ridges.validator.graders.trueskill_grader import TrueSkillGrader, MockTrueSkillGrader
+from ridges.validator.github.git_handler import GitHubIssueHandler, PrMetadata
 from neurons.constants import LLM_EVAL_MULT, PROCESS_TIME_MULT, ValidatorDefaults
 from neurons.constants import UPLOAD_ISSUE_ENDPOINT
 

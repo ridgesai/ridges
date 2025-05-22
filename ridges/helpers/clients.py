@@ -9,7 +9,7 @@ from enum import Enum
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional
 import requests
-from agentao.helpers.constants import BASE_DASHBOARD_URL
+from ridges.helpers.constants import BASE_DASHBOARD_URL
 load_dotenv()
 
 lifecycle_events = {
@@ -90,7 +90,7 @@ def record_solution_selected(
     
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "agentao-client/1.0"
+        "User-Agent": "ridges-client/1.0"
     }
     
     requests.post(endpoint, json=payload, headers=headers)
@@ -120,7 +120,7 @@ def record_miner_submission(
 
         headers = {
             "Content-Type": "application/json",
-            "User-Agent": "agentao-client/1.0"
+            "User-Agent": "ridges-client/1.0"
         }
 
         requests.post(endpoint, json=payload, headers=headers)
@@ -169,7 +169,7 @@ formatter = ESTFormatter('%(asctime)s - %(filename)s:%(lineno)d [%(levelname)s] 
 # Get all built-in LogRecord attributes by creating a dummy record and getting its __dict__ keys
 LOG_RECORD_BUILTIN_ATTRS = list(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys())
 
-class AgentaoHandler(logging.Handler):
+class RidgesHandler(logging.Handler):
     def __init__(self, context: LogSessionContext):
         super().__init__()
         self.setFormatter(formatter)
@@ -295,17 +295,17 @@ def setup_logger(logger_name: str, log_session_context: LogSessionContext) -> Lo
     console_handler.setFormatter(formatter)
     
     logger.addHandler(console_handler)
-    logger.addHandler(AgentaoHandler(context=log_session_context))
+    logger.addHandler(RidgesHandler(context=log_session_context))
 
     # Two helper methods to allow us to set optional context during forward passes
     def add_forward_pass_context(forward_pass_id: str):
         for handler in logger.handlers:
-            if isinstance(handler, AgentaoHandler):
+            if isinstance(handler, RidgesHandler):
                 handler._add_forward_pass_context(forward_pass_id)
     
     def reset_forward_pass_context():
         for handler in logger.handlers:
-            if isinstance(handler, AgentaoHandler):
+            if isinstance(handler, RidgesHandler):
                 handler._reset_forward_pass_context()
 
     logger.add_forward_pass_context = add_forward_pass_context

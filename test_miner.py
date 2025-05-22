@@ -9,10 +9,10 @@ from pathlib import Path
 
 import yaml
 
-from agentao.helpers.classes import UnsolvedIssue
-from agentao.helpers.helpers import clone_repo
-from agentao.miner.generate_solution import generate_code_patch
-from agentao.repo_environment import REPO_TO_ENVIRONMENT_INFO
+from ridges.helpers.classes import UnsolvedIssue
+from ridges.helpers.helpers import clone_repo
+from ridges.miner.generate_solution import generate_code_patch
+from ridges.repo_environment import REPO_TO_ENVIRONMENT_INFO
 from neurons.miner import MinerDefaults
 
 test_issue_desc = """I'm running missing_colon.py as follows:

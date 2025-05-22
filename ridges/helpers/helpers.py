@@ -4,7 +4,7 @@ from pathlib import Path
 import math
 from git import Repo
 
-from agentao.helpers.constants import PRICING_DATA_PER_MILLION_TOKENS
+from ridges.helpers.constants import PRICING_DATA_PER_MILLION_TOKENS
 
 from logging import Logger
 

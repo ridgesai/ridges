@@ -5,7 +5,7 @@ set -eo pipefail
 # Usage:
 # > ./scripts/run.sh <pm2 arguments> -- <validator.py arguments>
 # Example:
-# > ./scripts/run.sh --name agentao-validator -- --netuid 62 --wallet.name validator_wallet --wallet.hotkey default --logging.info
+# > ./scripts/run.sh --name ridges-validator -- --netuid 62 --wallet.name validator_wallet --wallet.hotkey default --logging.info
 
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 REPO_ROOT=$(dirname "$SCRIPT_DIR")
@@ -13,11 +13,11 @@ pushd $REPO_ROOT > /dev/null || exit 1
 
 sleep_duration_s=300  # Sleep 5 minutes between update checks
 branch="$(git branch --show-current)"
-auto_update_enabled=${AGENTAO_VALIDATOR_AUTO_UPDATE:-1}
+auto_update_enabled=${RIDGES_VALIDATOR_AUTO_UPDATE:-1}
 stash_msg="autostash-pre-rebase"
 stash_ref=""
 
-DEFAULT_PROC_NAME="agentao-validator"  # in absence of --name flag
+DEFAULT_PROC_NAME="ridges-validator"  # in absence of --name flag
 
 ######## Extract --name flag ###########################
 args=("$@")  # Copy arguments to a new array so that we can use shift

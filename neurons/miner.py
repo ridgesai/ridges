@@ -1,13 +1,13 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# Copyright © 2023 Agentao
+# Copyright © 2023 Ridges
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
+# documentation files (the "Software"), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
 # and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 # The above copyright notice and this permission notice shall be included in all copies or substantial portions of
 # the Software.
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
 # THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
@@ -16,7 +16,7 @@ from textwrap import dedent
 
 from dotenv import load_dotenv
 
-from agentao.miner.model_utils import get_envar_names_from_model_name, ALL_MODEL_NAMES, MODEL_CLASS_TO_ENVAR_NAMES
+from ridges.miner.model_utils import get_envar_names_from_model_name, ALL_MODEL_NAMES, MODEL_CLASS_TO_ENVAR_NAMES
 from neurons.constants import LOG_SESSION_CONTEXT
 
 load_dotenv()
@@ -32,14 +32,14 @@ import random
 
 import yaml
 
-import agentao
-from agentao.base.miner import BaseMinerNeuron
-from agentao.helpers.classes import UnsolvedIssue
-from agentao.helpers.constants import EXAMPLE_PATCH
-from agentao.helpers.helpers import clone_repo
-from agentao.miner.generate_solution import generate_code_patch
-from agentao.repo_environment import SUPPORTED_REPOS, REPO_TO_ENVIRONMENT_INFO
-from agentao.helpers.clients import LogSessionContext, setup_logger
+import ridges
+from ridges.base.miner import BaseMinerNeuron
+from ridges.helpers.classes import UnsolvedIssue
+from ridges.helpers.constants import EXAMPLE_PATCH
+from ridges.helpers.helpers import clone_repo
+from ridges.miner.generate_solution import generate_code_patch
+from ridges.repo_environment import SUPPORTED_REPOS, REPO_TO_ENVIRONMENT_INFO
+from ridges.helpers.clients import LogSessionContext, setup_logger
 
 from logging import Logger
 
@@ -89,8 +89,8 @@ class Miner(BaseMinerNeuron):
         self.logger.info(f"Using model: {self.model_name}")
 
     async def forward(
-        self, synapse: agentao.protocol.CodingTask
-    ) -> agentao.protocol.CodingTask:
+        self, synapse: ridges.protocol.CodingTask
+    ) -> ridges.protocol.CodingTask:
         """
         Processes the incoming 'Dummy' synapse by performing a predefined operation on the input data.
         This method should be replaced with actual logic relevant to the miner's purpose.
@@ -157,7 +157,7 @@ class Miner(BaseMinerNeuron):
             self.logger.exception("Error processing request")
 
     async def blacklist(
-        self, synapse: agentao.protocol.CodingTask
+        self, synapse: ridges.protocol.CodingTask
     ) -> Tuple[bool, str]:
         """
         Determines whether an incoming request should be blacklisted and thus ignored. Your implementation should
@@ -217,7 +217,7 @@ class Miner(BaseMinerNeuron):
         )
         return False, "Hotkey recognized!"
 
-    async def priority(self, synapse: agentao.protocol.CodingTask) -> float:
+    async def priority(self, synapse: ridges.protocol.CodingTask) -> float:
         """
         The priority function determines the order in which requests are handled. More valuable or higher-priority
         requests are processed before others. You should design your own priority mechanism with care.

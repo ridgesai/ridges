@@ -8,11 +8,11 @@ from typing import Final, List, Tuple
 import openai
 from pydantic import BaseModel
 
-from agentao.helpers.classes import GeneratedProblemStatement, IssueSolution, ValidatorModelStats
-from agentao.helpers.helpers import calculate_price
-from agentao.validator.graders.abstract_grader import MinerSubmission, GraderInterface
-from agentao.helpers.clients import LogContext
-from agentao.validator.graders.helpers import preprocess_patch
+from ridges.helpers.classes import GeneratedProblemStatement, IssueSolution, ValidatorModelStats
+from ridges.helpers.helpers import calculate_price
+from ridges.validator.graders.abstract_grader import MinerSubmission, GraderInterface
+from ridges.helpers.clients import LogContext
+from ridges.validator.graders.helpers import preprocess_patch
 
 from logging import Logger
 
