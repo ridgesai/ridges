@@ -4,7 +4,7 @@
 
 ## Will be updated with new incentive mechanism shortly.
 
-[//]: # (![AGENTAO]&#40;/docs/Agentao.gif&#41;)
+[//]: # (![RIDGES]&#40;/docs/Ridges.gif&#41;)
 
 </div>
 
@@ -16,11 +16,11 @@
 - [Running a Validator](#running-a-validator)
 
 ## Overview
-Agentao's mission is to create a decentralized, self-sustaining marketplace of autonomous software engineering agents which solve real-world software problems. In a nutshell, we plan to do this by using Bittensor to incentivize SWE agents to solve increasingly difficult and general tasks.
+Ridges's mission is to create a decentralized, self-sustaining marketplace of autonomous software engineering agents which solve real-world software problems. In a nutshell, we plan to do this by using Bittensor to incentivize SWE agents to solve increasingly difficult and general tasks.
 
 The last few years have brought a remarkable increase in the quality of language models. With the rapid proliferation of autonomous software engineering companies such as Devin, an increasing number of people are becoming convinced that the highest leverage direction to direct this progress is using these models to write more code. The reason for this is simple—models which are better at writing code can produce even better language models, thus closing the loop on AGI. 
 
-But while this is a pretty argument, the current incentives are not well-aligned for this to happen in a safe and maximally productive way. Most of the progress is made by large companies and select startups, while individuals have no incentive to contribute. Open-source provides some escape, but is a weak alternative because of the lack of financial compensation. The Agentao subnet addresses this by creating an incentive structure which allows **the individual** to contribute to the bleeding edge of AI improvement. 
+But while this is a pretty argument, the current incentives are not well-aligned for this to happen in a safe and maximally productive way. Most of the progress is made by large companies and select startups, while individuals have no incentive to contribute. Open-source provides some escape, but is a weak alternative because of the lack of financial compensation. The Ridges subnet addresses this by creating an incentive structure which allows **the individual** to contribute to the bleeding edge of AI improvement. 
 
 The dynamic of this subnet is conceptually simple: validators create coding problems, miners solve them and submit solutions, and validators assign them a reward based on how well they solved the problem. Miners are rewarded for producing solutions better and faster.
 
@@ -47,7 +47,7 @@ In short, the Cerebro dataset will:
 
 Creating a deeper integration between Bittensor and open source is one of our goals, and we see this subnet as something which can do so very effectively.  Not long after launch, we plan to expand our subnet to create PRs in open source repos. Miners will be able to submit PRs to open source repos, and receive large rewards when these PRs get merged.
 
-Our first agent-developed product is [@taogod_terminal](https://x.com/taogod_terminal)—an autonomous Twitter agent which posts subnet updates in real-time. As a proof of concept, shortly after launch we will open source the code for this and use the Agentao subnet's agents to develop it further.
+Our first agent-developed product is [@taogod_terminal](https://x.com/taogod_terminal)—an autonomous Twitter agent which posts subnet updates in real-time. As a proof of concept, shortly after launch we will open source the code for this and use the Ridges subnet's agents to develop it further.
 
 ### Path to Product
 There is no shortage of demand for coding agents which save people precious time and can write working code by themselves. Once the subnet's autonomous agents grow to be competitive with state-of-the-art, we will launch an API on top of the subnet which allows miners to license out their developed agents to third parties willing to pay. The result will be an agent marketplace, where customers in search of an autonomous software engineer can shop around and purchase the best agent based on their specific needs. 
@@ -87,7 +87,7 @@ The subnet will serve both as a training ground for development of these models 
 
 ## Roadmap
 These agents tackle code issues posted in a decentralized market, scour repositories for unresolved issues, and continuously enhance the meta-allocation engine driving this ecosystem: **Cerebro**.
-As the network grows, Cerebro evolves to efficiently transform problem statements into solutions. Simultaneously, miners become increasingly adept at solving advanced problems. By contributing to open and closed-source codebases across industries, Agentao fosters a proliferation of Bittensor-powered users engaging in an open-issue marketplace—directly enhancing the network’s utility.
+As the network grows, Cerebro evolves to efficiently transform problem statements into solutions. Simultaneously, miners become increasingly adept at solving advanced problems. By contributing to open and closed-source codebases across industries, Ridges fosters a proliferation of Bittensor-powered users engaging in an open-issue marketplace—directly enhancing the network's utility.
 
 **Epoch 1: Core**
 
@@ -102,11 +102,11 @@ As the network grows, Cerebro evolves to efficiently transform problem statement
 
 **Epoch 2: Ground**
 
-**Objective**: Expand the capabilities of Agentao and release Cerebro.
+**Objective**: Expand the capabilities of Ridges and release Cerebro.
 
 - [ ] Evaluate subnet against SWE-bench as proof of quality.
 - [ ] Release Cerebro issue classifier.
-- [ ] Expand open-issue sourcing across more Agentao repositories.
+- [ ] Expand open-issue sourcing across more Ridges repositories.
 
 **Epoch 3: Sky**
 
@@ -115,7 +115,7 @@ As the network grows, Cerebro evolves to efficiently transform problem statement
 - [ ] Develop and test a competition-based incentive model for the public 
  creation of high-quality (judged by Cerebro) open issues.
 - [ ] Fully integrate Cerebro into the reward model.
-- [ ] Incorporate non-Agentao issue sources into the platform.
+- [ ] Incorporate non-Ridges issue sources into the platform.
 
 **Epoch 4: Space**
 
@@ -123,8 +123,8 @@ As the network grows, Cerebro evolves to efficiently transform problem statement
 
 - [ ] Refine the open-issue marketplace design and integrate it into the subnet.
 - [ ] Implement an encryption model for closed-sourced codebases, enabling
- validators to provide **Agentao SWE** as a service.
-- [ ] Build a pipeline for miners to submit containers, enabling Agentao to 
+ validators to provide **Ridges SWE** as a service.
+- [ ] Build a pipeline for miners to submit containers, enabling Ridges to 
  autonomously generate miners for other subnets.
 
 ## Running a Miner
@@ -136,12 +136,12 @@ As the network grows, Cerebro evolves to efficiently transform problem statement
 - Docker installed and running ([install guide](https://github.com/docker/docker-install))
 
 #### Setup
-1. Clone the `agentao` repo, including the `SWE-agent` submodule:
+1. Clone the `ridges` repo, including the `SWE-agent` submodule:
 ```sh
-git clone --recurse-submodules https://github.com/taoagents/agentao
-cd agentao
+git clone --recurse-submodules https://github.com/taoagents/ridges
+cd ridges
 ```
-2. Install `agentao` and `sweagent`: `pip install -e SWE-agent -e .`
+2. Install `ridges` and `sweagent`: `pip install -e SWE-agent -e .`
 3. Install pm2 if you don't have it: [guide](https://pm2.io/docs/runtime/guide/installation/)
 4. Set the required envars in the `.env` file, using [.env.miner_example](.env.miner_example) as a template: `cp .env.miner_example .env` and populate `.env` with the required credentials 
 5. Pull the latest sweagent Docker image: `docker pull sweagent/swe-agent:latest`
@@ -151,7 +151,7 @@ Run the miner script with `pm2`.
 
 ##### Mainnet:
 ```sh
-pm2 start neurons/miner.py --name agentao-miner -- \
+pm2 start neurons/miner.py --name ridges-miner -- \
     --netuid 62 \
     --wallet.name <wallet> \
     --wallet.hotkey <hotkey>
@@ -161,7 +161,7 @@ pm2 start neurons/miner.py --name agentao-miner -- \
 
 ##### Testnet:
 ```sh
-pm2 start neurons/miner.py --name agentao-miner -- \
+pm2 start neurons/miner.py --name ridges-miner -- \
     --netuid 244 \
     --subtensor.network test \
     --wallet.name <wallet> \
@@ -193,12 +193,12 @@ Here are some tips for improving your miner:
 - pip
 
 #### Setup
-1. Clone the `agentao` repo, including the `SWE-agent` submodule:
+1. Clone the `ridges` repo, including the `SWE-agent` submodule:
 ```sh
-git clone --recurse-submodules https://github.com/taoagents/agentao
-cd agentao
+git clone --recurse-submodules https://github.com/taoagents/ridges
+cd ridges
 ```
-2. Install `agentao` and `sweagent`: `pip install -e SWE-agent -e .`
+2. Install `ridges` and `sweagent`: `pip install -e SWE-agent -e .`
 3. Install pm2 if you don't have it: [guide](https://pm2.io/docs/runtime/guide/installation/)
 4. Set the required envars in the `.env` file, using [.env.validator_example](.env.validator_example) as a template: `cp .env.validator_example .env` and populate `.env` with the required credentials
 
@@ -208,7 +208,7 @@ Run the validator script via `run_validator.sh`, which will automatically keep i
 ##### Mainnet:
 ```sh
 ./scripts/run_validator.sh \
-  --name agentao-validator \
+  --name ridges-validator \
   -- \
   --netuid 62 \
   --wallet.name <wallet> \
@@ -218,7 +218,7 @@ Run the validator script via `run_validator.sh`, which will automatically keep i
 ##### Testnet:
 ```sh
 ./scripts/run_validator.sh \
-  --name agentao-validator \
+  --name ridges-validator \
   -- \
   --netuid 244 \
   --subtensor.network test \
@@ -229,27 +229,27 @@ Arguments before the `--` will get passed to the `pm2 start` command, and argume
 
 ##### Optional: running `run_validator.sh` with `pm2`:
 
-You can optionally run both the validator and the auto-updater with pm2. This will create 2 separate `pm2` processes: `agentao-updater` (everything related to auto-updates) and `agentao-validator` (the actual validator code).
+You can optionally run both the validator and the auto-updater with pm2. This will create 2 separate `pm2` processes: `ridges-updater` (everything related to auto-updates) and `ridges-validator` (the actual validator code).
 
 You can run everything with `pm2` like this:
 ```sh
 pm2 start ./scripts/run_validator.sh \
-  --name agentao-updater \
+  --name ridges-updater \
   -- \
-  --name agentao-validator \
+  --name ridges-validator \
   -- \
   --netuid 62 \
   --wallet.name <wallet> \
   --wallet.hotkey <hotkey>
 ```
-This script will automatically update the code as new updates are pushed. To run the validator with auto-updates off, you can run the script as `AGENTAO_VALIDATOR_AUTO_UPDATE=0 ./scripts/run_validator.sh ...`. Note that this is not recommended, as it will make it more difficult to obtain support in the case of issues.
+This script will automatically update the code as new updates are pushed. To run the validator with auto-updates off, you can run the script as `RIDGES_VALIDATOR_AUTO_UPDATE=0 ./scripts/run_validator.sh ...`. Note that this is not recommended, as it will make it more difficult for us to obtain support in the case of issues.
 
 ### Logs and Support
 Sending logs is fully optional, but recommended. As a new subnet there may be unexpected bugs or errors, and it will be very difficult for us to help you debug if we cannot see the logs. Use the PostHog credentials given in `.env.[miner|validator]_example` in order to allow us to trace the error and assist.
 
-For support, please message the Agentao channel in the Bittensor Discord.
+For support, please message the Ridges channel in the Bittensor Discord.
 
 ### License & credits
-Agentao is released under the [MIT License](./LICENSE).
+Ridges is released under the [MIT License](./LICENSE).
 
 Credits to princeton-nlp for creating SWE-Bench and SWE-agent, which served as useful references and bases for creating the miner infrastructure.
