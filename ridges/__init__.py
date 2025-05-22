@@ -1,6 +1,5 @@
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
-# Copyright © 2023 Ridges
+# Copyright © 2025 Ridges
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the "Software"), to deal in the Software without restriction, including without limitation
@@ -30,4 +29,3 @@ __spec_version__ = (
 from . import protocol
 from . import base
 from . import api
-from .subnet_links import SUBNET_LINKS
