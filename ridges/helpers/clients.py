@@ -15,7 +15,6 @@ load_dotenv()
 lifecycle_events = {
     "question_generated": ["question_id", "question_text"],
     "miner_submitted": ["question_id", "miner_hotkey", "patch", "response_time"],
-    "miner_submitted_organic": ["miner_hotkey", "patch", "response_time"],
     "solution_selected": ["question_id", "grade", "miner_hotkey"],
     "set_weights": [],
     "float_score": ["question_id", "miner_hotkey"],
@@ -258,9 +257,6 @@ class RidgesHandler(logging.Handler):
                         patch=formatted_properties.get("patch"),
                         response_time=float(formatted_properties.get("response_time"))
                     )
-                elif event_type == "miner_submitted_organic":
-                    # TODO: Add handler
-                    pass
                 elif event_type == "solution_selected":
                     record_solution_selected(
                         question_id=formatted_properties.get("question_id"),

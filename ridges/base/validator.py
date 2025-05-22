@@ -142,12 +142,10 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.error(f"Failed to create Axon initialize with exception: {e}")
             pass
 
-    async def organic_forward(self):
-        raise NotImplementedError
+
 
     async def concurrent_forward(self):
-        coroutines = [self.organic_forward()]
-        coroutines.extend([self.forward() for _ in range(self.config.neuron.num_concurrent_forwards)])
+        coroutines = [self.forward() for _ in range(self.config.neuron.num_concurrent_forwards)]
         await asyncio.gather(*coroutines)
 
     def run(self):
