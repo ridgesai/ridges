@@ -1,7 +1,7 @@
 from typing import Dict, Final, List
 
 from pydantic import BaseModel
-from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
+from swebench.harness.constants.python import MAP_REPO_VERSION_TO_SPECS_PY
 
 
 class RepoEnvironmentInfo(BaseModel):
@@ -17,15 +17,15 @@ class RepoEnvironmentInfo(BaseModel):
 
     @staticmethod
     def from_swebench(repo: str):
-        if repo not in SUPPORTED_REPOS:
-            raise ValueError(f"Repo {repo} is not supported. Must be one of: {SUPPORTED_REPOS}")
+        if repo not in SUPPORTED_SWEBENCH_REPOS:
+            raise ValueError(f"Repo {repo} is not supported. Must be one of: {SUPPORTED_SWEBENCH_REPOS}")
 
-        specs_dict = MAP_REPO_VERSION_TO_SPECS[repo]
+        specs_dict = MAP_REPO_VERSION_TO_SPECS_PY[repo]
 
-        max_key: str = max(specs_dict.keys(), key=lambda version: float(version))
+        max_key: str = max(specs_dict.keys(), key=lambda version: float(version.lstrip("v"))) # Handles v5.4
 
-        install_command: str = specs_dict[max_key]["install"]
-        python_version: str = specs_dict[max_key]["python"]
+        install_command: str = specs_dict[max_key].get("install", "python -m pip install -e .") # Default to pip install
+        python_version: str = specs_dict[max_key].get("python", "3.9") # Default to 3.9
 
         return RepoEnvironmentInfo(
             install_command=install_command,
@@ -33,10 +33,7 @@ class RepoEnvironmentInfo(BaseModel):
         )
 
 
-SUPPORTED_SWEBENCH_REPOS: Final[List[str]] = [
-    "mwaskom/seaborn",
-    "pytest-dev/pytest",
-]
+SUPPORTED_SWEBENCH_REPOS: List[str] = list(MAP_REPO_VERSION_TO_SPECS_PY.keys())
 
 SUPPORTED_OPEN_REPOS: Final[List[str]] = [
     "taoagents/taogod_terminal",
