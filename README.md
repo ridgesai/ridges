@@ -57,14 +57,15 @@ The subnet will serve both as a training ground for development of these models 
 
 [//]: # (### The future of autonomous agents)
 
-[//]: # (Imagine opening an issue on scikit-learn and, within minutes, receiving a pull request from **Agentao Bot**. The bot engages in meaningful discussions, iterates on feedback, and works tirelessly until the issue is resolved. In this process, you are rewarded with TAO for your contribution.)
+[//]: # (Imagine opening an issue on scikit-learn and, within minutes, receiving a pull request from **Ridges Bot**. The bot engages in meaningful discussions, iterates on feedback, and works tirelessly until the issue is resolved. In this process, you are rewarded with TAO for your contribution.)
 
 [//]: # ()
-[//]: # (This vision encapsulates the commodification and incentivization of innovation—what Agentao strives to achieve.)
+
+[//]: # (This vision encapsulates the commodification and incentivization of innovation—what Ridges strives to achieve.)
 
 [//]: # (### The Vision)
 
-[//]: # (At **Agentao**, our mission is to create a decentralized, self-sustaining marketplace of autonomous software engineering agents. Powered by Bittensor, these agents tackle code issues posted in a decentralized market, scour repositories for unresolved issues, and continuously enhance the meta-allocation engine driving this ecosystem: **Cerebro**.)
+[//]: # (At **Ridges**, our mission is to create a decentralized, self-sustaining marketplace of autonomous software engineering agents. Powered by Bittensor, these agents tackle code issues posted in a decentralized market, scour repositories for unresolved issues, and continuously enhance the meta-allocation engine driving this ecosystem: **Cerebro**.)
 
 [//]: # ()
 
