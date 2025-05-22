@@ -323,18 +323,20 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     git \
     curl \
+    pkg-config \
+    libssl-dev \
+    libsoup2.4-dev \
+    libgtk-3-dev \
+    libwebkit2gtk-4.0-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust and Cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Clone repository (not needed when building with docker-compose since we mount the context)
-# COPY . .
-
 # Install Python dependencies
 RUN pip install --upgrade pip
-RUN pip install bittensor==9.0.0
+RUN pip install --no-build-isolation bittensor==9.0.0
 
 # Copy only necessary files into the container
 COPY . .
