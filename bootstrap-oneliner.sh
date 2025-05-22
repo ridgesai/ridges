@@ -1,15 +1,7 @@
 #!/usr/bin/env bash
 # Ridges Development Environment Bootstrap One-Liner
-# Usage: curl -sSL https://raw.githubusercontent.com/taoagents/ridges/main/bootstrap-oneliner.sh | bash
+# This script downloads and executes the Ridges bootstrap script
+# Usage: curl -sSL https://raw.githubusercontent.com/ridgesai/ridges/single-local-deploy/bootstrap-oneliner.sh | bash
 
-# Generate the bootstrap command
-cat << 'EOL'
-curl -sSL https://raw.githubusercontent.com/taoagents/ridges/main/bootstrap.sh -o /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh
-EOL
-
-# Example of how to use this script:
-cat << 'EOL'
-
-# To bootstrap your Ridges development environment with a single command, run:
-curl -sSL https://raw.githubusercontent.com/taoagents/ridges/main/bootstrap-oneliner.sh | bash
-EOL 
+# Download and execute the bootstrap script
+curl -sSL https://raw.githubusercontent.com/ridgesai/ridges/single-local-deploy/bootstrap.sh -o /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh 

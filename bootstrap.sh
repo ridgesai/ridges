@@ -153,7 +153,7 @@ clone_repos() {
     
     # Clone Ridges
     if [ ! -d "$RIDGES_DIR" ]; then
-        git clone https://github.com/taoagents/ridges.git "$RIDGES_DIR"
+        git clone https://github.com/ridgesai/ridges.git "$RIDGES_DIR"
         log_info "Ridges repository cloned."
     else
         log_info "Ridges repository already exists. Pulling latest changes..."
@@ -265,7 +265,7 @@ services:
     restart: unless-stopped
 
   validator:
-    image: taoagents/ridges:latest
+    image: ridgesai/ridges:latest
     container_name: ridges-validator
     depends_on:
       - subtensor
@@ -283,7 +283,7 @@ services:
     restart: unless-stopped
 
   miner:
-    image: taoagents/ridges:latest
+    image: ridgesai/ridges:latest
     container_name: ridges-miner
     depends_on:
       - subtensor
