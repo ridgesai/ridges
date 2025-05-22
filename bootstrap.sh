@@ -265,7 +265,7 @@ services:
     restart: unless-stopped
 
   validator:
-    image: opentensor/bittensor:latest
+    image: python:3.10-slim
     container_name: ridges-validator
     depends_on:
       - subtensor
@@ -274,8 +274,10 @@ services:
       - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
-        sleep 15 &&
+        apt-get update && apt-get install -y git build-essential pkg-config curl &&
+        pip install btcli &&
         cd /app/ridges && pip install -e . &&
+        sleep 15 &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli wallet create --n-words 12 --no-use-password --wallet-name validator --hotkey default --no-prompt || true &&
         btcli wallet faucet --wallet.name validator && 
@@ -285,7 +287,7 @@ services:
     restart: unless-stopped
 
   miner:
-    image: opentensor/bittensor:latest
+    image: python:3.10-slim
     container_name: ridges-miner
     depends_on:
       - subtensor
@@ -295,8 +297,10 @@ services:
       - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
-        sleep 30 &&
+        apt-get update && apt-get install -y git build-essential pkg-config curl &&
+        pip install btcli &&
         cd /app/ridges && pip install -e . &&
+        sleep 30 &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli wallet create --n-words 12 --no-use-password --wallet-name miner --hotkey default --no-prompt || true &&
         btcli wallet faucet --wallet.name miner &&
