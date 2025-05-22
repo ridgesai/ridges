@@ -276,11 +276,20 @@ services:
       - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
+        set -ex
         apt-get update && apt-get install -y git build-essential pkg-config curl libssl-dev && 
         # Skip building bittensor-wallet from source
         pip install bittensor-cli --no-build-isolation && 
-        pip install virtualenv &&
+        # Make sure btcli is in PATH
+        export PATH=/usr/local/bin:$PATH &&
         cd /app/ridges &&
+        # Before attempting to install, check if neurons directory exists
+        if [ ! -d '/app/ridges/neurons' ]; then
+          echo 'ERROR: neurons directory not found at /app/ridges/neurons'
+          ls -la /app/ridges
+          exit 1
+        fi
+        python -m pip install virtualenv &&
         python -m virtualenv .venv &&
         . .venv/bin/activate &&
         # Fix dependencies before installation
@@ -294,13 +303,20 @@ services:
         if [ -f SWE-agent/sweagent/environment/swe_env.py ]; then
           sed -i 's|from swebench.harness.utils import get_environment_yml, get_requirements|from swebench.harness.test_spec.python import get_environment_yml, get_requirements|g' SWE-agent/sweagent/environment/swe_env.py
         fi
-        # Set mock responses in validator.py
-        sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/validator.py &&
+        # Set mock responses in validator.py if it exists
+        if [ -f neurons/validator.py ]; then
+          sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/validator.py
+        else
+          echo 'ERROR: neurons/validator.py not found!'
+          exit 1
+        fi
         # Install the package
         pip install -e . &&
         sleep 15 &&
         # Configure bittensor
         export PYTHONUNBUFFERED=1 &&
+        hash -r &&  # Clear command path cache
+        command -v btcli || which btcli || echo 'btcli not found in PATH' &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli config set --allow_partial_stake true &&
         # Create wallets
@@ -316,6 +332,7 @@ services:
         # Add stake
         btcli stake add --wallet.name validator --wallet.hotkey default --amount 100 --netuid 1 --no-prompt || true &&
         # Run validator
+        cd /app/ridges &&
         python neurons/validator.py --netuid 1 --wallet.name validator --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944 --use-mock-responses
       "
     restart: unless-stopped
@@ -331,11 +348,20 @@ services:
       - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
+        set -ex
         apt-get update && apt-get install -y git build-essential pkg-config curl libssl-dev &&
         # Skip building bittensor-wallet from source
         pip install bittensor-cli --no-build-isolation && 
-        pip install virtualenv &&
+        # Make sure btcli is in PATH
+        export PATH=/usr/local/bin:$PATH &&
         cd /app/ridges &&
+        # Before attempting to install, check if neurons directory exists
+        if [ ! -d '/app/ridges/neurons' ]; then
+          echo 'ERROR: neurons directory not found at /app/ridges/neurons'
+          ls -la /app/ridges
+          exit 1
+        fi
+        python -m pip install virtualenv &&
         python -m virtualenv .venv &&
         . .venv/bin/activate &&
         # Fix dependencies before installation
@@ -349,13 +375,20 @@ services:
         if [ -f SWE-agent/sweagent/environment/swe_env.py ]; then
           sed -i 's|from swebench.harness.utils import get_environment_yml, get_requirements|from swebench.harness.test_spec.python import get_environment_yml, get_requirements|g' SWE-agent/sweagent/environment/swe_env.py
         fi
-        # Set mock responses in miner.py
-        sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/miner.py &&
+        # Set mock responses in miner.py if it exists
+        if [ -f neurons/miner.py ]; then
+          sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/miner.py
+        else
+          echo 'ERROR: neurons/miner.py not found!'
+          exit 1
+        fi
         # Install the package
         pip install -e . &&
         sleep 30 &&
         # Configure bittensor
         export PYTHONUNBUFFERED=1 &&
+        hash -r &&  # Clear command path cache
+        command -v btcli || which btcli || echo 'btcli not found in PATH' &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli config set --allow_partial_stake true &&
         # Create wallets
@@ -365,6 +398,7 @@ services:
         # Register on subnet
         btcli subnet register --wallet.name miner --netuid 1 --wallet.hotkey default --no-prompt || true &&
         # Run miner
+        cd /app/ridges &&
         python neurons/miner.py --netuid 1 --wallet.name miner --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944 --use-mock-responses
       "
     restart: unless-stopped
