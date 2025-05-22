@@ -363,11 +363,18 @@ main() {
     # Create workspace directory
     mkdir -p "$WORKSPACE_DIR"
     
-    # Ask for setup type
-    echo -e "\nSelect setup type:"
-    echo "1) Native setup (runs services directly on host)"
-    echo "2) Docker setup (runs services in containers)"
-    read -p "Enter your choice (1/2): " setup_type
+    # Check if this is being run non-interactively (e.g., piped from curl)
+    if [ -t 0 ]; then
+        # Running interactively, we can prompt the user
+        echo -e "\nSelect setup type:"
+        echo "1) Native setup (runs services directly on host)"
+        echo "2) Docker setup (runs services in containers)"
+        read -p "Enter your choice (1/2): " setup_type
+    else
+        # Non-interactive mode, use default (Docker)
+        log_info "Running in non-interactive mode. Using default setup type: Docker"
+        setup_type=2
+    fi
     
     case "$setup_type" in
         1) # Native setup
