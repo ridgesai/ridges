@@ -1,13 +1,4 @@
-# Use this document to specify the minimum compute requirements.
-# This document will be used to generate a list of recommended hardware for your subnet.
-
-# This is intended to give a rough estimate of the minimum requirements
-# so that the user can make an informed decision about whether or not
-# they want to run a miner or validator on their machine.
-
-# NOTE: Specification for miners may be different from validators
-
-version: '1.0' # update this version key as needed, ideally should match your release version
+version: '2.0'
 
 compute_spec:
 
@@ -21,13 +12,13 @@ compute_spec:
       architecture: "x86_64"  # Architecture type (e.g., x86_64, arm64)
 
     gpu:
-      required: True                       # Does the application require a GPU?
+      required: False                      # Does the application require a GPU?
       min_vram: 8                          # Minimum GPU VRAM (GB)
       recommended_vram: 24                 # Recommended GPU VRAM (GB)
       cuda_cores: 1024                     # Minimum number of CUDA cores (if applicable)
       min_compute_capability: 6.0          # Minimum CUDA compute capability
       recommended_compute_capability: 7.0  # Recommended CUDA compute capability
-      recommended_gpu: "NVIDIA A100"       # provide a recommended GPU to purchase/rent
+      recommended_gpu: "NVIDIA A100"       # In the event you prefer to run a miner with a local LLM
 
     memory:
       min_ram: 16          # Minimum RAM (GB)

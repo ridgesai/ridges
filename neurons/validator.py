@@ -68,7 +68,7 @@ class Validator(BaseValidatorNeuron):
         config=None,
         model: str = ValidatorDefaults.MODEL,
         miner_request_timeout: int = ValidatorDefaults.CODINGTASK_TIMEOUT_MINS,
-        use_mock_responses: bool = False,
+        use_mock_responses: bool = True,
     ):
         super(Validator, self).__init__(config=config)
 

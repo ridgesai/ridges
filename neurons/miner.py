@@ -62,7 +62,7 @@ class Miner(BaseMinerNeuron):
         config=None, 
         model: str = MinerDefaults.MODEL,
         max_instance_cost: float = MinerDefaults.MAX_INSTANCE_COST,
-        use_mock_responses: bool = False,
+        use_mock_responses: bool = True,
     ):
         init_swe_agent(model)
 
