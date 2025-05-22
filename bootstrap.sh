@@ -257,11 +257,13 @@ services:
     container_name: subtensor-local
     ports:
       - "9944:9944"
+      - "9945:9945"
     volumes:
       - subtensor-data:/tmp/blockchain
-    command: bash -c "/app/run_subtensor --no-validator --ws-external"
+    command: bash -c "/app/run_subtensor --no-validator --ws-external --features pow-faucet"
     environment:
       - SUBTENSOR_CHAIN_TYPE=local
+      - BUILD_BINARY=0
     restart: unless-stopped
 
   validator:
@@ -275,14 +277,39 @@ services:
     command: >
       bash -c "
         apt-get update && apt-get install -y git build-essential pkg-config curl &&
-        pip install btcli &&
-        cd /app/ridges && pip install -e . &&
+        pip install bittensor-cli && pip install virtualenv &&
+        cd /app/ridges &&
+        python -m virtualenv .venv &&
+        . .venv/bin/activate &&
+        # Fix dependencies before installation
+        sed -i 's|decorator @ file:///home/conda/feedstock_root/build_artifacts/decorator_1641555617451/work|decorator>=5.1.1|g' SWE-agent/sweagent/api/requirements.txt &&
+        sed -i 's|swebench==.*|swebench>=4.0.3|g' SWE-agent/sweagent/api/requirements.txt &&
+        # Install dependencies
+        pip install -r SWE-agent/sweagent/api/requirements.txt &&
+        pip install 'modal>=0.57.0' &&
+        # Fix import in swe_env.py
+        sed -i 's|from swebench.harness.utils import get_environment_yml, get_requirements|from swebench.harness.test_spec.python import get_environment_yml, get_requirements|g' SWE-agent/sweagent/environment/swe_env.py &&
+        # Set mock responses in validator.py
+        sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/validator.py &&
+        # Install the package
+        pip install -e . &&
         sleep 15 &&
+        # Configure bittensor
         btcli config set --subtensor.network ws://subtensor:9944 &&
+        btcli config set --allow_partial_stake true &&
+        # Create wallets
+        btcli wallet create --n-words 12 --no-use-password --wallet-name owner --hotkey default --no-prompt || true &&
         btcli wallet create --n-words 12 --no-use-password --wallet-name validator --hotkey default --no-prompt || true &&
-        btcli wallet faucet --wallet.name validator && 
+        # Fund wallets from faucet
+        btcli wallet faucet --wallet.name owner --max-successes 6 --no-prompt &&
+        btcli wallet faucet --wallet.name validator --max-successes 6 --no-prompt &&
+        # Create subnet and register
+        btcli subnet create --wallet.name owner --subtensor.network ws://subtensor:9944 --no-prompt || true &&
         btcli subnet register --wallet.name validator --netuid 1 --wallet.hotkey default --no-prompt || true &&
-        python3 neurons/validator.py --netuid 1 --wallet.name validator --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944
+        # Add stake
+        btcli stake add --wallet.name validator --wallet.hotkey default --amount 100 --netuid 1 --no-prompt || true &&
+        # Run validator
+        python neurons/validator.py --netuid 1 --wallet.name validator --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944 --use-mock-responses
       "
     restart: unless-stopped
 
@@ -298,14 +325,34 @@ services:
     command: >
       bash -c "
         apt-get update && apt-get install -y git build-essential pkg-config curl &&
-        pip install btcli &&
-        cd /app/ridges && pip install -e . &&
+        pip install bittensor-cli && pip install virtualenv &&
+        cd /app/ridges &&
+        python -m virtualenv .venv &&
+        . .venv/bin/activate &&
+        # Fix dependencies before installation
+        sed -i 's|decorator @ file:///home/conda/feedstock_root/build_artifacts/decorator_1641555617451/work|decorator>=5.1.1|g' SWE-agent/sweagent/api/requirements.txt &&
+        sed -i 's|swebench==.*|swebench>=4.0.3|g' SWE-agent/sweagent/api/requirements.txt &&
+        # Install dependencies
+        pip install -r SWE-agent/sweagent/api/requirements.txt &&
+        pip install 'modal>=0.57.0' &&
+        # Fix import in swe_env.py
+        sed -i 's|from swebench.harness.utils import get_environment_yml, get_requirements|from swebench.harness.test_spec.python import get_environment_yml, get_requirements|g' SWE-agent/sweagent/environment/swe_env.py &&
+        # Set mock responses in miner.py
+        sed -i 's|use_mock_responses=False|use_mock_responses=True|g' neurons/miner.py &&
+        # Install the package
+        pip install -e . &&
         sleep 30 &&
+        # Configure bittensor
         btcli config set --subtensor.network ws://subtensor:9944 &&
+        btcli config set --allow_partial_stake true &&
+        # Create wallets
         btcli wallet create --n-words 12 --no-use-password --wallet-name miner --hotkey default --no-prompt || true &&
-        btcli wallet faucet --wallet.name miner &&
+        # Fund wallets from faucet
+        btcli wallet faucet --wallet.name miner --max-successes 6 --no-prompt &&
+        # Register on subnet
         btcli subnet register --wallet.name miner --netuid 1 --wallet.hotkey default --no-prompt || true &&
-        python3 neurons/miner.py --netuid 1 --wallet.name miner --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944
+        # Run miner
+        python neurons/miner.py --netuid 1 --wallet.name miner --wallet.hotkey default --logging.debug --subtensor.network ws://subtensor:9944 --use-mock-responses
       "
     restart: unless-stopped
 
