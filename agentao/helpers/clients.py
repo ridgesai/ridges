@@ -10,6 +10,7 @@ from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional
 import requests
 from agentao.helpers.constants import BASE_DASHBOARD_URL
+from pathlib import Path
 load_dotenv()
 
 lifecycle_events = {
@@ -291,10 +292,21 @@ def setup_logger(logger_name: str, log_session_context: LogSessionContext) -> Lo
 
     logger.setLevel(logging.INFO)
 
+    # Create logs directory if it doesn't exist
+    LOGS_DIR = Path('logs')
+    LOGS_DIR.mkdir(exist_ok=True)
+
+    # Add console handler
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
-    
     logger.addHandler(console_handler)
+
+    # Add file handler - using a single file for all logs
+    file_handler = logging.FileHandler(LOGS_DIR / 'validator.log', mode='a')
+    file_handler.setFormatter(logging.Formatter('(%(asctime)s) %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    logger.addHandler(file_handler)
+    
+    # Add PostHog handler
     logger.addHandler(AgentaoHandler(context=log_session_context))
 
     # Two helper methods to allow us to set optional context during forward passes

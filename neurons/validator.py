@@ -228,6 +228,8 @@ class Validator(BaseValidatorNeuron):
         - Rewarding the miners
         - Updating the scores
         """
+        
+        self.logger.info(f"Loop number {self.step}")
         forward_pass_id = str(uuid.uuid4())
 
         self.logger.add_forward_pass_context(forward_pass_id)
