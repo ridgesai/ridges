@@ -5,12 +5,12 @@ from logging import Logger
 import os
 import json
 
-from agentao.validator.graders.abstract_grader import GraderInterface, MinerSubmission
-from agentao.validator.graders.float_grader import FloatGrader, MockFloatGrader
+from ridges.validator.graders.abstract_grader import GraderInterface, MinerSubmission
+from ridges.validator.graders.float_grader import FloatGrader, MockFloatGrader
 
 
 from dataclasses import asdict
-from agentao.helpers.clients import LogContext
+from ridges.helpers.clients import LogContext
 
 class TrueSkillGrader(GraderInterface):
     """

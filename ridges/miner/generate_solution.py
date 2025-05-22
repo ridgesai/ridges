@@ -19,7 +19,7 @@ from sweagent.environment.utils import (
 )
 from sweagent.types import AgentInfo, TrajectoryStep
 
-from agentao.helpers.classes import UnsolvedIssue, IssueSolution, MinerModelStats
+from ridges.helpers.classes import UnsolvedIssue, IssueSolution, MinerModelStats
 from logging import Logger
 
 @dataclass(frozen=True)

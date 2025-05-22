@@ -9,8 +9,8 @@ from typing import Tuple, Dict, Final
 import openai
 from pydantic import BaseModel
 
-from agentao.helpers.classes import GeneratedProblemStatement
-from agentao.validator.graders.abstract_grader import GraderInterface, MinerSubmission
+from ridges.helpers.classes import GeneratedProblemStatement
+from ridges.validator.graders.abstract_grader import GraderInterface, MinerSubmission
 
 from logging import Logger
 

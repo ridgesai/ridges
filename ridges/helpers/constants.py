@@ -125,7 +125,7 @@ PRICING_DATA_PER_MILLION_TOKENS: Final[Dict[str, Dict[str, float]]] = {
     }
 }
 
-BASE_DASHBOARD_URL: Final[str] = "https://agentao-dashboard.vercel.app"
+BASE_DASHBOARD_URL: Final[str] = "https://ridges-dashboard.vercel.app"
 
 EXAMPLE_PATCH = """
 diff --git a/tests/test_matrix.py b/tests/test_matrix.py

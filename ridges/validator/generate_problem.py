@@ -10,11 +10,11 @@ import openai
 from jinja2 import Template
 from pydantic import BaseModel
 
-from agentao.helpers.classes import FilePair, GeneratedProblemStatement, \
+from ridges.helpers.classes import FilePair, GeneratedProblemStatement, \
     ValidatorModelStats, IngestionHeuristics
-from agentao.helpers.clients import LogContext
-from agentao.helpers.helpers import calculate_price
-from agentao.validator.ingest import get_all_filepairs
+from ridges.helpers.clients import LogContext
+from ridges.helpers.helpers import calculate_price
+from ridges.validator.ingest import get_all_filepairs
 
 from logging import Logger
 

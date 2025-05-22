@@ -23,8 +23,8 @@ import traceback
 
 import bittensor as bt
 
-from agentao.base.neuron import BaseNeuron
-from agentao.utils.config import add_miner_args
+from ridges.base.neuron import BaseNeuron
+from ridges.utils.config import add_miner_args
 
 from typing import Union
 

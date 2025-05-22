@@ -29,7 +29,7 @@ echo "Python 3.10 has been installed successfully!"
 
 # Docker
 #########################################################################
-# Add Docker’s official GPG key
+# Add Docker's official GPG key
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
 # Add Docker repository
@@ -50,8 +50,8 @@ python3.10 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 
-git clone --recurse-submodules https://github.com/taoagents/agentao
-pushd agentao
+git clone --recurse-submodules https://github.com/taoagents/ridges
+pushd ridges
 pip install -e SWE-agent -e .
 popd
 

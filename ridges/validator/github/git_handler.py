@@ -12,7 +12,7 @@ from github.PullRequest import PullRequest
 from github.Repository import Repository
 from pydantic import BaseModel
 
-from agentao.repo_environment import SUPPORTED_OPEN_REPOS
+from ridges.repo_environment import SUPPORTED_OPEN_REPOS
 from sweagent.environment.swe_env import EnvironmentArguments, SWEEnv
 
 load_dotenv()
@@ -151,13 +151,13 @@ class GitHubIssueHandler:
                 lines = list(filter(None, lines))
 
                 submit_line = "@taoagents closes #"
-                agentao_mr = False
+                ridges_mr = False
                 for line in lines:
                     if line.startswith(submit_line):
-                        agentao_mr = True
+                        ridges_mr = True
                         break
                 
-                if not agentao_mr: continue
+                if not ridges_mr: continue
 
                 # Now we see if the PR has been accepted by the owner
                 # within the last 24 hours

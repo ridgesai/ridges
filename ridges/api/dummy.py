@@ -19,7 +19,7 @@
 
 import bittensor as bt
 from typing import List, Optional, Union, Any, Dict
-from agentao.protocol import CodingTask
+from ridges.protocol import CodingTask
 from bittensor.utils.subnets import SubnetsAPI
 
 

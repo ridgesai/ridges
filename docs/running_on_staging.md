@@ -1,12 +1,12 @@
-# AgenTao-specific tips:
+# Ridges-specific tips:
 
 Use this function to start localnet:
 ```sh
 function start-localnet() {
     subtensor_root=<...>
-    agentao_root=<...>
+    ridges_root=<...>
     pm2 start -f "$subtensor_root/scripts/localnet.sh" --name localnet -- False --no-purge
-    pm2 start "$agentao_root"/scripts/setup_staging_subnet.sh --name localnet-setup --no-autorestart
+    pm2 start "$ridges_root"/scripts/setup_staging_subnet.sh --name localnet-setup --no-autorestart
 }
 ```
 -----

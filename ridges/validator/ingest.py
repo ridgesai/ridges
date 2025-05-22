@@ -21,10 +21,10 @@ import numpy as np
 import openai
 import tiktoken
 
-from agentao.helpers.classes import EmbeddedFile, FilePair, IngestionHeuristics
+from ridges.helpers.classes import EmbeddedFile, FilePair, IngestionHeuristics
 from logging import Logger
 
-from agentao.helpers.clients import LogContext
+from ridges.helpers.clients import LogContext
 
 OPENAI_CLIENT: Final[openai.Client] = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
 
