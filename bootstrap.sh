@@ -265,17 +265,17 @@ services:
     restart: unless-stopped
 
   validator:
-    build:
-      context: ${RIDGES_DIR}
-      dockerfile: Dockerfile
+    image: opentensor/bittensor:latest
     container_name: ridges-validator
     depends_on:
       - subtensor
     volumes:
       - bittensor-data:/root/.bittensor
+      - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
         sleep 15 &&
+        cd /app/ridges && pip install -e . &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli wallet create --n-words 12 --no-use-password --wallet-name validator --hotkey default --no-prompt || true &&
         btcli wallet faucet --wallet.name validator && 
@@ -285,18 +285,18 @@ services:
     restart: unless-stopped
 
   miner:
-    build:
-      context: ${RIDGES_DIR}
-      dockerfile: Dockerfile
+    image: opentensor/bittensor:latest
     container_name: ridges-miner
     depends_on:
       - subtensor
       - validator
     volumes:
       - bittensor-data:/root/.bittensor
+      - ${RIDGES_DIR}:/app/ridges
     command: >
       bash -c "
         sleep 30 &&
+        cd /app/ridges && pip install -e . &&
         btcli config set --subtensor.network ws://subtensor:9944 &&
         btcli wallet create --n-words 12 --no-use-password --wallet-name miner --hotkey default --no-prompt || true &&
         btcli wallet faucet --wallet.name miner &&
@@ -310,50 +310,7 @@ volumes:
   bittensor-data:
 EOF
 
-    # Create a Dockerfile if it doesn't exist
-    if [ ! -f "$RIDGES_DIR/Dockerfile" ]; then
-        log_info "Creating Dockerfile for Ridges..."
-        cat > "$RIDGES_DIR/Dockerfile" << 'EOF'
-FROM python:3.10-slim
-
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    curl \
-    pkg-config \
-    libssl-dev \
-    libsoup2.4-dev \
-    libgtk-3-dev \
-    libwebkit2gtk-4.0-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust and Cargo
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Install Python dependencies
-RUN pip install --upgrade pip
-RUN pip install --no-build-isolation bittensor==9.0.0
-
-# Copy only necessary files into the container
-COPY . .
-
-# Install the package
-RUN pip install -e .
-
-# Set working directory for execution
-WORKDIR /app
-
-# Default command (this will be overridden by docker-compose)
-CMD ["python3", "-m", "bittensor"]
-EOF
-    fi
-
     log_info "docker-compose.yml created at $WORKSPACE_DIR/docker-compose.yml"
-    log_info "Dockerfile created at $RIDGES_DIR/Dockerfile"
 }
 
 # Main function
