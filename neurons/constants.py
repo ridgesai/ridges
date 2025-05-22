@@ -21,6 +21,6 @@ class ValidatorDefaults:
         min_files_to_consider_dir_for_problems=3,
         min_file_content_len=50,
     )
-    NEURON_NUM_CONCURRENT_FORWARDS: Final[int] = 2
+    NEURON_NUM_CONCURRENT_FORWARDS: Final[int] = 1
     MAX_MINERS_PER_PROBLEM: Final[int] = 15
     NO_RESPONSE_MIN: Final[float] = 0.005

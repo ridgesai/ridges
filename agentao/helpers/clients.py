@@ -303,7 +303,7 @@ def setup_logger(logger_name: str, log_session_context: LogSessionContext) -> Lo
 
     # Add file handler - using a single file for all logs
     file_handler = logging.FileHandler(LOGS_DIR / 'validator.log', mode='a')
-    file_handler.setFormatter(logging.Formatter('(%(asctime)s) %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    file_handler.setFormatter(logging.Formatter('<span style="color:orange">**(%(asctime)s)**</span> `%(pathname)s:%(lineno)d` \n %(message)s \n', datefmt='%Y-%m-%d %H:%M:%S'))
     logger.addHandler(file_handler)
     
     # Add PostHog handler

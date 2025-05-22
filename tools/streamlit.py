@@ -43,28 +43,14 @@ def read_logs():
             return logs
     except FileNotFoundError:
         return []
-    
-def clean_log(log):
-    log_split = log.split(')', 1)
-    log_split[0] = f"<span style='color:orange'>**{log_split[0] + ')'}**</span>"
-    return log_split[0] + " " +  log_split[1]
 
 # Initialize Streamlit page
 st.set_page_config(page_title="Local Subtensor Logging", layout="wide")
 st.title("Local Subtensor Logging 🔧")
-st.subheader("View the logs of a local Subtensor validator")
+st.subheader("View the logs of a local Subtensor repository")
 
-# Create a container for logs
-log_container = st.empty()
-
-# Add the Streamlit handler to the root logger
-root_logger = logging.getLogger()
-streamlit_handler = StreamlitHandler(log_container)
-streamlit_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-root_logger.addHandler(streamlit_handler)
-
-st.markdown("This is a tool to view the logs of a local Subtensor validator. Currently it seperates each iteration of `forward()` with a divider.")
-st.markdown("Ensure this streamlit app is running before running the validator.")
+st.markdown("This is a tool to view all the local logs within a subtensor repository. Currently it seperates each iteration of `forward()` with a divider.")
+st.markdown("Ensure this streamlit app is running before running your neurons.")
 st.divider()
 
 while True:
@@ -77,9 +63,12 @@ while True:
             print(log)
             if "Loop number" in log:
                 st.divider()
-                st.markdown(f"`Query number {log.split('Loop number ')[1].split(' ')[0]}`")
+                st.markdown(
+                    f'<span style="color: #ADD8E6; font-family: monospace; font-style: italic;">Query number {log.split("Loop number ")[1].split(" ")[0]}</span>',
+                    unsafe_allow_html=True
+                )
             else:
-                st.markdown(clean_log(log), unsafe_allow_html=True)
+                st.markdown(log, unsafe_allow_html=True)
         
         # Add a small delay
         time.sleep(0.1)
