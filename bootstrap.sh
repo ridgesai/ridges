@@ -248,7 +248,7 @@ launch_services() {
 # Create Docker Compose file
 create_docker_compose() {
     log_info "Creating docker-compose.yml for easier management..."
-    cat > "$WORKSPACE_DIR/docker-compose.yml" << 'EOF'
+    cat > "$WORKSPACE_DIR/docker-compose.yml" << EOF
 version: '3'
 
 services:
@@ -265,7 +265,9 @@ services:
     restart: unless-stopped
 
   validator:
-    image: ridgesai/ridges:latest
+    build:
+      context: ${RIDGES_DIR}
+      dockerfile: Dockerfile
     container_name: ridges-validator
     depends_on:
       - subtensor
@@ -283,7 +285,9 @@ services:
     restart: unless-stopped
 
   miner:
-    image: ridgesai/ridges:latest
+    build:
+      context: ${RIDGES_DIR}
+      dockerfile: Dockerfile
     container_name: ridges-miner
     depends_on:
       - subtensor
@@ -306,7 +310,48 @@ volumes:
   bittensor-data:
 EOF
 
+    # Create a Dockerfile if it doesn't exist
+    if [ ! -f "$RIDGES_DIR/Dockerfile" ]; then
+        log_info "Creating Dockerfile for Ridges..."
+        cat > "$RIDGES_DIR/Dockerfile" << 'EOF'
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust and Cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Clone repository (not needed when building with docker-compose since we mount the context)
+# COPY . .
+
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install bittensor==9.0.0
+
+# Copy only necessary files into the container
+COPY . .
+
+# Install the package
+RUN pip install -e .
+
+# Set working directory for execution
+WORKDIR /app
+
+# Default command (this will be overridden by docker-compose)
+CMD ["python3", "-m", "bittensor"]
+EOF
+    fi
+
     log_info "docker-compose.yml created at $WORKSPACE_DIR/docker-compose.yml"
+    log_info "Dockerfile created at $RIDGES_DIR/Dockerfile"
 }
 
 # Main function
@@ -338,6 +383,7 @@ main() {
             create_docker_compose
             log_info "Starting Docker services..."
             cd "$WORKSPACE_DIR" && docker-compose up -d
+            log_info "Note: First run may take several minutes as Docker images are being built."
             ;;
         *)
             log_error "Invalid choice. Exiting."
@@ -354,6 +400,7 @@ main() {
     else
         echo -e "\nTo monitor Docker containers: docker-compose logs -f"
         echo "To stop containers: docker-compose down"
+        echo -e "\nTo rebuild the Docker images: docker-compose build --no-cache"
     fi
     
     echo -e "\nEnjoy developing with Ridges!"
