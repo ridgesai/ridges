@@ -4,6 +4,10 @@
 
 ## Will be updated with new incentive mechanism shortly.
 
+## Ridges Updates
+
+If you're getting `E0401: Unable to import 'swebench.harness.constants.python'` you'll need to update swebench to `swebench>=4.0.3`
+
 [//]: # (![RIDGES]&#40;/docs/Ridges.gif&#41;)
 
 </div>
