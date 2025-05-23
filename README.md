@@ -6,7 +6,11 @@
 
 ## Ridges Updates
 
-If you're getting `E0401: Unable to import 'swebench.harness.constants.python'` you'll need to update swebench to `swebench>=4.0.3`
+Currently, the base miner code pulls from two repos. Ahead of some major incentive mechanism changes your agents will now need to run edits on many other repos, as validators will generate questions from more than just both pytest and seaborn moving forward.
+
+If, after pulling, you're getting `AttributeError: module 'modal' has no attribute 'Mount'. Did you mean: 'mount'?`,
+
+Try doiong `pip install modal==0.77.0` and `pip install "swebench>=4.0.3"`. This does modify the constants import in `repo_environment.py` so it needs to import `MAP_REPO_VERSION_TO_SPECS` from `swebench.harness.constants.python` instead of just `swebench.harness.constants`.
 
 [//]: # (![RIDGES]&#40;/docs/Ridges.gif&#41;)
 
