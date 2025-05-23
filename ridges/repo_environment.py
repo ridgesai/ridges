@@ -1,7 +1,7 @@
 from typing import Dict, Final, List
 
 from pydantic import BaseModel
-from swebench.harness.constants.python import MAP_REPO_VERSION_TO_SPECS_PY
+from swebench.harness.constants import MAP_REPO_VERSION_TO_SPECS
 
 
 class RepoEnvironmentInfo(BaseModel):
@@ -20,7 +20,7 @@ class RepoEnvironmentInfo(BaseModel):
         if repo not in SUPPORTED_SWEBENCH_REPOS:
             raise ValueError(f"Repo {repo} is not supported. Must be one of: {SUPPORTED_SWEBENCH_REPOS}")
 
-        specs_dict = MAP_REPO_VERSION_TO_SPECS_PY[repo]
+        specs_dict = MAP_REPO_VERSION_TO_SPECS[repo]
 
         max_key: str = max(specs_dict.keys(), key=lambda version: float(version.lstrip("v"))) # Handles v5.4
 
@@ -33,7 +33,7 @@ class RepoEnvironmentInfo(BaseModel):
         )
 
 
-SUPPORTED_SWEBENCH_REPOS: List[str] = list(MAP_REPO_VERSION_TO_SPECS_PY.keys())
+SUPPORTED_SWEBENCH_REPOS: List[str] = list(MAP_REPO_VERSION_TO_SPECS.keys())
 
 SUPPORTED_OPEN_REPOS: Final[List[str]] = [
     "taoagents/taogod_terminal",
