@@ -301,9 +301,21 @@ def setup_logger(logger_name: str, log_session_context: LogSessionContext) -> Lo
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Add file handler - using a single file for all logs
-    file_handler = logging.FileHandler(LOGS_DIR / 'validator.log', mode='a')
-    file_handler.setFormatter(logging.Formatter('<span style="color:orange">**(%(asctime)s)**</span> `%(pathname)s:%(lineno)d` \n %(message)s \n', datefmt='%Y-%m-%d %H:%M:%S'))
+    class DynamicFileHandler(logging.Handler):  # Changed from FileHandler to Handler
+        def emit(self, record):
+            # Get timestamp with milliseconds
+            timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%d_%H-%M-%S-%f')
+            pathname = record.pathname.replace('/', '_')
+            
+            # Create new file handler for this specific log
+            file_handler = logging.FileHandler(LOGS_DIR / f'{timestamp}_{pathname}.log', mode='a')
+            file_handler.setFormatter(self.formatter)
+            file_handler.emit(record)
+            file_handler.close()
+
+    # Use the dynamic handler without a dummy file
+    file_handler = DynamicFileHandler() 
+    file_handler.setFormatter(logging.Formatter('%(message)s'))
     logger.addHandler(file_handler)
     
     # Add PostHog handler
