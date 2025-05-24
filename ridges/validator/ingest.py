@@ -86,7 +86,10 @@ def evaluate_for_context(dir_path, repo_structure, heuristics: IngestionHeuristi
 
     def _embed_code(raw_codes: List[str]) -> List[List[float]]:
         encoding = tiktoken.get_encoding('cl100k_base')
-        truncated_inputs = [encoding.encode(json.dumps(code))[:8191] for code in raw_codes]
+        encoded_inputs = [encoding.encode(json.dumps(code)) for code in raw_codes]
+        max_tokens_per_code = min(8191, encoding.max_token_value // len(raw_codes))
+        truncated_inputs = [tokens[:max_tokens_per_code] for tokens in encoded_inputs]
+
         response = OPENAI_CLIENT.embeddings.create(
             model="text-embedding-3-small",
             input=truncated_inputs
