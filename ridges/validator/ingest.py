@@ -123,7 +123,12 @@ def evaluate_for_context(dir_path, repo_structure, heuristics: IngestionHeuristi
 
     if len(repo_structure['files']) >= heuristics.min_files_to_consider_dir_for_problems:
         files = _retrieve_files_in_dir()
-        embeddings = _embed_code(list(map(lambda file: file['contents'], files)))
+        try:    
+            embeddings = _embed_code(list(map(lambda file: file['contents'], files)))
+        except Exception as e:
+            logger.exception(f"Error embedding code: {e}")
+            return []
+        
         embedded_files = [
             EmbeddedFile(
                 path=file['path'],
