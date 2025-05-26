@@ -36,7 +36,7 @@ VERSION_KEY = 2
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PREFERRED_OPENAI_MODEL = "gpt4o"
+PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")

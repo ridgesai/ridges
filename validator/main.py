@@ -318,7 +318,7 @@ async def main():
                         await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
                         continue
 
-                    logger.info(f"Processing challenge: task_id={challenge['challenge_id']}")
+                    logger.info(f"Processing challenge: task_id={challenge.challenge_id}")
 
                     # Log background task status
                     logger.info("Background task status:")
