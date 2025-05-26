@@ -45,7 +45,7 @@ async def blacklist_low_stake(
     metagraph = config.metagraph
     metagraph.sync_nodes()
     node = metagraph.nodes.get(validator_hotkey)
-    logger.info(f"Node {validator_hotkey} has TAO stake {node.tao_stake}")
+    logger.info(f"Node {validator_hotkey} has TAO stake {node.tao_stake if node else -1}")
     logger.info(f"Node full object: {node}")
     if not node:
         raise HTTPException(status_code=403, detail="Hotkey not found in metagraph")

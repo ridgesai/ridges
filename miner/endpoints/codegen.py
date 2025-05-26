@@ -31,6 +31,10 @@ async def process_challenge(
             challenge_id = challenge_data.get("challenge_id")
             problem_statement = challenge_data.get("problem_statement")
             dynamic_checklist = challenge_data.get("dynamic_checklist")
+            repository = challenge_data.get("repository_name")
+
+            # Optionally we need to check out a repo at a given commit and solve the problem there
+            commit_hash = challenge_data.get("commit_hash")
             
             logger.info(f"Received challenge data: {json.dumps(challenge_data, indent=2)}")
             

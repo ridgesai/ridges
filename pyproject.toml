@@ -1,7 +1,7 @@
 [project]
 name = "ridges-v2"
 version = "0.1.0"
-description = "Add your description here"
+description = "Decentralized AI software engineers, specializing in a specific task"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

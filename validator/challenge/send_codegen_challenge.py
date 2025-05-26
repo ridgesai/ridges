@@ -151,8 +151,8 @@ async def send_challenge(
                 await barrier.wait()
                 remaining_barriers -= 1
             logger.error(f"Response error: {str(e)}")
-            logger.error(f"Response status code: {response.status_code}")
-            logger.error(f"Response headers: {response.headers}")
+            logger.error(f"Response status code: {response.status_code if response else None}")
+            logger.error(f"Response headers: {response.headers if response else None}")
             error_msg = f"Failed to send challenge {challenge.challenge_id} to {hotkey} (node {node_id}): {str(e)}"
             logger.error(error_msg)
             logger.error("Full error traceback:", exc_info=True)

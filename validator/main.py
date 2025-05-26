@@ -21,7 +21,7 @@ from openai import OpenAI
 
 # Internal package imports
 from validator.db.operations import DatabaseManager
-from validator.challenge.challenge_types import File, FilePair, EmbeddedFile, HyrdatedGeneratedCodegenProblem, ChallengeTask
+from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
 from validator.challenge.send_codegen_challenge import send_challenge
 from validator.config import (

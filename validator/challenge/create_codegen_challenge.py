@@ -3,7 +3,7 @@ For now Ridges has a codegen challenge. Very shortly we will be introducing more
 '''
 
 import random
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 import pickle
 import os
 import json
@@ -218,7 +218,7 @@ def get_all_filepairs(
 
     return valid_pairs
 
-def setup_repositories_and_select_random() -> Path:
+def setup_repositories_and_select_random() -> Tuple[str, Path]:
     """
     Clones supported repositories if they don't exist 
     into the appropriate directory, and selects one for 
@@ -254,7 +254,7 @@ def setup_repositories_and_select_random() -> Path:
     repo_path = SUPPORTED_CODEGEN_REPOS[repo_name]
     logger.info(f"Selected repository {repo_name} at {repo_path}")
 
-    return repo_path
+    return repo_name, repo_path
 
 async def create_next_codegen_challenge(
     openai_client: openai.Client
@@ -273,7 +273,7 @@ async def create_next_codegen_challenge(
     '''
 
     # Select a supported repo at random
-    repo_path: Path = setup_repositories_and_select_random()
+    repo_name, repo_path = setup_repositories_and_select_random()
 
     file_pairs = get_all_filepairs(local_repo_path=repo_path, openai_client=openai_client)
     selected_pair = random.choice(file_pairs)
@@ -299,6 +299,8 @@ async def create_next_codegen_challenge(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
+        repository_name=repo_name,
+        commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,
         context_files=[file.contents for file in selected_pair.files]

@@ -53,6 +53,8 @@ class HyrdatedGeneratedCodegenProblem:
     model: str
     problem_statement: str
     dynamic_checklist: List[str]
+    repository_name: str
+    commit_hash: Optional[str]
     context_files: FilePair
 
     def to_detailed_format(self) -> str:
@@ -70,6 +72,7 @@ class HyrdatedGeneratedCodegenProblem:
         return {
             "challenge_id": self.challenge_id,
             "context_files": self.context_files.files,
+            "repository_name": self.repository_name,
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist
         }
