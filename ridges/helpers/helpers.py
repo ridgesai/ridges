@@ -8,7 +8,7 @@ from ridges.helpers.constants import PRICING_DATA_PER_MILLION_TOKENS
 
 from logging import Logger
 
-def clone_repo(author_name: str, repo_name: str, base_path: Path, logger: Logger) -> Path:
+def clone_repo(author_name: str, repo_name: str, base_path: Path, logger: Logger, base_commit: str = None) -> Path:
     """
     Clone a GitHub repository to a specified directory under 'repos' and return the path.
 
@@ -26,11 +26,14 @@ def clone_repo(author_name: str, repo_name: str, base_path: Path, logger: Logger
             shutil.rmtree(clone_to_path)
             logger.debug(f"Directory {clone_to_path} has been removed.")
 
-        Repo.clone_from(f"https://github.com/{author_name}/{repo_name}.git", clone_to_path)
+        repo = Repo.clone_from(f"https://github.com/{author_name}/{repo_name}.git", clone_to_path)
         logger.debug(f"Repository cloned to {clone_to_path}")
+        if base_commit:
+            repo.git.checkout(base_commit)
+            logger.debug(f"Checked out base commit {base_commit}")
         return clone_to_path
-    except Exception:
-        logger.exception(f"Failed to clone repository")
+    except Exception as e:
+        logger.exception(f"Failed to clone repository: {e}")
         raise
 
 
