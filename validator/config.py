@@ -10,7 +10,7 @@ SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
 
 # Validator configuration
 HOTKEY_NAME = os.getenv("HOTKEY_NAME", "default")
-WALLET_NAME = os.getenv("WALLET_NAME", "default")
+WALLET_NAME = os.getenv("WALLET_NAME", "validator")
 MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
 VALIDATOR_PORT = int(os.getenv("VALIDATOR_PORT", "8000"))
 VALIDATOR_HOST = os.getenv("VALIDATOR_HOST", "0.0.0.0")
