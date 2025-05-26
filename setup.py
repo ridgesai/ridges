@@ -91,7 +91,7 @@ setup(
         "setuptools>=68",
         "ipython",
         "ipdb",
-        "swebench==2.1.8",
+        "swebench>=4.0.3",
         "boto3",
         "openai>=1.0.0",
         "pygithub",

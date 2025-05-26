@@ -1,0 +1,46 @@
+version: '3.8'
+services:
+  subtensor:
+    build: .
+    container_name: subtensor
+    working_dir: /subtensor
+    command: ["bash", "-c", "BUILD_BINARY=0 ./scripts/localnet.sh False"]
+    ports:
+      - "9945:9945"
+    networks:
+      - ridgesnet
+    volumes:
+      - subtensor-data:/subtensor/data # Persist chain data to avoid resetting wallets, subnets, and registrations on restart
+
+  miner:
+    build: .
+    container_name: miner
+    depends_on:
+      - subtensor
+    working_dir: /app
+    command: ["bash", "-c", "/app/venv/bin/python neurons/miner.py --netuid 1 --subtensor.network ws://subtensor:9945 --wallet.name miner --wallet.hotkey default"]
+    networks:
+      - ridgesnet
+    volumes:
+      - miner-wallets:/root/.bittensor
+
+  validator:
+    build: .
+    container_name: validator
+    depends_on:
+      - subtensor
+    working_dir: /app
+    command: ["bash", "-c", "/app/venv/bin/python neurons/validator.py --netuid 1 --subtensor.network ws://subtensor:9945 --wallet.name validator --wallet.hotkey default"]
+    networks:
+      - ridgesnet
+    volumes:
+      - validator-wallets:/root/.bittensor
+
+networks:
+  ridgesnet:
+    driver: bridge
+
+volumes:
+  subtensor-data:
+  miner-wallets:
+  validator-wallets: 

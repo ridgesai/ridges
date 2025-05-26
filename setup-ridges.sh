@@ -124,7 +124,7 @@ setup_bittensor() {
     print_message "Cloning subtensor repository..."
     git clone https://github.com/opentensor/subtensor.git
   fi
-  
+
   ./subtensor/scripts/init.sh
 
   # Setup subtensor
