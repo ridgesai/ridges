@@ -33,6 +33,15 @@ class ColoredFormatter(logging.Formatter):
 def get_logs_file():
     return Path(__file__).parent / "logs.json"
 
+def clear_logs():
+    """Clear all logs by resetting logs.json to an empty array."""
+    log_file = get_logs_file()
+    try:
+        with open(log_file, 'w') as f:
+            json.dump([], f)
+    except Exception as e:
+        print(f"Error clearing log file: {e}")
+
 def append_log(new_log):
     log_file = get_logs_file()
     try:
@@ -46,6 +55,7 @@ def append_log(new_log):
             "timestamp": new_log.asctime,
             "milliseconds": new_log.msecs,
             "levelname": new_log.levelname,
+            "filename": new_log.name,
             "pathname": new_log.pathname,
             "funcName": new_log.funcName,
             "lineno": new_log.lineno,

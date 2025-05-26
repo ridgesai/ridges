@@ -15,6 +15,15 @@ def get_logs():
         st.error(f"Error reading logs: {e}")
     return []
 
+def clear_logs():
+    """Clear all logs by resetting logs.json to an empty array."""
+    log_file = get_logs_file()
+    try:
+        with open(log_file, 'w') as f:
+            json.dump([], f)
+    except Exception as e:
+        print(f"Error clearing log file: {e}")
+
 def get_log_levelname(log):
     return log['levelname'][9:-4]
 
@@ -69,7 +78,7 @@ if "level_selection" not in st.session_state:
 # Display logs in a more readable format
 with log_container.container():
     st.session_state.logs = get_logs()
-    st.session_state.files = set([log['pathname'] for log in st.session_state.logs])
+    st.session_state.files = set([log['filename'] for log in st.session_state.logs])
     st.session_state.levels = set([get_log_levelname(log) for log in st.session_state.logs])
 
     with st.sidebar:
@@ -77,8 +86,12 @@ with log_container.container():
         st.session_state.file_selection = st.selectbox("Files", st.session_state.files, index=None)
         st.text("Filter by level")
         st.session_state.level_selection = st.selectbox("Levels", st.session_state.levels, index=None)
-    
+        if st.button("Clear existing logs", type="primary"):
+            clear_logs()
+            st.rerun()
+
     st.title("Validator dashboard")
+    st.text("Press R to refresh to see latest logs (working on a fix for this)")
 
     if st.session_state.file_selection is not None:
         st.markdown(f"Displaying logs from `{st.session_state.file_selection}`")
@@ -92,3 +105,6 @@ with log_container.container():
         if (st.session_state.file_selection is None or log['pathname'] in st.session_state.file_selection) and (st.session_state.level_selection is None or get_log_levelname(log) in st.session_state.level_selection):
             output_log(log)
             num_logs_ouputted += 1
+    
+    st.divider()
+    st.text(f"Displayed {num_logs_ouputted} logs that match the selected filters")
