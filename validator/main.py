@@ -1,4 +1,3 @@
-
 # Python built in imports 
 from pathlib import Path
 import sys 
@@ -62,9 +61,11 @@ async def check_miner_availability(
     hotkey: str
 ) -> bool: 
     """Check if a miner is available and log the result."""
-    server_address = construct_server_address(node)
+    server_address = await construct_server_address(node)
     start_time = time.time()
     
+    print("SERVER ADDY FOR NOD", node.dict())
+    print("YEEHAW", f"{server_address}/availability")
     try:
         headers = {"validator-hotkey": hotkey}
         response = await client.get(f"{server_address}/availability", headers=headers, timeout=5.0)
@@ -116,7 +117,7 @@ def get_active_nodes_on_chain() -> list[Node]:
         return active_nodes
         
     except Exception as e:
-        logger.error(f"Failed to get active nodes: {str(e)}")
+        logger.error(f"Failed to get active nodes: {str(e)}", exc_info=True)
         return []
     
 async def get_available_nodes_with_api(

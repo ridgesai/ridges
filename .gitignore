@@ -12,3 +12,7 @@ wheels/
 # Env files
 *.env
 *.db
+
+# Validator generated files
+.cache/
+validator/repos/

@@ -19,7 +19,7 @@ class Config(BaseModel):
     metagraph: Metagraph
     httpx_client: httpx.AsyncClient
     nonce_manager: Any  # Using Any to avoid Pydantic validation issues with NonceManager
-    min_stake_threshold: float = Field(default=500.0)
+    min_stake_threshold: float = Field(default=1.0)
 
     class Config:
         arbitrary_types_allowed = True

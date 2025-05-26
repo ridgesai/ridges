@@ -4,7 +4,7 @@ import os
 
 # Network configuration
 # Consider defaulting to testnet uid?
-NETUID = int(os.getenv("NETUID", "62"))
+NETUID = int(os.getenv("NETUID", "1"))
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
 
