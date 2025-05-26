@@ -6,7 +6,7 @@ import os
 # Consider defaulting to testnet uid?
 NETUID = int(os.getenv("NETUID", "62"))
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
-SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "127.0.0.1:9944")
+SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
 
 # Validator configuration
 HOTKEY_NAME = os.getenv("HOTKEY_NAME", "default")
