@@ -33,6 +33,7 @@ class CodingTask(bt.Synapse):
 
     ########################## Payload definition ##############################
     repo: str  # Format: <author>/<name>
+    base_commit: Optional[str] = None # The base commit to use for the benchmark
 
     # The issue description
     problem_statement: str
