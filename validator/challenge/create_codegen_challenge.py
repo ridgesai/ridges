@@ -56,11 +56,16 @@ def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def highest_cosine_filepair_selector(file_pairs: List[FilePair]) -> FilePair:
-    selected_file_pair = sorted(
+    if len(file_pairs) == 0:
+        raise ValueError("No file pairs found")
+    
+    top_10_file_pairs = sorted(
         file_pairs,
         key=lambda x: float(x.cosine_similarity),
         reverse=True
-    )[random.randint(1, 10)]
+    )[:10]
+
+    selected_file_pair = random.choice(top_10_file_pairs)
 
     return selected_file_pair
 
