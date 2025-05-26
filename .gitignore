@@ -14,3 +14,9 @@ wheels/
 
 # Databases
 *.db
+
+# MacOS
+.DS_Store
+
+# Logging
+logs.json

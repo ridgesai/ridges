@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from pathlib import Path
 
-from fiber.logging_utils import get_logger
+from validator.utils.logging_utils import get_logger
 
 from validator.challenge.challenge_types import HyrdatedGeneratedCodegenProblem, CodegenResponse
 from .schema import check_db_initialized, init_db

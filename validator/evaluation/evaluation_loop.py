@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fiber.logging_utils import get_logger
+from validator.utils.logging_utils import get_logger
 from openai import OpenAI
 
 from validator.db.operations import DatabaseManager

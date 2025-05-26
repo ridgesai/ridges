@@ -14,7 +14,6 @@ from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
 from fiber.chain.chain_utils import load_hotkey_keypair
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
-from fiber.logging_utils import get_logger
 from dotenv import load_dotenv
 import httpx
 from openai import OpenAI
@@ -24,6 +23,7 @@ from validator.db.operations import DatabaseManager
 from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
 from validator.challenge.send_codegen_challenge import send_challenge
+from validator.utils.logging_utils import get_logger
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
