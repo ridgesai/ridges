@@ -330,7 +330,7 @@ async def main():
                         task = asyncio.create_task(
                             send_challenge(
                                 challenge=challenge,
-                                server_address=construct_server_address(node),
+                                server_address=await construct_server_address(node),
                                 hotkey=node.hotkey,
                                 keypair=hotkey,
                                 node_id=node.node_id,
