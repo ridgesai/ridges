@@ -29,6 +29,7 @@ async def send_challenge(
     timeout: float = CHALLENGE_TIMEOUT.total_seconds()  # Use config timeout in seconds
 ) -> httpx.Response:
     """Send a challenge to a miner node using fiber 2.0.0 protocol."""
+
     endpoint = "/codegen/challenge"
     payload = challenge.to_dict()
 

@@ -41,20 +41,16 @@ class DatabaseManager:
                 INSERT OR IGNORE INTO codegen_challenges (
                     challenge_id, created_at, question_text, 
                            relevant_filepair_1_name, relevant_filepair_2_name,
-                           relevant_filepair_1_content, relevant_filepair_2_content,
                            dynamic_checklist
                 )
                 VALUES (?, CURRENT_TIMESTAMP, ?, 
-                           ?, ?,
                            ?, ?,
                            ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.context_files.files[0].path,
-                challenge.context_files.files[1].path,
-                challenge.context_files.files[0].contents,
-                challenge.context_files.files[1].contents,
+                str(challenge.context_files[0].path),
+                str(challenge.context_files[1].path),
                 json.dumps(challenge.dynamic_checklist)
             ))
 
@@ -149,13 +145,13 @@ class DatabaseManager:
                     challenge_id,
                     miner_hotkey,
                     node_id,
-                    response_data,
+                    response_patch,
                     received_at,
                     completed_at,
                     evaluated,
                     score,
                     evaluated_at,
-                    response_patch,
+                    response_patch
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
             """, (

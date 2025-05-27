@@ -326,7 +326,7 @@ async def main():
 
                     for node in available_nodes:
                         server_address = await construct_server_address(node)
-                        print("SERVER ADDY", server_address)
+                        
                         task = asyncio.create_task(
                             send_challenge(
                                 challenge=challenge,
