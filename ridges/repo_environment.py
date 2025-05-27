@@ -33,7 +33,10 @@ class RepoEnvironmentInfo(BaseModel):
         )
 
 
-SUPPORTED_SWEBENCH_REPOS: List[str] = list(MAP_REPO_VERSION_TO_SPECS.keys())
+SUPPORTED_SWEBENCH_REPOS: Final[List[str]] = [
+    "mwaskom/seaborn",
+    "pytest-dev/pytest",
+]
 
 SUPPORTED_OPEN_REPOS: Final[List[str]] = [
     "taoagents/taogod_terminal",
