@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 # Add parent directory to Python path to allow importing dashboard as a package
 sys.path.append(str(Path(__file__).parents[2]))
-from dashboard.logging_utils import get_logger
+from logging_utils import get_logger
 
 from validator.challenge.challenge_types import GeneratedCodegenProblem, CodegenResponse
 from validator.config import VALIDATION_DELAY

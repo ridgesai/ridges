@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from dashboard.logging_utils import get_logger
+from logging_utils import get_logger
 
 from miner.dependancies import get_config, Config
 from miner.endpoints.codegen import router as codegen_router

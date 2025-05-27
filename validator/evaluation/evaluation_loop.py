@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 
-from dashboard.logging_utils import get_logger
+from logging_utils import get_logger
 from openai import OpenAI
 import asyncio
 
