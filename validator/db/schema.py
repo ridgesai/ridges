@@ -15,8 +15,6 @@ def get_schema_v1() -> List[str]:
             question_text TEXT NOT NULL,
             relevant_filepair_1_name TEXT NOT NULL,
             relevant_filepair_2_name TEXT NOT NULL,
-            relevant_filepair_1_content TEXT NOT NULL,
-            relevant_filepair_2_content TEXT NOT NULL,
             dynamic_checklist TEXT NOT NULL  -- Stored as JSON array
         )
         """,

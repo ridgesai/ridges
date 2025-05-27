@@ -22,3 +22,5 @@ logs.json
 # Validator generated files
 .cache/
 validator/repos/
+
+LOCAL_NOTES.md

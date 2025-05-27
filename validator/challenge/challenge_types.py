@@ -56,7 +56,7 @@ class HydratedGeneratedCodegenProblem:
     dynamic_checklist: List[str]
     repository_name: str
     commit_hash: Optional[str]
-    context_files: FilePair
+    context_files: List[File]
 
     def to_detailed_format(self) -> str:
         context_files_string = ""
@@ -72,7 +72,7 @@ class HydratedGeneratedCodegenProblem:
         """Convert challenge to dictionary for sending to miners"""
         return {
             "challenge_id": self.challenge_id,
-            "context_files": [file.contents for file in self.context_files.files],
+            "context_files": [],
             "repository_name": self.repository_name,
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist

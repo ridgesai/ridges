@@ -17,7 +17,7 @@ import openai
 import numpy as np
 from validator.utils.logging_utils import get_logger
 
-from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, EmbeddedFile, FilePair, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
+from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, EmbeddedFile, FilePair, File, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
 from validator.config import (
     OPENAI_API_KEY, PREFERRED_OPENAI_MODEL,
     MIN_FILE_CONTENT_LEN_CHARS, MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM
@@ -290,16 +290,21 @@ async def create_next_codegen_challenge(
 
     logger.info(f'Generating new problem statement using files {[file.path for file in selected_pair.files]}')
 
-    completion = openai_client.beta.chat.completions.parse(
-        model=PREFERRED_OPENAI_MODEL,
-        messages=[
-            {"role": "system", "content": prompt_with_filepair_context},
-            {"role": "user", "content": f"Generate the list of problem statements. Generate exactly 1 problem statement statements, no more and no less"},
-        ],
-        response_format=CodegenProblemLLMResponse,
-    )
+    # completion = openai_client.beta.chat.completions.parse(
+    #     model=PREFERRED_OPENAI_MODEL,
+    #     messages=[
+    #         {"role": "system", "content": prompt_with_filepair_context},
+    #         {"role": "user", "content": f"Generate the list of problem statements. Generate exactly 1 problem statement statements, no more and no less"},
+    #     ],
+    #     response_format=CodegenProblemLLMResponse,
+    # )
 
-    generated_problem: CodegenProblemLLMResponse = completion.choices[0].message.parsed
+    # generated_problem: CodegenProblemLLMResponse = completion.choices[0].message.parsed
+
+    generated_problem = CodegenProblemLLMResponse.model_validate({
+        "problem_statement": "This is a sample problem statement",
+        "dynamic_checklist": ["checklist item 1", "checklist item 2"]
+    })
 
     logger.info("generated")
     problem_id = str(uuid.uuid4())
@@ -312,5 +317,5 @@ async def create_next_codegen_challenge(
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,
-        context_files=[file.contents for file in selected_pair.files]
+        context_files=[File(path=file.path, contents=file.contents) for file in selected_pair.files]
     )
