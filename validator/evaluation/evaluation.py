@@ -4,6 +4,7 @@ import re
 from openai import OpenAI
 
 from validator.challenge.challenge_types import ValidationResult, CodegenResponse
+from validator.utils import remove_unused_vars
 
 def remove_comments(patch_content: str) -> str:
     """
@@ -78,7 +79,9 @@ def remove_docstrings(patch_content: str) -> str:
 
 class CodeGenValidator:
     def __init__(self, openai_client: OpenAI, validator_hotkey: str):
-        pass
+        self.db_manager = None
+        self.openai_client = openai_client
+        self.validator_hotkey = validator_hotkey
 
     def preprocess_patch(patch: str) -> str:
         '''
@@ -87,7 +90,9 @@ class CodeGenValidator:
         NOTE: Add AST Walk to remove unused vars etc
         '''
 
-        return patch.strip()
+        without_unused = remove_unused_vars.dict_remover(patch)
+
+        return without_unused.strip()
     
     def apply_and_run_tests(patch: str) -> Optional[str]:
         '''
@@ -99,7 +104,7 @@ class CodeGenValidator:
         '''
         return None
 
-    def evaluate_response(self, miner_response: CodegenResponse) -> ValidationResult:
+    async def evaluate_response(self, miner_response: CodegenResponse) -> ValidationResult:
         patch = self.preprocess_patch(miner_response.response_patch)
 
         if len(patch) == 0:
@@ -117,6 +122,6 @@ class CodeGenValidator:
             )
 
         return ValidationResult(
-            score=0,
-            error="Nothing was graded"
+            score=2,
+            error=None
         )

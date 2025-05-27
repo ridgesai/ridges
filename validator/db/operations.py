@@ -10,7 +10,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parents[2]))
 from dashboard.logging_utils import get_logger
 
-from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, CodegenResponse
+from validator.challenge.challenge_types import GeneratedCodegenProblem, CodegenResponse
+from validator.config import VALIDATION_DELAY
 from .schema import check_db_initialized, init_db
 
 logger = get_logger(__name__)
@@ -35,7 +36,7 @@ class DatabaseManager:
     def get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
-    def store_codegen_challenge(self, challenge: HydratedGeneratedCodegenProblem) -> None:
+    def store_codegen_challenge(self, challenge: GeneratedCodegenProblem) -> None:
         """Store a new challenge in the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -64,7 +65,8 @@ class DatabaseManager:
                 logger.info(f"Stored new challenge {challenge.challenge_id} in database")
 
             conn.commit()
-
+        except Exception as e:
+            logger.error(f"Error storing {challenge.challenge_id} in database")
         finally:
             conn.close()
         
@@ -90,6 +92,29 @@ class DatabaseManager:
 
             conn.commit()
 
+        finally:
+            conn.close()
+
+    def find_challenge_ready_for_evaluation(self):
+        """Finds a challenge where all responses are pending, and ready to be evaluated"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                        SELECT DISTINCT c.challenge_id, 
+                                COUNT(r.response_id) as pending_count,
+                                MIN(r.received_at) as earliest_received
+                        FROM responses r
+                        JOIN codegen_challenges c ON r.challenge_id = c.challenge_id
+                        WHERE r.evaluated = FALSE
+                            AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
+                        GROUP BY c.challenge_id
+                        LIMIT 1
+                    """, (VALIDATION_DELAY.total_seconds() / 60,))
+                    
+            row = cursor.fetchone()
+            return row[0] if row and row[0] else None
         finally:
             conn.close()
         
@@ -281,23 +306,6 @@ class DatabaseManager:
         finally:
             conn.close()
         
-    def mark_response_as_evaluated(self, response_id: int) -> None:
-        """Mark a response as evaluated"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-
-        try:
-            cursor.execute("""
-                UPDATE responses
-                SET evaluated = TRUE, evaluated_at = ?
-                WHERE response_id = ?
-            """, (datetime.utcnow(), response_id))
-
-            conn.commit()
-
-        finally:
-            conn.close()
-    
     def get_challenge_assignment_sent_at(self, challenge_id: str, miner_hotkey: str) -> Optional[datetime]:
         """Get the sent_at timestamp for a challenge assignment"""
         conn = self.get_connection()
@@ -420,7 +428,7 @@ class DatabaseManager:
             conn.close()
 
 
-    def mark_response_failed(self, response_id: int) -> None:
+    def mark_response_failed(self, response_id: str) -> None:
         """Mark a single response as evaluated (used when evaluation failed)."""
         conn = self.get_connection()
         cursor = conn.cursor()
