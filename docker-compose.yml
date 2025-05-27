@@ -1,46 +1,66 @@
-version: '3.8'
+# docker-compose.yml  –  shared-wallets edition
 services:
+  # 1) Build image once
+  ridges-base:
+    build:
+      context: .
+      target: runtime
+    image: ridges-base:latest
+    profiles: ["builder"]
+
+  # 2) Runtime services
   subtensor:
-    build: .
+    image: ridges-base:latest
     container_name: subtensor
     working_dir: /subtensor
-    command: ["bash", "-c", "BUILD_BINARY=0 ./scripts/localnet.sh False"]
+    command: ["bash", "-c",
+      "BUILD_BINARY=0 ./scripts/localnet.sh False --ws-external --enable-pow-faucet"]
+    environment:
+      - RUN_IN_DOCKER=1
     ports:
       - "9945:9945"
-    networks:
-      - ridgesnet
+    networks: [ridgesnet]
     volumes:
-      - subtensor-data:/subtensor/data # Persist chain data to avoid resetting wallets, subnets, and registrations on restart
+      - subtensor-data:/subtensor/data        # chain state
+      - bt-wallets:/root/.bittensor           # 🔑 share wallets (optional but handy)
 
   miner:
-    build: .
+    image: ridges-base:latest
     container_name: miner
-    depends_on:
-      - subtensor
+    depends_on: [subtensor]
     working_dir: /app
-    command: ["bash", "-c", "/app/venv/bin/python neurons/miner.py --netuid 1 --subtensor.network ws://subtensor:9945 --wallet.name miner --wallet.hotkey default"]
-    networks:
-      - ridgesnet
+    command: ["bash", "-c",
+      "/opt/venv/bin/python neurons/miner.py \
+       --netuid 1 \
+       --subtensor.network ws://subtensor:9945 \
+       --wallet.name miner \
+       --wallet.hotkey default"]
+    networks: [ridgesnet]
     volumes:
-      - miner-wallets:/root/.bittensor
+      - bt-wallets:/root/.bittensor           # 🔑 shared keys
 
   validator:
-    build: .
+    image: ridges-base:latest
     container_name: validator
-    depends_on:
-      - subtensor
+    depends_on: [subtensor]
     working_dir: /app
-    command: ["bash", "-c", "/app/venv/bin/python neurons/validator.py --netuid 1 --subtensor.network ws://subtensor:9945 --wallet.name validator --wallet.hotkey default"]
-    networks:
-      - ridgesnet
+    command: ["bash", "-c",
+      "/opt/venv/bin/python neurons/validator.py \
+       --netuid 1 \
+       --subtensor.network ws://subtensor:9945 \
+       --wallet.name validator \
+       --wallet.hotkey default"]
+    environment:
+      - OPENAI_API_KEY=sk-replace-me
+    networks: [ridgesnet]
     volumes:
-      - validator-wallets:/root/.bittensor
+      - bt-wallets:/root/.bittensor           # 🔑 shared keys
 
+# Shared network & volumes
 networks:
   ridgesnet:
     driver: bridge
 
 volumes:
   subtensor-data:
-  miner-wallets:
-  validator-wallets: 
+  bt-wallets:

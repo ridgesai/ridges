@@ -1,20 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 # Interactive script to set up Bittensor wallets for owner, miner, and validator roles.
 # References:
 # https://docs.bittensor.com/working-with-keys
 # https://docs.bittensor.com/getting-started/wallets
-
-# Path to shared venv (created by setup-btcli.sh)
-VENV_PATH="../deps/.venv"
-
-# Activate venv
-if [ -d "$VENV_PATH" ]; then
-    source "$VENV_PATH/bin/activate"
-else
-    echo "[ERROR] Python virtual environment not found at $VENV_PATH. Please run setup-btcli.sh first."
-    exit 1
-fi
+# NOTE: When run inside the Docker container, btcli is already on the PATH.
 
 # Check if subtensor chain is running (port 9945)
 if ! nc -z localhost 9945; then
@@ -29,11 +19,11 @@ create_wallet() {
     read -p "Enter wallet name for $role (default: $default_name): " wallet_name
     wallet_name=${wallet_name:-$default_name}
 
-    echo "\n[INFO] Creating coldkey for $role ($wallet_name)..."
+    echo -e "\n[INFO] Creating coldkey for $role ($wallet_name)..."
     btcli wallet new_coldkey --wallet.name "$wallet_name"
-    echo "\n[INFO] Creating hotkey for $role ($wallet_name, hotkey: default)..."
+    echo -e "\n[INFO] Creating hotkey for $role ($wallet_name, hotkey: default)..."
     btcli wallet new_hotkey --wallet.name "$wallet_name" --wallet.hotkey default
-    echo "\n[IMPORTANT] Please store your mnemonics for $role ($wallet_name) in a secure place!"
+    echo -e "\n[IMPORTANT] Please store your mnemonics for $role ($wallet_name) in a secure place!"
 }
 
 echo "[Wallet Setup] You will now create wallets for the following roles:"
@@ -76,4 +66,4 @@ echo
 # List all wallets for confirmation
 btcli wallet list
 
-echo "[INFO] Wallet setup complete." 
+echo "[INFO] Wallet setup complete."

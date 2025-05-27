@@ -1,10 +1,10 @@
-# Use Ubuntu 22.04 as the base image
-FROM ubuntu:22.04
+# syntax=docker/dockerfile:1   ← enables BuildKit cache mounts
+############################################################
+#  Stage 1 – builder / compiler
+############################################################
+FROM ubuntu:22.04 AS build
 
-# Set non-interactive mode for apt
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install system dependencies (including libssl-dev, clang, and libclang-dev for Rust/OpenSSL)
+ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     git curl make openssl libssl-dev llvm llvm-dev clang libclang-dev libclang-12-dev protobuf-compiler libusb-1.0-0-dev jq \
     python3.11 python3.11-venv python3-pip \
@@ -16,27 +16,28 @@ RUN apt-get update && apt-get install -y \
     libwebkit2gtk-4.0-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Set python3.11 as default
+# Python 3.11 default
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
-# Install Rust
+# Rust tool-chain
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
+# ---- build subtensor ----
 # Clone and build Subtensor
-RUN git clone https://github.com/opentensor/subtensor.git /subtensor
+RUN git clone https://github.com/opentensor/subtensor.git /subtensor \
+ && sed -i 's|pow-faucet *= *\[\]|pow-faucet = ["node-subtensor-runtime/pow-faucet"]|' /subtensor/node/Cargo.toml
 WORKDIR /subtensor
-RUN ./scripts/init.sh && cargo build -p node-subtensor --profile release && \
+RUN ./scripts/init.sh && cargo build -p node-subtensor --profile release --features pow-faucet && \
     mkdir -p /subtensor/target/non-fast-blocks && \
     cp -r /subtensor/target/release /subtensor/target/non-fast-blocks/ && \
     mkdir -p /subtensor/target/fast-blocks && \
     cp -r /subtensor/target/release /subtensor/target/fast-blocks/
 
-# Set up app directory
+# ---- build Python env & your app ----
 WORKDIR /app
 COPY . /app
 
-# Set up Python venv and install dependencies
 RUN python3.11 -m venv /app/venv && \
     /app/venv/bin/pip install --upgrade pip && \
     if [ -d /app/deps/btcli ]; then /app/venv/bin/pip install -e /app/deps/btcli; fi && \
@@ -46,5 +47,28 @@ RUN python3.11 -m venv /app/venv && \
 
 ENV PATH="/app/venv/bin:${PATH}"
 
-# Default command (overridden by docker-compose)
-CMD ["/bin/bash"] 
+############################################################
+#  Stage 2 – runtime
+############################################################
+FROM ubuntu:22.04 AS runtime
+
+# minimal runtime libs
+RUN apt-get update && apt-get install -y \
+    python3.11 python3.11-venv python3-pip \
+    git \
+    lsof netcat jq libssl3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+#   1) subtensor binary + auxiliary dirs
+COPY --from=build /subtensor /subtensor
+COPY --from=build /subtensor/target/release/node-subtensor /usr/local/bin/
+COPY --from=build /subtensor/target/non-fast-blocks /subtensor/target/non-fast-blocks
+COPY --from=build /subtensor/target/fast-blocks      /subtensor/target/fast-blocks
+
+#   2) python venv + application
+COPY --from=build /app/venv /opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+WORKDIR /app
+COPY --from=build /app/. /app
+
+CMD ["/bin/bash"]    # overridden by docker-compose service commands

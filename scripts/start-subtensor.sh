@@ -31,3 +31,5 @@ done
 
 echo "[INFO] Subtensor chain is running on ws://localhost:$CHAIN_PORT"
 wait $SUBTENSOR_PID 
+
+# If subtensor doesn't run, try restarting your whole computer. 

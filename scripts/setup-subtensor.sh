@@ -27,7 +27,7 @@ fi
 
 # Build subtensor binary with faucet feature enabled
 echo "[INFO] Building Subtensor binary (this may take a while)..."
-cargo build -p node-subtensor --profile release || { echo "[ERROR] Cargo build failed."; exit 1; }
+cargo build -p node-subtensor --profile release --features pow-faucet || { echo "[ERROR] Cargo build failed."; exit 1; }
 
 echo "[INFO] Subtensor setup complete."
 cd - 

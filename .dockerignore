@@ -1,0 +1,50 @@
+# Ignore version control
+.git
+.gitmodules
+.github/
+
+# Ignore Python cache and venvs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+ridges.egg-info/
+SWE-agent/sweagent.egg-info/
+
+# Ignore build/test artifacts
+build/
+dist/
+*.egg-info/
+.coverage
+.cache
+.mypy_cache/
+.pytest_cache/
+.tox/
+*.log
+*.bak
+
+# Ignore editor/OS files
+.DS_Store
+*.swp
+*.swo
+
+# Ignore large docs/media not needed in image
+docs/Taogod.gif
+
+# Ignore local notebooks and test outputs
+github_test.ipynb
+tests/sample_generated_problems.json
+
+# Ignore local config/secrets (if any)
+*.env
+keys.cfg
+
+# Ignore backup files
+*.bak
+
+# (Optional) Ignore local shell script state files
+scripts/.dependencies_installed
+scripts/.wallets_setup 

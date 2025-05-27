@@ -1,18 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 # Registers a subnet on the local Subtensor chain using the owner wallet and optionally adds stake.
 # Reference: https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md#5-initialize
-
-# Path to shared venv (created by setup-btcli.sh)
-VENV_PATH="../deps/.venv"
-
-# Activate venv
-if [ -d "$VENV_PATH" ]; then
-    source "$VENV_PATH/bin/activate"
-else
-    echo "[ERROR] Python virtual environment not found at $VENV_PATH. Please run setup-btcli.sh first."
-    exit 1
-fi
+# NOTE: When run inside the Docker container, btcli is already on the PATH.
 
 # Check if subtensor chain is running (port 9945)
 if ! nc -z localhost 9945; then
@@ -57,4 +47,4 @@ if [[ "$add_stake" =~ ^[Yy]$ ]]; then
     fi
 else
     echo "[INFO] Skipping stake addition."
-fi 
+fi
