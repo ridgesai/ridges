@@ -10,12 +10,13 @@ btc() {
   docker compose exec subtensor btcli "$@"
 }
 # Build the base image
-DOCKER_BUILDKIT=1 docker compose build ridges-base
+DOCKER_BUILDKIT=1 docker compose --profile builder build ridges-base
 
 # 1) be sure the chain is running
 docker compose up -d subtensor
 sleep 5   # short pause for first blocks
 
+btc config set --subtensor.chain_endpoint ws://subtensor:9945
 # 2) create wallets (Step 7)
 btc wallet new_coldkey --wallet.name owner
 btc wallet new_coldkey --wallet.name miner
