@@ -28,7 +28,7 @@ MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM = 3
 MIN_FILE_CONTENT_LEN_CHARS = 50
 
 WEIGHTS_INTERVAL = timedelta(minutes=30)
-VALIDATION_DELAY = timedelta(minutes=5)
+VALIDATION_DELAY = timedelta(minutes=1)
 
 DB_PATH = Path("validator.db")
 

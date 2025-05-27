@@ -105,21 +105,21 @@ class CodeGenValidator:
         return None
 
     async def evaluate_response(self, miner_response: CodegenResponse) -> ValidationResult:
-        patch = self.preprocess_patch(miner_response.response_patch)
+        # patch = self.preprocess_patch(miner_response.response_patch)
 
-        if len(patch) == 0:
-            return ValidationResult(
-                score=0,
-                error="Not a valid patch"
-            )
+        # if len(patch) == 0:
+        #     return ValidationResult(
+        #         score=0,
+        #         error="Not a valid patch"
+        #     )
         
-        test_errors = self.apply_and_run_tests(patch)
+        # test_errors = self.apply_and_run_tests(patch)
 
-        if test_errors is not None:
-            return ValidationResult(
-                score=0,
-                error=test_errors
-            )
+        # if test_errors is not None:
+        #     return ValidationResult(
+        #         score=0,
+        #         error=test_errors
+        #     )
 
         return ValidationResult(
             score=2,

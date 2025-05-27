@@ -110,7 +110,8 @@ class DatabaseManager:
                     """, (VALIDATION_DELAY.total_seconds() / 60,))
                     
             row = cursor.fetchone()
-            return row[0] if row and row[0] else None
+
+            return row if row and row[0] else None
         finally:
             conn.close()
         
@@ -373,8 +374,8 @@ class DatabaseManager:
                 FROM responses
                 WHERE challenge_id = ?
                   AND evaluated = FALSE
-                  AND response_data IS NOT NULL
-            """, (challenge_id,))
+                  AND response_patch IS NOT NULL
+            """, (str(challenge_id),))
 
             rows = cursor.fetchall()
             responses = []
