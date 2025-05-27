@@ -9,6 +9,8 @@ set -e
 btc() {
   docker compose exec subtensor btcli "$@"
 }
+# Build the base image
+DOCKER_BUILDKIT=1 docker compose build ridges-base
 
 # 1) be sure the chain is running
 docker compose up -d subtensor
