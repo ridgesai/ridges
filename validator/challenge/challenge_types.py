@@ -23,6 +23,12 @@ class File:
     path: Path
     contents: str
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "path": self.path,
+            "contents": str(self.contents)
+        }
+
 
 @dataclass
 class EmbeddedFile:
@@ -72,7 +78,7 @@ class HydratedGeneratedCodegenProblem:
         """Convert challenge to dictionary for sending to miners"""
         return {
             "challenge_id": self.challenge_id,
-            "context_files": [],
+            "context_files": [file.to_dict() for file in self.context_files],
             "repository_name": self.repository_name,
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist
