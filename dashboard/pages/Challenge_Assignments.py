@@ -54,7 +54,7 @@ class ChallengeAssignment:
             status=row[7]
         )
 
-def get_all_challenge_assignments(db_path: str = "validator.db") -> List[ChallengeAssignment]:
+def get_all_challenge_assignments(db_path: str = "../validator.db") -> List[ChallengeAssignment]:
     """
     Read all challenge assignments from the database and return them as a list of ChallengeAssignment objects.
     

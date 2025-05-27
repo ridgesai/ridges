@@ -66,7 +66,7 @@ class Response:
             response_patch=row[10]
         )
 
-def get_all_responses(db_path: str = "validator.db") -> List[Response]:
+def get_all_responses(db_path: str = "../validator.db") -> List[Response]:
     """
     Read all responses from the database and return them as a list of Response objects.
     
