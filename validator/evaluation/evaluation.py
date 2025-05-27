@@ -4,6 +4,7 @@ import re
 from openai import OpenAI
 
 from validator.challenge.challenge_types import ValidationResult, CodegenResponse
+from validator.utils import remove_unused_vars
 
 def remove_comments(patch_content: str) -> str:
     """
@@ -87,7 +88,9 @@ class CodeGenValidator:
         NOTE: Add AST Walk to remove unused vars etc
         '''
 
-        return patch.strip()
+        without_unused = remove_unused_vars.dict_remover(patch)
+
+        return without_unused.strip()
     
     def apply_and_run_tests(patch: str) -> Optional[str]:
         '''
