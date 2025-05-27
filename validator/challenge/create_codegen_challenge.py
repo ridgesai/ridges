@@ -288,7 +288,7 @@ async def create_next_codegen_challenge(
         files=selected_pair.files
     )
 
-    logger.info('starting completion and q gen')
+    logger.info(f'Generating new problem statement using files {[file.path for file in selected_pair.files]}')
 
     completion = openai_client.beta.chat.completions.parse(
         model=PREFERRED_OPENAI_MODEL,
