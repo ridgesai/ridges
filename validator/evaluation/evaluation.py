@@ -79,7 +79,9 @@ def remove_docstrings(patch_content: str) -> str:
 
 class CodeGenValidator:
     def __init__(self, openai_client: OpenAI, validator_hotkey: str):
-        pass
+        self.db_manager = None
+        self.openai_client = openai_client
+        self.validator_hotkey = validator_hotkey
 
     def preprocess_patch(patch: str) -> str:
         '''
@@ -102,7 +104,7 @@ class CodeGenValidator:
         '''
         return None
 
-    def evaluate_response(self, miner_response: CodegenResponse) -> ValidationResult:
+    async def evaluate_response(self, miner_response: CodegenResponse) -> ValidationResult:
         patch = self.preprocess_patch(miner_response.response_patch)
 
         if len(patch) == 0:
@@ -120,6 +122,6 @@ class CodeGenValidator:
             )
 
         return ValidationResult(
-            score=0,
-            error="Nothing was graded"
+            score=2,
+            error=None
         )

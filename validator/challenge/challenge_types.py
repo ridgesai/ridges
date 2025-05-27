@@ -54,7 +54,7 @@ class CodegenProblemLLMResponse(BaseModel):
     dynamic_checklist: List[str]
 
 @dataclass
-class HydratedGeneratedCodegenProblem:
+class GeneratedCodegenProblem:
     challenge_id: str
     prompt: str
     model: str
@@ -97,7 +97,7 @@ class ValidationResult:
 
 
 class ChallengeTask:
-    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: HydratedGeneratedCodegenProblem, miner_hotkey: str):
+    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: GeneratedCodegenProblem, miner_hotkey: str):
         self.node_id = node_id
         self.task = task
         self.timestamp = timestamp

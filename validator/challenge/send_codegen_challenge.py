@@ -10,7 +10,7 @@ from fiber import Keypair
 from fiber.logging_utils import get_logger
 from fiber.validator import client as validator
 
-from validator.challenge.challenge_types import CodegenResponse, HydratedGeneratedCodegenProblem
+from validator.challenge.challenge_types import CodegenResponse, GeneratedCodegenProblem
 from validator.utils.async_utils import AsyncBarrier
 from validator.db.operations import DatabaseManager
 from validator.config import CHALLENGE_TIMEOUT
@@ -18,7 +18,7 @@ from validator.config import CHALLENGE_TIMEOUT
 logger = get_logger(__name__)
 
 async def send_challenge(
-    challenge: HydratedGeneratedCodegenProblem,
+    challenge: GeneratedCodegenProblem,
     server_address: str,
     hotkey: str,
     keypair: Keypair,
@@ -112,7 +112,6 @@ async def send_challenge(
                 # Log essential information about the response
                 logger.info(f"Received response for challenge {challenge.challenge_id}:")
                 logger.info(f"  Processing time: {processing_time:.2f} seconds")
-                logger.info(f"  Number of frames: {len(response_data.get('frames', []))}")
                                 
                 # Create CodegenResponse with parsed data
                 codegen_response = CodegenResponse(

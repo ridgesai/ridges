@@ -17,7 +17,7 @@ import openai
 import numpy as np
 from fiber.logging_utils import get_logger
 
-from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, EmbeddedFile, FilePair, File, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
+from validator.challenge.challenge_types import GeneratedCodegenProblem, EmbeddedFile, FilePair, File, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
 from validator.config import (
     OPENAI_API_KEY, PREFERRED_OPENAI_MODEL,
     MIN_FILE_CONTENT_LEN_CHARS, MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM
@@ -263,7 +263,7 @@ def setup_repositories_and_select_random() -> Tuple[str, Path]:
 
 async def create_next_codegen_challenge(
     openai_client: openai.Client
-) -> HydratedGeneratedCodegenProblem:
+) -> GeneratedCodegenProblem:
     ''' 
     Creates a Codegen challenge task. 
     To do this, validators clone a repo from the available repo set, find a random set of filepairs, 
@@ -308,7 +308,7 @@ async def create_next_codegen_challenge(
 
     problem_id = str(uuid.uuid4())
 
-    return HydratedGeneratedCodegenProblem(
+    return GeneratedCodegenProblem(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
