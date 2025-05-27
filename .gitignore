@@ -19,6 +19,9 @@ wheels/
 # Logging
 logs.json
 
+# IDEs
+.idea/
+
 # Validator generated files
 .cache/
 validator/repos/
