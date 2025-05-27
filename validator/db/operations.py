@@ -150,19 +150,18 @@ class DatabaseManager:
                     completed_at,
                     evaluated,
                     score,
-                    evaluated_at,
-                    response_patch
+                    evaluated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 challenge_id,
                 miner_hotkey,
                 node_id,
+                response.response_patch,
                 received_at,
                 completed_at,
                 response.evaluated,
-                response.score,
-                response.response_patch
+                response.score
             ))
 
             response_id = cursor.lastrowid
