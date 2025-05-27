@@ -1,6 +1,6 @@
 import json
 
-from fiber.logging_utils import get_logger
+from dashboard.logging_utils import get_logger
 from fastapi import APIRouter, Depends, Request, HTTPException
 
 from miner.dependancies import blacklist_low_stake, verify_request, get_config

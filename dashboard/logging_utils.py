@@ -31,7 +31,7 @@ class ColoredFormatter(logging.Formatter):
         return message
 
 def get_logs_file():
-    return Path(__file__).parent / "logs.json"
+    return Path(__file__).parents[0] / "logs.json"
 
 def clear_logs():
     """Clear all logs by resetting logs.json to an empty array."""

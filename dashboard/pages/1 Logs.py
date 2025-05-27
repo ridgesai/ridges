@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Returns the path to the logs.json file
 def get_logs_file():
-    return Path(__file__).parent / "logs.json"
+    return Path(__file__).parents[1] / "logs.json"
 
 # Returns all logs from logs.json as a list of dictionaries
 def get_logs():
@@ -91,16 +91,14 @@ with log_container.container():
 
     # Sidebar for filters and clearing logs
     with st.sidebar:
-        st.text("Filter by file")
-        st.session_state.file_selection = st.selectbox("Files", st.session_state.files, index=None)
-        st.text("Filter by level")
-        st.session_state.level_selection = st.selectbox("Levels", st.session_state.levels, index=None)
+        st.session_state.file_selection = st.selectbox("Filter by file", st.session_state.files, index=None)
+        st.session_state.level_selection = st.selectbox("Filter by level", st.session_state.levels, index=None)
         if st.button("Clear existing logs", type="primary"):
             clear_logs()
             st.rerun()
 
     # Title and refresh text
-    st.title("Validator dashboard")
+    st.subheader("Validator Logs")
     st.text("Press R to refresh to see latest logs (working on a fix for this)")
 
     # Display the selected filters
@@ -113,8 +111,8 @@ with log_container.container():
 
     # Display the logs that match the selected filters
     num_logs_ouputted = 0
-    for log in st.session_state.logs:
-        if (st.session_state.file_selection is None or log['pathname'] in st.session_state.file_selection) and (st.session_state.level_selection is None or get_log_levelname(log) in st.session_state.level_selection):
+    for log in reversed(st.session_state.logs):
+        if (st.session_state.file_selection is None or log['filename'] in st.session_state.file_selection) and (st.session_state.level_selection is None or get_log_levelname(log) in st.session_state.level_selection):
             output_log(log)
             num_logs_ouputted += 1
     

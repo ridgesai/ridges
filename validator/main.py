@@ -23,7 +23,7 @@ from validator.db.operations import DatabaseManager
 from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
 from validator.challenge.send_codegen_challenge import send_challenge
-from validator.utils.logging_utils import get_logger
+from dashboard.logging_utils import get_logger
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,

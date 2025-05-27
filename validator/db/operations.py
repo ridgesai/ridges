@@ -4,7 +4,11 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from pathlib import Path
 
-from validator.utils.logging_utils import get_logger
+import sys
+from pathlib import Path
+# Add parent directory to Python path to allow importing dashboard as a package
+sys.path.append(str(Path(__file__).parents[2]))
+from dashboard.logging_utils import get_logger
 
 from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, CodegenResponse
 from .schema import check_db_initialized, init_db

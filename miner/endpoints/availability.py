@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from loguru import logger
+from dashboard.logging_utils import get_logger
 
 from miner.utils.shared import miner_lock
+
+logger = get_logger(__name__)
 
 class AvailabilityResponse(BaseModel):
     available: bool
