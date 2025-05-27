@@ -306,7 +306,6 @@ async def create_next_codegen_challenge(
         "dynamic_checklist": ["checklist item 1", "checklist item 2"]
     })
 
-    logger.info("generated")
     problem_id = str(uuid.uuid4())
 
     return HydratedGeneratedCodegenProblem(
