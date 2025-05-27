@@ -19,7 +19,7 @@ class Config(BaseModel):
     metagraph: Metagraph
     httpx_client: httpx.AsyncClient
     nonce_manager: Any  # Using Any to avoid Pydantic validation issues with NonceManager
-    min_stake_threshold: float = Field(default=500.0)
+    min_stake_threshold: float = Field(default=1.0)
 
     class Config:
         arbitrary_types_allowed = True
@@ -30,11 +30,11 @@ def factory_config() -> Config:
     nonce_manager = NonceManager()
 
     # Load fiber network configuration
-    wallet_name = os.getenv("WALLET_NAME", "default")
+    wallet_name = os.getenv("WALLET_NAME", "miner")
     hotkey_name = os.getenv("HOTKEY_NAME", "default")
-    netuid = os.getenv("NETUID")
-    subtensor_network = os.getenv("SUBTENSOR_NETWORK")
-    subtensor_address = os.getenv("SUBTENSOR_ADDRESS")
+    netuid = os.getenv("NETUID", "1")
+    subtensor_network = os.getenv("SUBTENSOR_NETWORK", "local")
+    subtensor_address = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
     load_old_nodes = bool(os.getenv("LOAD_OLD_NODES", True))
     refresh_nodes = os.getenv("REFRESH_NODES", "true").lower() == "true"
 

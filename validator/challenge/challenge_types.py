@@ -5,6 +5,7 @@ from textwrap import dedent
 from datetime import datetime
 
 import asyncio
+from pydantic import BaseModel
 
 '''
 Helper that lets the validator set the scope of files they want to select for a challenge
@@ -42,12 +43,12 @@ class FilePair:
     files: List[EmbeddedFile]
 
 @dataclass 
-class CodegenProblemLLMResponse:
+class CodegenProblemLLMResponse(BaseModel):
     problem_statement: str
     dynamic_checklist: List[str]
 
 @dataclass
-class HyrdatedGeneratedCodegenProblem:
+class HydratedGeneratedCodegenProblem:
     challenge_id: str
     prompt: str
     model: str
@@ -71,7 +72,7 @@ class HyrdatedGeneratedCodegenProblem:
         """Convert challenge to dictionary for sending to miners"""
         return {
             "challenge_id": self.challenge_id,
-            "context_files": self.context_files.files,
+            "context_files": [file.contents for file in self.context_files.files],
             "repository_name": self.repository_name,
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist
@@ -90,7 +91,7 @@ class ValidationResult:
 
 
 class ChallengeTask:
-    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: HyrdatedGeneratedCodegenProblem, miner_hotkey: str):
+    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: HydratedGeneratedCodegenProblem, miner_hotkey: str):
         self.node_id = node_id
         self.task = task
         self.timestamp = timestamp

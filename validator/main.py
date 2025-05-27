@@ -64,7 +64,7 @@ async def check_miner_availability(
     hotkey: str
 ) -> bool: 
     """Check if a miner is available and log the result."""
-    server_address = construct_server_address(node)
+    server_address = await construct_server_address(node)
     start_time = time.time()
     
     try:
@@ -118,7 +118,7 @@ def get_active_nodes_on_chain() -> list[Node]:
         return active_nodes
         
     except Exception as e:
-        logger.error(f"Failed to get active nodes: {str(e)}")
+        logger.error(f"Failed to get active nodes: {str(e)}", exc_info=True)
         return []
     
 async def get_available_nodes_with_api(
@@ -319,7 +319,7 @@ async def main():
                         await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
                         continue
 
-                    logger.info(f"Processing challenge: task_id={challenge['challenge_id']}")
+                    logger.info(f"Processing challenge: task_id={challenge.challenge_id}")
 
                     # Log background task status
                     logger.info("Background task status:")
@@ -328,10 +328,12 @@ async def main():
                     logger.info(f"  - Cleanup task running: {not cleanup_task.done()}")
 
                     for node in available_nodes:
+                        server_address = await construct_server_address(node)
+                        print("SERVER ADDY", server_address)
                         task = asyncio.create_task(
                             send_challenge(
                                 challenge=challenge,
-                                server_address=construct_server_address(node),
+                                server_address=server_address,
                                 hotkey=node.hotkey,
                                 keypair=hotkey,
                                 node_id=node.node_id,

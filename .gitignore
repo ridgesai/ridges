@@ -9,10 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Environment variables
-.env
-
-# Databases
+# Env files
+*.env
 *.db
 
 # MacOS
@@ -20,3 +18,7 @@ wheels/
 
 # Logging
 logs.json
+
+# Validator generated files
+.cache/
+validator/repos/

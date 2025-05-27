@@ -65,7 +65,7 @@ router = APIRouter()
 router.add_api_route(
     "/challenge",
     process_challenge,
-    tags=["soccer"],
-    dependencies=[Depends(blacklist_low_stake), Depends(verify_request)],
+    tags=["codegen"],
+    dependencies=[Depends(verify_request)],
     methods=["POST"],
 )

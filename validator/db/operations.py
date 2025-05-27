@@ -6,7 +6,7 @@ from pathlib import Path
 
 from validator.utils.logging_utils import get_logger
 
-from validator.challenge.challenge_types import HyrdatedGeneratedCodegenProblem, CodegenResponse
+from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, CodegenResponse
 from .schema import check_db_initialized, init_db
 
 logger = get_logger(__name__)
@@ -31,7 +31,7 @@ class DatabaseManager:
     def get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
-    def store_codegen_challenge(self, challenge: HyrdatedGeneratedCodegenProblem) -> None:
+    def store_codegen_challenge(self, challenge: HydratedGeneratedCodegenProblem) -> None:
         """Store a new challenge in the database"""
         conn = self.get_connection()
         cursor = conn.cursor()

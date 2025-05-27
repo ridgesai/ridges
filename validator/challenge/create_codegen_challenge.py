@@ -17,7 +17,7 @@ import openai
 import numpy as np
 from validator.utils.logging_utils import get_logger
 
-from validator.challenge.challenge_types import HyrdatedGeneratedCodegenProblem, EmbeddedFile, FilePair, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
+from validator.challenge.challenge_types import HydratedGeneratedCodegenProblem, EmbeddedFile, FilePair, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
 from validator.config import (
     OPENAI_API_KEY, PREFERRED_OPENAI_MODEL,
     MIN_FILE_CONTENT_LEN_CHARS, MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM
@@ -56,11 +56,16 @@ def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 def highest_cosine_filepair_selector(file_pairs: List[FilePair]) -> FilePair:
-    selected_file_pair = sorted(
+    if len(file_pairs) == 0:
+        raise ValueError("No file pairs found")
+    
+    top_10_file_pairs = sorted(
         file_pairs,
         key=lambda x: float(x.cosine_similarity),
         reverse=True
-    )[random.randint(1, 10)]
+    )[:10]
+
+    selected_file_pair = random.choice(top_10_file_pairs)
 
     return selected_file_pair
 
@@ -196,7 +201,7 @@ def get_all_filepairs(
         logger.info("Retrieved relevant filepairs for repo from cache")
         return filepairs_from_cache
     
-    logger.error("filepairs not found in cache")
+    logger.info("filepairs not found in cache, generating them now and saving to .cache")
     
     repo_structure = walk_repository(local_repo_path)
 
@@ -258,7 +263,7 @@ def setup_repositories_and_select_random() -> Tuple[str, Path]:
 
 async def create_next_codegen_challenge(
     openai_client: openai.Client
-) -> HyrdatedGeneratedCodegenProblem:
+) -> HydratedGeneratedCodegenProblem:
     ''' 
     Creates a Codegen challenge task. 
     To do this, validators clone a repo from the available repo set, find a random set of filepairs, 
@@ -280,8 +285,10 @@ async def create_next_codegen_challenge(
 
     # Generate problem statement + dynamic checklist of issues to be solved
     prompt_with_filepair_context = PROBLEM_STATEMENT_TEMPLATE.render(
-        dict(selected_pair.files)
+        files=selected_pair.files
     )
+
+    logger.info(f'Generating new problem statement using files {[file.path for file in selected_pair.files]}')
 
     completion = openai_client.beta.chat.completions.parse(
         model=PREFERRED_OPENAI_MODEL,
@@ -292,10 +299,12 @@ async def create_next_codegen_challenge(
         response_format=CodegenProblemLLMResponse,
     )
 
-    generated_problem: CodegenProblemLLMResponse = completion.choices[0]
+    generated_problem: CodegenProblemLLMResponse = completion.choices[0].message.parsed
+
+    logger.info("generated")
     problem_id = str(uuid.uuid4())
 
-    return HyrdatedGeneratedCodegenProblem(
+    return HydratedGeneratedCodegenProblem(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
