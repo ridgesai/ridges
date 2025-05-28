@@ -1,5 +1,6 @@
 from itertools import combinations
 from logging import Logger
+from fiber.logging_utils import get_logger
 import os
 import random
 from textwrap import dedent
@@ -23,14 +24,15 @@ class WinLoss(BaseModel):
 
 
 class EloGrader(GraderInterface):
-    def __init__(self, logger: Logger):
-        self.logger = logger
+    def __init__(self, problem: GeneratedCodegenProblem):
+        self.logger = get_logger(__name__)
+        self.problem = problem
 
-    def grade(self, problem: GeneratedCodegenProblem, responses: List[CodegenResponse]) -> List[ValidationResult]:
-        results = self.rank_elo(problem, responses)
+    def grade(self, responses: List[CodegenResponse]) -> List[ValidationResult]:
+        results = self.rank_elo(responses)
         return results
 
-    def get_prompt(self, problem: GeneratedCodegenProblem) -> str:
+    def get_prompt(self) -> str:
         return dedent(f"""
         You are an unbiased code evaluator, who takes in a problem statement, plus a checklist of factors that a solution to the statement should consider.
         For context, you will also be given the files used to generate a solution.
@@ -39,7 +41,7 @@ class EloGrader(GraderInterface):
         Otherwise, return is_draw = False and victor_model = the model id of the better solution.
         There is one ground truth solution, though it may not be one the solutions provided. The goal is to evenutally find this coherent solution (that works and was merged). The winner should generally reflect which model is more likely to be this ground truth real world winner.
         ------
-        {problem.to_detailed_format()}
+        {self.problem.to_detailed_format()}
         ------
         """)
 
@@ -65,9 +67,9 @@ class EloGrader(GraderInterface):
         return completion.choices[0].message.parsed
 
     def compare_responses(
-        self, problem: GeneratedCodegenProblem, response_1: CodegenResponse, response_2: CodegenResponse
+        self, response_1: CodegenResponse, response_2: CodegenResponse
     ) -> float:
-        prompt = self.get_prompt(problem)
+        prompt = self.get_prompt()
 
         context = self.get_context(response_1, response_2)
 
@@ -92,11 +94,11 @@ class EloGrader(GraderInterface):
         else:
             return 0.5
 
-    def rank_elo(self, problem: GeneratedCodegenProblem, responses: List[CodegenResponse]) -> List[ValidationResult]:
+    def rank_elo(self, responses: List[CodegenResponse]) -> List[ValidationResult]:
         arena = EloArena()
-        matches: List[Tuple[CodegenResponse, CodegenResponse]] = generate_matches(responses)
-        for response_1, response_2 in matches:
-            comparison = self.compare_responses(problem, response_1, response_2)
+
+        for response_1, response_2 in generate_matches(responses):
+            comparison = self.compare_responses(response_1, response_2)
             arena.update_ratings(response_1.miner_hotkey, response_2.miner_hotkey, comparison)
             self.logger.info(f"Current rankings: {arena.raw_rankings()}")
 

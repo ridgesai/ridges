@@ -6,6 +6,7 @@ from fiber.logging_utils import get_logger
 from openai import OpenAI
 import asyncio
 
+from validator.challenge.challenge_types import GeneratedCodegenProblem
 from validator.db.operations import DatabaseManager
 from validator.evaluation.evaluation import CodeGenValidator
 
@@ -18,39 +19,34 @@ async def evaluate_pending_responses(
 ):
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
+        # Fetch the challenge from the DB
+        challenge = db_manager.get_challenge(challenge_id)
+
+        if not challenge:
+            logger.error(f"Challenge {challenge_id} not found")
+            return
+
+        problem = GeneratedCodegenProblem.from_dict(challenge)
+
         # Fetch pending responses from the DB for a given challenge
         responses = await db_manager.get_pending_responses(challenge_id)
 
         logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
 
-        evaluation_results = []
-
-        # For each response, run the validator and get a score,
-        for response in responses:
-            logger.info(f"Processing response {response.response_id}")
-
-            try: 
-                result = await validator.evaluate_response(response)
-
-                evaluation_results.append({
-                    **response.to_dict(),
-                    "challenge_id": challenge_id,
-                    "score": result.score,
-                    "error": result.error,
-                })
-
-            except Exception as e:
-                logger.error(f'Error processing response {response.response_id}: {e}')
-                db_manager.mark_response_failed(response.response_id)
-                continue
+        try:
+            evaluation_results = await validator.evaluate_responses(problem, responses)
+        except Exception as e:
+            logger.error(f"Error evaluating responses: {e}")
+            db_manager.mark_responses_failed(challenge_id)
+            return
 
         # Update the responses as evaluated and with their score in the DB
-        logger.info(f"Updating scores for {len(evaluation_results)} responses")
+        logger.info(f"Updating scores for {len(evaluation_results)} responses on challenge {challenge_id}")
 
-        for evaluation in evaluation_results:
-            node_id = evaluation.get("node_id")
-            response_id = evaluation.get("response_id")
-            score = evaluation.get("score")
+        for response, evaluation in zip(responses, evaluation_results):
+            node_id = response.node_id
+            response_id = response.response_id
+            score = evaluation.score
 
             logger.info(f"Processing response {response_id} for node {node_id}. Score: {score}")
 
@@ -60,7 +56,7 @@ async def evaluate_pending_responses(
                 evaluated=True,
                 evaluated_at=datetime.now(timezone.utc)
             )
-
+        
     except Exception as e:
         logger.error(f"Error in evaluate_pending_responses: {str(e)}")
         await asyncio.sleep(0.5)
