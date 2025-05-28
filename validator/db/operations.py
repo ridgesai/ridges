@@ -62,7 +62,7 @@ class DatabaseManager:
 
             conn.commit()
         except Exception as e:
-            logger.error(f"Error storing {challenge.challenge_id} in database")
+            logger.error(f"Error storing {challenge.challenge_id} in database: {e}")
         finally:
             conn.close()
         
