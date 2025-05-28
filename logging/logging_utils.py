@@ -5,6 +5,8 @@ import json
 from colorama import Back, Fore, Style
 from pathlib import Path
 
+logs_filename = "logs.json"
+
 class ColoredFormatter(logging.Formatter):
     COLORS = {
         "DEBUG": Fore.CYAN,
@@ -31,7 +33,7 @@ class ColoredFormatter(logging.Formatter):
         return message
 
 def get_logs_file():
-    return Path(__file__).parents[0] / "logs.json"
+    return Path(__file__).parents[0] / logs_filename
 
 def clear_logs():
     """Clear all logs by resetting logs.json to an empty array."""

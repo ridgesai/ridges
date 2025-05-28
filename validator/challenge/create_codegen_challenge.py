@@ -15,7 +15,7 @@ import subprocess
 import tiktoken
 import openai
 import numpy as np
-from logging_utils import get_logger
+from logging.logging_utils import get_logger
 
 from validator.challenge.challenge_types import GeneratedCodegenProblem, EmbeddedFile, FilePair, File, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
 from validator.config import (

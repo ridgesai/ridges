@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 
-from logging_utils import get_logger
+from logging.logging_utils import get_logger
 from openai import OpenAI
 import asyncio
 
@@ -21,7 +21,7 @@ async def evaluate_pending_responses(
         # Fetch pending responses from the DB for a given challenge
         responses = await db_manager.get_pending_responses(challenge_id)
 
-        logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
+        logger.info(f"Found {len(responses)} responses to challenge {challenge_id}", 1)
 
         evaluation_results = []
 

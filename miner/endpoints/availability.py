@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from logging_utils import get_logger
+from logging.logging_utils import get_logger
 
 from miner.utils.shared import miner_lock
 
