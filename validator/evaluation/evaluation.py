@@ -7,8 +7,8 @@ from fiber.logging_utils import get_logger
 from validator.challenge.challenge_types import GeneratedCodegenProblem, ValidationResult, CodegenResponse
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.elo_grader import EloGrader
-from validator.utils.clone_repo import clone_repo
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
+from validator.config import MOCK_RESPONSES
 
 class CodeGenValidator:
     def __init__(self, db_manager: DatabaseManager, openai_client: OpenAI, validator_hotkey: str):
@@ -56,6 +56,9 @@ class CodeGenValidator:
         return None
 
     async def evaluate_responses(self, problem: GeneratedCodegenProblem, miner_responses: List[CodegenResponse]) -> List[ValidationResult]:
+        if MOCK_RESPONSES:
+            return ValidationResult(score=5, error=None)
+
         grader = EloGrader(problem)
 
         responses_to_test = []

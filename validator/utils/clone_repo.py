@@ -1,14 +1,14 @@
 import shutil
 from pathlib import Path
+from typing import Optional
 
 from git import Repo
 
-from logging import Logger
 from fiber.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-def clone_repo(base_path: Path, repo_name: str,base_commit: str = None) -> Path:
+def clone_repo(base_path: Path, repo_name: str, base_commit: Optional[str] = None) -> Path:
     """
     Clone a GitHub repository to a specified directory under 'repos' and return the path.
     """
