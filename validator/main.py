@@ -9,7 +9,6 @@ import asyncio
 from datetime import datetime, timezone
 
 # External package imports
-from fiber.validator import client as validator
 from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
 from fiber.chain.chain_utils import load_hotkey_keypair
@@ -30,9 +29,9 @@ from validator.config import (
     CHALLENGE_TIMEOUT, DB_PATH, WEIGHTS_INTERVAL,
     MAX_MINERS, MIN_MINERS
 )
-from validator.evaluation.evaluation import CodeGenValidator
 from validator.evaluation.evaluation_loop import run_evaluation_loop
 from validator.utils.async_utils import AsyncBarrier
+from validator.evaluation.set_weights import set_weights
 
 project_root = str(Path(__file__).resolve().parents[2])
 sys.path.append(project_root)
@@ -162,26 +161,27 @@ async def get_available_nodes_with_api(
 
 async def weights_update_loop(db_manager: DatabaseManager) -> None:
     """Run the weights update loop on WEIGHTS_INTERVAL."""
-    logger.info("Weight updating loop not yet implemented")
-    # logger.info("Starting weights update loop")
-    # consecutive_failures = 0
-    # max_consecutive_failures = 3
+    logger.info("Starting weights update loop")
+    consecutive_failures = 0
+    max_consecutive_failures = 3
 
-    # while True: 
-    #     try:
-    #         raise NotImplementedError("Have not implemented a way to set weights yet.")
-        
-    #     except Exception as e:
-    #         consecutive_failures += 1
-    #         logger.error(f"Error in weights update loop (attempt {consecutive_failures}/{max_consecutive_failures}): {str(e)}")
+    while True: 
+        try: 
+            await set_weights(db_manager)
+            consecutive_failures = 0 # Reset failure counter on success
+            logger.info(f"Weights updated successfully, sleeping for {WEIGHTS_INTERVAL}")
+            await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
+        except Exception as e:
+            consecutive_failures += 1
+            logger.error(f"Error in weights update loop (attempt {consecutive_failures}/{max_consecutive_failures}): {str(e)}")
             
-    #         if consecutive_failures >= max_consecutive_failures:
-    #             logger.error("Too many consecutive failures in weights update loop, waiting for longer period")
-    #             await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds() * 2)  # Wait twice as long before retrying
-    #             consecutive_failures = 0  # Reset counter after long wait
-    #         else:
-    #             # Wait normal interval before retry
-    #             await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error("Too many consecutive failures in weights update loop, waiting for longer period")
+                await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds() * 2)  # Wait twice as long before retrying
+                consecutive_failures = 0  # Reset counter after long wait
+            else:
+                # Wait normal interval before retry
+                await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
 
 async def periodic_cleanup(db_manager: DatabaseManager, interval_hours: int = 24):
     logger.info("Not cleaning anything up until push to main db instance implemented")

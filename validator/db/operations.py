@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -301,6 +301,7 @@ class DatabaseManager:
             conn.rollback()
             logger.error(f"Error during database cleanup: {str(e)}")
         finally:
+            cursor.close()
             conn.close()
         
     def get_challenge_assignment_sent_at(self, challenge_id: str, miner_hotkey: str) -> Optional[datetime]:
@@ -318,6 +319,7 @@ class DatabaseManager:
             row = cursor.fetchone()
             return datetime.fromisoformat(row[0]) if row and row[0] else None
         finally:
+            cursor.close()
             conn.close()
     
     def update_response(
@@ -345,6 +347,7 @@ class DatabaseManager:
             logger.error(f"Error updating response {response_id}: {str(e)}")
             conn.rollback()
         finally:
+            cursor.close()
             conn.close()
     
     async def get_pending_responses(self, challenge_id: str) -> List[CodegenResponse]:
@@ -444,6 +447,60 @@ class DatabaseManager:
             conn.rollback()
             logger.error(f"Error marking response {response_id} as failed: {str(e)}")
 
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_global_miner_scores(self, hours: int = 24) -> Tuple[float, int]:
+        """Gets the average score for all miners and average number of responses for each miner over the last n hours"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        print("HOURS", hours)
+
+        try:
+            cursor.execute("""
+                SELECT 
+                    AVG(score) as global_avg_score,
+                    COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
+                FROM responses 
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now',  '-' || ? || ' hours')
+            """, (hours,))
+
+            global_average, average_count = cursor.fetchone()
+
+            return global_average, average_count
+
+        finally:
+            cursor.close()
+            conn.close()
+        
+    def get_bayesian_miner_score(
+        self,
+        global_average: float,
+        average_count: int,
+        hours: int = 24
+    ): 
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    COUNT(*) as response_count,
+                    AVG(score) as avg_score,
+                    (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey       
+            """, (average_count, global_average, average_count, hours,))
+
+            results = cursor.fetchall()
+
+            return results
         finally:
             cursor.close()
             conn.close()
