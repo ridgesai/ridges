@@ -2,12 +2,12 @@ from typing import Optional
 
 from openai import OpenAI
 
-from validator.challenge.challenge_types import ValidationResult, CodegenResponse
+from validator.db.operations import DatabaseManager
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
 
 class CodeGenValidator:
-    def __init__(self, openai_client: OpenAI, validator_hotkey: str):
-        self.db_manager = None
+    def __init__(self, db_manager: DatabaseManager, openai_client: OpenAI, validator_hotkey: str):
+        self.db_manager = db_manager
         self.openai_client = openai_client
         self.validator_hotkey = validator_hotkey
 

@@ -77,8 +77,7 @@ async def run_evaluation_loop(
     try: 
         logger.info("Initializing evaluation loop...")
         db_manager = DatabaseManager(db_path)
-        validator = CodeGenValidator(openai_client, validator_hotkey)
-        validator.db_manager = db_manager
+        validator = CodeGenValidator(db_manager, openai_client, validator_hotkey)
         iteration = 0 
 
         while True:
