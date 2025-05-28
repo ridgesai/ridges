@@ -49,6 +49,7 @@ class CodeGenValidator:
         # except Exception as e:
         #     self.logger.error(f"Failed to apply patch {patch}: {e}")
 
+        # TODO: Figure out a way to run an arbitrary repo's test suite
         # Run tests
         
         # Run pylint
