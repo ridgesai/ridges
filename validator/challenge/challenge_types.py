@@ -83,6 +83,16 @@ class GeneratedCodegenProblem:
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'GeneratedCodegenProblem':
+        return cls(
+            challenge_id=data.get('challenge_id'),
+            context_files=[File.from_dict(file) for file in data.get('context_files', [])],
+            repository_name=data.get('repository_name'),
+            problem_statement=data.get('problem_statement'),
+            dynamic_checklist=data.get('dynamic_checklist')
+        )
 
 class ValidationResult:
     def __init__(self, 
