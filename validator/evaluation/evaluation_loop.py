@@ -29,7 +29,7 @@ async def evaluate_pending_responses(
         # Fetch pending responses from the DB for a given challenge
         responses = await db_manager.get_pending_responses(challenge_id)
 
-        logger.info(f"Found {len(responses)} responses to challenge {challenge_id}", 1)
+        logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
 
         try:
             evaluation_results = await validator.evaluate_responses(problem, responses)
