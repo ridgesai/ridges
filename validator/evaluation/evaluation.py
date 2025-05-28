@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from git import Repo
 from openai import OpenAI
-from fiber.logging_utils import get_logger
+from logging.logging_utils import get_logger
 from validator.challenge.challenge_types import GeneratedCodegenProblem, ValidationResult, CodegenResponse
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.elo_grader import EloGrader
