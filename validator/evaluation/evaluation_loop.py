@@ -20,13 +20,11 @@ async def evaluate_pending_responses(
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
         # Fetch the challenge from the DB
-        challenge = db_manager.get_challenge(challenge_id)
+        problem = db_manager.get_challenge(challenge_id)
 
-        if not challenge:
+        if not problem:
             logger.error(f"Challenge {challenge_id} not found")
             return
-
-        problem = GeneratedCodegenProblem.from_dict(challenge)
 
         # Fetch pending responses from the DB for a given challenge
         responses = await db_manager.get_pending_responses(challenge_id)
