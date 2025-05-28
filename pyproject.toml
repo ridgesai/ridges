@@ -8,6 +8,7 @@ dependencies = [
     "asyncio>=3.4.3",
     "dotenv>=0.9.9",
     "fiber[full]",
+    "gitpython>=3.1.44",
     "httpx>=0.27.0",
     "jinja2>=3.1.6",
     "loguru>=0.7.3",
@@ -16,6 +17,7 @@ dependencies = [
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",
     "streamlit>=1.21.0",
+    "swebench>=4.0.3",
     "tiktoken>=0.9.0",
 ]
 

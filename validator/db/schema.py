@@ -12,10 +12,11 @@ def get_schema_v1() -> List[str]:
         CREATE TABLE IF NOT EXISTS codegen_challenges (
             challenge_id TEXT PRIMARY KEY,  -- UUID for the challenge
             created_at TIMESTAMP NOT NULL,
-            question_text TEXT NOT NULL,
-            relevant_filepair_1_name TEXT NOT NULL,
-            relevant_filepair_2_name TEXT NOT NULL,
-            dynamic_checklist TEXT NOT NULL  -- Stored as JSON array
+            problem_statement TEXT NOT NULL,
+            dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
+            repository_name TEXT NOT NULL,
+            commit_hash TEXT,
+            context_file_paths TEXT NOT NULL -- JSON array of file paths relative to repo root
         )
         """,
 
