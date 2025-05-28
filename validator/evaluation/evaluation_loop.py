@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 
-from logging.logging_utils import get_logger
+from logging.logging_utils import get_logger, logging_update_active_coroutines, logging_update_eval_loop_num
 from openai import OpenAI
 import asyncio
 
@@ -78,7 +78,9 @@ async def run_evaluation_loop(
 
         while True:
             try:
+                logging_update_active_coroutines("evaluation_task", True)
                 iteration += 1
+                logging_update_eval_loop_num(iteration)
                 logger.info(f"Starting evaluation loop iteration {iteration}")
                 logger.info("Getting database connection...")
                 
@@ -90,6 +92,8 @@ async def run_evaluation_loop(
                     logger.info(f"No challenges ready for evaluation (iteration {iteration})")
                     logger.info(f"Preparing to sleep for {sleep_interval} seconds...")
                     sleep_start = time.time()
+                    logging_update_active_coroutines("evaluation_task", False)
+                    logging_update_eval_loop_num(0)
                     await asyncio.sleep(sleep_interval)
                     sleep_duration = time.time() - sleep_start
                     logger.info(f"Waking up after sleeping for {sleep_duration:.1f} seconds (iteration {iteration})")
@@ -110,6 +114,8 @@ async def run_evaluation_loop(
                     logger.error(f"Error processing challenge {challenge} (iteration {iteration}): {str(e)}")
                     logger.error("Stack trace:", exc_info=True)
                 
+                logging_update_active_coroutines("evaluation_task", False)
+                logging_update_eval_loop_num(0)
                 await asyncio.sleep(sleep_interval)
 
             except Exception as e:
@@ -117,6 +123,8 @@ async def run_evaluation_loop(
                 logger.error("Stack trace:", exc_info=True)
                 logger.info(f"Preparing to sleep for {sleep_interval} seconds before retry...")
                 sleep_start = time.time()
+                logging_update_active_coroutines("evaluation_task", False)
+                logging_update_eval_loop_num(0)
                 await asyncio.sleep(sleep_interval)
                 sleep_duration = time.time() - sleep_start
                 logger.info(f"Waking up after sleeping for {sleep_duration:.1f} seconds to retry after error")

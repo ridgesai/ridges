@@ -5,7 +5,7 @@ from openai import OpenAI
 from validator.challenge.challenge_types import GeneratedCodegenProblem, ValidationResult, CodegenResponse
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.elo_grader import EloGrader
-from validator.utils.clone_repo import clone_repo
+# from validator.utils.clone_repo import clone_repo
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
 
 class CodeGenValidator:

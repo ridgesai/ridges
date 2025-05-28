@@ -4,8 +4,28 @@ import sys
 import json
 from colorama import Back, Fore, Style
 from pathlib import Path
+from typing import Dict
 
 logs_filename = "logs.json"
+
+# Global set to store active coroutines
+active_coroutines = set()
+
+# Global variable to store evaluation loop number
+eval_loop_num = 0
+
+def logging_update_active_coroutines(task_name: str, is_running: bool) -> None:
+    """Update the status of a task in the global task_statuses dictionary."""
+    global active_coroutines
+    if is_running:
+        active_coroutines.add(task_name)
+    else:
+        active_coroutines.discard(task_name)  # Use discard instead of remove to avoid KeyError
+
+def logging_update_eval_loop_num(loop_number) -> None:
+    """Update the evaluation loop number."""
+    global eval_loop_num
+    eval_loop_num = loop_number
 
 class ColoredFormatter(logging.Formatter):
     COLORS = {
@@ -62,6 +82,8 @@ def append_log(new_log):
             "funcName": new_log.funcName,
             "lineno": new_log.lineno,
             "message": new_log.message,
+            "active_coroutines": list(active_coroutines),
+            "eval_loop_num": eval_loop_num
         }
         
         logs.append(log_json)
