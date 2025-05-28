@@ -3,7 +3,7 @@ from typing import List
 
 from fiber.chain import chain_utils, interface, metagraph, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
-from fiber.logging_utils import get_logger
+from logging.logging_utils import get_logger
 
 
 from validator.db.operations import DatabaseManager

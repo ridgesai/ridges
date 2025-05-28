@@ -13,8 +13,18 @@ wheels/
 *.env
 *.db
 
+# MacOS
+.DS_Store
+
+# Logging
+logs.json
+
+# IDEs
+.idea/
+
 # Validator generated files
 .cache/
 validator/repos/
 
+LOCAL_NOTES.md
 LOCAL_NOTES.md

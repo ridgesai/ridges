@@ -13,7 +13,6 @@ from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
 from fiber.chain.chain_utils import load_hotkey_keypair
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
-from loguru import logger
 from dotenv import load_dotenv
 import httpx
 from openai import OpenAI
@@ -23,6 +22,7 @@ from validator.db.operations import DatabaseManager
 from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
 from validator.challenge.send_codegen_challenge import send_challenge
+from logging.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
@@ -40,6 +40,9 @@ sys.path.append(project_root)
 validator_dir = Path(__file__).parent
 env_path = validator_dir / ".env"
 load_dotenv(env_path)
+
+# Set up logger
+logger = get_logger(__name__)
 
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
@@ -163,10 +166,12 @@ async def weights_update_loop(db_manager: DatabaseManager) -> None:
     max_consecutive_failures = 3
 
     while True: 
+        logging_update_active_coroutines("weights_task", True)
         try: 
             await set_weights(db_manager)
             consecutive_failures = 0 # Reset failure counter on success
             logger.info(f"Weights updated successfully, sleeping for {WEIGHTS_INTERVAL}")
+            logging_update_active_coroutines("weights_task", False)
             await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
         except Exception as e:
             consecutive_failures += 1
@@ -174,10 +179,12 @@ async def weights_update_loop(db_manager: DatabaseManager) -> None:
             
             if consecutive_failures >= max_consecutive_failures:
                 logger.error("Too many consecutive failures in weights update loop, waiting for longer period")
+                logging_update_active_coroutines("weights_task", False)
                 await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds() * 2)  # Wait twice as long before retrying
                 consecutive_failures = 0  # Reset counter after long wait
             else:
                 # Wait normal interval before retry
+                logging_update_active_coroutines("weights_task", False)
                 await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
 
 async def periodic_cleanup(db_manager: DatabaseManager, interval_hours: int = 24):

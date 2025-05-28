@@ -1,6 +1,6 @@
 from itertools import combinations
 from logging import Logger
-from fiber.logging_utils import get_logger
+from logging.logging_utils import get_logger
 import os
 import random
 from textwrap import dedent
