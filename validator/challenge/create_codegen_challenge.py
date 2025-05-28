@@ -316,5 +316,5 @@ async def create_next_codegen_challenge(
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,
-        context_files=[File(path=file.path, contents=file.contents) for file in selected_pair.files]
+        context_file_paths=[os.path.relpath(file.path, repo_path) for file in selected_pair.files]
     )

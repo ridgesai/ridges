@@ -62,11 +62,11 @@ class GeneratedCodegenProblem:
     dynamic_checklist: List[str]
     repository_name: str
     commit_hash: Optional[str]
-    context_files: List[File]
+    context_file_paths: List[str] # Relative to repository_name as the repo root
 
     def to_detailed_format(self) -> str:
         context_files_string = ""
-        for i, file in enumerate(self.context_files):
+        for i, file in enumerate(self.context_file_paths):
             context_files_string += f"# File {i} used to solve the problem: {file}"
         return dedent(f"""
         Problem Statement: {self.problem_statement}
@@ -78,21 +78,12 @@ class GeneratedCodegenProblem:
         """Convert challenge to dictionary for sending to miners"""
         return {
             "challenge_id": self.challenge_id,
-            "context_files": [file.to_dict() for file in self.context_files],
-            "repository_name": self.repository_name,
             "problem_statement": self.problem_statement,
-            "dynamic_checklist": self.dynamic_checklist
+            "dynamic_checklist": self.dynamic_checklist,
+            "repository_name": self.repository_name,
+            "commit_hash": self.commit_hash,
+            "context_file_paths": self.context_file_paths
         }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'GeneratedCodegenProblem':
-        return cls(
-            challenge_id=data.get('challenge_id'),
-            context_files=[File.from_dict(file) for file in data.get('context_files', [])],
-            repository_name=data.get('repository_name'),
-            problem_statement=data.get('problem_statement'),
-            dynamic_checklist=data.get('dynamic_checklist')
-        )
 
 class ValidationResult:
     def __init__(self, 

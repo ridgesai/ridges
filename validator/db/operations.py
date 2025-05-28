@@ -40,19 +40,17 @@ class DatabaseManager:
         try:
             cursor.execute("""
                 INSERT OR IGNORE INTO codegen_challenges (
-                    challenge_id, created_at, question_text, 
-                           relevant_filepair_1_name, relevant_filepair_2_name,
-                           dynamic_checklist
+                    challenge_id, created_at, problem_statement, dynamic_checklist,
+                    repository_name, commit_hash, context_file_paths
                 )
-                VALUES (?, CURRENT_TIMESTAMP, ?, 
-                           ?, ?,
-                           ?)
+                VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                str(challenge.context_files[0].path),
-                str(challenge.context_files[1].path),
-                json.dumps(challenge.dynamic_checklist)
+                json.dumps(challenge.dynamic_checklist),
+                challenge.repository_name,
+                challenge.commit_hash,
+                json.dumps(challenge.context_file_paths)
             ))
 
             if cursor.rowcount == 0:
@@ -206,22 +204,35 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    def get_challenge(self, challenge_id: str) -> Optional[Dict]:
+    def get_challenge(self, challenge_id: str) -> Optional[GeneratedCodegenProblem]:
         """Get a challenge from the database by ID"""
         conn = self.get_connection()
         with conn:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
+            logger.info(f"Challenge ID: {challenge_id}")
+            # log type of challenge_id
+            logger.info(f"Type of challenge_id: {type(challenge_id)}")
             cursor.execute("""
-                SELECT c.*, ca.sent_at
-                FROM codegen_challenges c
-                LEFT JOIN challenge_assignments ca ON c.challenge_id = ca.challenge_id
-                WHERE c.challenge_id = ?
+                SELECT *
+                FROM codegen_challenges 
+                WHERE challenge_id = ?
             """, (challenge_id,))
             row = cursor.fetchone()
 
+            logger.info(f"Row: {row}")
+
             if row:
-                return dict(row)
+                return GeneratedCodegenProblem(
+                    challenge_id=row["challenge_id"],
+                    problem_statement=row["problem_statement"],
+                    dynamic_checklist=json.loads(row["dynamic_checklist"]),
+                    repository_name=row["repository_name"],
+                    commit_hash=row["commit_hash"],
+                    context_file_paths=json.loads(row["context_file_paths"]),
+                    prompt="",
+                    model="",
+                )
             return None
 
     def log_availability_check(
