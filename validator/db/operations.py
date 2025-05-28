@@ -220,8 +220,6 @@ class DatabaseManager:
             """, (challenge_id,))
             row = cursor.fetchone()
 
-            logger.info(f"Row: {row}")
-
             if row:
                 return GeneratedCodegenProblem(
                     challenge_id=row["challenge_id"],
