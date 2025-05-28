@@ -30,6 +30,7 @@ MIN_FILE_CONTENT_LEN_CHARS = 50
 WEIGHTS_INTERVAL = timedelta(minutes=30)
 VALIDATION_DELAY = timedelta(minutes=1)
 ALPHA_SCORING_MULTIPLICATOR = 3
+MOCK_RESPONSES = False
 
 DB_PATH = Path("validator.db")
 

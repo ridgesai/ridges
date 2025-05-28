@@ -4,7 +4,6 @@ from typing import Optional
 
 from git import Repo
 
-from logging import Logger
 from fiber.logging_utils import get_logger
 
 logger = get_logger(__name__)
