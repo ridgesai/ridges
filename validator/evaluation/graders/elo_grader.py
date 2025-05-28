@@ -106,6 +106,10 @@ class EloArena:
 
         max_rating = max(self.players.values())
         min_rating = min(self.players.values())
+
+        if max_rating == min_rating:  # All players have the same rating
+            return {player: 0.5 for player in self.players.keys()}
+
         return {
             player: (rating - min_rating) / (max_rating - min_rating)
             for player, rating in self.players.items()
