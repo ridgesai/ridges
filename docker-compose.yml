@@ -37,10 +37,11 @@ services:
       - SUBTENSOR_ADDRESS=ws://subtensor:9945
       - WALLET_NAME=miner_ridges
       - HOTKEY_NAME=default_ridges
-    # env_file:                  # secrets & config specific to miner
-    #   - ./miner/.env
+    env_file:
+      - ./miner/.env
     networks: [ridgesnet]
     volumes:
+      - ./miner:/app/miner
       - bt-wallets:/root/.bittensor
 
   validator:
@@ -52,11 +53,11 @@ services:
       bash -c "uv run validator/main.py"
     environment:
       - PYTHONPATH=/app
-      - OPENAI_API_KEY=replace-me
       - WALLET_NAME=validator_ridges
       - HOTKEY_NAME=default_ridges
-    # env_file:git 
-    #   - ./validator/.env       # validator-specific secrets
+      - SUBTENSOR_ADDRESS=ws://subtensor:9945
+    env_file:
+      - ./validator/.env       # validator-specific secrets
     networks: [ridgesnet]
     volumes:
       - bt-wallets:/root/.bittensor

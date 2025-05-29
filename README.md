@@ -78,3 +78,21 @@ The validator will use the shared wallet volume and the correct wallet/hotkey na
 ## Helpful commands
 
 - See the registered actors on a subnet locally: `btcli subnets show --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945`
+
+## Updating the Miner After Code Changes
+
+If you make changes to the code in the `miner` directory, you need to restart the miner container to apply those changes:
+
+```sh
+docker compose restart miner
+```
+
+If you change dependencies (e.g., update `pyproject.toml`) or the Dockerfile, you must rebuild the image and then restart the miner:
+
+```sh
+docker compose build miner
+docker compose up miner
+```
+
+- **Code changes only:** Just restart the miner container.
+- **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
