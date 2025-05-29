@@ -43,6 +43,12 @@ async def process_challenge(
             if not problem_statement or not dynamic_checklist:
                 raise HTTPException(status_code=400, detail="Incomplete problem provided")
             
+            # Check for OpenAI API key
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                logger.error("OpenAI API key not set in environment")
+                raise HTTPException(status_code=500, detail="OpenAI API key not set in environment")
+
             logger.info(f"Cloning repository {repository} at commit {commit_hash}")
             repo_path = clone_and_checkout_repo(repository, commit_hash)
             logger.info(f"Repository cloned to {repo_path}")
@@ -50,10 +56,6 @@ async def process_challenge(
             logger.info(f"Processing challenge {challenge_id} with problem statement {problem_statement}")
 
             # Generate solution using OpenAI
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                logger.error("OpenAI API key not set in environment")
-                raise HTTPException(status_code=500, detail="OpenAI API key not set in environment")
             logger.info("Generating solution using OpenAI...")
             solution = generate_solution_with_openai(problem_statement, api_key)
             logger.info(f"Generated solution: {solution}")
@@ -91,6 +93,7 @@ router.add_api_route(
     "/challenge",
     process_challenge,
     tags=["codegen"],
-    # dependencies=[Depends(verify_request)],
+    # Commnent out dependencies for testing
+    dependencies=[Depends(verify_request)],
     methods=["POST"],
 )
