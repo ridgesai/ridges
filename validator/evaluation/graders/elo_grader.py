@@ -1,5 +1,4 @@
 from itertools import combinations
-from logging import Logger
 from logging.logging_utils import get_logger
 import os
 import random
