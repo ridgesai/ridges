@@ -40,6 +40,11 @@ VERSION_KEY = 2
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
+# AWS Configuration
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 
