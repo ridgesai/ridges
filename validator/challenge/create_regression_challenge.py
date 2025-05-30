@@ -136,13 +136,10 @@ async def create_regression_challenge() -> GeneratedRegressionProblem:
 
     repo_name = random.choice(supported_repos)
 
-    # Create execution environment
     environment = create_execution_environment(repo_name)
 
-    # Generate a bug and extract the patch and list of failing tests
     bug = environment.create_bug()
 
-    # Clone the repo locally and apply the patch
     repo_path = clone_repo(Path.cwd(), repo_name, bug.base_commit)
     repo = Repo(repo_path)
 
@@ -181,6 +178,10 @@ async def create_regression_challenge() -> GeneratedRegressionProblem:
 
     logger.info(f"Uploading repo to Gitea: {bare_repo_path}")
     repository_url = upload_repo_to_gitea(bare_repo_path, problem_id)
+
+    # Clean up local files
+    shutil.rmtree(repo_path, ignore_errors=True)
+    shutil.rmtree(bare_repo_path, ignore_errors=True)
 
     # Generate a problem statement which contains the failing tests
     problem_statement = PROBLEM_STATEMENT_TEMPLATE_SWESMITH.render(
