@@ -15,26 +15,11 @@ import requests
 from jinja2 import Template
 
 from validator.utils.clone_repo import clone_repo
+from validator.challenge.challenge_types import GeneratedRegressionProblem
 
 logger = get_logger(__name__)
 
 
-@dataclass
-class GeneratedRegressionProblem:
-    challenge_id: str
-    repository_url: str
-    commit_hash: Optional[str]
-    problem_statement: str
-    context_file_paths: List[str]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "challenge_id": self.challenge_id,
-            "repository_url": self.repository_url,
-            "commit_hash": self.commit_hash,
-            "problem_statement": self.problem_statement,
-            "context_file_paths": self.context_file_paths,
-        }
 
 
 PROBLEM_STATEMENT_TEMPLATE_SWESMITH: Final[Template] = Template(

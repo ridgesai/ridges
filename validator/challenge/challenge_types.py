@@ -7,6 +7,8 @@ from datetime import datetime
 import asyncio
 from pydantic import BaseModel
 
+from validator.challenge.create_regression_challenge import GeneratedRegressionProblem
+
 '''
 Helper that lets the validator set the scope of files they want to select for a challenge
 '''
@@ -98,7 +100,7 @@ class ValidationResult:
 
 
 class ChallengeTask:
-    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: GeneratedCodegenProblem, miner_hotkey: str):
+    def __init__(self, node_id: int, task: asyncio.Task, timestamp: datetime, challenge: GeneratedCodegenProblem | GeneratedRegressionProblem, miner_hotkey: str):
         self.node_id = node_id
         self.task = task
         self.timestamp = timestamp
@@ -133,6 +135,71 @@ class CodegenResponse:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CodegenResponse':
+        received_at = data.get('received_at')
+        if received_at and isinstance(received_at, str):
+            received_at = datetime.fromisoformat(received_at)
+        evaluated_at = data.get('evaluated_at')
+        if evaluated_at and isinstance(evaluated_at, str):
+            evaluated_at = datetime.fromisoformat(evaluated_at)
+        return cls(
+            challenge_id=data['challenge_id'],
+            processing_time=data.get('processing_time'),
+            node_id=data.get('node_id'),
+            miner_hotkey=data.get('miner_hotkey'),
+            response_id=data.get('response_id'),
+            received_at=received_at,
+            score=data.get('score'),
+            evaluated=data.get('evaluated', False),
+            evaluated_at=evaluated_at,
+            response_patch=data.get('response_patch')
+        )
+
+
+@dataclass
+class GeneratedRegressionProblem:
+    challenge_id: str
+    repository_url: str
+    commit_hash: Optional[str]
+    problem_statement: str
+    context_file_paths: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "challenge_id": self.challenge_id,
+            "repository_url": self.repository_url,
+            "commit_hash": self.commit_hash,
+            "problem_statement": self.problem_statement,
+            "context_file_paths": self.context_file_paths,
+        }
+
+@dataclass
+class RegressionResponse:
+    """Expected response format for regression challenges"""
+    challenge_id: str
+    node_id: Optional[int] = None
+    miner_hotkey: Optional[str] = None
+    response_id: Optional[int] = None
+    received_at: Optional[datetime] = None
+    score: Optional[float] = None
+    evaluated: bool = False
+    evaluated_at: Optional[datetime] = None
+    response_patch: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "challenge_id": self.challenge_id,
+            "node_id": self.node_id,
+            "miner_hotkey": self.miner_hotkey,
+            "response_id": self.response_id,
+            "received_at": self.received_at.isoformat() if self.received_at else None,
+            "score": self.score,
+            "evaluated": self.evaluated,
+            "evaluated_at": self.evaluated_at.isoformat() if self.evaluated_at else None,
+            "response_patch": self.response_patch
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'RegressionResponse':
         received_at = data.get('received_at')
         if received_at and isinstance(received_at, str):
             received_at = datetime.fromisoformat(received_at)

@@ -20,6 +20,18 @@ def get_schema_v1() -> List[str]:
         )
         """,
 
+        # Regression challenges table
+        """
+        CREATE TABLE IF NOT EXISTS regression_challenges (
+            challenge_id TEXT PRIMARY KEY,  -- UUID for the challenge
+            created_at TIMESTAMP NOT NULL,
+            problem_statement TEXT NOT NULL,
+            repository_url TEXT NOT NULL,
+            commit_hash TEXT NOT NULL,
+            context_file_paths TEXT NOT NULL -- JSON array of file paths relative to repo root
+        )
+        """,
+
         # Challenge assignments table
         """
         CREATE TABLE IF NOT EXISTS challenge_assignments (
@@ -32,6 +44,22 @@ def get_schema_v1() -> List[str]:
             completed_at TIMESTAMP,
             status TEXT CHECK(status IN ('assigned', 'sent', 'completed', 'failed')) DEFAULT 'assigned',
             FOREIGN KEY (challenge_id) REFERENCES codegen_challenges(challenge_id),
+            UNIQUE(challenge_id, miner_hotkey)
+        )
+        """,
+
+        # Regression challenge assignments table
+        """
+        CREATE TABLE IF NOT EXISTS regression_challenge_assignments (
+            assignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            challenge_id TEXT NOT NULL,
+            miner_hotkey TEXT NOT NULL,
+            node_id INTEGER NOT NULL,
+            assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sent_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            status TEXT CHECK(status IN ('assigned', 'sent', 'completed', 'failed')) DEFAULT 'assigned',
+            FOREIGN KEY (challenge_id) REFERENCES regression_challenges(challenge_id),
             UNIQUE(challenge_id, miner_hotkey)
         )
         """,
@@ -52,6 +80,25 @@ def get_schema_v1() -> List[str]:
             response_patch TEXT,
             FOREIGN KEY (challenge_id) REFERENCES codegen_challenges(challenge_id),
             FOREIGN KEY (challenge_id, miner_hotkey) REFERENCES challenge_assignments(challenge_id, miner_hotkey)
+        )
+        """,
+
+        # Regression responses table
+        """
+        CREATE TABLE IF NOT EXISTS regression_responses (
+            response_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            challenge_id TEXT NOT NULL,
+            miner_hotkey TEXT NOT NULL,
+            node_id INTEGER,
+            processing_time FLOAT,
+            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP,
+            evaluated BOOLEAN DEFAULT FALSE,
+            score FLOAT,
+            evaluated_at TIMESTAMP,
+            response_patch TEXT,
+            FOREIGN KEY (challenge_id) REFERENCES regression_challenges(challenge_id),
+            FOREIGN KEY (challenge_id, miner_hotkey) REFERENCES regression_challenge_assignments(challenge_id, miner_hotkey)
         )
         """,
 
@@ -88,6 +135,9 @@ def check_db_initialized(db_path: str) -> bool:
             'challenge_assignments',
             'responses',
             'availability_checks',
+            'regression_challenges',
+            'regression_challenge_assignments',
+            'regression_responses',
         }
         
         # Check if all required tables exist
