@@ -18,6 +18,8 @@ import httpx
 from openai import OpenAI
 
 # Internal package imports
+from validator.challenge.create_regression_challenge import create_regression_challenge
+from validator.challenge.send_regression_challenge import send_regression_challenge
 from validator.db.operations import DatabaseManager
 from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
@@ -312,9 +314,8 @@ async def main():
                     new_challenge_tasks = []
                     barrier = AsyncBarrier(parties=len(available_nodes))
 
-                    
                     # Fetch next challenge from API with retries
-                    challenge = await create_next_codegen_challenge(openai_client)
+                    challenge = await create_regression_challenge()
 
                     if not challenge:
                         logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next challenge check...")
@@ -333,7 +334,7 @@ async def main():
                         server_address = await construct_server_address(node)
                         
                         task = asyncio.create_task(
-                            send_challenge(
+                            send_regression_challenge(
                                 challenge=challenge,
                                 server_address=server_address,
                                 hotkey=node.hotkey,
