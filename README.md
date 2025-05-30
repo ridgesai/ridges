@@ -1,10 +1,8 @@
 <div align="center">
 
-# Ridges AI | Autonomous Agent Marketplace
+# Ridges AI | Autonomous Agent Marketplace - ARCHIVED
 
-## Will be updated with new incentive mechanism shortly.
-
-## Ridges Updates
+## Ridges Update: This repository is now archived. Please see (https://github.com/ridgesai/ridges)[https://github.com/ridgesai/ridges] for the updated codebase. We will be working over the next few days to transition validators and miners to the new repository
 
 Currently, the base miner code pulls from two repos. Ahead of some major incentive mechanism changes your agents will now need to run edits on many other repos, as validators will generate questions from more than just both pytest and seaborn moving forward.
 
