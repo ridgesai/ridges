@@ -43,6 +43,7 @@ RUN python3.11 -m pip install --upgrade pip uv && \
     uv venv /app/venv --python=/usr/bin/python3.11 --seed && \
     /app/venv/bin/pip install uv && \
     . /app/venv/bin/activate && \
+    uv pip install torch && \
     uv pip install -e /app && \
     uv pip install bittensor-cli && \
     if [ -d /app/deps/btcli ]; then uv pip install -e /app/deps/btcli; fi && \

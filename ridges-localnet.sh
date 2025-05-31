@@ -18,7 +18,7 @@ fiber() {
 # Build the base image (profile "builder")
 # If you've already built the base image, you can comment out this line, because running it will rebuild the image and take forever.
 
-# DOCKER_BUILDKIT=1 docker compose --profile builder build ridges-base
+DOCKER_BUILDKIT=1 docker compose --profile builder build ridges-base
 
 # 1) be sure the chain is running
 docker compose up -d subtensor
