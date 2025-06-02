@@ -190,7 +190,7 @@ class DatabaseManager:
                             AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
                         GROUP BY c.challenge_id
                         LIMIT 1
-                    """, (VALIDATION_DELAY.total_seconds() / 60))
+                    """, (VALIDATION_DELAY.total_seconds() / 60,))
                     
             row = cursor.fetchone()
 
