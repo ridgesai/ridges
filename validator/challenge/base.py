@@ -14,7 +14,7 @@ from enum import Enum
 import httpx
 from fiber import Keypair
 from logging.logging_utils import get_logger
-from fiber.validator import client as validator
+from fiber.validator import client as validator_client
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
@@ -113,7 +113,7 @@ class BaseChallenge(ABC):
         barrier: AsyncBarrier,
         db_manager: 'DatabaseManager',
         client: Optional[httpx.AsyncClient] = None,
-        timeout: float = 300.0
+        timeout: float = 600.0
     ) -> httpx.Response:
         """
         Send this challenge to a miner node.
@@ -165,7 +165,7 @@ class BaseChallenge(ABC):
                 
                 # Send the challenge using fiber validator client
                 try:
-                    response = await validator.make_non_streamed_post(
+                    response = await validator_client.make_non_streamed_post(
                         httpx_client=client,
                         server_address=server_address,
                         validator_ss58_address=keypair.ss58_address,
