@@ -177,16 +177,20 @@ class BaseChallenge(ABC):
                     )
                 except httpx.TimeoutException:
                     # Handle timeout with appropriate default response
+                    logger.error(f"Timeout sending {self.challenge_type} challenge {self.challenge_id}")
                     response = httpx.Response(
                         status_code=200,
                         json={"patch": None},
+                        request=httpx.Request("POST", endpoint)
                     )
 
                 except Exception as e:
                     logger.error(f"Error sending {self.challenge_type} challenge {self.challenge_id}: {str(e)}")
+                    logger.error("Full error traceback:", exc_info=True)
                     response = httpx.Response(
                         status_code=200,
                         json={"patch": None},
+                        request=httpx.Request("POST", endpoint)
                     )
     
                 
