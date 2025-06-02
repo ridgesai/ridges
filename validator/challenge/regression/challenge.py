@@ -25,6 +25,11 @@ class RegressionChallenge(BaseChallenge):
     """
     repository_url: str
     context_file_paths: List[str]
+
+    @property
+    def challenge_type(self) -> str:
+        """Return the specific challenge type."""
+        return 'regression'
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -54,14 +59,6 @@ class RegressionChallenge(BaseChallenge):
             repository_url=data["repository_url"],
             commit_hash=data["commit_hash"],
             context_file_paths=data["context_file_paths"]
-        )
-    
-    def store_in_database(self, db_manager: DatabaseManager) -> None:
-        """Store this challenge in the database."""
-        db_manager.store_challenge(
-            challenge_id=self.challenge_id,
-            challenge_type="regression",
-            challenge_data=self.to_database_dict()
         )
     
     @classmethod

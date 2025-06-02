@@ -7,7 +7,7 @@ and responses should inherit from.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -16,10 +16,8 @@ from fiber import Keypair
 from logging.logging_utils import get_logger
 from fiber.validator import client as validator
 
+from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
-
-if TYPE_CHECKING:
-    from validator.db.operations import DatabaseManager
 
 logger = get_logger(__name__)
 
@@ -51,7 +49,7 @@ class BaseChallenge(ABC):
     
     @property
     @abstractmethod
-    def challenge_type(self) -> ChallengeType:
+    def challenge_type(self) -> str:
         """Return the specific challenge type."""
         pass
     
@@ -67,7 +65,7 @@ class BaseChallenge(ABC):
     
     def get_endpoint(self) -> str:
         """Get the API endpoint for this challenge type."""
-        return f"/{self.challenge_type.value}/challenge"
+        return f"/{self.challenge_type}/challenge"
     
     def process_response_data(self, response: httpx.Response) -> Tuple[str, Optional[str]]:
         """
@@ -127,7 +125,7 @@ class BaseChallenge(ABC):
         endpoint = self.get_endpoint()
         payload = self.to_dict()
         
-        logger.info(f"Preparing to send {self.challenge_type.value} challenge to node {node_id}")
+        logger.info(f"Preparing to send {self.challenge_type} challenge to node {node_id}")
         logger.info(f"  Server address: {server_address}")
         logger.info(f"  Hotkey: {hotkey}")
         logger.info(f"  Challenge ID: {self.challenge_id}")
@@ -138,12 +136,12 @@ class BaseChallenge(ABC):
         try:
             # Store the challenge in the database
             if db_manager:
-                logger.debug(f"Storing {self.challenge_type.value} challenge {self.challenge_id} in database")
+                logger.debug(f"Storing {self.challenge_type} challenge {self.challenge_id} in database")
                 self.store_in_database(db_manager)
             
             # Record the assignment
             if db_manager:
-                logger.debug(f"Recording {self.challenge_type.value} challenge assignment in database")
+                logger.debug(f"Recording {self.challenge_type} challenge assignment in database")
                 db_manager.assign_challenge(self.challenge_id, hotkey, node_id)
             
             # Create client if not provided
@@ -154,7 +152,7 @@ class BaseChallenge(ABC):
                 should_close_client = True
             
             if db_manager:
-                logger.debug(f"Marking {self.challenge_type.value} challenge as sent in database")
+                logger.debug(f"Marking {self.challenge_type} challenge as sent in database")
                 db_manager.mark_challenge_sent(self.challenge_id, hotkey)
             
             if remaining_barriers:
@@ -163,7 +161,7 @@ class BaseChallenge(ABC):
             
             try:
                 sent_time = datetime.now(timezone.utc)
-                logger.debug(f"Sending {self.challenge_type.value} challenge request...")
+                logger.debug(f"Sending {self.challenge_type} challenge request...")
                 
                 # Send the challenge using fiber validator client
                 try:
@@ -185,7 +183,7 @@ class BaseChallenge(ABC):
                     )
 
                 except Exception as e:
-                    logger.error(f"Error sending {self.challenge_type.value} challenge {self.challenge_id}: {str(e)}")
+                    logger.error(f"Error sending {self.challenge_type} challenge {self.challenge_id}: {str(e)}")
                     response = httpx.Response(
                         status_code=200,
                         json={"patch": None},
@@ -278,21 +276,17 @@ class BaseChallenge(ABC):
             logger.error("Full error traceback:", exc_info=True)
             raise ValueError(error_msg)
     
-    # Abstract methods that subclasses must implement for database integration
-    @abstractmethod
     def store_in_database(self, db_manager: 'DatabaseManager') -> None:
         """Store this challenge in the database."""
-        pass
+        db_manager.store_challenge(
+            challenge_id=self.challenge_id,
+            challenge_type=self.challenge_type,
+            challenge_data=self.to_database_dict()
+        )
 
     @abstractmethod
-    def evaluate_responses(self, responses: List['BaseResponse'], db_manager: 'DatabaseManager') -> List['ValidationResult']:
+    def evaluate_responses(self, responses: List['BaseResponse']) -> List['ValidationResult']:
         """Evaluate a list of responses for this challenge."""
-        pass
-
-    @classmethod
-    @abstractmethod
-    def get_from_database(cls, db_manager: 'DatabaseManager', challenge_id: str) -> Optional['BaseChallenge']:
-        """Retrieve a challenge from the database by ID."""
         pass
 
 

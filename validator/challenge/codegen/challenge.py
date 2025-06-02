@@ -38,6 +38,11 @@ class CodegenChallenge(BaseChallenge):
     prompt: str = ""
     model: str = ""
     
+    @property
+    def challenge_type(self) -> str:
+        """Return the specific challenge type."""
+        return 'codegen'
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
         return {
