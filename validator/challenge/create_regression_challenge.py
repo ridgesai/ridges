@@ -153,20 +153,18 @@ async def create_regression_challenge() -> GeneratedRegressionProblem:
         os.path.relpath(item.a_path, repo_path) for item in repo.index.diff(None)
     ]
 
-    # Upload the repo using the configured method
+    # Make a new repo with new history and upload it
     problem_id = str(uuid.uuid4())
+    shutil.rmtree(repo_path / ".git")
+    repo = Repo.init(repo_path)
     repo.git.add(".")
-    repo.git.commit("-m", f"Bug {problem_id}", author="Validator <validator@ridges.ai>")
-    bare_repo_path = repo_path.with_suffix(".git")
-    shutil.rmtree(bare_repo_path, ignore_errors=True)
-    repo.clone(bare_repo_path, bare=True)
+    repo.git.commit("-m", f"Initial commit", author="Validator <validator@ridges.ai>")
 
-    logger.info(f"Uploading repo to Gitea: {bare_repo_path}")
-    repository_url = upload_repo_to_gitea(bare_repo_path, problem_id)
+    logger.info(f"Uploading repo to Gitea: {repo_path}")
+    repository_url = upload_repo_to_gitea(repo_path, problem_id)
 
     # Clean up local files
     shutil.rmtree(repo_path, ignore_errors=True)
-    shutil.rmtree(bare_repo_path, ignore_errors=True)
 
     # Generate a problem statement which contains the failing tests
     problem_statement = PROBLEM_STATEMENT_TEMPLATE_SWESMITH.render(
@@ -182,12 +180,12 @@ async def create_regression_challenge() -> GeneratedRegressionProblem:
     )
 
 
-def upload_repo_to_gitea(bare_repo_path: Path, problem_id: str) -> str:
+def upload_repo_to_gitea(repo_path: Path, problem_id: str) -> str:
     """
     Create a repository on Gitea and upload the code there.
 
     Args:
-        bare_repo_path: Path to the bare git repository to upload
+        repo_path: Path to the git repository to upload
         problem_id: Unique identifier for the problem
 
     Returns:
@@ -224,7 +222,7 @@ def upload_repo_to_gitea(bare_repo_path: Path, problem_id: str) -> str:
     logger.info(f"Repository URL: {repo_url}")
 
     # Push the repository to Gitea
-    repo = Repo(bare_repo_path)
+    repo = Repo(repo_path)
     try:
         # Add the Gitea remote
         remote_name = "gitea"
