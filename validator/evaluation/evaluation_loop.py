@@ -26,10 +26,15 @@ async def evaluate_pending_responses(
         # Fetch pending responses from the DB for a given challenge
         responses = db_manager.get_pending_responses(challenge_id)
 
-        logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
+        if len(responses) == 0:
+            logger.info(f"No responses found for challenge {challenge_id}")
+            return
+        else:
+            logger.info(f"Found {len(responses)} responses for challenge {challenge_id}")
 
         try:
             evaluation_results = await challenge.evaluate_responses(responses, db_manager)
+            logger.info(f"Evaluation results: {evaluation_results}")
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
