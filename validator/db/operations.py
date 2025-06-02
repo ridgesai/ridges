@@ -39,19 +39,30 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
+            # First insert into the parent challenges table
             cursor.execute("""
-                INSERT OR IGNORE INTO codegen_challenges (
-                    challenge_id, created_at, problem_statement, dynamic_checklist,
-                    repository_name, commit_hash, context_file_paths
+                INSERT OR IGNORE INTO challenges (
+                    challenge_id, challenge_type, created_at, problem_statement,
+                    commit_hash, context_file_paths
                 )
-                VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)
+                VALUES (?, 'codegen', CURRENT_TIMESTAMP, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                json.dumps(challenge.dynamic_checklist),
-                challenge.repository_name,
                 challenge.commit_hash,
                 json.dumps(challenge.context_file_paths)
+            ))
+
+            # Then insert codegen-specific data
+            cursor.execute("""
+                INSERT OR IGNORE INTO codegen_challenges (
+                    challenge_id, dynamic_checklist, repository_name
+                )
+                VALUES (?, ?, ?)
+            """, (
+                challenge.challenge_id,
+                json.dumps(challenge.dynamic_checklist),
+                challenge.repository_name
             ))
 
             if cursor.rowcount == 0:
@@ -101,8 +112,9 @@ class DatabaseManager:
                                 COUNT(r.response_id) as pending_count,
                                 MIN(r.received_at) as earliest_received
                         FROM responses r
-                        JOIN codegen_challenges c ON r.challenge_id = c.challenge_id
+                        JOIN challenges c ON r.challenge_id = c.challenge_id
                         WHERE r.evaluated = FALSE
+                            AND c.challenge_type = 'codegen'
                             AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
                         GROUP BY c.challenge_id
                         LIMIT 1
@@ -206,33 +218,34 @@ class DatabaseManager:
             conn.close()
     
     def get_challenge(self, challenge_id: str) -> Optional[GeneratedCodegenProblem]:
-        """Get a challenge from the database by ID"""
+        """Get challenge details from the database"""
         conn = self.get_connection()
-        with conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            logger.info(f"Challenge ID: {challenge_id}")
-            # log type of challenge_id
-            logger.info(f"Type of challenge_id: {type(challenge_id)}")
-            cursor.execute("""
-                SELECT *
-                FROM codegen_challenges 
-                WHERE challenge_id = ?
-            """, (challenge_id,))
-            row = cursor.fetchone()
+        cursor = conn.cursor()
 
-            if row:
-                return GeneratedCodegenProblem(
-                    challenge_id=row["challenge_id"],
-                    problem_statement=row["problem_statement"],
-                    dynamic_checklist=json.loads(row["dynamic_checklist"]),
-                    repository_name=row["repository_name"],
-                    commit_hash=row["commit_hash"],
-                    context_file_paths=json.loads(row["context_file_paths"]),
-                    prompt="",
-                    model="",
-                )
-            return None
+        try:
+            cursor.execute("""
+                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash, c.context_file_paths,
+                       cc.dynamic_checklist, cc.repository_name
+                FROM challenges c
+                JOIN codegen_challenges cc ON c.challenge_id = cc.challenge_id
+                WHERE c.challenge_id = ? AND c.challenge_type = 'codegen'
+            """, (challenge_id,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return GeneratedCodegenProblem(
+                challenge_id=row[0],
+                problem_statement=row[2],
+                dynamic_checklist=json.loads(row[5]),
+                repository_name=row[6],
+                commit_hash=row[3],
+                context_file_paths=json.loads(row[4])
+            )
+
+        finally:
+            conn.close()
 
     def log_availability_check(
         self,
@@ -274,18 +287,29 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
+            # First insert into the parent challenges table
             cursor.execute("""
-                INSERT OR IGNORE INTO regression_challenges (
-                    challenge_id, created_at, problem_statement, repository_url,
+                INSERT OR IGNORE INTO challenges (
+                    challenge_id, challenge_type, created_at, problem_statement,
                     commit_hash, context_file_paths
                 )
-                VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?, ?)
+                VALUES (?, 'regression', CURRENT_TIMESTAMP, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.repository_url,
                 challenge.commit_hash,
                 json.dumps(challenge.context_file_paths)
+            ))
+
+            # Then insert regression-specific data
+            cursor.execute("""
+                INSERT OR IGNORE INTO regression_challenges (
+                    challenge_id, repository_url
+                )
+                VALUES (?, ?)
+            """, (
+                challenge.challenge_id,
+                challenge.repository_url
             ))
 
             if cursor.rowcount == 0:
@@ -306,7 +330,7 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO regression_challenge_assignments (
+                INSERT OR IGNORE INTO challenge_assignments (
                     challenge_id,
                     miner_hotkey,
                     node_id,
@@ -334,9 +358,10 @@ class DatabaseManager:
                         SELECT DISTINCT c.challenge_id, 
                                 COUNT(r.response_id) as pending_count,
                                 MIN(r.received_at) as earliest_received
-                        FROM regression_responses r
-                        JOIN regression_challenges c ON r.challenge_id = c.challenge_id
+                        FROM responses r
+                        JOIN challenges c ON r.challenge_id = c.challenge_id
                         WHERE r.evaluated = FALSE
+                            AND c.challenge_type = 'regression'
                             AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
                         GROUP BY c.challenge_id
                         LIMIT 1
@@ -355,7 +380,7 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                UPDATE regression_challenge_assignments
+                UPDATE challenge_assignments
                 SET status = 'sent', sent_at = CURRENT_TIMESTAMP
                 WHERE challenge_id = ? AND miner_hotkey = ?
             """, (challenge_id, miner_hotkey))
@@ -372,7 +397,7 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                UPDATE regression_challenge_assignments
+                UPDATE challenge_assignments
                 SET status = 'failed'
                 WHERE challenge_id = ? AND miner_hotkey = ?
             """, (challenge_id, miner_hotkey))
@@ -391,16 +416,16 @@ class DatabaseManager:
         received_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None
     ) -> int:
-        """Store a miner's response to a regression challenge"""
+        """Store a miner's response to a regression challenge - now uses unified responses table"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             now = datetime.utcnow()
 
-            # Store response
+            # Store response in the unified responses table
             cursor.execute("""
-                INSERT INTO regression_responses (
+                INSERT INTO responses (
                     challenge_id,
                     miner_hotkey,
                     node_id,
@@ -425,61 +450,71 @@ class DatabaseManager:
 
             response_id = cursor.lastrowid
 
-            # Mark challenge as completed in regression_challenge_assignments
+            # Mark challenge as completed in challenge_assignments
             cursor.execute("""
-                UPDATE regression_challenge_assignments
+                UPDATE challenge_assignments
                 SET status = 'completed',
                     completed_at = ?
                 WHERE challenge_id = ? AND miner_hotkey = ?
             """, (now, challenge_id, miner_hotkey))
 
             conn.commit()
+
             return response_id
 
+        except Exception as e:
+            logger.error(f"Error storing response for challenge {challenge_id}: {e}")
+            return None
         finally:
             conn.close()
 
     def get_regression_challenge(self, challenge_id: str) -> Optional[GeneratedRegressionProblem]:
-        """Get a regression challenge from the database by ID"""
+        """Get regression challenge details from the database"""
         conn = self.get_connection()
-        with conn:
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            logger.info(f"Regression Challenge ID: {challenge_id}")
-            logger.info(f"Type of challenge_id: {type(challenge_id)}")
-            cursor.execute("""
-                SELECT *
-                FROM regression_challenges 
-                WHERE challenge_id = ?
-            """, (challenge_id,))
-            row = cursor.fetchone()
+        cursor = conn.cursor()
 
-            if row:
-                return GeneratedRegressionProblem(
-                    challenge_id=row["challenge_id"],
-                    problem_statement=row["problem_statement"],
-                    repository_url=row["repository_url"],
-                    commit_hash=row["commit_hash"],
-                    context_file_paths=json.loads(row["context_file_paths"]),
-                )
-            return None
+        try:
+            cursor.execute("""
+                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash, c.context_file_paths,
+                       rc.repository_url
+                FROM challenges c
+                JOIN regression_challenges rc ON c.challenge_id = rc.challenge_id
+                WHERE c.challenge_id = ? AND c.challenge_type = 'regression'
+            """, (challenge_id,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return GeneratedRegressionProblem(
+                challenge_id=row[0],
+                problem_statement=row[2],
+                repository_url=row[5],
+                commit_hash=row[3],
+                context_file_paths=json.loads(row[4])
+            )
+
+        finally:
+            conn.close()
 
     def get_regression_challenge_assignment_sent_at(self, challenge_id: str, miner_hotkey: str) -> Optional[datetime]:
-        """Get the sent_at timestamp for a regression challenge assignment"""
+        """Get when a regression challenge was sent to a miner"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
                 SELECT sent_at
-                FROM regression_challenge_assignments
+                FROM challenge_assignments
                 WHERE challenge_id = ? AND miner_hotkey = ?
-                AND status IN ('sent', 'completed')
-            """, (str(challenge_id), miner_hotkey))
+            """, (challenge_id, miner_hotkey))
+
             row = cursor.fetchone()
-            return datetime.fromisoformat(row[0]) if row and row[0] else None
+            if row and row[0]:
+                return datetime.fromisoformat(row[0])
+            return None
+
         finally:
-            cursor.close()
             conn.close()
 
     def update_regression_response(
@@ -489,13 +524,13 @@ class DatabaseManager:
         evaluated: bool,
         evaluated_at: datetime
     ) -> None:
-        """Update a regression response with evaluation results"""
+        """Update a regression response with evaluation results - now uses unified responses table"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                UPDATE regression_responses
+                UPDATE responses
                 SET score = ?, evaluated = ?, evaluated_at = ?
                 WHERE response_id = ?
             """, (score, evaluated, evaluated_at, response_id))
@@ -512,7 +547,7 @@ class DatabaseManager:
 
     async def get_pending_regression_responses(self, challenge_id: str) -> List[RegressionResponse]:
         """
-        Get all unevaluated responses for a regression challenge.
+        Get all unevaluated responses for a regression challenge - now uses unified responses table.
 
         Args:
             challenge_id: The challenge ID to get responses for
@@ -527,17 +562,19 @@ class DatabaseManager:
         try:
             cursor.execute("""
                 SELECT
-                    response_id,
-                    challenge_id,
-                    miner_hotkey,
-                    node_id,
-                    response_patch,
-                    received_at,
-                    completed_at
-                FROM regression_responses
-                WHERE challenge_id = ?
-                  AND evaluated = FALSE
-                  AND response_patch IS NOT NULL
+                    r.response_id,
+                    r.challenge_id,
+                    r.miner_hotkey,
+                    r.node_id,
+                    r.response_patch,
+                    r.received_at,
+                    r.completed_at
+                FROM responses r
+                JOIN challenges c ON r.challenge_id = c.challenge_id
+                WHERE r.challenge_id = ?
+                  AND c.challenge_type = 'regression'
+                  AND r.evaluated = FALSE
+                  AND r.response_patch IS NOT NULL
             """, (str(challenge_id),))
 
             rows = cursor.fetchall()
@@ -565,15 +602,18 @@ class DatabaseManager:
             conn.close()
 
     def mark_regression_responses_failed(self, challenge_id):
-        """Mark all responses for a regression challenge as evaluated if the response patch is missing."""
+        """Mark all responses for a regression challenge as evaluated if the response patch is missing - now uses unified responses table."""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                UPDATE regression_responses
+                UPDATE responses
                 SET evaluated = TRUE, evaluated_at = ?
                 WHERE challenge_id = ?
+                  AND challenge_id IN (
+                      SELECT challenge_id FROM challenges WHERE challenge_type = 'regression'
+                  )
             """, (datetime.utcnow(), challenge_id))
 
             conn.commit()
@@ -588,13 +628,13 @@ class DatabaseManager:
             conn.close()
 
     def mark_regression_response_failed(self, response_id: str) -> None:
-        """Mark a single regression response as evaluated (used when evaluation failed)."""
+        """Mark a single regression response as evaluated (used when evaluation failed) - now uses unified responses table."""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                UPDATE regression_responses
+                UPDATE responses
                 SET evaluated = TRUE, evaluated_at = ?
                 WHERE response_id = ?
             """, (datetime.utcnow(), response_id))
@@ -617,6 +657,7 @@ class DatabaseManager:
     def cleanup_old_data(self, days: int = 7) -> None:
         """
         Remove data older than the specified number of days from various tables.
+        Updated to work with unified schema.
 
         Args:
             days: Number of days to keep data for. Default is 7.
@@ -625,13 +666,11 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
-            # Define tables and their timestamp columns
+            # Define tables and their timestamp columns for unified schema
             tables_to_clean = [
                 ("responses", "received_at"),
                 ("challenge_assignments", "completed_at"),
                 ("availability_checks", "checked_at"),
-                ("regression_responses", "received_at"),
-                ("regression_challenge_assignments", "completed_at"),
             ]
 
             for table, timestamp_column in tables_to_clean:
@@ -643,9 +682,41 @@ class DatabaseManager:
                 deleted_rows = cursor.rowcount
                 logger.info(f"Deleted {deleted_rows} rows from {table} older than {days} days")
 
-            # Clean up challenges that are no longer referenced
-            cursor.execute("""
+            # Clean up codegen challenges that are no longer referenced
+            cursor.execute(f"""
                 DELETE FROM codegen_challenges
+                WHERE challenge_id NOT IN (
+                    SELECT DISTINCT challenge_id FROM responses
+                    UNION
+                    SELECT DISTINCT challenge_id FROM challenge_assignments
+                )
+                AND challenge_id IN (
+                    SELECT challenge_id FROM challenges 
+                    WHERE created_at < datetime('now', '-{days} days')
+                )
+            """)
+            deleted_codegen_challenges = cursor.rowcount
+            logger.info(f"Deleted {deleted_codegen_challenges} orphaned codegen challenges older than {days} days")
+
+            # Clean up regression challenges that are no longer referenced
+            cursor.execute(f"""
+                DELETE FROM regression_challenges
+                WHERE challenge_id NOT IN (
+                    SELECT DISTINCT challenge_id FROM responses
+                    UNION
+                    SELECT DISTINCT challenge_id FROM challenge_assignments
+                )
+                AND challenge_id IN (
+                    SELECT challenge_id FROM challenges 
+                    WHERE created_at < datetime('now', '-{days} days')
+                )
+            """)
+            deleted_regression_challenges = cursor.rowcount
+            logger.info(f"Deleted {deleted_regression_challenges} orphaned regression challenges older than {days} days")
+
+            # Clean up parent challenges that are no longer referenced
+            cursor.execute(f"""
+                DELETE FROM challenges
                 WHERE challenge_id NOT IN (
                     SELECT DISTINCT challenge_id FROM responses
                     UNION
@@ -653,21 +724,8 @@ class DatabaseManager:
                 )
                 AND created_at < datetime('now', '-{days} days')
             """)
-            deleted_challenges = cursor.rowcount
-            logger.info(f"Deleted {deleted_challenges} orphaned codegen challenges older than {days} days")
-
-            # Clean up regression challenges that are no longer referenced
-            cursor.execute(f"""
-                DELETE FROM regression_challenges
-                WHERE challenge_id NOT IN (
-                    SELECT DISTINCT challenge_id FROM regression_responses
-                    UNION
-                    SELECT DISTINCT challenge_id FROM regression_challenge_assignments
-                )
-                AND created_at < datetime('now', '-{days} days')
-            """)
-            deleted_regression_challenges = cursor.rowcount
-            logger.info(f"Deleted {deleted_regression_challenges} orphaned regression challenges older than {days} days")
+            deleted_parent_challenges = cursor.rowcount
+            logger.info(f"Deleted {deleted_parent_challenges} orphaned parent challenges older than {days} days")
 
             conn.commit()
             logger.info(f"Database cleanup completed for data older than {days} days")
@@ -881,18 +939,20 @@ class DatabaseManager:
             conn.close()
 
     def get_global_regression_miner_scores(self, hours: int = 24) -> Tuple[float, int]:
-        """Gets the average score for all miners and average number of regression responses for each miner over the last n hours"""
+        """Gets the average score for all miners and average number of regression responses for each miner over the last n hours - now uses unified responses table"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
                 SELECT 
-                    AVG(score) as global_avg_score,
-                    COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
-                FROM regression_responses 
-                WHERE evaluated = TRUE 
-                AND evaluated_at > datetime('now',  '-' || ? || ' hours')
+                    AVG(r.score) as global_avg_score,
+                    COUNT(*) / COUNT(DISTINCT r.miner_hotkey) as avg_responses_per_miner
+                FROM responses r
+                JOIN challenges c ON r.challenge_id = c.challenge_id
+                WHERE r.evaluated = TRUE 
+                AND c.challenge_type = 'regression'
+                AND r.evaluated_at > datetime('now',  '-' || ? || ' hours')
             """, (hours,))
 
             global_average, average_count = cursor.fetchone()
@@ -909,20 +969,23 @@ class DatabaseManager:
         average_count: int,
         hours: int = 24
     ): 
+        """Get bayesian regression miner scores - now uses unified responses table"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
                 SELECT 
-                    miner_hotkey,
+                    r.miner_hotkey,
                     COUNT(*) as response_count,
-                    AVG(score) as avg_score,
-                    (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
-                FROM regression_responses
-                WHERE evaluated = TRUE 
-                AND evaluated_at > datetime('now', '-' || ? || ' hours')
-                GROUP BY miner_hotkey       
+                    AVG(r.score) as avg_score,
+                    (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
+                FROM responses r
+                JOIN challenges c ON r.challenge_id = c.challenge_id
+                WHERE r.evaluated = TRUE 
+                AND c.challenge_type = 'regression'
+                AND r.evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY r.miner_hotkey       
             """, (average_count, global_average, average_count, hours,))
 
             results = cursor.fetchall()
