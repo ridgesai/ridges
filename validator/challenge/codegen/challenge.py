@@ -214,10 +214,7 @@ class CodegenChallenge(BaseChallenge):
         Returns:
             List of ValidationResult objects with scores
         """
-        if MOCK_RESPONSES:
-            return [ValidationResult(is_valid=True, score=5.0) for _ in responses]
-
-        grader = EloGrader(self.to_detailed_format())
+        grader = EloGrader(self)
         responses_to_test = []
 
         for response in responses:
