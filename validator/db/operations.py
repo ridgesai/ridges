@@ -41,26 +41,26 @@ class DatabaseManager:
             # First insert into the parent challenges table
             cursor.execute("""
                 INSERT OR IGNORE INTO challenges (
-                    challenge_id, challenge_type, created_at, problem_statement,
-                    commit_hash
+                    challenge_id, challenge_type, created_at
                 )
-                VALUES (?, 'codegen', CURRENT_TIMESTAMP, ?, ?)
+                VALUES (?, 'codegen', CURRENT_TIMESTAMP)
+            """, (
+                challenge.challenge_id,
+            ))
+
+            # Then insert codegen-specific data including problem_statement, repository_url, commit_hash, and context_file_paths
+            cursor.execute("""
+                INSERT OR IGNORE INTO codegen_challenges (
+                    challenge_id, problem_statement, dynamic_checklist, repository_name, repository_url, commit_hash, context_file_paths
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.commit_hash
-            ))
-
-            # Then insert codegen-specific data including context_file_paths
-            cursor.execute("""
-                INSERT OR IGNORE INTO codegen_challenges (
-                    challenge_id, dynamic_checklist, repository_name, context_file_paths
-                )
-                VALUES (?, ?, ?, ?)
-            """, (
-                challenge.challenge_id,
                 json.dumps(challenge.dynamic_checklist),
                 challenge.repository_name,
+                challenge.repository_url,
+                challenge.commit_hash,
                 json.dumps(challenge.context_file_paths)
             ))
 
@@ -223,8 +223,8 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash,
-                       cc.dynamic_checklist, cc.repository_name, cc.context_file_paths
+                SELECT c.challenge_id, c.created_at,
+                       cc.problem_statement, cc.dynamic_checklist, cc.repository_name, cc.repository_url, cc.commit_hash, cc.context_file_paths
                 FROM challenges c
                 JOIN codegen_challenges cc ON c.challenge_id = cc.challenge_id
                 WHERE c.challenge_id = ? AND c.challenge_type = 'codegen'
@@ -237,10 +237,11 @@ class DatabaseManager:
             return CodegenChallenge(
                 challenge_id=row[0],
                 problem_statement=row[2],
-                dynamic_checklist=json.loads(row[4]),
-                repository_name=row[5],
-                commit_hash=row[3],
-                context_file_paths=json.loads(row[6])
+                dynamic_checklist=json.loads(row[3]),
+                repository_name=row[4],
+                repository_url=row[5],
+                commit_hash=row[6],
+                context_file_paths=json.loads(row[7])
             )
 
         finally:
@@ -289,25 +290,24 @@ class DatabaseManager:
             # First insert into the parent challenges table
             cursor.execute("""
                 INSERT OR IGNORE INTO challenges (
-                    challenge_id, challenge_type, created_at, problem_statement,
-                    commit_hash
+                    challenge_id, challenge_type, created_at
                 )
-                VALUES (?, 'regression', CURRENT_TIMESTAMP, ?, ?)
+                VALUES (?, 'regression', CURRENT_TIMESTAMP)
+            """, (
+                challenge.challenge_id,
+            ))
+
+            # Then insert regression-specific data including problem_statement, repository_url, commit_hash, and context_file_paths
+            cursor.execute("""
+                INSERT OR IGNORE INTO regression_challenges (
+                    challenge_id, problem_statement, repository_url, commit_hash, context_file_paths
+                )
+                VALUES (?, ?, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.commit_hash
-            ))
-
-            # Then insert regression-specific data including context_file_paths
-            cursor.execute("""
-                INSERT OR IGNORE INTO regression_challenges (
-                    challenge_id, repository_url, context_file_paths
-                )
-                VALUES (?, ?, ?)
-            """, (
-                challenge.challenge_id,
                 challenge.repository_url,
+                challenge.commit_hash,
                 json.dumps(challenge.context_file_paths)
             ))
 
@@ -474,8 +474,8 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash,
-                       rc.repository_url, rc.context_file_paths
+                SELECT c.challenge_id, c.created_at,
+                       rc.problem_statement, rc.repository_url, rc.commit_hash, rc.context_file_paths
                 FROM challenges c
                 JOIN regression_challenges rc ON c.challenge_id = rc.challenge_id
                 WHERE c.challenge_id = ? AND c.challenge_type = 'regression'
@@ -488,8 +488,8 @@ class DatabaseManager:
             return RegressionChallenge(
                 challenge_id=row[0],
                 problem_statement=row[2],
-                repository_url=row[4],
-                commit_hash=row[3],
+                repository_url=row[3],
+                commit_hash=row[4],
                 context_file_paths=json.loads(row[5])
             )
 

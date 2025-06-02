@@ -313,11 +313,15 @@ async def create_next_codegen_challenge(
 
     problem_id = str(uuid.uuid4())
 
+    # Generate repository URL from repository name
+    repository_url = f"https://github.com/{repo_name}.git"
+
     return CodegenChallenge(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
         repository_name=repo_name,
+        repository_url=repository_url,
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,

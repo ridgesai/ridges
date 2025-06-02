@@ -21,6 +21,7 @@ class CodegenChallenge(BaseChallenge):
     """
     dynamic_checklist: List[str]
     repository_name: str
+    repository_url: str
     context_file_paths: List[str]  # Relative to repository_name as the repo root
     
     # Legacy fields for backward compatibility (should be removed eventually)
@@ -39,6 +40,7 @@ class CodegenChallenge(BaseChallenge):
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist,
             "repository_name": self.repository_name,
+            "repository_url": self.repository_url,
             "commit_hash": self.commit_hash,
             "context_file_paths": self.context_file_paths
         }
@@ -48,6 +50,7 @@ class CodegenChallenge(BaseChallenge):
         return {
             "dynamic_checklist": self.dynamic_checklist,
             "repository_name": self.repository_name,
+            "repository_url": self.repository_url,
             "context_file_paths": self.context_file_paths
         }
     
@@ -72,6 +75,7 @@ class CodegenChallenge(BaseChallenge):
         """Get repository-related information."""
         return {
             "repository_name": self.repository_name,
+            "repository_url": self.repository_url,
             "commit_hash": self.commit_hash or "latest"
         }
     
