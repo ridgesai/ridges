@@ -6,34 +6,30 @@ from logging.logging_utils import get_logger, logging_update_active_coroutines, 
 from openai import OpenAI
 import asyncio
 
-from validator.challenge.codegen.challenge import CodegenChallenge
-from validator.challenge.codegen.response import CodegenResponse
 from validator.db.operations import DatabaseManager
-from validator.evaluation.evaluation import CodeGenValidator
 
 logger = get_logger(__name__)
 
 async def evaluate_pending_responses(
-    validator: CodeGenValidator,
     db_manager: DatabaseManager,
     challenge_id: str
 ):
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
         # Fetch the challenge from the DB
-        problem = CodegenChallenge.get_from_database(db_manager, challenge_id)
+        challenge = db_manager.get_challenge(challenge_id)
 
-        if not problem:
+        if not challenge:
             logger.error(f"Challenge {challenge_id} not found")
             return
 
         # Fetch pending responses from the DB for a given challenge
-        responses = CodegenResponse.get_pending_responses(db_manager, challenge_id)
+        responses = db_manager.get_pending_responses(challenge_id)
 
         logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
 
         try:
-            evaluation_results = await validator.evaluate_responses(problem, responses)
+            evaluation_results = await challenge.evaluate_responses(responses, db_manager)
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
@@ -68,11 +64,10 @@ async def run_evaluation_loop(
     validator_hotkey: str,
     sleep_interval: int = 60
 ) -> None:
-    """Entrypoint that sets up the DB, validator, and runs the loop."""
+    """Entrypoint that sets up the DB and runs the loop."""
     try: 
         logger.info("Initializing evaluation loop...")
         db_manager = DatabaseManager(db_path)
-        validator = CodeGenValidator(db_manager, openai_client, validator_hotkey)
         iteration = 0 
 
         while True:
@@ -84,7 +79,7 @@ async def run_evaluation_loop(
                 logger.info("Getting database connection...")
                 
                 # Get pending challenges
-                challenge = db_manager.find_challenge_ready_for_evaluation("codegen")
+                challenge = db_manager.find_challenge_ready_for_evaluation()
 
                 # If no challenges pending eval, sleep for a bit before checking again
                 if not challenge:
@@ -104,7 +99,6 @@ async def run_evaluation_loop(
                     # Process the challenge
                     logger.info("Starting evaluate_pending_responses...")
                     await evaluate_pending_responses(
-                        validator=validator,
                         db_manager=db_manager,
                         challenge_id=challenge[0]
                     )

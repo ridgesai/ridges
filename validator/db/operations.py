@@ -1,6 +1,6 @@
 import json
 import sqlite3
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
@@ -8,6 +8,9 @@ from logging.logging_utils import get_logger
 
 from validator.config import VALIDATION_DELAY
 from .schema import check_db_initialized, init_db
+
+if TYPE_CHECKING:
+    from validator.challenge.base import BaseChallenge
 
 logger = get_logger(__name__)
 
@@ -171,24 +174,23 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def find_challenge_ready_for_evaluation(self, challenge_type: str):
+    def find_challenge_ready_for_evaluation(self):
         """Finds a challenge where all responses are pending, and ready to be evaluated"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                        SELECT DISTINCT c.challenge_id, 
+                        SELECT DISTINCT c.challenge_id, c.challenge_type,
                                 COUNT(r.response_id) as pending_count,
                                 MIN(r.received_at) as earliest_received
                         FROM responses r
                         JOIN challenges c ON r.challenge_id = c.challenge_id
                         WHERE r.evaluated = FALSE
-                            AND c.challenge_type = ?
                             AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
                         GROUP BY c.challenge_id
                         LIMIT 1
-                    """, (challenge_type, VALIDATION_DELAY.total_seconds() / 60))
+                    """, (VALIDATION_DELAY.total_seconds() / 60))
                     
             row = cursor.fetchone()
 
@@ -337,6 +339,60 @@ class DatabaseManager:
         finally:
             cursor.close()
             conn.close()
+
+    def get_pending_responses(self, challenge_id: str):
+        """Get all pending responses for a challenge, returning appropriate response objects."""
+        # First determine the challenge type
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT challenge_type 
+                FROM challenges 
+                WHERE challenge_id = ?
+            """, (challenge_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                logger.error(f"Challenge {challenge_id} not found")
+                return []
+            
+            challenge_type = row[0]
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+        # Get the raw response data
+        response_data = self.get_response_data(challenge_id, challenge_type)
+        responses = []
+        
+        # Create appropriate response objects based on challenge type
+        if challenge_type == "codegen":
+            from validator.challenge.codegen.response import CodegenResponse
+            for data in response_data:
+                try:
+                    response = CodegenResponse.from_dict(data)
+                    responses.append(response)
+                except Exception as e:
+                    logger.error(f"Error processing codegen response {data.get('response_id')}: {str(e)}")
+                    continue
+                    
+        elif challenge_type == "regression":
+            from validator.challenge.regression.response import RegressionResponse
+            for data in response_data:
+                try:
+                    response = RegressionResponse.from_dict(data)
+                    responses.append(response)
+                except Exception as e:
+                    logger.error(f"Error processing regression response {data.get('response_id')}: {str(e)}")
+                    continue
+        else:
+            logger.error(f"Unknown challenge type: {challenge_type}")
+            return []
+        
+        return responses
 
     def update_response(
         self,
@@ -624,3 +680,38 @@ class DatabaseManager:
         finally:
             cursor.close()
             conn.close()
+
+    def get_challenge(self, challenge_id: str) -> Optional['BaseChallenge']:
+        """Get a challenge object by ID, determining the appropriate type."""
+        # First determine the challenge type
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT challenge_type 
+                FROM challenges 
+                WHERE challenge_id = ?
+            """, (challenge_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                logger.error(f"Challenge {challenge_id} not found")
+                return None
+            
+            challenge_type = row[0]
+            
+        finally:
+            cursor.close()
+            conn.close()
+        
+        # Get the appropriate challenge object using lazy imports
+        if challenge_type == "codegen":
+            from validator.challenge.codegen.challenge import CodegenChallenge
+            return CodegenChallenge.get_from_database(self, challenge_id)
+        elif challenge_type == "regression":
+            from validator.challenge.regression.challenge import RegressionChallenge
+            return RegressionChallenge.get_from_database(self, challenge_id)
+        else:
+            logger.error(f"Unknown challenge type: {challenge_type}")
+            return None

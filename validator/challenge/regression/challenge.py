@@ -6,10 +6,13 @@ This module defines the RegressionChallenge class for regression testing challen
 
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
+from datetime import datetime
 
 from validator.db.operations import DatabaseManager
+from validator.challenge.base import ValidationResult
 
-from ..base import BaseChallenge, ChallengeType
+from ..base import BaseChallenge, BaseResponse
+from .response import RegressionResponse
 
 
 @dataclass
@@ -22,11 +25,6 @@ class RegressionChallenge(BaseChallenge):
     """
     repository_url: str
     context_file_paths: List[str]
-    
-    @property
-    def challenge_type(self) -> ChallengeType:
-        """Return the regression challenge type."""
-        return ChallengeType.REGRESSION
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -104,4 +102,42 @@ class RegressionChallenge(BaseChallenge):
             "gitlab.com", 
             "bitbucket.org"
         ]
-        return any(pattern in self.repository_url.lower() for pattern in public_patterns) 
+        return any(pattern in self.repository_url.lower() for pattern in public_patterns)
+    
+    def create_response_object(self, challenge_id: str, hotkey: str, node_id: int, 
+                             received_at: datetime, response_patch: Optional[str]):
+        """
+        Create a RegressionResponse object for this challenge type.
+        
+        Args:
+            challenge_id: The challenge ID
+            hotkey: Miner's hotkey
+            node_id: Miner's node ID
+            received_at: When the response was received
+            response_patch: The response patch content
+            
+        Returns:
+            RegressionResponse object
+        """
+        return RegressionResponse(
+            challenge_id=challenge_id,
+            node_id=node_id,
+            miner_hotkey=hotkey,
+            received_at=received_at,
+            response_patch=response_patch
+        )
+    
+    async def evaluate_responses(self, responses: List['BaseResponse'], db_manager: 'DatabaseManager') -> List[ValidationResult]:
+        """
+        Evaluate responses for this regression challenge.
+        
+        Args:
+            responses: List of BaseResponse objects (should be RegressionResponse instances)
+            db_manager: Database manager for marking failed responses
+            
+        Returns:
+            List of ValidationResult objects with scores
+        """
+        # TODO: Implement regression evaluation logic
+        # For now, return default scores
+        return [ValidationResult(is_valid=True, score=0.0) for _ in responses] 

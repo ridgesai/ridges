@@ -7,7 +7,7 @@ and responses should inherit from.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, TYPE_CHECKING
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -16,8 +16,10 @@ from fiber import Keypair
 from logging.logging_utils import get_logger
 from fiber.validator import client as validator
 
-from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
+
+if TYPE_CHECKING:
+    from validator.db.operations import DatabaseManager
 
 logger = get_logger(__name__)
 
@@ -78,18 +80,15 @@ class BaseChallenge(ABC):
             Tuple of (response_type, response_patch) where response_type 
             indicates the format and response_patch is the actual content
         """
+        
         # Default implementation - subclasses can override
         try:
-            if self.challenge_type == ChallengeType.CODEGEN:
-                response_data = response.json()
-                return "json", response_data.get("patch")
-            elif self.challenge_type == ChallengeType.REGRESSION:
-                return "text", response.text if response else None
+            response_data = response.json()
+            return "json", response_data.get("patch")
         except Exception:
             return "text", response.text if response else None
-        
-        return "unknown", None
     
+    @abstractmethod
     def create_response_object(self, challenge_id: str, hotkey: str, node_id: int, 
                              received_at: datetime, response_patch: Optional[str]):
         """
@@ -103,28 +102,9 @@ class BaseChallenge(ABC):
             response_patch: The response patch content
             
         Returns:
-            The response object (CodegenResponse or RegressionResponse)
+            The response object for this specific challenge type
         """
-        if self.challenge_type == ChallengeType.CODEGEN:
-            from validator.challenge.codegen.response import CodegenResponse
-            return CodegenResponse(
-                challenge_id=challenge_id,
-                miner_hotkey=hotkey,
-                node_id=node_id,
-                received_at=received_at,
-                response_patch=response_patch
-            )
-        elif self.challenge_type == ChallengeType.REGRESSION:
-            from validator.challenge.regression.response import RegressionResponse
-            return RegressionResponse(
-                challenge_id=challenge_id,
-                node_id=node_id,
-                miner_hotkey=hotkey,
-                received_at=received_at,
-                response_patch=response_patch
-            )
-        else:
-            raise ValueError(f"Unknown challenge type: {self.challenge_type}")
+        pass
     
     async def send(
         self,
@@ -300,8 +280,19 @@ class BaseChallenge(ABC):
     
     # Abstract methods that subclasses must implement for database integration
     @abstractmethod
-    def store_in_database(self, db_manager) -> None:
+    def store_in_database(self, db_manager: 'DatabaseManager') -> None:
         """Store this challenge in the database."""
+        pass
+
+    @abstractmethod
+    def evaluate_responses(self, responses: List['BaseResponse'], db_manager: 'DatabaseManager') -> List['ValidationResult']:
+        """Evaluate a list of responses for this challenge."""
+        pass
+
+    @classmethod
+    @abstractmethod
+    def get_from_database(cls, db_manager: 'DatabaseManager', challenge_id: str) -> Optional['BaseChallenge']:
+        """Retrieve a challenge from the database by ID."""
         pass
 
 

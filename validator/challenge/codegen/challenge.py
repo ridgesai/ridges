@@ -7,17 +7,18 @@ This module defines the CodegenChallenge class for code generation challenges.
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional
 from textwrap import dedent
-from datetime import datetime, timezone
+from datetime import datetime
 
-import httpx
-from fiber import Keypair
 from logging.logging_utils import get_logger
-from fiber.validator import client as validator
 
 from validator.db.operations import DatabaseManager
-from validator.utils.async_utils import AsyncBarrier
+from validator.challenge.base import ValidationResult
+from validator.evaluation.graders.elo_grader import EloGrader
+from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
+from validator.config import MOCK_RESPONSES
 
-from ..base import BaseChallenge, ChallengeType
+from ..base import BaseChallenge
+from .response import CodegenResponse
 
 logger = get_logger(__name__)
 
@@ -36,11 +37,6 @@ class CodegenChallenge(BaseChallenge):
     
     prompt: str = ""
     model: str = ""
-    
-    @property
-    def challenge_type(self) -> ChallengeType:
-        """Return the codegen challenge type."""
-        return ChallengeType.CODEGEN
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -129,4 +125,115 @@ class CodegenChallenge(BaseChallenge):
     
     def context_file_count(self) -> int:
         """Get the number of context files."""
-        return len(self.context_file_paths) 
+        return len(self.context_file_paths)
+    
+    def create_response_object(self, challenge_id: str, hotkey: str, node_id: int, 
+                             received_at: datetime, response_patch: Optional[str]):
+        """
+        Create a CodegenResponse object for this challenge type.
+        
+        Args:
+            challenge_id: The challenge ID
+            hotkey: Miner's hotkey
+            node_id: Miner's node ID
+            received_at: When the response was received
+            response_patch: The response patch content
+            
+        Returns:
+            CodegenResponse object
+        """
+        return CodegenResponse(
+            challenge_id=challenge_id,
+            miner_hotkey=hotkey,
+            node_id=node_id,
+            received_at=received_at,
+            response_patch=response_patch
+        )
+    
+    def preprocess_patch(self, patch: str) -> str:
+        """
+        Preprocesses a patch by removing comments, docstrings, etc.
+        
+        Args:
+            patch: The patch content to preprocess
+            
+        Returns:
+            The preprocessed patch content
+        """
+        if not patch:
+            return ""
+        
+        without_comments = remove_comments(patch)
+        without_docstrings = remove_docstrings(without_comments)
+        without_unused = remove_unused(without_docstrings)
+
+        return without_unused.strip()
+    
+    def apply_and_run_tests(self, patch: str) -> Optional[str]:
+        """
+        Clones the relevant repo, applies the patch, and runs the tests.
+        Also runs pylint and makes sure no new errors have appeared.
+        
+        Args:
+            patch: The patch content to apply and test
+            
+        Returns:
+            An error message if anything fails, otherwise None
+        """
+        # try:
+        #     repo_path = clone_repo(Path.cwd() / "repos", self.repository_url, self.commit_hash)
+        #     repo = Repo(repo_path)
+        # except Exception as e:
+        #     logger.error(f"Failed to clone repo {self.repository_url}: {e}")
+        #     return f"Failed to clone repo {self.repository_url}: {e}"
+        
+        # try:
+        #     repo.git.apply(patch)
+        # except Exception as e:
+        #     logger.error(f"Failed to apply patch {patch}: {e}")
+
+        # TODO: Figure out a way to run an arbitrary repo's test suite
+        # Run tests
+        
+        # Run pylint
+        return None
+    
+    async def evaluate_responses(self, responses: List['CodegenResponse'], db_manager: 'DatabaseManager') -> List[ValidationResult]:
+        """
+        Evaluate responses for this codegen challenge.
+        
+        Args:
+            responses: List of CodegenResponse objects
+            db_manager: Database manager for marking failed responses
+            
+        Returns:
+            List of ValidationResult objects with scores
+        """
+        if MOCK_RESPONSES:
+            return [ValidationResult(is_valid=True, score=5.0) for _ in responses]
+
+        grader = EloGrader(self.to_detailed_format())
+        responses_to_test = []
+
+        for response in responses:
+            # Preprocess the patch
+            response.response_patch = self.preprocess_patch(response.response_patch)
+            
+            # Apply and run tests
+            error = self.apply_and_run_tests(response.response_patch)
+            
+            if error is None:
+                responses_to_test.append(response)
+            else:
+                logger.info(f"Response {response.response_id} failed because of: {error}")
+                if db_manager:
+                    db_manager.mark_response_failed(response.response_id)
+        
+        # Grade the valid responses
+        scores = grader.grade(responses_to_test)
+
+        # Return validation results for all responses that passed testing
+        return [
+            ValidationResult(is_valid=True, score=scores.get(response.miner_hotkey, 0.0)) 
+            for response in responses_to_test
+        ] 

@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List
-from validator.challenge.codegen.challenge import CodegenChallenge
-from validator.challenge.codegen.response import CodegenResponse
-from validator.challenge.base import ValidationResult
+from typing import Dict, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from validator.challenge.codegen.response import CodegenResponse
 
 class GraderInterface(ABC):
-    def grade(self, problem: CodegenChallenge, responses: List[CodegenResponse]) -> List[ValidationResult]:
+    @abstractmethod
+    def grade(self, responses: List['CodegenResponse']) -> Dict[str, float]:
+        """Grade a list of responses and return scores by hotkey."""
         raise NotImplementedError("GraderInterface.grade() must be overridden")
