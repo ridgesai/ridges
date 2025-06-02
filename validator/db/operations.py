@@ -6,8 +6,7 @@ from pathlib import Path
 
 from logging.logging_utils import get_logger
 
-from validator.challenge.challenge_types import GeneratedCodegenProblem, CodegenResponse, RegressionResponse
-from validator.challenge.create_regression_challenge import GeneratedRegressionProblem
+from validator.challenge import CodegenChallenge, CodegenResponse, RegressionChallenge, RegressionResponse
 from validator.config import VALIDATION_DELAY
 from .schema import check_db_initialized, init_db
 
@@ -33,7 +32,7 @@ class DatabaseManager:
     def get_connection(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
-    def store_codegen_challenge(self, challenge: GeneratedCodegenProblem) -> None:
+    def store_codegen_challenge(self, challenge: CodegenChallenge) -> None:
         """Store a new challenge in the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -217,7 +216,7 @@ class DatabaseManager:
         finally:
             conn.close()
     
-    def get_challenge(self, challenge_id: str) -> Optional[GeneratedCodegenProblem]:
+    def get_challenge(self, challenge_id: str) -> Optional[CodegenChallenge]:
         """Get challenge details from the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -235,7 +234,7 @@ class DatabaseManager:
             if not row:
                 return None
 
-            return GeneratedCodegenProblem(
+            return CodegenChallenge(
                 challenge_id=row[0],
                 problem_statement=row[2],
                 dynamic_checklist=json.loads(row[4]),
@@ -281,7 +280,7 @@ class DatabaseManager:
     # REGRESSION CHALLENGE OPERATIONS
     # =============================================================================
 
-    def store_regression_challenge(self, challenge: GeneratedRegressionProblem) -> None:
+    def store_regression_challenge(self, challenge: RegressionChallenge) -> None:
         """Store a new regression challenge in the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -468,7 +467,7 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def get_regression_challenge(self, challenge_id: str) -> Optional[GeneratedRegressionProblem]:
+    def get_regression_challenge(self, challenge_id: str) -> Optional[RegressionChallenge]:
         """Get regression challenge details from the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -486,7 +485,7 @@ class DatabaseManager:
             if not row:
                 return None
 
-            return GeneratedRegressionProblem(
+            return RegressionChallenge(
                 challenge_id=row[0],
                 problem_statement=row[2],
                 repository_url=row[4],

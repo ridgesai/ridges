@@ -15,7 +15,7 @@ import requests
 from jinja2 import Template
 
 from validator.utils.clone_repo import clone_repo
-from validator.challenge.challenge_types import GeneratedRegressionProblem
+from validator.challenge import RegressionChallenge
 
 logger = get_logger(__name__)
 
@@ -106,7 +106,7 @@ def create_execution_environment(repo_name: str) -> Environment:
     return Environment(repo_name)
 
 
-async def create_regression_challenge() -> GeneratedRegressionProblem:
+async def create_next_regression_challenge() -> RegressionChallenge:
     """
     Creates a codegen challenge using swesmith's bug generation framework.
 
@@ -171,7 +171,7 @@ async def create_regression_challenge() -> GeneratedRegressionProblem:
         affected_files=affected_files, failing_tests=bug.FAIL_TO_PASS
     )
 
-    return GeneratedRegressionProblem(
+    return RegressionChallenge(
         challenge_id=problem_id,
         repository_url=repository_url,
         commit_hash=bug.base_commit,

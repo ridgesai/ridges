@@ -8,8 +8,7 @@ from git import Optional
 import httpx
 from logging.logging_utils import get_logger
 from fiber.validator import client as validator
-from validator.challenge.challenge_types import RegressionResponse
-from validator.challenge.create_regression_challenge import GeneratedRegressionProblem
+from validator.challenge import RegressionResponse, RegressionChallenge
 from validator.config import CHALLENGE_TIMEOUT
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
@@ -19,7 +18,7 @@ logger = get_logger(__name__)
 
 
 async def send_regression_challenge(
-    challenge: GeneratedRegressionProblem,
+    challenge: RegressionChallenge,
     server_address: str,
     hotkey: str,
     keypair: Keypair,

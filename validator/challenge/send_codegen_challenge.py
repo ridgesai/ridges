@@ -10,7 +10,7 @@ from fiber import Keypair
 from logging.logging_utils import get_logger
 from fiber.validator import client as validator
 
-from validator.challenge.challenge_types import CodegenResponse, GeneratedCodegenProblem
+from validator.challenge import CodegenResponse, CodegenChallenge
 from validator.utils.async_utils import AsyncBarrier
 from validator.db.operations import DatabaseManager
 from validator.config import CHALLENGE_TIMEOUT
@@ -18,7 +18,7 @@ from validator.config import CHALLENGE_TIMEOUT
 logger = get_logger(__name__)
 
 async def send_challenge(
-    challenge: GeneratedCodegenProblem,
+    challenge: CodegenChallenge,
     server_address: str,
     hotkey: str,
     keypair: Keypair,
