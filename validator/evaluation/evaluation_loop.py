@@ -6,7 +6,8 @@ from logging.logging_utils import get_logger, logging_update_active_coroutines, 
 from openai import OpenAI
 import asyncio
 
-from validator.challenge.challenge_types import GeneratedCodegenProblem
+from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.challenge.codegen.response import CodegenResponse
 from validator.db.operations import DatabaseManager
 from validator.evaluation.evaluation import CodeGenValidator
 
@@ -20,14 +21,14 @@ async def evaluate_pending_responses(
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
         # Fetch the challenge from the DB
-        problem = db_manager.get_challenge(challenge_id)
+        problem = CodegenChallenge.get_from_database(db_manager, challenge_id)
 
         if not problem:
             logger.error(f"Challenge {challenge_id} not found")
             return
 
         # Fetch pending responses from the DB for a given challenge
-        responses = await db_manager.get_pending_responses(challenge_id)
+        responses = CodegenResponse.get_pending_responses(db_manager, challenge_id)
 
         logger.info(f"Found {len(responses)} responses to challenge {challenge_id}")
 
@@ -83,7 +84,7 @@ async def run_evaluation_loop(
                 logger.info("Getting database connection...")
                 
                 # Get pending challenges
-                challenge = db_manager.find_challenge_ready_for_evaluation()
+                challenge = db_manager.find_challenge_ready_for_evaluation("codegen")
 
                 # If no challenges pending eval, sleep for a bit before checking again
                 if not challenge:

@@ -19,7 +19,7 @@ from openai import OpenAI
 # Internal package imports
 from validator.challenge.create_regression_challenge import create_next_regression_challenge
 from validator.db.operations import DatabaseManager
-from validator.challenge.challenge_types import ChallengeTask
+from validator.challenge.common import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
 from logging.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (

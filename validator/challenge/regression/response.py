@@ -5,7 +5,7 @@ This module defines the RegressionResponse class for responses to regression cha
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from ..base import BaseResponse
@@ -85,4 +85,23 @@ class RegressionResponse(BaseResponse):
             evaluated=data.get('evaluated', False),
             evaluated_at=evaluated_at,
             response_patch=data.get('response_patch')
-        ) 
+        )
+    
+    @classmethod
+    def get_pending_responses(cls, db_manager, challenge_id: str) -> List['RegressionResponse']:
+        """Get all pending responses for a regression challenge."""
+        response_data = db_manager.get_response_data(challenge_id, "regression")
+        responses = []
+        
+        for data in response_data:
+            try:
+                response = cls.from_dict(data)
+                responses.append(response)
+            except Exception as e:
+                # Log error but continue processing other responses
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error processing response {data.get('response_id')}: {str(e)}")
+                continue
+        
+        return responses 

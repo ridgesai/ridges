@@ -8,10 +8,8 @@ from typing import Dict, Final, List, Optional, Tuple, TypeVar
 import openai
 from pydantic import BaseModel
 
-from validator.challenge.challenge_types import (
-    CodegenResponse,
-    GeneratedCodegenProblem,
-)
+from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.challenge.codegen.response import CodegenResponse
 from .abstract_grader import GraderInterface
 
 
@@ -116,7 +114,7 @@ class EloArena:
 
 
 class EloGrader(GraderInterface):
-    def __init__(self, problem: GeneratedCodegenProblem):
+    def __init__(self, problem: CodegenChallenge):
         self.logger = get_logger(__name__)
         self.problem = problem
 
