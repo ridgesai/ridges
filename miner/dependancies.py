@@ -2,7 +2,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from fiber import constants as cst
 from fiber import utils
 from fiber.chain.signatures import get_hash, verify_signature
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 
 from miner.core.config import Config, factory_config
 

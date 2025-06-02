@@ -2,7 +2,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import time
 
-from logging.logging_utils import get_logger, logging_update_active_coroutines, logging_update_eval_loop_num
+from ridges_logging.logging_utils import get_logger, logging_update_active_coroutines, logging_update_eval_loop_num
 from openai import OpenAI
 import asyncio
 
