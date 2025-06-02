@@ -7,8 +7,6 @@ from datetime import datetime
 import asyncio
 from pydantic import BaseModel
 
-from validator.challenge.create_regression_challenge import GeneratedRegressionProblem
-
 '''
 Helper that lets the validator set the scope of files they want to select for a challenge
 '''
@@ -87,6 +85,24 @@ class GeneratedCodegenProblem:
             "context_file_paths": self.context_file_paths
         }
 
+
+@dataclass
+class GeneratedRegressionProblem:
+    challenge_id: str
+    repository_url: str
+    commit_hash: Optional[str]
+    problem_statement: str
+    context_file_paths: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "challenge_id": self.challenge_id,
+            "repository_url": self.repository_url,
+            "commit_hash": self.commit_hash,
+            "problem_statement": self.problem_statement,
+            "context_file_paths": self.context_file_paths,
+        }
+
 class ValidationResult:
     def __init__(self, 
         score: float,
@@ -154,23 +170,6 @@ class CodegenResponse:
             response_patch=data.get('response_patch')
         )
 
-
-@dataclass
-class GeneratedRegressionProblem:
-    challenge_id: str
-    repository_url: str
-    commit_hash: Optional[str]
-    problem_statement: str
-    context_file_paths: List[str]
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "challenge_id": self.challenge_id,
-            "repository_url": self.repository_url,
-            "commit_hash": self.commit_hash,
-            "problem_statement": self.problem_statement,
-            "context_file_paths": self.context_file_paths,
-        }
 
 @dataclass
 class RegressionResponse:
