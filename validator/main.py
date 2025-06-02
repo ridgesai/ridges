@@ -2,7 +2,6 @@
 from pathlib import Path
 import sys 
 import time
-from typing import Optional
 import random
 import os
 import asyncio
@@ -19,11 +18,9 @@ from openai import OpenAI
 
 # Internal package imports
 from validator.challenge.create_regression_challenge import create_next_regression_challenge
-from validator.challenge.send_regression_challenge import send_regression_challenge
 from validator.db.operations import DatabaseManager
 from validator.challenge.challenge_types import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
-from validator.challenge.send_codegen_challenge import send_challenge
 from logging.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
@@ -334,8 +331,7 @@ async def main():
                         server_address = await construct_server_address(node)
                         
                         task = asyncio.create_task(
-                            send_regression_challenge(
-                                challenge=challenge,
+                            challenge.send(
                                 server_address=server_address,
                                 hotkey=node.hotkey,
                                 keypair=hotkey,

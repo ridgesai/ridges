@@ -11,6 +11,9 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from enum import Enum
 
+import httpx
+from fiber import Keypair
+
 
 class ChallengeType(Enum):
     """Enumeration of available challenge types."""
@@ -43,6 +46,21 @@ class BaseChallenge(ABC):
     @abstractmethod
     def get_context_data(self) -> Dict[str, Any]:
         """Return challenge-specific context data."""
+        pass
+    
+    @abstractmethod
+    async def send(
+        self,
+        server_address: str,
+        hotkey: str,
+        keypair: Keypair,
+        node_id: int,
+        barrier: "AsyncBarrier",
+        db_manager: Optional["DatabaseManager"] = None,
+        client: Optional[httpx.AsyncClient] = None,
+        timeout: float = 300.0
+    ) -> httpx.Response:
+        """Send this challenge to a miner node."""
         pass
 
 
