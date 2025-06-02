@@ -43,26 +43,26 @@ class DatabaseManager:
             cursor.execute("""
                 INSERT OR IGNORE INTO challenges (
                     challenge_id, challenge_type, created_at, problem_statement,
-                    commit_hash, context_file_paths
+                    commit_hash
                 )
-                VALUES (?, 'codegen', CURRENT_TIMESTAMP, ?, ?, ?)
+                VALUES (?, 'codegen', CURRENT_TIMESTAMP, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.commit_hash,
-                json.dumps(challenge.context_file_paths)
+                challenge.commit_hash
             ))
 
-            # Then insert codegen-specific data
+            # Then insert codegen-specific data including context_file_paths
             cursor.execute("""
                 INSERT OR IGNORE INTO codegen_challenges (
-                    challenge_id, dynamic_checklist, repository_name
+                    challenge_id, dynamic_checklist, repository_name, context_file_paths
                 )
-                VALUES (?, ?, ?)
+                VALUES (?, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 json.dumps(challenge.dynamic_checklist),
-                challenge.repository_name
+                challenge.repository_name,
+                json.dumps(challenge.context_file_paths)
             ))
 
             if cursor.rowcount == 0:
@@ -224,8 +224,8 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash, c.context_file_paths,
-                       cc.dynamic_checklist, cc.repository_name
+                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash,
+                       cc.dynamic_checklist, cc.repository_name, cc.context_file_paths
                 FROM challenges c
                 JOIN codegen_challenges cc ON c.challenge_id = cc.challenge_id
                 WHERE c.challenge_id = ? AND c.challenge_type = 'codegen'
@@ -238,10 +238,10 @@ class DatabaseManager:
             return GeneratedCodegenProblem(
                 challenge_id=row[0],
                 problem_statement=row[2],
-                dynamic_checklist=json.loads(row[5]),
-                repository_name=row[6],
+                dynamic_checklist=json.loads(row[4]),
+                repository_name=row[5],
                 commit_hash=row[3],
-                context_file_paths=json.loads(row[4])
+                context_file_paths=json.loads(row[6])
             )
 
         finally:
@@ -291,25 +291,25 @@ class DatabaseManager:
             cursor.execute("""
                 INSERT OR IGNORE INTO challenges (
                     challenge_id, challenge_type, created_at, problem_statement,
-                    commit_hash, context_file_paths
+                    commit_hash
                 )
-                VALUES (?, 'regression', CURRENT_TIMESTAMP, ?, ?, ?)
+                VALUES (?, 'regression', CURRENT_TIMESTAMP, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
-                challenge.commit_hash,
-                json.dumps(challenge.context_file_paths)
+                challenge.commit_hash
             ))
 
-            # Then insert regression-specific data
+            # Then insert regression-specific data including context_file_paths
             cursor.execute("""
                 INSERT OR IGNORE INTO regression_challenges (
-                    challenge_id, repository_url
+                    challenge_id, repository_url, context_file_paths
                 )
-                VALUES (?, ?)
+                VALUES (?, ?, ?)
             """, (
                 challenge.challenge_id,
-                challenge.repository_url
+                challenge.repository_url,
+                json.dumps(challenge.context_file_paths)
             ))
 
             if cursor.rowcount == 0:
@@ -475,8 +475,8 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash, c.context_file_paths,
-                       rc.repository_url
+                SELECT c.challenge_id, c.created_at, c.problem_statement, c.commit_hash,
+                       rc.repository_url, rc.context_file_paths
                 FROM challenges c
                 JOIN regression_challenges rc ON c.challenge_id = rc.challenge_id
                 WHERE c.challenge_id = ? AND c.challenge_type = 'regression'
@@ -489,9 +489,9 @@ class DatabaseManager:
             return GeneratedRegressionProblem(
                 challenge_id=row[0],
                 problem_statement=row[2],
-                repository_url=row[5],
+                repository_url=row[4],
                 commit_hash=row[3],
-                context_file_paths=json.loads(row[4])
+                context_file_paths=json.loads(row[5])
             )
 
         finally:

@@ -14,8 +14,7 @@ def get_schema_v1() -> List[str]:
             challenge_type TEXT NOT NULL CHECK(challenge_type IN ('codegen', 'regression')),
             created_at TIMESTAMP NOT NULL,
             problem_statement TEXT NOT NULL,
-            commit_hash TEXT,
-            context_file_paths TEXT NOT NULL -- JSON array of file paths relative to repo root
+            commit_hash TEXT
         )
         """,
 
@@ -25,6 +24,7 @@ def get_schema_v1() -> List[str]:
             challenge_id TEXT PRIMARY KEY,
             dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
             repository_name TEXT NOT NULL,
+            context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
             FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
         )
         """,
@@ -34,6 +34,7 @@ def get_schema_v1() -> List[str]:
         CREATE TABLE IF NOT EXISTS regression_challenges (
             challenge_id TEXT PRIMARY KEY,
             repository_url TEXT NOT NULL,
+            context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
             FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
         )
         """,
