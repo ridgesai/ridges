@@ -20,9 +20,8 @@ class CodegenChallenge(BaseChallenge):
     and dynamic checklist, using provided context files as reference.
     """
     dynamic_checklist: List[str]
-    repository_name: str
     repository_url: str
-    context_file_paths: List[str]  # Relative to repository_name as the repo root
+    context_file_paths: List[str]  # Relative to repository_url as the repo root
     
     # Legacy fields for backward compatibility (should be removed eventually)
     prompt: str = ""
@@ -39,7 +38,6 @@ class CodegenChallenge(BaseChallenge):
             "challenge_id": self.challenge_id,
             "problem_statement": self.problem_statement,
             "dynamic_checklist": self.dynamic_checklist,
-            "repository_name": self.repository_name,
             "repository_url": self.repository_url,
             "commit_hash": self.commit_hash,
             "context_file_paths": self.context_file_paths
@@ -49,7 +47,6 @@ class CodegenChallenge(BaseChallenge):
         """Return codegen-specific context data."""
         return {
             "dynamic_checklist": self.dynamic_checklist,
-            "repository_name": self.repository_name,
             "repository_url": self.repository_url,
             "context_file_paths": self.context_file_paths
         }
@@ -74,7 +71,6 @@ class CodegenChallenge(BaseChallenge):
     def get_repository_info(self) -> Dict[str, str]:
         """Get repository-related information."""
         return {
-            "repository_name": self.repository_name,
             "repository_url": self.repository_url,
             "commit_hash": self.commit_hash or "latest"
         }

@@ -51,14 +51,13 @@ class DatabaseManager:
             # Then insert codegen-specific data including problem_statement, repository_url, commit_hash, and context_file_paths
             cursor.execute("""
                 INSERT OR IGNORE INTO codegen_challenges (
-                    challenge_id, problem_statement, dynamic_checklist, repository_name, repository_url, commit_hash, context_file_paths
+                    challenge_id, problem_statement, dynamic_checklist, repository_url, commit_hash, context_file_paths
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 challenge.challenge_id,
                 challenge.problem_statement,
                 json.dumps(challenge.dynamic_checklist),
-                challenge.repository_name,
                 challenge.repository_url,
                 challenge.commit_hash,
                 json.dumps(challenge.context_file_paths)
@@ -224,7 +223,7 @@ class DatabaseManager:
         try:
             cursor.execute("""
                 SELECT c.challenge_id, c.created_at,
-                       cc.problem_statement, cc.dynamic_checklist, cc.repository_name, cc.repository_url, cc.commit_hash, cc.context_file_paths
+                       cc.problem_statement, cc.dynamic_checklist, cc.repository_url, cc.commit_hash, cc.context_file_paths
                 FROM challenges c
                 JOIN codegen_challenges cc ON c.challenge_id = cc.challenge_id
                 WHERE c.challenge_id = ? AND c.challenge_type = 'codegen'
@@ -238,10 +237,9 @@ class DatabaseManager:
                 challenge_id=row[0],
                 problem_statement=row[2],
                 dynamic_checklist=json.loads(row[3]),
-                repository_name=row[4],
-                repository_url=row[5],
-                commit_hash=row[6],
-                context_file_paths=json.loads(row[7])
+                repository_url=row[4],
+                commit_hash=row[5],
+                context_file_paths=json.loads(row[6])
             )
 
         finally:

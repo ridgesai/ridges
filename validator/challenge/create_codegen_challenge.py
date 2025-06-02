@@ -320,7 +320,6 @@ async def create_next_codegen_challenge(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
-        repository_name=repo_name,
         repository_url=repository_url,
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,

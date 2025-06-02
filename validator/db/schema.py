@@ -22,7 +22,6 @@ def get_schema_v1() -> List[str]:
             challenge_id TEXT PRIMARY KEY,
             problem_statement TEXT NOT NULL, -- Problem statement for codegen challenges
             dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
-            repository_name TEXT NOT NULL,
             repository_url TEXT NOT NULL,     -- URL of the repository
             commit_hash TEXT,                 -- Optional commit hash for codegen challenges
             context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
