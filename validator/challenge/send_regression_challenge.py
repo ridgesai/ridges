@@ -45,14 +45,14 @@ async def send_regression_challenge(
     try:
         # First, store the challenge in the challenges table
         if db_manager:
-            logger.debug(f"Storing challenge {challenge.challenge_id} in database")
+            logger.debug(f"Storing regression challenge {challenge.challenge_id} in database")
             db_manager.store_regression_challenge(
                 challenge=challenge
             )
 
         # Record the assignment
         if db_manager:
-            logger.debug(f"Recording challenge assignment in database")
+            logger.debug(f"Recording regression challenge assignment in database")
             db_manager.assign_regression_challenge(challenge.challenge_id, hotkey, node_id)
 
         # Create client if not provided
@@ -63,7 +63,7 @@ async def send_regression_challenge(
             should_close_client = True
 
         if db_manager:
-            logger.debug("Marking challenge as sent in database")
+            logger.debug("Marking regression challenge as sent in database")
             db_manager.mark_regression_challenge_sent(challenge.challenge_id, hotkey)
             
         if remaining_barriers:
@@ -72,7 +72,7 @@ async def send_regression_challenge(
             
         try:
             sent_time = datetime.now(timezone.utc)
-            logger.debug("Sending challenge request...")
+            logger.debug("Sending regression challenge request...")
             
             # Send the challenge using fiber validator client with long timeout
             try:
@@ -95,7 +95,7 @@ async def send_regression_challenge(
                 )
 
             except Exception as e:
-                logger.error(f"Error sending regression challenge: {str(e)}")
+                logger.error(f"Error sending regression challenge {challenge.challenge_id}: {str(e)}")
                 response =  httpx.Response(
                     status_code=200,
                     content=b"",
@@ -129,7 +129,7 @@ async def send_regression_challenge(
             return response
 
         except Exception as e:
-            logger.error(f"Error sending regression challenge: {str(e)}")
+            logger.error(f"Error sending regression challenge {challenge.challenge_id}: {str(e)}")
             if db_manager:
                 db_manager.mark_regression_challenge_failed(challenge.challenge_id, hotkey)
             raise
