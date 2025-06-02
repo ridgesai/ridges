@@ -7,7 +7,7 @@ from fiber import Keypair
 from git import Optional
 import httpx
 from logging.logging_utils import get_logger
-import validator
+from fiber.validator import client as validator
 from validator.challenge.challenge_types import RegressionResponse
 from validator.challenge.create_regression_challenge import GeneratedRegressionProblem
 from validator.config import CHALLENGE_TIMEOUT
