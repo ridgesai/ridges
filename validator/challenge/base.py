@@ -113,7 +113,7 @@ class BaseChallenge(ABC):
         barrier: AsyncBarrier,
         db_manager: 'DatabaseManager',
         client: Optional[httpx.AsyncClient] = None,
-        timeout: float = 600.0
+        timeout: float = 1200.0 # 20 minutes
     ) -> httpx.Response:
         """
         Send this challenge to a miner node.
@@ -289,7 +289,7 @@ class BaseChallenge(ABC):
         )
 
     @abstractmethod
-    def evaluate_responses(self, responses: List['BaseResponse']) -> List['ValidationResult']:
+    async def evaluate_responses(self, responses: List['BaseResponse']) -> List['ValidationResult']:
         """Evaluate a list of responses for this challenge."""
         pass
 
