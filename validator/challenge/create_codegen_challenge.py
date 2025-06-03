@@ -15,7 +15,7 @@ import subprocess
 import tiktoken
 import openai
 import numpy as np
-from ridges_logging.logging_utils import get_logger
+from shared.logging_utils import get_logger
 
 from validator.challenge import (
     CodegenChallenge, 
