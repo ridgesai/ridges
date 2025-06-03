@@ -108,84 +108,6 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     logger.info(f"Successfully cleaned patch of length {len(diff)}")
     return diff
 
-# --- New Ollama helper -----------------------------------------------
-def solve_with_ollama_swe_agent(problem_text: str, repo_path: str, model_name: str = "llama3") -> str:
-    """
-    Runs SWE-agent CLI with a local Ollama model and returns the produced git diff as a string.
-    """
-    import tempfile
-    from pathlib import Path
-    import subprocess
-
-    logger.info(f"Using Ollama model: {model_name}")
-
-    with tempfile.NamedTemporaryFile("w+", suffix=".md", delete=False) as f:
-        f.write(problem_text)
-        problem_file = f.name
-
-    out_dir = tempfile.mkdtemp(prefix="sweagent_run_")
-    cmd = [
-        "sweagent", "run",
-        f"--agent.model.name=ollama/{model_name}",
-        "--agent.model.api_base=http://localhost:11434",
-        "--agent.model.per_instance_cost_limit=0",
-        "--agent.model.total_cost_limit=0",
-        "--agent.model.per_instance_call_limit=100",
-        "--agent.model.max_input_tokens=0",
-        "--agent.tools.parse_function.type=function_calling",  # Faster than thought_action
-        f"--env.repo.path={repo_path}",
-        f"--problem_statement.path={problem_file}",
-        f"--output_dir={out_dir}"
-    ]
-
-    logger.info(f"Running SWE-agent with Ollama: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    logger.info(f"SWE-agent stdout: {result.stdout}")
-    logger.info(f"SWE-agent stderr: {result.stderr}")
-
-    if result.returncode != 0:
-        raise RuntimeError(f"SWE-agent failed: {result.stderr}")
-
-    # Find and read the patch file (same as your current logic)
-    instance_dirs = list(Path(out_dir).glob("*"))
-    if not instance_dirs:
-        logger.error(f"No instance directories found in {out_dir}")
-        raise RuntimeError("SWE-agent did not create any output directories")
-
-    instance_dir = max(instance_dirs, key=lambda p: p.stat().st_mtime)
-    logger.info(f"Using instance directory: {instance_dir}")
-
-    patch_file = instance_dir / f"{instance_dir.name}.patch"
-    if not patch_file.exists():
-        logger.error(f"Patch file not found at {patch_file}")
-        logger.error(f"Directory contents: {list(instance_dir.glob('*'))}")
-        raise RuntimeError("SWE-agent did not generate a patch file")
-
-    logger.info(f"Reading patch from {patch_file}")
-    with open(patch_file, "r") as fh:
-        diff = fh.read()
-
-    if not diff:
-        logger.error("Patch file is empty")
-        raise RuntimeError("SWE-agent generated an empty patch")
-
-    # Clean up the patch
-    lines = diff.splitlines()
-    cleaned_lines = []
-    skip_file = False
-    for line in lines:
-        if "__pycache__" in line:
-            skip_file = True
-            continue
-        if skip_file and line.startswith("diff --git"):
-            skip_file = False
-        if skip_file:
-            continue
-        cleaned_lines.append(line.rstrip())
-    diff = "\n".join(cleaned_lines) + "\n"
-    logger.info(f"Successfully cleaned patch of length {len(diff)}")
-    return diff
-
 async def process_challenge(
     request: Request,
     config: Config = Depends(get_config)
@@ -232,11 +154,8 @@ async def process_challenge(
             # Generate solution using SWE-agent (should be a patch/diff)
             logger.info("Generating solution using SWE-agent...")
 
-            # Ollama SWE-agent
-            solution_patch = solve_with_ollama_swe_agent(problem_statement, repo_path)
-
             # Replace with SWE-agent CLI call
-            # solution_patch = solve_with_swe_agent(problem_statement, repo_path)
+            solution_patch = solve_with_swe_agent(problem_statement, repo_path)
 
             # For testing: Return hello world diff
             # solution_patch = HELLO_WORLD_DIFF
@@ -288,6 +207,6 @@ router.add_api_route(
     process_challenge,
     tags=["codegen"],
     # Commnent out dependencies for testing
-    # dependencies=[Depends(verify_request)],
+    dependencies=[Depends(verify_request)],
     methods=["POST"],
 )
