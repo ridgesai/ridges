@@ -11,7 +11,6 @@ from miner.dependancies import blacklist_low_stake, verify_request, get_config
 from miner.core.config import Config
 from miner.utils.shared import miner_lock
 from miner.utils.git_ops import clone_and_checkout_repo
-from miner.utils.llm import generate_solution_with_openai, validate_and_fix_patch_with_openai
 from miner.utils.patch import generate_patch, apply_patch
 from validator.challenge.challenge_types import File
 
