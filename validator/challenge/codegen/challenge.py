@@ -185,22 +185,7 @@ class CodegenChallenge(BaseChallenge):
         Returns:
             An error message if anything fails, otherwise None
         """
-        # try:
-        #     repo_path = clone_repo(Path.cwd() / "repos", self.repository_url, self.commit_hash)
-        #     repo = Repo(repo_path)
-        # except Exception as e:
-        #     logger.error(f"Failed to clone repo {self.repository_url}: {e}")
-        #     return f"Failed to clone repo {self.repository_url}: {e}"
-        
-        # try:
-        #     repo.git.apply(patch)
-        # except Exception as e:
-        #     logger.error(f"Failed to apply patch {patch}: {e}")
-
-        # TODO: Figure out a way to run an arbitrary repo's test suite
-        # Run tests
-        
-        # Run pylint
+        # Since this is a synthetic codegen problem, the problem statement doesn't correspond to a real test
         return None
     
     async def evaluate_responses(self, responses: List['CodegenResponse'], db_manager: 'DatabaseManager') -> List[ValidationResult]:
