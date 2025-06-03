@@ -109,7 +109,7 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     return diff
 
 # --- New Ollama helper -----------------------------------------------
-def solve_with_ollama_swe_agent(problem_text: str, repo_path: str, model_name: str = "wizardlm2:7b") -> str:
+def solve_with_ollama_swe_agent(problem_text: str, repo_path: str, model_name: str = "llama3") -> str:
     """
     Runs SWE-agent CLI with a local Ollama model and returns the produced git diff as a string.
     """
@@ -132,12 +132,7 @@ def solve_with_ollama_swe_agent(problem_text: str, repo_path: str, model_name: s
         "--agent.model.total_cost_limit=0",
         "--agent.model.per_instance_call_limit=100",
         "--agent.model.max_input_tokens=0",
-        "--agent.tools.parse_function.type=thought_action",
-        "--agent.model.num_ctx=2048",
-        "--agent.model.num_thread=8",
-        "--agent.model.num_gpu=1",
-        "--agent.model.temperature=0.7",
-        "--agent.max_steps=4",
+        "--agent.tools.parse_function.type=function_calling",  # Faster than thought_action
         f"--env.repo.path={repo_path}",
         f"--problem_statement.path={problem_file}",
         f"--output_dir={out_dir}"
@@ -191,34 +186,6 @@ def solve_with_ollama_swe_agent(problem_text: str, repo_path: str, model_name: s
     logger.info(f"Successfully cleaned patch of length {len(diff)}")
     return diff
 
-# --- New in-process helper -----------------------------------------------
-try:
-    from sweagent.run.single import run_single
-except ImportError:
-    run_single = None  # Handle gracefully if not available
-
-def solve_with_swe_agent_inline(problem_text: str, repo_path: str) -> str:
-    """
-    Calls SWE-agent via its Python API (no subprocess) and returns a git diff.
-    """
-    if run_single is None:
-        raise ImportError("sweagent.run.single.run_single is not available. Make sure sweagent is installed in your environment.")
-
-    patch, _trajectory = run_single(
-        repo_path=repo_path,
-        problem_statement={"text": problem_text},
-        model={"name": "gpt-4o", "per_instance_cost_limit": 2.0},
-        agent={"max_steps": 6},                       # tweak as you like
-        env={"pytest": {"test_selection": "failing"}}
-    )
-
-    if not patch or not patch.lstrip().startswith("diff --git"):
-        raise RuntimeError("SWE-agent did not return a valid git diff")
-
-    # quick cleanup: strip trailing whitespace, ensure final newline
-    patch = "\n".join(line.rstrip() for line in patch.splitlines()) + "\n"
-    return patch
-
 async def process_challenge(
     request: Request,
     config: Config = Depends(get_config)
@@ -271,8 +238,6 @@ async def process_challenge(
             # Replace with SWE-agent CLI call
             # solution_patch = solve_with_swe_agent(problem_statement, repo_path)
 
-            # solution_patch = solve_with_swe_agent_inline(problem_statement, repo_path)
-            
             # For testing: Return hello world diff
             # solution_patch = HELLO_WORLD_DIFF
             
