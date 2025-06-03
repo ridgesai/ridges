@@ -1,10 +1,10 @@
-from pathlib import Path
 from typing import List, Optional
 
-from git import Repo
 from openai import OpenAI
 from shared.logging_utils import get_logger
-from validator.challenge.challenge_types import GeneratedCodegenProblem, ValidationResult, CodegenResponse
+from validator.challenge.base import ValidationResult
+from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.challenge.codegen.response import CodegenResponse
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.elo_grader import EloGrader
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
@@ -28,7 +28,7 @@ class CodeGenValidator:
 
         return without_unused.strip()
     
-    def apply_and_run_tests(self, problem: GeneratedCodegenProblem, patch: str) -> Optional[str]:
+    def apply_and_run_tests(self, problem: 'CodegenChallenge', patch: str) -> Optional[str]:
         '''
         Clones the relevant repo, applies the patch, and runs the tests.
         Also runs pylint and makes sure no new errors have appeared.
@@ -38,11 +38,11 @@ class CodeGenValidator:
         '''
 
         # try:
-        #     repo_path = clone_repo(Path.cwd() / "repos", problem.repository_name, problem.commit_hash)
+        #     repo_path = clone_repo(Path.cwd() / "repos", problem.repository_url, problem.commit_hash)
         #     repo = Repo(repo_path)
         # except Exception as e:
-        #     self.logger.error(f"Failed to clone repo {problem.repository_name}: {e}")
-        #     return f"Failed to clone repo {problem.repository_name}: {e}"
+        #     self.logger.error(f"Failed to clone repo {problem.repository_url}: {e}")
+        #     return f"Failed to clone repo {problem.repository_url}: {e}"
         
         # try:
         #     repo.git.apply(patch)
@@ -55,7 +55,7 @@ class CodeGenValidator:
         # Run pylint
         return None
 
-    async def evaluate_responses(self, problem: GeneratedCodegenProblem, miner_responses: List[CodegenResponse]) -> List[ValidationResult]:
+    async def evaluate_responses(self, problem: CodegenChallenge, miner_responses: List[CodegenResponse]) -> List['ValidationResult']:
         if MOCK_RESPONSES:
             return ValidationResult(score=5, error=None)
 

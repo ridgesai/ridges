@@ -68,10 +68,18 @@ async def set_weights(
         keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
         
         # Get validator node ID and version key
-        validator_node_id = substrate.query("SubtensorModule", "Uids", [NETUID, keypair.ss58_address]).value
-        v_key = substrate.query("SubtensorModule", "WeightsVersionKey", [NETUID]).value
-        logger.info(f"Subnet Version key: {v_key}")
-        version_key = VERSION_KEY
+        node_id_query = substrate.query("SubtensorModule", "Uids", [NETUID, keypair.ss58_address])
+        if node_id_query is None:
+            logger.error(f"Failed to get validator node ID for {keypair.ss58_address}")
+            return
+        validator_node_id = node_id_query.value
+        version_key_query = substrate.query("SubtensorModule", "WeightsVersionKey", [NETUID])
+        if version_key_query is None:
+            logger.error(f"Failed to get subnet version key for {NETUID}")
+            return
+        version_key = version_key_query.value
+        logger.info(f"Subnet Version key: {version_key}")
+
         # Get all active nodes
         nodes = get_nodes_for_netuid(substrate=substrate, netuid=NETUID)
         

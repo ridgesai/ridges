@@ -17,7 +17,15 @@ import openai
 import numpy as np
 from shared.logging_utils import get_logger
 
-from validator.challenge.challenge_types import GeneratedCodegenProblem, EmbeddedFile, FilePair, File, CodegenProblemLLMResponse, SUPPORTED_CODEGEN_REPOS
+from validator.challenge import (
+    CodegenChallenge, 
+    CodegenProblemLLMResponse, 
+    IngestionHeuristics, 
+    File, 
+    EmbeddedFile, 
+    FilePair,
+    SUPPORTED_CODEGEN_REPOS
+)
 from validator.config import (
     OPENAI_API_KEY, PREFERRED_OPENAI_MODEL,
     MIN_FILE_CONTENT_LEN_CHARS, MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM
@@ -263,15 +271,12 @@ def setup_repositories_and_select_random() -> Tuple[str, Path]:
 
 async def create_next_codegen_challenge(
     openai_client: openai.Client
-) -> GeneratedCodegenProblem:
+) -> CodegenChallenge:
     ''' 
     Creates a Codegen challenge task. 
     To do this, validators clone a repo from the available repo set, find a random set of filepairs, 
     and generate a problem + checklist of things the problem must solve. 
     This is then returned to miners that specialize in codegen
-
-    Args:
-        openai_client: The validator's OpenAI client with which to generate the question
 
     Returns:
         GeneratedProblemStatement or None if error
@@ -290,29 +295,32 @@ async def create_next_codegen_challenge(
 
     logger.info(f'Generating new problem statement using files {[file.path for file in selected_pair.files]}')
 
-    # completion = openai_client.beta.chat.completions.parse(
-    #     model=PREFERRED_OPENAI_MODEL,
-    #     messages=[
-    #         {"role": "system", "content": prompt_with_filepair_context},
-    #         {"role": "user", "content": f"Generate the list of problem statements. Generate exactly 1 problem statement statements, no more and no less"},
-    #     ],
-    #     response_format=CodegenProblemLLMResponse,
-    # )
+    completion = openai_client.beta.chat.completions.parse(
+        model=PREFERRED_OPENAI_MODEL,
+        messages=[
+            {"role": "system", "content": prompt_with_filepair_context},
+            {"role": "user", "content": f"Generate the list of problem statements. Generate exactly 1 problem statement statements, no more and no less"},
+        ],
+        response_format=CodegenProblemLLMResponse,
+    )
 
-    # generated_problem: CodegenProblemLLMResponse = completion.choices[0].message.parsed
+    generated_problem: CodegenProblemLLMResponse = completion.choices[0].message.parsed
 
-    generated_problem = CodegenProblemLLMResponse.model_validate({
-        "problem_statement": "This is a sample problem statement",
-        "dynamic_checklist": ["checklist item 1", "checklist item 2"]
-    })
+    # generated_problem = CodegenProblemLLMResponse.model_validate({
+    #     "problem_statement": "This is a sample problem statement",
+    #     "dynamic_checklist": ["checklist item 1", "checklist item 2"]
+    # })
 
     problem_id = str(uuid.uuid4())
 
-    return GeneratedCodegenProblem(
+    # Generate repository URL from repository name
+    repository_url = f"https://github.com/{repo_name}.git"
+
+    return CodegenChallenge(
         challenge_id=problem_id,
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
-        repository_name=repo_name,
+        repository_url=repository_url,
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,

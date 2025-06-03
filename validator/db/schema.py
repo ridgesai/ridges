@@ -5,22 +5,43 @@ from typing import List
 SCHEMA_VERSION = 1
 
 def get_schema_v1() -> List[str]:
-    """Database schema for version 1"""
+    """Database schema for version 1 - Unified challenge structure using class table inheritance"""
     return [
-        # Codegen challenges table
+        # Parent challenges table with common fields
         """
-        CREATE TABLE IF NOT EXISTS codegen_challenges (
+        CREATE TABLE IF NOT EXISTS challenges (
             challenge_id TEXT PRIMARY KEY,  -- UUID for the challenge
-            created_at TIMESTAMP NOT NULL,
-            problem_statement TEXT NOT NULL,
-            dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
-            repository_name TEXT NOT NULL,
-            commit_hash TEXT,
-            context_file_paths TEXT NOT NULL -- JSON array of file paths relative to repo root
+            challenge_type TEXT NOT NULL CHECK(challenge_type IN ('codegen', 'regression')),
+            created_at TIMESTAMP NOT NULL
         )
         """,
 
-        # Challenge assignments table
+        # Codegen-specific challenges table (inherits from challenges)
+        """
+        CREATE TABLE IF NOT EXISTS codegen_challenges (
+            challenge_id TEXT PRIMARY KEY,
+            problem_statement TEXT NOT NULL, -- Problem statement for codegen challenges
+            dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
+            repository_url TEXT NOT NULL,     -- URL of the repository
+            commit_hash TEXT,                 -- Optional commit hash for codegen challenges
+            context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
+            FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
+        )
+        """,
+
+        # Regression-specific challenges table (inherits from challenges)  
+        """
+        CREATE TABLE IF NOT EXISTS regression_challenges (
+            challenge_id TEXT PRIMARY KEY,
+            problem_statement TEXT NOT NULL, -- Problem statement for regression challenges
+            repository_url TEXT NOT NULL,
+            commit_hash TEXT,                 -- Optional commit hash for regression challenges
+            context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
+            FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
+        )
+        """,
+
+        # Unified challenge assignments table
         """
         CREATE TABLE IF NOT EXISTS challenge_assignments (
             assignment_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,12 +52,12 @@ def get_schema_v1() -> List[str]:
             sent_at TIMESTAMP,
             completed_at TIMESTAMP,
             status TEXT CHECK(status IN ('assigned', 'sent', 'completed', 'failed')) DEFAULT 'assigned',
-            FOREIGN KEY (challenge_id) REFERENCES codegen_challenges(challenge_id),
+            FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
             UNIQUE(challenge_id, miner_hotkey)
         )
         """,
 
-        # Responses table
+        # Unified responses table
         """
         CREATE TABLE IF NOT EXISTS responses (
             response_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,7 +71,7 @@ def get_schema_v1() -> List[str]:
             score FLOAT,
             evaluated_at TIMESTAMP,
             response_patch TEXT,
-            FOREIGN KEY (challenge_id) REFERENCES codegen_challenges(challenge_id),
+            FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
             FOREIGN KEY (challenge_id, miner_hotkey) REFERENCES challenge_assignments(challenge_id, miner_hotkey)
         )
         """,
@@ -82,15 +103,16 @@ def check_db_initialized(db_path: str) -> bool:
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
         existing_tables = {row[0] for row in cursor.fetchall()}
         
-        # Required tables
+        # Required tables for unified schema
         required_tables = {
+            'challenges',
             'codegen_challenges',
+            'regression_challenges',
             'challenge_assignments',
             'responses',
             'availability_checks',
         }
         
-        # Check if all required tables exist
         return required_tables.issubset(existing_tables)
         
     except sqlite3.Error:

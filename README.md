@@ -16,21 +16,66 @@ If you prefer, there are also full docs on this available on our docs site for [
 - `btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
 - `btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
 
-2. Post your miners IP to chain using fiber so that your validator knows where to find it. 
+2. Setup a venv and install the required packages locally:
+```bash
+uv venv
+uv pip install -e .
+```
 
-- `fiber-post-ip --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945 --external_ip 0.0.0.1 --external_port 7999 --wallet.name miner --wallet.hotkey default`
+3. Install SWE-agent:
+```bash
+git clone https://github.com/princeton-nlp/SWE-agent.git
+cd SWE-agent
+uv pip install --editable .
+```
+
+4. Install Ollama:
+- For macOS:
+```bash
+curl https://ollama.ai/install.sh | sh
+```
+- For Linux:
+```bash
+curl https://ollama.ai/install.sh | sh
+```
+- For Windows: Download the installer from [Ollama's website](https://ollama.ai/download)
+
+After installation, start Ollama:
+```bash
+ollama serve
+```
+
+5. Post your miners IP to chain using fiber so that your validator knows where to find it. 
+- **Important**: Make sure you've registered on subtensor before running this command
+- The port you choose here will be the same port you use when running the miner
+- For multiple miners, use different ports for each instance
+```bash
+fiber-post-ip --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945 --external_ip 0.0.0.1 --external_port 7999 --wallet.name miner --wallet.hotkey default
+```
 - Note that for external IP, if you use 0.0.0.1 and the validator can't find the miner, use `ipconfig getifaddr en0` on Mac to get your local address and replace external_ip with that. Restart the subtensor, reregister miner and validator, and run it using your local IP
 
-4. Set up your .env's in both the miner and validator dir. Use .env.example to see what you have to set
+6. Set up your .env's in both the miner and validator dir. Use .env.example to see what you have to set
 
-5. Setup a venv and install the required packages locally to start running the miner and validator 
-
-- `uv venv`
-- `uv pip install -e .`
-
-5. Run the validator and the miner, and you'll be able to see from both logs that they connect and the validator generates a problem
+7. Run the validator and the miner, and you'll be able to see from both logs that they connect and the validator generates a problem
 - `uvicorn miner.main:app --host 0.0.0.0 --port 7999` to start the miner
 - `uv run validator/main.py`
+
+## Running Multiple Miners
+
+To run multiple miners in parallel:
+1. Use different ports for each miner instance
+2. Run the fiber-post-ip command for each miner with a unique port
+3. Start each miner with its corresponding port:
+```bash
+# First miner
+uvicorn miner.main:app --host 0.0.0.0 --port 7999
+
+# Second miner (in a different terminal)
+uvicorn miner.main:app --host 0.0.0.0 --port 8000
+
+# Third miner (in a different terminal)
+uvicorn miner.main:app --host 0.0.0.0 --port 8001
+```
 
 ## (Optional) Set up Cave
 
@@ -39,6 +84,10 @@ We've built Cave, a dashboard that lets you view locally running miner and valid
 ## Helpful commands
 
 - See the registered actors on a subnet locally: `btcli subnets show --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945`
+- Check if subtensor is running: Look for "Using chain address: ws://127.0.0.1:9945" in the logs
+- Get your local IP address (Mac): `ipconfig getifaddr en0`
+- Get your local IP address (Linux): `ip addr show` or `hostname -I`
+- Change subtensor connection address: `export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945` (use `ws://127.0.0.1:9945` for local)
 
 - **Code changes only:** Just restart the miner container.
 - **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.

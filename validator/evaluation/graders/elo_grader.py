@@ -3,16 +3,16 @@ from shared.logging_utils import get_logger
 import os
 import random
 from textwrap import dedent
-from typing import Dict, Final, List, Optional, Tuple, TypeVar
+from typing import TYPE_CHECKING, Dict, Final, List, Optional, Tuple, TypeVar
 
 import openai
 from pydantic import BaseModel
 
-from validator.challenge.challenge_types import (
-    CodegenResponse,
-    GeneratedCodegenProblem,
-)
 from .abstract_grader import GraderInterface
+
+if TYPE_CHECKING:
+    from validator.challenge.codegen.challenge import CodegenChallenge
+    from validator.challenge.codegen.response import CodegenResponse
 
 
 class WinLoss(BaseModel):
@@ -116,11 +116,11 @@ class EloArena:
 
 
 class EloGrader(GraderInterface):
-    def __init__(self, problem: GeneratedCodegenProblem):
+    def __init__(self, problem: 'CodegenChallenge'):
         self.logger = get_logger(__name__)
         self.problem = problem
 
-    def grade(self, responses: List[CodegenResponse]) -> Dict[str, float]:
+    def grade(self, responses: List['CodegenResponse']) -> Dict[str, float]:
         """
         Grade a list of responses using the Elo rating system and return a dictionary of scores for each response by hotkey
         """
@@ -143,7 +143,7 @@ class EloGrader(GraderInterface):
         )
 
     def get_context(
-        self, response_1: CodegenResponse, response_2: CodegenResponse
+        self, response_1: 'CodegenResponse', response_2: 'CodegenResponse'
     ) -> str:
         return dedent(
             f"""
@@ -169,7 +169,7 @@ class EloGrader(GraderInterface):
         return completion.choices[0].message.parsed
 
     def compare_responses(
-        self, response_1: CodegenResponse, response_2: CodegenResponse
+        self, response_1: 'CodegenResponse', response_2: 'CodegenResponse'
     ) -> float:
         prompt = self.get_prompt()
 
@@ -200,7 +200,7 @@ class EloGrader(GraderInterface):
         else:
             return 0.5
 
-    def rank_elo(self, responses: List[CodegenResponse]) -> EloArena:
+    def rank_elo(self, responses: List['CodegenResponse']) -> EloArena:
         arena = EloArena()
 
         for response_1, response_2 in generate_matches(responses):

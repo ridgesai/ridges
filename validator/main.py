@@ -2,7 +2,6 @@
 from pathlib import Path
 import sys 
 import time
-from typing import Optional
 import random
 import os
 import asyncio
@@ -18,10 +17,10 @@ import httpx
 from openai import OpenAI
 
 # Internal package imports
+from validator.challenge.create_regression_challenge import create_next_regression_challenge
 from validator.db.operations import DatabaseManager
-from validator.challenge.challenge_types import ChallengeTask
+from validator.challenge.common import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
-from validator.challenge.send_codegen_challenge import send_challenge
 from shared.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
@@ -43,6 +42,7 @@ load_dotenv(env_path)
 
 # Set up logger
 logger = get_logger(__name__)
+logger.info(f"Loading environment variables from {env_path.absolute()}")
 
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
@@ -312,7 +312,6 @@ async def main():
                     new_challenge_tasks = []
                     barrier = AsyncBarrier(parties=len(available_nodes))
 
-                    
                     # Fetch next challenge from API with retries
                     challenge = await create_next_codegen_challenge(openai_client)
 
@@ -333,8 +332,7 @@ async def main():
                         server_address = await construct_server_address(node)
                         
                         task = asyncio.create_task(
-                            send_challenge(
-                                challenge=challenge,
+                            challenge.send(
                                 server_address=server_address,
                                 hotkey=node.hotkey,
                                 keypair=hotkey,
