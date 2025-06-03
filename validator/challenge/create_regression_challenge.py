@@ -66,11 +66,43 @@ class Environment:
 
     def __init__(self, repo_name: str):
         self.repo_name = repo_name
+    
+    def create_docker_execution_environment(self) -> None:
+        """
+        Creates a docker container with the repo and the dependencies installed.
+        Inside, we can generate mutations, validate which induce bugs, and then return the bug.
+        Here, a bug is defined as a patch that causes one or more previously passing tests to fail.
+        """
+        pass
+
+    def generate_bugs(self) -> None:
+        """
+        Generates bugs for the repo.
+        """
+        pass
+
+    def collect_bugs(self) -> None:
+        """
+        Collects bugs into a single json for validation.
+        """
+        pass
+
+    def validate_bugs(self) -> None:
+        """
+        Validates the bugs.
+        """
+        pass
+
+    def get_random_bug(self) -> Bug:
+        """
+        Gets a random bug from the bugs json.
+        """
+        pass
 
     def create_bug(self) -> Bug:
         """
         Placeholder for creating a bug, which is a patch that causes one or more previously passing tests to fail.
-        Will get theis data from a docker container running tests.
+        Will get this data from a docker container running tests.
         """
 
         # Get json from ../SWE-smith/logs/task_insts/monkeytype_pytest.json
@@ -95,17 +127,6 @@ class Environment:
         )
 
 
-def create_execution_environment(repo_name: str) -> Environment:
-    """
-    Creates an execution environment for a given repo.
-    Inside, we can generate mutations, validate which induce bugs, and then return the bug.
-    Here, a bug is defined as a patch that causes one or more previously passing tests to fail.
-
-    TODO: This is a placeholder until we can run a docker container with the repo and the dependencies installed.
-    """
-    return Environment(repo_name)
-
-
 async def create_next_regression_challenge() -> RegressionChallenge:
     """
     Creates a codegen challenge using swesmith's bug generation framework.
@@ -121,7 +142,12 @@ async def create_next_regression_challenge() -> RegressionChallenge:
 
     repo_name = random.choice(supported_repos)
 
-    environment = create_execution_environment(repo_name)
+    environment = Environment(repo_name)
+    # environment.create_docker_execution_environment()
+    # environment.generate_bugs()
+    # environment.collect_bugs()
+    # environment.validate_bugs()
+    # bug = environment.get_random_bug()
 
     bug = environment.create_bug()
 
