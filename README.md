@@ -29,21 +29,6 @@ cd SWE-agent
 uv pip install --editable .
 ```
 
-4. Install Ollama:
-- For macOS:
-```bash
-curl https://ollama.ai/install.sh | sh
-```
-- For Linux:
-```bash
-curl https://ollama.ai/install.sh | sh
-```
-- For Windows: Download the installer from [Ollama's website](https://ollama.ai/download)
-
-After installation, start Ollama:
-```bash
-ollama serve
-```
 
 5. Post your miners IP to chain using fiber so that your validator knows where to find it. 
 - **Important**: Make sure you've registered on subtensor before running this command
@@ -71,10 +56,10 @@ To run multiple miners in parallel:
 uvicorn miner.main:app --host 0.0.0.0 --port 7999
 
 # Second miner (in a different terminal)
-uvicorn miner.main:app --host 0.0.0.0 --port 8000
+uvicorn miner.main:app --host 0.0.0.0 --port 7998
 
 # Third miner (in a different terminal)
-uvicorn miner.main:app --host 0.0.0.0 --port 8001
+uvicorn miner.main:app --host 0.0.0.0 --port 7997
 ```
 
 ## (Optional) Set up Cave
