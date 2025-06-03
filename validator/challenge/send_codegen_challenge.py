@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fiber import Keypair
-from ridges_logging.logging_utils import get_logger
+from shared.logging_utils import get_logger
 from fiber.validator import client as validator
 
 from validator.challenge.challenge_types import CodegenResponse, GeneratedCodegenProblem

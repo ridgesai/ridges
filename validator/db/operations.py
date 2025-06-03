@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 from pathlib import Path
 
-from ridges_logging.logging_utils import get_logger
+from shared.logging_utils import get_logger
 
 from validator.challenge.challenge_types import GeneratedCodegenProblem, CodegenResponse
 from validator.config import VALIDATION_DELAY
