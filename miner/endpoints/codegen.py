@@ -1,7 +1,7 @@
 import json
 import os
 
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 from fastapi import APIRouter, Depends, Request, HTTPException
 
 from miner.dependancies import blacklist_low_stake, verify_request, get_config

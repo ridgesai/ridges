@@ -1,5 +1,5 @@
 from itertools import combinations
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 import os
 import random
 from textwrap import dedent

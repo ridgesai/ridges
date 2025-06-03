@@ -1,9 +1,7 @@
-from pathlib import Path
 from typing import List, Optional
 
-from git import Repo
 from openai import OpenAI
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 from validator.challenge.codegen.challenge import CodegenChallenge
 from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.base import ValidationResult

@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 
 from validator.config import VALIDATION_DELAY
 from .schema import check_db_initialized, init_db

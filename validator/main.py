@@ -21,7 +21,7 @@ from validator.challenge.create_regression_challenge import create_next_regressi
 from validator.db.operations import DatabaseManager
 from validator.challenge.common import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
-from logging.logging_utils import get_logger, logging_update_active_coroutines
+from ridges_logging.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
