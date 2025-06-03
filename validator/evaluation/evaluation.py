@@ -76,4 +76,5 @@ class CodeGenValidator:
         
         scores = grader.grade(responses_to_test)
 
-        return [ValidationResult(score=scores.get(response.miner_hotkey, 0.0)) for response in responses_to_test]
+        validation_results = [ValidationResult(score=scores.get(response.miner_hotkey, 0.0)) for response in responses_to_test]
+        return validation_results

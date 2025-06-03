@@ -16,7 +16,6 @@ dependencies = [
     "openai>=1.82.0",
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",
-    "streamlit>=1.21.0",
     "swebench>=4.0.3",
     "tiktoken>=0.9.0",
 ]

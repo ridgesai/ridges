@@ -4,7 +4,52 @@ Many thanks to SN44 Score Vision, we've used their repo as inspiration for how t
 
 This repo will eventually be merged into the main ridgesai/ridges folder. In order to release the new changes such as new task types etc, we are refactoring the codebase to make it cleaner, support async tasks, and use fiber to allow us to more easily split emission between different types of tasks
 
-## Local Setup
+## Quick Start (Recommended)
+
+You can set up and run a local Ridges testnet with a single script:
+
+```sh
+./ridges-localnet.sh
+```
+
+This script will:
+- Build the Docker images (unless you comment out the build line if already built)
+- Set up the Subtensor node and the miner
+- Create wallets and hotkeys with `_ridges` suffixes to avoid overwriting your existing keys
+
+**Note:**
+- The validator is **not** started automatically by the script. You must start it manually (see below).
+- The miner and validator use the following wallet/hotkey names by default:
+  - Miner: `miner_ridges` / `default_ridges`
+  - Validator: `validator_ridges` / `default_ridges`
+
+## Running the Validator
+
+To run the validator, you must set your OpenAI API key and start the service manually:
+
+1. **Set your OpenAI API key in `docker-compose.yml`:**
+   ```yaml
+   environment:
+     - OPENAI_API_KEY=sk-...your-key-here...
+   ```
+   Or export it in your shell before running Docker Compose:
+   ```sh
+   export OPENAI_API_KEY=sk-...your-key-here...
+   ```
+
+2. **Start the validator:**
+   ```sh
+   docker compose up validator
+   ```
+
+The validator will use the shared wallet volume and the correct wallet/hotkey names as set in the compose file.
+
+## Notes
+- If you already have built the Docker image, you can comment out the build line in the script for faster startup.
+- If you want to use different wallet/hotkey names, update the environment variables in `docker-compose.yml` for the miner and validator services.
+- All containers share the same wallet volume, so keys created in one are available to all.
+
+## Local Setup (Manual/Advanced)
 
 1. Get the subtensor running, and then register your validator and miner wallets to it as usual: 
 
@@ -33,3 +78,21 @@ This repo will eventually be merged into the main ridgesai/ridges folder. In ord
 ## Helpful commands
 
 - See the registered actors on a subnet locally: `btcli subnets show --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945`
+
+## Updating the Miner After Code Changes
+
+If you make changes to the code in the `miner` directory, you need to restart the miner container to apply those changes:
+
+```sh
+docker compose restart miner
+```
+
+If you change dependencies (e.g., update `pyproject.toml`) or the Dockerfile, you must rebuild the image and then restart the miner:
+
+```sh
+docker compose build miner
+docker compose up miner
+```
+
+- **Code changes only:** Just restart the miner container.
+- **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
