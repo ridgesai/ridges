@@ -295,104 +295,68 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def get_response_data(self, challenge_id: str, challenge_type: str) -> List[Dict[str, Any]]:
-        """Get all unevaluated responses for a challenge"""
+    def get_pending_responses(self, challenge_id: str):
+        """Get all pending responses for a challenge, returning appropriate response objects."""
         conn = self.get_connection()
-        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
-
+        
         try:
+            # Get responses and challenge type in a single query
             cursor.execute("""
-                SELECT
+                SELECT 
                     r.response_id,
                     r.challenge_id,
                     r.miner_hotkey,
                     r.node_id,
                     r.response_patch,
                     r.received_at,
-                    r.completed_at
+                    r.completed_at,
+                    c.challenge_type
                 FROM responses r
                 JOIN challenges c ON r.challenge_id = c.challenge_id
                 WHERE r.challenge_id = ?
-                  AND c.challenge_type = ?
                   AND r.evaluated = FALSE
                   AND r.response_patch IS NOT NULL
-            """, (str(challenge_id), challenge_type))
-
+            """, (str(challenge_id),))
+            
             rows = cursor.fetchall()
+            if not rows:
+                logger.info(f"No pending responses found for challenge {challenge_id}")
+                return []
+            
+            challenge_type = rows[0]["challenge_type"]
             responses = []
-
-            for row in rows:
-                responses.append({
-                    'response_id': row["response_id"],
-                    'challenge_id': row["challenge_id"],
-                    'miner_hotkey': row["miner_hotkey"],
-                    'node_id': row["node_id"],
-                    'response_patch': row["response_patch"],
-                    'received_at': row["received_at"],
-                    'completed_at': row["completed_at"]
-                })
-
+            
+            # Create appropriate response objects based on challenge type
+            if challenge_type == "codegen":
+                from validator.challenge.codegen.response import CodegenResponse
+                for row in rows:
+                    try:
+                        response = CodegenResponse.from_dict(dict(row))
+                        responses.append(response)
+                    except Exception as e:
+                        logger.error(f"Error processing codegen response {row['response_id']}: {str(e)}")
+                        continue
+                        
+            elif challenge_type == "regression":
+                from validator.challenge.regression.response import RegressionResponse
+                for row in rows:
+                    try:
+                        response = RegressionResponse.from_dict(dict(row))
+                        responses.append(response)
+                    except Exception as e:
+                        logger.error(f"Error processing regression response {row['response_id']}: {str(e)}")
+                        continue
+            else:
+                logger.error(f"Unknown challenge type: {challenge_type}")
+                return []
+            
             logger.info(f"Found {len(responses)} pending responses for challenge {challenge_id}")
             return responses
 
         finally:
             cursor.close()
             conn.close()
-
-    def get_pending_responses(self, challenge_id: str):
-        """Get all pending responses for a challenge, returning appropriate response objects."""
-        # First determine the challenge type
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute("""
-                SELECT challenge_type 
-                FROM challenges 
-                WHERE challenge_id = ?
-            """, (challenge_id,))
-            
-            row = cursor.fetchone()
-            if not row:
-                logger.error(f"Challenge {challenge_id} not found")
-                return []
-            
-            challenge_type = row[0]
-            
-        finally:
-            cursor.close()
-            conn.close()
-        
-        # Get the raw response data
-        response_data = self.get_response_data(challenge_id, challenge_type)
-        responses = []
-        
-        # Create appropriate response objects based on challenge type
-        if challenge_type == "codegen":
-            from validator.challenge.codegen.response import CodegenResponse
-            for data in response_data:
-                try:
-                    response = CodegenResponse.from_dict(data)
-                    responses.append(response)
-                except Exception as e:
-                    logger.error(f"Error processing codegen response {data.get('response_id')}: {str(e)}")
-                    continue
-                    
-        elif challenge_type == "regression":
-            from validator.challenge.regression.response import RegressionResponse
-            for data in response_data:
-                try:
-                    response = RegressionResponse.from_dict(data)
-                    responses.append(response)
-                except Exception as e:
-                    logger.error(f"Error processing regression response {data.get('response_id')}: {str(e)}")
-                    continue
-        else:
-            logger.error(f"Unknown challenge type: {challenge_type}")
-            return []
-        
-        return responses
 
     def update_response(
         self,
