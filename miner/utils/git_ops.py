@@ -2,6 +2,7 @@ import os
 import shutil
 from git import Repo
 import logging
+import uuid
 
 
 def get_git_url(repo: str) -> str:
@@ -21,12 +22,16 @@ def clone_and_checkout_repo(repository: str, commit_hash: str = None, base_dir: 
     Returns the path to the cloned repo.
     """
     git_url = get_git_url(repository)
-    # Use a safe directory name
-    repo_dir = os.path.join(base_dir, repository.replace("/", "_").replace(":", "_"))
+    # Use a safe directory name and append a unique id
+    unique_id = str(uuid.uuid4())
+    repo_dir = os.path.join(base_dir, f"{repository.replace('/', '_').replace(':', '_')}_{unique_id}")
 
-    # Clean up any previous clone
+    # Clean up any previous clone (shouldn't be needed, but for safety)
     if os.path.exists(repo_dir):
         shutil.rmtree(repo_dir)
+
+    # Ensure base_dir exists
+    os.makedirs(base_dir, exist_ok=True)
 
     # Clone the repo
     repo = Repo.clone_from(git_url, repo_dir)
