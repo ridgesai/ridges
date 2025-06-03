@@ -3,14 +3,9 @@ from pathlib import Path
 import os
 
 # Network configuration
-
-# Mainnet config 
-
-# Testnet config
-
-# Localnet config
-NETUID = int(os.getenv("NETUID", "1"))
-SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
+# Consider defaulting to testnet uid?
+NETUID = int(os.getenv("NETUID", "62"))
+SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "finney")
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
 
 # Validator configuration
@@ -47,6 +42,8 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
+RIDGES_API_URL = "https://api.ridges.ai"
+LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 # Log initial configuration
 import logging
