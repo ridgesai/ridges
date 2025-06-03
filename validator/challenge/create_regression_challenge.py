@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, Dict, Final, List
-from logging.logging_utils import get_logger
+from ridges_logging.logging_utils import get_logger
 
 from git import Optional, Repo
 import requests
