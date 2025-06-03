@@ -12,7 +12,7 @@ from miner.core.config import Config
 from miner.utils.shared import miner_lock
 from miner.utils.git_ops import clone_and_checkout_repo
 from miner.utils.patch import generate_patch, apply_patch
-from validator.challenge.challenge_types import File
+from validator.challenge.common import File
 
 logger = get_logger(__name__)
 
