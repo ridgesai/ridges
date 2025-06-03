@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import subprocess
+import time
 from pathlib import Path
 
 from shared.logging_utils import get_logger
@@ -38,23 +39,78 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     cmd = [
         "sweagent", "run",
         "--agent.model.name=claude-3-7-sonnet-latest",
-        "--agent.model.per_instance_cost_limit=2.00",
+        "--agent.model.per_instance_cost_limit=100.00",
         f"--env.repo.path={repo_path}",
         f"--problem_statement.path={problem_file}",
-        f"--output_dir={out_dir}"           # Changed from output_path to output_dir
+        f"--output_dir={out_dir}"
     ]
     
     # Log the command being run
     logger.info(f"Running SWE-agent with command: {' '.join(cmd)}")
     
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    # Start the process with real-time output streaming
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,  # Line buffered
+        universal_newlines=True
+    )
+
+    # Function to stream output in real-time
+    def stream_output(pipe, prefix):
+        for line in pipe:
+            logger.info(f"{prefix}: {line.strip()}")
     
-    # Log the full output
-    logger.info(f"SWE-agent stdout: {result.stdout}")
-    logger.info(f"SWE-agent stderr: {result.stderr}")
-    
-    if result.returncode != 0:
-        raise RuntimeError(f"SWE-agent failed: {result.stderr}")
+    # Start threads to stream stdout and stderr
+    import threading
+    stdout_thread = threading.Thread(target=stream_output, args=(process.stdout, "SWE-agent stdout"))
+    stderr_thread = threading.Thread(target=stream_output, args=(process.stderr, "SWE-agent stderr"))
+    stdout_thread.daemon = True
+    stderr_thread.daemon = True
+    stdout_thread.start()
+    stderr_thread.start()
+
+    # Also start a thread to monitor the log files
+    def monitor_logs():
+        while process.poll() is None:  # While process is running
+            instance_dirs = list(Path(out_dir).glob("*"))
+            if instance_dirs:
+                instance_dir = max(instance_dirs, key=lambda p: p.stat().st_mtime)
+                for log_file in instance_dir.glob("*.log"):
+                    try:
+                        with open(log_file, 'r') as f:
+                            # Read new lines
+                            f.seek(0, 2)  # Seek to end
+                            while process.poll() is None:
+                                line = f.readline()
+                                if line:
+                                    logger.info(f"SWE-agent log [{log_file.name}]: {line.strip()}")
+                                else:
+                                    time.sleep(0.1)  # Short sleep to prevent busy waiting
+                    except Exception as e:
+                        logger.error(f"Error reading log file {log_file}: {e}")
+            time.sleep(1)  # Check for new instance directories every second
+
+    log_monitor_thread = threading.Thread(target=monitor_logs)
+    log_monitor_thread.daemon = True
+    log_monitor_thread.start()
+
+    # Wait for the process to complete
+    try:
+        process.wait(timeout=900)  # 15 minute timeout
+    except subprocess.TimeoutExpired:
+        process.kill()
+        raise RuntimeError("SWE-agent timed out after 15 minutes")
+
+    # Wait for output threads to finish
+    stdout_thread.join()
+    stderr_thread.join()
+    log_monitor_thread.join()
+
+    if process.returncode != 0:
+        raise RuntimeError(f"SWE-agent failed with return code {process.returncode}")
 
     # 3) Find and read the patch file
     # First try the instance-specific directory
@@ -106,7 +162,7 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     diff = "\n".join(cleaned_lines) + "\n"
     
     logger.info(f"Successfully cleaned patch of length {len(diff)}")
-    return diff
+    return diff 
 
 async def process_challenge(
     request: Request,
