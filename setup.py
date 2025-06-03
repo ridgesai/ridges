@@ -5,6 +5,6 @@ setup(
     packages=[
         "miner",
         "validator",
-        "logging",
+        "ridges_logging",
     ],
 ) 
