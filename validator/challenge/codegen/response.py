@@ -5,8 +5,9 @@ This module defines the CodegenResponse class for responses to codegen challenge
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime
+
 
 from ..base import BaseResponse
 

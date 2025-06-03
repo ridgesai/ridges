@@ -5,7 +5,7 @@ This module defines the RegressionResponse class for responses to regression cha
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from ..base import BaseResponse

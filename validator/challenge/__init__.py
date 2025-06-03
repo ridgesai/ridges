@@ -14,7 +14,7 @@ from .codegen import CodegenChallenge, CodegenResponse
 # Regression challenges  
 from .regression import RegressionChallenge, RegressionResponse
 
-# Legacy imports from old challenge_types.py for any remaining usages
+# Common utilities
 from .common import (
     IngestionHeuristics,
     File,

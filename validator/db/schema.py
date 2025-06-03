@@ -12,9 +12,7 @@ def get_schema_v1() -> List[str]:
         CREATE TABLE IF NOT EXISTS challenges (
             challenge_id TEXT PRIMARY KEY,  -- UUID for the challenge
             challenge_type TEXT NOT NULL CHECK(challenge_type IN ('codegen', 'regression')),
-            created_at TIMESTAMP NOT NULL,
-            problem_statement TEXT NOT NULL,
-            commit_hash TEXT
+            created_at TIMESTAMP NOT NULL
         )
         """,
 
@@ -22,8 +20,10 @@ def get_schema_v1() -> List[str]:
         """
         CREATE TABLE IF NOT EXISTS codegen_challenges (
             challenge_id TEXT PRIMARY KEY,
+            problem_statement TEXT NOT NULL, -- Problem statement for codegen challenges
             dynamic_checklist TEXT NOT NULL,  -- Stored as JSON array
-            repository_name TEXT NOT NULL,
+            repository_url TEXT NOT NULL,     -- URL of the repository
+            commit_hash TEXT,                 -- Optional commit hash for codegen challenges
             context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
             FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
         )
@@ -33,7 +33,9 @@ def get_schema_v1() -> List[str]:
         """
         CREATE TABLE IF NOT EXISTS regression_challenges (
             challenge_id TEXT PRIMARY KEY,
+            problem_statement TEXT NOT NULL, -- Problem statement for regression challenges
             repository_url TEXT NOT NULL,
+            commit_hash TEXT,                 -- Optional commit hash for regression challenges
             context_file_paths TEXT NOT NULL, -- JSON array of file paths relative to repo root
             FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id) ON DELETE CASCADE
         )

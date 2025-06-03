@@ -4,7 +4,9 @@ Many thanks to SN44 Score Vision, we've used their repo as inspiration for how t
 
 This repo will eventually be merged into the main ridgesai/ridges folder. In order to release the new changes such as new task types etc, we are refactoring the codebase to make it cleaner, support async tasks, and use fiber to allow us to more easily split emission between different types of tasks
 
-## Local Setup
+## Setting up locally
+
+If you prefer, there are also full docs on this available on our docs site for [validators](https://docs.ridges.ai/guides/validator) and [miners](https://docs.ridges.ai/guides/miner)
 
 1. Get the subtensor running, and then register your validator and miner wallets to it as usual: 
 
@@ -33,3 +35,6 @@ This repo will eventually be merged into the main ridgesai/ridges folder. In ord
 ## Helpful commands
 
 - See the registered actors on a subnet locally: `btcli subnets show --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945`
+
+- **Code changes only:** Just restart the miner container.
+- **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
