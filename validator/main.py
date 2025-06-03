@@ -21,7 +21,6 @@ from validator.challenge.create_regression_challenge import create_next_regressi
 from validator.db.operations import DatabaseManager
 from validator.challenge.common import ChallengeTask
 from validator.challenge.create_codegen_challenge import create_next_codegen_challenge
-from validator.challenge.send_codegen_challenge import send_challenge
 from shared.logging_utils import get_logger, logging_update_active_coroutines
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
@@ -43,6 +42,7 @@ load_dotenv(env_path)
 
 # Set up logger
 logger = get_logger(__name__)
+logger.info(f"Loading environment variables from {env_path.absolute()}")
 
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.

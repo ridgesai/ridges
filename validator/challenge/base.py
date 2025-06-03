@@ -13,7 +13,7 @@ from enum import Enum
 
 import httpx
 from fiber import Keypair
-from ridges_logging.logging_utils import get_logger
+from shared.logging_utils import get_logger
 from fiber.validator import client as validator_client
 
 from validator.db.operations import DatabaseManager

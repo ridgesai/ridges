@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional
 from textwrap import dedent
 from datetime import datetime
 
-from ridges_logging.logging_utils import get_logger
+from shared.logging_utils import get_logger
 
 from validator.db.operations import DatabaseManager
 from validator.challenge.base import ValidationResult
