@@ -16,6 +16,11 @@ from dotenv import load_dotenv
 import httpx
 from openai import OpenAI
 
+# Load environment variables
+validator_dir = Path(__file__).parent
+env_path = validator_dir / ".env"
+load_dotenv(env_path)
+
 # Internal package imports
 from validator.challenge.create_regression_challenge import create_next_regression_challenge
 from validator.db.operations import DatabaseManager
@@ -34,11 +39,6 @@ from validator.evaluation.set_weights import set_weights
 
 project_root = str(Path(__file__).resolve().parents[2])
 sys.path.append(project_root)
-
-# Load environment variables
-validator_dir = Path(__file__).parent
-env_path = validator_dir / ".env"
-load_dotenv(env_path)
 
 # Set up logger
 logger = get_logger(__name__)
