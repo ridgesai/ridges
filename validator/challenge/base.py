@@ -222,6 +222,8 @@ class BaseChallenge(ABC):
                         received_at=sent_time,
                         response_patch=response_patch
                     )
+
+                    logger.info(f"Challenge response: {challenge_response}")
                     
                     # Store response in responses table
                     if db_manager:
@@ -232,8 +234,6 @@ class BaseChallenge(ABC):
                             response_patch=challenge_response.response_patch,
                             received_at=sent_time,
                             completed_at=received_time,
-                            evaluated=challenge_response.evaluated,
-                            score=challenge_response.score
                         )
                         logger.info(f"Stored response {response_id} in database")
                     
