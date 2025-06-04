@@ -98,18 +98,18 @@ async def run_evaluation_loop(
                     logger.info(f"Waking up after sleeping for {sleep_duration:.1f} seconds (iteration {iteration})")
                     continue
 
-                logger.info(f"Processing challenge {challenge[0]} (iteration {iteration})")
+                logger.info(f"Processing challenge {challenge.challenge_id} (iteration {iteration})")
 
                 try:
                     # Process the challenge
                     logger.info("Starting evaluate_pending_responses...")
                     await evaluate_pending_responses(
                         db_manager=db_manager,
-                        challenge_id=challenge[0]
+                        challenge_id=challenge.challenge_id
                     )
                     logger.info(f"Successfully completed challenge processing (iteration {iteration})")
                 except Exception as e:
-                    logger.error(f"Error processing challenge {challenge} (iteration {iteration}): {str(e)}")
+                    logger.error(f"Error processing challenge {challenge.challenge_id} (iteration {iteration}): {str(e)}")
                     logger.error("Stack trace:", exc_info=True)
                 
                 logging_update_active_coroutines("evaluation_task", False)
