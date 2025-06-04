@@ -4,6 +4,8 @@ import tempfile
 import subprocess
 import time
 from pathlib import Path
+import shutil
+import threading
 
 from shared.logging_utils import get_logger
 from fastapi import APIRouter, Depends, Request, HTTPException
@@ -65,7 +67,6 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
             logger.info(f"{prefix}: {line.strip()}")
     
     # Start threads to stream stdout and stderr
-    import threading
     stdout_thread = threading.Thread(target=stream_output, args=(process.stdout, "SWE-agent stdout"))
     stderr_thread = threading.Thread(target=stream_output, args=(process.stderr, "SWE-agent stderr"))
     stdout_thread.daemon = True
@@ -110,9 +111,6 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     stderr_thread.join()
     log_monitor_thread.join()
 
-    if process.returncode != 0:
-        raise RuntimeError(f"SWE-agent failed with return code {process.returncode}")
-
     # 3) Find and read the patch file
     # First try the instance-specific directory
     instance_dirs = list(Path(out_dir).glob("*"))
@@ -123,6 +121,19 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     # Get the most recent instance directory
     instance_dir = max(instance_dirs, key=lambda p: p.stat().st_mtime)
     logger.info(f"Using instance directory: {instance_dir}")
+
+    if process.returncode != 0:
+        # Check for UnicodeDecodeError in log files
+        error_detected = False
+        for log_file in instance_dir.glob("*.log"):
+            with open(log_file, "r") as lf:
+                if "UnicodeDecodeError" in lf.read():
+                    error_detected = True
+                    break
+        if error_detected:
+            logger.warning("SWE-agent failed due to UnicodeDecodeError in subprocess. Returning empty patch.")
+            return ""
+        raise RuntimeError(f"SWE-agent failed with return code {process.returncode}")
 
     # Look for the patch file
     patch_file = instance_dir / f"{instance_dir.name}.patch"
@@ -135,6 +146,15 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     logger.info(f"Reading patch from {patch_file}")
     with open(patch_file, "r") as fh:
         diff = fh.read()
+
+    # Log the cost of the run if available
+    cost_file = instance_dir / "cost.json"
+    if cost_file.exists():
+        with open(cost_file, "r") as cf:
+            cost_data = json.load(cf)
+            logger.info(f"SWE-agent cost for this run: {cost_data}")
+    else:
+        logger.warning(f"No cost.json found in {instance_dir}")
 
     if not diff:
         logger.error("Patch file is empty")
@@ -163,7 +183,7 @@ def solve_with_swe_agent(problem_text: str, repo_path: str) -> str:
     diff = "\n".join(cleaned_lines) + "\n"
     
     logger.info(f"Successfully cleaned patch of length {len(diff)}")
-    return diff 
+    return diff
 
 async def process_challenge(
     request: Request,
@@ -185,11 +205,11 @@ async def process_challenge(
             if not problem_statement or not dynamic_checklist:
                 raise HTTPException(status_code=400, detail="Incomplete problem provided")
             
-            # Check for OpenAI API key
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                logger.error("OpenAI API key not set in environment")
-                raise HTTPException(status_code=500, detail="OpenAI API key not set in environment")
+            # # Check for OpenAI API key
+            # api_key = os.getenv("OPENAI_API_KEY")
+            # if not api_key:
+            #     logger.error("OpenAI API key not set in environment")
+            #     raise HTTPException(status_code=500, detail="OpenAI API key not set in environment")
 
             if not repository:
                 raise HTTPException(status_code=400, detail="repository_name is required")
