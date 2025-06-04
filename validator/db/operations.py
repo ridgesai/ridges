@@ -273,25 +273,34 @@ class DatabaseManager:
         try:
             now = datetime.utcnow()
 
-            # Store response
+            # Get challenge type
+            cursor.execute("""
+                SELECT challenge_type
+                FROM challenges
+                WHERE challenge_id = ?
+            """, (challenge_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Challenge {challenge_id} not found")
+            challenge_type = row[0]
+
+            # Store base response
             cursor.execute("""
                 INSERT INTO responses (
                     challenge_id,
                     miner_hotkey,
                     node_id,
-                    response_patch,
                     received_at,
                     completed_at,
                     evaluated,
                     score,
                     evaluated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 challenge_id,
                 miner_hotkey,
                 node_id,
-                response_patch,
                 received_at,
                 completed_at,
                 evaluated,
@@ -299,6 +308,25 @@ class DatabaseManager:
             ))
 
             response_id = cursor.lastrowid
+
+            # Store type-specific response data
+            if response_patch:
+                if challenge_type == 'codegen':
+                    cursor.execute("""
+                        INSERT INTO codegen_responses (
+                            response_id,
+                            response_patch
+                        )
+                        VALUES (?, ?)
+                    """, (response_id, response_patch))
+                elif challenge_type == 'regression':
+                    cursor.execute("""
+                        INSERT INTO regression_responses (
+                            response_id,
+                            response_patch
+                        )
+                        VALUES (?, ?)
+                    """, (response_id, response_patch))
 
             # Mark challenge as completed in challenge_assignments
             cursor.execute("""
@@ -327,15 +355,26 @@ class DatabaseManager:
                     r.challenge_id,
                     r.miner_hotkey,
                     r.node_id,
-                    r.response_patch,
                     r.received_at,
                     r.completed_at,
-                    c.challenge_type
+                    r.evaluated,
+                    r.score,
+                    r.evaluated_at,
+                    c.challenge_type,
+                    CASE 
+                        WHEN c.challenge_type = 'codegen' THEN cr.response_patch
+                        WHEN c.challenge_type = 'regression' THEN rr.response_patch
+                    END as response_patch
                 FROM responses r
                 JOIN challenges c ON r.challenge_id = c.challenge_id
+                LEFT JOIN codegen_responses cr ON r.response_id = cr.response_id
+                LEFT JOIN regression_responses rr ON r.response_id = rr.response_id
                 WHERE r.challenge_id = ?
                   AND r.evaluated = FALSE
-                  AND r.response_patch IS NOT NULL
+                  AND (
+                      (c.challenge_type = 'codegen' AND cr.response_patch IS NOT NULL)
+                      OR (c.challenge_type = 'regression' AND rr.response_patch IS NOT NULL)
+                  )
             """, (str(challenge_id),))
             
             rows = cursor.fetchall()

@@ -57,7 +57,7 @@ def get_schema_v1() -> List[str]:
         )
         """,
 
-        # Unified responses table
+        # Parent responses table with common fields
         """
         CREATE TABLE IF NOT EXISTS responses (
             response_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,9 +70,26 @@ def get_schema_v1() -> List[str]:
             evaluated BOOLEAN DEFAULT FALSE,
             score FLOAT,
             evaluated_at TIMESTAMP,
-            response_patch TEXT,
             FOREIGN KEY (challenge_id) REFERENCES challenges(challenge_id),
             FOREIGN KEY (challenge_id, miner_hotkey) REFERENCES challenge_assignments(challenge_id, miner_hotkey)
+        )
+        """,
+
+        # Codegen-specific responses table (inherits from responses)
+        """
+        CREATE TABLE IF NOT EXISTS codegen_responses (
+            response_id INTEGER PRIMARY KEY,
+            response_patch TEXT NOT NULL,
+            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE
+        )
+        """,
+
+        # Regression-specific responses table (inherits from responses)
+        """
+        CREATE TABLE IF NOT EXISTS regression_responses (
+            response_id INTEGER PRIMARY KEY,
+            response_patch TEXT NOT NULL,
+            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE
         )
         """,
 
@@ -110,6 +127,8 @@ def check_db_initialized(db_path: str) -> bool:
             'regression_challenges',
             'challenge_assignments',
             'responses',
+            'codegen_responses',
+            'regression_responses',
             'availability_checks',
         }
         
