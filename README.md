@@ -32,8 +32,15 @@ uv pip install --editable .
 cd ..
 ```
 
+5. Add API key to .env - default right now is using Anthropic
 
-5. Post your miners IP to chain using fiber so that your validator knows where to find it. 
+6. If you're running the subtensor locally you need to run this command
+```bash
+export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945
+```
+
+
+7. Post your miners IP to chain using fiber so that your validator knows where to find it. 
 - **Important**: Make sure you've registered on subtensor before running this command
 - The port you choose here will be the same port you use when running the miner
 - For multiple miners, use different ports for each instance
@@ -42,9 +49,9 @@ fiber-post-ip --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945 --extern
 ```
 - Note that for external IP, if you use 0.0.0.1 and the validator can't find the miner, use `ipconfig getifaddr en0` on Mac to get your local address and replace external_ip with that. Restart the subtensor, reregister miner and validator, and run it using your local IP
 
-6. Set up your .env's in both the miner and validator dir. Use .env.example to see what you have to set
+8. Set up your .env's in both the miner and validator dir. Use .env.example to see what you have to set
 
-7. Run the validator and the miner, and you'll be able to see from both logs that they connect and the validator generates a problem
+9. Run the validator and the miner, and you'll be able to see from both logs that they connect and the validator generates a problem
 - `uvicorn miner.main:app --host 0.0.0.0 --port 7999` to start the miner
 - `uv run validator/main.py`
 
