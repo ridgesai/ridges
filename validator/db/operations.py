@@ -7,7 +7,7 @@ from pathlib import Path
 from shared.logging_utils import get_logger
 
 from validator.config import VALIDATION_DELAY
-from .schema import check_db_initialized, init_db
+from .schema import init_db
 
 if TYPE_CHECKING:
     from validator.challenge.base import BaseChallenge
@@ -20,9 +20,8 @@ class DatabaseManager:
         self.db_path = db_path
 
         # Initialize database if needed
-        if not check_db_initialized(str(db_path)):
-            logger.info(f"Initializing new database at {db_path}")
-            init_db(str(db_path))
+        logger.info(f"Initializing new database at {db_path}")
+        init_db(str(db_path))
         
         # Create a connection with Row factory
         self.conn = sqlite3.connect(db_path)
