@@ -16,17 +16,20 @@ If you prefer, there are also full docs on this available on our docs site for [
 - `btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
 - `btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
 
-2. Setup a venv and install the required packages locally:
+2. Install Docker based on your system requirements.
+
+3. Setup a venv and install the required packages locally:
 ```bash
-uv venv
+uv venv --python 3.11
 uv pip install -e .
 ```
 
-3. Install SWE-agent:
+4. Install SWE-agent:
 ```bash
 git clone https://github.com/princeton-nlp/SWE-agent.git
 cd SWE-agent
 uv pip install --editable .
+cd ..
 ```
 
 
