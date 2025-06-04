@@ -200,20 +200,26 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
             # Fetch all logs created in the last n minutes (based on the Config)
             tasks = [
                 db_manager.get_all_table_entries("codegen_challenges", since=LOG_DRAIN_FREQUENCY),
+                db_manager.get_all_table_entries("regression_challenges", since=LOG_DRAIN_FREQUENCY),
                 db_manager.get_all_table_entries("responses", since=LOG_DRAIN_FREQUENCY), 
             ]
-            challenges = tasks[0]
-            responses = tasks[1]
+            codegen_challenges = tasks[0]
+            regression_challenges = tasks[1]
+            responses = tasks[2]
 
-            logger.info(f"Fetched {len(challenges)} challenges, {len(responses)} from database. Preparing to post to Ridges API")
+            logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(regression_challenges)} regression challenges, {len(responses)} responses from database. Preparing to post to Ridges API")
             async with httpx.AsyncClient() as client:
                 api_tasks = [
                     client.post(
-                        f"{RIDGES_API_URL}/ingestion/codegen-challenges",
-                        json=challenges
+                        f"{RIDGES_API_URL}/post/codegen-challenges",
+                        json=codegen_challenges
                     ),
                     client.post(
-                        f"{RIDGES_API_URL}/ingestion/codegen-responses",
+                        f"{RIDGES_API_URL}/post/regression-challenges",
+                        json=regression_challenges
+                    ),
+                    client.post(
+                        f"{RIDGES_API_URL}/post/responses",
                         json=responses
                     ),
                 ]

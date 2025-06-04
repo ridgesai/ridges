@@ -591,12 +591,13 @@ class DatabaseManager:
 
         TABLE_TO_DATETIME_MAP = {
             "codegen_challenges": "created_at",
+            "regression_challenges": "created_at",
             "responses": "received_at",
         }
 
         try:
             if not since:
-                cursor.execute(f"SELECT * FROM {table_name}")
+                cursor.execute(f"SELECT * FROM {table_name} JOIN challenges ON {table_name}.challenge_id = challenges.challenge_id")
                 return [dict(row) for row in cursor.fetchall()]
 
             # If since exists, see if its a supported table
@@ -605,7 +606,7 @@ class DatabaseManager:
             if time_field_name is None:
                 raise NotImplementedError(f"Provided table {table_name} does not have a table time field recorded. Please add this tables time field name to fetch all rows since a date.")
 
-            cursor.execute(f"SELECT * FROM {table_name} WHERE datetime({time_field_name}) > datetime('now', '-{since.total_seconds()} seconds')")
+            cursor.execute(f"SELECT * FROM {table_name} JOIN challenges ON {table_name}.challenge_id = challenges.challenge_id WHERE datetime({time_field_name}) > datetime('now', '-{since.total_seconds()} seconds')")
             rows = cursor.fetchall()
             columns = [col[0] for col in cursor.description]
 
