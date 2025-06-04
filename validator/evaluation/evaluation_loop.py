@@ -67,7 +67,7 @@ async def run_evaluation_loop(
     db_path: Path,
     openai_client: OpenAI,
     validator_hotkey: str,
-    sleep_interval: int = 60
+    sleep_interval: int = 5 * 60 # 5 minutes
 ) -> None:
     """Entrypoint that sets up the DB and runs the loop."""
     try: 

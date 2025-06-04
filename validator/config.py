@@ -25,7 +25,7 @@ MIN_MINERS = 1
 MAX_MINERS = 25
 
 # Additional settings needed for operation
-CHALLENGE_INTERVAL = timedelta(minutes=1)
+CHALLENGE_INTERVAL = timedelta(minutes=5)
 CHALLENGE_TIMEOUT = timedelta(minutes=4)
 
 # Codegen task configuration
