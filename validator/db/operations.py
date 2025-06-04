@@ -24,6 +24,7 @@ class DatabaseManager:
             logger.info(f"Initializing new database at {db_path}")
             init_db(str(db_path))
         
+        # Create a connection with Row factory
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
         logger.info(f"Connected to database at {db_path}")
@@ -33,7 +34,10 @@ class DatabaseManager:
             self.conn.close()
 
     def get_connection(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.db_path)
+        """Get a new database connection with Row factory."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
     
     # =============================================================================
     # GENERIC CHALLENGE OPERATIONS
@@ -193,8 +197,23 @@ class DatabaseManager:
                     """, (VALIDATION_DELAY.total_seconds() / 60,))
                     
             row = cursor.fetchone()
+            if not row or not row[0]:  # First column is challenge_id
+                return None
 
-            return row if row and row[0] else None
+            challenge_id = row[0]  # First column is challenge_id
+            challenge_type = row[1]  # Second column is challenge_type
+            
+            # Get the appropriate challenge object
+            if challenge_type == "codegen":
+                from validator.challenge.codegen.challenge import CodegenChallenge
+                return CodegenChallenge.get_from_database(self, challenge_id)
+            elif challenge_type == "regression":
+                from validator.challenge.regression.challenge import RegressionChallenge
+                return RegressionChallenge.get_from_database(self, challenge_id)
+            else:
+                logger.error(f"Unknown challenge type: {challenge_type}")
+                return None
+
         finally:
             conn.close()
         
@@ -665,17 +684,17 @@ class DatabaseManager:
             
             challenge_type = row[0]
             
+            # Get the appropriate challenge object using lazy imports
+            if challenge_type == "codegen":
+                from validator.challenge.codegen.challenge import CodegenChallenge
+                return CodegenChallenge.get_from_database(self, challenge_id)
+            elif challenge_type == "regression":
+                from validator.challenge.regression.challenge import RegressionChallenge
+                return RegressionChallenge.get_from_database(self, challenge_id)
+            else:
+                logger.error(f"Unknown challenge type: {challenge_type}")
+                return None
+            
         finally:
             cursor.close()
             conn.close()
-        
-        # Get the appropriate challenge object using lazy imports
-        if challenge_type == "codegen":
-            from validator.challenge.codegen.challenge import CodegenChallenge
-            return CodegenChallenge.get_from_database(self, challenge_id)
-        elif challenge_type == "regression":
-            from validator.challenge.regression.challenge import RegressionChallenge
-            return RegressionChallenge.get_from_database(self, challenge_id)
-        else:
-            logger.error(f"Unknown challenge type: {challenge_type}")
-            return None
