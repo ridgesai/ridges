@@ -631,7 +631,8 @@ class DatabaseManager:
         TABLE_TO_DATETIME_MAP = {
             "codegen_challenges": "created_at",
             "regression_challenges": "created_at",
-            "responses": "received_at",
+            "codegen_responses": "received_at",
+            "regression_responses": "received_at",
         }
 
         try:
@@ -678,7 +679,8 @@ class DatabaseManager:
         try:
             # Define tables and their timestamp columns for unified schema
             tables_to_clean = [
-                ("responses", "received_at"),
+                ("codegen_responses", "received_at"),
+                ("regression_responses", "received_at"),
                 ("challenge_assignments", "completed_at"),
                 ("availability_checks", "checked_at"),
             ]

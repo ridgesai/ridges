@@ -200,14 +200,16 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
             # Fetch all logs created in the last n minutes (based on the Config)
             tasks = [
                 db_manager.get_all_table_entries("codegen_challenges", since=LOG_DRAIN_FREQUENCY),
+                db_manager.get_all_table_entries("codegen_responses", since=LOG_DRAIN_FREQUENCY), 
                 db_manager.get_all_table_entries("regression_challenges", since=LOG_DRAIN_FREQUENCY),
-                db_manager.get_all_table_entries("responses", since=LOG_DRAIN_FREQUENCY), 
+                db_manager.get_all_table_entries("regression_responses", since=LOG_DRAIN_FREQUENCY), 
             ]
             codegen_challenges = tasks[0]
-            regression_challenges = tasks[1]
-            responses = tasks[2]
+            codegen_responses = tasks[1]
+            regression_challenges = tasks[2]
+            regression_responses = tasks[3]
 
-            logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(regression_challenges)} regression challenges, {len(responses)} responses from database. Preparing to post to Ridges API")
+            logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(codegen_responses)} codegen responses, {len(regression_challenges)} regression challenges, {len(regression_responses)} regression responses from database. Preparing to post to Ridges API")
             async with httpx.AsyncClient() as client:
                 api_tasks = [
                     client.post(
@@ -215,12 +217,16 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
                         json=codegen_challenges
                     ),
                     client.post(
+                        f"{RIDGES_API_URL}/post/codegen-responses",
+                        json=codegen_responses
+                    ),
+                    client.post(
                         f"{RIDGES_API_URL}/post/regression-challenges",
                         json=regression_challenges
                     ),
                     client.post(
-                        f"{RIDGES_API_URL}/post/responses",
-                        json=responses
+                        f"{RIDGES_API_URL}/post/regression-responses",
+                        json=regression_responses
                     ),
                 ]
                 await asyncio.gather(*api_tasks)
