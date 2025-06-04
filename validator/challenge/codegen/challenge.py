@@ -31,6 +31,7 @@ class CodegenChallenge(BaseChallenge):
     This challenge type asks miners to generate code based on a problem statement
     and dynamic checklist, using provided context files as reference.
     """
+    problem_statement: str
     dynamic_checklist: List[str]
     repository_url: str
     context_file_paths: List[str]  # Relative to repository_url as the repo root
@@ -210,6 +211,7 @@ class CodegenChallenge(BaseChallenge):
             error = self.apply_and_run_tests(response.response_patch)
             
             if error is None:
+                logger.info(f"Response {response.response_id} passed testing")
                 responses_to_test.append(response)
             else:
                 logger.info(f"Response {response.response_id} failed because of: {error}")
