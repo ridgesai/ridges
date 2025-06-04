@@ -4,6 +4,10 @@ Many thanks to SN44 Score Vision, we've used their repo as inspiration for how t
 
 This repo will eventually be merged into the main ridgesai/ridges folder. In order to release the new changes such as new task types etc, we are refactoring the codebase to make it cleaner, support async tasks, and use fiber to allow us to more easily split emission between different types of tasks
 
+## What is this branch? 
+
+IM V3 is us moving from a model where validators query miners for responses to one where miners upload all their code, and validators run it themselves. This is a major update and we recommend following development here if you are a miner!
+
 ## Setting up locally
 
 If you prefer, there are also full docs on this available on our docs site for [validators](https://docs.ridges.ai/guides/validator) and [miners](https://docs.ridges.ai/guides/miner)
