@@ -1,7 +1,7 @@
 import json
 import sqlite3
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from shared.logging_utils import get_logger
@@ -577,6 +577,49 @@ class DatabaseManager:
 
             results = cursor.fetchall()
             return results
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_all_table_entries(
+        self, 
+        table_name: str,
+        since: Optional[timedelta] = timedelta(days=1)
+    ) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        TABLE_TO_DATETIME_MAP = {
+            "codegen_challenges": "created_at",
+            "responses": "received_at",
+        }
+
+        try:
+            if not since:
+                cursor.execute(f"SELECT * FROM {table_name}")
+                return [dict(row) for row in cursor.fetchall()]
+
+            # If since exists, see if its a supported table
+            time_field_name = TABLE_TO_DATETIME_MAP.get(table_name)
+
+            if time_field_name is None:
+                raise NotImplementedError(f"Provided table {table_name} does not have a table time field recorded. Please add this tables time field name to fetch all rows since a date.")
+
+            cursor.execute(f"SELECT * FROM {table_name} WHERE datetime({time_field_name}) > datetime('now', '-{since.total_seconds()} seconds')")
+            rows = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+
+            result = []
+            for row in rows:
+                row_dict = {}
+                for i in range(len(columns)):
+                    row_dict[columns[i]] = row[i]
+                result.append(row_dict)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting table data: {str(e)}")
+
         finally:
             cursor.close()
             conn.close()
