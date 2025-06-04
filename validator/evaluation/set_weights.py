@@ -121,16 +121,6 @@ async def set_weights(
             # If no scores, distribute evenly
             node_weights = [1.0 / len(nodes) for _ in nodes]
 
-        # Breakpoint: code below from template
-        
-        # Ensure weights sum to 1.0
-        total_weight = sum(node_weights)
-        if total_weight > 0:
-            node_weights = [w / total_weight for w in node_weights]
-        else:
-            # If no scores, distribute evenly
-            node_weights = [1.0 / len(nodes) for _ in nodes]
-        
         # Log detailed weight information
         logger.info(f"Setting weights for {len(nodes)} nodes")
         for node_id, weight, node in zip(node_ids, node_weights, nodes):

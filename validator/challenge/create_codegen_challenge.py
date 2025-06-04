@@ -279,7 +279,7 @@ async def create_next_codegen_challenge(
     This is then returned to miners that specialize in codegen
 
     Returns:
-        GeneratedProblemStatement or None if error
+        CodegenChallenge or None if error
     '''
 
     # Select a supported repo at random
