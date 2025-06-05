@@ -35,7 +35,8 @@ activate_venv
 
 # Run validator if not already running
 if ! is_validator_running; then
-    echo "Validator is not running, starting pm2 process '$PM2_PROCESS_NAME'..."
+    echo "Validator is not running, starting pm2 process '$PM2_PROCESS_NAME'"
+    echo "Add an argument to this script to change the PM2 process name, e.g. $0 my-pm2-process-name"
     # Exit if validator/.env does not exist
     if [ ! -f "validator/.env" ]; then
         echo "validator/.env does not exist, please create it. You can use validator/.env.example as a template."
@@ -55,6 +56,7 @@ if ! is_validator_running; then
         echo "Please update the values in validator/.env and run this script again."
         exit 1
     fi
+    uv pip install -e "."
     pm2 start uv  --name $PM2_PROCESS_NAME -- run validator/main.py
 else
     echo "Validator is already running"
@@ -71,17 +73,12 @@ while true; do
     NEW_VERSION=$(git rev-parse HEAD)
 
     if [ $VERSION != $NEW_VERSION ]; then
-        echo "Code updated, reinstalling dependencies..."
-        
-        # Reactivate venv to ensure we're in the right environment
+        echo "Code updated on branch $(git rev-parse --abbrev-ref HEAD)"
+        echo "Latest commit: $(git log -1 --pretty=%B)"
+        echo "Reinstalling dependencies if necessary..."
         activate_venv
-        
-        # Install dependencies using uv
         uv pip install -e "."
-        
-        # Restart the PM2 process
         pm2 restart $PM2_PROCESS_NAME
-        
-        echo "Update completed"
+        echo "Update completed at $(date '+%Y-%m-%d %H:%M:%S'), validator is now running on version $NEW_VERSION"
     fi
 done
