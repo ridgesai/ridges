@@ -86,3 +86,15 @@ We've built Cave, a dashboard that lets you view locally running miner and valid
 
 - **Code changes only:** Just restart the miner container.
 - **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
+
+## For Validators
+
+1. Make sure you have these dependencies installed:
+  - `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+  - `pm2` (`npm install pm2@latest -g`)
+  - `docker`
+2. Fill out `validator/.env` using the template found in `validator/.env.example`
+3. Run `./validator_auto_update.sh` to start your validator and keep it up-to-date
+
+This will allow your validator to run smoothly as we continue to improve the incentive mechanism over time.
+
