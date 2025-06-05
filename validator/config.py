@@ -47,6 +47,7 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
+RIDGES_API_URL = "http://127.0.0.1:8000" # TODO: Get this from the environment
 
 # Log initial configuration
 import logging
