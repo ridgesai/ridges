@@ -75,6 +75,7 @@ while true; do
 
     VERSION=$(git rev-parse HEAD)
     
+    echo -n "$(date '+%Y-%m-%d %H:%M:%S') - "
     # Pull latest changes
     git pull --rebase --autostash
 
