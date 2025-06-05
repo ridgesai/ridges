@@ -207,12 +207,8 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
             ]
             codegen_challenges = tasks[0]
             codegen_responses = tasks[1]
-            for response in codegen_responses:
-                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
             regression_challenges = tasks[2]
             regression_responses = tasks[3]
-            for response in regression_responses:
-                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
 
             logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(codegen_responses)} codegen responses, {len(regression_challenges)} regression challenges, {len(regression_responses)} regression responses from database. Preparing to post to Ridges API")
             async with httpx.AsyncClient() as client:
@@ -220,28 +216,28 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
                 if (len(codegen_challenges) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/validator/post/codegen-challenges",
+                            f"{RIDGES_API_URL}/ingestion/codegen-challenges",
                             json=codegen_challenges
                         )
                     )
                 if (len(codegen_responses) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/validator/post/codegen-responses",
+                            f"{RIDGES_API_URL}/ingestion/codegen-responses",
                             json=codegen_responses
                         )
                     )
                 if (len(regression_challenges) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/validator/post/regression-challenges",
+                            f"{RIDGES_API_URL}/ingestion/regression-challenges",
                             json=regression_challenges
                         )
                     )
                 if (len(regression_responses) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/validator/post/regression-responses",
+                            f"{RIDGES_API_URL}/ingestion/regression-responses",
                             json=regression_responses
                         )
                     )
