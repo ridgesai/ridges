@@ -92,7 +92,7 @@ class ChallengeTask:
         self.miner_hotkey = miner_hotkey
     
     def __repr__(self) -> str:
-        return f"ChallengeTask(node_id={self.node_id}, challenge_type={self.challenge.challenge_type}, miner={self.miner_hotkey})"
+        return f"ChallengeTask(node_id={self.node_id}, type={self.challenge.type}, miner={self.miner_hotkey})"
 
 
 # Get the absolute path to repos dir
@@ -100,6 +100,24 @@ validator_dir = Path(__file__).parents[1]
 repos_dir = validator_dir / "repos"
 
 SUPPORTED_CODEGEN_REPOS: Dict[str, Path] = {
-    "mwaskom/seaborn": repos_dir / "seaborn",
-    "pytest-dev/pytest":  repos_dir / "pytest",
-} 
+    "SWE-bench-repos/mwaskom__seaborn": repos_dir / "mwaskom__seaborn",
+    "SWE-bench-repos/swe-bench__humanevalfix-python": repos_dir / "swe-bench__humanevalfix-python",
+    "SWE-bench-repos/swe-bench__livecodebench-selfrepair": repos_dir / "swe-bench__livecodebench-selfrepair",
+    "SWE-bench-repos/pytest-dev__pytest": repos_dir / "pytest-dev__pytest",
+    "SWE-bench-repos/pydicom__pydicom": repos_dir / "pydicom__pydicom",
+    "SWE-bench-repos/pvlib__pvlib-python": repos_dir / "pvlib__pvlib-python",
+    "SWE-bench-repos/marshmallow-code__marshmallow": repos_dir / "marshmallow-code__marshmallow",
+    "SWE-bench-repos/pylint-dev__astroid": repos_dir / "pylint-dev__astroid",
+    "SWE-bench-repos/sqlfluff__sqlfluff": repos_dir / "sqlfluff__sqlfluff",
+    "SWE-bench-repos/psf__requests": repos_dir / "psf__requests",
+    "SWE-bench-repos/pydata__xarray": repos_dir / "pydata__xarray",
+    "SWE-bench-repos/pylint-dev__pylint": repos_dir / "pylint-dev__pylint",
+    "SWE-bench-repos/Qiskit__qiskit": repos_dir / "Qiskit__qiskit",
+    "SWE-bench-repos/sympy__sympy": repos_dir / "sympy__sympy",
+    "SWE-bench-repos/astropy__astropy": repos_dir / "astropy__astropy",
+    "SWE-bench-repos/matplotlib__matplotlib": repos_dir / "matplotlib__matplotlib",
+    "SWE-bench-repos/pallets__flask": repos_dir / "pallets__flask",
+    "SWE-bench-repos/sphinx-doc__sphinx": repos_dir / "sphinx-doc__sphinx",
+    "SWE-bench-repos/django__django": repos_dir / "django__django",
+    "SWE-bench-repos/scikit-learn__scikit-learn": repos_dir / "scikit-learn__scikit-learn",
+}

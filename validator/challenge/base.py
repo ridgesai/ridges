@@ -46,12 +46,12 @@ class BaseChallenge(ABC):
     challenge_id: str
     problem_statement: str
     commit_hash: Optional[str]
+    validator_hotkey: str
     
     @property
-    @abstractmethod
-    def challenge_type(self) -> str:
-        """Return the specific challenge type."""
-        pass
+    def type(self) -> str:
+        """Get the type of challenge"""
+        raise NotImplementedError("Challenge type must be implemented by subclass")
     
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:
@@ -64,8 +64,8 @@ class BaseChallenge(ABC):
         pass
     
     def get_endpoint(self) -> str:
-        """Get the API endpoint for this challenge type."""
-        return f"/{self.challenge_type}/challenge"
+        """Get the endpoint for this challenge type"""
+        return f"/{self.type}/challenge"
     
     def process_response_data(self, response: httpx.Response) -> Tuple[str, Optional[str]]:
         """
@@ -125,7 +125,7 @@ class BaseChallenge(ABC):
         endpoint = self.get_endpoint()
         payload = self.to_dict()
         
-        logger.info(f"Preparing to send {self.challenge_type} challenge to node {node_id}")
+        logger.info(f"Preparing to send {self.type} challenge to node {node_id}")
         logger.info(f"  Server address: {server_address}")
         logger.info(f"  Hotkey: {hotkey}")
         logger.info(f"  Challenge ID: {self.challenge_id}")
@@ -136,12 +136,12 @@ class BaseChallenge(ABC):
         try:
             # Store the challenge in the database
             if db_manager:
-                logger.debug(f"Storing {self.challenge_type} challenge {self.challenge_id} in database")
+                logger.debug(f"Storing {self.type} challenge {self.challenge_id} in database")
                 self.store_in_database(db_manager)
             
             # Record the assignment
             if db_manager:
-                logger.debug(f"Recording {self.challenge_type} challenge assignment in database")
+                logger.debug(f"Recording {self.type} challenge assignment in database")
                 db_manager.assign_challenge(self.challenge_id, hotkey, node_id)
             
             # Create client if not provided
@@ -152,7 +152,7 @@ class BaseChallenge(ABC):
                 should_close_client = True
             
             if db_manager:
-                logger.debug(f"Marking {self.challenge_type} challenge as sent in database")
+                logger.debug(f"Marking {self.type} challenge as sent in database")
                 db_manager.mark_challenge_sent(self.challenge_id, hotkey)
             
             if remaining_barriers:
@@ -161,7 +161,7 @@ class BaseChallenge(ABC):
             
             try:
                 sent_time = datetime.now(timezone.utc)
-                logger.debug(f"Sending {self.challenge_type} challenge request...")
+                logger.debug(f"Sending {self.type} challenge request...")
                 
                 # Send the challenge using fiber validator client
                 try:
@@ -177,7 +177,7 @@ class BaseChallenge(ABC):
                     )
                 except httpx.TimeoutException:
                     # Handle timeout with appropriate default response
-                    logger.error(f"Timeout sending {self.challenge_type} challenge {self.challenge_id}")
+                    logger.error(f"Timeout sending {self.type} challenge {self.challenge_id}")
                     response = httpx.Response(
                         status_code=200,
                         json={"patch": None},
@@ -185,7 +185,7 @@ class BaseChallenge(ABC):
                     )
 
                 except Exception as e:
-                    logger.error(f"Error sending {self.challenge_type} challenge {self.challenge_id}: {str(e)}")
+                    logger.error(f"Error sending {self.type} challenge {self.challenge_id}: {str(e)}")
                     logger.error("Full error traceback:", exc_info=True)
                     response = httpx.Response(
                         status_code=200,
@@ -284,8 +284,9 @@ class BaseChallenge(ABC):
         """Store this challenge in the database."""
         db_manager.store_challenge(
             challenge_id=self.challenge_id,
-            challenge_type=self.challenge_type,
-            challenge_data=self.to_database_dict()
+            type=self.type,
+            challenge_data=self.to_database_dict(),
+            validator_hotkey=self.validator_hotkey
         )
 
     @abstractmethod

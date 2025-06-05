@@ -270,6 +270,7 @@ def setup_repositories_and_select_random() -> Tuple[str, Path]:
     return repo_name, repo_path
 
 async def create_next_codegen_challenge(
+    validator_hotkey: str,
     openai_client: openai.Client
 ) -> CodegenChallenge:
     ''' 
@@ -324,5 +325,6 @@ async def create_next_codegen_challenge(
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,
-        context_file_paths=[os.path.relpath(file.path, repo_path) for file in selected_pair.files]
+        context_file_paths=[os.path.relpath(file.path, repo_path) for file in selected_pair.files],
+        validator_hotkey=validator_hotkey
     )
