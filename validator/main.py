@@ -5,6 +5,8 @@ import time
 import random
 import os
 import asyncio
+import tempfile
+from zipfile import ZipFile
 from datetime import datetime, timezone
 
 # External package imports
@@ -15,6 +17,7 @@ from fiber.chain.fetch_nodes import get_nodes_for_netuid
 from dotenv import load_dotenv
 import httpx
 from openai import OpenAI
+from traceback import format_exception
 
 # Load environment variables
 validator_dir = Path(__file__).parent
@@ -31,11 +34,12 @@ from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
     CHALLENGE_TIMEOUT, DB_PATH, WEIGHTS_INTERVAL,
-    MAX_MINERS, MIN_MINERS
+    MAX_MINERS, MIN_MINERS, RIDGES_API_URL
 )
 from validator.evaluation.evaluation_loop import run_evaluation_loop
 from validator.utils.async_utils import AsyncBarrier
 from validator.evaluation.set_weights import set_weights
+from validator.sandbox.manager import SandboxManager
 
 project_root = str(Path(__file__).resolve().parents[2])
 sys.path.append(project_root)
@@ -128,7 +132,10 @@ async def main():
         )
 
         # runs the main iteration loop within async client
-        try: 
+        try:
+            # Create a sandbox manager
+            sbox_manager = SandboxManager()
+            
             # Main challenge loop
             iteration = 0 
             while True: 
@@ -153,7 +160,11 @@ async def main():
 
                     # Fetch agents for a given task type 
                     task = "codegen" # Currently hardcoding to codegen. Will create concurrent tasks or some looping structure with regression integration
-                    agents = []
+                    
+                    # Get list of agents from RIDGES API
+                    response = await client.get(f"{RIDGES_API_URL}/validator/get/agents", params={"type": task})
+                    response.raise_for_status()
+                    agents = response.json()['agents']
 
                     # Generate and send challenges
                     challenge = await create_next_codegen_challenge(openai_client)
@@ -165,10 +176,56 @@ async def main():
                         continue
 
                     # If we have enough agents available, start running them in sandboxes and generate eval patches
-                    def run_agent_sandboxes():
-                        raise NotImplementedError()
-                    
-                    patches = run_agent_sandboxes()
+                    async def run_agent_sandboxes():
+                        logger.info("Running sandboxes")
+                        sboxes = []
+                        
+                        # Create and run a sandbox for each agent
+                        for agent in agents:
+                            try:
+                                # Download the agent code from Ridges API
+                                logger.info(f"Downloading agent code for agent {agent['agent_id']}")
+                                response = await client.get(f"{RIDGES_API_URL}/validator/get/agent-zip", params={"agent_id": agent['agent_id']})
+                                response.raise_for_status()
+                                logger.info(f"Downloaded agent code for agent {agent['agent_id']}")
+                                
+                                # Save zip file to temp location
+                                tmp_file = tempfile.NamedTemporaryFile(suffix='.zip', delete=False)
+                                tmp_file.write(response.content)
+                                tmp_file.close()
+                                
+                                # Unzip the file to a temp directory
+                                temp_dir = tempfile.mkdtemp()
+                                logger.info(f"Unzipping agent code for agent {agent['agent_id']} to temp directory {temp_dir}")
+                                with ZipFile(tmp_file.name, 'r') as zip_ref:
+                                    zip_ref.extractall(temp_dir)
+                                logger.info(f"Unzipped agent code for agent {agent['agent_id']} to temp directory {temp_dir}")
+
+                                # Create a sandbox for the agent, that runs the agent code from the temp directory
+                                sbox = sbox_manager.add_sandbox(src_dir=temp_dir)
+                                sbox.run_async(challenge)
+                                sboxes.append(sbox)
+                            except Exception as e:
+                                logger.error(f"Error configuring sandbox for agent {agent['agent_id']}: {e}")
+                       
+                        # Wait for all sandboxes to finish
+                        logger.info("Waiting on sandboxes...")
+                        for sbox in sboxes:
+                            sbox.wait() # They will be automatically removed from the manager when done
+
+                        # Grab the outputs of each
+                        patches = []
+                        for sbox in sboxes:
+                            if sbox.success:
+                                patches.append(sbox.output)
+                            else:
+                                logger.error(f"Sandbox for agent {agent['agent_id']} failed: {sbox.error}")
+
+                        logger.info(f"Got {len(patches)} patches")
+
+                        return patches
+
+                    patches = await run_agent_sandboxes()
 
                     # Run the eval loop with the patches 
                     logger.info(f"Generated {len(patches)} patches from {len(agents)} agents: task_id={challenge.challenge_id}")
@@ -187,7 +244,9 @@ async def main():
                 except KeyboardInterrupt:
                     break
                 except Exception as e: 
-                    logger.error(f"Error in main loop: {str(e)}")
+                    logger.error("Error in main loop:")
+                    for line in format_exception(type(e), e, e.__traceback__):
+                        logger.error(line.rstrip())
                     await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
         finally: 
             # Cancel evaluation and weights loops
