@@ -124,7 +124,7 @@ class Sandbox:
 
             # Wait for the container to finish running, then kill it
             self.container.wait()
-            # self.container.remove()
+            self.container.remove()
 
             # An error might have occurred on another thread (e.g., the monitor thread killed the sandbox because it exceeded a resource limit)
             if (self.error):
