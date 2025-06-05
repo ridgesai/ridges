@@ -101,7 +101,6 @@ repos_dir = validator_dir / "repos"
 
 SUPPORTED_CODEGEN_REPOS: Dict[str, Path] = {
     "SWE-bench-repos/mwaskom__seaborn": repos_dir / "mwaskom__seaborn",
-    "SWE-bench-repos/swe-bench__humanevalfix-python": repos_dir / "swe-bench__humanevalfix-python",
     "SWE-bench-repos/swe-bench__livecodebench-selfrepair": repos_dir / "swe-bench__livecodebench-selfrepair",
     "SWE-bench-repos/pytest-dev__pytest": repos_dir / "pytest-dev__pytest",
     "SWE-bench-repos/pydicom__pydicom": repos_dir / "pydicom__pydicom",
