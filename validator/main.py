@@ -6,6 +6,7 @@ import random
 import os
 import asyncio
 from datetime import datetime, timezone
+import uuid
 
 # External package imports
 from fiber.chain.interface import get_substrate
@@ -199,36 +200,51 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
 
             # Fetch all logs created in the last n minutes (based on the Config)
             tasks = [
-                db_manager.get_all_table_entries("codegen_challenges", since=LOG_DRAIN_FREQUENCY),
-                db_manager.get_all_table_entries("codegen_responses", since=LOG_DRAIN_FREQUENCY), 
-                db_manager.get_all_table_entries("regression_challenges", since=LOG_DRAIN_FREQUENCY),
-                db_manager.get_all_table_entries("regression_responses", since=LOG_DRAIN_FREQUENCY), 
+                db_manager.get_all_challenge_table_entries("codegen_challenges"),
+                db_manager.get_all_response_table_entries("codegen_responses"), 
+                db_manager.get_all_challenge_table_entries("regression_challenges"),
+                db_manager.get_all_response_table_entries("regression_responses"), 
             ]
             codegen_challenges = tasks[0]
             codegen_responses = tasks[1]
+            for response in codegen_responses:
+                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
             regression_challenges = tasks[2]
             regression_responses = tasks[3]
+            for response in regression_responses:
+                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
 
             logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(codegen_responses)} codegen responses, {len(regression_challenges)} regression challenges, {len(regression_responses)} regression responses from database. Preparing to post to Ridges API")
             async with httpx.AsyncClient() as client:
-                api_tasks = [
-                    client.post(
-                        f"{RIDGES_API_URL}/post/codegen-challenges",
-                        json=codegen_challenges
-                    ),
-                    client.post(
-                        f"{RIDGES_API_URL}/post/codegen-responses",
-                        json=codegen_responses
-                    ),
-                    client.post(
-                        f"{RIDGES_API_URL}/post/regression-challenges",
-                        json=regression_challenges
-                    ),
-                    client.post(
-                        f"{RIDGES_API_URL}/post/regression-responses",
-                        json=regression_responses
-                    ),
-                ]
+                api_tasks = []
+                if (len(codegen_challenges) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/codegen-challenges",
+                            json=codegen_challenges
+                        )
+                    )
+                if (len(codegen_responses) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/codegen-responses",
+                            json=codegen_responses
+                        )
+                    )
+                if (len(regression_challenges) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/regression-challenges",
+                            json=regression_challenges
+                        )
+                    )
+                if (len(regression_responses) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/regression-responses",
+                            json=regression_responses
+                        )
+                    )
                 await asyncio.gather(*api_tasks)
 
             # Calculate how long the loop took 
@@ -240,7 +256,7 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
             await asyncio.sleep(sleep_time)
         except Exception as e:
             consecutive_failures += 1
-            logger.error(f"Error in weights update loop (attempt {consecutive_failures}/{max_consecutive_failures}): {str(e)}")
+            logger.error(f"Error in drain api loop (attempt {consecutive_failures}/{max_consecutive_failures}): {str(e)}")
 
             if consecutive_failures >= max_consecutive_failures:
                 logger.error("Too many consecutive failures in weights update loop, waiting for longer period")
@@ -374,7 +390,7 @@ async def main():
                     barrier = AsyncBarrier(parties=len(available_nodes))
 
                     # Fetch next challenge from API with retries
-                    challenge = await create_next_codegen_challenge(openai_client)
+                    challenge = await create_next_codegen_challenge(hotkey.ss58_address, openai_client)
 
                     if not challenge:
                         logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next challenge check...")

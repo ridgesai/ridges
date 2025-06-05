@@ -39,9 +39,9 @@ class CodegenChallenge(BaseChallenge):
     model: str = ""
     
     @property
-    def challenge_type(self) -> str:
-        """Return the specific challenge type."""
-        return 'codegen'
+    def type(self) -> str:
+        """Get the type of challenge"""
+        return "codegen"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -51,7 +51,8 @@ class CodegenChallenge(BaseChallenge):
             "dynamic_checklist": self.dynamic_checklist,
             "repository_url": self.repository_url,
             "commit_hash": self.commit_hash,
-            "context_file_paths": self.context_file_paths
+            "context_file_paths": self.context_file_paths,
+            "validator_hotkey": self.validator_hotkey
         }
     
     def to_database_dict(self) -> Dict[str, Any]:
@@ -73,15 +74,17 @@ class CodegenChallenge(BaseChallenge):
             dynamic_checklist=data["dynamic_checklist"],
             repository_url=data["repository_url"],
             commit_hash=data["commit_hash"],
-            context_file_paths=data["context_file_paths"]
+            context_file_paths=data["context_file_paths"],
+            validator_hotkey=data["validator_hotkey"]
         )
     
     def store_in_database(self, db_manager: DatabaseManager) -> None:
         """Store this challenge in the database."""
         db_manager.store_challenge(
             challenge_id=self.challenge_id,
-            challenge_type="codegen",
-            challenge_data=self.to_database_dict()
+            type="codegen",
+            challenge_data=self.to_database_dict(),
+            validator_hotkey=self.validator_hotkey
         )
     
     @classmethod

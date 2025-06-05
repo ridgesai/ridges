@@ -11,7 +11,8 @@ def get_schema_v1() -> List[str]:
         """
         CREATE TABLE IF NOT EXISTS challenges (
             challenge_id TEXT PRIMARY KEY,  -- UUID for the challenge
-            challenge_type TEXT NOT NULL CHECK(challenge_type IN ('codegen', 'regression')),
+            type TEXT NOT NULL CHECK(type IN ('codegen', 'regression')),
+            validator_hotkey TEXT NOT NULL,
             created_at TIMESTAMP NOT NULL
         )
         """,
@@ -79,8 +80,10 @@ def get_schema_v1() -> List[str]:
         """
         CREATE TABLE IF NOT EXISTS codegen_responses (
             response_id INTEGER PRIMARY KEY,
+            challenge_id TEXT NOT NULL,
             response_patch TEXT NOT NULL,
-            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE
+            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
+            FOREIGN KEY (challenge_id) REFERENCES codegen_challenges(challenge_id) ON DELETE CASCADE
         )
         """,
 
@@ -88,8 +91,10 @@ def get_schema_v1() -> List[str]:
         """
         CREATE TABLE IF NOT EXISTS regression_responses (
             response_id INTEGER PRIMARY KEY,
+            challenge_id TEXT NOT NULL,
             response_patch TEXT NOT NULL,
-            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE
+            FOREIGN KEY (response_id) REFERENCES responses(response_id) ON DELETE CASCADE,
+            FOREIGN KEY (challenge_id) REFERENCES regression_challenges(challenge_id) ON DELETE CASCADE
         )
         """,
 
