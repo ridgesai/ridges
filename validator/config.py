@@ -4,11 +4,7 @@ import os
 
 # Network configuration
 
-# Mainnet config 
-
-# Testnet config
-
-# Localnet config
+# Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
@@ -17,8 +13,6 @@ SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
 HOTKEY_NAME = os.getenv("HOTKEY_NAME", "default")
 WALLET_NAME = os.getenv("WALLET_NAME", "validator")
 MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
-VALIDATOR_PORT = int(os.getenv("VALIDATOR_PORT", "8000"))
-VALIDATOR_HOST = os.getenv("VALIDATOR_HOST", "0.0.0.0")
 
 # Default configuration values
 MIN_MINERS = 1

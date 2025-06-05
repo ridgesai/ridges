@@ -24,7 +24,7 @@ uv venv --python 3.11
 uv pip install -e .
 ```
 
-4. Install SWE-agent:
+4. Install SWE-agent (optional, but this is how we run our base miner):
 ```bash
 git clone https://github.com/princeton-nlp/SWE-agent.git
 cd SWE-agent
