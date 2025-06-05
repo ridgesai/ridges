@@ -68,7 +68,7 @@ while true; do
     VERSION=$(git rev-parse HEAD)
     
     # Pull latest changes
-    git pull --rebase --autostash
+    git pull --rebase --autostash origin main
 
     NEW_VERSION=$(git rev-parse HEAD)
 
