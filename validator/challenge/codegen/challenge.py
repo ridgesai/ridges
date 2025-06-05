@@ -218,11 +218,14 @@ class CodegenChallenge(BaseChallenge):
                 if db_manager:
                     db_manager.mark_response_failed(response.response_id)
         
-        # Grade the valid responses
-        scores = grader.grade(responses_to_test)
+        # Grade the valid responses and get explanations
+        scores, explanations = grader.grade_with_explanations(responses_to_test)
 
         # Return validation results for all responses that passed testing
         return [
-            ValidationResult(is_valid=True, score=scores.get(response.miner_hotkey, 0.0)) 
+            ValidationResult(
+                is_valid=True,
+                score=scores.get(response.miner_hotkey, 0.0)
+            )
             for response in responses_to_test
         ] 
