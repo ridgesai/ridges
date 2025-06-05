@@ -21,8 +21,13 @@ activate_venv() {
     if [ -f "$VENV_PATH/bin/activate" ]; then
         source "$VENV_PATH/bin/activate"
     else
-        echo "Virtual environment not found at $VENV_PATH"
-        exit 1
+        read -p "Virtual environment not found at $VENV_PATH, run 'uv venv' to create it? (y/N) " confirm
+        if [ "$confirm" = "y" ]; then
+            uv venv
+            source "$VENV_PATH/bin/activate"
+        else
+            exit 1
+        fi
     fi
 }
 
