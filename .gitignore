@@ -27,5 +27,9 @@ logs.json
 repos/
 validator/repos/
 
+# Miner installations
+SWE-agent/
+SWE-agent/*
+
 LOCAL_NOTES.md
 LOCAL_NOTES.md

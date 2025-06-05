@@ -270,7 +270,7 @@ async def process_challenge(
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error processing soccer challenge: {str(e)}")
+            logger.error(f"Error processing codegen challenge: {str(e)}")
             logger.exception("Full error traceback:")
             raise HTTPException(status_code=500, detail=f"Challenge processing error: {str(e)}")
         finally:
