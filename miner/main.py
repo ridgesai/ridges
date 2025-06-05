@@ -18,7 +18,7 @@ app = FastAPI()
 
 app.dependency_overrides[Config] = get_config()
 
-# Include relevant miner routers 
+# Include relevant miner routers.
 app.include_router(
     codegen_router, 
     prefix="/codegen", 
