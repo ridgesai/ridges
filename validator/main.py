@@ -6,6 +6,7 @@ import random
 import os
 import asyncio
 from datetime import datetime, timezone
+import uuid
 
 # External package imports
 from fiber.chain.interface import get_substrate
@@ -31,7 +32,7 @@ from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
     CHALLENGE_TIMEOUT, DB_PATH, WEIGHTS_INTERVAL,
-    MAX_MINERS, MIN_MINERS
+    MAX_MINERS, MIN_MINERS, LOG_DRAIN_FREQUENCY, RIDGES_API_URL
 )
 from validator.evaluation.evaluation_loop import run_evaluation_loop
 from validator.utils.async_utils import AsyncBarrier
@@ -187,9 +188,85 @@ async def weights_update_loop(db_manager: DatabaseManager) -> None:
                 logging_update_active_coroutines("weights_task", False)
                 await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
 
-async def periodic_cleanup(db_manager: DatabaseManager, interval_hours: int = 24):
-    logger.info("Not cleaning anything up until push to main db instance implemented")
-    return 
+async def post_to_ridges_api(db_manager: DatabaseManager):
+    # TODO: Post data with fiber to show validator signature
+    logger.info("Starting Ridges API drain loop")
+    consecutive_failures = 0
+    max_consecutive_failures = 3
+
+    while True:
+        try:
+            start_time = time.time()
+
+            # Fetch all logs created in the last n minutes (based on the Config)
+            tasks = [
+                db_manager.get_all_challenge_table_entries("codegen_challenges"),
+                db_manager.get_all_response_table_entries("codegen_responses"), 
+                db_manager.get_all_challenge_table_entries("regression_challenges"),
+                db_manager.get_all_response_table_entries("regression_responses"), 
+            ]
+            codegen_challenges = tasks[0]
+            codegen_responses = tasks[1]
+            for response in codegen_responses:
+                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
+            regression_challenges = tasks[2]
+            regression_responses = tasks[3]
+            for response in regression_responses:
+                response["agent_id"] = str(uuid.uuid4()) # Generate a random agent uuid for now until we migrate to V3
+
+            logger.info(f"Fetched {len(codegen_challenges)} codegen challenges, {len(codegen_responses)} codegen responses, {len(regression_challenges)} regression challenges, {len(regression_responses)} regression responses from database. Preparing to post to Ridges API")
+            async with httpx.AsyncClient() as client:
+                api_tasks = []
+                if (len(codegen_challenges) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/codegen-challenges",
+                            json=codegen_challenges
+                        )
+                    )
+                if (len(codegen_responses) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/codegen-responses",
+                            json=codegen_responses
+                        )
+                    )
+                if (len(regression_challenges) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/regression-challenges",
+                            json=regression_challenges
+                        )
+                    )
+                if (len(regression_responses) > 0):
+                    api_tasks.append(
+                        client.post(
+                            f"{RIDGES_API_URL}/validator/post/regression-responses",
+                            json=regression_responses
+                        )
+                    )
+                await asyncio.gather(*api_tasks)
+
+            # Calculate how long the loop took 
+            elapsed_time = time.time() - start_time
+            sleep_time = max(0, LOG_DRAIN_FREQUENCY.total_seconds() - elapsed_time)
+
+            # Sleep for the remaining time
+            logger.info(f"Posted to Ridges API, sleeping for {sleep_time} seconds")
+            await asyncio.sleep(sleep_time)
+        except Exception as e:
+            consecutive_failures += 1
+            logger.error(f"Error in drain api loop (attempt {consecutive_failures}/{max_consecutive_failures}): {str(e)}")
+
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error("Too many consecutive failures in weights update loop, waiting for longer period")
+                logging_update_active_coroutines("weights_task", False)
+                await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds() * 2)  # Wait twice as long before retrying
+                consecutive_failures = 0  # Reset counter after long wait
+            else:
+                # Wait normal interval before retry
+                logging_update_active_coroutines("weights_task", False)
+                await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
 
 async def main():
     """Main validator loop."""
@@ -237,12 +314,12 @@ async def main():
             lambda t: logger.error(f"Weights task ended unexpectedly: {t.exception()}")
             if t.exception() else None
         )
-    
-        # Start the periodic cleanup task
-        logger.info("Starting cleanup task...")
-        cleanup_task = asyncio.create_task(periodic_cleanup(db_manager))
-        cleanup_task.add_done_callback(
-            lambda t: logger.error(f"Cleanup task ended unexpectedly: {t.exception()}")
+
+        # Start a task to periodically push non sensitive data to Ridges for the dashboard
+        logger.info("Starting Ridges API task...")
+        api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager))
+        api_drain_task.add_done_callback(
+            lambda t: logger.error(f"Ridges API task ended unexpectedly: {t.exception()}")
             if t.exception() else None
         )
 
@@ -257,7 +334,7 @@ async def main():
                     logger.info(f"Main loop iteration {iteration}")
 
                     # Check if any background tasks failed
-                    for task in [evaluation_task, weights_task, cleanup_task]:
+                    for task in [evaluation_task, weights_task, api_drain_task]:
                         if task.done() and not task.cancelled():
                             exc = task.exception()
                             if exc:
@@ -276,9 +353,9 @@ async def main():
                                 elif task == weights_task:
                                     logger.info("Restarting weights update loop...")
                                     weights_task = asyncio.create_task(weights_update_loop(db_manager))
-                                elif task == cleanup_task:
-                                    logger.info("Restarting cleanup task...")
-                                    cleanup_task = asyncio.create_task(periodic_cleanup(db_manager))
+                                elif task == api_drain_task:
+                                    logger.info("Restarting API drain task...")
+                                    api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager))
                     
                     # Clean up completed challenge tasks
                     active_challenge_tasks = [
@@ -313,7 +390,7 @@ async def main():
                     barrier = AsyncBarrier(parties=len(available_nodes))
 
                     # Fetch next challenge from API with retries
-                    challenge = await create_next_codegen_challenge(openai_client)
+                    challenge = await create_next_codegen_challenge(hotkey.ss58_address, openai_client)
 
                     if not challenge:
                         logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next challenge check...")
@@ -326,7 +403,7 @@ async def main():
                     logger.info("Background task status:")
                     logger.info(f"  - Evaluation task running: {not evaluation_task.done()}")
                     logger.info(f"  - Weights task running: {not weights_task.done()}")
-                    logger.info(f"  - Cleanup task running: {not cleanup_task.done()}")
+                    logger.info(f"  - API drain task running: {not api_drain_task.done()}")
 
                     for node in available_nodes:
                         server_address = await construct_server_address(node)
@@ -373,9 +450,9 @@ async def main():
             # Cancel evaluation and weights loops
             evaluation_task.cancel()
             weights_task.cancel()
-            cleanup_task.cancel()
+            api_drain_task.cancel()
             try:
-                await asyncio.gather(evaluation_task, weights_task, cleanup_task, return_exceptions=True)
+                await asyncio.gather(evaluation_task, weights_task, api_drain_task, return_exceptions=True)
             except asyncio.CancelledError:
                 pass
         

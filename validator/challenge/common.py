@@ -92,7 +92,7 @@ class ChallengeTask:
         self.miner_hotkey = miner_hotkey
     
     def __repr__(self) -> str:
-        return f"ChallengeTask(node_id={self.node_id}, challenge_type={self.challenge.challenge_type}, miner={self.miner_hotkey})"
+        return f"ChallengeTask(node_id={self.node_id}, type={self.challenge.type}, miner={self.miner_hotkey})"
 
 
 # Get the absolute path to repos dir
