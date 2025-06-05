@@ -187,7 +187,7 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
-                SELECT c.challenge_id, c.challenge_type
+                SELECT c.challenge_id, c.type
                 FROM challenges c
                 WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
                 AND c.challenge_id NOT IN (
