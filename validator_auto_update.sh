@@ -1,6 +1,16 @@
 #!/bin/bash
 
+# Add a --help with instructions
+if [ "$1" == "--help" ]; then
+    echo "Usage: $0 [PM2_PROCESS_NAME]"
+    echo "  PM2_PROCESS_NAME: The name of the PM2 process to start. Defaults to ridges-validator."
+    exit 0
+fi
+
 PM2_PROCESS_NAME=$1
+if [ -z "$PM2_PROCESS_NAME" ]; then
+    PM2_PROCESS_NAME="ridges-validator"
+fi
 VENV_PATH=".venv"
 
 # Ensure we're in the project root directory
@@ -25,10 +35,10 @@ activate_venv
 
 # Run validator if not already running
 if ! is_validator_running; then
-    echo "Validator is not running, starting..."
+    echo "Validator is not running, starting pm2 process '$PM2_PROCESS_NAME'..."
     # Exit if validator/.env does not exist
     if [ ! -f "validator/.env" ]; then
-        echo "validator/.env does not exist, please create it."
+        echo "validator/.env does not exist, please create it. You can use validator/.env.example as a template."
         exit 1
     fi
 
