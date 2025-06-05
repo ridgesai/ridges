@@ -78,7 +78,7 @@ while true; do
         echo "Reinstalling dependencies if necessary..."
         activate_venv
         uv pip install -e "."
-        pm2 restart $PM2_PROCESS_NAME
+        pm2 restart $PM2_PROCESS_NAME --update-env
         echo "Update completed at $(date '+%Y-%m-%d %H:%M:%S'), validator is now running on version $NEW_VERSION"
     fi
 done
