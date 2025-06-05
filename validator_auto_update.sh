@@ -59,16 +59,16 @@ if ! is_validator_running; then
     uv pip install -e "."
     pm2 start uv  --name $PM2_PROCESS_NAME -- run validator/main.py
 else
-    echo "Validator is already running"
+    echo "✅ Validator is already running. Auto-update enabled, checking for updates periodically"
 fi
 
 while true; do
-    sleep 5
+    sleep 5m
 
     VERSION=$(git rev-parse HEAD)
     
     # Pull latest changes
-    git pull --rebase --autostash origin main
+    git pull --rebase --autostash
 
     NEW_VERSION=$(git rev-parse HEAD)
 
