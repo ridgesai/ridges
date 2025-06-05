@@ -190,8 +190,8 @@ class DatabaseManager:
                 SELECT c.challenge_id, c.type
                 FROM challenges c
                 WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
-                AND c.challenge_id NOT IN (
-                    SELECT DISTINCT challenge_id FROM responses WHERE evaluated = FALSE
+                AND c.challenge_id NOT IN ( -- Challenge ID doesn't have evaluated responses
+                    SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
                 )
                 ORDER BY c.created_at ASC
                 LIMIT 1
