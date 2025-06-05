@@ -6,7 +6,7 @@ from pathlib import Path
 
 from shared.logging_utils import get_logger
 
-from validator.config import VALIDATION_DELAY
+from validator.config import CHALLENGE_TIMEOUT
 from .schema import check_db_initialized, init_db
 
 if TYPE_CHECKING:
@@ -179,22 +179,21 @@ class DatabaseManager:
             conn.close()
 
     def find_challenge_ready_for_evaluation(self):
-        """Finds a challenge where all responses are pending, and ready to be evaluated"""
+        """Finds a challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                        SELECT DISTINCT c.challenge_id, c.challenge_type,
-                                COUNT(r.response_id) as pending_count,
-                                MIN(r.received_at) as earliest_received
-                        FROM responses r
-                        JOIN challenges c ON r.challenge_id = c.challenge_id
-                        WHERE r.evaluated = FALSE
-                            AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
-                        GROUP BY c.challenge_id
-                        LIMIT 1
-                    """, (VALIDATION_DELAY.total_seconds() / 60,))
+                SELECT c.challenge_id, c.challenge_type
+                FROM challenges c
+                WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
+                AND c.challenge_id NOT IN (
+                    SELECT DISTINCT challenge_id FROM responses WHERE evaluated = FALSE
+                )
+                ORDER BY c.created_at ASC
+                LIMIT 1
+            """, (CHALLENGE_TIMEOUT.total_seconds() / 60,))
                     
             row = cursor.fetchone()
             if not row or not row[0]:  # First column is challenge_id
