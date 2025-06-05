@@ -27,7 +27,7 @@ activate_venv() {
 }
 
 function is_validator_running() {
-  pm2 jlist | jq -e "if length > 0 then .[] | select(.name == \"$PM2_PROCESS_NAME\" and .pm2_env.status == \"online\") else empty end" > /dev/null
+  pm2 list | grep $PM2_PROCESS_NAME > /dev/null
 }
 
 # Activate virtual environment initially
