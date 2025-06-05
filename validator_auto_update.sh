@@ -36,10 +36,17 @@ activate_venv
 # Run validator if not already running
 if ! is_validator_running; then
     echo "Validator is not running, starting pm2 process '$PM2_PROCESS_NAME'"
-    echo "Add an argument to this script to change the PM2 process name, e.g. $0 my-pm2-process-name"
+    echo "(Add an argument to this script if you'd like to change the PM2 process name, e.g. $0 my-pm2-process-name)"
+    echo ""
     # Exit if validator/.env does not exist
     if [ ! -f "validator/.env" ]; then
         echo "validator/.env does not exist, please create it. You can use validator/.env.example as a template."
+        # Offer to copy the template
+        read -p "Would you like to run 'cp validator/.env.example validator/.env'? (y/N) " confirm
+        if [ "$confirm" = "y" ]; then
+            cp validator/.env.example validator/.env
+            echo "validator/.env.example copied to validator/.env"
+        fi
         exit 1
     fi
 
@@ -51,6 +58,7 @@ if ! is_validator_running; then
     echo "  WALLET_NAME: $(grep -v '^#' validator/.env | grep WALLET_NAME | cut -d '=' -f2)"
     echo "  HOTKEY_NAME: $(grep -v '^#' validator/.env | grep HOTKEY_NAME | cut -d '=' -f2)"
     echo "  OPENAI_API_KEY: $(grep -v '^#' validator/.env | grep OPENAI_API_KEY | cut -d '=' -f2)"
+    echo ""
     read -p "Are these values correct? (y/N) " confirm
     if [ "$confirm" != "y" ]; then
         echo "Please update the values in validator/.env and run this script again."
