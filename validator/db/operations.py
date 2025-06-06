@@ -3,6 +3,7 @@ import sqlite3
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from pathlib import Path
+import random
 
 from shared.logging_utils import get_logger
 
@@ -181,18 +182,13 @@ class DatabaseManager:
             conn.close()
 
     def find_challenge_ready_for_evaluation(self):
-        """Finds a challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
+        """Finds a random challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            cursor.execute("""
-                DELETE FROM challenges
-                WHERE challenge_id = ?
-            """, ('6c0cc180-e922-4dfb-bcdd-5ddc91cfc6f9',))
-        except Exception:
-            pass
-        try:
+            # Before we find a challenge, we need to delete expired empty challenges. Not sure if we should call this function here or in the main loop.
+            self.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60)
             cursor.execute("""
                 SELECT c.challenge_id, c.type
                 FROM challenges c
@@ -204,16 +200,13 @@ class DatabaseManager:
                     SELECT 1 FROM responses WHERE challenge_id = c.challenge_id
                 )
                 ORDER BY c.created_at ASC
-                LIMIT 1
             """, (CHALLENGE_TIMEOUT.total_seconds() / 60,))
-                    
-            row = cursor.fetchone()
-            if not row or not row[0]:  # First column is challenge_id
+            rows = cursor.fetchall()
+            if not rows:
                 return None
-
-            challenge_id = row[0]  # First column is challenge_id
-            type = row[1]  # Second column is type
-            
+            challenge_row = random.choice(rows) 
+            challenge_id = challenge_row[0]
+            type = challenge_row[1]
             # Get the appropriate challenge object
             if type == "codegen":
                 from validator.challenge.codegen.challenge import CodegenChallenge
@@ -224,7 +217,6 @@ class DatabaseManager:
             else:
                 logger.error(f"Unknown challenge type: {type}")
                 return None
-
         finally:
             conn.close()
         
@@ -812,6 +804,45 @@ class DatabaseManager:
                 logger.error(f"Unknown challenge type: {type}")
                 return None
             
+        finally:
+            cursor.close()
+            conn.close()
+
+
+    ## FIX FOR EXPIRED CHALLENGES THAT HAVE NO RESPONSES
+    def delete_expired_empty_challenges(self, timeout_minutes: int = 10) -> int:
+        """Delete challenges older than timeout_minutes with 0 responses. Returns number deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Find challenge_ids that are older than timeout and have 0 responses
+            cursor.execute('''
+                SELECT c.challenge_id
+                FROM challenges c
+                LEFT JOIN responses r ON c.challenge_id = r.challenge_id
+                WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
+                GROUP BY c.challenge_id
+                HAVING COUNT(r.response_id) = 0
+            ''', (timeout_minutes,))
+            challenge_ids = [row[0] for row in cursor.fetchall()]
+            if not challenge_ids:
+                return 0
+            # Delete from all relevant tables
+            for challenge_id in challenge_ids:
+                cursor.execute("DELETE FROM codegen_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenge_assignments WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM codegen_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenges WHERE challenge_id = ?", (challenge_id,))
+            conn.commit()
+            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min)")
+            return len(challenge_ids)
+        except Exception as e:
+            logger.error(f"Error deleting expired empty challenges: {e}")
+            conn.rollback()
+            return 0
         finally:
             cursor.close()
             conn.close()
