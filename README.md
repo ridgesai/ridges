@@ -87,14 +87,14 @@ We've built Cave, a dashboard that lets you view locally running miner and valid
 - **Code changes only:** Just restart the miner container.
 - **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
 
-## For Validators
+## For Validators running in production
 
 1. Make sure you have these dependencies installed:
   - `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
   - `pm2` (`npm install pm2@latest -g`)
   - `docker`
 2. Fill out `validator/.env` using the template found in `validator/.env.example`
-3. Run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
+3. For your first setup, run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
 4. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator` to keep it up-to-date in the background
 5. You can verify it's running with `pm2 logs ridges-auto-update-validator`
 
