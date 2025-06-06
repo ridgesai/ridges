@@ -2304,6 +2304,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "swebench" },
     { name = "tiktoken" },
+    { name = "trueskill" },
 ]
 
 [package.metadata]
@@ -2321,6 +2322,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.41" },
     { name = "swebench", specifier = ">=4.0.3" },
     { name = "tiktoken", specifier = ">=0.9.0" },
+    { name = "trueskill", specifier = ">=0.4.5" },
 ]
 
 [[package]]
@@ -2598,6 +2600,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
 ]
+
+[[package]]
+name = "trueskill"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d0/b1/572f309178eacdccd9f9f5f3e3e14fb3543a89c6259d62b36660350af2b9/trueskill-0.4.5.tar.gz", hash = "sha256:9d62b48d2428369d712bd9becff9f9a2caa325e1a2ab5f9392d34bff757867bb", size = 21315, upload-time = "2018-09-07T12:27:32.078Z" }
 
 [[package]]
 name = "typer"
