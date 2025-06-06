@@ -148,7 +148,7 @@ async def run_evaluation_loop(
                 logging_update_eval_loop_num(0)
 
                 # Clean old challenges with no evaluated responses
-                db_manager.delete_expired_empty_challenges(timeout_minutes=2+(CHALLENGE_TIMEOUT.total_seconds() / 60)) # 2 minute buffer
+                db_manager.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60) 
                 await asyncio.sleep(sleep_interval)
 
             except Exception as e:
