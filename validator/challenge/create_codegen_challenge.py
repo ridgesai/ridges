@@ -321,6 +321,7 @@ async def create_next_codegen_challenge(
         prompt=prompt_with_filepair_context,
         model=PREFERRED_OPENAI_MODEL,
         repository_url=repository_url,
+        local_repo_path=repo_path,
         commit_hash=None,
         problem_statement=generated_problem.problem_statement,
         dynamic_checklist=generated_problem.dynamic_checklist,

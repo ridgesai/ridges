@@ -33,6 +33,7 @@ class CodegenChallenge(BaseChallenge):
     """
     dynamic_checklist: List[str]
     repository_url: str
+    local_repo_path: str
     context_file_paths: List[str]  # Relative to repository_url as the repo root
     
     prompt: str = ""
