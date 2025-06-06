@@ -32,6 +32,9 @@ SANDBOX_OUTPUT_FILE = SANDBOX_DIR + "/output.json"
 SANDBOX_SOURCE_DIR = SANDBOX_DIR + "/src"
 SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/AgentMain.py" # NOTE: We don't actually mount this, we just expect that it exists
 
+# The mounted directory that contains the repository that the agent is solving a problem for
+SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
+
 # The maximum resource usage that is allowed for a sandbox
 SANDBOX_MAX_CPU_USAGE = 5 # %
 SANDBOX_MAX_RAM_USAGE = 256 # MiB 
@@ -45,13 +48,14 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 class Sandbox:
     _id_counter = 1
 
-    def __init__(self, manager: 'SandboxManager', src_dir: str):        
+    def __init__(self, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
         self.id = Sandbox._id_counter
         Sandbox._id_counter += 1
 
         self.manager = manager
 
         self.src_dir = src_dir
+        self.repo_dir_path = repo_dir_path
         
         self.running = False
         
@@ -206,8 +210,8 @@ class SandboxManager:
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
         
-    def add_sandbox(self, src_dir):
-        sandbox = Sandbox(manager=self, src_dir=src_dir)
+    def add_sandbox(self, src_dir, repo_dir_path):
+        sandbox = Sandbox(manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
         self.sandboxes.append(sandbox)
         return sandbox
     
