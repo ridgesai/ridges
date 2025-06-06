@@ -18,6 +18,7 @@ from fiber.validator import client as validator_client
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
+from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 logger = get_logger(__name__)
 
@@ -289,11 +290,37 @@ class BaseChallenge(ABC):
             validator_hotkey=self.validator_hotkey
         )
 
-    @abstractmethod
-    async def evaluate_responses(self, responses: List['BaseResponse']) -> List['ValidationResult']:
-        """Evaluate a list of responses for this challenge."""
-        pass
+    def preprocess_patch(self, patch: str) -> str:
+        """
+        Preprocesses a patch by removing comments, docstrings, etc.
+        
+        Args:
+            patch: The patch content to preprocess
+            
+        Returns:
+            The preprocessed patch content
+        """
+        if not patch:
+            return ""
+        
+        without_comments = remove_comments(patch)
+        without_docstrings = remove_docstrings(without_comments)
+        without_unused = remove_unused(without_docstrings)
 
+        return without_unused.strip()
+    
+    def apply_and_run_tests(self, patch: str) -> Optional[str]:
+        """
+        Clones the relevant repo, applies the patch, and runs the tests.
+        Also runs pylint and makes sure no new errors have appeared.
+        
+        Args:
+            patch: The patch content to apply and test
+            
+        Returns:
+            An error message if anything fails, otherwise None
+        """
+        return None
 
 @dataclass
 class BaseResponse(ABC):

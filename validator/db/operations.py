@@ -187,8 +187,6 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
-            # Before we find a challenge, we need to delete expired empty challenges. Not sure if we should call this function here or in the main loop.
-            self.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60)
             cursor.execute("""
                 SELECT c.challenge_id, c.type
                 FROM challenges c
@@ -547,32 +545,20 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-    def get_global_miner_scores(self, hours: int = 24, type: Optional[str] = None) -> Tuple[float, int]:
+    def get_global_miner_scores(self, hours: int = 24) -> Tuple[float, int]:
         """Gets the average score for all miners and average number of responses for each miner over the last n hours"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if type:
-                cursor.execute("""
-                    SELECT 
-                        AVG(r.score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT r.miner_hotkey) as avg_responses_per_miner
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.type = ?
-                    AND r.evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        AVG(score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
-                    FROM responses 
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (hours,))
+            cursor.execute("""
+                SELECT 
+                    AVG(COALESCE(score, 0)) as global_avg_score,
+                    COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
+                FROM responses 
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now',  '-' || ? || ' hours')
+            """, (hours,))
 
             global_average, average_count = cursor.fetchone()
             return global_average, average_count
@@ -586,38 +572,22 @@ class DatabaseManager:
         global_average: float,
         average_count: int,
         hours: int = 24,
-        type: Optional[str] = None
     ): 
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if type:
-                cursor.execute("""
-                    SELECT 
-                        r.miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(r.score) as avg_score,
-                        (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.type = ?
-                    AND r.evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY r.miner_hotkey       
-                """, (average_count, global_average, average_count, type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(score) as avg_score,
-                        (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
-                    FROM responses
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY miner_hotkey       
-                """, (average_count, global_average, average_count, hours))
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    COUNT(*) as response_count,
+                    AVG(COALESCE(score, 0)) as average_score,
+                    (COUNT(*) * AVG(COALESCE(score, 0)) + ? * ?) / (COUNT(*) + ?) as bayesian_average
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey       
+            """, (average_count, global_average, average_count, hours))
 
             results = cursor.fetchall()
             return results
@@ -811,11 +781,11 @@ class DatabaseManager:
 
     ## FIX FOR EXPIRED CHALLENGES THAT HAVE NO RESPONSES
     def delete_expired_empty_challenges(self, timeout_minutes: int = 10) -> int:
-        """Delete challenges older than timeout_minutes with 0 responses. Returns number deleted."""
+        """Delete challenges older than timeout_minutes with 0 responses and not evaluated. Returns number deleted."""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            # Find challenge_ids that are older than timeout and have 0 responses
+            # Find challenge_ids that are older than timeout, have 0 responses, and have not been evaluated
             cursor.execute('''
                 SELECT c.challenge_id
                 FROM challenges c
@@ -823,6 +793,9 @@ class DatabaseManager:
                 WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
                 GROUP BY c.challenge_id
                 HAVING COUNT(r.response_id) = 0
+                   AND c.challenge_id NOT IN (
+                       SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
+                   )
             ''', (timeout_minutes,))
             challenge_ids = [row[0] for row in cursor.fetchall()]
             if not challenge_ids:
@@ -837,7 +810,7 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM regression_challenges WHERE challenge_id = ?", (challenge_id,))
                 cursor.execute("DELETE FROM challenges WHERE challenge_id = ?", (challenge_id,))
             conn.commit()
-            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min)")
+            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min and not evaluated)")
             return len(challenge_ids)
         except Exception as e:
             logger.error(f"Error deleting expired empty challenges: {e}")

@@ -1,12 +1,16 @@
 from pathlib import Path
 from datetime import datetime, timezone
 import time
+from typing import List
 
 from shared.logging_utils import get_logger, logging_update_active_coroutines, logging_update_eval_loop_num
 from openai import OpenAI
 import asyncio
 
+from validator.challenge.base import BaseResponse, ValidationResult
+from validator.config import CHALLENGE_TIMEOUT
 from validator.db.operations import DatabaseManager
+from validator.evaluation.graders.trueskill_grader import TrueSkillGrader
 
 logger = get_logger(__name__)
 
@@ -24,7 +28,7 @@ async def evaluate_pending_responses(
             return
 
         # Fetch pending responses from the DB for a given challenge
-        responses = db_manager.get_pending_responses(challenge_id)
+        responses: List[BaseResponse] = db_manager.get_pending_responses(challenge_id)
 
         if len(responses) == 0:
             logger.info(f"No responses found for challenge {challenge_id}")
@@ -33,8 +37,36 @@ async def evaluate_pending_responses(
             logger.info(f"Found {len(responses)} responses for challenge {challenge_id}")
 
         try:
-            evaluation_results = await challenge.evaluate_responses(responses, db_manager)
-            logger.info(f"Evaluation results: {evaluation_results}")
+            grader = TrueSkillGrader(challenge)
+            responses_to_test = []
+
+            for response in responses:
+                # Preprocess the patch
+                response.response_patch = challenge.preprocess_patch(response.response_patch)
+                
+                # Apply and run tests
+                error = challenge.apply_and_run_tests(response.response_patch)
+                
+                if error is None:
+                    logger.info(f"Response {response.response_id} passed testing")
+                    responses_to_test.append(response)
+                else:
+                    logger.info(f"Response {response.response_id} failed because of: {error}")
+                    if db_manager:
+                        db_manager.mark_response_failed(response.response_id)
+            
+                # Grade the valid responses and get explanations
+                scores = grader.grade(responses_to_test)
+
+                # Return validation results for all responses that passed testing
+                evaluation_results = [
+                    ValidationResult(
+                        is_valid=True,
+                        score=scores.get(response.miner_hotkey, 0.0)
+                    )
+                    for response in responses_to_test
+                ]
+                logger.info(f"Evaluation results: {evaluation_results}")
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
@@ -114,6 +146,9 @@ async def run_evaluation_loop(
                 
                 logging_update_active_coroutines("evaluation_task", False)
                 logging_update_eval_loop_num(0)
+
+                # Clean old challenges with no evaluated responses
+                db_manager.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60) 
                 await asyncio.sleep(sleep_interval)
 
             except Exception as e:
