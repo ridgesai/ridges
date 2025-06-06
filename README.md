@@ -94,8 +94,9 @@ We've built Cave, a dashboard that lets you view locally running miner and valid
   - `pm2` (`npm install pm2@latest -g`)
   - `docker`
 2. Fill out `validator/.env` using the template found in `validator/.env.example`
-3. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator` to start your validator and keep it up-to-date
-4. You can verify it's running with `pm2 logs ridges-auto-update-validator`
+3. Run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
+4. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator` to keep it up-to-date in the background
+5. You can verify it's running with `pm2 logs ridges-auto-update-validator`
 
 This will allow your validator to run smoothly as we continue to improve the incentive mechanism over time.
 
