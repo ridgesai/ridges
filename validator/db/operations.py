@@ -811,11 +811,11 @@ class DatabaseManager:
 
     ## FIX FOR EXPIRED CHALLENGES THAT HAVE NO RESPONSES
     def delete_expired_empty_challenges(self, timeout_minutes: int = 10) -> int:
-        """Delete challenges older than timeout_minutes with 0 responses. Returns number deleted."""
+        """Delete challenges older than timeout_minutes with 0 responses and not evaluated. Returns number deleted."""
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            # Find challenge_ids that are older than timeout and have 0 responses
+            # Find challenge_ids that are older than timeout, have 0 responses, and have not been evaluated
             cursor.execute('''
                 SELECT c.challenge_id
                 FROM challenges c
@@ -823,6 +823,9 @@ class DatabaseManager:
                 WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
                 GROUP BY c.challenge_id
                 HAVING COUNT(r.response_id) = 0
+                   AND c.challenge_id NOT IN (
+                       SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
+                   )
             ''', (timeout_minutes,))
             challenge_ids = [row[0] for row in cursor.fetchall()]
             if not challenge_ids:
@@ -837,7 +840,7 @@ class DatabaseManager:
                 cursor.execute("DELETE FROM regression_challenges WHERE challenge_id = ?", (challenge_id,))
                 cursor.execute("DELETE FROM challenges WHERE challenge_id = ?", (challenge_id,))
             conn.commit()
-            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min)")
+            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min and not evaluated)")
             return len(challenge_ids)
         except Exception as e:
             logger.error(f"Error deleting expired empty challenges: {e}")
