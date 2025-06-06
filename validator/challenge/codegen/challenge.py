@@ -12,9 +12,6 @@ from datetime import datetime
 from shared.logging_utils import get_logger
 
 from validator.db.operations import DatabaseManager
-from validator.challenge.base import ValidationResult
-from validator.evaluation.graders.trueskill_grader import TrueSkillGrader
-from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
 
 from ..base import BaseChallenge
 from .response import CodegenResponse
@@ -157,77 +154,3 @@ class CodegenChallenge(BaseChallenge):
             received_at=received_at,
             response_patch=response_patch
         )
-    
-    def preprocess_patch(self, patch: str) -> str:
-        """
-        Preprocesses a patch by removing comments, docstrings, etc.
-        
-        Args:
-            patch: The patch content to preprocess
-            
-        Returns:
-            The preprocessed patch content
-        """
-        if not patch:
-            return ""
-        
-        without_comments = remove_comments(patch)
-        without_docstrings = remove_docstrings(without_comments)
-        without_unused = remove_unused(without_docstrings)
-
-        return without_unused.strip()
-    
-    def apply_and_run_tests(self, patch: str) -> Optional[str]:
-        """
-        Clones the relevant repo, applies the patch, and runs the tests.
-        Also runs pylint and makes sure no new errors have appeared.
-        
-        Args:
-            patch: The patch content to apply and test
-            
-        Returns:
-            An error message if anything fails, otherwise None
-        """
-        # Since this is a synthetic codegen problem, the problem statement doesn't correspond to a real test
-        return None
-    
-    async def evaluate_responses(self, responses: List['CodegenResponse'], db_manager: 'DatabaseManager') -> List[ValidationResult]:
-        """
-        Evaluate responses for this codegen challenge.
-        
-        Args:
-            responses: List of CodegenResponse objects
-            db_manager: Database manager for marking failed responses
-            
-        Returns:
-            List of ValidationResult objects with scores
-        """
-        grader = TrueSkillGrader(self)
-        responses_to_test = []
-
-        for response in responses:
-            # Preprocess the patch
-            response.response_patch = self.preprocess_patch(response.response_patch)
-            
-            # Apply and run tests
-            error = self.apply_and_run_tests(response.response_patch)
-            
-            if error is None:
-                logger.info(f"Response {response.response_id} passed testing")
-                responses_to_test.append(response)
-            else:
-                logger.info(f"Response {response.response_id} failed because of: {error}")
-                if db_manager:
-                    db_manager.mark_response_failed(response.response_id)
-        
-        # Grade the valid responses and get explanations
-        scores = grader.grade(responses_to_test)
-
-        # Return validation results for all responses that passed testing
-        return [
-            ValidationResult(
-                is_valid=True,
-                score=scores.get(response.miner_hotkey, 0.0)
-            )
-            for response in responses_to_test
-        ] 
