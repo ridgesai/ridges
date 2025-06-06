@@ -8,7 +8,7 @@ import asyncio
 import tempfile
 from zipfile import ZipFile
 from datetime import datetime, timezone
-
+import shutil
 # External package imports
 from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
@@ -222,6 +222,10 @@ async def main():
                                 logger.error(f"Sandbox for agent {agent['agent_id']} failed: {sbox.error}")
 
                         logger.info(f"Got {len(patches)} patches")
+
+                        # Delete the temporary directories (that hold the agent code)
+                        for sbox in sboxes:
+                            shutil.rmtree(sbox.src_dir)
 
                         return patches
 
