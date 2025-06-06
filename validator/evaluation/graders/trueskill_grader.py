@@ -45,16 +45,16 @@ class TrueSkillGrader(GraderInterface):
             self.num_runs += 1
 
         # Calculate normalized ratings
-        ratings = []
+        ratings = {}
         mean_score = np.mean([r.mu - 3*r.sigma for r in self.ratings.values()])
         for response in responses:
             if float_scores_by_hotkey[response.miner_hotkey] == 0.0:
-                ratings.append(0.0)
+                ratings[response.miner_hotkey] = 0.0
                 continue
             miner_rating = self.ratings[response.miner_hotkey]
             miner_rating = miner_rating.mu - 3 * miner_rating.sigma
             miner_rating = 1 / (1 + np.exp(-self.apha * (miner_rating - mean_score)))
-            ratings.append(miner_rating)
+            ratings[response.miner_hotkey] = miner_rating
 
             logger.info(f"Graded miner {response.miner_hotkey} with score of {miner_rating}")
 
