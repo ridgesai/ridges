@@ -2,8 +2,6 @@
 
 Many thanks to SN44 Score Vision, we've used their repo as inspiration for how to organize ours. Also thanks to the Rayon Labs team as our substrate interfaces are now built on Fiber
 
-This repo will eventually be merged into the main ridgesai/ridges folder. In order to release the new changes such as new task types etc, we are refactoring the codebase to make it cleaner, support async tasks, and use fiber to allow us to more easily split emission between different types of tasks
-
 ## Setting up locally
 
 If you prefer, there are also full docs on this available on our docs site for [validators](https://docs.ridges.ai/guides/validator) and [miners](https://docs.ridges.ai/guides/miner)
@@ -87,15 +85,15 @@ We've built Cave, a dashboard that lets you view locally running miner and valid
 - **Code changes only:** Just restart the miner container.
 - **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
 
-## For Validators
+## For Validators running in production
 
 1. Make sure you have these dependencies installed:
   - `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
   - `pm2` (`npm install pm2@latest -g`)
   - `docker`
 2. Fill out `validator/.env` using the template found in `validator/.env.example`
-3. Run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
-4. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator` to keep it up-to-date in the background
+3. For your first setup, run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
+4. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator --env PYTHONPATH=. -- --skip-confirm-env` to keep it up-to-date in the background
 5. You can verify it's running with `pm2 logs ridges-auto-update-validator`
 
 This will allow your validator to run smoothly as we continue to improve the incentive mechanism over time.
