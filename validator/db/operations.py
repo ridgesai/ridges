@@ -187,8 +187,6 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
-            # Before we find a challenge, we need to delete expired empty challenges. Not sure if we should call this function here or in the main loop.
-            self.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60)
             cursor.execute("""
                 SELECT c.challenge_id, c.type
                 FROM challenges c
