@@ -547,32 +547,20 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-    def get_global_miner_scores(self, hours: int = 24, type: Optional[str] = None) -> Tuple[float, int]:
+    def get_global_miner_scores(self, hours: int = 24) -> Tuple[float, int]:
         """Gets the average score for all miners and average number of responses for each miner over the last n hours"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if type:
-                cursor.execute("""
-                    SELECT 
-                        AVG(r.score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT r.miner_hotkey) as avg_responses_per_miner
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.type = ?
-                    AND r.evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        AVG(score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
-                    FROM responses 
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (hours,))
+            cursor.execute("""
+                SELECT 
+                    AVG(COALESCE(score, 0)) as global_avg_score,
+                    COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
+                FROM responses 
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now',  '-' || ? || ' hours')
+            """, (hours,))
 
             global_average, average_count = cursor.fetchone()
             return global_average, average_count
@@ -586,38 +574,22 @@ class DatabaseManager:
         global_average: float,
         average_count: int,
         hours: int = 24,
-        type: Optional[str] = None
     ): 
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if type:
-                cursor.execute("""
-                    SELECT 
-                        r.miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(r.score) as average_score,
-                        (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_average
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.type = ?
-                    AND r.evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY r.miner_hotkey       
-                """, (average_count, global_average, average_count, type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(score) as average_score,
-                        (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_average
-                    FROM responses
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY miner_hotkey       
-                """, (average_count, global_average, average_count, hours))
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    COUNT(*) as response_count,
+                    AVG(COALESCE(score, 0)) as average_score,
+                    (COUNT(*) * AVG(COALESCE(score, 0)) + ? * ?) / (COUNT(*) + ?) as bayesian_average
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey       
+            """, (average_count, global_average, average_count, hours))
 
             results = cursor.fetchall()
             return results
