@@ -61,15 +61,15 @@ class TrueSkillGrader(GraderInterface):
 
     def update_ratings(
             self, 
-            submissions: List[BaseResponse], 
+            responses: List[BaseResponse], 
             float_scores: List[float]
     ) -> None:
         """
         Update the ratings of the miners  based on their performance.
         """
         raw_scores = {}
-        for fs, submission in zip(float_scores, submissions):
-            raw_scores[submission.miner_hotkey] = fs
+        for fs, response in zip(float_scores, responses):
+            raw_scores[response.miner_hotkey] = fs
 
         sorted_scores = sorted(raw_scores.items(), key=lambda x: x[1], reverse=True)
 
