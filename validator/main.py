@@ -295,7 +295,7 @@ async def main():
                 db_path=DB_PATH,
                 openai_client=openai_client,
                 validator_hotkey=hotkey.ss58_address,
-                sleep_interval=15
+                sleep_interval=5 * 60 # 5 minutes
             )
         )
         evaluation_task.add_done_callback(
