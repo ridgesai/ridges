@@ -1,12 +1,13 @@
-from typing import List, Dict
+from typing import TYPE_CHECKING, List, Dict
 import trueskill
 import numpy as np
 
 from shared.logging_utils import get_logger
 from validator.challenge.base import BaseResponse
-from validator.challenge.codegen.challenge import CodegenChallenge
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.evaluation.graders.float_grader import FloatGrader
+if TYPE_CHECKING:
+    from validator.challenge.codegen.challenge import CodegenChallenge
 
 logger = get_logger(__name__)
 
@@ -16,7 +17,7 @@ class TrueSkillGrader(GraderInterface):
     ratings are updated based on the performance of the miners in the
     forward loop, and then normalized with a logistic function.
     """
-    def __init__(self, problem: CodegenChallenge):
+    def __init__(self, problem: 'CodegenChallenge'):
         self.env = trueskill.TrueSkill()
         self.ratings: Dict[str, trueskill.Rating] = {}
         self.float_grader = FloatGrader(problem)
