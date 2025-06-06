@@ -187,6 +187,13 @@ class DatabaseManager:
 
         try:
             cursor.execute("""
+                DELETE FROM challenges
+                WHERE challenge_id = ?
+            """, ('6c0cc180-e922-4dfb-bcdd-5ddc91cfc6f9',))
+        except Exception:
+            pass
+        try:
+            cursor.execute("""
                 SELECT c.challenge_id, c.type
                 FROM challenges c
                 WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
