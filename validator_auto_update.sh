@@ -32,7 +32,7 @@ activate_venv() {
 }
 
 function is_validator_running() {
-  pm2 list | grep $PM2_PROCESS_NAME > /dev/null
+  pm2 list | grep $PM2_PROCESS_NAME
 }
 
 # Activate virtual environment initially
@@ -40,7 +40,7 @@ activate_venv
 
 # Run validator if not already running
 if ! is_validator_running; then
-    echo "Validator is not running, starting pm2 process '$PM2_PROCESS_NAME'"
+    echo "No process named '$PM2_PROCESS_NAME' is running, starting one:"
     echo "(Add an argument to this script if you'd like to change the PM2 process name, e.g. $0 my-pm2-process-name)"
     echo ""
     # Exit if validator/.env does not exist
@@ -72,18 +72,16 @@ if ! is_validator_running; then
     uv pip install -e "."
     pm2 start uv  --name $PM2_PROCESS_NAME -- run validator/main.py
 else
-    echo "✅ Validator is already running. Auto-update enabled, checking for updates periodically"
+    # Get PM2 process ID
+    PM2_ID=$(pm2 id $PM2_PROCESS_NAME)
+    echo "✅ $PM2_PROCESS_NAME is already running with PM2 ID: $PM2_ID. Auto-update enabled, checking for updates periodically"
 fi
 
 while true; do
-    sleep 5m
+    echo -n "$(date '+%Y-%m-%d %H:%M:%S') - Checking for updates from $(git remote get-url origin) - "
 
     VERSION=$(git rev-parse HEAD)
-    
-    echo -n "$(date '+%Y-%m-%d %H:%M:%S') - "
-    # Pull latest changes
     git pull --rebase --autostash
-
     NEW_VERSION=$(git rev-parse HEAD)
 
     if [ $VERSION != $NEW_VERSION ]; then
@@ -94,5 +92,8 @@ while true; do
         uv pip install -e "."
         pm2 restart $PM2_PROCESS_NAME --update-env
         echo "Update completed at $(date '+%Y-%m-%d %H:%M:%S'), validator is now running on version $NEW_VERSION"
+    else
+        echo "    No updates found, sleeping for 5 minutes"
     fi
+    sleep 5m
 done
