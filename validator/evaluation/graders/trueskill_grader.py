@@ -33,7 +33,7 @@ class TrueSkillGrader(GraderInterface):
         # Run float scores
         float_scores_by_hotkey = self.float_grader.grade(responses)
 
-        print(f"Graded miner {response.miner_hotkey} with score of {float_scores_by_hotkey[response.miner_hotkey]} for question {response.response_id}")
+        logger.info(f"Graded miner {response.miner_hotkey} with score of {float_scores_by_hotkey[response.miner_hotkey]} for question {response.response_id}")
 
         # We run the rating system thrice for steadier results when we first
         # initialize the ratings
