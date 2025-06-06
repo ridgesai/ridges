@@ -200,6 +200,9 @@ class DatabaseManager:
                 AND c.challenge_id NOT IN ( -- Challenge ID doesn't have evaluated responses
                     SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
                 )
+                AND EXISTS ( -- And challenge has responses
+                    SELECT 1 FROM responses WHERE challenge_id = c.challenge_id
+                )
                 ORDER BY c.created_at ASC
                 LIMIT 1
             """, (CHALLENGE_TIMEOUT.total_seconds() / 60,))
