@@ -597,8 +597,8 @@ class DatabaseManager:
                     SELECT 
                         r.miner_hotkey,
                         COUNT(*) as response_count,
-                        AVG(r.score) as avg_score,
-                        (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
+                        AVG(r.score) as average_score,
+                        (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_average
                     FROM responses r
                     JOIN challenges c ON r.challenge_id = c.challenge_id
                     WHERE r.evaluated = TRUE 
@@ -611,8 +611,8 @@ class DatabaseManager:
                     SELECT 
                         miner_hotkey,
                         COUNT(*) as response_count,
-                        AVG(score) as avg_score,
-                        (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
+                        AVG(score) as average_score,
+                        (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_average
                     FROM responses
                     WHERE evaluated = TRUE 
                     AND evaluated_at > datetime('now', '-' || ? || ' hours')
