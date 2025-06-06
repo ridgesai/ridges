@@ -202,7 +202,7 @@ class CodegenChallenge(BaseChallenge):
         Returns:
             List of ValidationResult objects with scores
         """
-        grader = TrueSkillGrader()
+        grader = TrueSkillGrader(self)
         responses_to_test = []
 
         for response in responses:
