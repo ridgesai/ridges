@@ -2,7 +2,7 @@
 #       To build the image, run:
 #       docker build -t sandbox-runner .
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 RUN pip install numpy
 RUN pip install pandas
