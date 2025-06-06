@@ -13,9 +13,8 @@ from shared.logging_utils import get_logger
 
 from validator.db.operations import DatabaseManager
 from validator.challenge.base import ValidationResult
-from validator.evaluation.graders.elo_grader import EloGrader
+from validator.evaluation.graders.trueskill_grader import TrueSkillGrader
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
-from validator.config import MOCK_RESPONSES
 
 from ..base import BaseChallenge
 from .response import CodegenResponse
@@ -203,7 +202,7 @@ class CodegenChallenge(BaseChallenge):
         Returns:
             List of ValidationResult objects with scores
         """
-        grader = EloGrader(self)
+        grader = TrueSkillGrader()
         responses_to_test = []
 
         for response in responses:
@@ -222,7 +221,7 @@ class CodegenChallenge(BaseChallenge):
                     db_manager.mark_response_failed(response.response_id)
         
         # Grade the valid responses and get explanations
-        scores, explanations = grader.grade_with_explanations(responses_to_test)
+        scores = grader.grade(responses_to_test)
 
         # Return validation results for all responses that passed testing
         return [
