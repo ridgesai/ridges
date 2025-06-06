@@ -187,6 +187,8 @@ class DatabaseManager:
         cursor = conn.cursor()
 
         try:
+            # Before we find a challenge, we need to delete expired empty challenges. Not sure if we should call this function here or in the main loop.
+            self.delete_expired_empty_challenges(timeout_minutes=10)
             cursor.execute("""
                 SELECT c.challenge_id, c.type
                 FROM challenges c
@@ -200,14 +202,6 @@ class DatabaseManager:
             if not rows:
                 return None
             challenge_row = random.choice(rows) 
-             # So now what happens if there are so many back logged challenges that have no responses?
-             # Cuz they will still exit early and not be evaluated but then they might pile up.
-             # Still need a way to remove challenges that have no responses. 
-             # I think instead of deleting them we should keep track of them somehow and when the next challenge is posted,
-             #   instead of creating a new challenge we can just post ones that had no responses,
-             #      but we need to do this to only really old challenges that have no responses, cuz we can't repost,
-             #        a quesiton that miners are already working on , or can we?
-             # I think this random choice is good, but I'm pretty sure another bug will show up if we randomly choose but I can't pinpoint ir rn. 
             challenge_id = challenge_row[0]
             type = challenge_row[1]
             # Get the appropriate challenge object
@@ -807,6 +801,45 @@ class DatabaseManager:
                 logger.error(f"Unknown challenge type: {type}")
                 return None
             
+        finally:
+            cursor.close()
+            conn.close()
+
+
+    ## FIX FOR EXPIRED CHALLENGES THAT HAVE NO RESPONSES
+    def delete_expired_empty_challenges(self, timeout_minutes: int = 10) -> int:
+        """Delete challenges older than timeout_minutes with 0 responses. Returns number deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Find challenge_ids that are older than timeout and have 0 responses
+            cursor.execute('''
+                SELECT c.challenge_id
+                FROM challenges c
+                LEFT JOIN responses r ON c.challenge_id = r.challenge_id
+                WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
+                GROUP BY c.challenge_id
+                HAVING COUNT(r.response_id) = 0
+            ''', (timeout_minutes,))
+            challenge_ids = [row[0] for row in cursor.fetchall()]
+            if not challenge_ids:
+                return 0
+            # Delete from all relevant tables
+            for challenge_id in challenge_ids:
+                cursor.execute("DELETE FROM codegen_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenge_assignments WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM codegen_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenges WHERE challenge_id = ?", (challenge_id,))
+            conn.commit()
+            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min)")
+            return len(challenge_ids)
+        except Exception as e:
+            logger.error(f"Error deleting expired empty challenges: {e}")
+            conn.rollback()
+            return 0
         finally:
             cursor.close()
             conn.close()
