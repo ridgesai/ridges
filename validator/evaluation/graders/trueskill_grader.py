@@ -31,26 +31,24 @@ class TrueSkillGrader(GraderInterface):
                 self.ratings[response.miner_hotkey] = self.env.create_rating()
 
         # Run float scores
-        float_scores = self.float_grader.grade(responses)
-        for index, response in enumerate(responses):
-            float_grade_assigned = float_scores[index]
+        float_scores_by_hotkey = self.float_grader.grade(responses)
 
-            print(f"Graded miner {response.miner_hotkey} with score of {float_grade_assigned} for question {response.response_id}")
+        print(f"Graded miner {response.miner_hotkey} with score of {float_scores_by_hotkey[response.miner_hotkey]} for question {response.response_id}")
 
         # We run the rating system thrice for steadier results when we first
         # initialize the ratings
         if len(responses) > 1:
             num_runs = 1 if self.num_runs > 5 else 3
             for _ in range(num_runs):
-                self.update_ratings(responses, float_scores)
+                self.update_ratings(responses, [float_scores_by_hotkey[response.miner_hotkey] for response in responses])
 
             self.num_runs += 1
 
         # Calculate normalized ratings
         ratings = []
         mean_score = np.mean([r.mu - 3*r.sigma for r in self.ratings.values()])
-        for index, response in enumerate(responses):
-            if float_scores[index] == 0.0:
+        for response in responses:
+            if float_scores_by_hotkey[response.miner_hotkey] == 0.0:
                 ratings.append(0.0)
                 continue
             miner_rating = self.ratings[response.miner_hotkey]
