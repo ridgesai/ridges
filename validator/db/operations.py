@@ -3,6 +3,7 @@ import sqlite3
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
 from datetime import datetime, timedelta
 from pathlib import Path
+import random
 
 from shared.logging_utils import get_logger
 
@@ -181,17 +182,10 @@ class DatabaseManager:
             conn.close()
 
     def find_challenge_ready_for_evaluation(self):
-        """Finds a challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
+        """Finds a random challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
-        try:
-            cursor.execute("""
-                DELETE FROM challenges
-                WHERE challenge_id = ?
-            """, ('6c0cc180-e922-4dfb-bcdd-5ddc91cfc6f9',))
-        except Exception:
-            pass
         try:
             cursor.execute("""
                 SELECT c.challenge_id, c.type
@@ -201,16 +195,21 @@ class DatabaseManager:
                     SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
                 )
                 ORDER BY c.created_at ASC
-                LIMIT 1
             """, (CHALLENGE_TIMEOUT.total_seconds() / 60,))
-                    
-            row = cursor.fetchone()
-            if not row or not row[0]:  # First column is challenge_id
+            rows = cursor.fetchall()
+            if not rows:
                 return None
-
-            challenge_id = row[0]  # First column is challenge_id
-            type = row[1]  # Second column is type
-            
+            challenge_row = random.choice(rows) 
+             # So now what happens if there are so many back logged challenges that have no responses?
+             # Cuz they will still exit early and not be evaluated but then they might pile up.
+             # Still need a way to remove challenges that have no responses. 
+             # I think instead of deleting them we should keep track of them somehow and when the next challenge is posted,
+             #   instead of creating a new challenge we can just post ones that had no responses,
+             #      but we need to do this to only really old challenges that have no responses, cuz we can't repost,
+             #        a quesiton that miners are already working on , or can we?
+             # I think this random choice is good, but I'm pretty sure another bug will show up if we randomly choose but I can't pinpoint ir rn. 
+            challenge_id = challenge_row[0]
+            type = challenge_row[1]
             # Get the appropriate challenge object
             if type == "codegen":
                 from validator.challenge.codegen.challenge import CodegenChallenge
@@ -221,7 +220,6 @@ class DatabaseManager:
             else:
                 logger.error(f"Unknown challenge type: {type}")
                 return None
-
         finally:
             conn.close()
         
