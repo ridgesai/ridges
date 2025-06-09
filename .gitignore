@@ -26,6 +26,7 @@ logs.json
 .cache/
 repos/
 validator/repos/
+results/
 
 # Miner installations and submodules
 SWE-agent/*
