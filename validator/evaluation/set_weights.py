@@ -17,6 +17,7 @@ from validator.config import (
     ALPHA_SCORING_MULTIPLICATOR
 )
 from validator.db.operations import DatabaseManager
+from validator.evaluation.log_score import log_score
 
 logger = get_logger(__name__)
 
@@ -56,7 +57,8 @@ async def _set_weights_with_timeout(
         return False
 
 async def set_weights(
-    db_manager: DatabaseManager
+    db_manager: DatabaseManager,
+    validator_hotkey: str
 ) -> None:
     """Set weights for miners based on their performance scores from the last 24 hours."""
     try:
@@ -126,6 +128,7 @@ async def set_weights(
         for node_id, weight, node in zip(node_ids, node_weights, nodes):
             hotkey = node.hotkey
             bayesian_score = hotkey_to_bayesian_score.get(hotkey, 0.0)
+            await log_score("weight", validator_hotkey, hotkey, weight)
             
             # Get additional info if available
             miner_info = next((s for s in bayesian_miner_scores if s[0] == hotkey), None)
