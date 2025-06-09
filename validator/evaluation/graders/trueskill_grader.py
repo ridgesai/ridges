@@ -1,9 +1,12 @@
+import json
+import os
 from typing import TYPE_CHECKING, List, Dict
 import trueskill
 import numpy as np
 
 from shared.logging_utils import get_logger
 from validator.challenge.base import BaseResponse
+from validator.dependancies import get_results_dir
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.evaluation.graders.float_grader import FloatGrader
 if TYPE_CHECKING:
@@ -23,6 +26,31 @@ class TrueSkillGrader(GraderInterface):
         self.float_grader = FloatGrader(problem)
         self.num_runs = 0
         self.apha = np.log(4) / self.env.beta
+
+          # Initialize cached ratings
+        self.initialize()
+
+    def initialize(self) -> None:
+        """
+        Initialize ratings for miners if available.
+        """
+        try:
+            with open(get_results_dir() / "trueskill_ratings.json", "r") as f:
+                state = json.load(f)
+        except FileNotFoundError as e:
+            # The file did not exist, so we do nothing
+            return
+        for miner_hotkey, rating in state.items():
+            self.ratings[miner_hotkey] = self.env.create_rating(mu=rating[0], sigma=rating[1])
+
+        logger.info(f"Loaded Trueskill ratings from file")
+
+    def save_state(self) -> None:
+        """
+        Save the state of the ratings to a file.
+        """
+        with open(get_results_dir() / "trueskill_ratings.json", "w") as f:
+            json.dump({k: [v.mu, v.sigma] for k, v in self.ratings.items()}, f)
 
     def grade(self, responses: List[BaseResponse]) -> List[float]:
         # Initialize any new miners
@@ -58,6 +86,7 @@ class TrueSkillGrader(GraderInterface):
 
             logger.info(f"Graded miner {response.miner_hotkey} with score of {miner_rating}")
 
+        self.save_state()
         return ratings
 
     def update_ratings(
