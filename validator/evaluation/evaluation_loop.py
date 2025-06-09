@@ -55,18 +55,17 @@ async def evaluate_pending_responses(
                     if db_manager:
                         db_manager.mark_response_failed(response.response_id)
             
-                # Grade the valid responses and get explanations
-                scores = grader.grade(responses_to_test)
+            # Grade the valid responses and get explanations
+            scores = grader.grade(responses_to_test)
 
-                # Return validation results for all responses that passed testing
-                evaluation_results = [
-                    ValidationResult(
-                        is_valid=True,
-                        score=scores.get(response.miner_hotkey, 0.0)
-                    )
-                    for response in responses_to_test
-                ]
-                logger.info(f"Evaluation results: {evaluation_results}")
+            # Return validation results for all responses that passed testing
+            evaluation_results = [
+                ValidationResult(
+                    is_valid=True,
+                    score=scores.get(response.miner_hotkey, 0.0)
+                )
+                for response in responses_to_test
+            ]
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
