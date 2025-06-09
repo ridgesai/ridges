@@ -353,7 +353,7 @@ async def main():
                                     weights_task = asyncio.create_task(weights_update_loop(db_manager))
                                 elif task == api_drain_task:
                                     logger.info("Restarting API drain task...")
-                                    api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager))
+                                    api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager, validator_hotkey=hotkey.ss58_address))
                     
                     # Clean up completed challenge tasks
                     active_challenge_tasks = [
