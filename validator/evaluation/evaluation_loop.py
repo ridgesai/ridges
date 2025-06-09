@@ -8,6 +8,7 @@ from openai import OpenAI
 import asyncio
 
 from validator.challenge.base import BaseResponse, ValidationResult
+from validator.config import CHALLENGE_TIMEOUT
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.trueskill_grader import TrueSkillGrader
 
@@ -54,18 +55,17 @@ async def evaluate_pending_responses(
                     if db_manager:
                         db_manager.mark_response_failed(response.response_id)
             
-                # Grade the valid responses and get explanations
-                scores = grader.grade(responses_to_test)
+            # Grade the valid responses and get explanations
+            scores = grader.grade(responses_to_test)
 
-                # Return validation results for all responses that passed testing
-                evaluation_results = [
-                    ValidationResult(
-                        is_valid=True,
-                        score=scores.get(response.miner_hotkey, 0.0)
-                    )
-                    for response in responses_to_test
-                ]
-                logger.info(f"Evaluation results: {evaluation_results}")
+            # Return validation results for all responses that passed testing
+            evaluation_results = [
+                ValidationResult(
+                    is_valid=True,
+                    score=scores.get(response.miner_hotkey, 0.0)
+                )
+                for response in responses_to_test
+            ]
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
@@ -74,7 +74,7 @@ async def evaluate_pending_responses(
         # Update the responses as evaluated and with their score in the DB
         logger.info(f"Updating scores for {len(evaluation_results)} responses on challenge {challenge_id}")
 
-        for response, evaluation in zip(responses, evaluation_results):
+        for response, evaluation in zip(responses_to_test, evaluation_results):
             node_id = response.node_id
             response_id = response.response_id
             score = evaluation.score
@@ -145,6 +145,9 @@ async def run_evaluation_loop(
                 
                 logging_update_active_coroutines("evaluation_task", False)
                 logging_update_eval_loop_num(0)
+
+                # Clean old challenges with no evaluated responses
+                db_manager.delete_expired_empty_challenges(timeout_minutes=CHALLENGE_TIMEOUT.total_seconds() / 60) 
                 await asyncio.sleep(sleep_interval)
 
             except Exception as e:

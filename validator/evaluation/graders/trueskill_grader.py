@@ -7,6 +7,7 @@ import numpy as np
 
 from shared.logging_utils import get_logger
 from validator.challenge.base import BaseResponse
+from validator.dependancies import get_results_dir
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.evaluation.graders.float_grader import FloatGrader
 from validator.evaluation.log_score import log_score
@@ -54,15 +55,14 @@ class TrueSkillGrader(GraderInterface):
             json.dump({k: [v.mu, v.sigma] for k, v in self.ratings.items()}, f)
 
     def grade(self, responses: List[BaseResponse]) -> List[float]:
+        # Run float scores
+        float_scores_by_hotkey = self.float_grader.grade(responses)
+
         # Initialize any new miners
         for response in responses:
             if response.miner_hotkey not in self.ratings:
                 self.ratings[response.miner_hotkey] = self.env.create_rating()
-
-        # Run float scores
-        float_scores_by_hotkey = self.float_grader.grade(responses)
-
-        logger.info(f"Graded miner {response.miner_hotkey} with score of {float_scores_by_hotkey[response.miner_hotkey]} for question {response.response_id}")
+            logger.info(f"Graded miner {response.miner_hotkey} with score of {float_scores_by_hotkey[response.miner_hotkey]} for question {response.response_id}")
 
         # We run the rating system thrice for steadier results when we first
         # initialize the ratings
