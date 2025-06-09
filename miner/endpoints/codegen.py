@@ -8,11 +8,11 @@ import shutil
 import threading
 
 from shared.logging_utils import get_logger
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException, Header
 
 from miner.dependancies import blacklist_low_stake, verify_request, get_config
 from miner.core.config import Config
-from miner.utils.shared import miner_lock
+from miner.utils.shared import worker_manager
 from miner.utils.git_ops import clone_and_checkout_repo
 from miner.utils.patch import generate_patch, apply_patch
 from validator.challenge.common import File
@@ -189,101 +189,52 @@ async def process_challenge(
     request: Request,
     config: Config = Depends(get_config)
 ):
-    logger.info("Attempting to acquire miner lock...")
-    async with miner_lock:
-        logger.info("Miner lock acquired, processing challenge...")
-        try:
-            challenge_data = await request.json()
-            challenge_id = challenge_data.get("challenge_id")
-            problem_statement = challenge_data.get("problem_statement")
-            dynamic_checklist = challenge_data.get("dynamic_checklist")
-            repository = challenge_data.get("repository_url")
-            commit_hash = challenge_data.get("commit_hash")
-
-            logger.info(f"Received challenge data: {json.dumps(challenge_data, indent=2)}")
+    try:
+        challenge_data = await request.json()
+        challenge_id = challenge_data.get("challenge_id")
+        validator_hotkey = request.headers.get("validator-hotkey")
+        
+        if not validator_hotkey:
+            logger.error("Missing validator-hotkey header")
+            raise HTTPException(status_code=400, detail="Missing validator-hotkey header")
+        
+        logger.info(f"Received challenge {challenge_id} from validator {validator_hotkey}")
+        
+        # Validate challenge data
+        problem_statement = challenge_data.get("problem_statement")
+        dynamic_checklist = challenge_data.get("dynamic_checklist")
+        repository = challenge_data.get("repository_url")
+        commit_hash = challenge_data.get("commit_hash")
+        
+        if not problem_statement or not dynamic_checklist:
+            logger.error("Incomplete problem provided")
+            raise HTTPException(status_code=400, detail="Incomplete problem provided")
             
-            if not problem_statement or not dynamic_checklist:
-                raise HTTPException(status_code=400, detail="Incomplete problem provided")
+        if not repository:
+            logger.error("repository_url is required")
+            raise HTTPException(status_code=400, detail="repository_url is required")
+        
+        # Add to queue instead of acquiring lock
+        success = await worker_manager.challenge_queue.add_challenge(
+            challenge_id=challenge_id,
+            validator_hotkey=validator_hotkey,
+            data=challenge_data
+        )
+        
+        if not success:
+            logger.error(f"Failed to add challenge {challenge_id} to queue - queue is full")
+            raise HTTPException(status_code=503, detail="Challenge queue is full")
             
-            # # Check for OpenAI API key
-            # api_key = os.getenv("OPENAI_API_KEY")
-            # if not api_key:
-            #     logger.error("OpenAI API key not set in environment")
-            #     raise HTTPException(status_code=500, detail="OpenAI API key not set in environment")
+        return {"success": True, "message": f"Challenge {challenge_id} added to queue"}
+        
+    except Exception as e:
+        logger.error(f"Error processing challenge: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
-            if not repository:
-                raise HTTPException(status_code=400, detail="repository_name is required")
-
-            logger.info(f"Cloning repository {repository} at commit {commit_hash}")
-            repo_path = clone_and_checkout_repo(repository, commit_hash)
-
-            # get python paths from challenge_data.get("context_file_paths") relative to repo_path
-            # Default to empty list if context_file_paths is not provided
-            context_file_paths = challenge_data.get("context_file_paths", [])
-            paths = [os.path.join(repo_path, file) for file in context_file_paths]
-
-            # get the contents of the python paths
-            relevant_files = [File(path=file, contents=open(file, "r").read()) for file in paths if os.path.exists(file)]
-            logger.info(f"Repository cloned to {repo_path}")
-            
-            logger.info(f"Processing challenge {challenge_id} with problem statement {problem_statement}")
-
-            # Generate solution using SWE-agent (should be a patch/diff)
-            logger.info("Generating solution using SWE-agent...")
-
-            # Replace with SWE-agent CLI call
-            solution_patch = solve_with_swe_agent(problem_statement, repo_path)
-
-            # For testing: Return hello world diff
-            # solution_patch = HELLO_WORLD_DIFF
-            
-            logger.info(f"Generated solution patch: {solution_patch}")
-
-            # Post-process patch: ensure it ends with a single newline, no trailing whitespace, no extra blank lines
-            solution_patch = solution_patch.rstrip() + "\n"
-
-            # Validate patch format
-            if not solution_patch.strip().startswith("diff --git"):
-                logger.error("LLM output is not a valid git diff (patch). Output was: %s", solution_patch)
-                raise HTTPException(status_code=500, detail="LLM did not return a valid git diff (patch).")
-
-            # Apply the patch to the repo
-            try:
-                apply_patch(repo_path, solution_patch)
-                logger.info("Patch applied successfully.")
-            except Exception as e:
-                logger.error(f"Failed to apply patch: {e}")
-                # Note: SWE-agent may handle retries internally, so we log the error but do not retry here.
-                raise HTTPException(status_code=500, detail=f"Failed to apply patch: {str(e)}")
-
-            # Generate a git patch of the changes
-            patch = generate_patch(repo_path)
-            logger.info(f"Generated patch:\n{patch}")
-
-            response = {
-                "challenge_id": challenge_id,
-                "patch": patch,
-            }
-            
-            logger.info(f"Responded to challenge {challenge_id}")
-            return response
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error processing codegen challenge: {str(e)}")
-            logger.exception("Full error traceback:")
-            raise HTTPException(status_code=500, detail=f"Challenge processing error: {str(e)}")
-        finally:
-            logger.info("Releasing miner lock...")
-
-
-# Create router with dependencies
+# Create router instance
 router = APIRouter()
-router.add_api_route(
-    "/challenge",
-    process_challenge,
-    tags=["codegen"],
-    # Commnent out dependencies for testing
-    dependencies=[Depends(verify_request)],
-    methods=["POST"],
-)
+
+# Define the endpoint with verification
+@router.post("/challenge", dependencies=[Depends(verify_request)])
+async def receive_challenge(request: Request, config: Config = Depends(get_config)):
+    return await process_challenge(request, config)
