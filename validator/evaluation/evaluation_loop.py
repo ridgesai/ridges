@@ -74,7 +74,7 @@ async def evaluate_pending_responses(
         # Update the responses as evaluated and with their score in the DB
         logger.info(f"Updating scores for {len(evaluation_results)} responses on challenge {challenge_id}")
 
-        for response, evaluation in zip(responses, evaluation_results):
+        for response, evaluation in zip(responses_to_test, evaluation_results):
             node_id = response.node_id
             response_id = response.response_id
             score = evaluation.score
