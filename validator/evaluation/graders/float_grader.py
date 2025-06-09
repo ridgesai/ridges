@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import asdict
 import os
 from statistics import mean
@@ -11,6 +12,7 @@ from shared.logging_utils import get_logger
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.evaluation.log_score import log_score
 from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 # Constants for scoring weights
@@ -98,7 +100,15 @@ class FloatGrader(GraderInterface):
                 scores[response.miner_hotkey] = self._compute_overall_score(miner_output_score)
 
         self.logger.info(f"Float grader cost: {total_cost}")
-
+    
+        # Collect all log_score coroutines and run them synchronously
+        log_tasks = [
+            log_score("float_grader", self.problem.validator_hotkey, hotkey, score)
+            for hotkey, score in scores.items()
+        ]
+        if log_tasks:
+            asyncio.run(asyncio.gather(*log_tasks))
+        
         return scores
 
     def _grade_solution(self, response: CodegenResponse) -> Tuple[FloatGraderScore, float]:
