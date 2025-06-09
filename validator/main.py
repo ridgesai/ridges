@@ -32,7 +32,8 @@ from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
     WALLET_NAME, HOTKEY_NAME, CHALLENGE_INTERVAL,
     CHALLENGE_TIMEOUT, DB_PATH, WEIGHTS_INTERVAL,
-    MAX_MINERS, MIN_MINERS, LOG_DRAIN_FREQUENCY, RIDGES_API_URL
+    MAX_MINERS, MIN_MINERS, LOG_DRAIN_FREQUENCY, RIDGES_API_URL,
+    VERSION_COMMIT_HASH
 )
 from validator.evaluation.evaluation_loop import run_evaluation_loop
 from validator.utils.async_utils import AsyncBarrier
@@ -44,6 +45,7 @@ sys.path.append(project_root)
 # Set up logger
 logger = get_logger(__name__)
 logger.info(f"Loading environment variables from {env_path.absolute()}")
+
 
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
@@ -188,7 +190,7 @@ async def weights_update_loop(db_manager: DatabaseManager) -> None:
                 logging_update_active_coroutines("weights_task", False)
                 await asyncio.sleep(WEIGHTS_INTERVAL.total_seconds())
 
-async def post_to_ridges_api(db_manager: DatabaseManager):
+async def post_to_ridges_api(db_manager: DatabaseManager, validator_hotkey: str):
     # TODO: Post data with fiber to show validator signature
     logger.info("Starting Ridges API drain loop")
     consecutive_failures = 0
@@ -216,28 +218,28 @@ async def post_to_ridges_api(db_manager: DatabaseManager):
                 if (len(codegen_challenges) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/ingestion/codegen-challenges",
+                            f"{RIDGES_API_URL}/ingestion/codegen-challenges?validator_version={VERSION_COMMIT_HASH}&validator_hotkey={validator_hotkey}",
                             json=codegen_challenges
                         )
                     )
                 if (len(codegen_responses) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/ingestion/codegen-responses",
+                            f"{RIDGES_API_URL}/ingestion/codegen-responses?validator_version={VERSION_COMMIT_HASH}&validator_hotkey={validator_hotkey}",
                             json=codegen_responses
                         )
                     )
                 if (len(regression_challenges) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/ingestion/regression-challenges",
+                            f"{RIDGES_API_URL}/ingestion/regression-challenges?validator_version={VERSION_COMMIT_HASH}&validator_hotkey={validator_hotkey}",
                             json=regression_challenges
                         )
                     )
                 if (len(regression_responses) > 0):
                     api_tasks.append(
                         client.post(
-                            f"{RIDGES_API_URL}/ingestion/regression-responses",
+                            f"{RIDGES_API_URL}/ingestion/regression-responses?validator_version={VERSION_COMMIT_HASH}&validator_hotkey={validator_hotkey}",
                             json=regression_responses
                         )
                     )
@@ -313,7 +315,7 @@ async def main():
 
         # Start a task to periodically push non sensitive data to Ridges for the dashboard
         logger.info("Starting Ridges API task...")
-        api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager))
+        api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager, validator_hotkey=hotkey.ss58_address))
         api_drain_task.add_done_callback(
             lambda t: logger.error(f"Ridges API task ended unexpectedly: {t.exception()}")
             if t.exception() else None

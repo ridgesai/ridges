@@ -1,6 +1,7 @@
 from datetime import timedelta
 from pathlib import Path
 import os
+import subprocess
 
 # Network configuration
 
@@ -33,6 +34,7 @@ MOCK_RESPONSES = False
 DB_PATH = Path("validator.db")
 
 VERSION_KEY = 2
+VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
 # OpenAI Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
