@@ -36,16 +36,13 @@ async def make_non_streamed_get(
     Returns:
         The HTTP response.
     """
-    # Reuse the existing make_request function from validator_client
-    # but change the method to GET
-    return await validator_client.make_request(
+    # Use the fiber helper for non-streamed GET requests
+    return await validator_client.make_non_streamed_get(
         httpx_client=httpx_client,
         server_address=server_address,
         validator_ss58_address=validator_ss58_address,
         miner_ss58_address=miner_ss58_address,
         keypair=keypair,
         endpoint=endpoint,
-        method="GET",
-        payload=None,  # No payload for GET
-        timeout=timeout
+        timeout=timeout,
     ) 
