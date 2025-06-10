@@ -42,11 +42,11 @@ async def evaluate_pending_responses(
             responses_to_test = []
 
             for response in responses:
-                # Preprocess the patch
-                response.response_patch = challenge.preprocess_patch(response.response_patch)
-                
                 # Apply and run tests
                 error = challenge.apply_and_run_tests(challenge,response.response_patch)
+
+                # Preprocess the patch
+                response.response_patch = challenge.preprocess_patch(response.response_patch)
                 
                 if error is None:
                     logger.info(f"Response {response.response_id} passed testing")
