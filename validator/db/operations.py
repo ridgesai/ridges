@@ -595,6 +595,28 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
+    def get_average_scores_by_hotkey(self, hours: int = 24) -> Dict[str, float]:
+        """Get average scores for each miner hotkey over the specified time period."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    AVG(COALESCE(score, 0)) as average_score
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey
+            """, (hours,))
+
+            results = cursor.fetchall()
+            return {row[0]: row[1] for row in results}
+        finally:
+            cursor.close()
+            conn.close()
+
     def get_all_challenge_table_entries(
         self, 
         table_name: str,
