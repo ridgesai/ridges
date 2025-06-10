@@ -255,6 +255,7 @@ class BaseChallenge(ABC):
                 logger.error(f"Response error: {str(e)}")
                 logger.error(f"Response status code: {response.status_code if response else None}")
                 logger.error(f"Response headers: {response.headers if response else None}")
+                if 500 <=response.status_code < 600
                 error_msg = f"Failed to send challenge {self.challenge_id} to {hotkey} (node {node_id}): {str(e)}"
                 logger.error(error_msg)
                 logger.error("Full error traceback:", exc_info=True)

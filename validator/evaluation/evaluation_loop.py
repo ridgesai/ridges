@@ -16,7 +16,8 @@ logger = get_logger(__name__)
 
 async def evaluate_pending_responses(
     db_manager: DatabaseManager,
-    challenge_id: str
+    challenge_id: str,
+    validator_hotkey: str
 ):
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
@@ -37,7 +38,7 @@ async def evaluate_pending_responses(
             logger.info(f"Found {len(responses)} responses for challenge {challenge_id}")
 
         try:
-            grader = TrueSkillGrader(challenge)
+            grader = TrueSkillGrader(validator_hotkey, challenge)
             responses_to_test = []
 
             for response in responses:
@@ -136,7 +137,8 @@ async def run_evaluation_loop(
                     logger.info("Starting evaluate_pending_responses...")
                     await evaluate_pending_responses(
                         db_manager=db_manager,
-                        challenge_id=challenge.challenge_id
+                        challenge_id=challenge.challenge_id,
+                        validator_hotkey=validator_hotkey
                     )
                     logger.info(f"Successfully completed challenge processing (iteration {iteration})")
                 except Exception as e:
