@@ -292,6 +292,9 @@ class WorkerManager:
             # Get the patch file - first try with instance_id
             patch_file = output_dir / f"{challenge_id}.patch"
             
+
+            # These are just a crap ton of checks to try to find the patch file.
+            # SWE-agent is a bit of a mess.
             # If not found, try other common patterns
             if not patch_file.exists():
                 # Try looking in instance directory
