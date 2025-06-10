@@ -210,10 +210,6 @@ class BaseChallenge(ABC):
                                 logger.info(
                                     f"Challenge {self.challenge_id} queued by miner {hotkey}, polling for result"
                                 )
-                            else:
-                                logger.info(
-                                    f"Challenge {self.challenge_id} appears to include a patch in initial POST (keys: {list(response_data.keys())})"
-                                )
                                 
                                 # Poll miner for the finished result
                                 result_endpoint = f"{endpoint}/{self.challenge_id}"
