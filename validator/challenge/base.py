@@ -207,7 +207,9 @@ class BaseChallenge(ABC):
                             if ("patch" not in response_data) or (not response_data.get("patch")):
                                 queue_detected = True
                             if queue_detected:
-                                logger.info(f"Challenge {self.challenge_id} queued by miner {hotkey}, polling for result")
+                                logger.info(
+                                    f"Challenge {self.challenge_id} queued by miner {hotkey}, polling for result"
+                                )
                             else:
                                 logger.info(
                                     f"Challenge {self.challenge_id} appears to include a patch in initial POST (keys: {list(response_data.keys())})"
@@ -217,10 +219,12 @@ class BaseChallenge(ABC):
                                 result_endpoint = f"{endpoint}/{self.challenge_id}"
                                 start_time = time.time()
                                 poll_interval = 10  # seconds
-                                max_poll_time = timeout - 60  # Give ourselves some margin
+                                max_poll_time = timeout - 60  # Allow some margin before overall timeout
 
                                 while time.time() - start_time < max_poll_time:
-                                    logger.info(f"Polling for challenge {self.challenge_id} result from {hotkey}")
+                                    logger.info(
+                                        f"Polling for challenge {self.challenge_id} result from {hotkey}"
+                                    )
                                     try:
                                         poll_response = await make_non_streamed_get(
                                             httpx_client=client,
@@ -229,7 +233,7 @@ class BaseChallenge(ABC):
                                             miner_ss58_address=hotkey,
                                             keypair=keypair,
                                             endpoint=result_endpoint,
-                                            timeout=30.0
+                                            timeout=30.0,
                                         )
 
                                         # Unwrap Fiber payload if present
@@ -239,35 +243,51 @@ class BaseChallenge(ABC):
                                         status = poll_data.get("status")
 
                                         if status == "completed":
-                                            logger.info(f"Challenge {self.challenge_id} completed by miner {hotkey}")
+                                            logger.info(
+                                                f"Challenge {self.challenge_id} completed by miner {hotkey}"
+                                            )
                                             response = httpx.Response(
                                                 status_code=200,
                                                 json={"patch": poll_data.get("patch")},
-                                                request=httpx.Request("GET", result_endpoint)
+                                                request=httpx.Request("GET", result_endpoint),
                                             )
                                             break
                                         elif status == "error":
-                                            logger.error(f"Error in challenge {self.challenge_id} from miner {hotkey}: {poll_data.get('error')}")
+                                            logger.error(
+                                                f"Error in challenge {self.challenge_id} from miner {hotkey}: {poll_data.get('error')}"
+                                            )
                                             response = httpx.Response(
                                                 status_code=200,
-                                                json={"patch": poll_data.get("patch"), "error": poll_data.get("error")},
-                                                request=httpx.Request("GET", result_endpoint)
+                                                json={
+                                                    "patch": poll_data.get("patch"),
+                                                    "error": poll_data.get("error"),
+                                                },
+                                                request=httpx.Request("GET", result_endpoint),
                                             )
                                             break
                                         else:
-                                            logger.info(f"Status '{status}' for challenge {self.challenge_id}; sleeping {poll_interval}s before next poll")
+                                            logger.info(
+                                                f"Status '{status}' for challenge {self.challenge_id}; sleeping {poll_interval}s before next poll"
+                                            )
                                             await asyncio.sleep(poll_interval)
                                     except Exception as poll_error:
-                                        logger.error(f"Error polling for challenge {self.challenge_id} result: {poll_error}")
+                                        logger.error(
+                                            f"Error polling for challenge {self.challenge_id} result: {poll_error}"
+                                        )
                                         await asyncio.sleep(poll_interval)
 
                                 # Timeout handling
-                                if response is None or (isinstance(response, httpx.Response) and not response.json().get("patch")):
-                                    logger.error(f"Polling for challenge {self.challenge_id} result timed out")
+                                if response is None or (
+                                    isinstance(response, httpx.Response)
+                                    and not response.json().get("patch")
+                                ):
+                                    logger.error(
+                                        f"Polling for challenge {self.challenge_id} result timed out"
+                                    )
                                     response = httpx.Response(
                                         status_code=200,
                                         json={"patch": None},
-                                        request=httpx.Request("GET", result_endpoint)
+                                        request=httpx.Request("GET", result_endpoint),
                                     )
                         except Exception as parse_error:
                             logger.error(f"Error parsing queue response: {str(parse_error)}")
