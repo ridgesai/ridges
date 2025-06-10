@@ -17,11 +17,10 @@ import httpx
 from fiber import Keypair
 from shared.logging_utils import get_logger
 from fiber.validator import client as validator_client
-from validator.utils.validator_client_helpers import make_non_streamed_get
+from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
-from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 logger = get_logger(__name__)
 
@@ -222,7 +221,7 @@ class BaseChallenge(ABC):
                                         f"Polling for challenge {self.challenge_id} result from {hotkey}"
                                     )
                                     try:
-                                        poll_response = await make_non_streamed_get(
+                                        poll_response = await validator_client.make_non_streamed_get(
                                             httpx_client=client,
                                             server_address=server_address,
                                             validator_ss58_address=keypair.ss58_address,
