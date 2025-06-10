@@ -7,7 +7,7 @@ import random
 
 from shared.logging_utils import get_logger
 
-from validator.config import CHALLENGE_TIMEOUT
+from validator.config import CHALLENGE_TIMEOUT, NO_RESPONSE_MIN_SCORE
 from .schema import check_db_initialized, init_db
 
 if TYPE_CHECKING:
@@ -604,12 +604,12 @@ class DatabaseManager:
             cursor.execute("""
                 SELECT 
                     miner_hotkey,
-                    AVG(COALESCE(score, 0)) as average_score
+                    AVG(COALESCE(score, ?)) as average_score
                 FROM responses
                 WHERE evaluated = TRUE 
                 AND evaluated_at > datetime('now', '-' || ? || ' hours')
                 GROUP BY miner_hotkey
-            """, (hours,))
+            """, (NO_RESPONSE_MIN_SCORE, hours,))
 
             results = cursor.fetchall()
             return {row[0]: row[1] for row in results}
