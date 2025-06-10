@@ -7,7 +7,7 @@ import random
 
 from shared.logging_utils import get_logger
 
-from validator.config import CHALLENGE_TIMEOUT
+from validator.config import CHALLENGE_TIMEOUT, NO_RESPONSE_MIN_SCORE
 from .schema import check_db_initialized, init_db
 
 if TYPE_CHECKING:
@@ -591,6 +591,28 @@ class DatabaseManager:
 
             results = cursor.fetchall()
             return results
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_average_scores_by_hotkey(self, hours: int = 24) -> Dict[str, float]:
+        """Get average scores for each miner hotkey over the specified time period."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    AVG(COALESCE(score, ?)) as average_score
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey
+            """, (NO_RESPONSE_MIN_SCORE, hours,))
+
+            results = cursor.fetchall()
+            return {row[0]: row[1] for row in results}
         finally:
             cursor.close()
             conn.close()

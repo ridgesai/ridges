@@ -171,7 +171,7 @@ async def weights_update_loop(db_manager: DatabaseManager, validator_hotkey: str
     while True: 
         logging_update_active_coroutines("weights_task", True)
         try: 
-            await set_weights(db_manager, validator_hotkey)
+            await set_weights(db_manager)
             consecutive_failures = 0 # Reset failure counter on success
             logger.info(f"Weights updated successfully, sleeping for {WEIGHTS_INTERVAL}")
             logging_update_active_coroutines("weights_task", False)
