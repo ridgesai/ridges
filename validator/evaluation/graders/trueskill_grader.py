@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from typing import TYPE_CHECKING, List, Dict
+from typing import TYPE_CHECKING, Coroutine, List, Dict
 import trueskill
 import numpy as np
 
@@ -76,7 +76,7 @@ class TrueSkillGrader(GraderInterface):
             self.num_runs += 1
 
         # Calculate normalized ratings
-        log_tasks = []
+        log_tasks: List[Coroutine] = []
         ratings = {}
         mean_score = np.mean([r.mu - 3*r.sigma for r in self.ratings.values()])
         for response in responses:
@@ -92,8 +92,8 @@ class TrueSkillGrader(GraderInterface):
 
             logger.info(f"Graded miner {response.miner_hotkey} with score of {miner_rating}")
 
-        if log_tasks:
-            await asyncio.gather(*log_tasks)
+        for task in log_tasks: # Run sequentially to avoid 499 client closed
+            await task
 
         self.save_state()
         return ratings
