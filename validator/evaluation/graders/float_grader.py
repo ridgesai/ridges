@@ -102,10 +102,8 @@ class FloatGrader(GraderInterface):
         self.logger.info(f"Float grader cost: {total_cost}")
     
         # Log scores asynchronously
-        await asyncio.gather(*[
-            log_score("float_grader", self.problem.validator_hotkey, hotkey, score)
-            for hotkey, score in scores.items()
-        ])
+        for hotkey, score in scores.items():
+            await log_score("float_grader", self.problem.validator_hotkey, hotkey, score)
         
         return scores
 
