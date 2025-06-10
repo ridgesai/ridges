@@ -8,7 +8,7 @@ import shutil
 import threading
 
 from shared.logging_utils import get_logger
-from fastapi import APIRouter, Depends, Request, HTTPException, Header
+from fastapi import APIRouter, Depends, Request, HTTPException, Header, Path as FastAPIPath
 
 from miner.dependancies import blacklist_low_stake, verify_request, get_config
 from miner.core.config import Config
@@ -225,7 +225,9 @@ async def process_challenge(
             logger.error(f"Failed to add challenge {challenge_id} to queue - queue is full")
             raise HTTPException(status_code=503, detail="Challenge queue is full")
             
-        return {"success": True, "message": f"Challenge {challenge_id} added to queue"}
+        response_payload = {"success": True, "message": f"Challenge {challenge_id} added to queue"}
+        logger.info(f"Returning POST body to validator: {response_payload}")
+        return response_payload
         
     except Exception as e:
         logger.error(f"Error processing challenge: {str(e)}", exc_info=True)
@@ -238,3 +240,45 @@ router = APIRouter()
 @router.post("/challenge", dependencies=[Depends(verify_request)])
 async def receive_challenge(request: Request, config: Config = Depends(get_config)):
     return await process_challenge(request, config)
+
+# Add a new endpoint to get the result of a challenge
+@router.get("/challenge/{challenge_id}", dependencies=[Depends(verify_request)])
+async def get_challenge_result(
+    challenge_id: str = FastAPIPath(...),
+    config: Config = Depends(get_config)
+):
+    """Get the result of a challenge by its ID"""
+    logger.info(f"Getting result for challenge {challenge_id}")
+    
+    # Check if we have a response for this challenge
+    response = worker_manager.get_response(challenge_id)
+    
+    if not response:
+        # Check if the challenge is still in the queue
+        if challenge_id in worker_manager.challenge_queue.active_challenges:
+            logger.info(f"Challenge {challenge_id} is still being processed")
+            return {
+                "challenge_id": challenge_id, 
+                "status": "processing",
+                "message": "Challenge is still being processed"
+            }
+        else:
+            logger.warning(f"No response found for challenge {challenge_id}")
+            raise HTTPException(status_code=404, detail=f"Challenge {challenge_id} not found")
+    
+    # Include any error information in the response
+    if "error" in response and response["error"]:
+        logger.warning(f"Challenge {challenge_id} has error: {response['error']}")
+        return {
+            "challenge_id": challenge_id,
+            "status": "error",
+            "error": response["error"],
+            "patch": response.get("patch")
+        }
+    
+    logger.info(f"Returning result for challenge {challenge_id}")
+    return {
+        "challenge_id": challenge_id,
+        "status": "completed",
+        "patch": response.get("patch")
+    }
