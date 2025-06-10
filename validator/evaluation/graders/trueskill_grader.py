@@ -29,6 +29,7 @@ class TrueSkillGrader(GraderInterface):
         self.float_grader = FloatGrader(problem)
         self.num_runs = 0
         self.apha = np.log(4) / self.env.beta
+        self.problem = problem
 
         # Initialize cached ratings
         self.initialize()

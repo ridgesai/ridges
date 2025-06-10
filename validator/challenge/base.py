@@ -7,6 +7,7 @@ and responses should inherit from.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import tempfile
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 from enum import Enum
@@ -19,6 +20,12 @@ from fiber.validator import client as validator_client
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
 from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
+
+import hashlib
+from pathlib import Path
+from git import Repo
+import shutil
+import subprocess
 
 logger = get_logger(__name__)
 
@@ -309,19 +316,84 @@ class BaseChallenge(ABC):
         without_unused = remove_unused(without_docstrings)
 
         return without_unused.strip()
-    
-    def apply_and_run_tests(self, patch: str) -> Optional[str]:
+
+    def clone_repo(self, base_path: Path, repo_url: str, commit_hash: str) -> Path:
         """
+        Clones a git repository into a unique folder (based on repo URL and commit hash),
+        and checks out the specified commit.
+        
+        Returns:
+            Path to the checked-out repository.
+        """
+        # Create a unique directory name using a hash
+        repo_id = hashlib.sha1(f"{repo_url}@{commit_hash}".encode()).hexdigest()
+        target_path = base_path / repo_id
+
+        if target_path.exists():
+            print(f"[INFO] Repository already cloned at {target_path}")
+            return target_path
+
+        # Clone the repo
+        print(f"[CLONE] Cloning {repo_url} into {target_path}")
+        repo = Repo.clone_from(repo_url, target_path)
+
+        if commit_hash:
+            print(f"[CHECKOUT] Checking out commit {commit_hash}")
+            repo.git.checkout(commit_hash)
+
+        return target_path
+
+    def apply_and_run_tests(self, problem, patch: str) -> Optional[str]:
+        '''
         Clones the relevant repo, applies the patch, and runs the tests.
         Also runs pylint and makes sure no new errors have appeared.
         
-        Args:
-            patch: The patch content to apply and test
-            
         Returns:
             An error message if anything fails, otherwise None
-        """
+        '''
+        repo_path = None
+        try:
+            repo_path = self.clone_repo(Path.cwd() / "repos", problem.repository_url, problem.commit_hash)
+            repo = Repo(repo_path)
+        except Exception as e:
+            return (f"[ERROR] Failed to clone repo {problem.repository_url}: {e}")
+
+        try:
+            with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
+                tmp_patch.write(patch)
+                tmp_patch.flush()
+                patch_path = tmp_patch.name
+            print(patch)
+            result = subprocess.run(
+                ["git", "apply", "--check", patch_path],
+                cwd=str(repo.working_tree_dir),
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                print("[GIT APPLY FAILED]")
+                print("stdout:", result.stdout)
+                print("stderr:", result.stderr)
+                raise RuntimeError(f"git apply failed: {result.stderr.strip()}")
+            else:
+                print("[GIT APPLY SUCCESS]")
+                print("stdout:", result.stdout)
+                print("stderr:", result.stderr)
+
+        except Exception as e:
+            return (f"[GIT DIFF DOES NOT APPLY] {e}")
+
+        finally:
+            if repo_path and repo_path.exists():
+                try:
+                    shutil.rmtree(repo_path)
+                    print(f"[CLEANUP] Removed repo at {repo_path}")
+                except Exception as cleanup_err:
+                    print(f"[CLEANUP FAILED] Could not delete repo at {repo_path}: {cleanup_err}")
+
         return None
+
 
 @dataclass
 class BaseResponse(ABC):

@@ -46,7 +46,7 @@ async def evaluate_pending_responses(
                 response.response_patch = challenge.preprocess_patch(response.response_patch)
                 
                 # Apply and run tests
-                error = challenge.apply_and_run_tests(response.response_patch)
+                error = challenge.apply_and_run_tests(challenge,response.response_patch)
                 
                 if error is None:
                     logger.info(f"Response {response.response_id} passed testing")
@@ -55,6 +55,8 @@ async def evaluate_pending_responses(
                     logger.info(f"Response {response.response_id} failed because of: {error}")
                     if db_manager:
                         db_manager.mark_response_failed(response.response_id)
+                    response.response_patch = ""
+                    responses_to_test.append(response)
             
             # Grade the valid responses and get explanations
             scores = await grader.grade(responses_to_test)
