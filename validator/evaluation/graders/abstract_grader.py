@@ -6,6 +6,6 @@ if TYPE_CHECKING:
 
 class GraderInterface(ABC):
     @abstractmethod
-    def grade(self, responses: List['CodegenResponse']) -> Dict[str, float]:
+    async def grade(self, responses: List['CodegenResponse']) -> Dict[str, float]:
         """Grade a list of responses and return scores by hotkey."""
         raise NotImplementedError("GraderInterface.grade() must be overridden")

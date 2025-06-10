@@ -79,7 +79,7 @@ class FloatGrader(GraderInterface):
         self.logger = get_logger(__name__)
         self.problem = problem
 
-    def grade(self, responses: List[CodegenResponse]) -> Dict[str, float]:
+    async def grade(self, responses: List[CodegenResponse]) -> Dict[str, float]:
         """
         Grade a list of responses and return scores by hotkey.
         """
@@ -101,13 +101,11 @@ class FloatGrader(GraderInterface):
 
         self.logger.info(f"Float grader cost: {total_cost}")
     
-        # Collect all log_score coroutines and run them synchronously
-        log_tasks = [
+        # Log scores asynchronously
+        await asyncio.gather(*[
             log_score("float_grader", self.problem.validator_hotkey, hotkey, score)
             for hotkey, score in scores.items()
-        ]
-        if log_tasks:
-            asyncio.run(asyncio.gather(*log_tasks))
+        ])
         
         return scores
 
@@ -213,6 +211,6 @@ if __name__ == "__main__":
     )
     
     grader = FloatGrader(challenge)
-    scores = grader.grade([sample_diff])
+    scores = asyncio.run(grader.grade([sample_diff]))
     
     logger.info(f"Grade response: {scores}")

@@ -56,7 +56,7 @@ async def evaluate_pending_responses(
                         db_manager.mark_response_failed(response.response_id)
             
             # Grade the valid responses and get explanations
-            scores = grader.grade(responses_to_test)
+            scores = await grader.grade(responses_to_test)
 
             # Return validation results for all responses that passed testing
             evaluation_results = [

@@ -54,9 +54,9 @@ class TrueSkillGrader(GraderInterface):
         with open(get_results_dir() / "trueskill_ratings.json", "w") as f:
             json.dump({k: [v.mu, v.sigma] for k, v in self.ratings.items()}, f)
 
-    def grade(self, responses: List[BaseResponse]) -> List[float]:
+    async def grade(self, responses: List[BaseResponse]) -> List[float]:
         # Run float scores
-        float_scores_by_hotkey = self.float_grader.grade(responses)
+        float_scores_by_hotkey = await self.float_grader.grade(responses)
 
         # Initialize any new miners
         for response in responses:
@@ -91,7 +91,7 @@ class TrueSkillGrader(GraderInterface):
             logger.info(f"Graded miner {response.miner_hotkey} with score of {miner_rating}")
 
         if log_tasks:
-            asyncio.run(asyncio.gather(*log_tasks))
+            await asyncio.gather(*log_tasks)
 
         self.save_state()
         return ratings
