@@ -604,12 +604,12 @@ class DatabaseManager:
             cursor.execute("""
                 SELECT 
                     miner_hotkey,
-                    AVG(COALESCE(score, ?)) as average_score
+                    AVG(score) as average_score
                 FROM responses
-                WHERE evaluated = TRUE 
+                WHERE evaluated = TRUE AND score IS NOT NULL
                 AND evaluated_at > datetime('now', '-' || ? || ' hours')
                 GROUP BY miner_hotkey
-            """, (NO_RESPONSE_MIN_SCORE, hours,))
+            """, (hours,))
 
             results = cursor.fetchall()
             return {row[0]: row[1] for row in results}
