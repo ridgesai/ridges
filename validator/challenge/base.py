@@ -38,6 +38,14 @@ class ValidationResult:
         self.score = score
         self.feedback = feedback
 
+    # Provide a readable representation for logging/debugging
+    def __repr__(self) -> str:
+        short_fb = (self.feedback[:50] + "…") if len(self.feedback) > 50 else self.feedback
+        return (
+            f"ValidationResult(valid={self.is_valid}, "
+            f"score={self.score:.3f}, feedback='{short_fb}')"
+        )
+
 
 @dataclass
 class BaseChallenge(ABC):
