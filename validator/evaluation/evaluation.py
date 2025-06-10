@@ -9,6 +9,10 @@ from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.elo_grader import EloGrader
 from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
 from validator.config import MOCK_RESPONSES
+import tempfile
+from git import Repo
+from pathlib import Path
+import hashlib
 
 class CodeGenValidator:
     def __init__(self, db_manager: DatabaseManager, openai_client: OpenAI, validator_hotkey: str):
@@ -28,6 +32,7 @@ class CodeGenValidator:
 
         return without_unused.strip()
     
+
     def apply_and_run_tests(self, problem: 'CodegenChallenge', patch: str) -> Optional[str]:
         '''
         Clones the relevant repo, applies the patch, and runs the tests.
@@ -37,23 +42,8 @@ class CodeGenValidator:
             An error message if anything fails, otherwise None
         '''
 
-        # try:
-        #     repo_path = clone_repo(Path.cwd() / "repos", problem.repository_url, problem.commit_hash)
-        #     repo = Repo(repo_path)
-        # except Exception as e:
-        #     self.logger.error(f"Failed to clone repo {problem.repository_url}: {e}")
-        #     return f"Failed to clone repo {problem.repository_url}: {e}"
-        
-        # try:
-        #     repo.git.apply(patch)
-        # except Exception as e:
-        #     self.logger.error(f"Failed to apply patch {patch}: {e}")
-
-        # TODO: Figure out a way to run an arbitrary repo's test suite
-        # Run tests
-        
-        # Run pylint
         return None
+
 
     async def evaluate_responses(self, problem: CodegenChallenge, miner_responses: List[CodegenResponse]) -> List['ValidationResult']:
         if MOCK_RESPONSES:
