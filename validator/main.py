@@ -160,7 +160,7 @@ async def get_available_nodes_with_api(
     for node in selected_nodes:
         logger.info(f"Selected node {node.node_id} (hotkey: {node.hotkey})")
     
-    return available_nodes
+    return selected_nodes
 
 async def weights_update_loop(db_manager: DatabaseManager, validator_hotkey: str) -> None:
     """Run the weights update loop on WEIGHTS_INTERVAL."""
