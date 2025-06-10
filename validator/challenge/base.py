@@ -187,8 +187,10 @@ class BaseChallenge(ABC):
                     # Attempt to parse JSON and log keys/values
                     try:
                         debug_data = response.json()
-                        logger.info(f"Parsed JSON keys: {list(debug_data.keys())}")
-                        logger.debug(f"Full JSON: {debug_data}")
+                        # Fiber adds a wrapper {"payload": {...}, "signature": "hex"}
+                        effective_data = debug_data.get("payload", debug_data)
+                        logger.info(f"Parsed JSON keys: {list(effective_data.keys())}")
+                        logger.debug(f"Full JSON: {effective_data}")
                     except Exception as json_err:
                         logger.error(f"Failed to parse JSON from miner response: {json_err}")
                     
@@ -196,7 +198,8 @@ class BaseChallenge(ABC):
                     if response.status_code == 200:
                         queue_detected = False
                         try:
-                            response_data = response.json()
+                            raw_json = response.json()
+                            response_data = raw_json.get("payload", raw_json)
                             # Case 1: explicit success marker
                             if response_data.get("success") is True:
                                 queue_detected = True
@@ -210,12 +213,12 @@ class BaseChallenge(ABC):
                                     f"Challenge {self.challenge_id} appears to include a patch in initial POST (keys: {list(response_data.keys())})"
                                 )
                                 
-                                # This is a queued response - need to poll for the actual result
+                                # Poll miner for the finished result
                                 result_endpoint = f"{endpoint}/{self.challenge_id}"
                                 start_time = time.time()
                                 poll_interval = 10  # seconds
-                                max_poll_time = timeout - 60  # Use less than the original timeout to allow for cleanup
-                                
+                                max_poll_time = timeout - 60  # Give ourselves some margin
+
                                 while time.time() - start_time < max_poll_time:
                                     logger.info(f"Polling for challenge {self.challenge_id} result from {hotkey}")
                                     try:
@@ -226,44 +229,40 @@ class BaseChallenge(ABC):
                                             miner_ss58_address=hotkey,
                                             keypair=keypair,
                                             endpoint=result_endpoint,
-                                            timeout=30.0  # Short timeout for polling
+                                            timeout=30.0
                                         )
-                                        
-                                        poll_data = poll_response.json()
-                                        
-                                        # Check if the challenge is complete
-                                        if poll_data.get("status") == "completed":
+
+                                        # Unwrap Fiber payload if present
+                                        poll_raw_json = poll_response.json()
+                                        poll_data = poll_raw_json.get("payload", poll_raw_json)
+
+                                        status = poll_data.get("status")
+
+                                        if status == "completed":
                                             logger.info(f"Challenge {self.challenge_id} completed by miner {hotkey}")
-                                            # Create a new response with the patch data
                                             response = httpx.Response(
                                                 status_code=200,
                                                 json={"patch": poll_data.get("patch")},
                                                 request=httpx.Request("GET", result_endpoint)
                                             )
                                             break
-                                        elif poll_data.get("status") == "error":
+                                        elif status == "error":
                                             logger.error(f"Error in challenge {self.challenge_id} from miner {hotkey}: {poll_data.get('error')}")
-                                            # Create error response
                                             response = httpx.Response(
-                                                status_code=200,  # Still use 200 to process as normal response
+                                                status_code=200,
                                                 json={"patch": poll_data.get("patch"), "error": poll_data.get("error")},
                                                 request=httpx.Request("GET", result_endpoint)
                                             )
                                             break
-                                        elif poll_data.get("status") == "processing":
-                                            logger.info(f"Challenge {self.challenge_id} still processing by miner {hotkey}")
-                                            # Wait before next poll
-                                            await asyncio.sleep(poll_interval)
                                         else:
-                                            logger.warning(f"Unknown status for challenge {self.challenge_id} from miner {hotkey}: {poll_data}")
+                                            logger.info(f"Status '{status}' for challenge {self.challenge_id}; sleeping {poll_interval}s before next poll")
                                             await asyncio.sleep(poll_interval)
-                                            
                                     except Exception as poll_error:
-                                        logger.error(f"Error polling for challenge {self.challenge_id} result: {str(poll_error)}")
+                                        logger.error(f"Error polling for challenge {self.challenge_id} result: {poll_error}")
                                         await asyncio.sleep(poll_interval)
-                                
-                                # If we got here without a valid response, the polling timed out
-                                if "patch" not in response.json():
+
+                                # Timeout handling
+                                if response is None or (isinstance(response, httpx.Response) and not response.json().get("patch")):
                                     logger.error(f"Polling for challenge {self.challenge_id} result timed out")
                                     response = httpx.Response(
                                         status_code=200,
