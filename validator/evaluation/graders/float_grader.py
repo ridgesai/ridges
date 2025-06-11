@@ -103,7 +103,7 @@ class FloatGrader(GraderInterface):
     
         score_logs = []
         for hotkey, score in scores.items():
-            score_logs.append(ScoreLog(type="float_grader", validator_hotkey=self.problem.validator_hotkey, miner_hotkey=hotkey, score=score))
+            score_logs.append(ScoreLog(type="float_grader", challenge_id=self.problem.challenge_id, validator_hotkey=self.problem.validator_hotkey, miner_hotkey=hotkey, score=score))
         await log_scores(score_logs)
         
         return scores

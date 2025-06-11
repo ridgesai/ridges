@@ -1,5 +1,6 @@
 from dataclasses import dataclass, asdict
 from typing import List, Literal
+from typing import Optional
 import httpx
 
 from shared.logging_utils import get_logger
@@ -11,6 +12,7 @@ logger = get_logger(__name__)
 @dataclass
 class ScoreLog:
     type: Literal["trueskill", "float_grader", "elo_grader", "weight"]
+    challenge_id: Optional[str] = None
     validator_hotkey: str
     miner_hotkey: str
     score: float
