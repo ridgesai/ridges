@@ -11,15 +11,17 @@ import tempfile
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 from enum import Enum
+import time
+import asyncio
 
 import httpx
 from fiber import Keypair
 from shared.logging_utils import get_logger
 from fiber.validator import client as validator_client
+from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
-from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 import hashlib
 from pathlib import Path
@@ -42,6 +44,14 @@ class ValidationResult:
         self.is_valid = is_valid
         self.score = score
         self.feedback = feedback
+
+    # Provide a readable representation for logging/debugging
+    def __repr__(self) -> str:
+        short_fb = (self.feedback[:50] + "…") if len(self.feedback) > 50 else self.feedback
+        return (
+            f"ValidationResult(valid={self.is_valid}, "
+            f"score={self.score:.3f}, feedback='{short_fb}')"
+        )
 
 
 @dataclass
@@ -183,6 +193,116 @@ class BaseChallenge(ABC):
                         payload=payload,
                         timeout=timeout
                     )
+                    
+                    # Log raw response for debugging
+                    logger.info(f"Raw POST body from miner: {response.text[:500]}{'...' if len(response.text) > 500 else ''}")
+                    logger.info(f"POST headers: {dict(response.headers)}")
+                    
+                    # Attempt to parse JSON and log keys/values
+                    try:
+                        debug_data = response.json()
+                        # Fiber adds a wrapper {"payload": {...}, "signature": "hex"}
+                        effective_data = debug_data.get("payload", debug_data)
+                        logger.info(f"Parsed JSON keys: {list(effective_data.keys())}")
+                        logger.debug(f"Full JSON: {effective_data}")
+                    except Exception as json_err:
+                        logger.error(f"Failed to parse JSON from miner response: {json_err}")
+                    
+                    # Check if this is a queued response
+                    if response.status_code == 200:
+                        queue_detected = False
+                        try:
+                            raw_json = response.json()
+                            response_data = raw_json.get("payload", raw_json)
+                            # Case 1: explicit success marker
+                            if response_data.get("success") is True:
+                                queue_detected = True
+                            # Case 2: patch missing OR empty -> assume queued
+                            if ("patch" not in response_data) or (not response_data.get("patch")):
+                                queue_detected = True
+                            if queue_detected:
+                                logger.info(
+                                    f"Challenge {self.challenge_id} queued by miner {hotkey}, polling for result"
+                                )
+                                
+                                # Poll miner for the finished result
+                                result_endpoint = f"{endpoint}/{self.challenge_id}"
+                                start_time = time.time()
+                                poll_interval = 10  # seconds
+                                max_poll_time = timeout - 60  # Allow some margin before overall timeout
+
+                                while time.time() - start_time < max_poll_time:
+                                    logger.info(
+                                        f"Polling for challenge {self.challenge_id} result from {hotkey}"
+                                    )
+                                    try:
+                                        poll_response = await validator_client.make_non_streamed_get(
+                                            httpx_client=client,
+                                            server_address=server_address,
+                                            validator_ss58_address=keypair.ss58_address,
+                                            miner_ss58_address=hotkey,
+                                            keypair=keypair,
+                                            endpoint=result_endpoint,
+                                            timeout=30.0,
+                                        )
+
+                                        # Unwrap Fiber payload if present
+                                        poll_raw_json = poll_response.json()
+                                        poll_data = poll_raw_json.get("payload", poll_raw_json)
+
+                                        status = poll_data.get("status")
+
+                                        if status == "completed":
+                                            logger.info(
+                                                f"Challenge {self.challenge_id} completed by miner {hotkey}"
+                                            )
+                                            response = httpx.Response(
+                                                status_code=200,
+                                                json={"patch": poll_data.get("patch")},
+                                                request=httpx.Request("GET", result_endpoint),
+                                            )
+                                            break
+                                        elif status == "error":
+                                            logger.error(
+                                                f"Error in challenge {self.challenge_id} from miner {hotkey}: {poll_data.get('error')}"
+                                            )
+                                            response = httpx.Response(
+                                                status_code=200,
+                                                json={
+                                                    "patch": poll_data.get("patch"),
+                                                    "error": poll_data.get("error"),
+                                                },
+                                                request=httpx.Request("GET", result_endpoint),
+                                            )
+                                            break
+                                        else:
+                                            logger.info(
+                                                f"Status '{status}' for challenge {self.challenge_id}; sleeping {poll_interval}s before next poll"
+                                            )
+                                            await asyncio.sleep(poll_interval)
+                                    except Exception as poll_error:
+                                        logger.error(
+                                            f"Error polling for challenge {self.challenge_id} result: {poll_error}"
+                                        )
+                                        await asyncio.sleep(poll_interval)
+
+                                # Timeout handling
+                                if response is None or (
+                                    isinstance(response, httpx.Response)
+                                    and not response.json().get("patch")
+                                ):
+                                    logger.error(
+                                        f"Polling for challenge {self.challenge_id} result timed out"
+                                    )
+                                    response = httpx.Response(
+                                        status_code=200,
+                                        json={"patch": None},
+                                        request=httpx.Request("GET", result_endpoint),
+                                    )
+                        except Exception as parse_error:
+                            logger.error(f"Error parsing queue response: {str(parse_error)}")
+                            # Continue with normal processing if we can't parse as queue response
+                    
                 except httpx.TimeoutException:
                     # Handle timeout with appropriate default response
                     logger.error(f"Timeout sending {self.type} challenge {self.challenge_id}")

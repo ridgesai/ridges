@@ -27,7 +27,9 @@ async def verify_request(
         )
 
     body = await request.body()
-    payload_hash = get_hash(body)
+    # Treat empty body (e.g., GET requests) as None to align with how clients
+    # construct the signing message (they pass payload_hash=None for GET).
+    payload_hash = None if not body else get_hash(body)
     message = utils.construct_header_signing_message(nonce=nonce, miner_hotkey=miner_hotkey, payload_hash=payload_hash)
     if not verify_signature(
         message=message,

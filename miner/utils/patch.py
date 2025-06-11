@@ -27,8 +27,12 @@ def apply_patch(repo_path: str, patch: str):
         with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.patch') as f:
             f.write(patch)
             temp_patch_file = f.name
-        # Apply the patch
-        repo.git.apply(temp_patch_file)
+        # Apply the patch, ignoring whitespace errors that break apply
+        try:
+            repo.git.apply('--whitespace=nowarn', temp_patch_file)
+        except Exception:
+            # Retry with --whitespace=fix (attempts to automatically fix)
+            repo.git.apply('--whitespace=fix', temp_patch_file)
     except Exception as e:
         raise RuntimeError(f"Failed to apply patch: {e}")
     finally:
