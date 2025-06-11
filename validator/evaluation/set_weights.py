@@ -20,13 +20,8 @@ from validator.config import (
     NO_RESPONSE_MIN_SCORE
 )
 from validator.db.operations import DatabaseManager
-from validator.evaluation.log_score import log_score
-from validator.evaluation.weight_utils import (
-    normalize_max_weight,
-    convert_weights_and_uids_for_emit,
-    process_weights_for_netuid,
-    U16_MAX
-)
+from validator.evaluation.log_score import ScoreLog, log_scores
+from validator.evaluation.weight_utils import process_weights_for_netuid
 
 
 def normalize(x: np.ndarray, p: int = 2, dim: int = 0) -> np.ndarray:
@@ -132,11 +127,14 @@ async def set_weights(db_manager: DatabaseManager):
             return
 
         # Log weight information
+        score_logs = []
         for node_id, weight in zip(node_ids, node_weights):
             # Find the corresponding node
             node = next((n for n in nodes if n.node_id == node_id), None)
             if node:
-                await log_score("weight", keypair.ss58_address, node.hotkey, weight)
+                score_logs.append(ScoreLog(type="weight", validator_hotkey=keypair.ss58_address, miner_hotkey=node.hotkey, score=weight))
+
+        await log_scores(score_logs)
 
         logger.info(f"weights: {node_weights}")
 
@@ -227,11 +225,12 @@ async def set_weights_bayesian(
             node_weights = [1.0 / len(nodes) for _ in nodes]
 
         # Log detailed weight information
+        score_logs = []
         logger.info(f"Setting weights for {len(nodes)} nodes")
         for node_id, weight, node in zip(node_ids, node_weights, nodes):
             hotkey = node.hotkey
             bayesian_score = hotkey_to_bayesian_score.get(hotkey, 0.0)
-            await log_score("weight", validator_hotkey, hotkey, weight)
+            score_logs.append(ScoreLog(type="weight", validator_hotkey=validator_hotkey, miner_hotkey=hotkey, score=weight))
             
             # Get additional info if available
             miner_info = next((s for s in bayesian_miner_scores if s[0] == hotkey), None)
@@ -250,7 +249,7 @@ async def set_weights_bayesian(
                     f"No responses in last 24h, "
                     f"weight={weight:.4f}"
                 )
-        
+        await log_scores(score_logs)
         # Set weights on chain with timeout
         success = await _set_weights_with_timeout(
             substrate=substrate,
