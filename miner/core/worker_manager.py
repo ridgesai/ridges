@@ -20,7 +20,7 @@ from miner.utils.patch import generate_patch, apply_patch
 logger = get_logger(__name__)
 
 class WorkerManager:
-    def __init__(self, num_workers: int = 3, max_queue_size: int = 10):
+    def __init__(self, num_workers: int = 1, max_queue_size: int = 1):
         """Initialize the worker manager with a specified number of workers"""
         self.num_workers = num_workers
         self.challenge_queue = ChallengeQueue(max_size=max_queue_size)
