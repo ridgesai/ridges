@@ -68,8 +68,7 @@ class WorkerManager:
             while self.running:
                 try:
                     # Check if we can start a new worker
-                    active_workers = len([p for p in self.worker_processes.values() 
-                                         if p.get("process") and p.get("process").poll() is None])
+                    active_workers = len(self.worker_processes)
                     
                     if active_workers >= self.num_workers:
                         # Maximum workers running, wait a bit
@@ -84,6 +83,13 @@ class WorkerManager:
                         continue
                         
                     logger.info(f"Starting worker for challenge {challenge.challenge_id}")
+                    
+                    # Pre-register this challenge so the active-worker count reflects it immediately
+                    self.worker_processes[challenge.challenge_id] = {
+                        "process": None,
+                        "start_time": time.time(),
+                        "output_dir": None,
+                    }
                     
                     # Start a worker process for this challenge
                     executor.submit(
@@ -592,6 +598,15 @@ class WorkerManager:
                     del self.worker_processes[challenge.challenge_id]
             except Exception as cleanup_error:
                 logger.error(f"Error cleaning up challenge: {str(cleanup_error)}")
+            finally:
+                # Ensure we always mark the challenge complete in the queue
+                try:
+                    asyncio.run(self.challenge_queue.complete_challenge(challenge.challenge_id))
+                except Exception:
+                    pass
+
+                # Remove from active worker tracking
+                self.worker_processes.pop(challenge.challenge_id, None)
             return None 
 
     def _log_output_directory_contents(self, output_dir: Path):
