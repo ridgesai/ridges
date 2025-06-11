@@ -10,7 +10,7 @@ from validator.challenge.base import BaseResponse
 from validator.dependancies import get_results_dir
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.evaluation.graders.float_grader import FloatGrader
-from validator.evaluation.log_score import log_score
+from validator.evaluation.log_score import ScoreLog, log_scores
 if TYPE_CHECKING:
     from validator.challenge.codegen.challenge import CodegenChallenge
 
@@ -76,24 +76,23 @@ class TrueSkillGrader(GraderInterface):
             self.num_runs += 1
 
         # Calculate normalized ratings
-        log_tasks: List[Coroutine] = []
+        score_logs = []
         ratings = {}
         mean_score = np.mean([r.mu - 3*r.sigma for r in self.ratings.values()])
         for response in responses:
             if float_scores_by_hotkey[response.miner_hotkey] == 0.0:
                 ratings[response.miner_hotkey] = 0.0
-                log_tasks.append(log_score("trueskill", self.validator_hotkey, response.miner_hotkey, 0.0))
+                score_logs.append(ScoreLog(type="trueskill", validator_hotkey=self.validator_hotkey, miner_hotkey=response.miner_hotkey, score=0.0))
                 continue
             miner_rating = self.ratings[response.miner_hotkey]
             miner_rating = miner_rating.mu - 3 * miner_rating.sigma
             miner_rating = 1 / (1 + np.exp(-self.apha * (miner_rating - mean_score)))
             ratings[response.miner_hotkey] = miner_rating
-            log_tasks.append(log_score("trueskill", self.validator_hotkey, response.miner_hotkey, miner_rating))
+            score_logs.append(ScoreLog(type="trueskill", validator_hotkey=self.validator_hotkey, miner_hotkey=response.miner_hotkey, score=miner_rating))
 
             logger.info(f"Graded miner {response.miner_hotkey} with score of {miner_rating}")
 
-        for task in log_tasks: # Run sequentially to avoid 499 client closed
-            await task
+        await log_scores(score_logs)
 
         self.save_state()
         return ratings

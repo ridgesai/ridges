@@ -12,7 +12,7 @@ from shared.logging_utils import get_logger
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.codegen.challenge import CodegenChallenge
-from validator.evaluation.log_score import log_score
+from validator.evaluation.log_score import ScoreLog, log_scores
 from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 # Constants for scoring weights
@@ -101,9 +101,10 @@ class FloatGrader(GraderInterface):
 
         self.logger.info(f"Float grader cost: {total_cost}")
     
-        # Log scores asynchronously
+        score_logs = []
         for hotkey, score in scores.items():
-            await log_score("float_grader", self.problem.validator_hotkey, hotkey, score)
+            score_logs.append(ScoreLog(type="float_grader", validator_hotkey=self.problem.validator_hotkey, miner_hotkey=hotkey, score=score))
+        await log_scores(score_logs)
         
         return scores
 
