@@ -201,7 +201,7 @@ class BaseChallenge(ABC):
                     except Exception as json_err:
                         logger.error(f"Failed to parse JSON from miner response: {json_err}")
                     
-                    # NEW CODE: Check if this is a queued response
+                    # Check if this is a queued response
                     if response.status_code == 200:
                         queue_detected = False
                         try:
@@ -295,7 +295,6 @@ class BaseChallenge(ABC):
                         except Exception as parse_error:
                             logger.error(f"Error parsing queue response: {str(parse_error)}")
                             # Continue with normal processing if we can't parse as queue response
-                    # END NEW CODE
                     
                 except httpx.TimeoutException:
                     # Handle timeout with appropriate default response
