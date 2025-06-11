@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import asdict
 import os
 from statistics import mean
@@ -11,6 +12,7 @@ from shared.logging_utils import get_logger
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.evaluation.log_score import ScoreLog, log_scores
 from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 # Constants for scoring weights
@@ -77,7 +79,7 @@ class FloatGrader(GraderInterface):
         self.logger = get_logger(__name__)
         self.problem = problem
 
-    def grade(self, responses: List[CodegenResponse]) -> Dict[str, float]:
+    async def grade(self, responses: List[CodegenResponse]) -> Dict[str, float]:
         """
         Grade a list of responses and return scores by hotkey.
         """
@@ -98,7 +100,12 @@ class FloatGrader(GraderInterface):
                 scores[response.miner_hotkey] = self._compute_overall_score(miner_output_score)
 
         self.logger.info(f"Float grader cost: {total_cost}")
-
+    
+        score_logs = []
+        for hotkey, score in scores.items():
+            score_logs.append(ScoreLog(type="float_grader", validator_hotkey=self.problem.validator_hotkey, miner_hotkey=hotkey, score=score))
+        await log_scores(score_logs)
+        
         return scores
 
     def _grade_solution(self, response: CodegenResponse) -> Tuple[FloatGraderScore, float]:
@@ -203,6 +210,6 @@ if __name__ == "__main__":
     )
     
     grader = FloatGrader(challenge)
-    scores = grader.grade([sample_diff])
+    scores = asyncio.run(grader.grade([sample_diff]))
     
     logger.info(f"Grade response: {scores}")

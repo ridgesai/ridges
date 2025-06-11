@@ -162,7 +162,7 @@ async def get_available_nodes_with_api(
     
     return selected_nodes
 
-async def weights_update_loop(db_manager: DatabaseManager) -> None:
+async def weights_update_loop(db_manager: DatabaseManager, validator_hotkey: str) -> None:
     """Run the weights update loop on WEIGHTS_INTERVAL."""
     logger.info("Starting weights update loop")
     consecutive_failures = 0
@@ -283,7 +283,7 @@ async def main():
         logger.error(f"Failed to load keys: {str(e)}")
         return
     
-     # Initialize database manager and validator
+    # Initialize database manager and validator
     logger.info(f"Initializing database manager with path: {DB_PATH}")
     db_manager = DatabaseManager(DB_PATH)
     # Initialize HTTP client with long timeout
@@ -307,7 +307,7 @@ async def main():
 
         # Start weights update loop as a separate task
         logger.info("Starting weights update task...")
-        weights_task = asyncio.create_task(weights_update_loop(db_manager))
+        weights_task = asyncio.create_task(weights_update_loop(db_manager, validator_hotkey=hotkey.ss58_address))
         weights_task.add_done_callback(
             lambda t: logger.error(f"Weights task ended unexpectedly: {t.exception()}")
             if t.exception() else None
@@ -350,7 +350,7 @@ async def main():
                                     )
                                 elif task == weights_task:
                                     logger.info("Restarting weights update loop...")
-                                    weights_task = asyncio.create_task(weights_update_loop(db_manager))
+                                    weights_task = asyncio.create_task(weights_update_loop(db_manager, validator_hotkey=hotkey.ss58_address))
                                 elif task == api_drain_task:
                                     logger.info("Restarting API drain task...")
                                     api_drain_task = asyncio.create_task(post_to_ridges_api(db_manager, validator_hotkey=hotkey.ss58_address))

@@ -16,7 +16,8 @@ logger = get_logger(__name__)
 
 async def evaluate_pending_responses(
     db_manager: DatabaseManager,
-    challenge_id: str
+    challenge_id: str,
+    validator_hotkey: str
 ):
     """Evaluate all pending responses for a challenge using the worker pool."""
     try:
@@ -37,15 +38,15 @@ async def evaluate_pending_responses(
             logger.info(f"Found {len(responses)} responses for challenge {challenge_id}")
 
         try:
-            grader = TrueSkillGrader(challenge)
+            grader = TrueSkillGrader(validator_hotkey, challenge)
             responses_to_test = []
 
             for response in responses:
+                # Apply and run tests
+                error = challenge.apply_and_run_tests(challenge,response.response_patch)
+
                 # Preprocess the patch
                 response.response_patch = challenge.preprocess_patch(response.response_patch)
-                
-                # Apply and run tests
-                error = challenge.apply_and_run_tests(response.response_patch)
                 
                 if error is None:
                     logger.info(f"Response {response.response_id} passed testing")
@@ -54,19 +55,20 @@ async def evaluate_pending_responses(
                     logger.info(f"Response {response.response_id} failed because of: {error}")
                     if db_manager:
                         db_manager.mark_response_failed(response.response_id)
+                    response.response_patch = ""
+                    responses_to_test.append(response)
             
-                # Grade the valid responses and get explanations
-                scores = grader.grade(responses_to_test)
+            # Grade the valid responses and get explanations
+            scores = await grader.grade(responses_to_test)
 
-                # Return validation results for all responses that passed testing
-                evaluation_results = [
-                    ValidationResult(
-                        is_valid=True,
-                        score=scores.get(response.miner_hotkey, 0.0)
-                    )
-                    for response in responses_to_test
-                ]
-                logger.info(f"Evaluation results: {evaluation_results}")
+            # Return validation results for all responses that passed testing
+            evaluation_results = [
+                ValidationResult(
+                    is_valid=True,
+                    score=scores.get(response.miner_hotkey, 0.0)
+                )
+                for response in responses_to_test
+            ]
         except Exception as e:
             logger.error(f"Error evaluating responses: {e}")
             db_manager.mark_responses_failed(challenge_id)
@@ -75,7 +77,7 @@ async def evaluate_pending_responses(
         # Update the responses as evaluated and with their score in the DB
         logger.info(f"Updating scores for {len(evaluation_results)} responses on challenge {challenge_id}")
 
-        for response, evaluation in zip(responses, evaluation_results):
+        for response, evaluation in zip(responses_to_test, evaluation_results):
             node_id = response.node_id
             response_id = response.response_id
             score = evaluation.score
@@ -137,7 +139,8 @@ async def run_evaluation_loop(
                     logger.info("Starting evaluate_pending_responses...")
                     await evaluate_pending_responses(
                         db_manager=db_manager,
-                        challenge_id=challenge.challenge_id
+                        challenge_id=challenge.challenge_id,
+                        validator_hotkey=validator_hotkey
                     )
                     logger.info(f"Successfully completed challenge processing (iteration {iteration})")
                 except Exception as e:
