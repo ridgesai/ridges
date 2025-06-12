@@ -555,6 +555,8 @@ class BaseChallenge(ABC):
                 if abs_path.exists() and abs_path.suffix == ".py":
                     if not self.is_valid_python(abs_path):
                         return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
+                elif abs_path.suffix != ".py":
+                    return f"File {relative_path} is not a python file"
         except Exception as e:
             return (f"[GIT DIFF DOES NOT APPLY] {e}")
 
