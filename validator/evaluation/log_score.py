@@ -12,10 +12,10 @@ logger = get_logger(__name__)
 @dataclass
 class ScoreLog:
     type: Literal["trueskill", "float_grader", "elo_grader", "weight"]
-    challenge_id: Optional[str] = None
     validator_hotkey: str
     miner_hotkey: str
     score: float
+    challenge_id: Optional[str] = None
 
 
 async def log_scores(logs: List[ScoreLog]):
