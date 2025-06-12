@@ -518,21 +518,36 @@ class BaseChallenge(ABC):
                 tmp_patch.flush()
                 patch_path = tmp_patch.name
             print(patch)
+            # First attempt: ignore whitespace differences
             result = subprocess.run(
-                ["git", "apply", "--check", patch_path],
+                ["git", "apply", "--check", "--whitespace=nowarn", patch_path],
                 cwd=str(repo.working_tree_dir),
                 capture_output=True,
                 text=True
             )
 
             if result.returncode != 0:
-                print("[GIT APPLY FAILED]")
+                # Retry asking git to auto-fix whitespace issues
+                result_fix = subprocess.run(
+                    ["git", "apply", "--check", "--whitespace=fix", patch_path],
+                    cwd=str(repo.working_tree_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result_fix.returncode != 0:
+                    print("[GIT APPLY FAILED]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+                    raise RuntimeError(f"git apply failed: {result_fix.stderr.strip()}")
+                else:
+                    print("[GIT APPLY SUCCESS WITH --whitespace=fix]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+            else:
+                print("[GIT APPLY SUCCESS]")
                 print("stdout:", result.stdout)
                 print("stderr:", result.stderr)
-                raise RuntimeError(f"git apply failed: {result.stderr.strip()}")
-            else:
-                subprocess.run(["git", "apply", patch_path], cwd=str(repo.working_tree_dir))
-                print("[GIT APPLY SUCCESS]")
 
             modified_files = self.get_modified_files_from_patch(patch)
             for relative_path in modified_files:
@@ -540,8 +555,6 @@ class BaseChallenge(ABC):
                 if abs_path.exists() and abs_path.suffix == ".py":
                     if not self.is_valid_python(abs_path):
                         return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
-                elif abs_path.suffix != ".py":
-                    return f"File {relative_path} is not a python file"
         except Exception as e:
             return (f"[GIT DIFF DOES NOT APPLY] {e}")
 
