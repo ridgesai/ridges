@@ -28,6 +28,7 @@ from pathlib import Path
 from git import Repo
 import shutil
 import subprocess
+import ast
 
 logger = get_logger(__name__)
 
@@ -462,6 +463,40 @@ class BaseChallenge(ABC):
 
         return target_path
 
+    def get_modified_files_from_patch(self, patch_text: str) -> list[str]:
+        """
+        Extracts a list of modified file paths from a diff patch.
+        Handles both 'git diff' and 'unified diff' formats.
+        """
+        modified_files = set()
+        for line in patch_text.splitlines():
+            if line.startswith("diff --git"):
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    filepath = parts[2][2:] if parts[2].startswith("b/") else parts[2]
+                    modified_files.add(filepath)
+            elif line.startswith("+++ "):
+                # fallback for unified diff (no diff --git)
+                path = line[4:].strip()
+                if path != "/dev/null":
+                    # strip "b/" or similar prefixes if present
+                    if path.startswith("b/") or path.startswith("a/"):
+                        path = path[2:]
+                    modified_files.add(path)
+        return list(modified_files)
+    
+    def is_valid_python(self, filepath: Path) -> bool:
+        try:
+            content = filepath.read_text(encoding='utf-8')
+            ast.parse(content)
+            return True
+        except SyntaxError as e:
+            print(f"[SYNTAX ERROR] in {filepath}: {e}")
+            return False
+        except Exception as e:
+            print(f"[READ ERROR] in {filepath}: {e}")
+            return False
+    
     def apply_and_run_tests(self, problem, patch: str) -> Optional[str]:
         '''
         Clones the relevant repo, applies the patch, and runs the tests.
@@ -496,10 +531,17 @@ class BaseChallenge(ABC):
                 print("stderr:", result.stderr)
                 raise RuntimeError(f"git apply failed: {result.stderr.strip()}")
             else:
+                subprocess.run(["git", "apply", patch_path], cwd=str(repo.working_tree_dir))
                 print("[GIT APPLY SUCCESS]")
-                print("stdout:", result.stdout)
-                print("stderr:", result.stderr)
 
+            modified_files = self.get_modified_files_from_patch(patch)
+            for relative_path in modified_files:
+                abs_path = repo_path / relative_path
+                if abs_path.exists() and abs_path.suffix == ".py":
+                    if not self.is_valid_python(abs_path):
+                        return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
+                elif abs_path.suffix != ".py":
+                    return f"File {relative_path} is not a python file"
         except Exception as e:
             return (f"[GIT DIFF DOES NOT APPLY] {e}")
 
