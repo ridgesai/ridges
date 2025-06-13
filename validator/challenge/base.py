@@ -514,10 +514,13 @@ class BaseChallenge(ABC):
 
         try:
             with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
+                # Strip non-Python file hunks so we do not fail on README etc.
+                patch = self._keep_only_python_files(patch)
                 tmp_patch.write(patch)
                 tmp_patch.flush()
                 patch_path = tmp_patch.name
             print(patch)
+            logger.info("[EVAL] git apply --check --whitespace=nowarn")
             # First attempt: ignore whitespace differences
             result = subprocess.run(
                 ["git", "apply", "--check", "--whitespace=nowarn", patch_path],
@@ -528,6 +531,7 @@ class BaseChallenge(ABC):
 
             if result.returncode != 0:
                 # Retry asking git to auto-fix whitespace issues
+                logger.info("[EVAL] git apply --check --whitespace=fix (retry)")
                 result_fix = subprocess.run(
                     ["git", "apply", "--check", "--whitespace=fix", patch_path],
                     cwd=str(repo.working_tree_dir),
@@ -569,6 +573,44 @@ class BaseChallenge(ABC):
                     print(f"[CLEANUP FAILED] Could not delete repo at {repo_path}: {cleanup_err}")
 
         return None
+
+    # ------------------------------------------------------------------
+    # Patch-utility helpers
+    # ------------------------------------------------------------------
+
+    def _keep_only_python_files(self, patch: str) -> str:
+        """Return a new patch string that contains *only* hunks that modify
+        ``*.py`` files (and their accompanying headers).  Hunks for any other
+        file types are discarded so we do not reject otherwise-valid solutions
+        that merely tweak docs, data files, etc.
+        """
+        filtered_lines: list[str] = []
+        include_current = True  # whether we are copying lines for the current file
+
+        for line in patch.splitlines():
+            if line.startswith("diff --git"):
+                # Start of a new file diff; decide if we keep it
+                parts = line.split()
+                # Format: diff --git a/FILE b/FILE  → we look at the *target* path
+                if len(parts) >= 4:
+                    path_token = parts[3]  # b/FILE
+                else:
+                    path_token = parts[-1]
+
+                # Remove leading b/ or a/
+                path = path_token[2:] if path_token.startswith(("a/", "b/")) else path_token
+
+                include_current = path.endswith(".py")
+                if include_current:
+                    filtered_lines.append(line)
+                # else: skip this header and subsequently until next diff hdr
+                continue
+
+            # Always keep patch metadata/header lines that precede a diff block
+            if not line.startswith("diff --git") and include_current:
+                filtered_lines.append(line)
+
+        return "\n".join(filtered_lines) + "\n" if filtered_lines else ""
 
 
 @dataclass
