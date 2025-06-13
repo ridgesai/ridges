@@ -18,6 +18,7 @@ wheels/
 
 # Logging
 logs.json
+logs_mineshaft/
 
 # IDEs
 .idea/
