@@ -28,6 +28,7 @@ from pathlib import Path
 from git import Repo
 import shutil
 import subprocess
+import ast
 
 logger = get_logger(__name__)
 
@@ -462,6 +463,40 @@ class BaseChallenge(ABC):
 
         return target_path
 
+    def get_modified_files_from_patch(self, patch_text: str) -> list[str]:
+        """
+        Extracts a list of modified file paths from a diff patch.
+        Handles both 'git diff' and 'unified diff' formats.
+        """
+        modified_files = set()
+        for line in patch_text.splitlines():
+            if line.startswith("diff --git"):
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    filepath = parts[2][2:] if parts[2].startswith("b/") else parts[2]
+                    modified_files.add(filepath)
+            elif line.startswith("+++ "):
+                # fallback for unified diff (no diff --git)
+                path = line[4:].strip()
+                if path != "/dev/null":
+                    # strip "b/" or similar prefixes if present
+                    if path.startswith("b/") or path.startswith("a/"):
+                        path = path[2:]
+                    modified_files.add(path)
+        return list(modified_files)
+    
+    def is_valid_python(self, filepath: Path) -> bool:
+        try:
+            content = filepath.read_text(encoding='utf-8')
+            ast.parse(content)
+            return True
+        except SyntaxError as e:
+            print(f"[SYNTAX ERROR] in {filepath}: {e}")
+            return False
+        except Exception as e:
+            print(f"[READ ERROR] in {filepath}: {e}")
+            return False
+    
     def apply_and_run_tests(self, problem, patch: str) -> Optional[str]:
         '''
         Clones the relevant repo, applies the patch, and runs the tests.
@@ -479,27 +514,53 @@ class BaseChallenge(ABC):
 
         try:
             with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
+                # Strip non-Python file hunks so we do not fail on README etc.
+                patch = self._keep_only_python_files(patch)
                 tmp_patch.write(patch)
                 tmp_patch.flush()
                 patch_path = tmp_patch.name
             print(patch)
+            logger.info("[EVAL] git apply --check --whitespace=nowarn")
+            # First attempt: ignore whitespace differences
             result = subprocess.run(
-                ["git", "apply", "--check", patch_path],
+                ["git", "apply", "--check", "--whitespace=nowarn", patch_path],
                 cwd=str(repo.working_tree_dir),
                 capture_output=True,
                 text=True
             )
 
             if result.returncode != 0:
-                print("[GIT APPLY FAILED]")
-                print("stdout:", result.stdout)
-                print("stderr:", result.stderr)
-                raise RuntimeError(f"git apply failed: {result.stderr.strip()}")
+                # Retry asking git to auto-fix whitespace issues
+                logger.info("[EVAL] git apply --check --whitespace=fix (retry)")
+                result_fix = subprocess.run(
+                    ["git", "apply", "--check", "--whitespace=fix", patch_path],
+                    cwd=str(repo.working_tree_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result_fix.returncode != 0:
+                    print("[GIT APPLY FAILED]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+                    raise RuntimeError(f"git apply failed: {result_fix.stderr.strip()}")
+                else:
+                    print("[GIT APPLY SUCCESS WITH --whitespace=fix]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
             else:
                 print("[GIT APPLY SUCCESS]")
                 print("stdout:", result.stdout)
                 print("stderr:", result.stderr)
 
+            modified_files = self.get_modified_files_from_patch(patch)
+            for relative_path in modified_files:
+                abs_path = repo_path / relative_path
+                if abs_path.exists() and abs_path.suffix == ".py":
+                    if not self.is_valid_python(abs_path):
+                        return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
+                elif abs_path.suffix != ".py":
+                    return f"File {relative_path} is not a python file"
         except Exception as e:
             return (f"[GIT DIFF DOES NOT APPLY] {e}")
 
@@ -512,6 +573,44 @@ class BaseChallenge(ABC):
                     print(f"[CLEANUP FAILED] Could not delete repo at {repo_path}: {cleanup_err}")
 
         return None
+
+    # ------------------------------------------------------------------
+    # Patch-utility helpers
+    # ------------------------------------------------------------------
+
+    def _keep_only_python_files(self, patch: str) -> str:
+        """Return a new patch string that contains *only* hunks that modify
+        ``*.py`` files (and their accompanying headers).  Hunks for any other
+        file types are discarded so we do not reject otherwise-valid solutions
+        that merely tweak docs, data files, etc.
+        """
+        filtered_lines: list[str] = []
+        include_current = True  # whether we are copying lines for the current file
+
+        for line in patch.splitlines():
+            if line.startswith("diff --git"):
+                # Start of a new file diff; decide if we keep it
+                parts = line.split()
+                # Format: diff --git a/FILE b/FILE  → we look at the *target* path
+                if len(parts) >= 4:
+                    path_token = parts[3]  # b/FILE
+                else:
+                    path_token = parts[-1]
+
+                # Remove leading b/ or a/
+                path = path_token[2:] if path_token.startswith(("a/", "b/")) else path_token
+
+                include_current = path.endswith(".py")
+                if include_current:
+                    filtered_lines.append(line)
+                # else: skip this header and subsequently until next diff hdr
+                continue
+
+            # Always keep patch metadata/header lines that precede a diff block
+            if not line.startswith("diff --git") and include_current:
+                filtered_lines.append(line)
+
+        return "\n".join(filtered_lines) + "\n" if filtered_lines else ""
 
 
 @dataclass
