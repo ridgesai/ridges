@@ -27,7 +27,7 @@ async def log_scores(logs: List[ScoreLog]):
         async with httpx.AsyncClient() as client:
             logger.debug(f"Logging {log_info}")
             response = await client.post(
-                f"{RIDGES_API_URL}/ingestion/scores", json=[asdict(log) for log in logs]
+                f"{RIDGES_API_URL}/ingestion/scores-list", json=[asdict(log) for log in logs]
             )
             response.raise_for_status()
             logger.info(f"Successfully logged {log_info}")
