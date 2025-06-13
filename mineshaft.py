@@ -323,6 +323,7 @@ class Mineshaft:
         """Handle shutdown signals."""
         # Redirect stderr immediately to suppress all error output
         sys.stderr = open(os.devnull, "w")
+        sys.stdout = open(os.devnull, "w")  # Also redirect stdout to be safe
 
         # Cancel all asyncio tasks in the validator
         if "validator" in self.processes:
@@ -333,6 +334,8 @@ class Mineshaft:
             except Exception:
                 pass
 
+        # Restore stdout for our shutdown messages
+        sys.stdout = sys.__stdout__
         console.print(f"\n[yellow]⚠️   Received signal {signum}, shutting down...[/yellow]")
         self._cleanup_processes()
         
@@ -350,7 +353,7 @@ class Mineshaft:
 
         for name, obj in list(self.processes.items()):
             try:
-                if name.endswith("_thread"):
+                if name.endswith("_thread") or name == "validator_stderr":
                     continue
                 pid = obj.pid
                 console.print(f"[yellow]Stopping {name} (PID: {pid})...[/yellow]")
@@ -364,6 +367,11 @@ class Mineshaft:
                 # Only show errors that aren't related to process termination or asyncio cancellation
                 if not isinstance(e, (asyncio.CancelledError, subprocess.TimeoutExpired, httpx.ConnectTimeout)):
                     console.print(f"[red]Error cleaning up {name}: {e}[/red]")
+
+        # Close any open file handles
+        for name, obj in list(self.processes.items()):
+            if name == "validator_stderr":
+                obj.close()
 
         self.processes.clear()
 
@@ -406,16 +414,20 @@ class Mineshaft:
             "PYTHONUNBUFFERED": "1",  # Ensure output is not buffered
         }
 
+        # Create a null device for stderr
+        null_device = open(os.devnull, "w")
+
         process = subprocess.Popen(
             ["uv", "run", "--no-sync", "validator/main.py"],
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=null_device,  # Redirect stderr to null
             bufsize=1,
             universal_newlines=True,
             env=env,
         )
 
         self.processes["validator"] = process
+        self.processes["validator_stderr"] = null_device  # Keep reference to close later
 
         def stream_output():
             ansi_escape = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-9;]*[ -/]*[@-~])")
