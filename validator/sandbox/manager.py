@@ -3,6 +3,7 @@ import json
 import time
 import docker
 import threading
+from pathlib import Path
 from shared.logging_utils import get_logger
 
 from validator.challenge.base import BaseChallenge
@@ -12,10 +13,11 @@ from validator.sandbox.validator import validate_sandbox_dir
 # Set up logger
 logger = get_logger(__name__)
 
-
+# Get the current directory where this file is located
+CURRENT_DIR = Path(__file__).parent.absolute()
 
 # The path (on the host filesystem) to the main script that will run in the sandbox
-MAIN_FILE = "/Users/adams/Documents/dev/refactor/validator/sandbox/Main.py"
+MAIN_FILE = str(CURRENT_DIR / "Main.py")
 
 # The Docker image to use for the sandbox
 # docker build -t sandbox-runner .
@@ -30,7 +32,7 @@ SANDBOX_OUTPUT_FILE = SANDBOX_DIR + "/output.json"
 
 # The mounted directories/files that come from the agent's submitted code
 SANDBOX_SOURCE_DIR = SANDBOX_DIR + "/src"
-SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/AgentMain.py" # NOTE: We don't actually mount this, we just expect that it exists
+SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don't actually mount this, we just expect that it exists
 
 # The mounted directory that contains the repository that the agent is solving a problem for
 SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"

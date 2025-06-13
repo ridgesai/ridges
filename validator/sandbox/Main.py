@@ -20,13 +20,13 @@ try:
         sys.path.insert(0, src_dir)
 
     # Load the AgentMain.py file provided by the agent developer
-    spec = importlib.util.spec_from_file_location('AgentMain', f'{src_dir}/AgentMain.py')
+    spec = importlib.util.spec_from_file_location('AgentMain', f'{src_dir}/agent.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
     # Run the agent_main function
     print('[DOCKER] before agent_main()')
-    output = module.agent_main(input)
+    output = module.agent_main("test")
     print(f'[DOCKER] after agent_main()')
     
     print(f'[DOCKER] output: {output}')

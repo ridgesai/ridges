@@ -1,6 +1,11 @@
 # Python built in imports 
 from pathlib import Path
 import sys 
+
+# Add project root to Python path before other imports
+project_root = str(Path(__file__).resolve().parents[2])
+sys.path.append(project_root)
+
 import time
 import random
 import os
@@ -40,9 +45,6 @@ from validator.evaluation.evaluation_loop import run_evaluation_loop
 from validator.utils.async_utils import AsyncBarrier
 from validator.evaluation.set_weights import set_weights
 from validator.sandbox.manager import SandboxManager
-
-project_root = str(Path(__file__).resolve().parents[2])
-sys.path.append(project_root)
 
 # Set up logger
 logger = get_logger(__name__)
@@ -162,9 +164,9 @@ async def main():
                     task = "codegen" # Currently hardcoding to codegen. Will create concurrent tasks or some looping structure with regression integration
                     
                     # Get list of agents from RIDGES API
-                    response = await client.get(f"{RIDGES_API_URL}/validator/get/agents", params={"type": task})
+                    response = await client.get(f"{RIDGES_API_URL}/retrieval/agent-list", params={"type": task})
                     response.raise_for_status()
-                    agents = response.json()['agents']
+                    agents = response.json()['details']['agents']
 
                     # Generate and send challenges
                     challenge = await create_next_codegen_challenge(openai_client)
@@ -185,24 +187,22 @@ async def main():
                             try:
                                 # Download the agent code from Ridges API
                                 logger.info(f"Downloading agent code for agent {agent['agent_id']}")
-                                response = await client.get(f"{RIDGES_API_URL}/validator/get/agent-zip", params={"agent_id": agent['agent_id']})
+                                response = await client.get(f"{RIDGES_API_URL}/retrieval/agent-file", params={"agent_id": agent['agent_id']})
                                 response.raise_for_status()
                                 logger.info(f"Downloaded agent code for agent {agent['agent_id']}")
                                 
-                                # Save zip file to temp location
-                                tmp_file = tempfile.NamedTemporaryFile(suffix='.zip', delete=False)
-                                tmp_file.write(response.content)
-                                tmp_file.close()
-                                
-                                # Unzip the file to a temp directory
+                                # Create a temp directory for the agent code
                                 temp_dir = tempfile.mkdtemp()
-                                logger.info(f"Unzipping agent code for agent {agent['agent_id']} to temp directory {temp_dir}")
-                                with ZipFile(tmp_file.name, 'r') as zip_ref:
-                                    zip_ref.extractall(temp_dir)
-                                logger.info(f"Unzipped agent code for agent {agent['agent_id']} to temp directory {temp_dir}")
+                                agent_file_path = os.path.join(temp_dir, "agent.py")
+                                
+                                # Save the Python file directly
+                                logger.info(f"Saving agent code to {agent_file_path}")
+                                with open(agent_file_path, 'wb') as f:
+                                    f.write(response.content)
+                                logger.info(f"Saved agent code for agent {agent['agent_id']}")
 
                                 # Create a sandbox for the agent, that runs the agent code from the temp directory
-                                sbox = sbox_manager.add_sandbox(src_dir=temp_dir)
+                                sbox = sbox_manager.add_sandbox(src_dir=temp_dir, repo_dir_path=agent_file_path)
                                 sbox.run_async(challenge)
                                 sboxes.append(sbox)
                             except Exception as e:

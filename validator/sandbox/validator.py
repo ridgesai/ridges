@@ -14,9 +14,9 @@ def validate_sandbox_dir(dir_path: str) -> None:
         raise ValueError(f'Failed to find {dir_path}')
 
     # Then, check if the AgentMain.py file exists
-    agent_main_path = os.path.join(dir_path, 'AgentMain.py')
+    agent_main_path = os.path.join(dir_path, 'agent.py')
     if not os.path.isfile(agent_main_path):
-        raise ValueError(f'Failed to find AgentMain.py')
+        raise ValueError(f'Failed to find agent.py')
 
     # Then, parse the AgentMain.py file
     try:

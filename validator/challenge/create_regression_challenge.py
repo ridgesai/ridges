@@ -15,7 +15,7 @@ import requests
 from jinja2 import Template
 
 from validator.utils.clone_repo import clone_repo
-from validator.challenge import RegressionChallenge
+from validator.challenge.regression.challenge import RegressionChallenge
 
 logger = get_logger(__name__)
 
