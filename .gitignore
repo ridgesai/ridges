@@ -12,6 +12,7 @@ wheels/
 # Env files
 *.env
 *.db
+*.db.bak
 
 # MacOS
 .DS_Store
