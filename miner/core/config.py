@@ -35,6 +35,7 @@ def factory_config() -> Config:
     netuid = os.getenv("NETUID", "1")
     subtensor_network = os.getenv("SUBTENSOR_NETWORK", "local")
     subtensor_address = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
+
     load_old_nodes = bool(os.getenv("LOAD_OLD_NODES", True))
     refresh_nodes = os.getenv("REFRESH_NODES", "true").lower() == "true"
 

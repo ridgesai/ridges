@@ -28,7 +28,6 @@ MIN_FILES_IN_DIR_TO_GENERATE_PROBLEM = 3
 MIN_FILE_CONTENT_LEN_CHARS = 50
 
 WEIGHTS_INTERVAL = timedelta(minutes=30)
-VALIDATION_DELAY = timedelta(minutes=1)
 ALPHA_SCORING_MULTIPLICATOR = 3
 MOCK_RESPONSES = False
 
@@ -61,4 +60,3 @@ logger.info(f"Challenge timeout: {CHALLENGE_TIMEOUT}")
 logger.info(f"Weights interval: {WEIGHTS_INTERVAL}")
 logger.info(f"DB path: {DB_PATH}")
 logger.info(f"Log level: {LOG_LEVEL}")
-logger.info(f"Validation delay: {VALIDATION_DELAY}")

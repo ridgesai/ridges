@@ -16,9 +16,8 @@ if TYPE_CHECKING:
 
 
 class WinLoss(BaseModel):
-    model_1_victor: bool
-    model_2_victor: bool
-    is_draw: bool
+    solution_1_victor: bool
+    solution_2_victor: bool
     explanation: str
 
 
@@ -127,14 +126,58 @@ class EloGrader(GraderInterface):
         arena = self.rank_elo(responses)
         return arena.get_scores()
 
+    def grade_with_explanations(self, responses: List['CodegenResponse']) -> Tuple[Dict[str, float], Dict[str, str]]:
+        """
+        Grade a list of responses and return both scores and explanations for each response by hotkey.
+        """
+        arena = EloArena()
+        explanations = {resp.miner_hotkey: "" for resp in responses}
+
+        if len(responses) == 1:
+            arena.players[responses[0].miner_hotkey] = arena.default_rating
+            explanations[responses[0].miner_hotkey] = "Only one response, no comparison made."
+            return arena.get_scores(), explanations
+
+        for response_1, response_2 in generate_matches(responses):
+            prompt = self.get_prompt()
+            context = self.get_context(response_1, response_2)
+            completion = self.get_completion(prompt, context)
+
+            # Log the comparison results
+            self.logger.info(f"Comparing {response_1.miner_hotkey} vs {response_2.miner_hotkey}")
+            self.logger.info(f"Solution 1 victor: {completion.solution_1_victor}")
+            self.logger.info(f"Solution 2 victor: {completion.solution_2_victor}")
+            self.logger.info(f"Explanation: {completion.explanation}")
+
+            if completion.solution_1_victor:
+                winner, loser = response_1, response_2
+            else:
+                winner, loser = response_2, response_1
+
+            # Save the explanation for both responses (winner gets the explanation, loser gets a note)
+            explanations[winner.miner_hotkey] = completion.explanation
+            explanations[loser.miner_hotkey] = f"Lost comparison to {winner.miner_hotkey}. Explanation: {completion.explanation}"
+
+            comparison = 1.0 if completion.solution_1_victor else 0.0
+            arena.update_ratings(
+                response_1.miner_hotkey, response_2.miner_hotkey, comparison
+            )
+            self.logger.info(f"Current rankings: {arena.raw_rankings()}")
+
+        self.logger.info(f"Raw Elo model rankings: {arena.raw_rankings()}")
+        self.logger.info("Final ELO Ratings:")
+        for player, rating in arena.raw_rankings().items():
+            self.logger.info(f"Player {player}: ELO Rating = {rating}")
+
+        return arena.get_scores(), explanations
+
     def get_prompt(self) -> str:
         return dedent(
             f"""
         You are an unbiased code evaluator, who takes in a problem statement, plus a checklist of factors that a solution to the statement should consider.
         For context, you will also be given the files used to generate a solution.
-        Then, you will be given two solutions, Determine which solution is better.
-        If they are equal in quality based on factors like how logical they are, cleanliness of code, as well as the factors included in the checklist, return is_draw = True and victor_model = None
-        Otherwise, return is_draw = False and victor_model = the model id of the better solution.
+        Then, you will be given two solutions. You MUST choose one solution as the winner - there are no draws allowed.
+        Choose the winner based on factors like how logical they are, cleanliness of code, as well as the factors included in the checklist.
         There is one ground truth solution, though it may not be one the solutions provided. The goal is to evenutally find this coherent solution (that works and was merged). The winner should generally reflect which model is more likely to be this ground truth real world winner.
         ------
         {self.problem.to_detailed_format()}
@@ -172,36 +215,37 @@ class EloGrader(GraderInterface):
         self, response_1: 'CodegenResponse', response_2: 'CodegenResponse'
     ) -> float:
         prompt = self.get_prompt()
-
         context = self.get_context(response_1, response_2)
-
         completion = self.get_completion(prompt, context)
 
+        # Log the comparison results
+        self.logger.info(f"Comparing {response_1.miner_hotkey} vs {response_2.miner_hotkey}")
+        self.logger.info(f"Solution 1 victor: {completion.solution_1_victor}")
+        self.logger.info(f"Solution 2 victor: {completion.solution_2_victor}")
+        self.logger.info(f"Explanation: {completion.explanation}")
+
         outputs = [
-            completion.model_1_victor,
-            completion.model_2_victor,
-            completion.is_draw,
+            completion.solution_1_victor,
+            completion.solution_2_victor,
         ]
 
-        if sum(outputs) < 1:
+        if sum(outputs) != 1:
             raise ValueError(
-                f"Invalid completion: {completion}. None of (1, 2, draw) is true. Received: {outputs}"
+                f"Invalid completion: {completion}. Exactly one solution must be chosen as victor. Received: {outputs}"
             )
 
-        if sum(outputs) > 1:
-            raise ValueError(
-                f"Invalid completion: {completion}. More than 1 value is true from (1, 2, draw). Received: {outputs}"
-            )
-
-        if completion.model_1_victor:
+        if completion.solution_1_victor:
             return 1.0
-        elif completion.model_2_victor:
-            return 0.0
         else:
-            return 0.5
+            return 0.0
 
     def rank_elo(self, responses: List['CodegenResponse']) -> EloArena:
         arena = EloArena()
+
+        # If there's only one response, add it to the arena with default rating
+        if len(responses) == 1:
+            arena.players[responses[0].miner_hotkey] = arena.default_rating
+            return arena
 
         for response_1, response_2 in generate_matches(responses):
             comparison = self.compare_responses(response_1, response_2)
@@ -211,6 +255,11 @@ class EloGrader(GraderInterface):
             self.logger.info(f"Current rankings: {arena.raw_rankings()}")
 
         self.logger.info(f"Raw Elo model rankings: {arena.raw_rankings()}")
+        
+        # Log final ELO ratings for each player
+        self.logger.info("Final ELO Ratings:")
+        for player, rating in arena.raw_rankings().items():
+            self.logger.info(f"Player {player}: ELO Rating = {rating}")
 
         return arena
 

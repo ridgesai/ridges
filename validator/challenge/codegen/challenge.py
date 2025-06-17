@@ -12,10 +12,6 @@ from datetime import datetime
 from shared.logging_utils import get_logger
 
 from validator.db.operations import DatabaseManager
-from validator.challenge.base import ValidationResult
-from validator.evaluation.graders.elo_grader import EloGrader
-from validator.utils.clean_patch import remove_unused, remove_comments, remove_docstrings
-from validator.config import MOCK_RESPONSES
 
 from ..base import BaseChallenge
 from .response import CodegenResponse
@@ -31,6 +27,7 @@ class CodegenChallenge(BaseChallenge):
     This challenge type asks miners to generate code based on a problem statement
     and dynamic checklist, using provided context files as reference.
     """
+    problem_statement: str
     dynamic_checklist: List[str]
     repository_url: str
     local_repo_path: str
@@ -40,9 +37,9 @@ class CodegenChallenge(BaseChallenge):
     model: str = ""
     
     @property
-    def challenge_type(self) -> str:
-        """Return the specific challenge type."""
-        return 'codegen'
+    def type(self) -> str:
+        """Get the type of challenge"""
+        return "codegen"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -52,7 +49,8 @@ class CodegenChallenge(BaseChallenge):
             "dynamic_checklist": self.dynamic_checklist,
             "repository_url": self.repository_url,
             "commit_hash": self.commit_hash,
-            "context_file_paths": self.context_file_paths
+            "context_file_paths": self.context_file_paths,
+            "validator_hotkey": self.validator_hotkey
         }
     
     def to_database_dict(self) -> Dict[str, Any]:
@@ -74,15 +72,17 @@ class CodegenChallenge(BaseChallenge):
             dynamic_checklist=data["dynamic_checklist"],
             repository_url=data["repository_url"],
             commit_hash=data["commit_hash"],
-            context_file_paths=data["context_file_paths"]
+            context_file_paths=data["context_file_paths"],
+            validator_hotkey=data["validator_hotkey"]
         )
     
     def store_in_database(self, db_manager: DatabaseManager) -> None:
         """Store this challenge in the database."""
         db_manager.store_challenge(
             challenge_id=self.challenge_id,
-            challenge_type="codegen",
-            challenge_data=self.to_database_dict()
+            type="codegen",
+            challenge_data=self.to_database_dict(),
+            validator_hotkey=self.validator_hotkey
         )
     
     @classmethod
@@ -155,73 +155,3 @@ class CodegenChallenge(BaseChallenge):
             received_at=received_at,
             response_patch=response_patch
         )
-    
-    def preprocess_patch(self, patch: str) -> str:
-        """
-        Preprocesses a patch by removing comments, docstrings, etc.
-        
-        Args:
-            patch: The patch content to preprocess
-            
-        Returns:
-            The preprocessed patch content
-        """
-        if not patch:
-            return ""
-        
-        without_comments = remove_comments(patch)
-        without_docstrings = remove_docstrings(without_comments)
-        without_unused = remove_unused(without_docstrings)
-
-        return without_unused.strip()
-    
-    def apply_and_run_tests(self, patch: str) -> Optional[str]:
-        """
-        Clones the relevant repo, applies the patch, and runs the tests.
-        Also runs pylint and makes sure no new errors have appeared.
-        
-        Args:
-            patch: The patch content to apply and test
-            
-        Returns:
-            An error message if anything fails, otherwise None
-        """
-        # Since this is a synthetic codegen problem, the problem statement doesn't correspond to a real test
-        return None
-    
-    async def evaluate_responses(self, responses: List['CodegenResponse'], db_manager: 'DatabaseManager') -> List[ValidationResult]:
-        """
-        Evaluate responses for this codegen challenge.
-        
-        Args:
-            responses: List of CodegenResponse objects
-            db_manager: Database manager for marking failed responses
-            
-        Returns:
-            List of ValidationResult objects with scores
-        """
-        grader = EloGrader(self)
-        responses_to_test = []
-
-        for response in responses:
-            # Preprocess the patch
-            response.response_patch = self.preprocess_patch(response.response_patch)
-            
-            # Apply and run tests
-            error = self.apply_and_run_tests(response.response_patch)
-            
-            if error is None:
-                responses_to_test.append(response)
-            else:
-                logger.info(f"Response {response.response_id} failed because of: {error}")
-                if db_manager:
-                    db_manager.mark_response_failed(response.response_id)
-        
-        # Grade the valid responses
-        scores = grader.grade(responses_to_test)
-
-        # Return validation results for all responses that passed testing
-        return [
-            ValidationResult(is_valid=True, score=scores.get(response.miner_hotkey, 0.0)) 
-            for response in responses_to_test
-        ] 

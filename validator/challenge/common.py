@@ -92,7 +92,7 @@ class ChallengeTask:
         self.miner_hotkey = miner_hotkey
     
     def __repr__(self) -> str:
-        return f"ChallengeTask(node_id={self.node_id}, challenge_type={self.challenge.challenge_type}, miner={self.miner_hotkey})"
+        return f"ChallengeTask(node_id={self.node_id}, type={self.challenge.type}, miner={self.miner_hotkey})"
 
 
 # Get the absolute path to repos dir
@@ -100,6 +100,6 @@ validator_dir = Path(__file__).parents[1]
 repos_dir = validator_dir / "repos"
 
 SUPPORTED_CODEGEN_REPOS: Dict[str, Path] = {
-    "mwaskom/seaborn": repos_dir / "seaborn",
-    "pytest-dev/pytest":  repos_dir / "pytest",
-} 
+    "SWE-bench-repos/mwaskom__seaborn": repos_dir / "mwaskom__seaborn",
+    "SWE-bench-repos/pytest-dev__pytest": repos_dir / "pytest-dev__pytest",
+}

@@ -27,8 +27,17 @@ def apply_patch(repo_path: str, patch: str):
         with tempfile.NamedTemporaryFile(delete=False, mode='w', suffix='.patch') as f:
             f.write(patch)
             temp_patch_file = f.name
-        # Apply the patch
-        repo.git.apply(temp_patch_file)
+        # Try to validate and apply the patch allowing whitespace differences
+        # to be ignored first.  This mirrors the behaviour we want on the
+        # validator so that both sides treat harmless whitespace changes the
+        # same way.
+        try:
+            repo.git.apply('--check', '--whitespace=nowarn', temp_patch_file)
+            repo.git.apply('--whitespace=nowarn', temp_patch_file)
+        except Exception:
+            # As a fallback ask Git to automatically fix whitespace issues.
+            repo.git.apply('--check', '--whitespace=fix', temp_patch_file)
+            repo.git.apply('--whitespace=fix', temp_patch_file)
     except Exception as e:
         raise RuntimeError(f"Failed to apply patch: {e}")
     finally:

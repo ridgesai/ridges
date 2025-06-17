@@ -7,17 +7,28 @@ and responses should inherit from.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+import tempfile
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 from enum import Enum
+import time
+import asyncio
 
 import httpx
 from fiber import Keypair
 from shared.logging_utils import get_logger
 from fiber.validator import client as validator_client
+from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
+
+import hashlib
+from pathlib import Path
+from git import Repo
+import shutil
+import subprocess
+import ast
 
 logger = get_logger(__name__)
 
@@ -35,6 +46,14 @@ class ValidationResult:
         self.score = score
         self.feedback = feedback
 
+    # Provide a readable representation for logging/debugging
+    def __repr__(self) -> str:
+        short_fb = (self.feedback[:50] + "…") if len(self.feedback) > 50 else self.feedback
+        return (
+            f"ValidationResult(valid={self.is_valid}, "
+            f"score={self.score:.3f}, feedback='{short_fb}')"
+        )
+
 
 @dataclass
 class BaseChallenge(ABC):
@@ -46,12 +65,12 @@ class BaseChallenge(ABC):
     challenge_id: str
     problem_statement: str
     commit_hash: Optional[str]
+    validator_hotkey: str
     
     @property
-    @abstractmethod
-    def challenge_type(self) -> str:
-        """Return the specific challenge type."""
-        pass
+    def type(self) -> str:
+        """Get the type of challenge"""
+        raise NotImplementedError("Challenge type must be implemented by subclass")
     
     @abstractmethod
     def to_dict(self) -> Dict[str, Any]:
@@ -64,8 +83,8 @@ class BaseChallenge(ABC):
         pass
     
     def get_endpoint(self) -> str:
-        """Get the API endpoint for this challenge type."""
-        return f"/{self.challenge_type}/challenge"
+        """Get the endpoint for this challenge type"""
+        return f"/{self.type}/challenge"
     
     def process_response_data(self, response: httpx.Response) -> Tuple[str, Optional[str]]:
         """
@@ -125,7 +144,7 @@ class BaseChallenge(ABC):
         endpoint = self.get_endpoint()
         payload = self.to_dict()
         
-        logger.info(f"Preparing to send {self.challenge_type} challenge to node {node_id}")
+        logger.info(f"Preparing to send {self.type} challenge to node {node_id}")
         logger.info(f"  Server address: {server_address}")
         logger.info(f"  Hotkey: {hotkey}")
         logger.info(f"  Challenge ID: {self.challenge_id}")
@@ -136,12 +155,12 @@ class BaseChallenge(ABC):
         try:
             # Store the challenge in the database
             if db_manager:
-                logger.debug(f"Storing {self.challenge_type} challenge {self.challenge_id} in database")
+                logger.debug(f"Storing {self.type} challenge {self.challenge_id} in database")
                 self.store_in_database(db_manager)
             
             # Record the assignment
             if db_manager:
-                logger.debug(f"Recording {self.challenge_type} challenge assignment in database")
+                logger.debug(f"Recording {self.type} challenge assignment in database")
                 db_manager.assign_challenge(self.challenge_id, hotkey, node_id)
             
             # Create client if not provided
@@ -152,7 +171,7 @@ class BaseChallenge(ABC):
                 should_close_client = True
             
             if db_manager:
-                logger.debug(f"Marking {self.challenge_type} challenge as sent in database")
+                logger.debug(f"Marking {self.type} challenge as sent in database")
                 db_manager.mark_challenge_sent(self.challenge_id, hotkey)
             
             if remaining_barriers:
@@ -161,7 +180,7 @@ class BaseChallenge(ABC):
             
             try:
                 sent_time = datetime.now(timezone.utc)
-                logger.debug(f"Sending {self.challenge_type} challenge request...")
+                logger.debug(f"Sending {self.type} challenge request...")
                 
                 # Send the challenge using fiber validator client
                 try:
@@ -175,9 +194,119 @@ class BaseChallenge(ABC):
                         payload=payload,
                         timeout=timeout
                     )
+                    
+                    # Log raw response for debugging
+                    logger.info(f"Raw POST body from miner: {response.text[:500]}{'...' if len(response.text) > 500 else ''}")
+                    logger.info(f"POST headers: {dict(response.headers)}")
+                    
+                    # Attempt to parse JSON and log keys/values
+                    try:
+                        debug_data = response.json()
+                        # Fiber adds a wrapper {"payload": {...}, "signature": "hex"}
+                        effective_data = debug_data.get("payload", debug_data)
+                        logger.info(f"Parsed JSON keys: {list(effective_data.keys())}")
+                        logger.debug(f"Full JSON: {effective_data}")
+                    except Exception as json_err:
+                        logger.error(f"Failed to parse JSON from miner response: {json_err}")
+                    
+                    # Check if this is a queued response
+                    if response.status_code == 200:
+                        queue_detected = False
+                        try:
+                            raw_json = response.json()
+                            response_data = raw_json.get("payload", raw_json)
+                            # Case 1: explicit success marker
+                            if response_data.get("success") is True:
+                                queue_detected = True
+                            # Case 2: patch missing OR empty -> assume queued
+                            if ("patch" not in response_data) or (not response_data.get("patch")):
+                                queue_detected = True
+                            if queue_detected:
+                                logger.info(
+                                    f"Challenge {self.challenge_id} queued by miner {hotkey}, polling for result"
+                                )
+                                
+                                # Poll miner for the finished result
+                                result_endpoint = f"{endpoint}/{self.challenge_id}"
+                                start_time = time.time()
+                                poll_interval = 10  # seconds
+                                max_poll_time = timeout - 60  # Allow some margin before overall timeout
+
+                                while time.time() - start_time < max_poll_time:
+                                    logger.info(
+                                        f"Polling for challenge {self.challenge_id} result from {hotkey}"
+                                    )
+                                    try:
+                                        poll_response = await validator_client.make_non_streamed_get(
+                                            httpx_client=client,
+                                            server_address=server_address,
+                                            validator_ss58_address=keypair.ss58_address,
+                                            miner_ss58_address=hotkey,
+                                            keypair=keypair,
+                                            endpoint=result_endpoint,
+                                            timeout=30.0,
+                                        )
+
+                                        # Unwrap Fiber payload if present
+                                        poll_raw_json = poll_response.json()
+                                        poll_data = poll_raw_json.get("payload", poll_raw_json)
+
+                                        status = poll_data.get("status")
+
+                                        if status == "completed":
+                                            logger.info(
+                                                f"Challenge {self.challenge_id} completed by miner {hotkey}"
+                                            )
+                                            response = httpx.Response(
+                                                status_code=200,
+                                                json={"patch": poll_data.get("patch")},
+                                                request=httpx.Request("GET", result_endpoint),
+                                            )
+                                            break
+                                        elif status == "error":
+                                            logger.error(
+                                                f"Error in challenge {self.challenge_id} from miner {hotkey}: {poll_data.get('error')}"
+                                            )
+                                            response = httpx.Response(
+                                                status_code=200,
+                                                json={
+                                                    "patch": poll_data.get("patch"),
+                                                    "error": poll_data.get("error"),
+                                                },
+                                                request=httpx.Request("GET", result_endpoint),
+                                            )
+                                            break
+                                        else:
+                                            logger.info(
+                                                f"Status '{status}' for challenge {self.challenge_id}; sleeping {poll_interval}s before next poll"
+                                            )
+                                            await asyncio.sleep(poll_interval)
+                                    except Exception as poll_error:
+                                        logger.error(
+                                            f"Error polling for challenge {self.challenge_id} result: {poll_error}"
+                                        )
+                                        await asyncio.sleep(poll_interval)
+
+                                # Timeout handling
+                                if response is None or (
+                                    isinstance(response, httpx.Response)
+                                    and not response.json().get("patch")
+                                ):
+                                    logger.error(
+                                        f"Polling for challenge {self.challenge_id} result timed out"
+                                    )
+                                    response = httpx.Response(
+                                        status_code=200,
+                                        json={"patch": None},
+                                        request=httpx.Request("GET", result_endpoint),
+                                    )
+                        except Exception as parse_error:
+                            logger.error(f"Error parsing queue response: {str(parse_error)}")
+                            # Continue with normal processing if we can't parse as queue response
+                    
                 except httpx.TimeoutException:
                     # Handle timeout with appropriate default response
-                    logger.error(f"Timeout sending {self.challenge_type} challenge {self.challenge_id}")
+                    logger.error(f"Timeout sending {self.type} challenge {self.challenge_id}")
                     response = httpx.Response(
                         status_code=200,
                         json={"patch": None},
@@ -185,7 +314,7 @@ class BaseChallenge(ABC):
                     )
 
                 except Exception as e:
-                    logger.error(f"Error sending {self.challenge_type} challenge {self.challenge_id}: {str(e)}")
+                    logger.error(f"Error sending {self.type} challenge {self.challenge_id}: {str(e)}")
                     logger.error("Full error traceback:", exc_info=True)
                     response = httpx.Response(
                         status_code=200,
@@ -284,14 +413,204 @@ class BaseChallenge(ABC):
         """Store this challenge in the database."""
         db_manager.store_challenge(
             challenge_id=self.challenge_id,
-            challenge_type=self.challenge_type,
-            challenge_data=self.to_database_dict()
+            type=self.type,
+            challenge_data=self.to_database_dict(),
+            validator_hotkey=self.validator_hotkey
         )
 
-    @abstractmethod
-    async def evaluate_responses(self, responses: List['BaseResponse']) -> List['ValidationResult']:
-        """Evaluate a list of responses for this challenge."""
-        pass
+    def preprocess_patch(self, patch: str) -> str:
+        """
+        Preprocesses a patch by removing comments, docstrings, etc.
+        
+        Args:
+            patch: The patch content to preprocess
+            
+        Returns:
+            The preprocessed patch content
+        """
+        if not patch:
+            return ""
+        
+        without_comments = remove_comments(patch)
+        without_docstrings = remove_docstrings(without_comments)
+        without_unused = remove_unused(without_docstrings)
+
+        return without_unused.strip()
+
+    def clone_repo(self, base_path: Path, repo_url: str, commit_hash: str) -> Path:
+        """
+        Clones a git repository into a unique folder (based on repo URL and commit hash),
+        and checks out the specified commit.
+        
+        Returns:
+            Path to the checked-out repository.
+        """
+        # Create a unique directory name using a hash
+        repo_id = hashlib.sha1(f"{repo_url}@{commit_hash}".encode()).hexdigest()
+        target_path = base_path / repo_id
+
+        if target_path.exists():
+            print(f"[INFO] Repository already cloned at {target_path}")
+            return target_path
+
+        # Clone the repo
+        print(f"[CLONE] Cloning {repo_url} into {target_path}")
+        repo = Repo.clone_from(repo_url, target_path)
+
+        if commit_hash:
+            print(f"[CHECKOUT] Checking out commit {commit_hash}")
+            repo.git.checkout(commit_hash)
+
+        return target_path
+
+    def get_modified_files_from_patch(self, patch_text: str) -> list[str]:
+        """
+        Extracts a list of modified file paths from a diff patch.
+        Handles both 'git diff' and 'unified diff' formats.
+        """
+        modified_files = set()
+        for line in patch_text.splitlines():
+            if line.startswith("diff --git"):
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    filepath = parts[2][2:] if parts[2].startswith("b/") else parts[2]
+                    modified_files.add(filepath)
+            elif line.startswith("+++ "):
+                # fallback for unified diff (no diff --git)
+                path = line[4:].strip()
+                if path != "/dev/null":
+                    # strip "b/" or similar prefixes if present
+                    if path.startswith("b/") or path.startswith("a/"):
+                        path = path[2:]
+                    modified_files.add(path)
+        return list(modified_files)
+    
+    def is_valid_python(self, filepath: Path) -> bool:
+        try:
+            content = filepath.read_text(encoding='utf-8')
+            ast.parse(content)
+            return True
+        except SyntaxError as e:
+            print(f"[SYNTAX ERROR] in {filepath}: {e}")
+            return False
+        except Exception as e:
+            print(f"[READ ERROR] in {filepath}: {e}")
+            return False
+    
+    def apply_and_run_tests(self, problem, patch: str) -> Optional[str]:
+        '''
+        Clones the relevant repo, applies the patch, and runs the tests.
+        Also runs pylint and makes sure no new errors have appeared.
+        
+        Returns:
+            An error message if anything fails, otherwise None
+        '''
+        repo_path = None
+        try:
+            repo_path = self.clone_repo(Path.cwd() / "repos", problem.repository_url, problem.commit_hash)
+            repo = Repo(repo_path)
+        except Exception as e:
+            return (f"[ERROR] Failed to clone repo {problem.repository_url}: {e}")
+
+        try:
+            with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
+                # Strip non-Python file hunks so we do not fail on README etc.
+                patch = self._keep_only_python_files(patch)
+                tmp_patch.write(patch)
+                tmp_patch.flush()
+                patch_path = tmp_patch.name
+            print(patch)
+            logger.info("[EVAL] git apply --check --whitespace=nowarn")
+            # First attempt: ignore whitespace differences
+            result = subprocess.run(
+                ["git", "apply", "--check", "--whitespace=nowarn", patch_path],
+                cwd=str(repo.working_tree_dir),
+                capture_output=True,
+                text=True
+            )
+
+            if result.returncode != 0:
+                # Retry asking git to auto-fix whitespace issues
+                logger.info("[EVAL] git apply --check --whitespace=fix (retry)")
+                result_fix = subprocess.run(
+                    ["git", "apply", "--check", "--whitespace=fix", patch_path],
+                    cwd=str(repo.working_tree_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result_fix.returncode != 0:
+                    print("[GIT APPLY FAILED]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+                    raise RuntimeError(f"git apply failed: {result_fix.stderr.strip()}")
+                else:
+                    print("[GIT APPLY SUCCESS WITH --whitespace=fix]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+            else:
+                print("[GIT APPLY SUCCESS]")
+                print("stdout:", result.stdout)
+                print("stderr:", result.stderr)
+
+            modified_files = self.get_modified_files_from_patch(patch)
+            for relative_path in modified_files:
+                abs_path = repo_path / relative_path
+                if abs_path.exists() and abs_path.suffix == ".py":
+                    if not self.is_valid_python(abs_path):
+                        return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
+                elif abs_path.suffix != ".py":
+                    return f"File {relative_path} is not a python file"
+        except Exception as e:
+            return (f"[GIT DIFF DOES NOT APPLY] {e}")
+
+        finally:
+            if repo_path and repo_path.exists():
+                try:
+                    shutil.rmtree(repo_path)
+                    print(f"[CLEANUP] Removed repo at {repo_path}")
+                except Exception as cleanup_err:
+                    print(f"[CLEANUP FAILED] Could not delete repo at {repo_path}: {cleanup_err}")
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Patch-utility helpers
+    # ------------------------------------------------------------------
+
+    def _keep_only_python_files(self, patch: str) -> str:
+        """Return a new patch string that contains *only* hunks that modify
+        ``*.py`` files (and their accompanying headers).  Hunks for any other
+        file types are discarded so we do not reject otherwise-valid solutions
+        that merely tweak docs, data files, etc.
+        """
+        filtered_lines: list[str] = []
+        include_current = True  # whether we are copying lines for the current file
+
+        for line in patch.splitlines():
+            if line.startswith("diff --git"):
+                # Start of a new file diff; decide if we keep it
+                parts = line.split()
+                # Format: diff --git a/FILE b/FILE  → we look at the *target* path
+                if len(parts) >= 4:
+                    path_token = parts[3]  # b/FILE
+                else:
+                    path_token = parts[-1]
+
+                # Remove leading b/ or a/
+                path = path_token[2:] if path_token.startswith(("a/", "b/")) else path_token
+
+                include_current = path.endswith(".py")
+                if include_current:
+                    filtered_lines.append(line)
+                # else: skip this header and subsequently until next diff hdr
+                continue
+
+            # Always keep patch metadata/header lines that precede a diff block
+            if not line.startswith("diff --git") and include_current:
+                filtered_lines.append(line)
+
+        return "\n".join(filtered_lines) + "\n" if filtered_lines else ""
 
 
 @dataclass

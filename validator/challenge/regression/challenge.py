@@ -27,9 +27,9 @@ class RegressionChallenge(BaseChallenge):
     context_file_paths: List[str]
 
     @property
-    def challenge_type(self) -> str:
-        """Return the specific challenge type."""
-        return 'regression'
+    def type(self) -> str:
+        """Get the type of challenge"""
+        return "regression"
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert challenge to dictionary for sending to miners."""
@@ -39,6 +39,7 @@ class RegressionChallenge(BaseChallenge):
             "commit_hash": self.commit_hash,
             "problem_statement": self.problem_statement,
             "context_file_paths": self.context_file_paths,
+            "validator_hotkey": self.validator_hotkey
         }
     
     def to_database_dict(self) -> Dict[str, Any]:
@@ -58,7 +59,8 @@ class RegressionChallenge(BaseChallenge):
             problem_statement=data["problem_statement"],
             repository_url=data["repository_url"],
             commit_hash=data["commit_hash"],
-            context_file_paths=data["context_file_paths"]
+            context_file_paths=data["context_file_paths"],
+            validator_hotkey=data["validator_hotkey"]
         )
     
     @classmethod
@@ -137,4 +139,13 @@ class RegressionChallenge(BaseChallenge):
         """
         # TODO: Implement regression evaluation logic
         # For now, return default scores
-        return [ValidationResult(is_valid=True, score=0.0) for _ in responses] 
+        return [ValidationResult(is_valid=True, score=0.0) for _ in responses]
+    
+    def store_in_database(self, db_manager: DatabaseManager) -> None:
+        """Store this challenge in the database."""
+        db_manager.store_challenge(
+            challenge_id=self.challenge_id,
+            type="regression",
+            challenge_data=self.to_database_dict(),
+            validator_hotkey=self.validator_hotkey
+        ) 

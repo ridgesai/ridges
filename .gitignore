@@ -18,6 +18,7 @@ wheels/
 
 # Logging
 logs.json
+logs_mineshaft/
 
 # IDEs
 .idea/
@@ -26,6 +27,11 @@ logs.json
 .cache/
 repos/
 validator/repos/
+results/
+
+# Miner installations and submodules
+SWE-agent/*
+.gitmodules
 
 LOCAL_NOTES.md
 LOCAL_NOTES.md

@@ -1,13 +1,14 @@
 import json
 import sqlite3
 from typing import Dict, List, Optional, Tuple, Any, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
+import random
 
 from shared.logging_utils import get_logger
 
-from validator.config import VALIDATION_DELAY
-from .schema import init_db
+from validator.config import CHALLENGE_TIMEOUT, NO_RESPONSE_MIN_SCORE
+from .schema import check_db_initialized, init_db
 
 if TYPE_CHECKING:
     from validator.challenge.base import BaseChallenge
@@ -42,7 +43,7 @@ class DatabaseManager:
     # GENERIC CHALLENGE OPERATIONS
     # =============================================================================
     
-    def store_challenge(self, challenge_id: str, challenge_type: str, challenge_data: Dict[str, Any]) -> None:
+    def store_challenge(self, challenge_id: str, type: str, challenge_data: Dict[str, Any], validator_hotkey: str) -> None:
         """Store a challenge in the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -51,13 +52,13 @@ class DatabaseManager:
             # First insert into the parent challenges table
             cursor.execute("""
                 INSERT OR IGNORE INTO challenges (
-                    challenge_id, challenge_type, created_at
+                    challenge_id, type, validator_hotkey, created_at
                 )
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-            """, (challenge_id, challenge_type))
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+            """, (challenge_id, type, validator_hotkey))
 
             # Then insert type-specific data
-            if challenge_type == 'codegen':
+            if type == 'codegen':
                 cursor.execute("""
                     INSERT OR IGNORE INTO codegen_challenges (
                         challenge_id, problem_statement, dynamic_checklist, repository_url, commit_hash, context_file_paths
@@ -71,7 +72,7 @@ class DatabaseManager:
                     challenge_data['commit_hash'],
                     json.dumps(challenge_data['context_file_paths'])
                 ))
-            elif challenge_type == 'regression':
+            elif type == 'regression':
                 cursor.execute("""
                     INSERT OR IGNORE INTO regression_challenges (
                         challenge_id, problem_statement, repository_url, commit_hash, context_file_paths
@@ -88,7 +89,7 @@ class DatabaseManager:
             if cursor.rowcount == 0:
                 logger.debug(f"Challenge {challenge_id} already exists in database")
             else:
-                logger.info(f"Stored new {challenge_type} challenge {challenge_id} in database")
+                logger.info(f"Stored new {type} challenge {challenge_id} in database")
 
             conn.commit()
         except Exception as e:
@@ -96,19 +97,19 @@ class DatabaseManager:
         finally:
             conn.close()
 
-    def get_challenge_data(self, challenge_id: str, challenge_type: str) -> Optional[Dict[str, Any]]:
+    def get_challenge_data(self, challenge_id: str, type: str) -> Optional[Dict[str, Any]]:
         """Get challenge data from the database"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if challenge_type == 'codegen':
+            if type == 'codegen':
                 cursor.execute("""
-                    SELECT c.challenge_id, c.created_at,
+                    SELECT c.challenge_id, c.created_at, c.validator_hotkey,
                            cc.problem_statement, cc.dynamic_checklist, cc.repository_url, cc.commit_hash, cc.context_file_paths
                     FROM challenges c
                     JOIN codegen_challenges cc ON c.challenge_id = cc.challenge_id
-                    WHERE c.challenge_id = ? AND c.challenge_type = 'codegen'
+                    WHERE c.challenge_id = ? AND c.type = 'codegen'
                 """, (challenge_id,))
                 
                 row = cursor.fetchone()
@@ -118,20 +119,21 @@ class DatabaseManager:
                 return {
                     'challenge_id': row[0],
                     'created_at': row[1],
-                    'problem_statement': row[2],
-                    'dynamic_checklist': json.loads(row[3]),
-                    'repository_url': row[4],
-                    'commit_hash': row[5],
-                    'context_file_paths': json.loads(row[6])
+                    'validator_hotkey': row[2],
+                    'problem_statement': row[3],
+                    'dynamic_checklist': json.loads(row[4]),
+                    'repository_url': row[5],
+                    'commit_hash': row[6],
+                    'context_file_paths': json.loads(row[7])
                 }
             
-            elif challenge_type == 'regression':
+            elif type == 'regression':
                 cursor.execute("""
-                    SELECT c.challenge_id, c.created_at,
+                    SELECT c.challenge_id, c.created_at, c.validator_hotkey,
                            rc.problem_statement, rc.repository_url, rc.commit_hash, rc.context_file_paths
                     FROM challenges c
                     JOIN regression_challenges rc ON c.challenge_id = rc.challenge_id
-                    WHERE c.challenge_id = ? AND c.challenge_type = 'regression'
+                    WHERE c.challenge_id = ? AND c.type = 'regression'
                 """, (challenge_id,))
                 
                 row = cursor.fetchone()
@@ -141,10 +143,11 @@ class DatabaseManager:
                 return {
                     'challenge_id': row[0],
                     'created_at': row[1],
-                    'problem_statement': row[2],
-                    'repository_url': row[3],
-                    'commit_hash': row[4],
-                    'context_file_paths': json.loads(row[5])
+                    'validator_hotkey': row[2],
+                    'problem_statement': row[3],
+                    'repository_url': row[4],
+                    'commit_hash': row[5],
+                    'context_file_paths': json.loads(row[6])
                 }
             
             return None
@@ -178,41 +181,39 @@ class DatabaseManager:
             conn.close()
 
     def find_challenge_ready_for_evaluation(self):
-        """Finds a challenge where all responses are pending, and ready to be evaluated"""
+        """Finds a random challenge where CHALLENGE_TIMEOUT has passed and all responses have not been evaluated"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
             cursor.execute("""
-                        SELECT DISTINCT c.challenge_id, c.challenge_type,
-                                COUNT(r.response_id) as pending_count,
-                                MIN(r.received_at) as earliest_received
-                        FROM responses r
-                        JOIN challenges c ON r.challenge_id = c.challenge_id
-                        WHERE r.evaluated = FALSE
-                            AND datetime(r.received_at) <= datetime('now', '-' || ? || ' minutes')
-                        GROUP BY c.challenge_id
-                        LIMIT 1
-                    """, (VALIDATION_DELAY.total_seconds() / 60,))
-                    
-            row = cursor.fetchone()
-            if not row or not row[0]:  # First column is challenge_id
+                SELECT c.challenge_id, c.type
+                FROM challenges c
+                WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
+                AND c.challenge_id NOT IN ( -- Challenge ID doesn't have evaluated responses
+                    SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
+                )
+                AND EXISTS ( -- And challenge has responses
+                    SELECT 1 FROM responses WHERE challenge_id = c.challenge_id
+                )
+                ORDER BY c.created_at ASC
+            """, (CHALLENGE_TIMEOUT.total_seconds() / 60,))
+            rows = cursor.fetchall()
+            if not rows:
                 return None
-
-            challenge_id = row[0]  # First column is challenge_id
-            challenge_type = row[1]  # Second column is challenge_type
-            
+            challenge_row = random.choice(rows) 
+            challenge_id = challenge_row[0]
+            type = challenge_row[1]
             # Get the appropriate challenge object
-            if challenge_type == "codegen":
+            if type == "codegen":
                 from validator.challenge.codegen.challenge import CodegenChallenge
                 return CodegenChallenge.get_from_database(self, challenge_id)
-            elif challenge_type == "regression":
+            elif type == "regression":
                 from validator.challenge.regression.challenge import RegressionChallenge
                 return RegressionChallenge.get_from_database(self, challenge_id)
             else:
-                logger.error(f"Unknown challenge type: {challenge_type}")
+                logger.error(f"Unknown challenge type: {type}")
                 return None
-
         finally:
             conn.close()
         
@@ -272,25 +273,34 @@ class DatabaseManager:
         try:
             now = datetime.utcnow()
 
-            # Store response
+            # Get challenge type
+            cursor.execute("""
+                SELECT type
+                FROM challenges
+                WHERE challenge_id = ?
+            """, (challenge_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Challenge {challenge_id} not found")
+            type = row[0]
+
+            # Store base response
             cursor.execute("""
                 INSERT INTO responses (
                     challenge_id,
                     miner_hotkey,
                     node_id,
-                    response_patch,
                     received_at,
                     completed_at,
                     evaluated,
                     score,
                     evaluated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """, (
                 challenge_id,
                 miner_hotkey,
                 node_id,
-                response_patch,
                 received_at,
                 completed_at,
                 evaluated,
@@ -298,6 +308,27 @@ class DatabaseManager:
             ))
 
             response_id = cursor.lastrowid
+
+            # Store type-specific response data
+            if response_patch:
+                if type == 'codegen':
+                    cursor.execute("""
+                        INSERT INTO codegen_responses (
+                            response_id,
+                            challenge_id,
+                            response_patch
+                        )
+                        VALUES (?, ?, ?)
+                    """, (response_id, challenge_id, response_patch))
+                elif type == 'regression':
+                    cursor.execute("""
+                        INSERT INTO regression_responses (
+                            response_id,
+                            challenge_id,
+                            response_patch
+                        )
+                        VALUES (?, ?, ?)
+                    """, (response_id, challenge_id, response_patch))
 
             # Mark challenge as completed in challenge_assignments
             cursor.execute("""
@@ -326,15 +357,26 @@ class DatabaseManager:
                     r.challenge_id,
                     r.miner_hotkey,
                     r.node_id,
-                    r.response_patch,
                     r.received_at,
                     r.completed_at,
-                    c.challenge_type
+                    r.evaluated,
+                    r.score,
+                    r.evaluated_at,
+                    c.type,
+                    CASE 
+                        WHEN c.type = 'codegen' THEN cr.response_patch
+                        WHEN c.type = 'regression' THEN rr.response_patch
+                    END as response_patch
                 FROM responses r
                 JOIN challenges c ON r.challenge_id = c.challenge_id
+                LEFT JOIN codegen_responses cr ON r.response_id = cr.response_id
+                LEFT JOIN regression_responses rr ON r.response_id = rr.response_id
                 WHERE r.challenge_id = ?
                   AND r.evaluated = FALSE
-                  AND r.response_patch IS NOT NULL
+                  AND (
+                      (c.type = 'codegen' AND cr.response_patch IS NOT NULL)
+                      OR (c.type = 'regression' AND rr.response_patch IS NOT NULL)
+                  )
             """, (str(challenge_id),))
             
             rows = cursor.fetchall()
@@ -342,11 +384,11 @@ class DatabaseManager:
                 logger.info(f"No pending responses found for challenge {challenge_id}")
                 return []
             
-            challenge_type = rows[0]["challenge_type"]
+            type = rows[0]["type"]
             responses = []
             
             # Create appropriate response objects based on challenge type
-            if challenge_type == "codegen":
+            if type == "codegen":
                 from validator.challenge.codegen.response import CodegenResponse
                 for row in rows:
                     try:
@@ -356,7 +398,7 @@ class DatabaseManager:
                         logger.error(f"Error processing codegen response {row['response_id']}: {str(e)}")
                         continue
                         
-            elif challenge_type == "regression":
+            elif type == "regression":
                 from validator.challenge.regression.response import RegressionResponse
                 for row in rows:
                     try:
@@ -366,7 +408,7 @@ class DatabaseManager:
                         logger.error(f"Error processing regression response {row['response_id']}: {str(e)}")
                         continue
             else:
-                logger.error(f"Unknown challenge type: {challenge_type}")
+                logger.error(f"Unknown challenge type: {type}")
                 return []
             
             logger.info(f"Found {len(responses)} pending responses for challenge {challenge_id}")
@@ -502,32 +544,20 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-    def get_global_miner_scores(self, hours: int = 24, challenge_type: Optional[str] = None) -> Tuple[float, int]:
+    def get_global_miner_scores(self, hours: int = 24) -> Tuple[float, int]:
         """Gets the average score for all miners and average number of responses for each miner over the last n hours"""
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if challenge_type:
-                cursor.execute("""
-                    SELECT 
-                        AVG(r.score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT r.miner_hotkey) as avg_responses_per_miner
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.challenge_type = ?
-                    AND r.evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (challenge_type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        AVG(score) as global_avg_score,
-                        COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
-                    FROM responses 
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now',  '-' || ? || ' hours')
-                """, (hours,))
+            cursor.execute("""
+                SELECT 
+                    AVG(COALESCE(score, 0)) as global_avg_score,
+                    COUNT(*) / COUNT(DISTINCT miner_hotkey) as avg_responses_per_miner
+                FROM responses 
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now',  '-' || ? || ' hours')
+            """, (hours,))
 
             global_average, average_count = cursor.fetchone()
             return global_average, average_count
@@ -541,45 +571,115 @@ class DatabaseManager:
         global_average: float,
         average_count: int,
         hours: int = 24,
-        challenge_type: Optional[str] = None
     ): 
         conn = self.get_connection()
         cursor = conn.cursor()
 
         try:
-            if challenge_type:
-                cursor.execute("""
-                    SELECT 
-                        r.miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(r.score) as avg_score,
-                        (COUNT(*) * AVG(r.score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
-                    FROM responses r
-                    JOIN challenges c ON r.challenge_id = c.challenge_id
-                    WHERE r.evaluated = TRUE 
-                    AND c.challenge_type = ?
-                    AND r.evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY r.miner_hotkey       
-                """, (average_count, global_average, average_count, challenge_type, hours))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        miner_hotkey,
-                        COUNT(*) as response_count,
-                        AVG(score) as avg_score,
-                        (COUNT(*) * AVG(score) + ? * ?) / (COUNT(*) + ?) as bayesian_avg
-                    FROM responses
-                    WHERE evaluated = TRUE 
-                    AND evaluated_at > datetime('now', '-' || ? || ' hours')
-                    GROUP BY miner_hotkey       
-                """, (average_count, global_average, average_count, hours))
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    COUNT(*) as response_count,
+                    AVG(COALESCE(score, 0)) as average_score,
+                    (COUNT(*) * AVG(COALESCE(score, 0)) + ? * ?) / (COUNT(*) + ?) as bayesian_average
+                FROM responses
+                WHERE evaluated = TRUE 
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey       
+            """, (average_count, global_average, average_count, hours))
 
             results = cursor.fetchall()
             return results
         finally:
             cursor.close()
             conn.close()
-        
+
+    def get_average_scores_by_hotkey(self, hours: int = 24) -> Dict[str, float]:
+        """Get average scores for each miner hotkey over the specified time period."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("""
+                SELECT 
+                    miner_hotkey,
+                    AVG(score) as average_score
+                FROM responses
+                WHERE evaluated = TRUE AND score IS NOT NULL
+                AND evaluated_at > datetime('now', '-' || ? || ' hours')
+                GROUP BY miner_hotkey
+            """, (hours,))
+
+            results = cursor.fetchall()
+            return {row[0]: row[1] for row in results}
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_all_challenge_table_entries(
+        self, 
+        table_name: str,
+        since: Optional[timedelta] = timedelta(days=1)
+    ) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            if not since:
+                cursor.execute(f"SELECT * FROM {table_name} JOIN challenges ON {table_name}.challenge_id = challenges.challenge_id")
+                return [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute(f"SELECT * FROM {table_name} t JOIN challenges c ON t.challenge_id = c.challenge_id WHERE datetime(c.created_at) > datetime('now', '-{since.total_seconds()} seconds')")
+            rows = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+
+            result = []
+            for row in rows:
+                row_dict = {}
+                for i in range(len(columns)):
+                    row_dict[columns[i]] = row[i]
+                result.append(row_dict)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting table data: {str(e)}")
+
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_all_response_table_entries(
+        self, 
+        table_name: str,
+        since: Optional[timedelta] = timedelta(days=1)
+    ) -> List[Dict[str, Any]]:
+        conn = self.get_connection()
+        cursor = conn.cursor()
+
+        try:
+            if not since:
+                cursor.execute(f"SELECT r.response_id, r.challenge_id, r.miner_hotkey, r.node_id, r.processing_time, r.received_at, r.completed_at, r.evaluated, r.score, r.evaluated_at, t.response_patch FROM {table_name} t JOIN responses r ON t.response_id = r.response_id")
+                return [dict(row) for row in cursor.fetchall()]
+
+            cursor.execute(f"SELECT r.response_id, r.challenge_id, r.miner_hotkey, r.node_id, r.processing_time, r.received_at, r.completed_at, r.evaluated, r.score, r.evaluated_at, t.response_patch FROM {table_name} t JOIN responses r ON t.response_id = r.response_id WHERE datetime(r.received_at) > datetime('now', '-{since.total_seconds()} seconds')")
+            rows = cursor.fetchall()
+            columns = [col[0] for col in cursor.description]
+
+            result = []
+            for row in rows:
+                row_dict = {}
+                for i in range(len(columns)):
+                    row_dict[columns[i]] = row[i]
+                result.append(row_dict)
+            return result
+
+        except Exception as e:
+            logger.error(f"Error getting table data: {str(e)}")
+
+        finally:
+            cursor.close()
+            conn.close()
+
     def cleanup_old_data(self, days: int = 7) -> None:
         """
         Remove data older than the specified number of days from various tables.
@@ -594,7 +694,8 @@ class DatabaseManager:
         try:
             # Define tables and their timestamp columns for unified schema
             tables_to_clean = [
-                ("responses", "received_at"),
+                ("codegen_responses", "received_at"),
+                ("regression_responses", "received_at"),
                 ("challenge_assignments", "completed_at"),
                 ("availability_checks", "checked_at"),
             ]
@@ -671,7 +772,7 @@ class DatabaseManager:
         
         try:
             cursor.execute("""
-                SELECT challenge_type 
+                SELECT type 
                 FROM challenges 
                 WHERE challenge_id = ?
             """, (challenge_id,))
@@ -681,19 +782,61 @@ class DatabaseManager:
                 logger.error(f"Challenge {challenge_id} not found")
                 return None
             
-            challenge_type = row[0]
+            type = row[0]
             
             # Get the appropriate challenge object using lazy imports
-            if challenge_type == "codegen":
+            if type == "codegen":
                 from validator.challenge.codegen.challenge import CodegenChallenge
                 return CodegenChallenge.get_from_database(self, challenge_id)
-            elif challenge_type == "regression":
+            elif type == "regression":
                 from validator.challenge.regression.challenge import RegressionChallenge
                 return RegressionChallenge.get_from_database(self, challenge_id)
             else:
-                logger.error(f"Unknown challenge type: {challenge_type}")
+                logger.error(f"Unknown challenge type: {type}")
                 return None
             
+        finally:
+            cursor.close()
+            conn.close()
+
+
+    ## FIX FOR EXPIRED CHALLENGES THAT HAVE NO RESPONSES
+    def delete_expired_empty_challenges(self, timeout_minutes: int = 10) -> int:
+        """Delete challenges older than timeout_minutes with 0 responses and not evaluated. Returns number deleted."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        try:
+            # Find challenge_ids that are older than timeout, have 0 responses, and have not been evaluated
+            cursor.execute('''
+                SELECT c.challenge_id
+                FROM challenges c
+                LEFT JOIN responses r ON c.challenge_id = r.challenge_id
+                WHERE c.created_at <= datetime('now', '-' || ? || ' minutes')
+                GROUP BY c.challenge_id
+                HAVING COUNT(r.response_id) = 0
+                   AND c.challenge_id NOT IN (
+                       SELECT DISTINCT challenge_id FROM responses WHERE evaluated = TRUE
+                   )
+            ''', (timeout_minutes,))
+            challenge_ids = [row[0] for row in cursor.fetchall()]
+            if not challenge_ids:
+                return 0
+            # Delete from all relevant tables
+            for challenge_id in challenge_ids:
+                cursor.execute("DELETE FROM codegen_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM responses WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenge_assignments WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM codegen_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM regression_challenges WHERE challenge_id = ?", (challenge_id,))
+                cursor.execute("DELETE FROM challenges WHERE challenge_id = ?", (challenge_id,))
+            conn.commit()
+            logger.info(f"Deleted {len(challenge_ids)} expired empty challenges (older than {timeout_minutes} min and not evaluated)")
+            return len(challenge_ids)
+        except Exception as e:
+            logger.error(f"Error deleting expired empty challenges: {e}")
+            conn.rollback()
+            return 0
         finally:
             cursor.close()
             conn.close()

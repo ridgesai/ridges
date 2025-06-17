@@ -127,7 +127,7 @@ class Environment:
         )
 
 
-async def create_next_regression_challenge() -> RegressionChallenge:
+async def create_next_regression_challenge(validator_hotkey: str) -> RegressionChallenge:
     """
     Creates a codegen challenge using swesmith's bug generation framework.
 
@@ -203,6 +203,7 @@ async def create_next_regression_challenge() -> RegressionChallenge:
         commit_hash=bug.base_commit,
         problem_statement=problem_statement,
         context_file_paths=affected_files,
+        validator_hotkey=validator_hotkey
     )
 
 
