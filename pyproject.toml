@@ -14,6 +14,7 @@ dependencies = [
     "loguru>=0.7.3",
     "numpy>=2.2.6",
     "openai>=1.82.0",
+    "pandas>=2.2.0",
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",
     "swebench>=4.0.3",

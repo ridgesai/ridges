@@ -8,7 +8,7 @@ import random
 from shared.logging_utils import get_logger
 
 from validator.config import CHALLENGE_TIMEOUT, NO_RESPONSE_MIN_SCORE
-from .schema import check_db_initialized, init_db
+from .schema import init_db
 
 if TYPE_CHECKING:
     from validator.challenge.base import BaseChallenge

@@ -13,7 +13,7 @@ import asyncio
 import tempfile
 from zipfile import ZipFile
 from datetime import datetime, timezone
-import uuid
+import shutil
 
 # External package imports
 from fiber.chain.interface import get_substrate
@@ -395,6 +395,14 @@ async def main():
                         logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next challenge check...")
                         await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
                         continue
+
+                                        # Fetch agents for a given task type 
+                    task = "codegen" # Currently hardcoding to codegen. Will create concurrent tasks or some looping structure with regression integration
+                    
+                    # Get list of agents from RIDGES API
+                    response = await client.get(f"{RIDGES_API_URL}/retrieval/agent-list", params={"type": task})
+                    response.raise_for_status()
+                    agents = response.json()['details']['agents']
 
                     # If we have enough agents available, start running them in sandboxes and generate eval patches
                     async def run_agent_sandboxes():
