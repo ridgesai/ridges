@@ -153,10 +153,6 @@ class BaseChallenge(ABC):
         response = None
         
         try:
-            # Store the challenge in the database
-            if db_manager:
-                logger.debug(f"Storing {self.type} challenge {self.challenge_id} in database")
-                self.store_in_database(db_manager)
             
             # Record the assignment
             if db_manager:

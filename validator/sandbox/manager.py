@@ -1,6 +1,8 @@
 import os
 import json
+import shutil
 import time
+from typing import List, Tuple
 import docker
 import threading
 from pathlib import Path
@@ -48,13 +50,17 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 
 
 class Sandbox:
+    agent_id: str
+    manager: 'SandboxManager'
     _id_counter = 1
 
-    def __init__(self, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
+
+    def __init__(self, agent_id: str, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
+        self.agent_id = agent_id
+        self.manager = manager
+
         self.id = Sandbox._id_counter
         Sandbox._id_counter += 1
-
-        self.manager = manager
 
         self.src_dir = src_dir
         self.repo_dir_path = repo_dir_path
@@ -153,11 +159,15 @@ class Sandbox:
             self.error = str(e)
         
         self.running = False
-        self.manager.remove_sandbox(self)
+    
+    def cleanup(self):
+        shutil.rmtree(self.src_dir)
 
 
 
 class SandboxManager:
+    sandboxes: List[Sandbox]
+
     def __init__(self):
         # Connect to the locally running Docker daemon
         self.docker = docker.from_env()
@@ -212,27 +222,25 @@ class SandboxManager:
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
         
-    def add_sandbox(self, src_dir, repo_dir_path):
-        sandbox = Sandbox(manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
+    def add_sandbox(self, agent_id: str, src_dir: str, repo_dir_path: str):
+        sandbox = Sandbox(agent_id=agent_id, manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
         self.sandboxes.append(sandbox)
         return sandbox
-    
-    def remove_sandbox(self, sandbox):
-        self.sandboxes.remove(sandbox)
 
-# if __name__ == "__main__":
-#     manager = SandboxManager()
-
-#     for i in range(100):
-#         sandbox = manager.add_sandbox(src_dir='../MyAgent')
-#         logger.info(f'Created sandbox {sandbox.id}...')
-#         sandbox.run_async('ridges123!')
-        
-#     logger.info('Waiting for all sandboxes to finish...')
+    def wait_for_all_sandboxes(self):
+        for sandbox in self.sandboxes:
+            sandbox.wait()
     
-#     for sandbox in manager.sandboxes:
-#         sandbox.wait()
-#         if (sandbox.success):
-#             logger.info(f'Sandbox {sandbox.id} ran successfully, output:', sandbox.output)
-#         else:
-#             logger.error(f'Sandbox {sandbox.id} ran unsuccessfully, error:', sandbox.error)
+    def get_successful_agent_patches(self) -> List[Tuple[str, str]]:
+        patches = []
+        for sbox in self.sandboxes:
+            if sbox.success:
+                patches.append((sbox.agent_id, sbox.output))
+            else:
+                logger.error(f"Sandbox for agent {sbox.agent_id} failed: {sbox.error}")
+        return patches
+    
+    def cleanup(self):
+        for sandbox in self.sandboxes:
+            sandbox.cleanup()
+            self.sandboxes.remove(sandbox)
