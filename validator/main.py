@@ -361,31 +361,31 @@ async def main():
                         if not task.task.done()
                     ]
                     
-                    # Get active nodes and make sure we have enough to continue the loop
-                    active_nodes = get_active_nodes_on_chain()
-                    num_active = len(active_nodes)
+                    # # Get active nodes and make sure we have enough to continue the loop
+                    # active_nodes = get_active_nodes_on_chain()
+                    # num_active = len(active_nodes)
 
-                    if num_active < MIN_MINERS:
-                        logger.warning(f"Only {num_active} active nodes available (minimum {MIN_MINERS} required)")
-                        logger.info(f"Will check again in {CHALLENGE_INTERVAL.total_seconds()} seconds...")
-                        await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
-                        continue
+                    # if num_active < MIN_MINERS:
+                    #     logger.warning(f"Only {num_active} active nodes available (minimum {MIN_MINERS} required)")
+                    #     logger.info(f"Will check again in {CHALLENGE_INTERVAL.total_seconds()} seconds...")
+                    #     await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
+                    #     continue
                 
-                    # Check availability of nodes
-                    available_nodes = await get_available_nodes_with_api(active_nodes, client, db_manager, hotkey.ss58_address)
-                    num_available = len(available_nodes)
+                    # # Check availability of nodes
+                    # available_nodes = await get_available_nodes_with_api(active_nodes, client, db_manager, hotkey.ss58_address)
+                    # num_available = len(available_nodes)
                     
-                    if num_available < MIN_MINERS:
-                        logger.warning(f"Only {num_available} nodes are available (minimum {MIN_MINERS} required)")
-                        logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next availability check...")
-                        await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
-                        continue
+                    # if num_available < MIN_MINERS:
+                    #     logger.warning(f"Only {num_available} nodes are available (minimum {MIN_MINERS} required)")
+                    #     logger.info(f"Sleeping for {CHALLENGE_INTERVAL.total_seconds()} seconds before next availability check...")
+                    #     await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
+                    #     continue
 
-                    logger.info(f"Processing {num_available} available nodes")
+                    # logger.info(f"Processing {num_available} available nodes")
 
-                    # Generate and send challenges
-                    new_challenge_tasks = []
-                    barrier = AsyncBarrier(parties=len(available_nodes))
+                    # # Generate and send challenges
+                    # new_challenge_tasks = []
+                    # barrier = AsyncBarrier(parties=len(available_nodes))
 
                     # Fetch next challenge from API with retries
                     challenge = await create_next_codegen_challenge(hotkey.ss58_address, openai_client)
@@ -396,7 +396,7 @@ async def main():
                         await asyncio.sleep(CHALLENGE_INTERVAL.total_seconds())
                         continue
 
-                                        # Fetch agents for a given task type 
+                    # Fetch agents for a given task type 
                     task = "codegen" # Currently hardcoding to codegen. Will create concurrent tasks or some looping structure with regression integration
                     
                     # Get list of agents from RIDGES API
@@ -466,32 +466,32 @@ async def main():
                     logger.info(f"  - Weights task running: {not weights_task.done()}")
                     logger.info(f"  - API drain task running: {not api_drain_task.done()}")
 
-                    for node in available_nodes:
-                        server_address = await construct_server_address(node)
+                    # for node in available_nodes:
+                    #     server_address = await construct_server_address(node)
                         
-                        task = asyncio.create_task(
-                            challenge.send(
-                                server_address=server_address,
-                                hotkey=node.hotkey,
-                                keypair=hotkey,
-                                node_id=node.node_id,
-                                barrier=barrier,
-                                db_manager=db_manager,
-                                client=client
-                            )
-                        )
+                    #     task = asyncio.create_task(
+                    #         challenge.send(
+                    #             server_address=server_address,
+                    #             hotkey=node.hotkey,
+                    #             keypair=hotkey,
+                    #             node_id=node.node_id,
+                    #             barrier=barrier,
+                    #             db_manager=db_manager,
+                    #             client=client
+                    #         )
+                    #     )
                         
-                        challenge_task = ChallengeTask(
-                            node_id=node.node_id,
-                            task=task,
-                            timestamp=datetime.now(timezone.utc),
-                            challenge=challenge,
-                            miner_hotkey=node.hotkey
-                        )
-                        new_challenge_tasks.append(challenge_task)
+                    #     challenge_task = ChallengeTask(
+                    #         node_id=node.node_id,
+                    #         task=task,
+                    #         timestamp=datetime.now(timezone.utc),
+                    #         challenge=challenge,
+                    #         miner_hotkey=node.hotkey
+                    #     )
+                    #     new_challenge_tasks.append(challenge_task)
                     
-                    # Add new challenges to active tasks
-                    active_challenge_tasks.extend(new_challenge_tasks)
+                    # # Add new challenges to active tasks
+                    # active_challenge_tasks.extend(new_challenge_tasks)
 
                     # NOTE: In the background, the evaluation loop looks at pending responses and evaluates them.
 
