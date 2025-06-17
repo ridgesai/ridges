@@ -12,7 +12,17 @@ from validator.config import CHALLENGE_TIMEOUT
 from validator.db.operations import DatabaseManager
 from validator.evaluation.graders.trueskill_grader import TrueSkillGrader
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
 logger = get_logger(__name__)
+
+def are_patches_too_similar(patch1: str, patch2: str, threshold: float = 0.95) -> bool:
+    """Returns True if patches are too similar based on cosine similarity."""
+    vectorizer = TfidfVectorizer().fit([patch1, patch2])
+    vectors = vectorizer.transform([patch1, patch2])
+    similarity = cosine_similarity(vectors[0], vectors[1])[0][0]
+    return similarity >= threshold
 
 async def evaluate_pending_responses(
     db_manager: DatabaseManager,
@@ -41,6 +51,7 @@ async def evaluate_pending_responses(
             grader = TrueSkillGrader(validator_hotkey, challenge)
             responses_to_test = []
 
+            seen_patches = []
             for response in responses:
                 # Apply and run tests
                 error = challenge.apply_and_run_tests(challenge,response.response_patch)
@@ -49,8 +60,20 @@ async def evaluate_pending_responses(
                 response.response_patch = challenge.preprocess_patch(response.response_patch)
                 
                 if error is None:
-                    logger.info(f"Response {response.response_id} passed testing")
-                    responses_to_test.append(response)
+                    is_duplicate = any(
+                        are_patches_too_similar(response.response_patch, seen_patch)
+                        for seen_patch in seen_patches
+                    )
+                    if is_duplicate:
+                        logger.info(f"Response {response.response_id} is too similar to a previous one")
+                        if db_manager:
+                            db_manager.mark_response_failed(response.response_id)
+                        response.response_patch = ""
+                        responses_to_test.append(response)
+                    else:
+                        logger.info(f"Response {response.response_id} passed testing")
+                        seen_patches.append(response.response_patch)
+                        responses_to_test.append(response)
                 else:
                     logger.info(f"Response {response.response_id} failed because of: {error}")
                     if db_manager:
