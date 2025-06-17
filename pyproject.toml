@@ -19,7 +19,6 @@ dependencies = [
     "swebench>=4.0.3",
     "tiktoken>=0.9.0",
     "trueskill>=0.4.5",
-    "scikit-learn>=1.7.0",
 ]
 
 [tool.uv.sources]

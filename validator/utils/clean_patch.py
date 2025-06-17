@@ -178,85 +178,30 @@ def remove_unused(patch: str) -> str:
 def remove_comments(patch_content: str) -> str:
     """
     Process a Git patch string to remove comments from added lines, keeping the '+' intact.
-    Preserves:
-    - Comments within string literals (single, double, or triple-quoted)
-    - Shebang lines
-    - Docstrings
-    
+
     :param patch_content: The content of a Git patch as a string.
     :return: The cleaned patch content as a string.
     """
+    # Regex patterns
+    comment_line_pattern = re.compile(r"^\+\s*#.*")  # Matches whole-line comments
+    inline_comment_pattern = re.compile(r"#.*")  # Matches inline comments
+
     cleaned_lines = []
-    
+
+    # Process each line
     for line in patch_content.splitlines():
-        # Don't process lines that aren't additions
-        if not line.startswith('+'):
-            cleaned_lines.append(line)
-            continue
-            
-        # Preserve shebang lines
-        if line.startswith('+#!'):
-            cleaned_lines.append(line)
-            continue
-            
-        # Skip pure comment lines (but not docstrings)
-        if line.lstrip().startswith('# '):
-            continue
-            
-        # For lines with potential inline comments or strings
-        content = line[1:]  # Remove the '+' temporarily
-        result = []
-        i = 0
-        length = len(content)
-        in_single_quote = False
-        in_double_quote = False
-        in_triple_single = False
-        in_triple_double = False
-        
-        while i < length:
-            char = content[i]
-            
-            # Handle triple quotes
-            if i + 2 < length:
-                triple = content[i:i+3]
-                if triple == '"""' and not in_single_quote:
-                    in_triple_double = not in_triple_double
-                    result.append(triple)
-                    i += 3
-                    continue
-                elif triple == "'''" and not in_double_quote:
-                    in_triple_single = not in_triple_single
-                    result.append(triple)
-                    i += 3
-                    continue
-            
-            # Handle escape sequences
-            if char == '\\' and i + 1 < length:
-                result.append(char + content[i + 1])
-                i += 2
-                continue
-                
-            # Handle string boundaries
-            if char == '"' and not in_single_quote and not in_triple_single and not in_triple_double:
-                in_double_quote = not in_double_quote
-                result.append(char)
-            elif char == "'" and not in_double_quote and not in_triple_single and not in_triple_double:
-                in_single_quote = not in_single_quote
-                result.append(char)
-            # Handle comments - only if we're not in any type of string
-            elif char == '#' and not any([in_single_quote, in_double_quote, in_triple_single, in_triple_double]):
-                break
-            else:
-                result.append(char)
-            
-            i += 1
-            
-        # Reconstruct the line
-        cleaned_line = '+' + ''.join(result).rstrip()
-        if cleaned_line != '+':  # Don't add empty lines
+        if line.startswith("+"):  # Only process added lines
+            if comment_line_pattern.match(line):
+                continue  # Skip whole-line comments
+
+            # Remove inline comments but keep the '+'
+            cleaned_line = inline_comment_pattern.sub("", line).rstrip()
+
             cleaned_lines.append(cleaned_line)
-            
-    return '\n'.join(cleaned_lines)
+        else:
+            cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
 
 
 def remove_docstrings(patch_content: str) -> str:
