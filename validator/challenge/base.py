@@ -29,9 +29,6 @@ from git import Repo
 import shutil
 import subprocess
 import ast
-import sys
-
-from subprocess import CompletedProcess
 
 logger = get_logger(__name__)
 
@@ -187,7 +184,6 @@ class BaseChallenge(ABC):
                 
                 # Send the challenge using fiber validator client
                 try:
-                    payload["dynamic_checklist"] = []
                     response = await validator_client.make_non_streamed_post(
                         httpx_client=client,
                         server_address=server_address,
@@ -501,16 +497,6 @@ class BaseChallenge(ABC):
             print(f"[READ ERROR] in {filepath}: {e}")
             return False
     
-    def run_subprocess_command(self, args: List[str], repo_path) -> CompletedProcess[str]:
-        result = subprocess.run(
-            args,
-            cwd=str(repo_path),
-            capture_output=True,
-            text=True,
-        )
-        logger.info(f"Output of `{' '.join(args)}`: {result}")
-        return result
-    
     def apply_and_run_tests(self, problem, patch: str) -> Optional[str]:
         '''
         Clones the relevant repo, applies the patch, and runs the tests.
@@ -530,64 +516,51 @@ class BaseChallenge(ABC):
             with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
                 # Strip non-Python file hunks so we do not fail on README etc.
                 patch = self._keep_only_python_files(patch)
-                print(patch)
                 tmp_patch.write(patch)
                 tmp_patch.flush()
                 patch_path = tmp_patch.name
-
-            modified_files = self.get_modified_files_from_patch(patch)
-            modified_files_full_paths = [str(repo_path / f) for f in modified_files if (repo_path / f).exists()]
-            if modified_files_full_paths:
-                result_pylint_before = self.run_subprocess_command(
-                    [sys.executable, "-m", "pylint", "--disable=import-error,no-member", "--errors-only", *modified_files_full_paths],
-                    repo_path
-                )
-            else:
-                result_pylint_before = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-            
+            print(patch)
             logger.info("[EVAL] git apply --check --whitespace=nowarn")
+            # First attempt: ignore whitespace differences
             result = subprocess.run(
                 ["git", "apply", "--check", "--whitespace=nowarn", patch_path],
-                cwd=str(repo_path),
+                cwd=str(repo.working_tree_dir),
                 capture_output=True,
                 text=True
             )
 
-            if result.returncode != 0:       
-                print("[GIT APPLY FAILED]")
-                print("stdout:", result_fix.stdout)
-                print("stderr:", result_fix.stderr)
-                raise RuntimeError(f"git apply failed: {result_fix.stderr.strip()}")
+            if result.returncode != 0:
+                # Retry asking git to auto-fix whitespace issues
+                logger.info("[EVAL] git apply --check --whitespace=fix (retry)")
+                result_fix = subprocess.run(
+                    ["git", "apply", "--check", "--whitespace=fix", patch_path],
+                    cwd=str(repo.working_tree_dir),
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result_fix.returncode != 0:
+                    print("[GIT APPLY FAILED]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
+                    raise RuntimeError(f"git apply failed: {result_fix.stderr.strip()}")
+                else:
+                    print("[GIT APPLY SUCCESS WITH --whitespace=fix]")
+                    print("stdout:", result_fix.stdout)
+                    print("stderr:", result_fix.stderr)
             else:
                 print("[GIT APPLY SUCCESS]")
                 print("stdout:", result.stdout)
                 print("stderr:", result.stderr)
 
-            try:
-                result_fix = subprocess.run(
-                    ["git", "apply", patch_path],
-                    cwd=str(repo_path),
-                    capture_output=True,
-                    text=True,
-                )
-                modified_files_full_paths = [str(repo_path / f) for f in modified_files if (repo_path / f).exists()]
-                result_pylint_after = self.run_subprocess_command(
-                    [sys.executable, "-m", "pylint", "--disable=import-error,no-member", "--errors-only","--fail-under=9.0", *modified_files_full_paths],
-                    repo_path
-                )
-                if result_pylint_before.returncode == 0 and result_pylint_after.returncode != 0:
-                    logger.info(f"Linter output: {result_pylint_after.stdout}")
-                    return ("Patch introduces linter errors, terminating early...")
-                else:
-                    for relative_path in modified_files:
-                        abs_path = repo_path / relative_path
-                        if abs_path.exists() and abs_path.suffix == ".py":
-                            if not self.is_valid_python(abs_path):
-                                return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
-                        elif abs_path.suffix != ".py":
-                            return f"File {relative_path} is not a python file"
-            except Exception as e:
-                return (f"PATCH IS INVALID {e}")
+            modified_files = self.get_modified_files_from_patch(patch)
+            for relative_path in modified_files:
+                abs_path = repo_path / relative_path
+                if abs_path.exists() and abs_path.suffix == ".py":
+                    if not self.is_valid_python(abs_path):
+                        return f"[AST ERROR] File {relative_path} contains invalid Python syntax"
+                elif abs_path.suffix != ".py":
+                    return f"File {relative_path} is not a python file"
         except Exception as e:
             return (f"[GIT DIFF DOES NOT APPLY] {e}")
 
