@@ -530,7 +530,6 @@ class BaseChallenge(ABC):
             with tempfile.NamedTemporaryFile("w+", delete=False) as tmp_patch:
                 # Strip non-Python file hunks so we do not fail on README etc.
                 patch = self._keep_only_python_files(patch)
-                patch = patch + "\n" + "def broken_function(" + "\n"
                 print(patch)
                 tmp_patch.write(patch)
                 tmp_patch.flush()
