@@ -1,3 +1,5 @@
+"""Websocket utilities for sending evaluation runs."""
+
 import json
 
 from validator.db.schema import EvaluationRun

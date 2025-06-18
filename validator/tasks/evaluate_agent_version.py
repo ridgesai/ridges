@@ -8,7 +8,7 @@ from typing import List
 import uuid
 import httpx
 from validator.db.schema import AgentVersion, EvaluationRun
-from validator.dependancies import get_db_session
+from validator.dependancies import get_session_factory
 from validator.sandbox.manager import SandboxManager
 from shared.logging_utils import get_logger
 from validator.config import RIDGES_API_URL, CHALLENGE_TIMEOUT, validator_hotkey
@@ -38,13 +38,13 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
         async with httpx.AsyncClient(timeout=CHALLENGE_TIMEOUT.total_seconds() * 2) as client:
             try:
                 # Download the agent code from Ridges API
-                logger.info(f"Downloading agent code for agent {agent_version.agent_id} version {agent_version.latest_version}")
+                logger.info(f"Downloading agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
                 response = await client.get(
                     f"{RIDGES_API_URL}/retrieval/agent-version-file",
                     params={"version_id": agent_version.version_id},
                 )
                 response.raise_for_status()
-                logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.latest_version}")
+                logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
 
                 # Create a temp directory for the agent code
                 temp_dir = tempfile.mkdtemp()
@@ -54,7 +54,7 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
                 logger.info(f"Saving agent code to {agent_file_path}")
                 with open(agent_file_path, "wb") as f:
                     f.write(response.content)
-                logger.info(f"Saved agent code for agent {agent_version.agent_id} version {agent_version.latest_version}")
+                logger.info(f"Saved agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
 
                 instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", ["astropy__astropy-14309"])
                 for instance in instances:
@@ -62,7 +62,7 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
                     sbox.run_async({"instance_id": instance["instance_id"]})
             except Exception as e:
                 logger.error(
-                    f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.latest_version}: {e}"
+                    f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.version_num}: {e}"
                 )
 
         # Wait for all sandboxes to finish
@@ -78,7 +78,7 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
         for instance_id, patch in sbox_manager.get_successful_patches():
             prediction = {
                 "instance_id": instance_id,
-                "model_name_or_path": f"{agent_version.agent_id}v{agent_version.latest_version}",
+                "model_name_or_path": f"{agent_version.agent_id}v{agent_version.version_num}",
                 "model_patch": patch
             }
         
@@ -129,7 +129,7 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
                 evaluation_run.response=patch
                 evaluation_run.solved=report["resolved"]
             else:
-                logger.info(f"Agent {agent_version.agent_id} version {agent_version.latest_version} failed to run instance {instance_id}")
+                logger.info(f"Agent {agent_version.agent_id} version {agent_version.version_num} failed to run instance {instance_id}")
                 evaluation_run.solved=False
             
             runs.append(evaluation_run)
@@ -140,10 +140,14 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
 
         # Save evaluation runs to database
         if runs:
-            with get_db_session() as session:
+            SessionFactory = get_session_factory()
+            session = SessionFactory()
+            try:
                 session.add_all(runs)
                 session.commit()
-            logger.info(f"Saved {len(runs)} evaluation runs to database")
+                logger.info(f"Saved {len(runs)} evaluation runs to database")
+            finally:
+                session.close()
 
         sbox_manager.cleanup()
     finally:

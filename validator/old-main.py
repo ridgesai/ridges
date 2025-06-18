@@ -55,7 +55,7 @@ async def get_next_agent_version() -> AgentVersion:
         return AgentVersion(
             agent_id=agent["agent_id"],
             version_id=str(uuid.uuid4()),
-            version_number=agent["version"],
+            version_num=agent["version"],
             created_at=agent["created_at"],
         )
 

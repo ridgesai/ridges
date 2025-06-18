@@ -25,7 +25,6 @@ class AgentVersion(Base):
     miner_hotkey: Mapped[str] = mapped_column(String, nullable=False)
     version_num: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=True)
     
 class EvaluationRun(Base):

@@ -1,10 +1,11 @@
 """Handler for agent version events."""
 
 import asyncio
+from datetime import datetime
 import json
 from shared.logging_utils import get_logger
 from validator.db.schema import AgentVersion
-from validator.dependancies import get_db_session
+from validator.dependancies import get_session_factory
 from sqlalchemy.orm import Session
 from validator.tasks.evaluate_agent_version import evaluate_agent_version
 from validator.config import validator_hotkey
@@ -36,11 +37,10 @@ async def handle_agent_for_evaluation(websocket, json_message, evaluation_runnin
         agent_data = json_message.get("agent_version", {})
         agent_id = agent_data.get("agent_id")
         miner_hotkey = agent_data.get("miner_hotkey")
-        version_number = agent_data.get("version_number")
+        version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
-        updated_at = agent_data.get("updated_at")
         
-        if not all([agent_id, miner_hotkey, version_number, created_at, updated_at]):
+        if not all([agent_id, miner_hotkey, version_num, created_at]):
             logger.error(f"Missing required fields in agent version response: {agent_data}")
             return
 
@@ -48,17 +48,19 @@ async def handle_agent_for_evaluation(websocket, json_message, evaluation_runnin
         agent_version = AgentVersion(
             agent_id=agent_id,
             miner_hotkey=miner_hotkey,
-            version_number=version_number,
-            created_at=created_at,
-            updated_at=updated_at
+            version_num=version_num,
+            created_at=datetime.fromisoformat(created_at),
         )
 
         # Save to database
-        with get_db_session() as session:
+        SessionFactory = get_session_factory()
+        session = SessionFactory()
+        try:
             session.add(agent_version)
             session.commit()
-
-        logger.info(f"Saved agent version to database: {agent_version.version_id}")
+            logger.info(f"Saved agent version to database: {agent_version.version_id}")
+        finally:
+            session.close()
 
         # Start evaluation task with websocket as first argument
         task = asyncio.create_task(
@@ -66,16 +68,15 @@ async def handle_agent_for_evaluation(websocket, json_message, evaluation_runnin
         )
 
         async def _on_done(_):
-            if websocket.open:
-                req = {
-                    "event": "get-next-version",
-                    "validator_hotkey": validator_hotkey.ss58_address,
-                }
-                try:
-                    await websocket.send(json.dumps(req))
-                    logger.info("Requested next agent version after evaluation completion")
-                except Exception as e:
-                    logger.error(f"Failed to request next version: {e}")
+            req = {
+                "event": "get-next-version",
+                "validator_hotkey": validator_hotkey.ss58_address,
+            }
+            try:
+                await websocket.send(json.dumps(req))
+                logger.info("Requested next agent version after evaluation completion")
+            except Exception as e:
+                logger.error(f"Failed to request next version: {e}")
 
         task.add_done_callback(lambda t: asyncio.create_task(_on_done(t)))
 
