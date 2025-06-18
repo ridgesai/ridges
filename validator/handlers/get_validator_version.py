@@ -9,6 +9,7 @@ from validator.config import validator_hotkey
 logger = get_logger(__name__)
 
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
+# VERSION_COMMIT_HASH = "cc85362f1f1ac6236883d42164a99dae59f88943"
 
 async def handle_get_validator_version(websocket):
     """Handle get validator version events."""
