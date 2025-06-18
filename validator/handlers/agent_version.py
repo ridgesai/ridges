@@ -3,7 +3,8 @@
 import asyncio
 import json
 from shared.logging_utils import get_logger
-from validator.db.schema import AgentVersion, get_engine
+from validator.db.schema import AgentVersion
+from validator.dependancies import get_db_session
 from sqlalchemy.orm import Session
 from validator.tasks.evaluate_agent_version import evaluate_agent_version
 from validator.config import validator_hotkey
@@ -49,11 +50,9 @@ async def handle_agent_version(websocket, json_message, evaluation_running: asyn
         )
 
         # Save to database
-        engine = get_engine()
-        with Session(engine) as session:
+        with get_db_session() as session:
             session.add(agent_version)
             session.commit()
-            session.refresh(agent_version)
 
         logger.info(f"Saved agent version to database: {agent_version.version_id}")
 

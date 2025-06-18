@@ -8,7 +8,6 @@ import numpy as np
 from shared.logging_utils import get_logger
 
 
-from validator.db.operations import DatabaseManager
 from validator.config import (
     NETUID, 
     SUBTENSOR_NETWORK, 
@@ -19,9 +18,6 @@ from validator.config import (
     ALPHA_SCORING_MULTIPLICATOR,
     NO_RESPONSE_MIN_SCORE
 )
-from validator.db.operations import DatabaseManager
-from validator.evaluation.log_score import ScoreLog, log_scores
-from validator.evaluation.weight_utils import process_weights_for_netuid
 
 
 def normalize(x: np.ndarray, p: int = 2, dim: int = 0) -> np.ndarray:
@@ -249,7 +245,6 @@ async def set_weights_bayesian(
                     f"No responses in last 24h, "
                     f"weight={weight:.4f}"
                 )
-        await log_scores(score_logs)
         # Set weights on chain with timeout
         success = await _set_weights_with_timeout(
             substrate=substrate,

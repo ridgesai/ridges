@@ -7,7 +7,8 @@ import tempfile
 from typing import List
 import uuid
 import httpx
-from validator.db.schema import AgentVersion, EvaluationRun, get_engine
+from validator.db.schema import AgentVersion, EvaluationRun
+from validator.dependancies import get_db_session
 from validator.sandbox.manager import SandboxManager
 from shared.logging_utils import get_logger
 from validator.config import RIDGES_API_URL, CHALLENGE_TIMEOUT, validator_hotkey
@@ -142,8 +143,7 @@ async def evaluate_agent_version(agent_version: AgentVersion, evaluation_running
 
         # Save evaluation runs to database
         if runs:
-            engine = get_engine()
-            with Session(engine) as session:
+            with get_db_session() as session:
                 session.add_all(runs)
                 session.commit()
             logger.info(f"Saved {len(runs)} evaluation runs to database")
