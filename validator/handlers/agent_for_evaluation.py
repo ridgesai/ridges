@@ -12,7 +12,7 @@ from validator.config import validator_hotkey
 logger = get_logger(__name__)
 
 
-async def handle_agent_version(websocket, json_message, evaluation_running: asyncio.Event):
+async def handle_agent_for_evaluation(websocket, json_message, evaluation_running: asyncio.Event):
     """Handle agent version events.
 
     Parameters
@@ -24,6 +24,10 @@ async def handle_agent_version(websocket, json_message, evaluation_running: asyn
 
     if evaluation_running.is_set():
         logger.info("Evaluation already running – ignoring agent-version event")
+        return
+
+    if json_message.get("error", None) is not None:
+        logger.info("No agent versions left to evaluate")
         return
 
     logger.info(f"Received agent version: {json_message}")
@@ -56,9 +60,9 @@ async def handle_agent_version(websocket, json_message, evaluation_running: asyn
 
         logger.info(f"Saved agent version to database: {agent_version.version_id}")
 
-        # Start evaluation task
+        # Start evaluation task with websocket as first argument
         task = asyncio.create_task(
-            evaluate_agent_version(agent_version, evaluation_running)
+            evaluate_agent_version(websocket, agent_version, evaluation_running)
         )
 
         async def _on_done(_):

@@ -21,10 +21,12 @@ import docker
 from swebench.harness.docker_build import build_env_images
 import asyncio
 
+from validator.utils.send_evaluation_run_websocket import send_evaluation_run_websocket
+
 logger = get_logger(__name__)
 
 
-async def evaluate_agent_version(agent_version: AgentVersion, evaluation_running: asyncio.Event):
+async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluation_running: asyncio.Event):
     """Run agents in sandboxes and collect their outputs."""
     logger.info("Running sandboxes")
     evaluation_running.set()
@@ -89,7 +91,22 @@ async def evaluate_agent_version(agent_version: AgentVersion, evaluation_running
             test_spec = make_test_spec(instance)
             build_env_images(client, [test_spec], max_workers=1)
 
-            started_at = datetime.now()
+            evaluation_run = EvaluationRun(
+                run_id=str(uuid.uuid4()),
+                version_id=agent_version.version_id,
+                validator_hotkey=validator_hotkey.ss58_address,
+                swebench_instance_id=instance_id,
+                fail_to_pass_success=None,
+                pass_to_pass_success=None,
+                fail_to_fail_success=None,
+                pass_to_fail_success=None,
+                response=None,
+                solved=None,
+                started_at=datetime.now(),
+                finished_at=None
+            )
+
+            await send_evaluation_run_websocket(websocket, evaluation_run) # Run started
 
             run_result = run_instance(
                 test_spec=test_spec,
@@ -101,43 +118,24 @@ async def evaluate_agent_version(agent_version: AgentVersion, evaluation_running
                 timeout=1800,
                 rewrite_reports=False
             )
+            evaluation_run.finished_at=datetime.now()
             if run_result:
                 instance_id, report = run_result
                 report = report[instance_id]
-                evaluation_run = EvaluationRun(
-                    run_id=str(uuid.uuid4()),
-                    version_id=agent_version.version_id,
-                    validator_hotkey=validator_hotkey.ss58_address,
-                    swebench_instance_id=instance_id,
-                    fail_to_pass_success=json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"]),
-                    pass_to_pass_success=json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"]),
-                    fail_to_fail_success=json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"]),
-                    pass_to_fail_success=json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"]),
-                    response=patch,
-                    solved=report["resolved"],
-                    started_at=started_at,
-                    finished_at=datetime.now()
-                )
-
-                runs.append(evaluation_run)
+                evaluation_run.fail_to_pass_success=json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"])
+                evaluation_run.pass_to_pass_success=json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"])
+                evaluation_run.fail_to_fail_success=json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"])
+                evaluation_run.pass_to_fail_success=json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"])
+                evaluation_run.response=patch
+                evaluation_run.solved=report["resolved"]
             else:
                 logger.info(f"Agent {agent_version.agent_id} version {agent_version.latest_version} failed to run instance {instance_id}")
-                evaluation_run = EvaluationRun(
-                    run_id=str(uuid.uuid4()),
-                    version_id=agent_version.version_id,
-                    validator_hotkey=validator_hotkey.ss58_address,
-                    swebench_instance_id=instance_id,
-                    fail_to_pass_success=None,
-                    pass_to_pass_success=None,
-                    fail_to_fail_success=None,
-                    pass_to_fail_success=None,
-                    response=None,
-                    solved=False,
-                    started_at=started_at,
-                    finished_at=datetime.now()
-                )
-                runs.append(evaluation_run)
-        
+                evaluation_run.solved=False
+            
+            runs.append(evaluation_run)
+
+            await send_evaluation_run_websocket(websocket, evaluation_run) # Run finished
+            
         logger.info(f"Runs: {runs}")
 
         # Save evaluation runs to database

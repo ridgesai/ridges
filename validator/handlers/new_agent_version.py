@@ -20,7 +20,7 @@ async def handle_new_agent_version(websocket, evaluation_running):
         return
 
     request = {
-        "event": "get-next-version",
+        "event": "request-agent-for-evaluation",
         "validator_hotkey": validator_hotkey.ss58_address,
     }
     try:

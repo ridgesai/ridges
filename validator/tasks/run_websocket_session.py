@@ -25,4 +25,4 @@ async def run_websocket_session(evaluation_running: asyncio.Event):
                         break
         except Exception as e:
             logger.error(f"Websocket task error: {e}")
-        await asyncio.sleep(5) 
+        await asyncio.sleep(5)

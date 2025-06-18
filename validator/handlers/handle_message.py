@@ -4,10 +4,9 @@ from asyncio import Event
 from shared.logging_utils import get_logger
 from validator.handlers.new_agent_version import handle_new_agent_version
 from validator.handlers.get_validator_version import handle_get_validator_version
-from validator.handlers.agent_version import handle_agent_version
+from validator.handlers.agent_for_evaluation import handle_agent_for_evaluation
 
 logger = get_logger(__name__)
-
 
 async def handle_message(websocket, message: str, evaluation_running: Event):
     """Route incoming websocket message to appropriate handler.
@@ -26,7 +25,7 @@ async def handle_message(websocket, message: str, evaluation_running: Event):
             await handle_new_agent_version(websocket, evaluation_running)
         case "get-validator-version":
             await handle_get_validator_version(websocket)
-        case "agent-version":
-            await handle_agent_version(websocket, json_message, evaluation_running)
+        case "agent-for-evaluation":
+            await handle_agent_for_evaluation(websocket, json_message, evaluation_running)
         case _:
             logger.info(f"Received unrecognized message: {message}")
