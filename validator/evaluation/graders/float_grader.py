@@ -15,6 +15,8 @@ from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.codegen.challenge import CodegenChallenge
 from validator.evaluation.log_score import ScoreLog, log_scores
 from validator.utils.clean_patch import (
+    has_unused_variables,
+    has_unused_dicts,
     remove_comments,
     remove_docstrings,
     remove_unused,
@@ -140,6 +142,14 @@ class FloatGrader(GraderInterface):
         OPENAI_CLIENT: Final[openai.Client] = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
         
         if not response.response_patch:
+            return EMPTY_PATCH_SCORE, 0.0
+
+        # Short-circuit if the patch still contains any blatantly unused code.
+        # We now treat *unused dictionary literals* as a hard failure just like
+        # other unused variables so miners cannot sneak dead-weight data
+        # structures past the validator.
+
+        if has_unused_dicts(response.response_patch) or has_unused_variables(response.response_patch):
             return EMPTY_PATCH_SCORE, 0.0
 
         # Preprocess the patch

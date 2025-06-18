@@ -79,6 +79,47 @@ def remove_unused_dicts(code: str) -> str:
     return ast.unparse(new_tree)
 
 
+def remove_unused_const_assignments(code: str) -> str:
+    """Remove assignments of constant literals to names that are never used.
+
+    We purposefully restrict removal to cases where the *value* is a
+    constant (str, int, float, bool, None).  This avoids accidentally
+    deleting helper variables that hold callables or computed values.
+    """
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return code  # Leave untouched if parsing fails.
+
+    # Pass 1: collect usages (ast.Load) of names.
+    used: set[str] = set()
+
+    class UsageVisitor(ast.NodeVisitor):
+        def visit_Name(self, node: ast.Name):
+            if isinstance(node.ctx, ast.Load):
+                used.add(node.id)
+            self.generic_visit(node)
+
+    UsageVisitor().visit(tree)
+
+    # Pass 2: remove Assign nodes whose targets are *all* unused and whose
+    # value is a Constant.
+    class ConstAssignRemover(ast.NodeTransformer):
+        def visit_Assign(self, node: ast.Assign):
+            # If any target is not a Name (e.g., tuple unpacking) bail.
+            target_ids = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if len(target_ids) != len(node.targets):
+                return node
+
+            if all(t not in used for t in target_ids) and isinstance(node.value, ast.Constant):
+                return None  # drop the node
+            return node
+
+    new_tree = ConstAssignRemover().visit(tree)
+    return ast.unparse(new_tree)
+
+
 def create_patch(
     original_patch: str,
     cleaned_code: str,
@@ -157,19 +198,19 @@ def create_patch(
 
 def remove_unused(patch: str) -> str:
     """
-    Remove unused dictionaries from a git patch.
+    Remove unused variables from a git patch.
 
     Args:
         patch (str): The git patch as a string
 
     Returns:
-        str: The cleaned patch with unused dictionaries removed
+        str: The cleaned patch with unused variables removed
     """
     # Extract code from patch
     code, pre_patch_lines, post_header_lines = extract_code_from_patch(patch)
 
-    # Remove unused dictionaries
     cleaned_code = remove_unused_dicts(code)
+    cleaned_code = remove_unused_const_assignments(cleaned_code)
 
     # Create new patch with cleaned code
     return create_patch(patch, cleaned_code, pre_patch_lines, post_header_lines)
@@ -246,3 +287,64 @@ def remove_docstrings(patch_content: str) -> str:
             cleaned_lines.append(line)
 
     return "\n".join(cleaned_lines)
+
+
+
+def has_unused_variables(patch: str) -> bool:
+    """Return True if the git *patch* contains unused dicts or constants."""
+
+    code, _, _ = extract_code_from_patch(patch)
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        # If it doesn't parse we treat it as having problems but let
+        # the syntax gate handle the reject; here we return False so
+        # the caller relies on the syntax check instead.
+        return False
+
+    # --- unused dicts -------------------------------------------------
+    dict_usages, dict_assignments = find_dict_usages(tree)
+    if set(dict_assignments.keys()) - dict_usages:
+        return True
+
+    # --- unused constant assignments ---------------------------------
+    used: set[str] = set()
+
+    class UsageVisitor(ast.NodeVisitor):
+        def visit_Name(self, node: ast.Name):
+            if isinstance(node.ctx, ast.Load):
+                used.add(node.id)
+            self.generic_visit(node)
+
+    UsageVisitor().visit(tree)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            target_ids = [t.id for t in node.targets if isinstance(t, ast.Name)]
+            if len(target_ids) != len(node.targets):
+                continue
+            if all(t not in used for t in target_ids) and isinstance(node.value, ast.Constant):
+                return True
+
+    return False
+
+
+def has_unused_dicts(patch: str) -> bool:
+    """Return True iff the *patch* introduces dictionary literals that are never used.
+
+    This is a lighter-weight variant of :func:`has_unused_variables` that focuses
+    solely on dictionary assignments.  It is useful for graders that wish to
+    reject submissions containing such dead code rather than silently cleaning
+    it up.
+    """
+
+    code, _, _ = extract_code_from_patch(patch)
+
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return True
+
+    dict_usages, dict_assignments = find_dict_usages(tree)
+    return bool(set(dict_assignments.keys()) - dict_usages)
