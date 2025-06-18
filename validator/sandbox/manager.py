@@ -8,7 +8,6 @@ import threading
 from pathlib import Path
 from shared.logging_utils import get_logger
 
-from validator.challenge.base import BaseChallenge
 from validator.utils.temp_files import create_temp_file
 from validator.sandbox.validator import validate_sandbox_dir
 
@@ -50,13 +49,13 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 
 
 class Sandbox:
-    agent_id: str
+    swebench_instance_id: str
     manager: 'SandboxManager'
     _id_counter = 1
 
 
-    def __init__(self, agent_id: str, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
-        self.agent_id = agent_id
+    def __init__(self, swebench_instance_id, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
+        self.swebench_instance_id = swebench_instance_id
         self.manager = manager
 
         self.id = Sandbox._id_counter
@@ -78,11 +77,11 @@ class Sandbox:
             self.success = False
             self.error = str(e)
 
-    def run_sync(self, challenge: BaseChallenge):
+    def run_sync(self, challenge: dict):
         self.running = True
         self._run(challenge)
 
-    def run_async(self, challenge: BaseChallenge):
+    def run_async(self, challenge: dict):
         self.done_event = threading.Event()
         
         def _thread_main():
@@ -102,7 +101,7 @@ class Sandbox:
         if (self.running):
             self.done_event.wait()
 
-    def _run(self, challenge: BaseChallenge):
+    def _run(self, challenge: dict):
         if (self.success is not None):
             self.running = False
             return
@@ -113,9 +112,8 @@ class Sandbox:
             self.output_file = create_temp_file()
 
             # Write the input to the input file
-            input = challenge.to_dict()
             with open(self.input_file, 'w') as f:
-                json.dump(input, f)
+                json.dump(challenge, f)
 
             # Create the Docker container, and run the Main.py script
             self.start_time = time.time()
@@ -161,7 +159,7 @@ class Sandbox:
         self.running = False
     
     def cleanup(self):
-        shutil.rmtree(self.src_dir)
+        shutil.rmtree(self.src_dir, ignore_errors=True)
 
 
 
@@ -222,8 +220,8 @@ class SandboxManager:
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
         
-    def add_sandbox(self, agent_id: str, src_dir: str, repo_dir_path: str):
-        sandbox = Sandbox(agent_id=agent_id, manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
+    def add_sandbox(self, swebench_instance_id: str, src_dir: str, repo_dir_path: str):
+        sandbox = Sandbox(swebench_instance_id=swebench_instance_id, manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
         self.sandboxes.append(sandbox)
         return sandbox
 
@@ -231,13 +229,13 @@ class SandboxManager:
         for sandbox in self.sandboxes:
             sandbox.wait()
     
-    def get_successful_agent_patches(self) -> List[Tuple[str, str]]:
+    def get_successful_patches(self) -> List[Tuple[str, str]]:
         patches = []
         for sbox in self.sandboxes:
             if sbox.success:
-                patches.append((sbox.agent_id, sbox.output))
+                patches.append((sbox.swebench_instance_id, sbox.output.get("patch")))
             else:
-                logger.error(f"Sandbox for agent {sbox.agent_id} failed: {sbox.error}")
+                logger.error(f"Sandbox for instance {sbox.swebench_instance_id} failed: {sbox.error}")
         return patches
     
     def cleanup(self):

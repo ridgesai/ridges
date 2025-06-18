@@ -3,6 +3,10 @@ from pathlib import Path
 import os
 import subprocess
 
+
+# External package imports
+from fiber.chain.chain_utils import load_hotkey_keypair
+
 # Network configuration
 
 # Load validator config from env
@@ -43,7 +47,7 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-RIDGES_API_URL = os.getenv("RIDGES_API_URL", "https://api.ridges.ai")
+RIDGES_API_URL = os.getenv("RIDGES_API_URL", "http://localhost:8000")
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 # Log initial configuration
@@ -62,3 +66,5 @@ logger.info(f"Challenge timeout: {CHALLENGE_TIMEOUT}")
 logger.info(f"Weights interval: {WEIGHTS_INTERVAL}")
 logger.info(f"DB path: {DB_PATH}")
 logger.info(f"Log level: {LOG_LEVEL}")
+
+validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)

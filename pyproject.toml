@@ -20,6 +20,7 @@ dependencies = [
     "swebench>=4.0.3",
     "tiktoken>=0.9.0",
     "trueskill>=0.4.5",
+    "websockets>=15.0.1",
 ]
 
 [tool.uv.sources]

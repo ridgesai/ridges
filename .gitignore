@@ -29,6 +29,7 @@ logs_mineshaft/
 repos/
 validator/repos/
 results/
+logs/
 
 # Miner installations and submodules
 SWE-agent/*
