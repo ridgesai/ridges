@@ -19,7 +19,6 @@ from swebench.harness.run_evaluation import (
 )
 import docker
 from swebench.harness.docker_build import build_env_images
-from sqlalchemy.orm import Session
 import asyncio
 
 logger = get_logger(__name__)
@@ -39,7 +38,7 @@ async def evaluate_agent_version(agent_version: AgentVersion, evaluation_running
                 # Download the agent code from Ridges API
                 logger.info(f"Downloading agent code for agent {agent_version.agent_id} version {agent_version.latest_version}")
                 response = await client.get(
-                    f"{RIDGES_API_URL}/retrieval/agent-file",
+                    f"{RIDGES_API_URL}/retrieval/agent-version-file",
                     params={"version_id": agent_version.version_id},
                 )
                 response.raise_for_status()

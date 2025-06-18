@@ -1,14 +1,13 @@
 """Task for updating weights periodically."""
 
 import asyncio
-from validator.db.operations import DatabaseManager
-from validator.evaluation.set_weights import set_weights
+from validator.utils.set_weights import set_weights
 from validator.config import WEIGHTS_INTERVAL
 from shared.logging_utils import get_logger, logging_update_active_coroutines
 
 logger = get_logger(__name__)
 
-async def weights_update_loop(db_manager: DatabaseManager) -> None:
+async def weights_update_loop() -> None:
     """Run the weights update loop on WEIGHTS_INTERVAL."""
     logger.info("Starting weights update loop")
     consecutive_failures = 0
@@ -17,7 +16,7 @@ async def weights_update_loop(db_manager: DatabaseManager) -> None:
     while True: 
         logging_update_active_coroutines("weights_task", True)
         try: 
-            await set_weights(db_manager)
+            await set_weights()
             consecutive_failures = 0 # Reset failure counter on success
             logger.info(f"Weights updated successfully, sleeping for {WEIGHTS_INTERVAL}")
             logging_update_active_coroutines("weights_task", False)
