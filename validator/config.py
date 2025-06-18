@@ -17,7 +17,7 @@ MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
 
 # Default configuration values
 MIN_MINERS = 1
-MAX_MINERS = 25
+MAX_MINERS = 50
 
 # Additional settings needed for operation
 CHALLENGE_INTERVAL = timedelta(minutes=10)
