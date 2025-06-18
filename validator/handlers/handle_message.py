@@ -17,8 +17,7 @@ async def handle_message(websocket, message):
     
     match event:
         case "new-agent-version":
-            agent_version = json_message["agent_version"]
-            await handle_new_agent_version(websocket, agent_version)
+            await handle_new_agent_version(websocket)
         case "get-validator-version":
             await handle_get_validator_version(websocket)
         case "agent-version":

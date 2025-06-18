@@ -23,18 +23,13 @@ async def run_websocket_session():
                 await handle_message(websocket, message)
             except websockets.ConnectionClosed:
                 logger.info("Connection closed. Reconnecting...")
+                await asyncio.sleep(5)
                 break
 
 
 async def main():
     init_db()
-    while True:
-        try:
-            await run_websocket_session()
-        except Exception as e:
-            logger.info(f"Connection failed: {e}")
-            logger.info("Retrying in 5 seconds...")
-            await asyncio.sleep(5)
+    await run_websocket_session()
 
 
 if __name__ == "__main__":
