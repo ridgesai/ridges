@@ -23,7 +23,7 @@ class AgentVersion(Base):
     version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_id: Mapped[str] = mapped_column(String, nullable=False)
     miner_hotkey: Mapped[str] = mapped_column(String, nullable=False)
-    version_number: Mapped[str] = mapped_column(String, nullable=False)
+    version_num: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
     score: Mapped[float] = mapped_column(Float, nullable=True)
