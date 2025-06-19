@@ -46,14 +46,6 @@ sys.path.append(project_root)
 logger = get_logger(__name__)
 logger.info(f"Loading environment variables from {env_path.absolute()}")
 
-# Move validator.db to a backup file with timestamp
-db_path = Path(DB_PATH)
-if db_path.exists():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_path = db_path.parent / f"validator-{timestamp}.db.bak"
-    db_path.rename(backup_path)
-    logger.info(f"Moved {db_path} to {backup_path}")
-
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
     
