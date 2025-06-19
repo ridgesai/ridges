@@ -35,7 +35,7 @@ async def send_evaluation_run_websocket(websocket, evaluation_run: EvaluationRun
         }
 
         message = json.dumps(evaluation_data)
-        websocket.send(message)  # Non-blocking send
+        await websocket.send(message)  # Non-blocking send
         logger.info(f"Sent evaluation run {evaluation_run.run_id} through websocket")
 
     except Exception as e:

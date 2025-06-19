@@ -75,7 +75,25 @@ async def evaluate_agent_version(websocket, agent_version: AgentVersion, evaluat
 
         runs: List[EvaluationRun] = []
 
-        for instance_id, patch in sbox_manager.get_successful_patches():
+        for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
+            if not success:
+                evaluation_run = EvaluationRun(
+                    run_id=str(uuid.uuid4()),
+                    version_id=agent_version.version_id,
+                    validator_hotkey=validator_hotkey.ss58_address,
+                    swebench_instance_id=instance_id,
+                    fail_to_pass_success="[]",
+                    pass_to_pass_success="[]",
+                    fail_to_fail_success="[]",
+                    pass_to_fail_success="[]",
+                    response=error,
+                    solved=False,
+                    started_at=datetime.now(),
+                    finished_at=datetime.now(),
+                )
+                await send_evaluation_run_websocket(websocket, evaluation_run) # Run started
+                continue
+            
             prediction = {
                 "instance_id": instance_id,
                 "model_name_or_path": f"{agent_version.agent_id}v{agent_version.version_num}",

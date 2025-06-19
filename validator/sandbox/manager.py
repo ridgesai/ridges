@@ -229,14 +229,14 @@ class SandboxManager:
         for sandbox in self.sandboxes:
             sandbox.wait()
     
-    def get_successful_patches(self) -> List[Tuple[str, str]]:
-        patches = []
-        for sbox in self.sandboxes:
-            if sbox.success:
-                patches.append((sbox.swebench_instance_id, sbox.output.get("patch")))
+    def get_patches_and_errors(self) -> List[Tuple[bool, str, str, str]]:
+        patches_and_errors = []
+        for sandbox in self.sandboxes:
+            if sandbox.success:
+                patches_and_errors.append((True,sandbox.swebench_instance_id, sandbox.output.get("patch"), None))
             else:
-                logger.error(f"Sandbox for instance {sbox.swebench_instance_id} failed: {sbox.error}")
-        return patches
+                patches_and_errors.append((False, sandbox.swebench_instance_id, None, sandbox.error))
+        return patches_and_errors
     
     def cleanup(self):
         for sandbox in self.sandboxes:

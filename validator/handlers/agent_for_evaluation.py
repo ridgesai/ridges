@@ -39,28 +39,30 @@ async def handle_agent_for_evaluation(websocket, json_message, evaluation_runnin
         miner_hotkey = agent_data.get("miner_hotkey")
         version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
-        
-        if not all([agent_id, miner_hotkey, version_num, created_at]):
+        version_id = agent_data.get("version_id")
+
+        if not all([version_id, agent_id, miner_hotkey, version_num, created_at]):
             logger.error(f"Missing required fields in agent version response: {agent_data}")
             return
 
         # Create AgentVersion object
         agent_version = AgentVersion(
+            version_id=version_id,
             agent_id=agent_id,
             miner_hotkey=miner_hotkey,
             version_num=version_num,
             created_at=datetime.fromisoformat(created_at),
         )
 
-        # Save to database
-        SessionFactory = get_session_factory()
-        session = SessionFactory()
-        try:
-            session.add(agent_version)
-            session.commit()
-            logger.info(f"Saved agent version to database: {agent_version.version_id}")
-        finally:
-            session.close()
+        # # Save to database
+        # SessionFactory = get_session_factory()
+        # session = SessionFactory()
+        # try:
+        #     session.add(agent_version)
+        #     session.commit()
+        #     logger.info(f"Saved agent version to database: {agent_version.version_id}")
+        # finally:
+        #     session.close()
 
         # Start evaluation task with websocket as first argument
         task = asyncio.create_task(
