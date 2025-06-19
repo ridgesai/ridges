@@ -35,11 +35,3 @@ def get_storage_dir(dirname: str) -> Path:
     storage_dir = Path(__file__).parent / dirname
     storage_dir.mkdir(parents=True, exist_ok=True)
     return storage_dir
-
-def get_challenge_dir() -> Path:
-    """Get path to challenge directory."""
-    return get_storage_dir("challenges")
-
-def get_results_dir() -> Path:
-    """Get path to results directory."""
-    return get_storage_dir("results")

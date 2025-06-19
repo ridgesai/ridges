@@ -7,7 +7,7 @@ from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
 from shared.logging_utils import get_logger
 
-from validator.dependancies import get_session_factory
+from validator.dependencies import get_session_factory
 from validator.db.schema import AgentVersion, EvaluationRun
 from validator.utils.weight_utils import process_weights_for_netuid
 
@@ -87,7 +87,7 @@ def get_latest_scores_by_hotkey() -> dict[str, float]:
     try:
         # Get the latest evaluation run for each agent version
         latest_runs = session.query(
-            EvaluationRun.version_id,
+            EvaluationRun.evaluation_id,
             EvaluationRun.solved,
             EvaluationRun.finished_at
         ).order_by(

@@ -2,9 +2,9 @@ import os
 import json
 import shutil
 import time
+import asyncio
 from typing import List, Tuple
 import docker
-import threading
 from pathlib import Path
 from shared.logging_utils import get_logger
 
@@ -81,25 +81,23 @@ class Sandbox:
         self.running = True
         self._run(challenge)
 
-    def run_async(self, challenge: dict):
-        self.done_event = threading.Event()
+    async def run_async(self, challenge: dict):
+        self.running = True
         
-        def _thread_main():
+        async def _async_main():
             logger.info(f'Running sandbox {self.id}')
-            self._run(challenge)
+            await asyncio.to_thread(self._run, challenge)
             if self.success:
                 logger.info(f'Sandbox {self.id} ran successfully')
             else:
                 logger.error(f'Sandbox {self.id} ran unsuccessfully, error: {self.error}')
-            self.done_event.set()
         
-        self.running = True
-        thread = threading.Thread(target=_thread_main, daemon=True)
-        thread.start()
+        # Start the async task
+        self._task = asyncio.create_task(_async_main())
     
-    def wait(self):
-        if (self.running):
-            self.done_event.wait()
+    async def wait(self):
+        if self.running and hasattr(self, '_task'):
+            await self._task
 
     def _run(self, challenge: dict):
         if (self.success is not None):
@@ -178,18 +176,19 @@ class SandboxManager:
             self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=True)
             
         self.sandboxes = []
-        threading.Thread(target=self._monitor, daemon=True).start()
+        # Start the monitor as an asyncio task
+        self._monitor_task = asyncio.create_task(self._monitor())
     
-    def _monitor(self):
+    async def _monitor(self):
         while True:
             for sandbox in self.sandboxes:
                 if sandbox.running and sandbox.success is None:
                     try:
-                        self._monitor_sandbox(sandbox)
+                        await asyncio.to_thread(self._monitor_sandbox, sandbox)
                     except Exception:
                         continue
             
-            time.sleep(1)
+            await asyncio.sleep(1)
 
     def _monitor_sandbox(self, sandbox):
         # Get the stats
@@ -225,9 +224,9 @@ class SandboxManager:
         self.sandboxes.append(sandbox)
         return sandbox
 
-    def wait_for_all_sandboxes(self):
+    async def wait_for_all_sandboxes(self):
         for sandbox in self.sandboxes:
-            sandbox.wait()
+            await sandbox.wait()
     
     def get_patches_and_errors(self) -> List[Tuple[bool, str, str, str]]:
         patches_and_errors = []

@@ -8,10 +8,15 @@ from shared.logging_utils import get_logger
 logger = get_logger(__name__)
 
 
-async def send_evaluation_run_websocket(websocket, evaluation_run: EvaluationRun) -> None:
-    """Send an evaluation run through the websocket."""
-    if not websocket:
-        logger.warning("No websocket available to send evaluation run")
+async def send_evaluation_run_websocket(websocket_app, evaluation_run: EvaluationRun) -> None:
+    """Send an evaluation run through the websocket app.
+    
+    Args:
+        websocket_app: WebsocketApp instance for queueing messages
+        evaluation_run: EvaluationRun object to send
+    """
+    if not websocket_app:
+        logger.warning("No websocket app available to send evaluation run")
         return
 
     try:
@@ -20,10 +25,11 @@ async def send_evaluation_run_websocket(websocket, evaluation_run: EvaluationRun
             "event": "upsert-evaluation-run",
             "evaluation_run": {
                 "run_id": evaluation_run.run_id,
-                "version_id": evaluation_run.version_id,
+                "evaluation_id": evaluation_run.evaluation_id,
                 "validator_hotkey": evaluation_run.validator_hotkey,
                 "swebench_instance_id": evaluation_run.swebench_instance_id,
                 "response": evaluation_run.response,
+                "error": evaluation_run.error,
                 "fail_to_pass_success": evaluation_run.fail_to_pass_success,
                 "pass_to_pass_success": evaluation_run.pass_to_pass_success,
                 "fail_to_fail_success": evaluation_run.fail_to_fail_success,
@@ -34,10 +40,10 @@ async def send_evaluation_run_websocket(websocket, evaluation_run: EvaluationRun
             }
         }
 
-        message = json.dumps(evaluation_data)
-        await websocket.send(message)  # Non-blocking send
-        logger.info(f"Sent evaluation run {evaluation_run.run_id} through websocket")
+        # Schedule the message to be sent
+        await websocket_app.send(evaluation_data)
+        logger.info(f"Scheduled evaluation run {evaluation_run.run_id} for sending")
 
     except Exception as e:
-        logger.error(f"Failed to send evaluation run through websocket: {e}")
+        logger.error(f"Failed to schedule evaluation run for sending: {e}")
         logger.exception("Full error traceback:")

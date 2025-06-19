@@ -5,7 +5,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from validator.config import DB_PATH
 from shared.logging_utils import get_logger
-from validator.dependancies import get_database_engine
+from validator.dependencies import get_database_engine
 
 logger = get_logger(__name__)
 
@@ -31,10 +31,11 @@ class EvaluationRun(Base):
     __tablename__ = "evaluation_runs"
 
     run_id: Mapped[str] = mapped_column(String, primary_key=True)
-    version_id: Mapped[str] = mapped_column(String, nullable=False)
+    evaluation_id: Mapped[str] = mapped_column(String, nullable=False)
     validator_hotkey: Mapped[str] = mapped_column(String, nullable=False)
     swebench_instance_id: Mapped[str] = mapped_column(String, nullable=False)
     response: Mapped[str] = mapped_column(String, nullable=True)
+    error: Mapped[str] = mapped_column(String, nullable=True)
     fail_to_pass_success: Mapped[str] = mapped_column(String, nullable=True)
     pass_to_pass_success: Mapped[str] = mapped_column(String, nullable=True)
     fail_to_fail_success: Mapped[str] = mapped_column(String, nullable=True)
