@@ -18,7 +18,13 @@ import httpx
 from fiber import Keypair
 from shared.logging_utils import get_logger
 from fiber.validator import client as validator_client
-from validator.utils.clean_patch import remove_comments, remove_docstrings, remove_unused
+from validator.utils.clean_patch import (
+    remove_comments,
+    remove_docstrings,
+    remove_print_statements,
+    remove_unused,
+    drop_header_noise,
+)
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
@@ -433,9 +439,11 @@ class BaseChallenge(ABC):
         
         without_comments = remove_comments(patch)
         without_docstrings = remove_docstrings(without_comments)
-        without_unused = remove_unused(without_docstrings)
+        without_prints = remove_print_statements(without_docstrings)
+        without_unused = remove_unused(without_prints)
+        without_header_noise = drop_header_noise(without_unused)
 
-        return without_unused.strip()
+        return without_header_noise.strip()
 
     def clone_repo(self, base_path: Path, repo_url: str, commit_hash: str) -> Path:
         """

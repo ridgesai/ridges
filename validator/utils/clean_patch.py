@@ -289,6 +289,39 @@ def remove_docstrings(patch_content: str) -> str:
     return "\n".join(cleaned_lines)
 
 
+def remove_print_statements(patch_content: str) -> str:
+    """Remove *added* print statement lines (e.g. ``+print(...)``) from a Git
+    patch.
+
+    The goal is to discard stray debug prints without rejecting the submission.
+    We purposefully perform a shallow textual check rather than AST parsing for
+    speed and to keep line-oriented diff structure intact.
+    
+    Parameters
+    ----------
+    patch_content : str
+        The unified diff/patch text returned by the miner.
+
+    Returns
+    -------
+    str
+        The patch with any added print statement lines removed.
+    """
+
+    # Regex matches a *print* call after optional whitespace, e.g. "print(" or
+    # "print (".
+    print_line_regex = re.compile(r"^\s*print\s*\(")
+
+    cleaned_lines: list[str] = []
+    for line in patch_content.splitlines():
+        if line.startswith("+"):  # Only consider newly-added lines
+            if print_line_regex.match(line[1:]):
+                # Skip this line entirely – do not include it in the output
+                continue
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
 
 def has_unused_variables(patch: str) -> bool:
     """Return True if the git *patch* contains unused dicts or constants."""
@@ -348,3 +381,40 @@ def has_unused_dicts(patch: str) -> bool:
 
     dict_usages, dict_assignments = find_dict_usages(tree)
     return bool(set(dict_assignments.keys()) - dict_usages)
+
+def drop_header_noise(patch: str) -> str:
+    """Remove free-form text inserted into the diff header section.
+
+    Any line located after the `+++ path` marker but *before* the first
+    `@@` hunk header that is not blank and does not begin with a comment
+    character is stripped.  This is where most prompt-injection payloads
+    are placed because the diff still parses.
+    """
+
+    cleaned_lines: list[str] = []
+    in_header = False
+    in_hunk = False
+
+    for line in patch.splitlines():
+        if line.startswith("+++ "):
+            in_header = True
+            cleaned_lines.append(line)
+            continue
+
+        if line.startswith("@@"):
+            # entering a hunk; reset header flag, enable hunk flag
+            in_header = False
+            in_hunk = True
+
+        if in_header:
+            # Keep only blank or comment-looking lines
+            if line.strip() and not line.lstrip().startswith(("#", "//", "/*")):
+                continue  # drop potential injection
+
+        # Inside a hunk, drop any line that has *no* diff prefix (!= + or -)
+        if in_hunk and line and not line.startswith(('+', '-', ' ')):
+            continue
+
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
