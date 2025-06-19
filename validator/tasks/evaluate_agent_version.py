@@ -4,7 +4,7 @@ from datetime import datetime
 import json
 import os
 import tempfile
-from typing import List
+from typing import TYPE_CHECKING, List
 import uuid
 import httpx
 from validator.db.schema import AgentVersion, EvaluationRun
@@ -20,12 +20,13 @@ from swebench.harness.run_evaluation import (
 import docker
 from swebench.harness.docker_build import build_env_images
 
-from validator.utils.send_evaluation_run_websocket import send_evaluation_run_websocket
+if TYPE_CHECKING:
+    from validator.socket.websocket_app import WebsocketApp
 
 logger = get_logger(__name__)
 
 
-async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_version: AgentVersion):
+async def evaluate_agent_version(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion):
     """Run agents in sandboxes and collect their outputs."""
     logger.info("Running sandboxes")
 
@@ -34,7 +35,6 @@ async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_versio
         "evaluation_id": evaluation_id,
     })
 
-    websocket_app.evaluation_running.set()
     errored = False
     try:
         # Create sandbox manager
@@ -102,7 +102,7 @@ async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_versio
                 evaluation_run.error=error
                 evaluation_run.solved=False
                 evaluation_run.finished_at=datetime.now()
-                await send_evaluation_run_websocket(websocket_app, evaluation_run) 
+                await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
                 continue
             
             prediction = {
@@ -120,7 +120,7 @@ async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_versio
             test_spec = make_test_spec(instance)
             build_env_images(client, [test_spec], max_workers=1)
 
-            await send_evaluation_run_websocket(websocket_app, evaluation_run) # Run started
+            await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()}) # Run started
 
             run_result = run_instance(
                 test_spec=test_spec,
@@ -151,7 +151,7 @@ async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_versio
             
             runs.append(evaluation_run)
 
-            await send_evaluation_run_websocket(websocket_app, evaluation_run) # Run finished
+            await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()}) # Run finished
             
         # Save evaluation runs to database
         if runs:
@@ -173,4 +173,3 @@ async def evaluate_agent_version(websocket_app, evaluation_id: str, agent_versio
             "evaluation_id": evaluation_id,
             "errored": errored,
         })
-        websocket_app.evaluation_running.clear()

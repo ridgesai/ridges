@@ -43,3 +43,20 @@ class EvaluationRun(Base):
     solved: Mapped[bool] = mapped_column(Boolean, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     finished_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    def to_dict(self):
+        return {
+            "run_id": self.run_id,
+            "evaluation_id": self.evaluation_id,
+            "validator_hotkey": self.validator_hotkey,
+            "swebench_instance_id": self.swebench_instance_id,
+            "response": self.response,
+            "error": self.error,
+            "fail_to_pass_success": self.fail_to_pass_success,
+            "pass_to_pass_success": self.pass_to_pass_success,
+            "fail_to_fail_success": self.fail_to_fail_success,
+            "pass_to_fail_success": self.pass_to_fail_success,
+            "solved": self.solved,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+        }
