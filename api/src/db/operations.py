@@ -139,7 +139,7 @@ class DatabaseManager:
             logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey}")
             return None
         
-    def get_evaluation(self, evaluation_id: str) -> Evaluation:
+    def get_evaluation(self, evaluation_id: str) -> Optional[Evaluation]:
         """
         Get an evaluation from the database. Return None if not found.
         """
@@ -162,7 +162,33 @@ class DatabaseManager:
                 )
             logger.info(f"Evaluation {evaluation_id} not found in the database")
             return None
-        
+
+    def get_evaluation_run(self, run_id: str) -> Optional[EvaluationRun]:
+        """
+        Get an evaluation run from the database. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM evaluation_runs WHERE run_id = %s
+            """, (run_id,))
+            row = cursor.fetchone()
+            if row:
+                return EvaluationRun(
+                    run_id=row[0],
+                    evaluation_id=row[1],
+                    swebench_instance_id=row[2],
+                    response=row[3],
+                    error=row[4],
+                    pass_to_fail_success=row[5],
+                    fail_to_pass_success=row[6],
+                    pass_to_pass_success=row[7],
+                    fail_to_fail_success=row[8],
+                    solved=row[9],
+                    started_at=row[10],
+                    finished_at=row[11]
+                )
+            logger.info(f"Evaluation run {run_id} not found in the database")
+            return None
                 
     def get_agent_by_hotkey(self, miner_hotkey: str) -> Agent:
         """
@@ -202,7 +228,7 @@ class DatabaseManager:
                 )
             return None
     
-    def get_agent_by_version_id(self, version_id: str) -> Agent:
+    def get_agent_by_version_id(self, version_id: str) -> Optional[Agent]:
         """
         Get an agent from the database. Return None if not found.
         """
@@ -221,7 +247,7 @@ class DatabaseManager:
                 )
             return None
         
-    def get_agent_version(self, version_id: str) -> AgentVersion:
+    def get_agent_version(self, version_id: str) -> Optional[AgentVersion]:
         """
         Get an agent version from the database. Return None if not found.
         """
