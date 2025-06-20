@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "asyncio>=3.4.3",
+    "boto3>=1.38.40",
     "dotenv>=0.9.9",
     "fiber[full]",
     "gitpython>=3.1.44",
@@ -15,6 +16,9 @@ dependencies = [
     "numpy>=2.2.6",
     "openai>=1.82.0",
     "pandas>=2.2.0",
+    "psycopg2>=2.9.10",
+    "psycopg2-binary>=2.9.10",
+    "python-multipart>=0.0.20",
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",
     "swebench>=4.0.3",
