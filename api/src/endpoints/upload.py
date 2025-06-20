@@ -38,7 +38,7 @@ async def post_agent (
     if existing_agent and existing_agent.last_updated > datetime.now() - timedelta(seconds=AGENT_RATE_LIMIT_SECONDS):
         raise HTTPException(
             status_code=400,
-            detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent"
+            detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
         )
 
     # Check filename
@@ -47,6 +47,22 @@ async def post_agent (
             status_code=400,
             detail="File must be a python file named agent.py"
         )
+    
+    if existing_agent:
+        existing_agent_version = db.get_latest_agent_version(existing_agent.agent_id)
+        evaluations = db.get_evaluations_by_version_id(existing_agent_version.version_id)
+        print(evaluations)
+        for evaluation in evaluations:
+            if evaluation.status == "running":
+                raise HTTPException(
+                    status_code=400,
+                    detail="An exisiting version of this agent is currently being evaluated. Please wait for it to finish before uploading a new version."
+                )
+        for evaluation in evaluations:
+            if evaluation.status == "waiting":
+                evaluation.status = "replaced"
+                evaluation.finished_at = datetime.now()
+                db.store_evaluation(evaluation)
     
     # Check file size
     MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB in bytes
