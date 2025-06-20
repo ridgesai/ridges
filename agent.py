@@ -41,6 +41,23 @@ def _default_proxy() -> str:
         socket.gethostbyname("host.docker.internal")  # resolves on Mac/Win Docker
         return "http://host.docker.internal:8000"
     except socket.gaierror:
+        # Try Docker default gateway (works on Linux)
+        def _docker_gateway_ip():
+            try:
+                with open("/proc/net/route") as fh:
+                    for line in fh.readlines()[1:]:
+                        parts = line.split()
+                        if parts[1] != "00000000" or not int(parts[3], 16) & 2:
+                            continue
+                        # parts[2] is hex little-endian gateway
+                        gw = socket.inet_ntoa(bytes.fromhex(parts[2])[::-1])
+                        return gw
+            except Exception:
+                return None
+
+        gw_ip = _docker_gateway_ip()
+        if gw_ip:
+            return f"http://{gw_ip}:8000"
         return "http://localhost:8000"
 
 PROXY     = os.getenv("AI_PROXY_BASE", _default_proxy())
@@ -175,15 +192,14 @@ FN_SPEC: List[Dict[str, Any]] = []
 
 # ────────────────────────────── proxy wrapper ────────────────────────────────
 
-def _call_proxy(messages: List[Dict[str, Any]], challenge_id: str, miner_hotkey: str,
+def _call_proxy(messages: List[Dict[str, Any]], run_id: str,
                 retries: int = 3) -> Dict[str, Any]:
     # All communication with the LLM funnelled through this one function.         
     # It hits whatever is running at AI_PROXY_BASE (env var) and returns the raw  
     # JSON/text the model produced. Retry logic is just "try a few times then die".
     payload = json.dumps({"messages": messages, "tools": FN_SPEC})
     params = {
-        "challenge_id": challenge_id,
-        "miner_hotkey": miner_hotkey,
+        "run_id": run_id,
         "input_text": payload,
         "return_text": "true",
         "return_code": "true",
@@ -220,9 +236,8 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
     #  else assume it's the final diff and bail                                  
     # We also auto-answer clarifying questions because the sandbox has no user.
     # Can change logic for this but idrk how to do it
-    challenge_id = prompt.get("challenge_id", "sandbox")
-    miner_hotkey = prompt.get("miner_hotkey", "sandbox")
-    user_text    = prompt.get("input_text", "")
+    run_id = prompt.get("run_id", None)
+    problem_statement = prompt.get("problem_statement", None)
     require_tool = os.getenv("FORCE_TOOL_CALL", "0") not in {"0", "false", "False", ""}
 
     system_prompt = (
@@ -239,13 +254,13 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
 
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user",   "content": user_text},
+        {"role": "user",   "content": problem_statement},
     ]
 
     tool_used = False
     for step in range(TOOL_LOOP_CAP):
         logging.info("proxy round %d", step + 1)
-        reply = _call_proxy(messages, challenge_id, miner_hotkey)
+        reply = _call_proxy(messages, run_id)
 
         raw_txt = reply.get("content", "").strip()
         # ───── detect explicit JSON tool call ─────
@@ -326,28 +341,7 @@ def agent_main(challenge):
     We support both so nothing breaks.
     """
 
-    # New-style call: full dict -------------------------------------------------
-    if isinstance(challenge, dict):
-        problem_text = challenge.get("problem_statement", str(challenge))
-        miner_hotkey = challenge.get("miner_hotkey", "sandbox")
-        instance_id  = challenge.get("instance_id", "sandbox")
-
-    # Legacy call: raw string ---------------------------------------------------
-    elif isinstance(challenge, str):
-        problem_text = challenge
-        miner_hotkey = "sandbox"
-        instance_id  = "sandbox"
-
-    else:
-        raise TypeError("agent_main expected dict or str, got " + type(challenge).__name__)
-
-    prompt = {
-        "challenge_id": instance_id,   # not strictly required but harmless
-        "miner_hotkey": miner_hotkey,
-        "input_text":   problem_text,
-    }
-
-    patch, _ = _solve(prompt)
+    patch, _ = _solve(challenge)
     return {"patch": patch}
 
     # ------------ real invocation path (after smoke-test) ------------------
