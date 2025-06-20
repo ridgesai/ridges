@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import websockets
-from websockets.exceptions import ConnectionClosed
 
 from shared.logging_utils import get_logger
 from validator.config import RIDGES_WS_URL
@@ -38,7 +37,7 @@ class WebsocketApp:
     async def start(self):
         while True:
             try:
-                async with websockets.connect(RIDGES_WS_URL, open_timeout=600, ping_interval=600, ping_timeout=600, close_timeout=600) as ws:
+                async with websockets.connect(RIDGES_WS_URL, ping_timeout=None) as ws:
                     self.ws = ws
                     logger.info(f"Connected to websocket: {RIDGES_WS_URL}")
                     await self.send(get_validator_version_info())
