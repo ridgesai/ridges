@@ -41,6 +41,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     try:
         # Create sandbox manager
         sbox_manager = SandboxManager()
+        instance_to_run_ids = {}
 
         # Create a client with longer timeout for agent operations
         async with httpx.AsyncClient(timeout=CHALLENGE_TIMEOUT.total_seconds() * 2) as client:
@@ -67,7 +68,9 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                 instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", ["astropy__astropy-14309"])
                 for instance in instances:
                     sbox = sbox_manager.add_sandbox(instance["instance_id"], src_dir=temp_dir, repo_dir_path=agent_file_path)
-                    await sbox.run_async({"instance_id": instance["instance_id"]})
+                    instance_to_run_ids[instance["instance_id"]] = str(uuid.uuid4())
+                    await sbox.run_async({"run_id": instance_to_run_ids[instance["instance_id"]],
+                                          "problem_statement": instance["problem_statement"]})
             except Exception as e:
                 logger.error(
                     f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.version_num}: {e}"
@@ -85,7 +88,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
 
         for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
             evaluation_run = EvaluationRun(
-                run_id=str(uuid.uuid4()),
+                run_id=instance_to_run_ids[instance_id],
                 evaluation_id=evaluation_id,
                 validator_hotkey=validator_hotkey.ss58_address,
                 swebench_instance_id=instance_id,
