@@ -113,10 +113,9 @@ def start_proxy():
                 if method.upper() == 'POST' and request_body:
                     req = urllib.request.Request(target_url, data=request_body.encode(), method='POST')
                     req.add_header('Content-Type', 'application/json')
-                    with open('conversation.txt', 'a') as f:
-                        f.write(f"Request:\n")
+                    with open('conversation.ndjson', 'a') as f:
                         f.write(request_body)
-                        f.write("\n\n--------------------------------\n\n")
+                        f.write("\n")
                 else:
                     req = urllib.request.Request(target_url, method=method)
 
@@ -130,10 +129,9 @@ def start_proxy():
                 resp = urllib.request.urlopen(req)
                 body = resp.read()
 
-                with open('conversation.txt', 'a') as f:
-                    f.write(f"Response:\n")
+                with open('conversation.ndjson', 'a') as f:
                     f.write(body)
-                    f.write("\n\n--------------------------------\n\n")
+                    f.write("\n")
                 
                 # Send proper HTTP response
                 response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
