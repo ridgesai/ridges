@@ -209,6 +209,10 @@ def _call_proxy(messages: List[Dict[str, Any]], run_id: str,
             r = requests.get(f"{PROXY}/agents/inference", params=params, timeout=REQUEST_TIMEOUT)
             r.raise_for_status()
             data = r.json()
+            diff = data.get("code_response", "")
+            if diff:
+                return {"content": diff}
+
             txt = data.get("text_response", "")
             try:
                 return json.loads(txt)
@@ -264,6 +268,9 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
 
         raw_txt = reply.get("content", "").strip()
         # ───── detect explicit JSON tool call ─────
+        if raw_txt.startswith("diff"):
+            return raw_txt, ""
+
         if raw_txt.startswith("{"):
             try:
                 obj = json.loads(raw_txt)
