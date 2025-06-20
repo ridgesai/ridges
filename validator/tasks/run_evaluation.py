@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-async def evaluate_agent_version(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion):
+async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion):
     """Run agents in sandboxes and collect their outputs."""
 
     websocket_app.evaluation_running.set()

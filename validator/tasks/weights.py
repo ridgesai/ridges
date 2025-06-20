@@ -1,7 +1,7 @@
 """Task for updating weights periodically."""
 
 import asyncio
-from validator.utils.set_weights import set_weights
+from validator.tasks.set_weights import set_weights
 from validator.config import WEIGHTS_INTERVAL
 from shared.logging_utils import get_logger, logging_update_active_coroutines
 

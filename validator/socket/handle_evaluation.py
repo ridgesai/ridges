@@ -3,7 +3,7 @@
 from datetime import datetime
 from shared.logging_utils import get_logger
 from validator.db.schema import AgentVersion
-from validator.tasks.evaluate_agent_version import evaluate_agent_version
+from validator.tasks.run_evaluation import run_evaluation
 from validator.config import validator_hotkey
 
 logger = get_logger(__name__)
@@ -57,7 +57,7 @@ async def handle_evaluation(websocket_app, json_message):
         # finally:
         #     session.close()
 
-        await evaluate_agent_version(websocket_app, evaluation_id, agent_version)
+        await run_evaluation(websocket_app, evaluation_id, agent_version)
 
         try:
             await websocket_app.send({"event": "get-next-evaluation"})
