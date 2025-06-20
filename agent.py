@@ -247,7 +247,7 @@ def _socket_request(path: str, data: Dict[str, Any]) -> Dict[str, Any]:
         
         response = b""
         while True:
-            chunk = sock.recv(4096)
+            chunk = sock.recv(8192)
             if not chunk:
                 break
             response += chunk
