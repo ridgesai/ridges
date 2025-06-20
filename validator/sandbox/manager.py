@@ -72,25 +72,63 @@ def start_proxy():
             logger.info("Received socket proxy request")
             data = client.recv(4096).decode()
             logger.info(f"Received socket proxy request: {data}")
-            path = data.split()[1].split('?')[0] if len(data.split()) > 1 else ""
-
-            params = urllib.parse.parse_qs(data.split('?')[1])
-            logger.info(f"Params: {params}")
+            
+            # Parse HTTP request
+            lines = data.split('\r\n')
+            if not lines:
+                return
+                
+            request_line = lines[0]
+            parts = request_line.split()
+            if len(parts) < 2:
+                return
+                
+            method, full_path = parts[0], parts[1]
+            path = full_path.split('?')[0]
+            
+            # Extract headers and body
+            headers = {}
+            body_start = -1
+            for i, line in enumerate(lines[1:], 1):
+                if line == '':
+                    body_start = i + 1
+                    break
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    headers[key.strip().lower()] = value.strip()
+            
+            # Get request body if present
+            request_body = None
+            if body_start > 0 and body_start < len(lines):
+                request_body = '\r\n'.join(lines[body_start:])
+            
+            logger.info(f"Method: {method}, Path: {path}")
+            logger.info(f"Headers: {headers}")
+            logger.info(f"Body: {request_body}")
             
             if path in ALLOWED_PATHS:
-                # Forward the full request
-                query_start = data.find('?')
-                if query_start != -1:
-                    full_url = f"http://localhost:8000{data.split()[1]}"
+                # Build target URL
+                target_url = f"http://localhost:8000{full_path}"
+                
+                # Create request
+                if method.upper() == 'POST' and request_body:
+                    req = urllib.request.Request(target_url, data=request_body.encode(), method='POST')
+                    req.add_header('Content-Type', 'application/json')
                 else:
-                    full_url = f"http://localhost:8000{path}"
-                    
-                resp = urllib.request.urlopen(full_url)
+                    req = urllib.request.Request(target_url, method=method)
+                
+                # Add original headers
+                for key, value in headers.items():
+                    if key not in ['host', 'connection']:
+                        req.add_header(key, value)
+                
+                # Send request
+                resp = urllib.request.urlopen(req)
                 body = resp.read()
                 
                 # Send proper HTTP response
                 response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
-                logger.info(f"Sending socket proxy response: {response}")
+                logger.info(f"Sending socket proxy response: {len(body)} bytes")
                 client.send(response)
             else:
                 client.send(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")

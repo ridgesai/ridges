@@ -166,10 +166,17 @@ FN_SPEC: List[Dict[str, Any]] = []
 
 # ────────────────────────────── Unix socket client ────────────────────────────
 
-def _socket_request(path: str, params: List[Tuple[str, str]]) -> Dict[str, Any]:
-    """Make HTTP request over Unix socket"""
-    query = urlencode(params)
-    request = f"GET {path}?{query} HTTP/1.1\r\nHost: localhost\r\n\r\n"
+def _socket_request(path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Make HTTP POST request over Unix socket"""
+    json_body = json.dumps(data)
+    request = (
+        f"POST {path} HTTP/1.1\r\n"
+        f"Host: localhost\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(json_body)}\r\n"
+        f"\r\n"
+        f"{json_body}"
+    )
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -183,6 +190,27 @@ def _socket_request(path: str, params: List[Tuple[str, str]]) -> Dict[str, Any]:
                 break
             response += chunk
             if b"\r\n\r\n" in response:
+                # Continue reading until we have the full body
+                headers_end = response.find(b"\r\n\r\n")
+                headers_part = response[:headers_end].decode()
+                
+                # Check if we have Content-Length header
+                content_length = 0
+                for line in headers_part.split('\r\n'):
+                    if line.lower().startswith('content-length:'):
+                        content_length = int(line.split(':')[1].strip())
+                        break
+                
+                body_start = headers_end + 4
+                body_received = len(response) - body_start
+                
+                # Read remaining body if needed
+                while body_received < content_length:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                    body_received = len(response) - body_start
                 break
         
         # Parse response
@@ -198,26 +226,26 @@ def _call_proxy(messages: List[Dict[str, Any]], run_id: str,
                 retries: int = 3) -> Dict[str, Any]:
     # All communication with the LLM funnelled through this one function.         
     # It hits the Unix socket proxy and returns the raw JSON/text the model produced.
-    payload = json.dumps({"messages": messages, "tools": FN_SPEC})
-    params = [
-        ("run_id", run_id),
-        ("return_text", "true"),
-        ("return_code", "true"),
-        ("input_text", payload),
-    ]
+    payload = {"messages": messages, "tools": FN_SPEC}
+    data = {
+        "run_id": run_id,
+        "return_text": "true",
+        "return_code": "true",
+        "input_text": json.dumps(payload),
+    }
     
     for attempt in range(retries):
         try:
-            data = _socket_request("/agents/inference", params)
-            diff = data.get("code_response", "")
+            response = _socket_request("/agents/inference", data)
+            diff = response.get("code_response", "")
             if diff:
                 return {"content": diff}
 
-            txt = data.get("text_response", "")
+            txt = response.get("text_response", "")
             try:
                 return json.loads(txt)
             except Exception:
-                return {"content": txt, "code": data.get("code_response", "")}
+                return {"content": txt, "code": response.get("code_response", "")}
         except Exception as exc:
             if attempt == retries - 1:
                 raise RuntimeError(f"proxy call failed: {exc}") from exc
