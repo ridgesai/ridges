@@ -244,16 +244,44 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
     problem_statement = prompt.get("problem_statement", None)
     require_tool = os.getenv("FORCE_TOOL_CALL", "0") not in {"0", "false", "False", ""}
 
+    # ------------------------- system prompt -------------------------
     system_prompt = (
-        "You are a fully-autonomous code-analysis agent running in an offline sandbox. "
-        "You CANNOT ask the user for clarification. If information is missing, make "
-        "reasonable assumptions and continue. Available tools (call by replying ONLY "
-        "with JSON): ls, find, read, diff. \n"
-        "When you reach your final answer you MUST return it as a unified diff starting "
-        "with the literal line 'diff' (no leading spaces). The diff should create or "
-        "modify source files so the user can apply it directly. Do not wrap the diff in "
-        "markdown fences and do not add commentary after the diff." +
-        (" You MUST invoke at least one tool before your final answer." if require_tool else "")
+        """
+        You are a fully-autonomous code-analysis agent running in an **offline sandbox**.
+        The repository root is /sandbox/repo (use **relative paths** such as
+        'astropy/io/registry/compat.py').
+
+        You may call four JSON tools — ls, find, read, diff — by replying
+        **only** with a JSON blob like {"tool":"ls","args":{...}}.
+
+        After you have gathered enough context you must reply with **one final
+        unified diff** that can be applied with `git apply` or `patch -p1`
+        **without any additional text**.
+
+        Unified-diff requirements:
+          • Start each file section with `--- a/<path>` and `+++ b/<path>` lines.
+          • Use one or more hunk headers of the form `@@ -oldStart,oldCount +newStart,newCount @@`.
+          • Use only lines that begin with a space (context), `+` (add), or `-` (delete).
+          • Do NOT wrap the diff in markdown fences, do NOT add commentary before or after, and do NOT add blank lines outside the diff.
+
+        Example format (do **not** repeat this text, only mirror the structure):
+        diff --git a/foo.py b/foo.py
+        --- a/foo.py
+        +++ b/foo.py
+        @@ -10,3 +10,4 @@ def bar():
+             print("old")
+        -    return 1
+        +    return 42
+        @@ -24,0 +25,3 @@
+        +# new helper
+        +def helper():
+        +    pass
+
+        You are a fully-autonomous code-analysis agent. Repo is at /sandbox/repo.
+        No external internet. Available JSON tools: ls, find, read, diff.
+        If unsure, assume and proceed.
+        """
+        .strip()
     )
 
     messages: List[Dict[str, Any]] = [
