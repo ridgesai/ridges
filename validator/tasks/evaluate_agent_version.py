@@ -28,6 +28,8 @@ logger = get_logger(__name__)
 
 async def evaluate_agent_version(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion):
     """Run agents in sandboxes and collect their outputs."""
+
+    websocket_app.evaluation_running.set()
     logger.info("Running sandboxes")
 
     await websocket_app.send({
@@ -146,6 +148,7 @@ async def evaluate_agent_version(websocket_app: "WebsocketApp", evaluation_id: s
             else:
                 logger.info(f"Agent {agent_version.agent_id} version {agent_version.version_num} failed to run instance {instance_id}")
                 evaluation_run.solved=False
+                evaluation_run.error=error
                 # with open(f"logs/run_evalulation/{evaluation_run.run_id}/{evaluation_run.run_id}.log", "r") as f:
                 #     evaluation_run.error = f.read()
             
@@ -173,3 +176,4 @@ async def evaluate_agent_version(websocket_app: "WebsocketApp", evaluation_id: s
             "evaluation_id": evaluation_id,
             "errored": errored,
         })
+        websocket_app.evaluation_running.clear()
