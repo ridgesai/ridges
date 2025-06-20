@@ -313,41 +313,12 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
 
     return "[no answer]", ""
 
-# ───────────────────────────── entrypoint ────────────────────────────────────
-
-def _main() -> None:
-    try:
-        prompt_data = json.loads((IO_DIR / "prompt.json").read_text())
-    except Exception as err:
-        raise SystemExit(f"failed to read prompt.json: {err}")
-
-    text, code = _solve(prompt_data)
-
-    logging.info("final text preview: %.200s", text)
-    (IO_DIR / "result.json").write_text(json.dumps({
-        "text_response": text,
-        "code_response": code or None,
-    }))
-    print(f"Wrote results → {(IO_DIR / 'result.json').resolve()}")
-
 # ---------------------------------------------------------------------------
 # Sandbox entry-point required by the validator
 # ---------------------------------------------------------------------------
-def agent_main(challenge):
-    """Entry-point called by /sandbox/Main.py.
-
-    Older versions of Main.py pass a *string* (just the problem statement).
-    Newer ones pass a dict with `problem_statement`, `instance_id`, etc.
-    We support both so nothing breaks.
-    """
-
-    patch, _ = _solve(challenge)
+def agent_main(input: dict):
+    patch, _ = _solve(input)
     return {"patch": patch}
 
-    # ------------ real invocation path (after smoke-test) ------------------
-    # prompt = {"challenge_id": instance_id, "input_text": "<< problem text >>"}
-    # patch, _ = _solve(prompt)
-    # return {"patch": patch}
-
 if __name__ == "__main__":
-    _main()
+    agent_main()
