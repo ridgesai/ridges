@@ -108,6 +108,6 @@ class WebSocketServer:
             return None
     
     async def start(self):
-        self.server = await websockets.serve(self.handle_connection, self.host, self.port, open_timeout=600, close_timeout=600, ping_timeout=600) # Timeout stuff is for a bug fix, look into it later
+        self.server = await websockets.serve(self.handle_connection, self.host, self.port, ping_timeout=None) # Timeout stuff is for a bug fix, look into it later
         logger.info(f"Platform socket started on {self.uri}")
         await asyncio.Future()  # run forever
