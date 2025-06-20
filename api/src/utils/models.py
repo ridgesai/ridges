@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Literal
 
@@ -42,3 +42,14 @@ class Evaluation(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
+
+class EmbeddingRequest(BaseModel):
+    input: str = Field(..., description="Text to embed")
+    
+class InferenceRequest(BaseModel):
+    run_id: str = Field(..., description="Evaluation run ID")
+    input_text: Optional[str] = Field(None, description="Input text for inference")
+    input_code: Optional[str] = Field(None, description="Input code for inference")
+    return_text: bool = Field(False, description="Whether to return text output")
+    return_code: bool = Field(False, description="Whether to return code output")
+    model: Optional[str] = Field(None, description="Model to use for inference")
