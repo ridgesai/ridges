@@ -69,9 +69,8 @@ def start_proxy():
     
     def handle_client(client):
         try:
-            logger.info("Received socket proxy request")
             data = client.recv(4096).decode()
-            logger.info(f"Received socket proxy request: {data}")
+            logger.debug(f"Received socket proxy request: {data}")
             
             # Parse HTTP request
             lines = data.split('\r\n')
@@ -102,9 +101,9 @@ def start_proxy():
             if body_start > 0 and body_start < len(lines):
                 request_body = '\r\n'.join(lines[body_start:])
             
-            logger.info(f"Method: {method}, Path: {path}")
-            logger.info(f"Headers: {headers}")
-            logger.info(f"Body: {request_body}")
+            logger.debug(f"Method: {method}, Path: {path}")
+            logger.debug(f"Headers: {headers}")
+            logger.debug(f"Body: {request_body}")
             
             if path in ALLOWED_PATHS:
                 # Build target URL
@@ -114,8 +113,13 @@ def start_proxy():
                 if method.upper() == 'POST' and request_body:
                     req = urllib.request.Request(target_url, data=request_body.encode(), method='POST')
                     req.add_header('Content-Type', 'application/json')
+                    with open('conversation.txt', 'a') as f:
+                        f.write(f"Request:\n")
+                        f.write(request_body)
+                        f.write("\n\n--------------------------------\n\n")
                 else:
                     req = urllib.request.Request(target_url, method=method)
+
                 
                 # Add original headers
                 for key, value in headers.items():
@@ -125,10 +129,15 @@ def start_proxy():
                 # Send request
                 resp = urllib.request.urlopen(req)
                 body = resp.read()
+
+                with open('conversation.txt', 'a') as f:
+                    f.write(f"Response:\n")
+                    f.write(body)
+                    f.write("\n\n--------------------------------\n\n")
                 
                 # Send proper HTTP response
                 response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
-                logger.info(f"Sending socket proxy response: {len(body)} bytes")
+                logger.debug(f"Sending socket proxy response: {len(body)} bytes")
                 client.send(response)
             else:
                 client.send(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
