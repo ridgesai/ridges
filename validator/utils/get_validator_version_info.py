@@ -1,6 +1,5 @@
 """Handler for get validator version events."""
 
-import json
 import subprocess
 from shared.logging_utils import get_logger
 
@@ -11,10 +10,9 @@ logger = get_logger(__name__)
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 # VERSION_COMMIT_HASH = "cc85362f1f1ac6236883d42164a99dae59f88943"
 
-async def handle_get_validator_version(websocket):
-    """Handle get validator version events."""
-    await websocket.send(json.dumps({
+def get_validator_version_info():
+    return {
         "event": "validator-version",
         "version_commit_hash": VERSION_COMMIT_HASH,
         "validator_hotkey": validator_hotkey.ss58_address
-    })) 
+    }
