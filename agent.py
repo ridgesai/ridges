@@ -200,6 +200,9 @@ def apply_patch(patch: str, strip: int = 1) -> str:
     str
         "ok" on success or an error message if the patch failed.
     """
+    # Ensure repository root exists even if host did not mount a repo directory.
+    REPO_ROOT.mkdir(parents=True, exist_ok=True)
+
     try:
         subprocess.run([
             "git",
@@ -377,6 +380,7 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
     ]
 
     tool_used = False
+    patch_applied = False
     for step in range(TOOL_LOOP_CAP):
         logging.info("proxy round %d", step + 1)
         reply = _call_proxy(messages, run_id)
@@ -389,8 +393,10 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
             # Always let the model know the outcome
             messages.append({"role": "tool", "content": result})
 
+            patch_applied_this_round = (result == "ok")
+
             # If patch applied, show the *actual* diff so the model can inspect
-            if result == "ok":
+            if patch_applied_this_round:
                 try:
                     real = subprocess.run(
                         ["git", "diff", "--patch", "--minimal"],
@@ -404,7 +410,9 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
                 except Exception as err:
                     messages.append({"role": "tool", "content": f"[failed to get git diff: {err}]"})
 
-            tool_used = True
+            tool_used = patch_applied_this_round
+            if patch_applied_this_round:
+                patch_applied = True
             continue
 
         # ───── recognise explicit finish signal ─────
@@ -457,7 +465,7 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
             continue
 
         # ───── final answer ─────
-        if not tool_used and require_tool:
+        if (not tool_used or not patch_applied) and require_tool:
             # If we've already asked once and model still didn't comply, accept its answer.
             if messages and messages[-1].get("role") == "user" and "Please inspect" in messages[-1].get("content", ""):
                 logging.warning("LLM failed to use tool after nudge; accepting best effort answer.")
@@ -467,6 +475,17 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
             messages.append({"role": "assistant", "content": raw_txt})
             messages.append({"role": "user", "content": "Please inspect the codebase with at least one tool."})
             continue
+
+        # ───── optional debug: dump conversation to stderr ─────
+        if os.getenv("DEBUG_CONVO_STDERR", "0") not in {"0", "false", "False", ""}:
+            import sys, json, textwrap
+            print(f"\n[DEBUG_CONVO] -------- step {step}", file=sys.stderr)
+            try:
+                print(textwrap.indent(json.dumps(messages, indent=2)[-4000:], "  "), file=sys.stderr)
+                print(textwrap.indent(json.dumps(reply, indent=2), "  "), file=sys.stderr)
+            except Exception as dbg_err:
+                print(f"[DEBUG_CONVO] logging failed: {dbg_err}", file=sys.stderr)
+
         return raw_txt, reply.get("code", "")
 
     return "[no answer]", ""
