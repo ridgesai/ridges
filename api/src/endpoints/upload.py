@@ -13,6 +13,7 @@ from api.src.utils.auth import verify_request
 from api.src.utils.models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
 from api.src.socket.server import WebSocketServer
+from api.src.db.s3 import S3Manager
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,9 @@ load_dotenv()
 
 s3_bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
 
+s3_manager = S3Manager()
 db = DatabaseManager()
+
 server = WebSocketServer()
 
 async def post_agent (
@@ -135,10 +138,9 @@ async def post_agent (
     agent_id = str(uuid.uuid4()) if not existing_agent else existing_agent.agent_id
     version_id = str(uuid.uuid4())
     
-    s3_client = boto3.client('s3')
-
     try:
-        s3_client.upload_fileobj(agent_file.file, s3_bucket_name, f"{version_id}/agent.py")
+        s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+        logger.info(f"Successfully uploaded agent version {version_id} to S3")
     except Exception as e:
         logger.error(f"Failed to upload agent version to S3: {e}")
         raise HTTPException(

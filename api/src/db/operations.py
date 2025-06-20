@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary
 from logging import getLogger   
 
 load_dotenv()
@@ -327,3 +327,50 @@ class DatabaseManager:
                 finished_at=row[7]
             )
             return None
+
+    def get_top_agents(self, num_agents: int) -> List[AgentSummary]:
+        """
+        Get the top agents from the database based on their latest scored version's score.
+        Returns agents ordered by their latest version's score in descending order.
+        Returns None if no scored agents are found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    a.agent_id,
+                    a.miner_hotkey,
+                    a.latest_version,
+                    a.created_at,
+                    a.last_updated,
+                    latest_scored.version_id,
+                    latest_scored.version_num,
+                    latest_scored.created_at as version_created_at,
+                    latest_scored.score
+                FROM agents a
+                LEFT JOIN (
+                    SELECT DISTINCT ON (agent_id) 
+                        agent_id,
+                        version_id,
+                        version_num,
+                        created_at,
+                        score
+                    FROM agent_versions 
+                    WHERE score IS NOT NULL
+                    ORDER BY agent_id, created_at DESC
+                ) latest_scored ON a.agent_id = latest_scored.agent_id
+                WHERE latest_scored.score IS NOT NULL
+                ORDER BY latest_scored.score DESC 
+                LIMIT %s
+            """, (num_agents,))
+            rows = cursor.fetchall()
+            return [AgentSummary(
+                miner_hotkey=row[1],
+                latest_version=AgentVersion(
+                    version_id=row[5],
+                    agent_id=row[0],
+                    version_num=row[6],
+                    created_at=row[7],
+                    score=row[8]
+                ),
+                code=None
+            ) for row in rows]

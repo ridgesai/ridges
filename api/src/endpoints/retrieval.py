@@ -4,21 +4,25 @@ import logging
 import boto3
 import os
 from dotenv import load_dotenv
+from typing import List
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
 from api.src.socket.server import WebSocketServer
+from api.src.utils.models import AgentSummary
+from api.src.db.s3 import S3Manager
 
 logger = logging.getLogger(__name__)
 
 db = DatabaseManager()
 server = WebSocketServer()
+s3_manager = S3Manager()
 
 load_dotenv()
 s3_bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
 
 # Get version file
-async def get_agent_version_file(version_id: str):
+def get_agent_version_file(version_id: str):
     agent_version = db.get_agent_version(version_id)
     
     if not agent_version:
@@ -43,14 +47,29 @@ async def get_agent_version_file(version_id: str):
     }
     return StreamingResponse(agent_object['Body'], media_type='application/octet-stream', headers=headers)
 
-async def get_validator_versions():
-    return server.validator_versions
+def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[AgentSummary]:
+    agent_summaries = db.get_top_agents(num_agents)
+
+    if not agent_summaries:
+        logger.warning(f"Top agents endpoint was requested but no agents were found in the database")
+        raise HTTPException(
+            status_code=404,
+            detail="No agents found"
+        )
+
+    if include_code:
+        for agent_summary in agent_summaries:
+            agent_summary.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
+
+    for agent_summary in agent_summaries:
+        print(agent_summary)
+    return agent_summaries
 
 router = APIRouter()
 
 routes = [
     ("/agent-version-file", get_agent_version_file),
-    ("/validator-versions", get_validator_versions),
+    ("/top-agents", get_top_agents),
 ]
 
 for path, endpoint in routes:

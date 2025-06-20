@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 chutes = ChutesManager()
 
-async def embedding(request: EmbeddingRequest):
+def embedding(request: EmbeddingRequest):
     try:
         embedding = chutes.embed(request.input)
     except Exception as e:

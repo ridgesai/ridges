@@ -115,7 +115,7 @@ class ChutesManager:
                 "content": f"Here is the code input:\n\n```\n{code_input}\n```"
             })
 
-        # TODO: Fix this: don't use streaming, validate code
+        # TODO: Fix this: don't use streaming
         response_chunks = []
         async with aiohttp.ClientSession() as session:
             async with session.post(
