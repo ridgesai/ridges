@@ -25,6 +25,7 @@ import os
 import pathlib
 import re
 import time
+import socket
 from typing import Any, Dict, List
 from urllib.parse import unquote
 
@@ -35,6 +36,7 @@ import subprocess
 # ─────────────────────────────── Paths & constants ───────────────────────────
 REPO_ROOT = pathlib.Path(os.getenv("REPO_ROOT", "/sandbox/repo")).resolve()
 IO_DIR    = pathlib.Path(os.getenv("IO_DIR",    "/sandbox_io")).resolve()
+SOCKET_PATH = "/tmp/sandbox_proxy.sock"
 
 # smarter default: if we're inside Docker Desktop, host.docker.internal resolves
 def _default_proxy() -> str:
@@ -221,34 +223,88 @@ TOOLS = {"ls": ls, "find": find, "read": read, "diff": diff, "apply_patch": appl
 # Empty list now; when proxy supports OpenAI tools we can push schema here.
 FN_SPEC: List[Dict[str, Any]] = []
 
-# ────────────────────────────── proxy wrapper ────────────────────────────────
+# ────────────────────────────── Unix socket client ────────────────────────────
+
+def _socket_request(path: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Make HTTP POST request over Unix socket"""
+    json_body = json.dumps(data)
+    request = (
+        f"POST {path} HTTP/1.1\r\n"
+        f"Host: localhost\r\n"
+        f"Content-Type: application/json\r\n"
+        f"Content-Length: {len(json_body)}\r\n"
+        f"\r\n"
+        f"{json_body}"
+    )
+    
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect(SOCKET_PATH)
+        sock.send(request.encode())
+        
+        response = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+            if b"\r\n\r\n" in response:
+                # Continue reading until we have the full body
+                headers_end = response.find(b"\r\n\r\n")
+                headers_part = response[:headers_end].decode()
+                
+                # Check if we have Content-Length header
+                content_length = 0
+                for line in headers_part.split('\r\n'):
+                    if line.lower().startswith('content-length:'):
+                        content_length = int(line.split(':')[1].strip())
+                        break
+                
+                body_start = headers_end + 4
+                body_received = len(response) - body_start
+                
+                # Read remaining body if needed
+                while body_received < content_length:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                    body_received = len(response) - body_start
+                break
+        
+        # Parse response
+        response_str = response.decode()
+        if "\r\n\r\n" in response_str:
+            headers, body = response_str.split("\r\n\r\n", 1)
+            return json.loads(body) if body else {}
+        return {}
+    finally:
+        sock.close()
 
 def _call_proxy(messages: List[Dict[str, Any]], run_id: str,
                 retries: int = 3) -> Dict[str, Any]:
     # All communication with the LLM funnelled through this one function.         
-    # It hits whatever is running at AI_PROXY_BASE (env var) and returns the raw  
-    # JSON/text the model produced. Retry logic is just "try a few times then die".
-    payload = json.dumps({"messages": messages, "tools": FN_SPEC})
-    params = {
+    # It hits the Unix socket proxy and returns the raw JSON/text the model produced.
+    payload = {"messages": messages, "tools": FN_SPEC}
+    data = {
         "run_id": run_id,
-        "input_text": payload,
         "return_text": "true",
         "return_code": "true",
+        "input_text": json.dumps(payload),
     }
+    
     for attempt in range(retries):
         try:
-            r = requests.get(f"{PROXY}/agents/inference", params=params, timeout=REQUEST_TIMEOUT)
-            r.raise_for_status()
-            data = r.json()
-            diff = data.get("code_response", "")
+            response = _socket_request("/agents/inference", data)
+            diff = response.get("code_response", "")
             if diff:
                 return {"content": diff}
 
-            txt = data.get("text_response", "")
+            txt = response.get("text_response", "")
             try:
                 return json.loads(txt)
             except Exception:
-                return {"content": txt, "code": data.get("code_response", "")}
+                return {"content": txt, "code": response.get("code_response", "")}
         except Exception as exc:
             if attempt == retries - 1:
                 raise RuntimeError(f"proxy call failed: {exc}") from exc
