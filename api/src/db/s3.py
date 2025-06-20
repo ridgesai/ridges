@@ -17,3 +17,7 @@ class S3Manager:
     def get_file_text(self, key: str) -> str:
         response = self.s3.get_object(Bucket=s3_bucket_name, Key=key)
         return response['Body'].read().decode('utf-8')
+    
+    def get_file_object(self, key: str) -> BinaryIO:
+        response = self.s3.get_object(Bucket=s3_bucket_name, Key=key)
+        return response['Body']

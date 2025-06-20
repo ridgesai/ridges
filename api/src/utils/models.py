@@ -23,7 +23,6 @@ class AgentSummary(BaseModel):
     miner_hotkey: str
     latest_version: AgentVersion
     code: Optional[str]
-
 class EvaluationRun(BaseModel):
     run_id: str
     evaluation_id: str
