@@ -117,6 +117,7 @@ class Sandbox:
             self.start_time = time.time()
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
+                network="host",
                 volumes={
                     # Mount the appropriate files
                     os.path.abspath(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
@@ -173,7 +174,7 @@ class SandboxManager:
         try:
             self.docker.networks.get(SANDBOX_NETWORK_NAME)
         except docker.errors.NotFound:
-            self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=True)
+            self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=False)
             
         self.sandboxes = []
         # Start the monitor as an asyncio task
