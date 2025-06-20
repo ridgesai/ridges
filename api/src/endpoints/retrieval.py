@@ -68,12 +68,33 @@ def get_agent(agent_id: str):
         "latest_scored_agent": latest_scored_agent
     }
 
+def get_agent_version_code(version_id: str):
+    agent_version = db.get_agent_version(version_id)
+    if not agent_version:
+        logger.info(f"Agent version {version_id} was requested but not found in our database")
+        raise HTTPException(
+            status_code=404,
+            detail="Agent version not found"
+        )
+    
+    try:
+        text = s3_manager.get_file_text(f"{version_id}/agent.py")
+    except Exception as e:
+        logger.error(f"Error retrieving agent version code from S3 for version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving agent version code. Please try again later."
+        )
+    
+    return text
+
 router = APIRouter()
 
 routes = [
     ("/agent-version-file", get_agent_version_file),
     ("/top-agents", get_top_agents),
     ("/agent", get_agent),
+    ("/agent-version-code", get_agent_version_code),
 ]
 
 for path, endpoint in routes:
