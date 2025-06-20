@@ -124,3 +124,17 @@ def finish_evaluation(evaluation_id: str, errored: bool):
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
     db.store_evaluation(evaluation)
+
+def reset_running_evaluations(validator_hotkey: str):
+    """
+    Reset all running evaluations for a validator. Essentially, add them back to the waiting queue.
+    """
+
+    evaluation = db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
+    if evaluation:
+        evaluation.status = "waiting"
+        evaluation.started_at = None
+        db.store_evaluation(evaluation)
+        logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
+    else:
+        logger.info(f"Validator {validator_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")

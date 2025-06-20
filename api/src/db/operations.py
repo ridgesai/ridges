@@ -305,3 +305,25 @@ class DatabaseManager:
                     score=row[4]
                 )
             return None
+        
+    def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Evaluation:
+        """
+        Get the running evaluation for a validator. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
+            """, (validator_hotkey,))
+            row = cursor.fetchone()
+            if row:
+                return Evaluation(
+                evaluation_id=row[0],
+                version_id=row[1],
+                validator_hotkey=row[2],
+                status=row[3],
+                terminated_reason=row[4],
+                created_at=row[5],
+                started_at=row[6],
+                finished_at=row[7]
+            )
+            return None
