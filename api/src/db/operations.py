@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution
 from logging import getLogger   
 
 load_dotenv()
@@ -449,4 +449,109 @@ class DatabaseManager:
                 )
             return None
 
-    
+    def get_recent_executions(self, num_executions: int) -> List[Execution]:
+        """
+        Gets the X most recently created evaluations, and returns a list of objects with the AgentVersion, Agent, Evaluation, and Runs
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT 
+                    e.evaluation_id,
+                    e.version_id,
+                    e.validator_hotkey,
+                    e.status,
+                    e.terminated_reason,
+                    e.created_at,
+                    e.started_at,
+                    e.finished_at,
+                    av.version_id as agent_version_id,
+                    av.agent_id,
+                    av.version_num,
+                    av.created_at as agent_version_created_at,
+                    av.score,
+                    a.agent_id as agent_agent_id,
+                    a.miner_hotkey,
+                    a.latest_version,
+                    a.created_at as agent_created_at,
+                    a.last_updated
+                FROM evaluations e
+                JOIN agent_versions av ON e.version_id = av.version_id
+                JOIN agents a ON av.agent_id = a.agent_id
+                ORDER BY e.created_at DESC
+                LIMIT %s
+            """, (num_executions,))
+            
+            rows = cursor.fetchall()
+            executions = []
+            
+            for row in rows:
+                evaluation_id = row[0]
+                
+                # Get evaluation runs for this evaluation
+                cursor.execute("""
+                    SELECT 
+                        run_id,
+                        evaluation_id,
+                        swebench_instance_id,
+                        response,
+                        error,
+                        pass_to_fail_success,
+                        fail_to_pass_success,
+                        pass_to_pass_success,
+                        fail_to_fail_success,
+                        solved,
+                        started_at,
+                        finished_at
+                    FROM evaluation_runs 
+                    WHERE evaluation_id = %s
+                """, (evaluation_id,))
+                
+                run_rows = cursor.fetchall()
+                evaluation_runs = [
+                    EvaluationRun(
+                        run_id=run_row[0],
+                        evaluation_id=run_row[1],
+                        swebench_instance_id=run_row[2],
+                        response=run_row[3],
+                        error=run_row[4],
+                        pass_to_fail_success=run_row[5],
+                        fail_to_pass_success=run_row[6],
+                        pass_to_pass_success=run_row[7],
+                        fail_to_fail_success=run_row[8],
+                        solved=run_row[9],
+                        started_at=run_row[10],
+                        finished_at=run_row[11]
+                    ) for run_row in run_rows
+                ]
+                
+                # Create Execution object
+                execution = Execution(
+                    evaluation=Evaluation(
+                        evaluation_id=row[0],
+                        version_id=row[1],
+                        validator_hotkey=row[2],
+                        status=row[3],
+                        terminated_reason=row[4],
+                        created_at=row[5],
+                        started_at=row[6],
+                        finished_at=row[7]
+                    ),
+                    evaluation_runs=evaluation_runs,
+                    agent=Agent(
+                        agent_id=row[13],
+                        miner_hotkey=row[14],
+                        latest_version=row[15],
+                        created_at=row[16],
+                        last_updated=row[17]
+                    ),
+                    agent_version=AgentVersion(
+                        version_id=row[8],
+                        agent_id=row[9],
+                        version_num=row[10],
+                        created_at=row[11],
+                        score=row[12]
+                    )
+                )
+                executions.append(execution)
+            
+            return executions
