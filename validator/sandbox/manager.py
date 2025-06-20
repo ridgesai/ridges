@@ -69,7 +69,7 @@ def start_proxy():
     
     def handle_client(client):
         try:
-            data = client.recv(4096).decode()
+            data = client.recv(8192).decode()
             logger.debug(f"Received socket proxy request: {data}")
             
             # Parse HTTP request
@@ -113,9 +113,9 @@ def start_proxy():
                 if method.upper() == 'POST' and request_body:
                     req = urllib.request.Request(target_url, data=request_body.encode(), method='POST')
                     req.add_header('Content-Type', 'application/json')
-                    with open('conversation.ndjson', 'a') as f:
-                        f.write(request_body)
-                        f.write("\n")
+                    with open('conversation.jsonc', 'a') as f:
+                        f.write(json.loads(request_body).get("input_text"))
+                        f.write(",\n")
                 else:
                     req = urllib.request.Request(target_url, method=method)
 
@@ -129,9 +129,9 @@ def start_proxy():
                 resp = urllib.request.urlopen(req)
                 body = resp.read()
 
-                with open('conversation.ndjson', 'a') as f:
-                    f.write(body)
-                    f.write("\n")
+                with open('conversation.jsonc', 'a') as f:
+                    f.write(body.decode('utf-8', errors='ignore'))
+                    f.write(",\n")
                 
                 # Send proper HTTP response
                 response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
