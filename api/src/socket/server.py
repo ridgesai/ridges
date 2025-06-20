@@ -1,10 +1,10 @@
 import asyncio
 import websockets
 import json
-from typing import Set, Optional
+from typing import Optional
 
 from api.src.utils.logging import get_logger
-from api.src.socket.server_helpers import upsert_evaluation_run, get_next_evaluation, get_agent_version_for_validator, create_evaluation, start_evaluation, finish_evaluation
+from api.src.socket.server_helpers import upsert_evaluation_run, get_next_evaluation, get_agent_version_for_validator, create_evaluation, start_evaluation, finish_evaluation, reset_running_evaluations
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,7 @@ class WebSocketServer:
             self.host = host
             self.port = port
             self.uri = f"ws://{host}:{port}"
-            self.clients: dict = {}  # Changed from Set to dict: {websocket: {"val_hotkey": str, "commit_hash": str}}
+            self.clients: dict = {}
             self.server = None
             self._initialized = True
             asyncio.create_task(self.start())
@@ -50,6 +50,9 @@ class WebSocketServer:
                     self.clients[websocket]["val_hotkey"] = response_json["validator_hotkey"]
                     self.clients[websocket]["version_commit_hash"] = response_json["version_commit_hash"]
                     logger.info(f"Validator at {websocket.remote_address} has sent their validator version and version commit hash to the platform socket. Validator hotkey: {self.clients[websocket]['val_hotkey']}, Version commit hash: {self.clients[websocket]['version_commit_hash']}")
+                    next_evaluation = get_next_evaluation(self.clients[websocket]["val_hotkey"])
+                    if next_evaluation:
+                        await websocket.send(json.dumps({"event": "evaluation-available"}))
 
                 if response_json["event"] == "get-next-evaluation":
                     validator_hotkey = self.clients[websocket]["val_hotkey"]
@@ -73,7 +76,8 @@ class WebSocketServer:
                     upsert_evaluation_run(response_json["evaluation_run"]) 
 
         except websockets.ConnectionClosed:
-            logger.info(f"Validator at {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}")
+            logger.info(f"Validator at {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
+            reset_running_evaluations(self.clients[websocket]["val_hotkey"])
         finally:
             # Remove client when they disconnect
             del self.clients[websocket]
@@ -108,6 +112,6 @@ class WebSocketServer:
             return None
     
     async def start(self):
-        self.server = await websockets.serve(self.handle_connection, self.host, self.port, open_timeout=600, close_timeout=600, ping_timeout=600) # Timeout stuff is for a bug fix, look into it later
+        self.server = await websockets.serve(self.handle_connection, self.host, self.port, ping_timeout=None) # Timeout stuff is for a bug fix, look into it later
         logger.info(f"Platform socket started on {self.uri}")
         await asyncio.Future()  # run forever

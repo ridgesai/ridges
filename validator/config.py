@@ -47,9 +47,62 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-RIDGES_API_URL = os.getenv("RIDGES_API_URL", "http://10.0.0.9:8000")
-RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://10.0.0.9:8765")
+RIDGES_API_URL = os.getenv("RIDGES_API_URL", "http://localhost:8000")
+RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://localhost:8765")
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
+
+EASY_INSTANCES = [
+    # "django__django-11119",
+    # "django__django-12304",
+    # "django__django-11880",
+    "sympy__sympy-15017",
+    "scikit-learn__scikit-learn-14141",
+    "pytest-dev__pytest-6202",
+    # "django__django-14792",
+    # "pallets__flask-5014",
+    # "django__django-16333",
+    # "django__django-11099",
+    # "django__django-10097",
+    # "django__django-11433",
+    # "django__django-13933",
+    # "django__django-12209",
+    # "matplotlib__matplotlib-24570",
+    # "sympy__sympy-24539",
+    # "pytest-dev__pytest-7982",
+    # "django__django-11239",
+    # "sympy__sympy-15809",
+    # "scikit-learn__scikit-learn-13135",
+    # "sympy__sympy-14711",
+    # "sphinx-doc__sphinx-9320",
+    # "scikit-learn__scikit-learn-13496",
+    # "django__django-13297",
+    # "django__django-15499",
+    # "scikit-learn__scikit-learn-13439",
+    # "astropy__astropy-7166",
+    # "sphinx-doc__sphinx-9230",
+    # "pytest-dev__pytest-10081",
+    # "django__django-10999",
+    # "django__django-14534",
+    # "django__django-11964",
+    # "sympy__sympy-15345",
+    # "django__django-14580",
+    # "django__django-11179",
+    # "sympy__sympy-15875",
+    # "django__django-12193",
+    # "django__django-15277",
+    # "sympy__sympy-19954",
+    # "psf__requests-1724",
+    # "sphinx-doc__sphinx-9367",
+    # "django__django-14493",
+    # "django__django-14376",
+    # "matplotlib__matplotlib-25479",
+    # "django__django-14752",
+    # "django__django-13112",
+    # "django__django-13406",
+    # "sympy__sympy-23534",
+    # "sympy__sympy-18189",
+    # "matplotlib__matplotlib-24149",
+]
 
 # Log initial configuration
 import logging

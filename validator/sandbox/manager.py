@@ -3,6 +3,11 @@ import json
 import shutil
 import time
 import asyncio
+import socket
+import threading
+import urllib.request
+import urllib.error
+import urllib.parse
 from typing import List, Tuple
 import docker
 from pathlib import Path
@@ -46,7 +51,67 @@ SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 # The name of the network that the sandbox will be connected to
 SANDBOX_NETWORK_NAME = "sandbox-network"
 
+# Unix socket for secure host access
+SOCKET_PATH = "/tmp/sandbox_proxy.sock"
+ALLOWED_PATHS = {"/agents/embeddings", "/agents/inference"}
 
+def start_proxy():
+    """Start minimal Unix socket proxy"""
+    try:
+        os.unlink(SOCKET_PATH)
+    except OSError:
+        pass
+    
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.bind(SOCKET_PATH)
+    sock.listen(5)
+    os.chmod(SOCKET_PATH, 0o666)
+    
+    def handle_client(client):
+        try:
+            logger.info("Received socket proxy request")
+            data = client.recv(4096).decode()
+            logger.info(f"Received socket proxy request: {data}")
+            path = data.split()[1].split('?')[0] if len(data.split()) > 1 else ""
+
+            params = urllib.parse.parse_qs(data.split('?')[1])
+            logger.info(f"Params: {params}")
+            
+            if path in ALLOWED_PATHS:
+                # Forward the full request
+                query_start = data.find('?')
+                if query_start != -1:
+                    full_url = f"http://localhost:8000{data.split()[1]}"
+                else:
+                    full_url = f"http://localhost:8000{path}"
+                    
+                resp = urllib.request.urlopen(full_url)
+                body = resp.read()
+                
+                # Send proper HTTP response
+                response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
+                logger.info(f"Sending socket proxy response: {response}")
+                client.send(response)
+            else:
+                client.send(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+        except Exception as e:
+            error_msg = f"HTTP/1.1 500 Error\r\nContent-Length: 0\r\n\r\n"
+            logger.error(f"Error sending socket proxy response: {error_msg}")
+            logger.error(f"Error: {e}")
+            client.send(error_msg.encode())
+        finally:
+            client.close()
+    
+    def run():
+        while True:
+            try:
+                client, _ = sock.accept()
+                threading.Thread(target=handle_client, args=(client,), daemon=True).start()
+            except:
+                break
+    
+    threading.Thread(target=run, daemon=True).start()
+    return sock
 
 class Sandbox:
     swebench_instance_id: str
@@ -117,7 +182,7 @@ class Sandbox:
             self.start_time = time.time()
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
-                network="host",
+                network=SANDBOX_NETWORK_NAME,
                 volumes={
                     # Mount the appropriate files
                     os.path.abspath(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
@@ -126,6 +191,9 @@ class Sandbox:
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
+                    
+                    # Mount the Unix socket for secure host access
+                    SOCKET_PATH: {"bind": "/tmp/sandbox_proxy.sock", "mode": "rw"},
                 },
                 working_dir=SANDBOX_DIR,
                 detach=True
@@ -175,6 +243,9 @@ class SandboxManager:
             self.docker.networks.get(SANDBOX_NETWORK_NAME)
         except docker.errors.NotFound:
             self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=False)
+        
+        # Initialize and start the Unix socket proxy
+        self.unix_proxy = start_proxy()
             
         self.sandboxes = []
         # Start the monitor as an asyncio task
@@ -239,6 +310,10 @@ class SandboxManager:
         return patches_and_errors
     
     def cleanup(self):
+        # Stop the Unix socket proxy
+        if hasattr(self, 'unix_proxy'):
+            self.unix_proxy.close()
+        
         for sandbox in self.sandboxes:
             sandbox.cleanup()
             self.sandboxes.remove(sandbox)
