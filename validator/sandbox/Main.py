@@ -26,7 +26,7 @@ try:
 
     # Run the agent_main function
     print('[DOCKER] before agent_main()')
-    output = module.agent_main("test")
+    output = module.agent_main(input)
     print(f'[DOCKER] after agent_main()')
     
     print(f'[DOCKER] output: {output}')
