@@ -30,6 +30,7 @@ from urllib.parse import unquote
 
 import requests
 import socket  # for auto-detecting host.docker.internal
+import subprocess
 
 # ─────────────────────────────── Paths & constants ───────────────────────────
 REPO_ROOT = pathlib.Path(os.getenv("REPO_ROOT", "/sandbox/repo")).resolve()
@@ -91,7 +92,7 @@ def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT_CHARS) -> str:
 # phrases like "I'll use the 'ls' tool" even when the model fails to emit the
 # strict JSON wrapper.
 
-_TOOL_PATTERN = re.compile(r"\b(ls|find|read|diff)\b", re.I)
+_TOOL_PATTERN = re.compile(r"\b(ls|find|read|diff|apply_patch)\b", re.I)
 
 def _nl_to_tool(text: str) -> tuple[str, Dict[str, Any]] | None:
     txt = unquote(text).strip().lower()
@@ -181,7 +182,37 @@ def diff(old: str, new: str) -> str:
                                  fromfile="old", tofile="new", lineterm="")
     return _truncate("\n".join(delta) or "[no diff]")
 
-TOOLS = {"ls": ls, "find": find, "read": read, "diff": diff}
+def apply_patch(patch: str, strip: int = 1) -> str:
+    """Apply a unified diff to the repository root.
+
+    Parameters
+    ----------
+    patch : str
+        The unified diff text.
+    strip : int, default 1
+        Number passed to git apply -p. With diffs created via `git diff` the
+        correct value is usually 1 (paths like a/foo.py, b/foo.py).
+
+    Returns
+    -------
+    str
+        "ok" on success or an error message if the patch failed.
+    """
+    try:
+        subprocess.run([
+            "git",
+            "apply",
+            f"-p{strip}",
+            "--whitespace=nowarn",
+            "--reject"
+        ], input=patch.encode(), cwd=REPO_ROOT, check=True, capture_output=True)
+        return "ok"
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.decode(errors="ignore")
+        stdout = exc.stdout.decode(errors="ignore")
+        return f"[patch failed]\n{stderr or stdout}"
+
+TOOLS = {"ls": ls, "find": find, "read": read, "diff": diff, "apply_patch": apply_patch}
 
 # ↑ quick python call-backs the LLM can invoke by returning a JSON blob like
 #   {"tool": "ls", "args": {"path": "astropy/io"}}
@@ -251,7 +282,7 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
         The repository root is /sandbox/repo (use **relative paths** such as
         'astropy/io/registry/compat.py').
 
-        You may call four JSON tools — ls, find, read, diff — by replying
+        You may call five JSON tools — ls, find, read, diff, apply_patch — by replying
         **only** with a JSON blob like {"tool":"ls","args":{...}}.
 
         After you have gathered enough context you must reply with **one final
@@ -278,7 +309,7 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
         +    pass
 
         You are a fully-autonomous code-analysis agent. Repo is at /sandbox/repo.
-        No external internet. Available JSON tools: ls, find, read, diff.
+        No external internet. Available JSON tools: ls, find, read, diff, apply_patch.
         If unsure, assume and proceed.
         """
         .strip()
@@ -297,19 +328,55 @@ def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
         raw_txt = reply.get("content", "").strip()
         # ───── detect explicit JSON tool call ─────
         if raw_txt.startswith("diff"):
-            return raw_txt, ""
+            # Let the model's diff modify the real repo, then loop again.
+            result = apply_patch(raw_txt)
+            # Always let the model know the outcome
+            messages.append({"role": "tool", "content": result})
 
+            # If patch applied, show the *actual* diff so the model can inspect
+            if result == "ok":
+                try:
+                    real = subprocess.run(
+                        ["git", "diff", "--patch", "--minimal"],
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    diff_txt = real.stdout.strip() or "[no diff (working tree clean)]"
+                    messages.append({"role": "tool", "content": _truncate(diff_txt)})
+                except Exception as err:
+                    messages.append({"role": "tool", "content": f"[failed to get git diff: {err}]"})
+
+            tool_used = True
+            continue
+
+        # ───── recognise explicit finish signal ─────
+        if raw_txt.strip().upper() in {"DONE", "FINISHED", "COMPLETE"}:
+            final_diff = subprocess.run(
+                ["git", "diff", "--patch", "--minimal"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout
+            return final_diff, ""
+
+        # If model returns JSON with {"final": true}
         if raw_txt.startswith("{"):
             try:
                 obj = json.loads(raw_txt)
-                if isinstance(obj, dict) and "tool" in obj:
-                    name, args = obj.get("tool"), obj.get("args", {})
-                    result = TOOLS.get(name, lambda **_: f"[unknown tool: {name}]")(**args)
-                    messages.append({"role": "tool", "content": result})
-                    tool_used = True
-                    continue
+                if obj.get("final") is True:
+                    final_diff = subprocess.run(
+                        ["git", "diff", "--patch", "--minimal"],
+                        cwd=REPO_ROOT,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    ).stdout
+                    return final_diff, ""
             except Exception:
-                pass  # fall through
+                pass  # not fatal
 
         # ───── heuristic natural-language detection ─────
         hint = _nl_to_tool(raw_txt)
