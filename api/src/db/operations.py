@@ -1,9 +1,9 @@
 import os
-from typing import Optional
+from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, AgentVersionForValidator, Evaluation
-from logging import getLogger
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation
+from logging import getLogger   
 
 load_dotenv()
 
@@ -264,4 +264,66 @@ class DatabaseManager:
                     created_at=row[3],
                     score=row[4]
                 )
+            return None
+        
+    def get_evaluations_by_version_id(self, version_id: str) -> List[Evaluation]:
+        """
+        Get all evaluations for a version from the database. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM evaluations WHERE version_id = %s
+            """, (version_id,))
+            rows = cursor.fetchall()
+            return [Evaluation(
+                evaluation_id=row[0],
+                version_id=row[1],
+                validator_hotkey=row[2],
+                status=row[3],
+                terminated_reason=row[4],
+                created_at=row[5],
+                started_at=row[6],
+                finished_at=row[7]
+            ) for row in rows]
+        
+    
+    def get_latest_agent_version(self, agent_id: str) -> Optional[AgentVersion]:
+        """
+        Get the latest agent version from the database. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM agent_versions WHERE agent_id = %s
+            """, (agent_id,))
+            row = cursor.fetchone()
+            if row:
+                return AgentVersion(
+                    version_id=row[0],
+                    agent_id=row[1],
+                    version_num=row[2],
+                    created_at=row[3],
+                    score=row[4]
+                )
+            return None
+        
+    def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Evaluation:
+        """
+        Get the running evaluation for a validator. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT * FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
+            """, (validator_hotkey,))
+            row = cursor.fetchone()
+            if row:
+                return Evaluation(
+                evaluation_id=row[0],
+                version_id=row[1],
+                validator_hotkey=row[2],
+                status=row[3],
+                terminated_reason=row[4],
+                created_at=row[5],
+                started_at=row[6],
+                finished_at=row[7]
+            )
             return None
