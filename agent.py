@@ -29,11 +29,21 @@ from typing import Any, Dict, List
 from urllib.parse import unquote
 
 import requests
+import socket  # for auto-detecting host.docker.internal
 
 # ─────────────────────────────── Paths & constants ───────────────────────────
 REPO_ROOT = pathlib.Path(os.getenv("REPO_ROOT", "/sandbox/repo")).resolve()
 IO_DIR    = pathlib.Path(os.getenv("IO_DIR",    "/sandbox_io")).resolve()
-PROXY     = os.getenv("AI_PROXY_BASE", "http://localhost:8000")
+
+# smarter default: if we're inside Docker Desktop, host.docker.internal resolves
+def _default_proxy() -> str:
+    try:
+        socket.gethostbyname("host.docker.internal")  # resolves on Mac/Win Docker
+        return "http://host.docker.internal:8000"
+    except socket.gaierror:
+        return "http://localhost:8000"
+
+PROXY     = os.getenv("AI_PROXY_BASE", _default_proxy())
 
 MAX_TOOL_OUTPUT_CHARS = 900_000   # trim gigantic outputs, 900KB is insane, I just increased it from 100KB for testing purposes
 TOOL_LOOP_CAP         = 80        # hard step cap
@@ -308,17 +318,31 @@ def _main() -> None:
 # ---------------------------------------------------------------------------
 # Sandbox entry-point required by the validator
 # ---------------------------------------------------------------------------
-def agent_main(challenge: dict):
-    # This is the ONLY entry-point the sandbox runner cares about.                 
-    # It receives whatever JSON we dumped into /sandbox/input.json (see            
-    # validator/sandbox/manager.py).                                               
-    # All we do is unwrap a few fields and shove them into _solve().               
-    instance_id  = challenge.get("instance_id", "sandbox") # I think we can remove this
-    problem_text = challenge.get("problem_statement", "")
-    miner_hotkey = challenge.get("miner_hotkey", "sandbox")
+def agent_main(challenge):
+    """Entry-point called by /sandbox/Main.py.
+
+    Older versions of Main.py pass a *string* (just the problem statement).
+    Newer ones pass a dict with `problem_statement`, `instance_id`, etc.
+    We support both so nothing breaks.
+    """
+
+    # New-style call: full dict -------------------------------------------------
+    if isinstance(challenge, dict):
+        problem_text = challenge.get("problem_statement", str(challenge))
+        miner_hotkey = challenge.get("miner_hotkey", "sandbox")
+        instance_id  = challenge.get("instance_id", "sandbox")
+
+    # Legacy call: raw string ---------------------------------------------------
+    elif isinstance(challenge, str):
+        problem_text = challenge
+        miner_hotkey = "sandbox"
+        instance_id  = "sandbox"
+
+    else:
+        raise TypeError("agent_main expected dict or str, got " + type(challenge).__name__)
 
     prompt = {
-        "challenge_id": instance_id,
+        "challenge_id": instance_id,   # not strictly required but harmless
         "miner_hotkey": miner_hotkey,
         "input_text":   problem_text,
     }

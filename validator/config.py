@@ -47,8 +47,8 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-RIDGES_API_URL = os.getenv("RIDGES_API_URL", "http://10.0.0.99:8000")
-RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://10.0.0.99:8765")
+RIDGES_API_URL = os.getenv("RIDGES_API_URL", "http://10.0.0.9:8000")
+RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://10.0.0.9:8765")
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 # Log initial configuration
