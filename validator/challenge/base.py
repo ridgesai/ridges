@@ -22,6 +22,7 @@ from validator.utils.clean_patch import (
     remove_comments,
     remove_docstrings,
     remove_print_statements,
+    remove_logging_calls,
     remove_unused,
     drop_header_noise,
 )
@@ -439,7 +440,8 @@ class BaseChallenge(ABC):
         
         without_comments = remove_comments(patch)
         without_docstrings = remove_docstrings(without_comments)
-        without_prints = remove_print_statements(without_docstrings)
+        without_logs = remove_logging_calls(without_docstrings)
+        without_prints = remove_print_statements(without_logs)
         without_unused = remove_unused(without_prints)
         without_header_noise = drop_header_noise(without_unused)
 

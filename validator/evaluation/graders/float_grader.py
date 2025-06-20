@@ -23,6 +23,7 @@ from validator.utils.clean_patch import (
     extract_code_from_patch,
     drop_header_noise,
     remove_print_statements,
+    remove_logging_calls,
 )
 
 # Constants for scoring weights
@@ -215,7 +216,8 @@ class FloatGrader(GraderInterface):
         """Preprocess a patch by removing comments, docstrings, and unused code."""
         without_comments = remove_comments(patch)
         without_docstrings = remove_docstrings(without_comments)
-        without_unused = remove_unused(without_docstrings)
+        without_logs = remove_logging_calls(without_docstrings)
+        without_unused = remove_unused(without_logs)
         without_header_noise = drop_header_noise(without_unused)
         without_print_statements = remove_print_statements(without_header_noise)
         return without_print_statements.strip()
