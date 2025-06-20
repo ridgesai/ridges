@@ -1,27 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
-import boto3
-import os
-from dotenv import load_dotenv
 from typing import List
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.socket.server import WebSocketServer
 from api.src.utils.models import AgentSummary
 from api.src.db.s3 import S3Manager
 
 logger = logging.getLogger(__name__)
 
 db = DatabaseManager()
-server = WebSocketServer()
 s3_manager = S3Manager()
 
-load_dotenv()
-s3_bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
-
-# Get version file
 def get_agent_version_file(version_id: str):
     agent_version = db.get_agent_version(version_id)
     
@@ -33,8 +24,7 @@ def get_agent_version_file(version_id: str):
         )
     
     try:
-        s3 = boto3.client('s3')
-        agent_object = s3.get_object(Bucket=s3_bucket_name, Key=f"{version_id}/agent.py")
+        agent_object = s3_manager.get_file_object(f"{version_id}/agent.py")
     except Exception as e:
         logger.error(f"Error retrieving agent version file from S3 for version {version_id}: {e}")
         raise HTTPException(
@@ -45,7 +35,7 @@ def get_agent_version_file(version_id: str):
     headers = {
         "Content-Disposition": f'attachment; filename="agent.py"'
     }
-    return StreamingResponse(agent_object['Body'], media_type='application/octet-stream', headers=headers)
+    return StreamingResponse(agent_object, media_type='application/octet-stream', headers=headers)
 
 def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[AgentSummary]:
     agent_summaries = db.get_top_agents(num_agents)
@@ -61,15 +51,29 @@ def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[Agen
         for agent_summary in agent_summaries:
             agent_summary.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
 
-    for agent_summary in agent_summaries:
-        print(agent_summary)
     return agent_summaries
+
+def get_agent(agent_id: str):
+    latest_agent = db.get_latest_agent(agent_id, scored=False)
+    latest_scored_agent = db.get_latest_agent(agent_id, scored=True)
+    if not latest_agent and not latest_scored_agent:
+        logger.info(f"Agent {agent_id} was requested but not found in our database")
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found"
+        )
+    
+    return {
+        "latest_agent": latest_agent,
+        "latest_scored_agent": latest_scored_agent
+    }
 
 router = APIRouter()
 
 routes = [
     ("/agent-version-file", get_agent_version_file),
     ("/top-agents", get_top_agents),
+    ("/agent", get_agent),
 ]
 
 for path, endpoint in routes:

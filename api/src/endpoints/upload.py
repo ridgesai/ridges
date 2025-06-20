@@ -2,11 +2,8 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 import logging
 import uuid
 from datetime import datetime, timedelta
-import boto3
-import os
 import ast
 import sys
-from dotenv import load_dotenv
 
 from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
@@ -17,13 +14,8 @@ from api.src.db.s3 import S3Manager
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
-s3_bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
-
 s3_manager = S3Manager()
 db = DatabaseManager()
-
 server = WebSocketServer()
 
 async def post_agent (
