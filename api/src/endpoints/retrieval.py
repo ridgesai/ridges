@@ -88,6 +88,18 @@ def get_agent_version_code(version_id: str):
     
     return text
 
+def get_recent_executions(num_executions: int = 3):
+    executions = db.get_recent_executions(num_executions)
+
+    if not executions:
+        logger.warning(f"Recent executions endpoint was requested but no executions were found in the database")
+        raise HTTPException(
+            status_code=404,
+            detail="No executions found"
+        )
+
+    return executions
+
 router = APIRouter()
 
 routes = [
@@ -95,6 +107,7 @@ routes = [
     ("/top-agents", get_top_agents),
     ("/agent", get_agent),
     ("/agent-version-code", get_agent_version_code),
+    ("/recent-executions", get_recent_executions),
 ]
 
 for path, endpoint in routes:

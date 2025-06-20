@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 
 class Agent(BaseModel):
     agent_id: str
@@ -46,6 +46,12 @@ class Evaluation(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
+
+class Execution(BaseModel):
+    evaluation: Evaluation
+    evaluation_runs: List[EvaluationRun]
+    agent: Agent
+    agent_version: AgentVersion
 
 class EmbeddingRequest(BaseModel):
     input: str = Field(..., description="Text to embed")
