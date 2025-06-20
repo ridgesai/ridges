@@ -54,14 +54,11 @@ class WebSocketServer:
                 if response_json["event"] == "get-next-evaluation":
                     validator_hotkey = self.clients[websocket]["val_hotkey"]
                     socket_message = await self.get_next_evaluation(validator_hotkey)
-                    if socket_message:
-                        try:
-                            await websocket.send(json.dumps(socket_message))
-                            logger.info(f"Platform socket sent requested evaluation to validator at {websocket.remote_address} with hotkey {validator_hotkey}")
-                        except websockets.ConnectionClosed:
-                            logger.warning(f"Failed to send requested evaluation to validator at {websocket.remote_address} with hotkey {validator_hotkey}")
+                    await websocket.send(json.dumps(socket_message))
+                    if "evaluation_id" in socket_message:
+                        logger.info(f"Platform socket sent requested evaluation {socket_message['evaluation_id']} to validator at {websocket.remote_address} with hotkey {validator_hotkey}")
                     else:
-                        logger.info(f"No evaluations available for validator at {websocket.remote_address} with hotkey {validator_hotkey}")
+                        logger.info(f"Informed validator at {websocket.remote_address} with hotkey {validator_hotkey} that there are no more evaluations available for it.")
                 
                 if response_json["event"] == "start-evaluation":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} has started an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
