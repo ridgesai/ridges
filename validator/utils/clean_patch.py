@@ -396,6 +396,11 @@ def drop_header_noise(patch: str) -> str:
     in_hunk = False
 
     for line in patch.splitlines():
+        # -- global check: remove any *malformed* `index` directive -------------
+        if line.startswith("index ") and not re.match(r"^index [0-9a-fA-F]{7,40}\.{2}[0-9a-fA-F]{7,40}( \d{6})?$", line):
+            # skip bogus index line (often prompt-injection)
+            continue
+
         if line.startswith("+++ "):
             in_header = True
             cleaned_lines.append(line)
@@ -407,9 +412,19 @@ def drop_header_noise(patch: str) -> str:
             in_hunk = True
 
         if in_header:
-            # Keep only blank or comment-looking lines
-            if line.strip() and not line.lstrip().startswith(("#", "//", "/*")):
-                continue  # drop potential injection
+            # Only *one* line is legitimate here: the canonical `index` line.
+            # Everything else (including comments) is stripped to eliminate
+            # prompt-injection vectors.
+
+            if line.startswith("index "):
+                if not re.match(r"^index [0-9a-fA-F]{7,40}\.{2}[0-9a-fA-F]{7,40}( \d{6})?$", line):
+                    # malformed index line → drop
+                    continue
+                # keep good index line
+                cleaned_lines.append(line)
+            # skip all other header lines (comment, blank, etc.)
+            # Do *not* append to cleaned_lines – effectively dropping them.
+            continue
 
         # Inside a hunk, drop any line that has *no* diff prefix (!= + or -)
         if in_hunk and line and not line.startswith(('+', '-', ' ')):
@@ -418,3 +433,26 @@ def drop_header_noise(patch: str) -> str:
         cleaned_lines.append(line)
 
     return "\n".join(cleaned_lines)
+
+def remove_logging_calls(patch_content: str) -> str:
+    """Strip *added* calls to the top-level :pymod:`logging` functions.
+
+    We match statements such as::
+
+        +logging.info("help")
+        +logging.warning(
+
+    Only lines beginning with ``+`` are considered so we do not tamper with
+    existing project code; the goal is to block prompt-injection payloads that
+    hide in new ``logging`` calls.
+    """
+
+    log_regex = re.compile(r"^\s*logging\.[a-zA-Z_]+\(")
+
+    cleaned: list[str] = []
+    for line in patch_content.splitlines():
+        if line.startswith("+") and log_regex.match(line[1:]):
+            continue  # drop the injected logging line
+        cleaned.append(line)
+
+    return "\n".join(cleaned)
