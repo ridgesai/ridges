@@ -2450,6 +2450,7 @@ dependencies = [
     { name = "swebench" },
     { name = "tiktoken" },
     { name = "trueskill" },
+    { name = "uvicorn" },
     { name = "websockets" },
 ]
 
@@ -2474,6 +2475,7 @@ requires-dist = [
     { name = "swebench", specifier = ">=4.0.3" },
     { name = "tiktoken", specifier = ">=0.9.0" },
     { name = "trueskill", specifier = ">=0.4.5" },
+    { name = "uvicorn", specifier = ">=0.30.5" },
     { name = "websockets", specifier = ">=15.0.1" },
 ]
 
