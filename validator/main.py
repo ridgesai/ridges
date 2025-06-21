@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 import httpx
 from openai import OpenAI
 
+from validator.utils.is_cheating import is_cheating
+
 # Load environment variables
 validator_dir = Path(__file__).parent
 env_path = validator_dir / ".env"
@@ -141,7 +143,7 @@ async def get_available_nodes_with_api(
     # Filter available nodes
     available_nodes = [
         node for node, is_available in zip(nodes, availability_results)
-        if is_available
+        if is_available and not is_cheating(node.hotkey)
     ]
 
     total_available = len(available_nodes)
