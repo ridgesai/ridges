@@ -13,6 +13,7 @@ from shared.logging_utils import get_logger
 from validator.evaluation.graders.abstract_grader import GraderInterface
 from validator.challenge.codegen.response import CodegenResponse
 from validator.challenge.codegen.challenge import CodegenChallenge
+from validator.evaluation.graders.looks_like_cheating import looks_like_cheating
 from validator.evaluation.log_score import ScoreLog, log_scores
 from validator.utils.clean_patch import (
     has_unused_variables,
@@ -150,6 +151,9 @@ class FloatGrader(GraderInterface):
         OPENAI_CLIENT: Final[openai.Client] = openai.Client(api_key=os.getenv("OPENAI_API_KEY"))
         
         if not response.response_patch:
+            return EMPTY_PATCH_SCORE, 0.0
+
+        if looks_like_cheating(response.response_patch):
             return EMPTY_PATCH_SCORE, 0.0
 
         # Short-circuit if the patch still contains any blatantly unused code.
