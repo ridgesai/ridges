@@ -53,9 +53,10 @@ def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[Agen
 
     return agent_summaries
 
-def get_agent(agent_id: str) -> AgentQueryResponse:
+def get_agent(agent_id: str, include_code: bool = False) -> AgentQueryResponse:
     latest_agent = db.get_latest_agent(agent_id, scored=False)
     latest_scored_agent = db.get_latest_agent(agent_id, scored=True)
+
     if not latest_agent and not latest_scored_agent:
         logger.info(f"Agent {agent_id} was requested but not found in our database")
         raise HTTPException(
@@ -63,6 +64,14 @@ def get_agent(agent_id: str) -> AgentQueryResponse:
             detail="Agent not found"
         )
     
+    if include_code:
+        latest_agent.code = s3_manager.get_file_text(f"{latest_agent.latest_version.version_id}/agent.py")
+        if latest_scored_agent:
+            latest_scored_agent.code = s3_manager.get_file_text(f"{latest_scored_agent.latest_version.version_id}/agent.py")
+
+    if latest_scored_agent and latest_scored_agent.latest_version.version_id == latest_agent.latest_version.version_id:
+        latest_scored_agent = None
+
     return AgentQueryResponse(
         latest_agent=latest_agent,
         latest_scored_agent=latest_scored_agent

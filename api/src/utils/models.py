@@ -27,7 +27,7 @@ class AgentSummary(BaseModel):
 
 class AgentQueryResponse(BaseModel):
     latest_agent: AgentSummary
-    latest_scored_agent: AgentSummary
+    latest_scored_agent: Optional[AgentSummary]
 
 class EvaluationRun(BaseModel):
     run_id: str
