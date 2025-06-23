@@ -43,6 +43,7 @@ async def post_agent (
             status_code=400,
             detail="miner_hotkey is required"
         )
+
     
     existing_agent = db.get_agent_by_hotkey(miner_hotkey)
     if existing_agent and existing_agent.last_updated > datetime.now() - timedelta(seconds=AGENT_RATE_LIMIT_SECONDS):
@@ -50,6 +51,8 @@ async def post_agent (
             status_code=400,
             detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
         )
+
+    agent_name = name if not existing_agent else existing_agent.name
 
     # Check filename
     if agent_file.filename != "agent.py":
@@ -164,7 +167,6 @@ async def post_agent (
         )
     
     # Only set name for new agents, not for updates
-    agent_name = name if not existing_agent else existing_agent.name
     
     agent_object = Agent(
         agent_id=agent_id,
