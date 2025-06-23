@@ -216,33 +216,71 @@ def remove_unused(patch: str) -> str:
     return create_patch(patch, cleaned_code, pre_patch_lines, post_header_lines)
 
 
+def _strip_inline_comment(code: str) -> str:
+    """Return *code* with any trailing ``# …`` removed **unless** the hash sign
+    occurs inside a string literal.
+
+    This is a simple heuristic (handles single- and double-quoted strings with
+    backslash escapes).  It is good enough to preserve colour strings like
+    "#3341A" while still stripping genuine inline comments.
+    """
+
+    in_single = False  # inside '…'
+    in_double = False  # inside "…"
+    escaped = False
+
+    for idx, ch in enumerate(code):
+        if escaped:
+            escaped = False
+            continue
+
+        if ch == "\\":
+            escaped = True
+            continue
+
+        if ch == "'" and not in_double:
+            in_single = not in_single
+            continue
+
+        if ch == '"' and not in_single:
+            in_double = not in_double
+            continue
+
+        # comment starts when we hit unquoted '#'
+        if ch == "#" and not in_single and not in_double:
+            return code[:idx].rstrip()
+
+    return code.rstrip()
+
+
 def remove_comments(patch_content: str) -> str:
+    """Remove comments from *added* lines of a patch while preserving ``+``.
+
+    • Entire added lines that *start* with ``#`` (after the ``+`` and optional
+      whitespace) are dropped.
+    • Inline ``#`` comments are removed **only** if the hash is not inside a
+      quoted string literal.
     """
-    Process a Git patch string to remove comments from added lines, keeping the '+' intact.
 
-    :param patch_content: The content of a Git patch as a string.
-    :return: The cleaned patch content as a string.
-    """
-    # Regex patterns
-    comment_line_pattern = re.compile(r"^\+\s*#.*")  # Matches whole-line comments
-    inline_comment_pattern = re.compile(r"#.*")  # Matches inline comments
+    full_line_comment = re.compile(r"^\+\s*#")
 
-    cleaned_lines = []
-
-    # Process each line
+    cleaned: list[str] = []
     for line in patch_content.splitlines():
-        if line.startswith("+"):  # Only process added lines
-            if comment_line_pattern.match(line):
-                continue  # Skip whole-line comments
+        if not line.startswith("+"):
+            cleaned.append(line)
+            continue
 
-            # Remove inline comments but keep the '+'
-            cleaned_line = inline_comment_pattern.sub("", line).rstrip()
+        # Strip the leading '+' and keep the rest for analysis
+        body = line[1:]
 
-            cleaned_lines.append(cleaned_line)
-        else:
-            cleaned_lines.append(line)
+        if full_line_comment.match(line):
+            # Skip whole-line comment entirely
+            continue
 
-    return "\n".join(cleaned_lines)
+        processed_body = _strip_inline_comment(body)
+        cleaned.append("+" + processed_body)
+
+    return "\n".join(cleaned)
 
 
 def remove_docstrings(patch_content: str) -> str:
@@ -410,6 +448,8 @@ def drop_header_noise(patch: str) -> str:
             # entering a hunk; reset header flag, enable hunk flag
             in_header = False
             in_hunk = True
+            cleaned_lines.append(line)  # keep the hunk header itself
+            continue
 
         if in_header:
             # Only *one* line is legitimate here: the canonical `index` line.
