@@ -8,6 +8,10 @@ from validator.socket.websocket_app import WebsocketApp
 logger = get_logger(__name__)
 
 async def main():
+    """
+    This starts up the validator websocket, which connects to the Ridges platform 
+    It receives and sends events like new agents to evaluate, eval status, scores, etc
+    """
     init_db()
     await WebsocketApp().start()
 

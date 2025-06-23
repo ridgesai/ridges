@@ -5,7 +5,7 @@ from typing import List
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary
+from api.src.utils.models import AgentSummary, AgentQueryResponse
 from api.src.db.s3 import S3Manager
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[Agen
 
     return agent_summaries
 
-def get_agent(agent_id: str):
+def get_agent(agent_id: str) -> AgentQueryResponse:
     latest_agent = db.get_latest_agent(agent_id, scored=False)
     latest_scored_agent = db.get_latest_agent(agent_id, scored=True)
     if not latest_agent and not latest_scored_agent:
@@ -63,10 +63,10 @@ def get_agent(agent_id: str):
             detail="Agent not found"
         )
     
-    return {
-        "latest_agent": latest_agent,
-        "latest_scored_agent": latest_scored_agent
-    }
+    return AgentQueryResponse(
+        latest_agent=latest_agent,
+        latest_scored_agent=latest_scored_agent
+    )
 
 def get_agent_version_code(version_id: str):
     agent_version = db.get_agent_version(version_id)
