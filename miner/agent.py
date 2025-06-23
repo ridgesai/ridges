@@ -246,9 +246,24 @@ def _apply_patch(patch: str) -> str:
         with NamedTemporaryFile("w", delete=False) as tmp:
             tmp.write(patch)
             tmp_path = tmp.name
-        cmd = ["patch", "-p1", "--forward", "--reject-file=-", "-i", tmp_path]
-        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=60)
+
+        def _run_patch(p_level: str):
+            return subprocess.run(
+                ["patch", p_level, "--forward", "--reject-file=-", "-i", tmp_path],
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+
+        proc = _run_patch("-p1")
         out = proc.stdout + proc.stderr
+
+        if proc.returncode not in (0, 1):
+            # Retry with -p0 – paths may already be relative.
+            proc2 = _run_patch("-p0")
+            out += "\n--- retry with -p0 ---\n" + proc2.stdout + proc2.stderr
+            proc = proc2
+
         if proc.returncode == 0:
             return "Patch applied successfully.\n" + out
         elif proc.returncode == 1:
@@ -291,9 +306,19 @@ DEFAULT_SYSTEM_PROMPT = _RAW_SYSTEM_PROMPT.format(command_docs=_COMMAND_DOCS)
 # ---------------------------------------------------------------------------
 
 ONESHOT_SYSTEM_PROMPT = (
-    "You are an autonomous programmer. The user will give you a problem "
-    "statement and a compact repository summary. Return ONE unified diff "
-    "patch that solves the task. Do NOT include explanations, only the diff."
+    "You are an autonomous programmer. The user will provide a bug report or "
+    "feature request (the \"problem\") plus a compact summary of the most "
+    "relevant repository files.  Your job is to return ONE *valid* unified "
+    "diff patch that fixes the problem.\n\n"
+    "STRICT FORMAT RULES\n"
+    "1. Return *only* the diff – no prose, no Markdown back-ticks.\n"
+    "2. The diff must start with 'diff --git a/<path> b/<path>' followed by "
+    "   the standard \"--- a/<path>\" and \"+++ b/<path>\" headers.\n"
+    "3. Use -u style context hunks that begin with lines like @@ -N,M +N,M @@.\n"
+    "4. Every changed file needs its own header block as in rule 2.\n"
+    "5. End the patch with a trailing newline.\n\n"
+    "Be exact: if the diff is syntactically malformed or wrapped in extra "
+    "text the automated patch tool will fail."
 )
 
 # Small helper – language tag for triple-backticks (very rough heuristic)
@@ -400,21 +425,13 @@ def run_oneshot(
     repo_summary = "\n\n".join(summary_parts)
 
     # --------------------------------------------------------------------
-    # Build messages, then *shrink* if the final encoded request would breach
-    # the proxy's 8 KiB single-read limit.  We progressively drop the *least*
-    # similar files from the summary until the request fits.
+    # Build initial conversation messages.
     # --------------------------------------------------------------------
 
     messages = [
         {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": problem_text,
-        },
-        {
-            "role": "user",
-            "content": "Repository summary (top files):\n\n" + repo_summary,
-        },
+        {"role": "user", "content": problem_text},
+        {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
     ]
 
     def _full_http_request(msgs: List[Dict[str, Any]]) -> bytes:
@@ -448,34 +465,14 @@ def run_oneshot(
 
     SOFT_CAP_BYTES = 512 * 1024  # 512 KiB
 
-    while True:
-        request_bytes = _full_http_request(messages)
-        if len(request_bytes) <= SOFT_CAP_BYTES:
-            break  # good – fits under soft cap
+    ATTEMPTS = 3
 
-        # 1) Remove repo summary files until none left.
-        if summary_parts:
-            summary_parts.pop()  # drop lowest-ranking file
-            repo_summary = "\n\n".join(summary_parts)
-            messages[-1]["content"] = "Repository summary (top files):\n\n" + repo_summary
-            continue
-
-        # 2) Truncate problem statement (messages[1]) in 20 kB steps.
-        user_msg = messages[1]
-        if len(user_msg["content"]) > 20_000:
-            user_msg["content"] = user_msg["content"][:20_000] + "\n[...truncated...]"
-            continue
-
-        # 3) Still exceeds soft cap – just send as-is; proxy can handle it but
-        # we avoid an infinite loop.
-        break
-
-    http_request = request_bytes
+    # Helper to send raw HTTP request and return body bytes – needs to be
+    # defined before first use inside the attempts loop.
 
     import socket as _s
 
     def _send(req_bytes: bytes) -> bytes:
-        """Send raw HTTP request over the Unix socket and return *body* bytes."""
         with _s.socket(_s.AF_UNIX, _s.SOCK_STREAM) as sock:
             sock.connect(socket_path)
             sock.sendall(req_bytes)
@@ -488,42 +485,57 @@ def run_oneshot(
         hdr_end = resp.find(b"\r\n\r\n")
         return resp[hdr_end + 4 :]
 
-    body = _send(http_request)
+    for attempt in range(ATTEMPTS):
+        # Ensure request fits (reuse shrinking logic)
+        while True:
+            request_bytes = _full_http_request(messages)
+            if len(request_bytes) <= SOFT_CAP_BYTES:
+                break
+            if summary_parts:
+                summary_parts.pop()
+                repo_summary = "\n\n".join(summary_parts)
+                messages[-1]["content"] = "Repository summary (top files):\n\n" + repo_summary
+            else:
+                break
 
-    # If the proxy responded with 500/empty body, retry once with a minimal prompt.
-    if not body:
-        minimal_messages = [
-            {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
-            {"role": "user", "content": problem_text[:20_000]},
-        ]
-        http_request = _full_http_request(minimal_messages)
-        body = _send(http_request)
+        body = _send(request_bytes)
+        if not body:
+            # Retry once with minimal prompt
+            body = _send(_full_http_request([
+                {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
+                {"role": "user", "content": problem_text[:20_000]},
+            ]))
+            if not body:
+                raise RuntimeError("Proxy returned empty body twice.")
 
-    if not body:
-        raise RuntimeError("Proxy returned empty response body after retry.")
+        proxy_resp = json.loads(body)
+        text_resp = (proxy_resp.get("text_response") or "").lstrip()
+        code_resp = (proxy_resp.get("code_response") or "").lstrip()
 
-    proxy_resp = json.loads(body)
-    text_resp = (proxy_resp.get("text_response") or "").lstrip()
-    code_resp = (proxy_resp.get("code_response") or "").lstrip()
+        patch_text = None
+        for cand in (text_resp, code_resp):
+            if cand and (cand.startswith("diff") or cand.startswith("--- ")):
+                patch_text = cand
+                break
 
-    patch_text = None
-    for cand in (text_resp, code_resp):
-        if cand and (cand.startswith("diff") or cand.startswith("--- ")):
-            patch_text = cand
-            break
+        if patch_text is None:
+            raise RuntimeError("LLM did not return a unified diff.")
 
-    if patch_text is None:
-        raise RuntimeError("LLM did not return a unified diff; responses were:\n" + text_resp[:400])
+        ok, dry_out = _dry_run_patch(patch_text)
+        if ok:
+            result = _apply_patch(patch_text)
+            with open("trajectory.jsonl", "w", encoding="utf-8") as tf:
+                tf.write(json.dumps({"assistant_patch": patch_text}) + "\n")
+                tf.write(json.dumps({"apply_result": result}) + "\n")
+            print(result)
+            return patch_text
 
-    # Apply patch using existing tool helper
-    result = _apply_patch(patch_text)
-    print(result)
-    # Write trajectory for auditing
-    with open("trajectory.jsonl", "w", encoding="utf-8") as tf:
-        tf.write(json.dumps({"assistant_patch": patch_text}) + "\n")
-        tf.write(json.dumps({"apply_result": result}) + "\n")
+        # Patch failed – append feedback and ask for correction.
+        messages.append({"role": "assistant", "content": patch_text})
+        messages.append({"role": "user", "content": "Patch failed to apply. Patch output was:\n" + dry_out + "\nPlease reply with a corrected unified diff only."})
 
-    return patch_text
+    # All attempts exhausted
+    raise RuntimeError("Patch could not be applied after iterative corrections.")
 
 # ---------------------------------------------------------------------------
 # Proxy communication --------------------------------------------------------
@@ -820,3 +832,32 @@ FUNCTION_SPECS: List[Dict[str, Any]] = [
     },
     {"name": "FINISH", "description": "Signal that all tasks are complete.", "parameters": {"type": "object", "properties": {}}},
 ]
+
+# Dry-run version – returns (applies_cleanly: bool, output: str)
+def _dry_run_patch(patch: str) -> tuple[bool, str]:
+    try:
+        with NamedTemporaryFile("w", delete=False) as tmp:
+            tmp.write(patch)
+            tmp_path = tmp.name
+
+        def _run(p_level: str):
+            return subprocess.run(
+                ["patch", "--dry-run", p_level, "--forward", "--reject-file=-", "-i", tmp_path],
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+
+        proc = _run("-p1")
+        if proc.returncode not in (0, 1):
+            proc = _run("-p0")
+
+        ok = proc.returncode in (0, 1)
+        return ok, proc.stdout + proc.stderr
+    except Exception as e:
+        return False, "dry-run error: " + str(e)
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
