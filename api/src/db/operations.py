@@ -3,12 +3,11 @@ from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution
-from logging import getLogger   
+from logging import getLogger
 
 load_dotenv()
 
 logger = getLogger(__name__)
-
 class DatabaseManager:
     def __init__(self):
         self.conn = psycopg2.connect(
@@ -24,6 +23,42 @@ class DatabaseManager:
             # Keepalive stuff is for a bug fix, look into it later
         )
         self.conn.autocommit = True
+        self.init_tables()
+
+    def init_tables(self):
+        """
+        Check if required tables exist and create them if they don't.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs')
+                """)
+                existing_tables = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"Existing database tables: {existing_tables}")
+
+            if len(existing_tables) == 4:
+                logger.info("All required tables already exist")
+                return
+            
+            logger.info("Not all tables exist, initializing them")
+
+            schema_path = os.path.join(os.path.dirname(__file__), 'postgres_schema.sql')
+            with open(schema_path, 'r') as f:
+                schema_sql = f.read()
+            
+            with self.conn.cursor() as cursor:
+                cursor.execute(schema_sql)
+            
+            logger.info("Database tables initialized successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to initialize database tables: {str(e)}")
+            raise
 
     def close(self):
         """
