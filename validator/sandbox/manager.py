@@ -62,14 +62,14 @@ def start_proxy():
         os.unlink(SOCKET_PATH)
     except OSError:
         pass
-    
+
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(SOCKET_PATH)
     sock.listen(128)
     os.chmod(SOCKET_PATH, 0o666)
-    
+
     logger.info(f"Unix socket proxy started on {SOCKET_PATH}")
-    
+
     def handle_client(client):
         try:
             # Read JSON message from client
@@ -85,40 +85,34 @@ def start_proxy():
                     break  # Complete JSON message received
                 except json.JSONDecodeError:
                     continue  # Keep reading
-            
+
             if not data:
                 client.send(json.dumps({"error": "No data received"}).encode('utf-8'))
                 return
-            
+
             try:
                 message = json.loads(data.decode('utf-8'))
                 endpoint = message.get("endpoint")
                 request_data = message.get("data", {})
-                
+
                 logger.debug(f"Received JSON request: endpoint={endpoint}, data_size={len(str(request_data))}")
-                
+
                 if endpoint not in ALLOWED_PATHS:
                     client.send(json.dumps({"error": f"Endpoint {endpoint} not allowed"}).encode('utf-8'))
                     return
-                
+
                 # Build target URL
                 target_url = RIDGES_API_URL + endpoint
                 logger.debug(f"Forwarding request to: {target_url}")
-                
+
                 # Create HTTP request to the API
-                if endpoint == "/agents/inference":
-                    # For inference, send the data as JSON
-                    req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
-                    req.add_header('Content-Type', 'application/json')
-                else:
-                    # For embeddings, send as form data
-                    req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
-                    req.add_header('Content-Type', 'application/json')
-                
+                req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
+                req.add_header('Content-Type', 'application/json')
+
                 # Send request to API
                 resp = urllib.request.urlopen(req)
                 response_body = resp.read()
-                
+
                 # Parse the API response
                 try:
                     api_response = json.loads(response_body.decode('utf-8'))
@@ -127,9 +121,9 @@ def start_proxy():
                 except json.JSONDecodeError:
                     # If API response is not JSON, wrap it
                     client.send(json.dumps({"response": response_body.decode('utf-8', errors='ignore')}).encode('utf-8'))
-                
+
                 logger.debug(f"Sent JSON response: {len(response_body)} bytes")
-                
+
             except json.JSONDecodeError as e:
                 client.send(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
             except urllib.error.URLError as e:
@@ -137,14 +131,14 @@ def start_proxy():
             except Exception as e:
                 client.send(json.dumps({"error": f"Proxy error: {str(e)}"}).encode('utf-8'))
                 logger.error(f"Proxy error: {e}")
-                
+
         except Exception as e:
             error_response = json.dumps({"error": f"Unexpected error: {str(e)}"})
             client.send(error_response.encode('utf-8'))
             logger.error(f"Unexpected error in proxy: {e}")
         finally:
             client.close()
-    
+
     def run():
         logger.info("Proxy server loop started")
         while True:
@@ -155,14 +149,14 @@ def start_proxy():
             except Exception as e:
                 logger.error(f"Error accepting connection: {e}")
                 break
-    
+
     proxy_thread = threading.Thread(target=run, daemon=True)
     proxy_thread.start()
     logger.info("Proxy thread started")
-    
+
     # Give the proxy a moment to start up
     time.sleep(0.1)
-    
+
     # Verify the socket is working
     try:
         test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -172,7 +166,7 @@ def start_proxy():
     except Exception as e:
         logger.error(f"Proxy socket verification failed: {e}")
         raise
-    
+
     return sock
 
 def test_proxy_connection():
@@ -437,7 +431,10 @@ class SandboxManager:
     def cleanup(self):
         # Stop the Unix socket proxy
         if hasattr(self, 'unix_proxy'):
-            self.unix_proxy.close()
+            try:
+                self.unix_proxy.close()
+            except:
+                pass
         
         for sandbox in self.sandboxes:
             sandbox.cleanup()
