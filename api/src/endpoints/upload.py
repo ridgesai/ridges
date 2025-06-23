@@ -15,7 +15,6 @@ from api.src.db.operations import DatabaseManager
 from api.src.socket.server import WebSocketServer
 from api.src.db.s3 import S3Manager
 from api.src.utils.nodes import get_subnet_hotkeys
-from validator.config import NETUID
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +93,7 @@ async def post_agent (
 
     # Check if hotkey is registered using fiber
     if miner_hotkey not in await get_subnet_hotkeys():
-        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet {NETUID}")
+        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
     # Check if file is a valid python file
     try:
