@@ -45,7 +45,7 @@ SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don
 SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
-SANDBOX_MAX_CPU_USAGE = 50 # %
+SANDBOX_MAX_CPU_USAGE = 70 # %
 SANDBOX_MAX_RAM_USAGE = 512 * 4# MiB 
 SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 
