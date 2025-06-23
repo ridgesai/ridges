@@ -45,7 +45,7 @@ SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
 SANDBOX_MAX_CPU_USAGE = 50 # %
-SANDBOX_MAX_RAM_USAGE = 512 # MiB 
+SANDBOX_MAX_RAM_USAGE = 512 * 4# MiB 
 SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 
 # The name of the network that the sandbox will be connected to
@@ -64,7 +64,7 @@ def start_proxy():
     
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.bind(SOCKET_PATH)
-    sock.listen(5)
+    sock.listen(128)
     os.chmod(SOCKET_PATH, 0o666)
     
     def handle_client(client):
