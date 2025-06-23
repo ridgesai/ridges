@@ -379,28 +379,12 @@ class SandboxManager:
                 dockerfile_path = str(CURRENT_DIR / "Dockerfile")
                 logger.info(f"Building image from {dockerfile_path}")
                 
-                # Build the image with streaming output
-                build_logs = self.docker.images.build(
+                self.docker.images.build(
                     path=str(CURRENT_DIR),
                     dockerfile="Dockerfile",
                     tag=SANDBOX_DOCKER_IMAGE,
                     rm=True  # Remove intermediate containers
                 )
-                
-                # Stream the build output
-                for log in build_logs:
-                    if isinstance(log, dict):
-                        if 'stream' in log:
-                            stream = log['stream'].strip()
-                            if stream:
-                                print(stream, end='', flush=True)
-                        elif 'error' in log:
-                            error = log['error'].strip()
-                            if error:
-                                print(f"ERROR: {error}", flush=True)
-                    else:
-                        # Handle string logs
-                        print(log, end='', flush=True)
                 
                 logger.info(f"Successfully built Docker image '{SANDBOX_DOCKER_IMAGE}'")
             except Exception as e:
