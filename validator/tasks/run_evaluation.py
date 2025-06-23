@@ -171,7 +171,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         logger.error(f"Error evaluating agent version: {e}")
         errored = True
     finally:
-        sbox_manager.cleanup()
+        if sbox_manager:
+            sbox_manager.cleanup()
         await websocket_app.send({
             "event": "finish-evaluation",
             "evaluation_id": evaluation_id,
