@@ -1,6 +1,7 @@
 #!.venv/bin/python3
+
 """
-Ridges CLI - A command-line interface for managing Ridges miners and validators.
+Ridges CLI - Command-line interface for managing Ridges miners
 """
 
 import hashlib
@@ -10,15 +11,56 @@ import httpx
 import subprocess
 import os
 import sys
+import time
 from typing import Optional
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+from rich.prompt import Prompt, Confirm
+from rich.align import Align
+from rich.live import Live
+from rich.layout import Layout
+from rich import box
+
+# Initialize Rich console
+console = Console()
 
 # Configuration
-API_BASE_URL = "http://localhost:8000"  # Update this with the actual API URL
+API_BASE_URL = "http://54.226.52.51:8000"  # Update this with the actual API URL
 CONFIG_FILE = "miner/.env"
 
 # Load environment variables from CONFIG_FILE
 load_dotenv(CONFIG_FILE)
+
+def print_success(message: str):
+    """Print a success message."""
+    console.print(f"✨ {message}", style="bold green")
+
+def print_error(message: str):
+    """Print an error message."""
+    console.print(f"💥 {message}", style="bold red")
+
+def print_info(message: str):
+    """Print an info message."""
+    console.print(f"ℹ️  {message}", style="bold blue")
+
+def print_warning(message: str):
+    """Print a warning message."""
+    console.print(f"⚠️  {message}", style="bold yellow")
+
+def animate_loading(message: str, duration: float = 2.0):
+    """Show a loading animation."""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        task = progress.add_task(message, total=None)
+        time.sleep(duration)
 
 class RidgesConfig:
     """Configuration management for Ridges CLI."""
@@ -64,13 +106,13 @@ class RidgesConfig:
         
         if not value:
             if default:
-                value = click.prompt(prompt_text, default=default, type=str)
+                value = Prompt.ask(f"🎯 {prompt_text}", default=default)
             else:
-                value = click.prompt(prompt_text, type=str)
+                value = Prompt.ask(f"🎯 {prompt_text}")
             
             # Save to config file
             self.save_config(key, value)
-            click.echo(f"💾 Saved {key} to {self.config_file}")
+            print_success(f"Configuration saved: {key} → {self.config_file}")
         
         return value
 
@@ -96,7 +138,7 @@ class RidgesCLI:
         )
     
     def get_keypair(self):
-        """Get the keypair for signing operations, prompting for coldkey and hotkey names if needed."""
+        """Get the keypair for signing operations."""
         coldkey_name = self.get_coldkey_name()
         hotkey_name = self.get_hotkey_name()
         return load_hotkey_keypair(coldkey_name, hotkey_name)
@@ -109,40 +151,75 @@ class RidgesCLI:
             default="miner/agent.py"
         )
     
-    def check_pm2_installed(self):
-        """Check if PM2 is installed."""
-        try:
-            subprocess.run(["pm2", "--version"], check=True, capture_output=True)
-            return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False
+    def get_agent_name(self) -> str:
+        """Get agent name from environment, config, or prompt user."""
+        return self.config.get_or_prompt(
+            "RIDGES_AGENT_NAME",
+            "Enter a name for your miner agent"
+        )
+
+def create_status_table(agent_data: dict, evaluations: list = None) -> Table:
+    """Create a status table."""
+    table = Table(
+        title="🎯 Agent Status Dashboard",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta"
+    )
     
-    def run_pm2_command(self, command: str, capture_output: bool = True):
-        """Run a PM2 command."""
-        if not self.check_pm2_installed():
-            click.echo("❌ PM2 is not installed. Please install it first: npm install -g pm2", err=True)
-            sys.exit(1)
-        
-        try:
-            result = subprocess.run(
-                ["pm2"] + command.split(),
-                check=True,
-                capture_output=capture_output,
-                text=True
-            )
-            return result
-        except subprocess.CalledProcessError as e:
-            click.echo(f"❌ PM2 command failed: {e}", err=True)
-            return None
+    table.add_column("Property", style="cyan", no_wrap=True)
+    table.add_column("Value", style="green")
+    
+    table.add_row("Agent ID", str(agent_data.get('agent_id', 'N/A')))
+    table.add_row("Latest Version", str(agent_data.get('latest_version', 'N/A')))
+    table.add_row("Created", str(agent_data.get('created_at', 'N/A')))
+    table.add_row("Last Updated", str(agent_data.get('last_updated', 'N/A')))
+    
+    if evaluations:
+        table.add_row("Recent Evaluations", f"{len(evaluations)} found")
+    
+    return table
+
+def create_evaluations_table(evaluations: list) -> Table:
+    """Create an evaluations table."""
+    table = Table(
+        title="📊 Recent Evaluations",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta"
+    )
+    
+    table.add_column("Status", style="cyan", no_wrap=True)
+    table.add_column("Created", style="green")
+    table.add_column("Details", style="yellow")
+    
+    status_emojis = {
+        'waiting': '⏳',
+        'running': '🔄',
+        'completed': '✅',
+        'error': '❌',
+        'timedout': '⏰',
+        'disconnected': '🔌'
+    }
+    
+    for eval_data in evaluations[:5]:  # Show last 5
+        status = eval_data.get('status', 'unknown')
+        emoji = status_emojis.get(status, '❓')
+        table.add_row(
+            f"{emoji} {status.title()}",
+            str(eval_data.get('created_at', 'N/A')),
+            str(eval_data.get('details', 'N/A'))
+        )
+    
+    return table
 
 @click.group()
 @click.version_option(version="1.0.0")
 def cli():
     """
-    Ridges CLI - Manage your Ridges miners and validators.
+    Ridges CLI - Manage your Ridges miners
     
-    This CLI provides commands to upload miners, check their status,
-    and manage validator processes with PM2.
+    Provides commands to upload miners and check their status.
     """
     pass
 
@@ -150,7 +227,8 @@ def cli():
 @click.option("--file", help="Path to agent.py file (can also be set via RIDGES_AGENT_FILE env var)")
 @click.option("--coldkey-name", help="Coldkey name (can also be set via RIDGES_COLDKEY_NAME env var)")
 @click.option("--hotkey-name", help="Hotkey name (can also be set via RIDGES_HOTKEY_NAME env var)")
-def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str]):
+@click.option("--name", help="Name for the miner agent")
+def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str], name: Optional[str]):
     """Upload a miner agent to the Ridges API."""
     ridges = RidgesCLI()
     
@@ -164,18 +242,29 @@ def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Option
     if not hotkey_name:
         hotkey_name = ridges.get_hotkey_name()
     
+    if not name:
+        name = ridges.get_agent_name()
+    
     # Check if file exists
     if not os.path.exists(file):
-        click.echo(f"❌ File not found: {file}", err=True)
+        print_error(f"File not found: {file}")
         sys.exit(1)
     
     # Check if file is named agent.py
     if os.path.basename(file) != "agent.py":
-        click.echo("❌ File must be named 'agent.py'", err=True)
+        print_error("File must be named 'agent.py'")
         sys.exit(1)
     
     # Get the actual hotkey address for the request
-    click.echo(f"📤 Uploading {file} with coldkey name: {coldkey_name}, hotkey name: {hotkey_name}")
+    console.print(Panel(
+        f"[bold cyan]📤 Uploading Agent[/bold cyan]\n"
+        f"[yellow]File:[/yellow] {file}\n"
+        f"[yellow]Name:[/yellow] {name}\n"
+        f"[yellow]Coldkey:[/yellow] {coldkey_name}\n"
+        f"[yellow]Hotkey:[/yellow] {hotkey_name}",
+        title="🚀 Upload Configuration",
+        border_style="cyan"
+    ))
     
     try:
         with open(file, 'rb') as f:
@@ -185,31 +274,53 @@ def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Option
             public_key = keypair.public_key.hex()
             file_info = f"{keypair.ss58_address}:{content_hash}"
             signature = keypair.sign(file_info).hex()
-            payload = { 'miner_hotkey': keypair.ss58_address, 'public_key': public_key, 'file_info': file_info, 'signature': signature }
+            payload = { 
+                'miner_hotkey': keypair.ss58_address, 
+                'public_key': public_key, 
+                'file_info': file_info, 
+                'signature': signature,
+                'name': name
+            }
 
+            animate_loading("🔐 Signing and preparing upload...")
             
             with httpx.Client() as client:
-                response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=30)
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn("[progress.description]{task.description}"),
+                    console=console,
+                    transient=True
+                ) as progress:
+                    task = progress.add_task("📡 Uploading to Ridges API...", total=None)
+                    response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=30)
                 
                 if response.status_code == 200:
                     result = response.json()
-                    click.echo(f"✅ {result.get('message', 'Upload successful')}")
+                    print_success(result.get('message', 'Upload successful'))
+                    
+                    # Show success panel
+                    console.print(Panel(
+                        f"[bold green]🎉 Upload Complete![/bold green]\n"
+                        f"[cyan]Your miner '{name}' is now live on the Ridges network[/cyan]",
+                        title="✨ Success",
+                        border_style="green"
+                    ))
                 else:
                     error_detail = response.json().get('detail', 'Unknown error') if response.headers.get('content-type', '').startswith('application/json') else response.text
-                    click.echo(f"❌ Upload failed: {error_detail}", err=True)
+                    print_error(f"Upload failed: {error_detail}")
                     sys.exit(1)
                     
     except httpx.RequestError as e:
-        click.echo(f"❌ Network error: {e}", err=True)
+        print_error(f"Network error: {e}")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"❌ Unexpected error: {e}", err=True)
+        print_error(f"Unexpected error: {e}")
         sys.exit(1)
 
 @cli.command()
 @click.option("--hotkey-name", help="Hotkey name (can also be set via RIDGES_HOTKEY_NAME env var)")
 def status(hotkey_name: Optional[str]):
-    """Check the status of your miner on the Ridges API."""
+    """Check the status of your miner."""
     ridges = RidgesCLI()
     
     if not hotkey_name:
@@ -217,23 +328,32 @@ def status(hotkey_name: Optional[str]):
     
     # Get the actual hotkey address for the API request
     actual_hotkey = ridges.get_keypair().ss58_address
-    click.echo(f"🔍 Checking status for hotkey name: {hotkey_name} (address: {actual_hotkey})")
+    
+    console.print(Panel(
+        f"[bold cyan]🔍 Checking Status[/bold cyan]\n"
+        f"[yellow]Hotkey Name:[/yellow] {hotkey_name}\n"
+        f"[yellow]Address:[/yellow] {actual_hotkey}",
+        title="📊 Status Check",
+        border_style="cyan"
+    ))
     
     try:
         with httpx.Client() as client:
             # First, try to get agent info
-            response = client.get(
-                f"{ridges.api_url}/agent/{actual_hotkey}",
-                timeout=10.0
-            )
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("🔍 Fetching agent information...", total=None)
+                response = client.get(
+                    f"{ridges.api_url}/agent/{actual_hotkey}",
+                    timeout=10.0
+                )
             
             if response.status_code == 200:
                 agent_data = response.json()
-                click.echo(f"✅ Agent found!")
-                click.echo(f"   Agent ID: {agent_data.get('agent_id', 'N/A')}")
-                click.echo(f"   Latest Version: {agent_data.get('latest_version', 'N/A')}")
-                click.echo(f"   Created: {agent_data.get('created_at', 'N/A')}")
-                click.echo(f"   Last Updated: {agent_data.get('last_updated', 'N/A')}")
                 
                 # Get evaluations if available
                 evaluations_response = client.get(
@@ -241,195 +361,41 @@ def status(hotkey_name: Optional[str]):
                     timeout=10.0
                 )
                 
+                evaluations = []
                 if evaluations_response.status_code == 200:
                     evaluations = evaluations_response.json()
-                    if evaluations:
-                        click.echo(f"   Recent Evaluations:")
-                        for eval_data in evaluations[:5]:  # Show last 5
-                            status = eval_data.get('status', 'unknown')
-                            status_emoji = {
-                                'waiting': '⏳',
-                                'running': '🔄',
-                                'completed': '✅',
-                                'error': '❌',
-                                'timedout': '⏰',
-                                'disconnected': '🔌'
-                            }.get(status, '❓')
-                            click.echo(f"     {status_emoji} {status} - {eval_data.get('created_at', 'N/A')}")
-                    else:
-                        click.echo("   No evaluations found")
-                        
+                
+                # Display status table
+                status_table = create_status_table(agent_data, evaluations)
+                console.print(status_table)
+                
+                # Display evaluations if available
+                if evaluations:
+                    evaluations_table = create_evaluations_table(evaluations)
+                    console.print(evaluations_table)
+                else:
+                    console.print(Panel(
+                        "[yellow]No evaluations found yet[/yellow]",
+                        title="📊 Evaluations",
+                        border_style="yellow"
+                    ))
+                    
             elif response.status_code == 404:
-                click.echo(f"❌ No agent found for hotkey: {actual_hotkey}")
+                console.print(Panel(
+                    f"[red]❌ No agent found for hotkey: {actual_hotkey}[/red]\n"
+                    f"[yellow]Try uploading your agent first with:[/yellow] [cyan]ridges upload[/cyan]",
+                    title="🔍 Agent Not Found",
+                    border_style="red"
+                ))
             else:
-                click.echo(f"❌ Error checking status: {response.status_code}", err=True)
+                print_error(f"Error checking status: {response.status_code}")
                 sys.exit(1)
                 
     except httpx.RequestError as e:
-        click.echo(f"❌ Network error: {e}", err=True)
+        print_error(f"Network error: {e}")
         sys.exit(1)
     except Exception as e:
-        click.echo(f"❌ Unexpected error: {e}", err=True)
-        sys.exit(1)
-
-@cli.group()
-def validator():
-    """Manage validator processes with PM2."""
-    pass
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-@click.option("--skip-confirm", is_flag=True, help="Skip environment confirmation")
-def start(name: str, skip_confirm: bool):
-    """Start the validator with PM2."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"🚀 Starting validator with PM2 process name: {name}")
-    
-    # Check if already running
-    result = ridges.run_pm2_command(f"list | grep {name}")
-    if result and name in result.stdout:
-        click.echo(f"✅ Validator '{name}' is already running")
-        return
-    
-    # Check if validator/.env exists
-    if not os.path.exists("validator/.env"):
-        click.echo("❌ validator/.env does not exist", err=True)
-        if os.path.exists("validator/.env.example"):
-            if click.confirm("Would you like to copy validator/.env.example to validator/.env?"):
-                subprocess.run(["cp", "validator/.env.example", "validator/.env"])
-                click.echo("✅ Copied validator/.env.example to validator/.env")
-            else:
-                sys.exit(1)
-        else:
-            click.echo("Please create validator/.env file", err=True)
-            sys.exit(1)
-    
-    # Confirm environment variables if not skipped
-    if not skip_confirm:
-        click.echo("Please confirm the following values in validator/.env:")
-        try:
-            with open("validator/.env", "r") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#"):
-                        key, value = line.split("=", 1)
-                        click.echo(f"  {key}: {value}")
-        except Exception as e:
-            click.echo(f"❌ Error reading validator/.env: {e}", err=True)
-            sys.exit(1)
-        
-        if not click.confirm("Are these values correct?"):
-            click.echo("Please update validator/.env and run this command again")
-            sys.exit(1)
-    
-    # Install dependencies
-    click.echo("📦 Installing dependencies...")
-    try:
-        subprocess.run(["uv", "pip", "install", "-e", "."], check=True)
-    except subprocess.CalledProcessError as e:
-        click.echo(f"❌ Failed to install dependencies: {e}", err=True)
-        sys.exit(1)
-    
-    # Start validator with PM2
-    click.echo("🔄 Starting validator...")
-    result = ridges.run_pm2_command(f"start 'uv run --no-sync validator/main.py' --name {name}")
-    
-    if result:
-        click.echo(f"✅ Validator '{name}' started successfully")
-        click.echo("💡 Use 'ridges validator status' to check the process")
-    else:
-        click.echo("❌ Failed to start validator", err=True)
-        sys.exit(1)
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-def stop(name: str):
-    """Stop the validator PM2 process."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"🛑 Stopping validator '{name}'...")
-    
-    result = ridges.run_pm2_command(f"stop {name}")
-    if result:
-        click.echo(f"✅ Validator '{name}' stopped successfully")
-    else:
-        click.echo(f"❌ Failed to stop validator '{name}'", err=True)
-        sys.exit(1)
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-def restart(name: str):
-    """Restart the validator PM2 process."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"🔄 Restarting validator '{name}'...")
-    
-    result = ridges.run_pm2_command(f"restart {name}")
-    if result:
-        click.echo(f"✅ Validator '{name}' restarted successfully")
-    else:
-        click.echo(f"❌ Failed to restart validator '{name}'", err=True)
-        sys.exit(1)
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-def status(name: str):
-    """Check the status of the validator PM2 process."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"📊 Status for validator '{name}':")
-    
-    result = ridges.run_pm2_command(f"list | grep {name}")
-    if result and name in result.stdout:
-        click.echo("✅ Validator is running")
-        # Get detailed status
-        detailed_result = ridges.run_pm2_command(f"show {name}")
-        if detailed_result:
-            lines = detailed_result.stdout.split('\n')
-            for line in lines:
-                if any(keyword in line.lower() for keyword in ['status', 'uptime', 'memory', 'cpu']):
-                    click.echo(f"   {line.strip()}")
-    else:
-        click.echo("❌ Validator is not running")
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-def logs(name: str):
-    """Show logs for the validator PM2 process."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"📋 Logs for validator '{name}':")
-    
-    result = ridges.run_pm2_command(f"logs {name} --lines 50", capture_output=False)
-    if not result:
-        click.echo(f"❌ Failed to get logs for '{name}'", err=True)
-        sys.exit(1)
-
-@validator.command()
-@click.option("--name", default="ridges-validator", help="PM2 process name (default: ridges-validator)")
-def auto_update(name: str):
-    """Start auto-update process for the validator."""
-    ridges = RidgesCLI()
-    
-    click.echo(f"🔄 Starting auto-update process for validator '{name}'...")
-    
-    # Check if auto-update script exists
-    if not os.path.exists("validator_auto_update.sh"):
-        click.echo("❌ validator_auto_update.sh not found", err=True)
-        sys.exit(1)
-    
-    # Make script executable
-    os.chmod("validator_auto_update.sh", 0o755)
-    
-    # Start auto-update process with PM2
-    result = ridges.run_pm2_command(f"start validator_auto_update.sh --name {name}-auto-update --interpreter bash")
-    
-    if result:
-        click.echo(f"✅ Auto-update process started successfully")
-        click.echo("💡 This process will automatically update the validator when new code is pushed to git")
-    else:
-        click.echo("❌ Failed to start auto-update process", err=True)
+        print_error(f"Unexpected error: {e}")
         sys.exit(1)
 
 @cli.command()
@@ -437,18 +403,38 @@ def config():
     """Show current configuration."""
     ridges = RidgesCLI()
     
-    click.echo("📋 Current Ridges CLI Configuration:")
-    click.echo(f"   Agent File: {ridges.get_agent_file_path()}")
-    click.echo(f"   Coldkey Name: {ridges.get_coldkey_name()}")
-    click.echo(f"   Hotkey Name: {ridges.get_hotkey_name()}")
-    click.echo(f"   Hotkey Address: {ridges.get_keypair().ss58_address}")
-    click.echo(f"   Config File: {ridges.config.config_file}")
+    config_table = Table(
+        title="⚙️ Ridges CLI Configuration",
+        box=box.ROUNDED,
+        show_header=True,
+        header_style="bold magenta"
+    )
+    
+    config_table.add_column("Setting", style="cyan", no_wrap=True)
+    config_table.add_column("Value", style="green")
+    
+    config_table.add_row("Agent File", ridges.get_agent_file_path())
+    config_table.add_row("Agent Name", ridges.get_agent_name())
+    config_table.add_row("Coldkey Name", ridges.get_coldkey_name())
+    config_table.add_row("Hotkey Name", ridges.get_hotkey_name())
+    config_table.add_row("Hotkey Address", ridges.get_keypair().ss58_address)
+    config_table.add_row("Config File", ridges.config.config_file)
+    
+    console.print(config_table)
 
 @cli.command()
 def version():
     """Show version information."""
-    click.echo("Ridges CLI v1.0.0")
-    click.echo("A command-line interface for managing Ridges miners and validators")
+    console.print(Panel(
+        "[bold yellow]🌟 Ridges CLI v1.0.0[/bold yellow]\n"
+        "[cyan]Command-line interface for managing Ridges miners and validators[/cyan]\n\n"
+        "[green]Features:[/green]\n"
+        "• 🚀 Upload miners to the network\n"
+        "• 🔍 Check miner status and evaluations\n"
+        "• ⚙️ Manage configuration settings\n"
+        title="📋 Version Information",
+        border_style="yellow"
+    ))
 
 if __name__ == "__main__":
     cli() 
