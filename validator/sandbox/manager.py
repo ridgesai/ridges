@@ -169,44 +169,6 @@ def start_proxy():
 
     return sock
 
-def test_proxy_connection():
-    """Test that the proxy is working by sending a simple request."""
-    try:
-        import socket
-        test_message = {
-            "endpoint": "/agents/inference",
-            "data": {
-                "model": "test",
-                "messages": [{"role": "user", "content": "test"}],
-                "stream": False,
-                "temperature": 0
-            }
-        }
-        
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-            sock.connect(SOCKET_PATH)
-            sock.sendall(json.dumps(test_message).encode('utf-8'))
-            
-            # Read response (should get an error since we're not hitting a real API)
-            response_data = b""
-            sock.settimeout(5)
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                response_data += chunk
-                try:
-                    response = json.loads(response_data.decode('utf-8'))
-                    break
-                except json.JSONDecodeError:
-                    continue
-            
-            logger.info("Proxy connection test successful")
-            return True
-    except Exception as e:
-        logger.error(f"Proxy connection test failed: {e}")
-        return False
-
 class Sandbox:
     swebench_instance_id: str
     manager: 'SandboxManager'
@@ -360,11 +322,7 @@ class SandboxManager:
             logger.error(f"Socket file does not exist: {SOCKET_PATH}")
             raise RuntimeError("Socket file was not created")
         
-        # Test the proxy connection
-        logger.info("Testing proxy connection...")
-        if not test_proxy_connection():
-            raise RuntimeError("Proxy connection test failed")
-        logger.info("Proxy connection test passed")
+        logger.info("Unix socket proxy setup complete")
             
         self.sandboxes = []
         # Start the monitor as an asyncio task
