@@ -38,6 +38,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     })
 
     errored = False
+    sbox_manager = None  # Initialize to None to avoid UnboundLocalError
     try:
         # Create sandbox manager
         sbox_manager = SandboxManager()
