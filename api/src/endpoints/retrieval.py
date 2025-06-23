@@ -2,11 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
 from typing import List
+import requests
+import os
+from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
 from api.src.utils.models import AgentSummary, AgentQueryResponse
 from api.src.db.s3 import S3Manager
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,43 @@ def get_recent_executions(num_executions: int = 3):
 def get_num_agents():
     return db.get_num_agents()
 
+def get_total_rewards_24h():
+
+    url = "https://api.taostats.io/api/dtao/pool/latest/v1?page=1"
+
+    headers = {"accept": "application/json",  "Authorization": os.getenv('TAOSTATS_API_KEY')}
+
+    try:
+        response = requests.get(url, headers=headers, params={"netuid": "62"})
+        alpha_in_pool = int(response.json()['data'][0]['alpha_in_pool'])
+        tao_in_pool = int(response.json()['data'][0]['total_tao'])
+    except Exception as e:
+        logger.error(f"Error retrieving tao and alpha in pool from Taostats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving tao and alpha in pool. Please try again later."
+        )
+
+    url = "https://api.taostats.io/api/price/latest/v1?asset=tao"
+
+    headers = {"accept": "application/json",  "Authorization": os.getenv('TAOSTATS_API_KEY')}
+
+    response = requests.get(url, headers=headers)
+
+    try:
+        tao_price = float(response.json()['data'][0]['price'])
+    except Exception as e:
+        logger.error(f"Error retrieving tao price from Taostats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving tao price. Please try again later."
+        )
+    
+    tao_per_alpha = tao_in_pool / alpha_in_pool
+    usd_per_day = tao_per_alpha * tao_price * 7200 * 0.41
+
+    return usd_per_day
+
 router = APIRouter()
 
 routes = [
@@ -121,6 +163,7 @@ routes = [
     ("/agent-version-code", get_agent_version_code),
     ("/recent-executions", get_recent_executions),
     ("/num-agents", get_num_agents),
+    ("/total-rewards-24h", get_total_rewards_24h),
 ]
 
 for path, endpoint in routes:
