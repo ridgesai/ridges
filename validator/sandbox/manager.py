@@ -57,7 +57,7 @@ SOCKET_PATH = "/tmp/sandbox_proxy.sock"
 ALLOWED_PATHS = {"/agents/embeddings", "/agents/inference"}
 
 def start_proxy():
-    """Start minimal Unix socket proxy"""
+    """Start minimal Unix socket proxy with JSON protocol"""
     try:
         os.unlink(SOCKET_PATH)
     except OSError:
@@ -70,116 +70,75 @@ def start_proxy():
     
     def handle_client(client):
         try:
-            # Read the entire HTTP request – keep reading until we have received
-            # the number of bytes advertised in the *Content-Length* header.
-            buf = bytearray()
-            header_end = None
-            content_len = None
-
+            # Read JSON message from client
+            data = b""
             while True:
                 chunk = client.recv(4096)
                 if not chunk:
                     break
-                buf.extend(chunk)
-
-                # Once we have the blank line we can parse headers and figure
-                # out how many body bytes to expect.
-                if header_end is None and b"\r\n\r\n" in buf:
-                    header_end = buf.find(b"\r\n\r\n")
-                    header_lines = buf[:header_end].decode(errors="ignore").split("\r\n")[1:]
-                    for line in header_lines:
-                        if ":" in line:
-                            k, v = line.split(":", 1)
-                            if k.strip().lower() == "content-length":
-                                try:
-                                    content_len = int(v.strip())
-                                except ValueError:
-                                    content_len = 0
-                    # If no Content-Length, assume no body.
-                    if content_len is None:
-                        content_len = 0
-
-                # After headers parsed: stop once entire body received.
-                if header_end is not None:
-                    body_bytes = len(buf) - (header_end + 4)
-                    if body_bytes >= content_len:
-                        break
-
-            data = buf.decode(errors="ignore")
-            logger.debug(f"Received socket proxy request: {data}")
+                data += chunk
+                # Try to parse as JSON to see if we have a complete message
+                try:
+                    json.loads(data.decode('utf-8'))
+                    break  # Complete JSON message received
+                except json.JSONDecodeError:
+                    continue  # Keep reading
             
-            # Parse HTTP request
-            lines = data.split('\r\n')
-            if not lines:
+            if not data:
+                client.send(json.dumps({"error": "No data received"}).encode('utf-8'))
                 return
+            
+            try:
+                message = json.loads(data.decode('utf-8'))
+                endpoint = message.get("endpoint")
+                request_data = message.get("data", {})
                 
-            request_line = lines[0]
-            parts = request_line.split()
-            if len(parts) < 2:
-                return
+                logger.debug(f"Received JSON request: endpoint={endpoint}, data_size={len(str(request_data))}")
                 
-            method, full_path = parts[0], parts[1]
-            path = full_path.split('?')[0]
-            
-            # Extract headers and body
-            headers = {}
-            body_start = -1
-            for i, line in enumerate(lines[1:], 1):
-                if line == '':
-                    body_start = i + 1
-                    break
-                if ':' in line:
-                    key, value = line.split(':', 1)
-                    headers[key.strip().lower()] = value.strip()
-            
-            # Get request body if present
-            request_body = None
-            if body_start > 0 and body_start < len(lines):
-                request_body = '\r\n'.join(lines[body_start:])
-            
-            logger.debug(f"Method: {method}, Path: {path}")
-            logger.debug(f"Headers: {headers}")
-            logger.debug(f"Body: {request_body}")
-            
-            if path in ALLOWED_PATHS:
+                if endpoint not in ALLOWED_PATHS:
+                    client.send(json.dumps({"error": f"Endpoint {endpoint} not allowed"}).encode('utf-8'))
+                    return
+                
                 # Build target URL
-                target_url = RIDGES_API_URL + full_path
+                target_url = RIDGES_API_URL + endpoint
                 
-                # Create request
-                if method.upper() == 'POST' and request_body:
-                    req = urllib.request.Request(target_url, data=request_body.encode(), method='POST')
+                # Create HTTP request to the API
+                if endpoint == "/agents/inference":
+                    # For inference, send the data as JSON
+                    req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
                     req.add_header('Content-Type', 'application/json')
-                    with open('conversation.jsonc', 'a') as f:
-                        f.write(json.loads(request_body).get("input_text"))
-                        f.write(",\n")
                 else:
-                    req = urllib.request.Request(target_url, method=method)
-
+                    # For embeddings, send as form data
+                    req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
+                    req.add_header('Content-Type', 'application/json')
                 
-                # Add original headers
-                for key, value in headers.items():
-                    if key not in ['host', 'connection']:
-                        req.add_header(key, value)
-                
-                # Send request
+                # Send request to API
                 resp = urllib.request.urlopen(req)
-                body = resp.read()
-
-                with open('conversation.jsonc', 'a') as f:
-                    f.write(body.decode('utf-8', errors='ignore'))
-                    f.write(",\n")
+                response_body = resp.read()
                 
-                # Send proper HTTP response
-                response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\n\r\n".encode() + body
-                logger.debug(f"Sending socket proxy response: {len(body)} bytes")
-                client.send(response)
-            else:
-                client.send(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\n\r\n")
+                # Parse the API response
+                try:
+                    api_response = json.loads(response_body.decode('utf-8'))
+                    # Send JSON response back to client
+                    client.send(json.dumps(api_response).encode('utf-8'))
+                except json.JSONDecodeError:
+                    # If API response is not JSON, wrap it
+                    client.send(json.dumps({"response": response_body.decode('utf-8', errors='ignore')}).encode('utf-8'))
+                
+                logger.debug(f"Sent JSON response: {len(response_body)} bytes")
+                
+            except json.JSONDecodeError as e:
+                client.send(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
+            except urllib.error.URLError as e:
+                client.send(json.dumps({"error": f"API request failed: {str(e)}"}).encode('utf-8'))
+            except Exception as e:
+                client.send(json.dumps({"error": f"Proxy error: {str(e)}"}).encode('utf-8'))
+                logger.error(f"Proxy error: {e}")
+                
         except Exception as e:
-            error_msg = f"HTTP/1.1 500 Error\r\nContent-Length: 0\r\n\r\n"
-            logger.error(f"Error sending socket proxy response: {error_msg}")
-            logger.error(f"Error: {e}")
-            client.send(error_msg.encode())
+            error_response = json.dumps({"error": f"Unexpected error: {str(e)}"})
+            client.send(error_response.encode('utf-8'))
+            logger.error(f"Unexpected error in proxy: {e}")
         finally:
             client.close()
     
