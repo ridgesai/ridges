@@ -100,6 +100,9 @@ def get_recent_executions(num_executions: int = 3):
 
     return executions
 
+def get_num_agents():
+    return db.get_num_agents()
+
 router = APIRouter()
 
 routes = [
@@ -108,6 +111,7 @@ routes = [
     ("/agent", get_agent),
     ("/agent-version-code", get_agent_version_code),
     ("/recent-executions", get_recent_executions),
+    ("/num-agents", get_num_agents),
 ]
 
 for path, endpoint in routes:

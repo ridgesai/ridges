@@ -598,3 +598,13 @@ class DatabaseManager:
                 executions.append(execution)
             
             return executions
+        
+    def get_num_agents(self) -> int:
+        """
+        Get the number of agents in the database.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM agents
+            """)
+            return cursor.fetchone()[0]
