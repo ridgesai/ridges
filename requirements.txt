@@ -39,7 +39,6 @@ eth-utils==2.3.2
 fastapi==0.112.0
 fastapi-cli==0.0.7
 fastcore==1.8.2
-fiber @ git+https://github.com/rayonlabs/fiber.git@7fe17fcabcfeccb081b7b2e150295132d441c557
 filelock==3.18.0
 frozenlist==1.6.0
 fsspec==2025.3.0
@@ -82,7 +81,6 @@ propcache==0.3.1
 protobuf==3.20.3
 psycopg2==2.9.10
 psycopg2-binary==2.9.10
-py-bip39-bindings==0.1.11
 py-ed25519-zebra-bindings==1.2.0
 py-sr25519-bindings==0.2.2
 pyarrow==20.0.0
