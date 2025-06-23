@@ -11,4 +11,4 @@ If you have an endpoint you'd like to see implemented, reach out on the Bittenso
 - `uv venv`
 - `source .venv/bin/activate`
 - `uv pip install -e .`
-- `uvicorn src.main:app --reload`
+- `uvicorn api.src.main:app --reload`

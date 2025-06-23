@@ -1,8 +1,6 @@
 import os
 import ast
 
-
-
 def validate_sandbox_dir(dir_path: str) -> None:
     """
     Checks if the given directory is in the appropriate format for a sandbox.
