@@ -68,6 +68,8 @@ def start_proxy():
     sock.listen(128)
     os.chmod(SOCKET_PATH, 0o666)
     
+    logger.info(f"Unix socket proxy started on {SOCKET_PATH}")
+    
     def handle_client(client):
         try:
             # Read JSON message from client
@@ -101,6 +103,7 @@ def start_proxy():
                 
                 # Build target URL
                 target_url = RIDGES_API_URL + endpoint
+                logger.debug(f"Forwarding request to: {target_url}")
                 
                 # Create HTTP request to the API
                 if endpoint == "/agents/inference":
@@ -143,15 +146,72 @@ def start_proxy():
             client.close()
     
     def run():
+        logger.info("Proxy server loop started")
         while True:
             try:
-                client, _ = sock.accept()
+                client, addr = sock.accept()
+                logger.debug(f"Accepted connection from {addr}")
                 threading.Thread(target=handle_client, args=(client,), daemon=True).start()
-            except:
+            except Exception as e:
+                logger.error(f"Error accepting connection: {e}")
                 break
     
-    threading.Thread(target=run, daemon=True).start()
+    proxy_thread = threading.Thread(target=run, daemon=True)
+    proxy_thread.start()
+    logger.info("Proxy thread started")
+    
+    # Give the proxy a moment to start up
+    time.sleep(0.1)
+    
+    # Verify the socket is working
+    try:
+        test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        test_sock.connect(SOCKET_PATH)
+        test_sock.close()
+        logger.info("Proxy socket verification successful")
+    except Exception as e:
+        logger.error(f"Proxy socket verification failed: {e}")
+        raise
+    
     return sock
+
+def test_proxy_connection():
+    """Test that the proxy is working by sending a simple request."""
+    try:
+        import socket
+        test_message = {
+            "endpoint": "/agents/inference",
+            "data": {
+                "model": "test",
+                "messages": [{"role": "user", "content": "test"}],
+                "stream": False,
+                "temperature": 0
+            }
+        }
+        
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.connect(SOCKET_PATH)
+            sock.sendall(json.dumps(test_message).encode('utf-8'))
+            
+            # Read response (should get an error since we're not hitting a real API)
+            response_data = b""
+            sock.settimeout(5)
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response_data += chunk
+                try:
+                    response = json.loads(response_data.decode('utf-8'))
+                    break
+                except json.JSONDecodeError:
+                    continue
+            
+            logger.info("Proxy connection test successful")
+            return True
+    except Exception as e:
+        logger.error(f"Proxy connection test failed: {e}")
+        return False
 
 class Sandbox:
     swebench_instance_id: str
@@ -288,7 +348,29 @@ class SandboxManager:
             self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=False)
         
         # Initialize and start the Unix socket proxy
+        logger.info("Starting Unix socket proxy...")
         self.unix_proxy = start_proxy()
+        logger.info("Unix socket proxy started successfully")
+        
+        # Verify the socket file exists and is accessible
+        if os.path.exists(SOCKET_PATH):
+            logger.info(f"Socket file exists: {SOCKET_PATH}")
+            try:
+                import stat
+                st = os.stat(SOCKET_PATH)
+                logger.info(f"Socket file permissions: {oct(st.st_mode)}")
+                logger.info(f"Socket file owner: {st.st_uid}")
+            except Exception as e:
+                logger.error(f"Error checking socket file: {e}")
+        else:
+            logger.error(f"Socket file does not exist: {SOCKET_PATH}")
+            raise RuntimeError("Socket file was not created")
+        
+        # Test the proxy connection
+        logger.info("Testing proxy connection...")
+        if not test_proxy_connection():
+            raise RuntimeError("Proxy connection test failed")
+        logger.info("Proxy connection test passed")
             
         self.sandboxes = []
         # Start the monitor as an asyncio task
