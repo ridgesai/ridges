@@ -1,501 +1,822 @@
-# agent.py
-#  heads up for aaron or jalal                                               
-#  This whole repo/sandbox starts here.                                     
-#                                                                                 
-#  The validator spins up a Docker container that mounts three things:          
-#        /sandbox/Main.py   – tiny runner script (already provided)               
-#        /sandbox/src       – folder that contains **this** agent.py              
-#        /sandbox/repo      – the target open-source repo we need to patch    
-#        correct me if im wrong, but feel free to change that    
-#                                                                                 
-#  Main.py imports this file and calls `agent_main(challenge_dict)`             
-#                                                                                 
-#  Inside we (1) chat with an LLM via a local HTTP proxy,                       
-#            (2) give it some tiny built-in tools (ls/find/read/diff) to explore  
-#            (3) loop until the LLM coughs up a unified diff.                     
-#                                                                                 
-#  Whatever diff we return becomes our "patch" and will be tested by Swe-bench.
+#!/usr/bin/env python3
+"""One-file autonomous coding agent ("base-miner").
 
+The validator mounts a repository and a problem statement inside a sandbox and
+executes this file.  The agent talks to a local *AI-proxy* over a UNIX domain
+socket using the OpenAI function-calling protocol.  It exposes a minimal but
+sufficient set of tools so the language-model can inspect and modify the
+repository and finally indicate it is done.
+
+Tools exposed to the LM
+-----------------------
+LS(dir=".")
+FIND(pattern, dir=".")
+READ_FILE(path, max_bytes=4000)
+DIFF(path1, path2)
+WRITE_FILE(path, content)
+APPLY_PATCH(patch)
+FINISH()
+
+Program exit codes
+------------------
+0  – model called FINISH (validator will run its own tests)
+1  – uncaught exception, timeout or max-steps exceeded
+
+Configuration (CLI flags *or* environment variables)
+----------------------------------------------------
+flag / env-var       default
+------------------   -----------------------------
+--socket  AI_PROXY_SOCK   /tmp/sandbox_proxy.sock
+--problem PROBLEM_FILE    ./PROBLEM.md
+--repo    REPO_ROOT       .
+--timeout AGENT_TIMEOUT   600  (seconds)
+--model   AGENT_MODEL     deepseek-ai/DeepSeek-V3-0324
+
+A `trajectory.jsonl` file with the full conversation is written for debugging.
+"""
 from __future__ import annotations
 
-import difflib
+import argparse
 import json
-import logging
 import os
-import pathlib
 import re
-import time
+import shlex
 import socket
-from typing import Any, Dict, List
-from urllib.parse import unquote
-
-import requests
-import socket  # for auto-detecting host.docker.internal
 import subprocess
+import sys
+import textwrap
+import time
+import traceback
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Any, Dict, List
 
-# ─────────────────────────────── Paths & constants ───────────────────────────
-REPO_ROOT = pathlib.Path(os.getenv("REPO_ROOT", "/sandbox/repo")).resolve()
-IO_DIR    = pathlib.Path(os.getenv("IO_DIR",    "/sandbox_io")).resolve()
-SOCKET_PATH = "/tmp/sandbox_proxy.sock"
+# ---------------------------------------------------------------------------
+# Environment tweaks ---------------------------------------------------------
+# ---------------------------------------------------------------------------
+# The `sentence_transformers` / `transformers` stack attempts to import the
+# TensorFlow / Keras backend by default.  In the constrained sandbox image we
+# don't ship those heavy dependencies, and recent `keras==3` is incompatible
+# with `transformers`, causing an immediate import failure.  Setting the
+# following environment variable instructs `transformers` to entirely skip any
+# TensorFlow components so that the pure PyTorch code paths are used instead.
+# IMPORTANT: This must be done *before* importing anything from transformers or
+# sentence_transformers.
 
-# smarter default: if we're inside Docker Desktop, host.docker.internal resolves
-def _default_proxy() -> str:
-    try:
-        socket.gethostbyname("host.docker.internal")  # resolves on Mac/Win Docker
-        return "http://host.docker.internal:8000"
-    except socket.gaierror:
-        # Try Docker default gateway (works on Linux)
-        def _docker_gateway_ip():
-            try:
-                with open("/proc/net/route") as fh:
-                    for line in fh.readlines()[1:]:
-                        parts = line.split()
-                        if parts[1] != "00000000" or not int(parts[3], 16) & 2:
-                            continue
-                        # parts[2] is hex little-endian gateway
-                        gw = socket.inet_ntoa(bytes.fromhex(parts[2])[::-1])
-                        return gw
-            except Exception:
-                return None
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
-        gw_ip = _docker_gateway_ip()
-        if gw_ip:
-            return f"http://{gw_ip}:8000"
-        return "http://localhost:8000"
+# Some recent versions of `transformers` still unconditionally import the legacy
+# compatibility package `tf_keras` (a thin shim around Keras 2.x).  Rather than
+# pulling in heavy TensorFlow dependencies or pinning older libraries, we
+# provide an empty stub so that the import succeeds without side-effects.
 
-PROXY     = os.getenv("AI_PROXY_BASE", _default_proxy())
+import types as _types
+import sys as _sys
+if "tf_keras" not in _sys.modules:
+    _sys.modules["tf_keras"] = _types.ModuleType("tf_keras")
 
-MAX_TOOL_OUTPUT_CHARS = 900_000   # trim gigantic outputs, 900KB is insane, I just increased it from 100KB for testing purposes
-TOOL_LOOP_CAP         = 80        # hard step cap
-REQUEST_TIMEOUT       = 60        # seconds per proxy round‑trip
+# Some helper classes referenced by `transformers.integrations` are only
+# defined when TensorFlow support is available.  We create lightweight stubs
+# so that static imports succeed even though the functionality is absent.
 
-_verbose = os.getenv("VERBOSE", "0") not in {"0", "false", "False", ""}
-logging.basicConfig(level=logging.DEBUG if _verbose else logging.INFO,
-                    format="[%(levelname)s] %(message)s")
+try:
+    import importlib as _importlib
 
-# ─────────────────────────────── helper utils ────────────────────────────────
+    _tfm = _importlib.import_module("transformers")  # ensure it's loaded
 
-def _safe_join(base: pathlib.Path, *paths: str | os.PathLike[str]) -> pathlib.Path:
-    # Little helper to make sure the LLM doesn't wander outside the repo tree.
-    # If it tries to read '/etc/passwd' we bail with 'access denied'.
-    cand = (base.joinpath(*paths)).resolve()
-    if not str(cand).startswith(str(base)):
-        raise ValueError("access denied: path escapes repository root")
-    return cand
+    if not hasattr(_tfm, "TFPreTrainedModel"):
+        class _DummyTFPreTrainedModel:  # noqa: N801 (class name style)
+            pass
 
+        _tfm.TFPreTrainedModel = _DummyTFPreTrainedModel
+except Exception:
+    # If transformers itself isn't importable for some reason we'll find out
+    # later when sentence_transformers attempts; nothing to do here.
+    pass
 
-def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT_CHARS) -> str:
-    if len(text) <= limit:
-        return text
-    head, tail = text[: limit // 2], text[-limit // 2 :]
-    return f"{head}\n[…truncated…]\n{tail}"
+# ---------------------------------------------------------------------------
+# Defaults via environment variables ----------------------------------------
+# ---------------------------------------------------------------------------
+DEFAULT_SOCKET = os.getenv("AI_PROXY_SOCK", "/tmp/sandbox_proxy.sock")
+DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
+DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
+DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
+DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3-0324")
 
-# Heuristic mapping from free-text to tool calls. This lets the agent act on
-# phrases like "I'll use the 'ls' tool" even when the model fails to emit the
-# strict JSON wrapper.
+# Other constants
+MAX_STEPS = 50
+MAX_OBS_CHARS = 20_000
+MAX_BYTES_READ = 4_000
 
-_TOOL_PATTERN = re.compile(r"\b(ls|find|read|diff|apply_patch)\b", re.I)
+# ---------------------------------------------------------------------------
+# Prompt templates (adapted from SWE-agent/config/default.yaml) --------------
+# ---------------------------------------------------------------------------
 
-def _nl_to_tool(text: str) -> tuple[str, Dict[str, Any]] | None:
-    txt = unquote(text).strip().lower()
+### ----------------------------------------------------------------------
+# Comprehensive prompt (SWE-agent default + coding_challenge) -------------
+### ----------------------------------------------------------------------
 
-    m = _TOOL_PATTERN.search(txt)
-    if not m:
-        return None
-
-    name = m.group(1)
-
-    if name == "ls":
-        # Try to capture path after 'ls' or 'in'
-        pm = re.search(r"ls (?:the )?(?:dir(?:ectory)? )?(?:in )?([\w./\-]+)", txt)
-        path = pm.group(1) if pm else "."
-        return "ls", {"path": path}
-
-    if name == "find":
-        patm = re.search(r"find (?:for )?[\'\"]([^\'\"]+)[\'\"]", txt)
-        pattern = patm.group(1) if patm else ".*"
-        pathm = re.search(r"in ([\w./\-]+)", txt)
-        pth = pathm.group(1) if pathm else "."
-        return "find", {"pattern": pattern, "path": pth}
-
-    if name == "read":
-        rm = re.search(r"read ([\w./\-]+)(?: lines? (\d+)(?:-(\d+))?)?", txt)
-        if rm:
-            path = rm.group(1)
-            start = int(rm.group(2) or 1)
-            end = int(rm.group(3) or (start + 399))
-            return "read", {"path": path, "start": start, "end": end}
-
-    # diff likely requires explicit JSON, skip heuristic
-    return None
-
-# ─────────────────────────────── tool functions ──────────────────────────────
-
-def ls(path: str = ".") -> str:
-    try:
-        base = _safe_join(REPO_ROOT, path)
-    except ValueError as exc:
-        return str(exc)
-    files = (str(p.relative_to(REPO_ROOT)) for p in base.rglob("*") if p.is_file())
-    return _truncate("\n".join(files)) or "[no files]"
-
-
-def find(pattern: str, path: str = ".") -> str:
-    try:
-        base = _safe_join(REPO_ROOT, path)
-    except ValueError as exc:
-        return str(exc)
-    try:
-        regex = re.compile(pattern, re.I)
-    except re.error as err:
-        return f"[invalid regex: {err}]"
-    matches: List[str] = []
-    for file in base.rglob("*"):
-        if not file.is_file():
-            continue
-        try:
-            text = file.read_text(errors="ignore")
-        except Exception:
-            continue
-        for i, line in enumerate(text.splitlines(), 1):
-            if regex.search(line):
-                rel = file.relative_to(REPO_ROOT)
-                matches.append(f"{rel}:{i}: {line.strip()}")
-    return _truncate("\n".join(matches) or "[no matches]")
-
-
-def read(path: str, start: int = 1, end: int = 400) -> str:
-    try:
-        file = _safe_join(REPO_ROOT, path)
-    except ValueError as exc:
-        return str(exc)
-    try:
-        lines = file.read_text(errors="ignore").splitlines()
-    except Exception as err:
-        return f"[error reading file: {err}]"
-    start, end = max(1, int(start)), max(int(start), int(end))
-    snippet = lines[start - 1 : end]
-    numbered = [f"{i+start:>5d}| {l}" for i, l in enumerate(snippet)]
-    return _truncate("\n".join(numbered) or "[empty]")
-
-
-def diff(old: str, new: str) -> str:
-    delta = difflib.unified_diff(old.splitlines(), new.splitlines(),
-                                 fromfile="old", tofile="new", lineterm="")
-    return _truncate("\n".join(delta) or "[no diff]")
-
-def apply_patch(patch: str, strip: int = 1) -> str:
-    """Apply a unified diff to the repository root.
-
-    Parameters
-    ----------
-    patch : str
-        The unified diff text.
-    strip : int, default 1
-        Number passed to git apply -p. With diffs created via `git diff` the
-        correct value is usually 1 (paths like a/foo.py, b/foo.py).
-
-    Returns
-    -------
-    str
-        "ok" on success or an error message if the patch failed.
+# --- system prompt (long form) ---
+_RAW_SYSTEM_PROMPT = textwrap.dedent(
     """
-    # Ensure repository root exists even if host did not mount a repo directory.
-    REPO_ROOT.mkdir(parents=True, exist_ok=True)
+    SETTING: You are an autonomous programmer, and you're working directly in the command line with a special interface.
 
+    The special interface consists of a file editor that shows you 100 lines of a file at a time.
+    In addition to typical bash commands, you can also use the following commands to help you navigate and edit files.
+
+    COMMANDS:
+    {command_docs}
+
+    Please note that THE EDIT COMMAND REQUIRES PROPER INDENTATION.
+    If you'd like to add the line '        print(x)' you must fully write that out, with all those spaces before the code! Indentation is important and code that is not indented correctly will fail and require fixing before it can be run.
+
+    RESPONSE FORMAT:
+    Your shell prompt is formatted as follows:
+    (Open file: <path>) <cwd> $
+
+    You need to format your output using two fields; discussion and command.
+    Your output should always include _one_ discussion and _one_ command field EXACTLY as in the following example:
+    DISCUSSION
+    First I'll start by using ls to see what files are in the current directory. Then maybe we can look at some relevant files to see what they look like.
+    ```
+    ls -a
+    ```
+
+    You should only include a *SINGLE* command in the command section and then wait for a response from the shell before continuing with more discussion and commands.
+    If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Instead submit the first command, wait for feedback, then issue the second.
+
+    You're free to use any other bash commands you want (e.g. find, grep, cat, ls, cd) in addition to the special commands listed above.
+    However, the environment does NOT support interactive session commands (e.g. python, vim), so please do not invoke them.
+    """
+)
+
+# --- instance prompt (long form) ---
+DEFAULT_INSTANCE_TEMPLATE = textwrap.dedent(
+    """
+    <uploaded_files>
+    {working_dir}
+    </uploaded_files>
+
+    We're currently attempting to solve the following problem:
+    ISSUE:
+    {problem_statement}
+
+    INSTRUCTIONS:
+    You are going to solve this issue on your own. Your terminal session has started and you're in the repository's root directory. You can use any bash commands or the special interface to help you. Edit all the files you need to and run any checks or tests that you want.
+    Remember, YOU CAN ONLY ENTER ONE COMMAND AT A TIME. You should always wait for feedback after every command.
+    When you're satisfied with all of the changes you've made, you can submit your changes to the code base by calling the FINISH tool.
+    Note however that you cannot use any interactive session commands (e.g. python, vim) in this environment, but you can write scripts and run them with `python <script_name>.py`.
+
+    NOTE ABOUT EDITING FILES: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
+
+    IMPORTANT TIPS:
+    1. Always test your code thoroughly before signalling FINISH, and if any tests fail, fix the code before continuing.
+    2. If you run a command and it doesn't work, try running a different command or inspecting the error.
+    3. Use commands like FIND or READ_FILE to inspect code instead of blindly scrolling.
+    4. Always pay attention to the current working directory.
+    5. When editing files, check that changes look correct; if not, issue another command to fix them.
+    """
+).strip()
+
+# When the last tool produced no output we can use this as a gentle reminder
+DEFAULT_NO_OUTPUT_MSG = (
+    "Your command ran successfully and did not produce any output."
+)
+
+# ---------------------------------------------------------------------------
+# Tool implementations -------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def _ls(dir: str = ".") -> str:
+    path = Path(dir)
+    if not path.is_dir():
+        return f"Directory not found: {dir}"
+    entries = [f"{p.name}/" if p.is_dir() else p.name for p in sorted(path.iterdir())]
+    return "\n".join(entries) or "<empty>"
+
+
+def _find(pattern: str, dir: str = ".") -> str:
     try:
-        subprocess.run([
-            "git",
-            "apply",
-            f"-p{strip}",
-            "--whitespace=nowarn",
-            "--reject"
-        ], input=patch.encode(), cwd=REPO_ROOT, check=True, capture_output=True)
-        return "ok"
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.stderr.decode(errors="ignore")
-        stdout = exc.stdout.decode(errors="ignore")
-        return f"[patch failed]\n{stderr or stdout}"
+        cmd = [
+            "bash",
+            "-lc",
+            f"grep -R -n --line-number --binary-files=text --color=never {shlex.quote(pattern)} {shlex.quote(dir)} || true",
+        ]
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+        return out or "<no matches>"
+    except Exception as e:
+        return f"find error: {e}"
 
-TOOLS = {"ls": ls, "find": find, "read": read, "diff": diff, "apply_patch": apply_patch}
 
-# ↑ quick python call-backs the LLM can invoke by returning a JSON blob like
-#   {"tool": "ls", "args": {"path": "astropy/io"}}
-#   The heuristics underneath also pick up plain English like "I'll use ls".
-
-# Empty list now; when proxy supports OpenAI tools we can push schema here.
-FN_SPEC: List[Dict[str, Any]] = []
-
-# ────────────────────────────── Unix socket client ────────────────────────────
-
-def _socket_request(path: str, data: Dict[str, Any]) -> Dict[str, Any]:
-    """Make HTTP POST request over Unix socket"""
-    json_body = json.dumps(data)
-    request = (
-        f"POST {path} HTTP/1.1\r\n"
-        f"Host: localhost\r\n"
-        f"Content-Type: application/json\r\n"
-        f"Content-Length: {len(json_body)}\r\n"
-        f"\r\n"
-        f"{json_body}"
-    )
-    
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+def _read_file(path: str, max_bytes: int = MAX_BYTES_READ) -> str:
+    p = Path(path)
+    if not p.exists():
+        return f"File not found: {path}"
     try:
-        sock.connect(SOCKET_PATH)
-        sock.send(request.encode())
-        
+        data = p.read_bytes()[:max_bytes]
+        return data.decode(errors="replace")
+    except Exception as e:
+        return f"read error: {e}"
+
+
+def _diff(path1: str, path2: str) -> str:
+    cmd = ["diff", "-u", "--", path1, path2]
+    try:
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
+        return out or "<no differences>"
+    except subprocess.CalledProcessError as e:
+        if e.returncode == 1:  # files differ -> diff in stdout
+            return e.output
+        return f"diff error: {e.output}"
+
+
+def _write_file(path: str, content: str) -> str:
+    p = Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return f"{path} written. bytes={len(content.encode())}"
+    except Exception as e:
+        return f"write error: {e}"
+
+
+def _apply_patch(patch: str) -> str:
+    """Apply unified diff using system `patch`. Returns result summary."""
+    try:
+        with NamedTemporaryFile("w", delete=False) as tmp:
+            tmp.write(patch)
+            tmp_path = tmp.name
+        cmd = ["patch", "-p1", "--forward", "--reject-file=-", "-i", tmp_path]
+        proc = subprocess.run(cmd, text=True, capture_output=True, timeout=60)
+        out = proc.stdout + proc.stderr
+        if proc.returncode == 0:
+            return "Patch applied successfully.\n" + out
+        elif proc.returncode == 1:
+            return "Patch applied with warnings/rejects.\n" + out
+        else:
+            return f"patch failed (code {proc.returncode}).\n" + out
+    except Exception:
+        return "patch execution error:\n" + traceback.format_exc()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+
+def _finish() -> str:
+    return "<FINISHED>"
+
+
+TOOLS = {
+    "LS": _ls,
+    "FIND": _find,
+    "READ_FILE": _read_file,
+    "DIFF": _diff,
+    "WRITE_FILE": _write_file,
+    "APPLY_PATCH": _apply_patch,
+    "FINISH": _finish,
+}
+
+# Build command documentation once TOOLS is defined
+_COMMAND_DOCS = "\n".join(
+    f"- {name.lower()}: {fn.__doc__.splitlines()[0] if fn.__doc__ else ''}" for name, fn in TOOLS.items()
+)
+
+# Format the raw system prompt with command docs
+DEFAULT_SYSTEM_PROMPT = _RAW_SYSTEM_PROMPT.format(command_docs=_COMMAND_DOCS)
+
+# ---------------------------------------------------------------------------
+# One-shot (MiniLM retrieval) mode -------------------------------------------
+# ---------------------------------------------------------------------------
+
+ONESHOT_SYSTEM_PROMPT = (
+    "You are an autonomous programmer. The user will give you a problem "
+    "statement and a compact repository summary. Return ONE unified diff "
+    "patch that solves the task. Do NOT include explanations, only the diff."
+)
+
+# Small helper – language tag for triple-backticks (very rough heuristic)
+def _lang_tag(path: str) -> str:
+    ext = os.path.splitext(path)[1].lower()
+    return {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".java": "java",
+        ".go": "go",
+    }.get(ext, "")
+
+
+def _collect_repo_texts(root: str = ".", *, max_file_bytes: int = 100_000) -> Dict[str, str]:
+    """Return {rel_path: text} for every reasonably-sized text file under *root*."""
+    texts: Dict[str, str] = {}
+    for dirpath, _dirs, files in os.walk(root):
+        if ".git" in dirpath.split(os.sep):
+            continue  # skip git internals
+        for fn in files:
+            path = os.path.join(dirpath, fn)
+            try:
+                if os.path.getsize(path) > max_file_bytes:
+                    continue
+                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                    texts[os.path.relpath(path, root)] = fh.read()
+            except Exception:
+                continue  # binary or unreadable
+    return texts
+
+
+def run_oneshot(
+    problem_text: str,
+    *,
+    socket_path: str,
+    model_name: str,
+    run_id: str,
+    top_k: int = 10,
+) -> str:
+    """Build repository summary and send a single LLM call.
+
+    We *prefer* to embed texts with `sentence_transformers` (MiniLM).  If that
+    model cannot be loaded – e.g. no internet to download weights – we fall
+    back to a plain TF-IDF vectoriser from scikit-learn so the agent still
+    operates fully offline.
+    """
+
+    import numpy as np  # local import to avoid cost when not used
+
+    repo_texts = _collect_repo_texts()
+    if not repo_texts:
+        raise RuntimeError("repository appears empty – nothing to embed")
+
+    file_paths = list(repo_texts.keys())
+    file_bodies = list(repo_texts.values())
+
+    # ------------------------------------------------------------
+    # 1) Try fast MiniLM embeddings (preferred) ------------------
+    # ------------------------------------------------------------
+    use_fallback = False
+    try:
+        from sentence_transformers import SentenceTransformer  # type: ignore
+
+        try:
+            encoder = SentenceTransformer("all-MiniLM-L6-v2")
+        except Exception:
+            # Most likely offline – fall back.
+            use_fallback = True
+    except Exception:
+        use_fallback = True
+
+    if not use_fallback:
+        file_vecs = encoder.encode(file_bodies, normalize_embeddings=True)
+        query_vec = encoder.encode([problem_text], normalize_embeddings=True)[0]
+
+        sims = file_vecs @ query_vec  # cosine similarity
+    else:
+        # --------------------------------------------------------
+        # 2) Offline fallback: TF-IDF ----------------------------
+        # --------------------------------------------------------
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        corpus = [problem_text] + file_bodies
+        vectorizer = TfidfVectorizer(stop_words="english", max_features=50_000)
+        mat = vectorizer.fit_transform(corpus).astype(np.float32)
+
+        query_vec = mat[0].toarray()[0]
+        file_mat = mat[1:]
+
+        # Cosine similarity: dot(u, v)/(||u||*||v||). Since TF-IDF vectors are
+        # already L2-normalised by sklearn (norm="l2" default), we can use dot.
+        sims = (file_mat @ query_vec)  # shape (n_files,)
+
+    top_idx = np.argsort(-sims)[: top_k]
+
+    summary_parts: list[str] = []
+    for idx in top_idx:
+        path = file_paths[idx]
+        body = file_bodies[idx][:2000]  # truncate per file
+        tag = _lang_tag(path)
+        summary_parts.append(f"### {path}\n```{tag}\n{body}\n```")
+
+    repo_summary = "\n\n".join(summary_parts)
+
+    # --------------------------------------------------------------------
+    # Build messages, then *shrink* if the final encoded request would breach
+    # the proxy's 8 KiB single-read limit.  We progressively drop the *least*
+    # similar files from the summary until the request fits.
+    # --------------------------------------------------------------------
+
+    messages = [
+        {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": problem_text,
+        },
+        {
+            "role": "user",
+            "content": "Repository summary (top files):\n\n" + repo_summary,
+        },
+    ]
+
+    def _full_http_request(msgs: List[Dict[str, Any]]) -> bytes:
+        """Return complete HTTP request for the given *msgs*."""
+        oa = {
+            "model": model_name,
+            "stream": False,
+            "messages": msgs,
+            "temperature": 0,
+        }
+        wrapper = {
+            "run_id": run_id,
+            "input_text": json.dumps(oa, ensure_ascii=False),
+            "return_text": True,
+            "return_code": True,
+        }
+        body = json.dumps(wrapper, ensure_ascii=False).encode("utf-8")
+        headers = (
+            "POST /agents/inference HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Content-Type: application/json\r\n"
+            f"Content-Length: {len(body)}\r\n\r\n"
+        ).encode("ascii")
+        return headers + body  # *no* trailing CRLF*
+
+    # The proxy now streams requests fully, so the hard 8-KiB ceiling is gone.
+    # We keep a *very* generous soft cap (512 KiB) just to avoid accidentally
+    # flooding the proxy with multi-MB payloads when a problem statement is
+    # huge.  If the request still exceeds this after all summary files are
+    # dropped we just send it – the proxy will handle it.
+
+    SOFT_CAP_BYTES = 512 * 1024  # 512 KiB
+
+    while True:
+        request_bytes = _full_http_request(messages)
+        if len(request_bytes) <= SOFT_CAP_BYTES:
+            break  # good – fits under soft cap
+
+        # 1) Remove repo summary files until none left.
+        if summary_parts:
+            summary_parts.pop()  # drop lowest-ranking file
+            repo_summary = "\n\n".join(summary_parts)
+            messages[-1]["content"] = "Repository summary (top files):\n\n" + repo_summary
+            continue
+
+        # 2) Truncate problem statement (messages[1]) in 20 kB steps.
+        user_msg = messages[1]
+        if len(user_msg["content"]) > 20_000:
+            user_msg["content"] = user_msg["content"][:20_000] + "\n[...truncated...]"
+            continue
+
+        # 3) Still exceeds soft cap – just send as-is; proxy can handle it but
+        # we avoid an infinite loop.
+        break
+
+    http_request = request_bytes
+
+    import socket as _s
+
+    def _send(req_bytes: bytes) -> bytes:
+        """Send raw HTTP request over the Unix socket and return *body* bytes."""
+        with _s.socket(_s.AF_UNIX, _s.SOCK_STREAM) as sock:
+            sock.connect(socket_path)
+            sock.sendall(req_bytes)
+            resp = b""
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                resp += chunk
+        hdr_end = resp.find(b"\r\n\r\n")
+        return resp[hdr_end + 4 :]
+
+    body = _send(http_request)
+
+    # If the proxy responded with 500/empty body, retry once with a minimal prompt.
+    if not body:
+        minimal_messages = [
+            {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
+            {"role": "user", "content": problem_text[:20_000]},
+        ]
+        http_request = _full_http_request(minimal_messages)
+        body = _send(http_request)
+
+    if not body:
+        raise RuntimeError("Proxy returned empty response body after retry.")
+
+    proxy_resp = json.loads(body)
+    text_resp = (proxy_resp.get("text_response") or "").lstrip()
+    code_resp = (proxy_resp.get("code_response") or "").lstrip()
+
+    patch_text = None
+    for cand in (text_resp, code_resp):
+        if cand and (cand.startswith("diff") or cand.startswith("--- ")):
+            patch_text = cand
+            break
+
+    if patch_text is None:
+        raise RuntimeError("LLM did not return a unified diff; responses were:\n" + text_resp[:400])
+
+    # Apply patch using existing tool helper
+    result = _apply_patch(patch_text)
+    print(result)
+    # Write trajectory for auditing
+    with open("trajectory.jsonl", "w", encoding="utf-8") as tf:
+        tf.write(json.dumps({"assistant_patch": patch_text}) + "\n")
+        tf.write(json.dumps({"apply_result": result}) + "\n")
+
+    return patch_text
+
+# ---------------------------------------------------------------------------
+# Proxy communication --------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def _send_to_proxy(socket_path: str, messages: List[Dict[str, Any]], *, run_id: str) -> Dict[str, Any]:
+    """Send chat *messages* to the proxy and return an assistant/tool dict.
+
+    The proxy expects a JSON object with keys::
+        {run_id, input_text, return_text, return_code}
+
+    where ``input_text`` itself is a JSON‐encoded string containing the full
+    OpenAI-style payload (model, messages, functions, etc.).  To satisfy the
+    proxy's 8 KiB single-recv limitation we aggressively trim the conversation
+    history until the encoded request fits.
+    """
+
+    # Build the outer payload lazily so we can shrink if needed
+    openai_payload = {
+        "model": DEFAULT_MODEL,
+        "stream": False,
+        "messages": messages,
+        "functions": FUNCTION_SPECS,
+        "temperature": 0,
+    }
+
+    MAX_REQ_BYTES = 8192  # proxy only reads 8192 bytes in one go – stay below
+
+    def _encoded(oa_payload: Dict[str, Any]) -> bytes:
+        inner_str = json.dumps(oa_payload, ensure_ascii=False)
+        wrapper = {
+            "run_id": run_id,
+            "input_text": inner_str,
+            "return_text": True,
+            "return_code": True,
+        }
+        return json.dumps(wrapper, ensure_ascii=False).encode("utf-8")
+
+    # Trim oldest user/assistant/tool messages until the payload fits.
+    # Always keep the first (system) message.
+    while True:
+        body_bytes = _encoded(openai_payload)
+        if len(body_bytes) <= MAX_REQ_BYTES:
+            break  # good – fits under the proxy's read limit
+
+        # If we have more than the system message, drop the oldest non-system.
+        if len(openai_payload["messages"]) > 1:
+            openai_payload["messages"].pop(1)
+            continue
+
+        # Only the (long) system prompt is left – truncate it hard.
+        sys_msg = openai_payload["messages"][0]
+        sys_msg["content"] = sys_msg["content"][: MAX_REQ_BYTES - 500]
+        # After truncation it must fit; if it STILL doesn't, we'll just send
+        # what we have and let the proxy fail – but that requires a >8 KiB
+        # single system prompt, which we never ship.
+        body_bytes = _encoded(openai_payload)
+        break
+
+    # Build raw HTTP request.
+    http_request = (
+        "POST /agents/inference HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {len(body_bytes)}\r\n"
+        "\r\n"
+    ).encode("ascii") + body_bytes + b"\r\n"
+
+    # --- send & receive over Unix socket ---
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+        sock.connect(socket_path)
+        sock.sendall(http_request)
+
         response = b""
+        body = b""
         while True:
             chunk = sock.recv(8192)
             if not chunk:
                 break
             response += chunk
             if b"\r\n\r\n" in response:
-                # Continue reading until we have the full body
-                headers_end = response.find(b"\r\n\r\n")
-                headers_part = response[:headers_end].decode()
-                
-                # Check if we have Content-Length header
-                content_length = 0
-                for line in headers_part.split('\r\n'):
-                    if line.lower().startswith('content-length:'):
-                        content_length = int(line.split(':')[1].strip())
-                        break
-                
-                body_start = headers_end + 4
-                body_received = len(response) - body_start
-                
-                # Read remaining body if needed
-                while body_received < content_length:
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    response += chunk
-                    body_received = len(response) - body_start
+                hdr_end = response.find(b"\r\n\r\n")
+                body = response[hdr_end + 4 :]
                 break
-        
-        # Parse response
-        response_str = response.decode()
-        if "\r\n\r\n" in response_str:
-            headers, body = response_str.split("\r\n\r\n", 1)
-            return json.loads(body) if body else {}
+
+    if not body:
         return {}
-    finally:
-        sock.close()
 
-def _call_proxy(messages: List[Dict[str, Any]], run_id: str,
-                retries: int = 3) -> Dict[str, Any]:
-    # All communication with the LLM funnelled through this one function.         
-    # It hits the Unix socket proxy and returns the raw JSON/text the model produced.
-    payload = {"messages": messages, "tools": FN_SPEC}
-    data = {
-        "run_id": run_id,
-        "return_text": "true",
-        "return_code": "true",
-        "input_text": json.dumps(payload),
-    }
-    
-    for attempt in range(retries):
-        try:
-            response = _socket_request("/agents/inference", data)
-            diff = response.get("code_response", "")
-            if diff:
-                return {"content": diff}
+    # return the raw proxy response so the caller can parse it
+    return json.loads(body)
 
-            txt = response.get("text_response", "")
-            try:
-                return json.loads(txt)
-            except Exception:
-                return {"content": txt, "code": response.get("code_response", "")}
-        except Exception as exc:
-            if attempt == retries - 1:
-                raise RuntimeError(f"proxy call failed: {exc}") from exc
-            time.sleep(1 + attempt * 2)
+# ---------------------------------------------------------------------------
+# Helper utilities -----------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-# ────────────────────── clarifying‑question auto‑handler ─────────────────────
-QUESTION_RE  = re.compile(r"\?\s*$")
-FOLLOWUP_RE  = re.compile(r"would you like|do you want|can you provide", re.I)
+def _truncate(text: str, limit: int = MAX_OBS_CHARS) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "\n...<truncated>"
 
-def _looks_like_question(text: str) -> bool:
-    t = text.strip().lower()
-    return bool(QUESTION_RE.search(t) or FOLLOWUP_RE.search(t))
+# ---------------------------------------------------------------------------
+# Main agent logic -----------------------------------------------------------
+# ---------------------------------------------------------------------------
 
-# ─────────────────────────── main solve loop ─────────────────────────────────
+def run_agent(problem_text: str, *, socket_path: str, timeout: int, model_name: str, run_id: str) -> None:
+    working_dir = os.getcwd()
 
-def _solve(prompt: Dict[str, Any]) -> tuple[str, str]:
-    # Core autopilot loop:                                                         
-    #  send conversation so far to the model                                     
-    #  if reply contains a tool-call, run it and feed output back                
-    #  else assume it's the final diff and bail                                  
-    # We also auto-answer clarifying questions because the sandbox has no user.
-    # Can change logic for this but idrk how to do it
-    run_id = prompt.get("run_id", None)
-    problem_statement = prompt.get("problem_statement", None)
-    require_tool = os.getenv("FORCE_TOOL_CALL", "0") not in {"0", "false", "False", ""}
-
-    # ------------------------- system prompt -------------------------
-    system_prompt = (
-        """
-        You are a fully-autonomous code-analysis agent running in an **offline sandbox**.
-        The repository root is /sandbox/repo (use **relative paths** such as
-        'astropy/io/registry/compat.py').
-
-        You may call five JSON tools — ls, find, read, diff, apply_patch — by replying
-        **only** with a JSON blob like {"tool":"ls","args":{...}}.
-
-        After you have gathered enough context you must reply with **one final
-        unified diff** that can be applied with `git apply` or `patch -p1`
-        **without any additional text**.
-
-        Unified-diff requirements:
-          • Start each file section with `--- a/<path>` and `+++ b/<path>` lines.
-          • Use one or more hunk headers of the form `@@ -oldStart,oldCount +newStart,newCount @@`.
-          • Use only lines that begin with a space (context), `+` (add), or `-` (delete).
-          • Do NOT wrap the diff in markdown fences, do NOT add commentary before or after, and do NOT add blank lines outside the diff.
-
-        Example format (do **not** repeat this text, only mirror the structure):
-        diff --git a/foo.py b/foo.py
-        --- a/foo.py
-        +++ b/foo.py
-        @@ -10,3 +10,4 @@ def bar():
-             print("old")
-        -    return 1
-        +    return 42
-        @@ -24,0 +25,3 @@
-        +# new helper
-        +def helper():
-        +    pass
-
-        You are a fully-autonomous code-analysis agent. Repo is at /sandbox/repo.
-        No external internet. Available JSON tools: ls, find, read, diff, apply_patch.
-        If unsure, assume and proceed.
-        """
-        .strip()
+    system_prompt = DEFAULT_SYSTEM_PROMPT
+    instance_prompt = DEFAULT_INSTANCE_TEMPLATE.format(
+        working_dir=working_dir, problem_statement=problem_text
     )
 
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": system_prompt},
-        {"role": "user",   "content": problem_statement},
+        {"role": "user", "content": instance_prompt},
     ]
 
-    tool_used = False
-    patch_applied = False
-    for step in range(TOOL_LOOP_CAP):
-        logging.info("proxy round %d", step + 1)
-        reply = _call_proxy(messages, run_id)
+    traj_file = Path("trajectory.jsonl").open("w", encoding="utf-8")
+    start_time = time.time()
 
-        raw_txt = reply.get("content", "").strip()
-        # ───── detect explicit JSON tool call ─────
-        if raw_txt.startswith("diff"):
-            # Let the model's diff modify the real repo, then loop again.
-            result = apply_patch(raw_txt)
-            # Always let the model know the outcome
-            messages.append({"role": "tool", "content": result})
+    for step in range(1, MAX_STEPS + 1):
+        if time.time() - start_time > timeout:
+            print("[agent] global timeout reached", file=sys.stderr)
+            sys.exit(1)
 
-            patch_applied_this_round = (result == "ok")
+        proxy_resp = _send_to_proxy(socket_path, messages, run_id=run_id)
 
-            # If patch applied, show the *actual* diff so the model can inspect
-            if patch_applied_this_round:
+        text_resp = (proxy_resp.get("text_response") or "").strip()
+        code_resp = (proxy_resp.get("code_response") or "").strip()
+
+        # Try diff first – model may send patch in code_response
+        if code_resp and (code_resp.lstrip().startswith("diff") or code_resp.lstrip().startswith("--- ")):
+            assistant_msg = {"role": "assistant", "content": None,
+                             "tool_call": {"name": "APPLY_PATCH", "arguments": {"patch": code_resp}}}
+            call = assistant_msg["tool_call"]
+            messages.append(assistant_msg)
+            thought_text = text_resp  # may be empty
+        else:
+            # Parse JSON tool call from text_response (preferred) or code_response fallback
+
+            def _extract_call(raw: str) -> Dict[str, Any] | None:
                 try:
-                    real = subprocess.run(
-                        ["git", "diff", "--patch", "--minimal"],
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    diff_txt = real.stdout.strip() or "[no diff (working tree clean)]"
-                    messages.append({"role": "tool", "content": _truncate(diff_txt)})
-                except Exception as err:
-                    messages.append({"role": "tool", "content": f"[failed to get git diff: {err}]"})
+                    obj = json.loads(raw)
+                except Exception:
+                    return None
 
-            tool_used = patch_applied_this_round
-            if patch_applied_this_round:
-                patch_applied = True
-            continue
+                # Shape 1: {"name": ..., "arguments": {...}}
+                if isinstance(obj, dict) and "name" in obj:
+                    return {"name": obj["name"], "arguments": obj.get("arguments", {})}
 
-        # ───── recognise explicit finish signal ─────
-        if raw_txt.strip().upper() in {"DONE", "FINISHED", "COMPLETE"}:
-            final_diff = subprocess.run(
-                ["git", "diff", "--patch", "--minimal"],
-                cwd=REPO_ROOT,
-                capture_output=True,
-                text=True,
-                check=False,
-            ).stdout
-            return final_diff, ""
+                # Shape 2: {"tool_calls": [ {"function": {"name":..., "arguments":"{...}"}} ]}
+                if isinstance(obj, dict) and "tool_calls" in obj:
+                    try:
+                        fc = obj["tool_calls"][0]["function"]
+                        args_str = fc.get("arguments", "{}")
+                        args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        return {"name": fc["name"], "arguments": args}
+                    except Exception:
+                        return None
 
-        # If model returns JSON with {"final": true}
-        if raw_txt.startswith("{"):
-            try:
-                obj = json.loads(raw_txt)
-                if obj.get("final") is True:
-                    final_diff = subprocess.run(
-                        ["git", "diff", "--patch", "--minimal"],
-                        cwd=REPO_ROOT,
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    ).stdout
-                    return final_diff, ""
-            except Exception:
-                pass  # not fatal
+                return None
 
-        # ───── heuristic natural-language detection ─────
-        hint = _nl_to_tool(raw_txt)
-        if hint:
-            tname, targs = hint
-            logging.info("heuristic tool match → %s(%s)", tname, targs)
-            try:
-                result = TOOLS[tname](**targs)
-            except Exception as err:
-                result = f"[tool execution error: {err}]"
-            messages.append({"role": "tool", "content": result})
-            tool_used = True
-            continue
+            call = _extract_call(text_resp) or _extract_call(code_resp)
 
-        # ───── automatic answer to clarifying question ─────
-        if _looks_like_question(raw_txt) and not tool_used:
-            logging.info("LLM asked a question; auto‑replying with 'No additional info'.")
-            messages.extend([
-                {"role": "assistant", "content": raw_txt},
-                {"role": "user",      "content": "No additional information is available. Proceed."},
-            ])
-            continue
+            thought_text = text_resp if call else text_resp or code_resp
 
-        # ───── final answer ─────
-        if (not tool_used or not patch_applied) and require_tool:
-            # If we've already asked once and model still didn't comply, accept its answer.
-            if messages and messages[-1].get("role") == "user" and "Please inspect" in messages[-1].get("content", ""):
-                logging.warning("LLM failed to use tool after nudge; accepting best effort answer.")
-                return raw_txt, reply.get("code", "")
+            if call:
+                messages.append({"role": "assistant", "content": None, "tool_call": call})
+            else:
+                messages.append({"role": "assistant", "content": thought_text})
+                traj_file.write(json.dumps({"assistant": {"content": thought_text}}) + "\n")
+                traj_file.flush()
+                continue  # nothing to execute this turn
 
-            logging.warning("LLM ended without using any tool; nudging once.")
-            messages.append({"role": "assistant", "content": raw_txt})
-            messages.append({"role": "user", "content": "Please inspect the codebase with at least one tool."})
-            continue
+        name = call["name"]
+        args = call.get("arguments", {}) or {}
 
-        # ───── optional debug: dump conversation to stderr ─────
-        if os.getenv("DEBUG_CONVO_STDERR", "0") not in {"0", "false", "False", ""}:
-            import sys, json, textwrap
-            print(f"\n[DEBUG_CONVO] -------- step {step}", file=sys.stderr)
-            try:
-                print(textwrap.indent(json.dumps(messages, indent=2)[-4000:], "  "), file=sys.stderr)
-                print(textwrap.indent(json.dumps(reply, indent=2), "  "), file=sys.stderr)
-            except Exception as dbg_err:
-                print(f"[DEBUG_CONVO] logging failed: {dbg_err}", file=sys.stderr)
+        # Execute tool
+        try:
+            result = TOOLS[name](**args) if args else TOOLS[name]()
+        except Exception:
+            result = "Tool execution error:\n" + traceback.format_exc()
 
-        return raw_txt, reply.get("code", "")
+        result_trunc = _truncate(result)
 
-    return "[no answer]", ""
+        # Append messages to history
+        messages.append({"role": "assistant", "content": thought_text})
+        messages.append({"role": "assistant", "tool_call": call})
+        messages.append({"role": "tool", "name": name, "content": result_trunc})
+
+        traj_file.write(json.dumps({"assistant": {"thought": thought_text, "action": call}}) + "\n")
+        traj_file.write(json.dumps({"tool_result": {"name": name, "content": result_trunc}}) + "\n")
+        traj_file.flush()
+
+        if name == "FINISH":
+            print("[agent] FINISH called – exiting.")
+            traj_file.close()
+            sys.exit(0)
+
+    print("[agent] max steps exceeded", file=sys.stderr)
+    traj_file.close()
+    sys.exit(1)
+
 
 # ---------------------------------------------------------------------------
-# Sandbox entry-point required by the validator
+# Compatibility wrapper for validator import style ---------------------------
 # ---------------------------------------------------------------------------
-def agent_main(input: dict):
-    patch, _ = _solve(input)
-    return {"patch": patch}
+
+def agent_main(input_dict: Dict[str, Any]):
+    """Entry-point expected by the validator legacy interface.
+
+    Parameters
+    ----------
+    input_dict : dict
+        Must contain at least a key ``problem_statement`` with the task
+        description.  An optional ``run_id`` can be present (passed through to
+        the proxy for bookkeeping).
+    """
+
+    problem_text = input_dict.get("problem_statement")
+    if not problem_text:
+        raise ValueError("input_dict must contain 'problem_statement'.")
+
+    # Environment overrides (the validator sets these); fall back to CLI defaults.
+    socket_path = os.getenv("AI_PROXY_SOCK", DEFAULT_SOCKET)
+    timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
+    model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
+
+    # Force one-shot MiniLM retrieval mode for every run.
+    patch_text = run_oneshot(
+        problem_text,
+        socket_path=socket_path,
+        model_name=model_name,
+        run_id=input_dict.get("run_id", ""),
+    )
+
+    return {"patch": patch_text}
+
+# Ensure both import-style and CLI execution work
 
 if __name__ == "__main__":
-    agent_main()
+    try:
+        payload = json.loads(sys.stdin.read()) if not sys.stdin.isatty() else {}
+    except Exception:
+        payload = {}
+    agent_main(payload)
+
+# ---------------------------------------------------------------------------
+# Function specs (for iterative chat loop) ----------------------------------
+# ---------------------------------------------------------------------------
+
+FUNCTION_SPECS: List[Dict[str, Any]] = [
+    {"name": "LS", "description": "List directory contents.", "parameters": {"type": "object", "properties": {"dir": {"type": "string", "description": "Directory path", "default": "."}}}},
+    {
+        "name": "FIND",
+        "description": "Recursively search files for a regex pattern and return matching lines.",
+        "parameters": {
+            "type": "object",
+            "properties": {"pattern": {"type": "string"}, "dir": {"type": "string", "default": "."}},
+            "required": ["pattern"],
+        },
+    },
+    {
+        "name": "READ_FILE",
+        "description": "Read up to max_bytes bytes from a file.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_BYTES_READ}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "DIFF",
+        "description": "Return unified diff between two files.",
+        "parameters": {
+            "type": "object",
+            "properties": {"path1": {"type": "string"}, "path2": {"type": "string"}},
+            "required": ["path1", "path2"],
+        },
+    },
+    {
+        "name": "WRITE_FILE",
+        "description": "Write content to a file (overwrites if exists).",
+        "parameters": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "APPLY_PATCH",
+        "description": "Apply a unified diff patch to the repository root using the patch command.",
+        "parameters": {"type": "object", "properties": {"patch": {"type": "string"}}, "required": ["patch"]},
+    },
+    {"name": "FINISH", "description": "Signal that all tasks are complete.", "parameters": {"type": "object", "properties": {}}},
+]
