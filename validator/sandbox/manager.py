@@ -13,6 +13,7 @@ import docker
 from pathlib import Path
 from shared.logging_utils import get_logger
 
+from validator.config import RIDGES_API_URL
 from validator.utils.temp_files import create_temp_file
 from validator.sandbox.validator import validate_sandbox_dir
 
@@ -142,7 +143,7 @@ def start_proxy():
             
             if path in ALLOWED_PATHS:
                 # Build target URL
-                target_url = f"http://localhost:8000{full_path}"
+                target_url = RIDGES_API_URL + full_path
                 
                 # Create request
                 if method.upper() == 'POST' and request_body:
