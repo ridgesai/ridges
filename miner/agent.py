@@ -47,6 +47,7 @@ import sys
 import textwrap
 import time
 import traceback
+import random
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List
@@ -434,29 +435,6 @@ def run_oneshot(
         {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
     ]
 
-    def _full_http_request(msgs: List[Dict[str, Any]]) -> bytes:
-        """Return complete HTTP request for the given *msgs*."""
-        oa = {
-            "model": model_name,
-            "stream": False,
-            "messages": msgs,
-            "temperature": 0,
-        }
-        wrapper = {
-            "run_id": run_id,
-            "input_text": json.dumps(oa, ensure_ascii=False),
-            "return_text": True,
-            "return_code": True,
-        }
-        body = json.dumps(wrapper, ensure_ascii=False).encode("utf-8")
-        headers = (
-            "POST /agents/inference HTTP/1.1\r\n"
-            "Host: localhost\r\n"
-            "Content-Type: application/json\r\n"
-            f"Content-Length: {len(body)}\r\n\r\n"
-        ).encode("ascii")
-        return headers + body  # *no* trailing CRLF*
-
     # The proxy now streams requests fully, so the hard 8-KiB ceiling is gone.
     # We keep a *very* generous soft cap (512 KiB) just to avoid accidentally
     # flooding the proxy with multi-MB payloads when a problem statement is
@@ -467,48 +445,34 @@ def run_oneshot(
 
     ATTEMPTS = 3
 
-    # Helper to send raw HTTP request and return body bytes – needs to be
-    # defined before first use inside the attempts loop.
-
-    import socket as _s
-
-    def _send(req_bytes: bytes) -> bytes:
-        with _s.socket(_s.AF_UNIX, _s.SOCK_STREAM) as sock:
-            sock.connect(socket_path)
-            sock.sendall(req_bytes)
-            resp = b""
-            while True:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                resp += chunk
-        hdr_end = resp.find(b"\r\n\r\n")
-        return resp[hdr_end + 4 :]
-
     for attempt in range(ATTEMPTS):
         # Ensure request fits (reuse shrinking logic)
         while True:
-            request_bytes = _full_http_request(messages)
+            request_data = {
+                "run_id": run_id,
+                "input_text": problem_text + "\n\nRepository summary (top files):\n\n" + repo_summary,
+                "return_text": True,
+                "return_code": True,
+                "model": model_name,
+            }
+            request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
             if len(request_bytes) <= SOFT_CAP_BYTES:
                 break
             if summary_parts:
                 summary_parts.pop()
                 repo_summary = "\n\n".join(summary_parts)
-                messages[-1]["content"] = "Repository summary (top files):\n\n" + repo_summary
+                request_data["input_text"] = problem_text + "\n\nRepository summary (top files):\n\n" + repo_summary
             else:
                 break
 
-        body = _send(request_bytes)
-        if not body:
-            # Retry once with minimal prompt
-            body = _send(_full_http_request([
-                {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
-                {"role": "user", "content": problem_text[:20_000]},
-            ]))
-            if not body:
-                raise RuntimeError("Proxy returned empty body twice.")
+        try:
+            proxy_resp = _send_json_request(socket_path, "/agents/inference", request_data)
+        except Exception as e:
+            print(f"[agent] Request failed (attempt {attempt + 1}): {e}", file=sys.stderr)
+            if attempt == ATTEMPTS - 1:
+                raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
+            continue
 
-        proxy_resp = json.loads(body)
         text_resp = (proxy_resp.get("text_response") or "").lstrip()
         code_resp = (proxy_resp.get("code_response") or "").lstrip()
 
@@ -519,7 +483,7 @@ def run_oneshot(
                 break
 
         if patch_text is None:
-            raise RuntimeError("LLM did not return a unified diff.")
+            raise Exception(proxy_resp)
 
         ok, dry_out = _dry_run_patch(patch_text)
         if ok:
@@ -541,91 +505,75 @@ def run_oneshot(
 # Proxy communication --------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-def _send_to_proxy(socket_path: str, messages: List[Dict[str, Any]], *, run_id: str) -> Dict[str, Any]:
-    """Send chat *messages* to the proxy and return an assistant/tool dict.
-
-    The proxy expects a JSON object with keys::
-        {run_id, input_text, return_text, return_code}
-
-    where ``input_text`` itself is a JSON‐encoded string containing the full
-    OpenAI-style payload (model, messages, functions, etc.).  To satisfy the
-    proxy's 8 KiB single-recv limitation we aggressively trim the conversation
-    history until the encoded request fits.
-    """
-
-    # Build the outer payload lazily so we can shrink if needed
-    openai_payload = {
-        "model": DEFAULT_MODEL,
-        "stream": False,
-        "messages": messages,
-        "functions": FUNCTION_SPECS,
-        "temperature": 0,
+def _send_json_request(socket_path: str, endpoint: str, data: dict, max_retries: int = 5, base_delay: float = 0.1) -> dict:
+    """Send JSON request over Unix socket with retry logic."""
+    
+    # Check if socket file exists
+    if not os.path.exists(socket_path):
+        raise RuntimeError(f"Socket file does not exist: {socket_path}")
+    
+    # Check socket file permissions
+    try:
+        import stat
+        st = os.stat(socket_path)
+        if not stat.S_ISSOCK(st.st_mode):
+            raise RuntimeError(f"Path exists but is not a socket: {socket_path}")
+        print(f"[agent] Socket file exists and is a socket: {socket_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"[agent] Error checking socket file: {e}", file=sys.stderr)
+    
+    message = {
+        "endpoint": endpoint,
+        "data": data
     }
-
-    MAX_REQ_BYTES = 8192  # proxy only reads 8192 bytes in one go – stay below
-
-    def _encoded(oa_payload: Dict[str, Any]) -> bytes:
-        inner_str = json.dumps(oa_payload, ensure_ascii=False)
-        wrapper = {
-            "run_id": run_id,
-            "input_text": inner_str,
-            "return_text": True,
-            "return_code": True,
-        }
-        return json.dumps(wrapper, ensure_ascii=False).encode("utf-8")
-
-    # Trim oldest user/assistant/tool messages until the payload fits.
-    # Always keep the first (system) message.
-    while True:
-        body_bytes = _encoded(openai_payload)
-        if len(body_bytes) <= MAX_REQ_BYTES:
-            break  # good – fits under the proxy's read limit
-
-        # If we have more than the system message, drop the oldest non-system.
-        if len(openai_payload["messages"]) > 1:
-            openai_payload["messages"].pop(1)
-            continue
-
-        # Only the (long) system prompt is left – truncate it hard.
-        sys_msg = openai_payload["messages"][0]
-        sys_msg["content"] = sys_msg["content"][: MAX_REQ_BYTES - 500]
-        # After truncation it must fit; if it STILL doesn't, we'll just send
-        # what we have and let the proxy fail – but that requires a >8 KiB
-        # single system prompt, which we never ship.
-        body_bytes = _encoded(openai_payload)
-        break
-
-    # Build raw HTTP request.
-    http_request = (
-        "POST /agents/inference HTTP/1.1\r\n"
-        "Host: localhost\r\n"
-        "Content-Type: application/json\r\n"
-        f"Content-Length: {len(body_bytes)}\r\n"
-        "\r\n"
-    ).encode("ascii") + body_bytes + b"\r\n"
-
-    # --- send & receive over Unix socket ---
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-        sock.connect(socket_path)
-        sock.sendall(http_request)
-
-        response = b""
-        body = b""
-        while True:
-            chunk = sock.recv(8192)
-            if not chunk:
-                break
-            response += chunk
-            if b"\r\n\r\n" in response:
-                hdr_end = response.find(b"\r\n\r\n")
-                body = response[hdr_end + 4 :]
-                break
-
-    if not body:
-        return {}
-
-    # return the raw proxy response so the caller can parse it
-    return json.loads(body)
+    
+    request_bytes = json.dumps(message, ensure_ascii=False).encode('utf-8')
+    
+    for attempt in range(max_retries + 1):
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                print(f"[agent] Connecting to socket: {socket_path} (attempt {attempt + 1})", file=sys.stderr)
+                sock.connect(socket_path)
+                print(f"[agent] Connected successfully, sending JSON request to {endpoint} ({len(request_bytes)} bytes)", file=sys.stderr)
+                sock.sendall(request_bytes)
+                
+                # Read JSON response
+                response_data = b""
+                sock.settimeout(30)  # 30 second timeout
+                
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response_data += chunk
+                    # Try to parse as JSON to see if we have a complete message
+                    try:
+                        response = json.loads(response_data.decode('utf-8'))
+                        print(f"[agent] Received JSON response: {len(response_data)} bytes", file=sys.stderr)
+                        return response
+                    except json.JSONDecodeError:
+                        continue  # Keep reading
+                
+                # If we get here, we didn't get a complete JSON response
+                raise RuntimeError("Incomplete JSON response received")
+                
+        except (socket.error, ConnectionRefusedError, FileNotFoundError) as e:
+            print(f"[agent] Connection error (attempt {attempt + 1}): {e}", file=sys.stderr)
+            if attempt == max_retries:
+                raise RuntimeError(f"Failed to connect to socket after {max_retries + 1} attempts. Last error: {e}")
+            
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+            print(f"[agent] Connection refused (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay:.2f}s...", file=sys.stderr)
+            time.sleep(delay)
+        except Exception as e:
+            print(f"[agent] Unexpected error (attempt {attempt + 1}): {e}", file=sys.stderr)
+            if attempt == max_retries:
+                raise RuntimeError(f"Unexpected error after {max_retries + 1} attempts: {e}")
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
+            print(f"[agent] Unexpected error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying in {delay:.2f}s...", file=sys.stderr)
+            time.sleep(delay)
+    
+    raise RuntimeError(f"Failed to send request after {max_retries + 1} attempts")
 
 # ---------------------------------------------------------------------------
 # Helper utilities -----------------------------------------------------------
@@ -661,7 +609,13 @@ def run_agent(problem_text: str, *, socket_path: str, timeout: int, model_name: 
             print("[agent] global timeout reached", file=sys.stderr)
             sys.exit(1)
 
-        proxy_resp = _send_to_proxy(socket_path, messages, run_id=run_id)
+        proxy_resp = _send_json_request(socket_path, "/agents/inference", {
+            "run_id": run_id,
+            "input_text": instance_prompt,
+            "return_text": True,
+            "return_code": True,
+            "model": model_name,
+        })
 
         text_resp = (proxy_resp.get("text_response") or "").strip()
         code_resp = (proxy_resp.get("code_response") or "").strip()
@@ -765,11 +719,15 @@ def agent_main(input_dict: Dict[str, Any]):
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
 
     # Force one-shot MiniLM retrieval mode for every run.
+    run_id = input_dict.get("run_id", "")
+    if not run_id:
+        raise ValueError("input_dict must contain 'run_id' for API calls.")
+    
     patch_text = run_oneshot(
         problem_text,
         socket_path=socket_path,
         model_name=model_name,
-        run_id=input_dict.get("run_id", ""),
+        run_id=run_id,
     )
 
     return {"patch": patch_text}
