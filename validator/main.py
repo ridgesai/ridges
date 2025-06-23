@@ -143,7 +143,7 @@ async def get_available_nodes_with_api(
     # Filter available nodes
     available_nodes = [
         node for node, is_available in zip(nodes, availability_results)
-        if is_available and not is_cheating(node.hotkey)
+        if is_available
     ]
 
     total_available = len(available_nodes)
