@@ -5,6 +5,7 @@ from typing import Optional, Literal, List
 class Agent(BaseModel):
     agent_id: str
     miner_hotkey: str
+    name: str
     latest_version: int
     created_at: datetime
     last_updated: datetime
@@ -23,6 +24,11 @@ class AgentSummary(BaseModel):
     miner_hotkey: str
     latest_version: AgentVersion
     code: Optional[str]
+
+class AgentQueryResponse(BaseModel):
+    latest_agent: AgentSummary
+    latest_scored_agent: AgentSummary
+
 class EvaluationRun(BaseModel):
     run_id: str
     evaluation_id: str

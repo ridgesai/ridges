@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from pydantic import BaseModel
 import logging
 import uuid
 from datetime import datetime, timedelta
 import ast
 import sys
+
+from fiber import Keypair
 
 from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
@@ -11,6 +14,7 @@ from api.src.utils.models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
 from api.src.socket.server import WebSocketServer
 from api.src.db.s3 import S3Manager
+from api.src.utils.nodes import get_subnet_hotkeys
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +22,20 @@ s3_manager = S3Manager()
 db = DatabaseManager()
 server = WebSocketServer()
 
+class AgentUploadRequest(BaseModel):
+    miner_hotkey: str
+    public_key: str
+    file_info: str
+    signature: str
+    name: str
+
 async def post_agent (
     agent_file: UploadFile = File(...),
-    miner_hotkey: str = None,
+    miner_hotkey: str = Form(...),
+    public_key: str = Form(...),
+    file_info: str = Form(...),
+    signature: str = Form(...),
+    name: str = Form(...),
 ):
     # Check if miner_hotkey is provided
     if not miner_hotkey:
@@ -28,6 +43,7 @@ async def post_agent (
             status_code=400,
             detail="miner_hotkey is required"
         )
+
     
     existing_agent = db.get_agent_by_hotkey(miner_hotkey)
     if existing_agent and existing_agent.last_updated > datetime.now() - timedelta(seconds=AGENT_RATE_LIMIT_SECONDS):
@@ -35,6 +51,8 @@ async def post_agent (
             status_code=400,
             detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
         )
+
+    agent_name = name if not existing_agent else existing_agent.name
 
     # Check filename
     if agent_file.filename != "agent.py":
@@ -73,7 +91,15 @@ async def post_agent (
             )
     # Reset file pointer
     await agent_file.seek(0)
-    
+
+    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    if not keypair.verify(file_info, bytes.fromhex(signature)):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Check if hotkey is registered using fiber
+    if miner_hotkey not in await get_subnet_hotkeys():
+        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
+
     # Check if file is a valid python file
     try:
         # Parse the file content
@@ -140,9 +166,12 @@ async def post_agent (
             detail=f"Failed to store agent version in our database. Please try again later."
         )
     
+    # Only set name for new agents, not for updates
+    
     agent_object = Agent(
         agent_id=agent_id,
         miner_hotkey=existing_agent.miner_hotkey if existing_agent else miner_hotkey,
+        name=agent_name,
         latest_version=existing_agent.latest_version + 1 if existing_agent else 0,
         created_at=existing_agent.created_at if existing_agent else datetime.now(),
         last_updated=datetime.now(),

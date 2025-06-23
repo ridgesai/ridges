@@ -317,6 +317,9 @@ class SandboxManager:
         # Connect to the locally running Docker daemon
         self.docker = docker.from_env()
 
+        # Ensure the sandbox-runner image is built
+        self._ensure_sandbox_image()
+
         # Create the sandbox network if it doesn't exist
         # TODO
         try:
@@ -397,3 +400,28 @@ class SandboxManager:
         for sandbox in self.sandboxes:
             sandbox.cleanup()
             self.sandboxes.remove(sandbox)
+
+    def _ensure_sandbox_image(self):
+        """Check if the sandbox-runner image exists and build it if not."""
+        try:
+            # Try to get the image
+            self.docker.images.get(SANDBOX_DOCKER_IMAGE)
+            logger.info(f"Docker image '{SANDBOX_DOCKER_IMAGE}' already exists")
+        except docker.errors.ImageNotFound:
+            logger.info(f"Docker image '{SANDBOX_DOCKER_IMAGE}' not found, building...")
+            try:
+                # Build the image from the Dockerfile in the sandbox directory
+                dockerfile_path = str(CURRENT_DIR / "Dockerfile")
+                logger.info(f"Building image from {dockerfile_path}")
+                
+                self.docker.images.build(
+                    path=str(CURRENT_DIR),
+                    dockerfile="Dockerfile",
+                    tag=SANDBOX_DOCKER_IMAGE,
+                    rm=True  # Remove intermediate containers
+                )
+                
+                logger.info(f"Successfully built Docker image '{SANDBOX_DOCKER_IMAGE}'")
+            except Exception as e:
+                logger.error(f"Failed to build Docker image '{SANDBOX_DOCKER_IMAGE}': {e}")
+                raise

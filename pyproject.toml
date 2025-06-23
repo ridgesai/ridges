@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "asyncio>=3.4.3",
     "boto3>=1.38.40",
+    "click>=8.1.0",
     "dotenv>=0.9.9",
     "fiber[full]",
     "gitpython>=3.1.44",
@@ -18,6 +19,7 @@ dependencies = [
     "pandas>=2.2.0",
     "psycopg2>=2.9.10",
     "psycopg2-binary>=2.9.10",
+    "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",

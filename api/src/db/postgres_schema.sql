@@ -2,6 +2,7 @@
 CREATE TABLE agents (
     agent_id UUID PRIMARY KEY NOT NULL,
     miner_hotkey TEXT NOT NULL,
+    name TEXT NOT NULL,
     latest_version INT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     last_updated TIMESTAMP NOT NULL
