@@ -65,6 +65,7 @@ markdown-it-py==3.0.0
 markupsafe==3.0.2
 mdurl==0.1.2
 modal==1.0.2
+mnemonic==0.20
 more-itertools==10.7.0
 multidict==6.4.4
 multiprocess==0.70.16
