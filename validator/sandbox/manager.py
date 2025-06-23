@@ -87,7 +87,10 @@ def start_proxy():
                     continue  # Keep reading
 
             if not data:
-                client.send(json.dumps({"error": "No data received"}).encode('utf-8'))
+                try:
+                    client.send(json.dumps({"error": "No data received"}).encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.debug("Client disconnected before response could be sent")
                 return
 
             try:
@@ -98,7 +101,10 @@ def start_proxy():
                 logger.debug(f"Received JSON request: endpoint={endpoint}, data_size={len(str(request_data))}")
 
                 if endpoint not in ALLOWED_PATHS:
-                    client.send(json.dumps({"error": f"Endpoint {endpoint} not allowed"}).encode('utf-8'))
+                    try:
+                        client.send(json.dumps({"error": f"Endpoint {endpoint} not allowed"}).encode('utf-8'))
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.debug("Client disconnected before response could be sent")
                     return
 
                 # Build target URL
@@ -117,27 +123,48 @@ def start_proxy():
                 try:
                     api_response = json.loads(response_body.decode('utf-8'))
                     # Send JSON response back to client
-                    client.send(json.dumps(api_response).encode('utf-8'))
+                    try:
+                        client.send(json.dumps(api_response).encode('utf-8'))
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.debug("Client disconnected before response could be sent")
                 except json.JSONDecodeError:
                     # If API response is not JSON, wrap it
-                    client.send(json.dumps({"response": response_body.decode('utf-8', errors='ignore')}).encode('utf-8'))
+                    try:
+                        client.send(json.dumps({"response": response_body.decode('utf-8', errors='ignore')}).encode('utf-8'))
+                    except (BrokenPipeError, ConnectionResetError):
+                        logger.debug("Client disconnected before response could be sent")
 
                 logger.debug(f"Sent JSON response: {len(response_body)} bytes")
 
             except json.JSONDecodeError as e:
-                client.send(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
+                try:
+                    client.send(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.debug("Client disconnected before response could be sent")
             except urllib.error.URLError as e:
-                client.send(json.dumps({"error": f"API request failed: {str(e)}"}).encode('utf-8'))
+                try:
+                    client.send(json.dumps({"error": f"API request failed: {str(e)}"}).encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.debug("Client disconnected before response could be sent")
             except Exception as e:
-                client.send(json.dumps({"error": f"Proxy error: {str(e)}"}).encode('utf-8'))
+                try:
+                    client.send(json.dumps({"error": f"Proxy error: {str(e)}"}).encode('utf-8'))
+                except (BrokenPipeError, ConnectionResetError):
+                    logger.debug("Client disconnected before response could be sent")
                 logger.error(f"Proxy error: {e}")
 
         except Exception as e:
-            error_response = json.dumps({"error": f"Unexpected error: {str(e)}"})
-            client.send(error_response.encode('utf-8'))
+            try:
+                error_response = json.dumps({"error": f"Unexpected error: {str(e)}"})
+                client.send(error_response.encode('utf-8'))
+            except (BrokenPipeError, ConnectionResetError):
+                logger.debug("Client disconnected before error response could be sent")
             logger.error(f"Unexpected error in proxy: {e}")
         finally:
-            client.close()
+            try:
+                client.close()
+            except Exception:
+                pass
 
     def run():
         logger.info("Proxy server loop started")
@@ -146,6 +173,9 @@ def start_proxy():
                 client, addr = sock.accept()
                 logger.debug(f"Accepted connection from {addr}")
                 threading.Thread(target=handle_client, args=(client,), daemon=True).start()
+            except (BrokenPipeError, ConnectionResetError) as e:
+                logger.debug(f"Connection error in proxy loop: {e}")
+                continue
             except Exception as e:
                 logger.error(f"Error accepting connection: {e}")
                 break
@@ -157,15 +187,50 @@ def start_proxy():
     # Give the proxy a moment to start up
     time.sleep(0.1)
 
-    # Verify the socket is working
+    # Verify the socket is working with a proper test
     try:
         test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        test_sock.settimeout(5)  # 5 second timeout
         test_sock.connect(SOCKET_PATH)
+        
+        # Send a minimal test message
+        test_message = {
+            "endpoint": "/agents/inference",
+            "data": {
+                "run_id": "test-verification",
+                "input_text": "test",
+                "return_text": True,
+                "return_code": True,
+                "model": "deepseek-ai/DeepSeek-V3-0324"
+            }
+        }
+        test_sock.sendall(json.dumps(test_message).encode('utf-8'))
+        
+        # Try to read response (should get an error since run_id doesn't exist in DB)
+        response_data = b""
+        test_sock.settimeout(10)  # 10 second timeout for response
+        while True:
+            chunk = test_sock.recv(4096)
+            if not chunk:
+                break
+            response_data += chunk
+            try:
+                response = json.loads(response_data.decode('utf-8'))
+                break  # Complete JSON response received
+            except json.JSONDecodeError:
+                continue  # Keep reading
+        
         test_sock.close()
-        logger.info("Proxy socket verification successful")
+        
+        # Check if we got a proper response (even if it's an error)
+        if response_data:
+            logger.info("Proxy socket verification successful - received response")
+        else:
+            raise RuntimeError("No response received from proxy")
+            
     except Exception as e:
         logger.error(f"Proxy socket verification failed: {e}")
-        raise
+        raise RuntimeError(f"Proxy socket verification failed: {e}")
 
     return sock
 
