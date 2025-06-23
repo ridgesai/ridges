@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from pydantic import BaseModel
 import logging
 import uuid
 from datetime import datetime, timedelta
 import ast
 import sys
+
+from fiber import Keypair
 
 from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
@@ -11,6 +14,8 @@ from api.src.utils.models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
 from api.src.socket.server import WebSocketServer
 from api.src.db.s3 import S3Manager
+from api.src.utils.nodes import get_subnet_hotkeys
+from validator.config import NETUID
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +23,18 @@ s3_manager = S3Manager()
 db = DatabaseManager()
 server = WebSocketServer()
 
+class AgentUploadRequest(BaseModel):
+    miner_hotkey: str
+    public_key: str
+    file_info: str
+    signature: str
+
 async def post_agent (
     agent_file: UploadFile = File(...),
-    miner_hotkey: str = None,
+    miner_hotkey: str = Form(...),
+    public_key: str = Form(...),
+    file_info: str = Form(...),
+    signature: str = Form(...),
 ):
     # Check if miner_hotkey is provided
     if not miner_hotkey:
@@ -73,7 +87,15 @@ async def post_agent (
             )
     # Reset file pointer
     await agent_file.seek(0)
-    
+
+    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    if not keypair.verify(file_info, bytes.fromhex(signature)):
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    # Check if hotkey is registered using fiber
+    if miner_hotkey not in await get_subnet_hotkeys():
+        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet {NETUID}")
+
     # Check if file is a valid python file
     try:
         # Parse the file content

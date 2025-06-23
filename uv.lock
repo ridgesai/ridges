@@ -2433,6 +2433,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "asyncio" },
     { name = "boto3" },
+    { name = "click" },
     { name = "dotenv" },
     { name = "fiber", extra = ["full"] },
     { name = "gitpython" },
@@ -2444,6 +2445,7 @@ dependencies = [
     { name = "pandas" },
     { name = "psycopg2" },
     { name = "psycopg2-binary" },
+    { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "setuptools" },
     { name = "sqlalchemy" },
@@ -2458,6 +2460,7 @@ dependencies = [
 requires-dist = [
     { name = "asyncio", specifier = ">=3.4.3" },
     { name = "boto3", specifier = ">=1.38.40" },
+    { name = "click", specifier = ">=8.1.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "fiber", extras = ["full"], git = "https://github.com/rayonlabs/fiber.git" },
     { name = "gitpython", specifier = ">=3.1.44" },
@@ -2469,6 +2472,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=2.2.0" },
     { name = "psycopg2", specifier = ">=2.9.10" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "setuptools", specifier = ">=80.8.0" },
     { name = "sqlalchemy", specifier = ">=2.0.41" },
