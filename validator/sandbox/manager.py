@@ -44,8 +44,8 @@ SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don
 SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
-SANDBOX_MAX_CPU_USAGE = 5 # %
-SANDBOX_MAX_RAM_USAGE = 256 # MiB 
+SANDBOX_MAX_CPU_USAGE = 50 # %
+SANDBOX_MAX_RAM_USAGE = 512 # MiB 
 SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 
 # The name of the network that the sandbox will be connected to
@@ -69,7 +69,42 @@ def start_proxy():
     
     def handle_client(client):
         try:
-            data = client.recv(8192).decode()
+            # Read the entire HTTP request – keep reading until we have received
+            # the number of bytes advertised in the *Content-Length* header.
+            buf = bytearray()
+            header_end = None
+            content_len = None
+
+            while True:
+                chunk = client.recv(4096)
+                if not chunk:
+                    break
+                buf.extend(chunk)
+
+                # Once we have the blank line we can parse headers and figure
+                # out how many body bytes to expect.
+                if header_end is None and b"\r\n\r\n" in buf:
+                    header_end = buf.find(b"\r\n\r\n")
+                    header_lines = buf[:header_end].decode(errors="ignore").split("\r\n")[1:]
+                    for line in header_lines:
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            if k.strip().lower() == "content-length":
+                                try:
+                                    content_len = int(v.strip())
+                                except ValueError:
+                                    content_len = 0
+                    # If no Content-Length, assume no body.
+                    if content_len is None:
+                        content_len = 0
+
+                # After headers parsed: stop once entire body received.
+                if header_end is not None:
+                    body_bytes = len(buf) - (header_end + 4)
+                    if body_bytes >= content_len:
+                        break
+
+            data = buf.decode(errors="ignore")
             logger.debug(f"Received socket proxy request: {data}")
             
             # Parse HTTP request
