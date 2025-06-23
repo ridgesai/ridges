@@ -434,9 +434,14 @@ def drop_header_noise(patch: str) -> str:
     in_hunk = False
 
     for line in patch.splitlines():
-        # -- global check: remove any *malformed* `index` directive -------------
+        # -- global checks -----------------------------------------------------
+        # malformed `index` lines
         if line.startswith("index ") and not re.match(r"^index [0-9a-fA-F]{7,40}\.{2}[0-9a-fA-F]{7,40}( \d{6})?$", line):
             # skip bogus index line (often prompt-injection)
+            continue
+
+        # malformed `similarity index` lines
+        if line.startswith("similarity index ") and not re.match(r"^similarity index \d+%$", line):
             continue
 
         if line.startswith("+++ "):
