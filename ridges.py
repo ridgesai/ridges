@@ -431,7 +431,7 @@ def version():
         "[green]Features:[/green]\n"
         "• 🚀 Upload miners to the network\n"
         "• 🔍 Check miner status and evaluations\n"
-        "• ⚙️ Manage configuration settings\n"
+        "• ⚙️ Manage configuration settings\n",
         title="📋 Version Information",
         border_style="yellow"
     ))
