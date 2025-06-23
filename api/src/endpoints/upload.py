@@ -34,6 +34,7 @@ async def post_agent (
     public_key: str = Form(...),
     file_info: str = Form(...),
     signature: str = Form(...),
+    name: str = Form(...),
 ):
     # Check if miner_hotkey is provided
     if not miner_hotkey:
@@ -161,9 +162,13 @@ async def post_agent (
             detail=f"Failed to store agent version in our database. Please try again later."
         )
     
+    # Only set name for new agents, not for updates
+    agent_name = name if not existing_agent else existing_agent.name
+    
     agent_object = Agent(
         agent_id=agent_id,
         miner_hotkey=existing_agent.miner_hotkey if existing_agent else miner_hotkey,
+        name=agent_name,
         latest_version=existing_agent.latest_version + 1 if existing_agent else 0,
         created_at=existing_agent.created_at if existing_agent else datetime.now(),
         last_updated=datetime.now(),

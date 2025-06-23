@@ -5,6 +5,7 @@ from typing import Optional, Literal, List
 class Agent(BaseModel):
     agent_id: str
     miner_hotkey: str
+    name: str
     latest_version: int
     created_at: datetime
     last_updated: datetime

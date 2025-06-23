@@ -74,12 +74,12 @@ class DatabaseManager:
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO agents (agent_id, miner_hotkey, latest_version, created_at, last_updated)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO agents (agent_id, miner_hotkey, name, latest_version, created_at, last_updated)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (agent_id) DO UPDATE SET
                         latest_version = EXCLUDED.latest_version,
                         last_updated = EXCLUDED.last_updated
-                """, (agent.agent_id, agent.miner_hotkey, agent.latest_version, agent.created_at, agent.last_updated))
+                """, (agent.agent_id, agent.miner_hotkey, agent.name, agent.latest_version, agent.created_at, agent.last_updated))
                 logger.info(f"Agent {agent.agent_id} stored successfully")
                 return 1
         except Exception as e:
@@ -238,9 +238,10 @@ class DatabaseManager:
                 return Agent(
                     agent_id=row[0],
                     miner_hotkey=row[1],
-                    latest_version=row[2],
-                    created_at=row[3],
-                    last_updated=row[4]
+                    name=row[2],
+                    latest_version=row[3],
+                    created_at=row[4],
+                    last_updated=row[5]
                 )
             return None
         
@@ -257,9 +258,10 @@ class DatabaseManager:
                 return Agent(
                     agent_id=row[0],
                     miner_hotkey=row[1],
-                    latest_version=row[2],
-                    created_at=row[3],
-                    last_updated=row[4]
+                    name=row[2],
+                    latest_version=row[3],
+                    created_at=row[4],
+                    last_updated=row[5]
                 )
             return None
     
@@ -276,9 +278,10 @@ class DatabaseManager:
                 return Agent(
                     agent_id=row[0],
                     miner_hotkey=row[1],
-                    latest_version=row[2],
-                    created_at=row[3],
-                    last_updated=row[4]
+                    name=row[2],
+                    latest_version=row[3],
+                    created_at=row[4],
+                    last_updated=row[5]
                 )
             return None
         
@@ -374,6 +377,7 @@ class DatabaseManager:
                 SELECT 
                     a.agent_id,
                     a.miner_hotkey,
+                    a.name,
                     a.latest_version,
                     a.created_at,
                     a.last_updated,
@@ -401,11 +405,11 @@ class DatabaseManager:
             return [AgentSummary(
                 miner_hotkey=row[1],
                 latest_version=AgentVersion(
-                    version_id=row[5],
+                    version_id=row[6],
                     agent_id=row[0],
-                    version_num=row[6],
-                    created_at=row[7],
-                    score=row[8]
+                    version_num=row[7],
+                    created_at=row[8],
+                    score=row[9]
                 ),
                 code=None
             ) for row in rows]
@@ -421,6 +425,7 @@ class DatabaseManager:
                     SELECT 
                         a.agent_id,
                         a.miner_hotkey,
+                        a.name,
                         a.latest_version,
                         a.created_at,
                         a.last_updated,
@@ -448,6 +453,7 @@ class DatabaseManager:
                     SELECT 
                         a.agent_id,
                         a.miner_hotkey,
+                        a.name,
                         a.latest_version,
                         a.created_at,
                         a.last_updated,
@@ -474,11 +480,11 @@ class DatabaseManager:
                 return AgentSummary(
                     miner_hotkey=row[1],
                     latest_version=AgentVersion(
-                        version_id=row[5],
+                        version_id=row[6],
                         agent_id=row[0],
-                        version_num=row[6],
-                        created_at=row[7],
-                        score=row[8]
+                        version_num=row[7],
+                        created_at=row[8],
+                        score=row[9]
                     ),
                     code=None
                 )
@@ -506,6 +512,7 @@ class DatabaseManager:
                     av.score,
                     a.agent_id as agent_agent_id,
                     a.miner_hotkey,
+                    a.name,
                     a.latest_version,
                     a.created_at as agent_created_at,
                     a.last_updated
@@ -575,9 +582,10 @@ class DatabaseManager:
                     agent=Agent(
                         agent_id=row[13],
                         miner_hotkey=row[14],
-                        latest_version=row[15],
-                        created_at=row[16],
-                        last_updated=row[17]
+                        name=row[15],
+                        latest_version=row[16],
+                        created_at=row[17],
+                        last_updated=row[18]
                     ),
                     agent_version=AgentVersion(
                         version_id=row[8],
