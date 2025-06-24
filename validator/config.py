@@ -104,6 +104,12 @@ EASY_INSTANCES = [
     # "matplotlib__matplotlib-24149",
 ]
 
+MEDIUM_INSTANCES = [
+    # "pylint-dev__pylint-8898",
+    "django__django-15957",
+
+]
+
 # Log initial configuration
 import logging
 logger = logging.getLogger(__name__)

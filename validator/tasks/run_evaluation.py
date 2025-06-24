@@ -11,7 +11,7 @@ from validator.db.schema import AgentVersion, EvaluationRun
 from validator.dependencies import get_session_factory
 from validator.sandbox.manager import SandboxManager
 from shared.logging_utils import get_logger
-from validator.config import EASY_INSTANCES, RIDGES_API_URL, CHALLENGE_TIMEOUT, validator_hotkey
+from validator.config import EASY_INSTANCES, RIDGES_API_URL, CHALLENGE_TIMEOUT, validator_hotkey, MEDIUM_INSTANCES
 from swebench.harness.run_evaluation import (
     load_swebench_dataset,
     run_instance,
@@ -66,7 +66,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     f.write(response.content)
                 logger.info(f"Saved agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
 
-                instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES)
+                instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES + MEDIUM_INSTANCES)
                 for instance in instances:
                     evaluation_run = EvaluationRun(
                         run_id=str(uuid.uuid4()),
