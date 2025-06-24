@@ -2,10 +2,10 @@
 """One-file autonomous coding agent ("base-miner").
 
 The validator mounts a repository and a problem statement inside a sandbox and
-executes this file.  The agent talks to a local *AI-proxy* over a UNIX domain
-socket using the OpenAI function-calling protocol.  It exposes a minimal but
-sufficient set of tools so the language-model can inspect and modify the
-repository and finally indicate it is done.
+executes this file.  The agent talks to a local *AI-proxy* over HTTP using the
+OpenAI function-calling protocol.  It exposes a minimal but sufficient set of
+tools so the language-model can inspect and modify the repository and finally
+indicate it is done.
 
 Tools exposed to the LM
 -----------------------
@@ -26,7 +26,7 @@ Configuration (CLI flags *or* environment variables)
 ----------------------------------------------------
 flag / env-var       default
 ------------------   -----------------------------
---socket  AI_PROXY_SOCK   /tmp/sandbox_proxy.sock
+--proxy   AI_PROXY_URL   http://sandbox_proxy
 --problem PROBLEM_FILE    ./PROBLEM.md
 --repo    REPO_ROOT       .
 --timeout AGENT_TIMEOUT   600  (seconds)
@@ -41,7 +41,6 @@ import json
 import os
 import re
 import shlex
-import socket
 import subprocess
 import sys
 import textwrap
@@ -51,6 +50,8 @@ import random
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List
+import urllib.request as _urlreq
+import urllib.error as _urlerr
 
 # ---------------------------------------------------------------------------
 # Environment tweaks ---------------------------------------------------------
@@ -456,53 +457,17 @@ def run_oneshot(
 
     SOFT_CAP_BYTES = 512 * 1024  # 512 KiB
 
-    ATTEMPTS = 3
+    ATTEMPTS = 8
 
     for attempt in range(ATTEMPTS):
-        # Ensure request fits (reuse shrinking logic)
-        while True:
-            request_data = {
-                "run_id": run_id,
-                "input_text": problem_text + "\n\nRepository summary (top files):\n\n" + repo_summary,
-                "return_text": True,
-                "return_code": True,
-                "model": model_name,
-            }
-            request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
-            if len(request_bytes) <= SOFT_CAP_BYTES:
-                break
-            if summary_parts:
-                summary_parts.pop()
-                repo_summary = "\n\n".join(summary_parts)
-                request_data["input_text"] = problem_text + "\n\nRepository summary (top files):\n\n" + repo_summary
-            else:
-                break
-
-        # ----------------------------------------------------------------
-        # Optional debugging: dump prompt statistics so the user can verify
-        # that the LLM sees the problem statement and repo context.
-        # Enable by setting AGENT_DEBUG=1 in the environment before running
-        # the miner.  All prints go to *stderr*; they are captured in the
-        # validator's run_instance.log for later inspection.
-        # ----------------------------------------------------------------
-
-        if os.getenv("AGENT_DEBUG") == "1" and attempt == 0:
-            import sys as _sys
-            _sys.stderr.write(
-                (
-                    f"[AGENT_DEBUG] problem_chars={len(problem_text)} "
-                    f"summary_files={len(summary_parts)} "
-                    f"prompt_bytes={len(request_bytes)}\n"
-                    f"[AGENT_DEBUG] top_files={top_file_paths}\n"
-                    f"[AGENT_DEBUG] prompt_preview:\n"
-                    + request_data["input_text"][:800].replace("\n", " ")
-                    + (" …" if len(request_data["input_text"]) > 800 else "")
-                    + "\n"
-                )
-            )
+        messages = [
+            {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
+            {"role": "user", "content": problem_text},
+            {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
+        ]
 
         try:
-            proxy_resp = _send_json_request(proxy_url, "/agents/inference", request_data)
+            proxy_resp = inference(messages, proxy_url, run_id, model_name)
         except Exception as e:
             print(f"[agent] Request failed (attempt {attempt + 1}): {e}", file=sys.stderr)
             if attempt == ATTEMPTS - 1:
@@ -544,50 +509,58 @@ def run_oneshot(
 # Proxy communication --------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-import urllib.request as _urlreq
-import urllib.error as _urlerr
+def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model: str = None) -> dict:
+    """Send inference request to the proxy and return the response."""
+    
+    # Build the input text from messages
+    input_text = ""
+    for msg in messages:
+        if msg["role"] == "system":
+            input_text += f"System: {msg['content']}\n\n"
+        elif msg["role"] == "user":
+            input_text += f"User: {msg['content']}\n\n"
+        elif msg["role"] == "assistant":
+            if msg.get("content"):
+                input_text += f"Assistant: {msg['content']}\n\n"
+            elif msg.get("tool_call"):
+                tool_call = msg["tool_call"]
+                input_text += f"Assistant: Called {tool_call['name']} with arguments {tool_call.get('arguments', {})}\n\n"
+        elif msg["role"] == "tool":
+            input_text += f"Tool {msg['name']}: {msg['content']}\n\n"
 
+    # Build request data
+    request_data = {
+        "run_id": run_id,
+        "input_text": input_text,
+        "return_text": True,
+        "return_code": True,
+    }
+    
+    if model:
+        request_data["model"] = model
 
-def _send_json_request(base_url: str, endpoint: str, data: dict, max_retries: int = 5, base_delay: float = 0.1) -> dict:
-    """Send JSON request to the proxy over HTTP with exponential back-off."""
-
-    base_url = base_url.rstrip("/")
-    url = f"{base_url}{endpoint}"
-
-    request_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
-    print(f"[agent] Sending request to {url} with {len(request_bytes)} bytes", file=sys.stderr)
-
-    for attempt in range(max_retries + 1):
-        try:
-            req = _urlreq.Request(url, data=request_bytes, method="POST")
-            req.add_header("Content-Type", "application/json")
-            print(f"[agent] HTTP POST to {url} (attempt {attempt + 1})", file=sys.stderr)
-
-            with _urlreq.urlopen(req, timeout=30) as resp:
-                response_body = resp.read()
-                print(f"[agent] HTTP status: {resp.status}, headers: {dict(resp.headers)}", file=sys.stderr)
-                response = json.loads(response_body.decode("utf-8"))
-                print(f"[agent] Received HTTP response ({len(response_body)} bytes): {response}", file=sys.stderr)
-                return response
-
-        except _urlerr.URLError as e:
-            print(f"[agent] URLError: {e}", file=sys.stderr)
-            if attempt == max_retries:
-                raise RuntimeError(f"Failed to reach proxy after {max_retries + 1} attempts: {e}")
-
-            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-            print(f"[agent] Proxy unreachable (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.2f}s", file=sys.stderr)
-            time.sleep(delay)
-        except Exception as e:
-            print(f"[agent] Unexpected error: {e}", file=sys.stderr)
-            if attempt == max_retries:
-                raise RuntimeError(f"Unexpected error after {max_retries + 1} attempts: {e}")
-            delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-            print(f"[agent] Unexpected error (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.2f}s", file=sys.stderr)
-            time.sleep(delay)
-
-    # Should never reach here
-    raise RuntimeError("Exhausted retries while contacting proxy")
+    # Send HTTP request
+    url = f"{proxy_url.rstrip('/')}/agents/inference"
+    request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
+    
+    print(f"[agent] Making inference request to {url}", file=sys.stderr)
+    print(f"[agent] Request data: {request_data}", file=sys.stderr)
+    
+    try:
+        req = _urlreq.Request(url, data=request_bytes, method="POST")
+        req.add_header("Content-Type", "application/json")
+        
+        with _urlreq.urlopen(req, timeout=30) as resp:
+            response_body = resp.read()
+            print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)", file=sys.stderr)
+            
+            response_json = json.loads(response_body.decode("utf-8"))
+            print(f"[agent] Response: {response_json}", file=sys.stderr)
+            return response_json
+            
+    except Exception as e:
+        print(f"[agent] Inference request failed: {e}", file=sys.stderr)
+        raise RuntimeError(f"Inference request failed: {e}")
 
 # ---------------------------------------------------------------------------
 # Helper utilities -----------------------------------------------------------
@@ -602,7 +575,7 @@ def _truncate(text: str, limit: int = MAX_OBS_CHARS) -> str:
 # Main agent logic -----------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: str, run_id: str) -> None:
+def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: str, run_id: str) -> str:
     working_dir = os.getcwd()
 
     system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -621,15 +594,9 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
     for step in range(1, MAX_STEPS + 1):
         if time.time() - start_time > timeout:
             print("[agent] global timeout reached", file=sys.stderr)
-            sys.exit(1)
+            return "Global timeout reached"
 
-        proxy_resp = _send_json_request(proxy_url, "/agents/inference", {
-            "run_id": run_id,
-            "input_text": instance_prompt,
-            "return_text": True,
-            "return_code": True,
-            "model": model_name,
-        })
+        proxy_resp = inference(messages, proxy_url, run_id, model_name)
 
         text_resp = (proxy_resp.get("text_response") or "").strip()
         code_resp = (proxy_resp.get("code_response") or "").strip()
@@ -701,11 +668,11 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
         if name == "FINISH":
             print("[agent] FINISH called – exiting.")
             traj_file.close()
-            sys.exit(0)
+            return "FINISH called"
 
     print("[agent] max steps exceeded", file=sys.stderr)
     traj_file.close()
-    sys.exit(1)
+    return "Max steps exceeded"
 
 
 # ---------------------------------------------------------------------------
@@ -733,27 +700,14 @@ def agent_main(input_dict: Dict[str, Any]):
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
 
     # Force one-shot MiniLM retrieval mode for every run.
-    run_id = input_dict.get("run_id", "")
-    if not run_id:
-        raise ValueError("input_dict must contain 'run_id' for API calls.")
-    
     patch_text = run_oneshot(
         problem_text,
         proxy_url=proxy_url,
         model_name=model_name,
-        run_id=run_id,
+        run_id=input_dict.get("run_id", ""),
     )
 
     return {"patch": patch_text}
-
-# Ensure both import-style and CLI execution work
-
-if __name__ == "__main__":
-    try:
-        payload = json.loads(sys.stdin.read()) if not sys.stdin.isatty() else {}
-    except Exception:
-        payload = {}
-    agent_main(payload)
 
 # ---------------------------------------------------------------------------
 # Function specs (for iterative chat loop) ----------------------------------
