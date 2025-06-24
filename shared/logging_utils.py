@@ -148,6 +148,7 @@ class ColoredFormatter(logging.Formatter):
 def get_logger(name: str):
     """Get a logger with the given name."""
     logger = logging.getLogger(name.split(".")[-1])
+    logger.propagate = False
     mode: str = os.getenv("ENV", "prod").lower()
 
     logger.setLevel(logging.DEBUG if mode != "prod" else logging.INFO)

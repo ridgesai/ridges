@@ -98,7 +98,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Defaults via environment variables ----------------------------------------
 # ---------------------------------------------------------------------------
-DEFAULT_SOCKET = os.getenv("AI_PROXY_SOCK", "/tmp/sandbox_proxy.sock")
+DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
 DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
 DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
 DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
@@ -256,15 +256,27 @@ def _apply_patch(patch: str) -> str:
                 timeout=60,
             )
 
-        proc = _run_patch("-p1")
-        out = proc.stdout + proc.stderr
+        # Try multiple patch strip levels then fallback to git apply
+        out = ""
+        proc = None
+        for level in ("-p1", "-p0", "-p2", "-p3"):
+            proc = _run_patch(level)
+            out += f"\n--- attempt {level} ---\n" + proc.stdout + proc.stderr
+            if proc.returncode in (0, 1):
+                break  # applied or with rejects
 
+        # Fallback to git apply if available and previous attempts failed
         if proc.returncode not in (0, 1):
-            # Retry with -p0 – paths may already be relative.
-            proc2 = _run_patch("-p0")
-            out += "\n--- retry with -p0 ---\n" + proc2.stdout + proc2.stderr
-            proc = proc2
-
+            git_proc = subprocess.run(
+                ["git", "apply", "--unsafe-paths", tmp_path],
+                text=True,
+                capture_output=True,
+                timeout=60,
+            )
+            out += "\n--- git apply fallback ---\n" + git_proc.stdout + git_proc.stderr
+            if git_proc.returncode == 0:
+                proc = git_proc
+         
         if proc.returncode == 0:
             return "Patch applied successfully.\n" + out
         elif proc.returncode == 1:
@@ -355,7 +367,7 @@ def _collect_repo_texts(root: str = ".", *, max_file_bytes: int = 100_000) -> Di
 def run_oneshot(
     problem_text: str,
     *,
-    socket_path: str,
+    proxy_url: str,
     model_name: str,
     run_id: str,
     top_k: int = 30,
@@ -490,7 +502,7 @@ def run_oneshot(
             )
 
         try:
-            proxy_resp = _send_json_request(socket_path, "/agents/inference", request_data)
+            proxy_resp = _send_json_request(proxy_url, "/agents/inference", request_data)
         except Exception as e:
             print(f"[agent] Request failed (attempt {attempt + 1}): {e}", file=sys.stderr)
             if attempt == ATTEMPTS - 1:
@@ -507,7 +519,10 @@ def run_oneshot(
                 break
 
         if patch_text is None:
-            raise Exception(proxy_resp)
+            print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...", file=sys.stderr)
+            print(f"[agent] code_response: {code_resp[:200]}...", file=sys.stderr)
+            print(f"[agent] Full proxy response: {proxy_resp}", file=sys.stderr)
+            raise Exception(f"No valid patch in response. Response: {proxy_resp}")
 
         ok, dry_out = _dry_run_patch(patch_text)
         if ok:
@@ -529,75 +544,50 @@ def run_oneshot(
 # Proxy communication --------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-def _send_json_request(socket_path: str, endpoint: str, data: dict, max_retries: int = 5, base_delay: float = 0.1) -> dict:
-    """Send JSON request over Unix socket with retry logic."""
-    
-    # Check if socket file exists
-    if not os.path.exists(socket_path):
-        raise RuntimeError(f"Socket file does not exist: {socket_path}")
-    
-    # Check socket file permissions
-    try:
-        import stat
-        st = os.stat(socket_path)
-        if not stat.S_ISSOCK(st.st_mode):
-            raise RuntimeError(f"Path exists but is not a socket: {socket_path}")
-        print(f"[agent] Socket file exists and is a socket: {socket_path}", file=sys.stderr)
-    except Exception as e:
-        print(f"[agent] Error checking socket file: {e}", file=sys.stderr)
-    
-    message = {
-        "endpoint": endpoint,
-        "data": data
-    }
-    
-    request_bytes = json.dumps(message, ensure_ascii=False).encode('utf-8')
-    
+import urllib.request as _urlreq
+import urllib.error as _urlerr
+
+
+def _send_json_request(base_url: str, endpoint: str, data: dict, max_retries: int = 5, base_delay: float = 0.1) -> dict:
+    """Send JSON request to the proxy over HTTP with exponential back-off."""
+
+    base_url = base_url.rstrip("/")
+    url = f"{base_url}{endpoint}"
+
+    request_bytes = json.dumps(data, ensure_ascii=False).encode("utf-8")
+    print(f"[agent] Sending request to {url} with {len(request_bytes)} bytes", file=sys.stderr)
+
     for attempt in range(max_retries + 1):
         try:
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
-                print(f"[agent] Connecting to socket: {socket_path} (attempt {attempt + 1})", file=sys.stderr)
-                sock.connect(socket_path)
-                print(f"[agent] Connected successfully, sending JSON request to {endpoint} ({len(request_bytes)} bytes)", file=sys.stderr)
-                sock.sendall(request_bytes)
-                
-                # Read JSON response
-                response_data = b""
-                sock.settimeout(30)  # 30 second timeout
-                
-                while True:
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    response_data += chunk
-                    # Try to parse as JSON to see if we have a complete message
-                    try:
-                        response = json.loads(response_data.decode('utf-8'))
-                        print(f"[agent] Received JSON response: {len(response_data)} bytes", file=sys.stderr)
-                        return response
-                    except json.JSONDecodeError:
-                        continue  # Keep reading
-                
-                # If we get here, we didn't get a complete JSON response
-                raise RuntimeError("Incomplete JSON response received")
-                
-        except (socket.error, ConnectionRefusedError, FileNotFoundError) as e:
-            print(f"[agent] Connection error (attempt {attempt + 1}): {e}", file=sys.stderr)
+            req = _urlreq.Request(url, data=request_bytes, method="POST")
+            req.add_header("Content-Type", "application/json")
+            print(f"[agent] HTTP POST to {url} (attempt {attempt + 1})", file=sys.stderr)
+
+            with _urlreq.urlopen(req, timeout=30) as resp:
+                response_body = resp.read()
+                print(f"[agent] HTTP status: {resp.status}, headers: {dict(resp.headers)}", file=sys.stderr)
+                response = json.loads(response_body.decode("utf-8"))
+                print(f"[agent] Received HTTP response ({len(response_body)} bytes): {response}", file=sys.stderr)
+                return response
+
+        except _urlerr.URLError as e:
+            print(f"[agent] URLError: {e}", file=sys.stderr)
             if attempt == max_retries:
-                raise RuntimeError(f"Failed to connect to socket after {max_retries + 1} attempts. Last error: {e}")
-            
+                raise RuntimeError(f"Failed to reach proxy after {max_retries + 1} attempts: {e}")
+
             delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-            print(f"[agent] Connection refused (attempt {attempt + 1}/{max_retries + 1}), retrying in {delay:.2f}s...", file=sys.stderr)
+            print(f"[agent] Proxy unreachable (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.2f}s", file=sys.stderr)
             time.sleep(delay)
         except Exception as e:
-            print(f"[agent] Unexpected error (attempt {attempt + 1}): {e}", file=sys.stderr)
+            print(f"[agent] Unexpected error: {e}", file=sys.stderr)
             if attempt == max_retries:
                 raise RuntimeError(f"Unexpected error after {max_retries + 1} attempts: {e}")
             delay = base_delay * (2 ** attempt) + random.uniform(0, 0.1)
-            print(f"[agent] Unexpected error (attempt {attempt + 1}/{max_retries + 1}): {e}, retrying in {delay:.2f}s...", file=sys.stderr)
+            print(f"[agent] Unexpected error (attempt {attempt + 1}/{max_retries + 1}): {e}. Retrying in {delay:.2f}s", file=sys.stderr)
             time.sleep(delay)
-    
-    raise RuntimeError(f"Failed to send request after {max_retries + 1} attempts")
+
+    # Should never reach here
+    raise RuntimeError("Exhausted retries while contacting proxy")
 
 # ---------------------------------------------------------------------------
 # Helper utilities -----------------------------------------------------------
@@ -612,7 +602,7 @@ def _truncate(text: str, limit: int = MAX_OBS_CHARS) -> str:
 # Main agent logic -----------------------------------------------------------
 # ---------------------------------------------------------------------------
 
-def run_agent(problem_text: str, *, socket_path: str, timeout: int, model_name: str, run_id: str) -> None:
+def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: str, run_id: str) -> None:
     working_dir = os.getcwd()
 
     system_prompt = DEFAULT_SYSTEM_PROMPT
@@ -633,7 +623,7 @@ def run_agent(problem_text: str, *, socket_path: str, timeout: int, model_name: 
             print("[agent] global timeout reached", file=sys.stderr)
             sys.exit(1)
 
-        proxy_resp = _send_json_request(socket_path, "/agents/inference", {
+        proxy_resp = _send_json_request(proxy_url, "/agents/inference", {
             "run_id": run_id,
             "input_text": instance_prompt,
             "return_text": True,
@@ -738,7 +728,7 @@ def agent_main(input_dict: Dict[str, Any]):
         raise ValueError("input_dict must contain 'problem_statement'.")
 
     # Environment overrides (the validator sets these); fall back to CLI defaults.
-    socket_path = os.getenv("AI_PROXY_SOCK", DEFAULT_SOCKET)
+    proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
     timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
 
@@ -749,7 +739,7 @@ def agent_main(input_dict: Dict[str, Any]):
     
     patch_text = run_oneshot(
         problem_text,
-        socket_path=socket_path,
+        proxy_url=proxy_url,
         model_name=model_name,
         run_id=run_id,
     )
@@ -830,12 +820,21 @@ def _dry_run_patch(patch: str) -> tuple[bool, str]:
                 timeout=60,
             )
 
-        proc = _run("-p1")
-        if proc.returncode not in (0, 1):
-            proc = _run("-p0")
+        out = ""
+        ok = False
+        for level in ("-p1", "-p0", "-p2", "-p3"):
+            proc = _run(level)
+            out += f"\n--- dry-run {level} ---\n" + proc.stdout + proc.stderr
+            if proc.returncode in (0, 1):
+                ok = True
+                break
 
-        ok = proc.returncode in (0, 1)
-        return ok, proc.stdout + proc.stderr
+        # Fallback to git apply --check
+        if not ok:
+            git_proc = subprocess.run(["git", "apply", "--check", tmp_path], text=True, capture_output=True)
+            out += "\n--- git apply --check ---\n" + git_proc.stdout + git_proc.stderr
+            ok = git_proc.returncode == 0
+        return ok, out
     except Exception as e:
         return False, "dry-run error: " + str(e)
     finally:

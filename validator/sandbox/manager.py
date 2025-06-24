@@ -3,11 +3,6 @@ import json
 import shutil
 import time
 import asyncio
-import socket
-import threading
-import urllib.request
-import urllib.error
-import urllib.parse
 from typing import List, Tuple
 import docker
 from pathlib import Path
@@ -52,187 +47,9 @@ SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 # The name of the network that the sandbox will be connected to
 SANDBOX_NETWORK_NAME = "sandbox-network"
 
-# Unix socket for secure host access
-SOCKET_PATH = "/tmp/sandbox_proxy.sock"
-ALLOWED_PATHS = {"/agents/embeddings", "/agents/inference"}
-
-def start_proxy():
-    """Start minimal Unix socket proxy with JSON protocol"""
-    try:
-        os.unlink(SOCKET_PATH)
-    except OSError:
-        pass
-
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    sock.bind(SOCKET_PATH)
-    sock.listen(128)
-    os.chmod(SOCKET_PATH, 0o666)
-
-    logger.info(f"Unix socket proxy started on {SOCKET_PATH}")
-
-    def handle_client(client):
-        try:
-            # Read JSON message from client
-            data = b""
-            while True:
-                chunk = client.recv(4096)
-                if not chunk:
-                    break
-                data += chunk
-                # Try to parse as JSON to see if we have a complete message
-                try:
-                    json.loads(data.decode('utf-8'))
-                    break  # Complete JSON message received
-                except json.JSONDecodeError:
-                    continue  # Keep reading
-
-            if not data:
-                try:
-                    client.send(json.dumps({"error": "No data received"}).encode('utf-8'))
-                except (BrokenPipeError, ConnectionResetError):
-                    logger.debug("Client disconnected before response could be sent")
-                return
-
-            try:
-                message = json.loads(data.decode('utf-8'))
-                endpoint = message.get("endpoint")
-                request_data = message.get("data", {})
-
-                logger.debug(f"Received JSON request: endpoint={endpoint}, data_size={len(str(request_data))}")
-
-                if endpoint not in ALLOWED_PATHS:
-                    try:
-                        client.send(json.dumps({"error": f"Endpoint {endpoint} not allowed"}).encode('utf-8'))
-                    except (BrokenPipeError, ConnectionResetError):
-                        logger.debug("Client disconnected before response could be sent")
-                    return
-
-                # Build target URL
-                target_url = RIDGES_API_URL + endpoint
-                logger.debug(f"Forwarding request to: {target_url}")
-
-                # Create HTTP request to the API
-                req = urllib.request.Request(target_url, data=json.dumps(request_data).encode('utf-8'), method='POST')
-                req.add_header('Content-Type', 'application/json')
-
-                # Send request to API
-                resp = urllib.request.urlopen(req)
-                response_body = resp.read()
-
-                # Parse the API response
-                try:
-                    api_response = json.loads(response_body.decode('utf-8'))
-                    # Send JSON response back to client
-                    try:
-                        client.send(json.dumps(api_response).encode('utf-8'))
-                    except (BrokenPipeError, ConnectionResetError):
-                        logger.debug("Client disconnected before response could be sent")
-                except json.JSONDecodeError:
-                    # If API response is not JSON, wrap it
-                    try:
-                        client.send(json.dumps({"response": response_body.decode('utf-8', errors='ignore')}).encode('utf-8'))
-                    except (BrokenPipeError, ConnectionResetError):
-                        logger.debug("Client disconnected before response could be sent")
-
-                logger.debug(f"Sent JSON response: {len(response_body)} bytes")
-
-            except json.JSONDecodeError as e:
-                try:
-                    client.send(json.dumps({"error": f"Invalid JSON: {str(e)}"}).encode('utf-8'))
-                except (BrokenPipeError, ConnectionResetError):
-                    logger.debug("Client disconnected before response could be sent")
-            except urllib.error.URLError as e:
-                try:
-                    client.send(json.dumps({"error": f"API request failed: {str(e)}"}).encode('utf-8'))
-                except (BrokenPipeError, ConnectionResetError):
-                    logger.debug("Client disconnected before response could be sent")
-            except Exception as e:
-                try:
-                    client.send(json.dumps({"error": f"Proxy error: {str(e)}"}).encode('utf-8'))
-                except (BrokenPipeError, ConnectionResetError):
-                    logger.debug("Client disconnected before response could be sent")
-                logger.error(f"Proxy error: {e}")
-
-        except Exception as e:
-            try:
-                error_response = json.dumps({"error": f"Unexpected error: {str(e)}"})
-                client.send(error_response.encode('utf-8'))
-            except (BrokenPipeError, ConnectionResetError):
-                logger.debug("Client disconnected before error response could be sent")
-            logger.error(f"Unexpected error in proxy: {e}")
-        finally:
-            try:
-                client.close()
-            except Exception:
-                pass
-
-    def run():
-        logger.info("Proxy server loop started")
-        while True:
-            try:
-                client, addr = sock.accept()
-                logger.debug(f"Accepted connection from {addr}")
-                threading.Thread(target=handle_client, args=(client,), daemon=True).start()
-            except (BrokenPipeError, ConnectionResetError) as e:
-                logger.debug(f"Connection error in proxy loop: {e}")
-                continue
-            except Exception as e:
-                logger.error(f"Error accepting connection: {e}")
-                break
-
-    proxy_thread = threading.Thread(target=run, daemon=True)
-    proxy_thread.start()
-    logger.info("Proxy thread started")
-
-    # Give the proxy a moment to start up
-    time.sleep(0.1)
-
-    # Verify the socket is working with a proper test
-    try:
-        test_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        test_sock.settimeout(5)  # 5 second timeout
-        test_sock.connect(SOCKET_PATH)
-        
-        # Send a minimal test message
-        test_message = {
-            "endpoint": "/agents/inference",
-            "data": {
-                "run_id": "test-verification",
-                "input_text": "test",
-                "return_text": True,
-                "return_code": True,
-                "model": "deepseek-ai/DeepSeek-V3-0324"
-            }
-        }
-        test_sock.sendall(json.dumps(test_message).encode('utf-8'))
-        
-        # Try to read response (should get an error since run_id doesn't exist in DB)
-        response_data = b""
-        test_sock.settimeout(10)  # 10 second timeout for response
-        while True:
-            chunk = test_sock.recv(4096)
-            if not chunk:
-                break
-            response_data += chunk
-            try:
-                response = json.loads(response_data.decode('utf-8'))
-                break  # Complete JSON response received
-            except json.JSONDecodeError:
-                continue  # Keep reading
-        
-        test_sock.close()
-        
-        # Check if we got a proper response (even if it's an error)
-        if response_data:
-            logger.info("Proxy socket verification successful - received response")
-        else:
-            raise RuntimeError("No response received from proxy")
-            
-    except Exception as e:
-        logger.error(f"Proxy socket verification failed: {e}")
-        raise RuntimeError(f"Proxy socket verification failed: {e}")
-
-    return sock
+# Nginx proxy image & container details
+PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
+PROXY_CONTAINER_NAME = "sandbox-proxy"
 
 class Sandbox:
     swebench_instance_id: str
@@ -312,11 +129,11 @@ class Sandbox:
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
-                    
-                    # Mount the Unix socket for secure host access
-                    SOCKET_PATH: {"bind": "/tmp/sandbox_proxy.sock", "mode": "rw"},
                 },
                 working_dir=SANDBOX_DIR,
+                environment={
+                    "AI_PROXY_URL": f"http://{PROXY_CONTAINER_NAME}"
+                },
                 detach=True
             )
 
@@ -358,36 +175,17 @@ class SandboxManager:
         # Connect to the locally running Docker daemon
         self.docker = docker.from_env()
 
-        # Ensure the sandbox-runner image is built
-        self._ensure_sandbox_image()
-
-        # Create the sandbox network if it doesn't exist
-        # TODO
+        # Create (or ensure) an isolated internal sandbox network – containers on this
+        # network have *no* external connectivity.
         try:
             self.docker.networks.get(SANDBOX_NETWORK_NAME)
         except docker.errors.NotFound:
-            self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=False)
-        
-        # Initialize and start the Unix socket proxy
-        logger.info("Starting Unix socket proxy...")
-        self.unix_proxy = start_proxy()
-        logger.info("Unix socket proxy started successfully")
-        
-        # Verify the socket file exists and is accessible
-        if os.path.exists(SOCKET_PATH):
-            logger.info(f"Socket file exists: {SOCKET_PATH}")
-            try:
-                import stat
-                st = os.stat(SOCKET_PATH)
-                logger.info(f"Socket file permissions: {oct(st.st_mode)}")
-                logger.info(f"Socket file owner: {st.st_uid}")
-            except Exception as e:
-                logger.error(f"Error checking socket file: {e}")
-        else:
-            logger.error(f"Socket file does not exist: {SOCKET_PATH}")
-            raise RuntimeError("Socket file was not created")
-        
-        logger.info("Unix socket proxy setup complete")
+            logger.info(f"Creating isolated docker network '{SANDBOX_NETWORK_NAME}' (internal=True)")
+            self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=True)
+
+        # Build and start the nginx forward proxy container.
+        self.proxy_container = self._start_proxy_container()
+        logger.info("Nginx proxy container started successfully")
             
         self.sandboxes = []
         # Start the monitor as an asyncio task
@@ -452,38 +250,43 @@ class SandboxManager:
         return patches_and_errors
     
     def cleanup(self):
-        # Stop the Unix socket proxy
-        if hasattr(self, 'unix_proxy'):
+        # Stop the proxy container gracefully
+        if hasattr(self, 'proxy_container'):
             try:
-                self.unix_proxy.close()
-            except:
+                self.proxy_container.remove(force=True)
+            except Exception:
                 pass
         
         for sandbox in self.sandboxes:
             sandbox.cleanup()
             self.sandboxes.remove(sandbox)
 
-    def _ensure_sandbox_image(self):
-        """Check if the sandbox-runner image exists and build it if not."""
+    def _start_proxy_container(self):
+        """Start the nginx proxy container."""
         try:
-            # Try to get the image
-            self.docker.images.get(SANDBOX_DOCKER_IMAGE)
-            logger.info(f"Docker image '{SANDBOX_DOCKER_IMAGE}' already exists")
-        except docker.errors.ImageNotFound:
-            logger.info(f"Docker image '{SANDBOX_DOCKER_IMAGE}' not found, building...")
+            # Start container on the default bridge network so it can reach the host API
+            container = self.docker.containers.run(
+                image=PROXY_DOCKER_IMAGE,
+                name=PROXY_CONTAINER_NAME,
+                detach=True,
+                environment={ "RIDGES_API_URL": RIDGES_API_URL }
+            )
+
+            # Also connect it to the internal sandbox network so sandboxes can reach it
             try:
-                # Build the image from the Dockerfile in the sandbox directory
-                dockerfile_path = str(CURRENT_DIR / "Dockerfile")
-                logger.info(f"Building image from {dockerfile_path}")
-                
-                self.docker.images.build(
-                    path=str(CURRENT_DIR),
-                    dockerfile="Dockerfile",
-                    tag=SANDBOX_DOCKER_IMAGE,
-                    rm=True  # Remove intermediate containers
-                )
-                
-                logger.info(f"Successfully built Docker image '{SANDBOX_DOCKER_IMAGE}'")
-            except Exception as e:
-                logger.error(f"Failed to build Docker image '{SANDBOX_DOCKER_IMAGE}': {e}")
-                raise
+                self.docker.networks.get(SANDBOX_NETWORK_NAME).connect(container)
+                logger.info(f"Connected proxy container to {SANDBOX_NETWORK_NAME}")
+            except Exception as net_e:
+                logger.error(f"Failed to attach proxy container to internal network: {net_e}")
+
+            # Allow some time for Nginx to become ready
+            time.sleep(2)
+
+            container.reload()
+            if container.status != "running":
+                raise RuntimeError(f"Proxy container is not running: {container.status}")
+
+            return container
+        except Exception as e:
+            logger.error(f"Error starting proxy container: {e}")
+            raise
