@@ -22,6 +22,7 @@ class AgentVersionForValidator(AgentVersion):
 
 class AgentSummary(BaseModel):
     miner_hotkey: str
+    name: str
     latest_version: AgentVersion
     code: Optional[str]
 
