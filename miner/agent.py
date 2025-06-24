@@ -358,7 +358,7 @@ def run_oneshot(
     socket_path: str,
     model_name: str,
     run_id: str,
-    top_k: int = 10,
+    top_k: int = 30,
 ) -> str:
     """Build repository summary and send a single LLM call.
 
@@ -415,6 +415,7 @@ def run_oneshot(
         sims = (file_mat @ query_vec)  # shape (n_files,)
 
     top_idx = np.argsort(-sims)[: top_k]
+    top_file_paths = [file_paths[idx] for idx in top_idx]
 
     summary_parts: list[str] = []
     for idx in top_idx:
@@ -464,6 +465,29 @@ def run_oneshot(
                 request_data["input_text"] = problem_text + "\n\nRepository summary (top files):\n\n" + repo_summary
             else:
                 break
+
+        # ----------------------------------------------------------------
+        # Optional debugging: dump prompt statistics so the user can verify
+        # that the LLM sees the problem statement and repo context.
+        # Enable by setting AGENT_DEBUG=1 in the environment before running
+        # the miner.  All prints go to *stderr*; they are captured in the
+        # validator's run_instance.log for later inspection.
+        # ----------------------------------------------------------------
+
+        if os.getenv("AGENT_DEBUG") == "1" and attempt == 0:
+            import sys as _sys
+            _sys.stderr.write(
+                (
+                    f"[AGENT_DEBUG] problem_chars={len(problem_text)} "
+                    f"summary_files={len(summary_parts)} "
+                    f"prompt_bytes={len(request_bytes)}\n"
+                    f"[AGENT_DEBUG] top_files={top_file_paths}\n"
+                    f"[AGENT_DEBUG] prompt_preview:\n"
+                    + request_data["input_text"][:800].replace("\n", " ")
+                    + (" …" if len(request_data["input_text"]) > 800 else "")
+                    + "\n"
+                )
+            )
 
         try:
             proxy_resp = _send_json_request(socket_path, "/agents/inference", request_data)
