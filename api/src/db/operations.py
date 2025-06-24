@@ -404,6 +404,7 @@ class DatabaseManager:
             rows = cursor.fetchall()
             return [AgentSummary(
                 miner_hotkey=row[1],
+                name=row[2],
                 latest_version=AgentVersion(
                     version_id=row[6],
                     agent_id=row[0],
@@ -479,6 +480,7 @@ class DatabaseManager:
             if row:
                 return AgentSummary(
                     miner_hotkey=row[1],
+                    name=row[2],
                     latest_version=AgentVersion(
                         version_id=row[6],
                         agent_id=row[0],
