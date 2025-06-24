@@ -329,7 +329,13 @@ ONESHOT_SYSTEM_PROMPT = (
     "4. Every changed file needs its own header block as in rule 2.\n"
     "5. End the patch with a trailing newline.\n\n"
     "Be exact: if the diff is syntactically malformed or wrapped in extra "
-    "text the automated patch tool will fail."
+    "text the automated patch tool will fail.\n\n"
+    "OUTPUT RULES (VERY IMPORTANT)\n"
+    "• You MUST end your reply with a *raw* JSON object – nothing else – that has exactly two keys: 'text_response' and 'code_response'.\n"
+    "• Do NOT surround the JSON with Markdown back-ticks or any other fencing.\n"
+    "• 'text_response' can hold arbitrary explanatory text (may be empty).\n"
+    "• 'code_response' must hold the unified diff from rules 1-5 *verbatim*.\n"
+    "Example format: {\"text_response\": \"short explanation\", \"code_response\": \"diff --git a/foo.py b/foo.py\n...\"}."
 )
 
 # Small helper – language tag for triple-backticks (very rough heuristic)
@@ -470,6 +476,10 @@ def run_oneshot(
             if attempt == ATTEMPTS - 1:
                 raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
             continue
+        
+
+        if isinstance(proxy_resp, str):
+            raise Exception(proxy_resp)
 
         text_resp = (proxy_resp.get("text_response") or "").lstrip()
         code_resp = (proxy_resp.get("code_response") or "").lstrip()
@@ -508,29 +518,10 @@ def run_oneshot(
 
 def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model: str = None) -> dict:
     """Send inference request to the proxy and return the response."""
-    
-    # Build the input text from messages
-    input_text = ""
-    for msg in messages:
-        if msg["role"] == "system":
-            input_text += f"System: {msg['content']}\n\n"
-        elif msg["role"] == "user":
-            input_text += f"User: {msg['content']}\n\n"
-        elif msg["role"] == "assistant":
-            if msg.get("content"):
-                input_text += f"Assistant: {msg['content']}\n\n"
-            elif msg.get("tool_call"):
-                tool_call = msg["tool_call"]
-                input_text += f"Assistant: Called {tool_call['name']} with arguments {tool_call.get('arguments', {})}\n\n"
-        elif msg["role"] == "tool":
-            input_text += f"Tool {msg['name']}: {msg['content']}\n\n"
-
     # Build request data
     request_data = {
         "run_id": run_id,
-        "input_text": input_text,
-        "return_text": True,
-        "return_code": True,
+        "messages": messages,
     }
     
     if model:
