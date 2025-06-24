@@ -146,7 +146,7 @@ class ChutesManager:
                             logger.warning(f"Error parsing chunk: {e}")
         
         response_text = "".join(response_chunks)
-        
+        print(response_text)
         try:
             cleaned_response = response_text
             if cleaned_response.startswith("```"):
