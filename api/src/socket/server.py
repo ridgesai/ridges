@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from api.src.utils.logging import get_logger
-from api.src.socket.server_helpers import upsert_evaluation_run, get_next_evaluation, get_agent_version_for_validator, create_evaluation, start_evaluation, finish_evaluation, reset_running_evaluations
+from api.src.socket.server_helpers import upsert_evaluation_run, get_next_evaluation, get_agent_version_for_validator, create_evaluation, start_evaluation, finish_evaluation, reset_running_evaluations, get_relative_version_num
 
 logger = get_logger(__name__)
 
@@ -119,6 +119,18 @@ class WebSocketServer:
         except Exception as e:
             logger.error(f"Error getting next evaluation: {str(e)}")
             return None
+        
+    def get_connected_validators(self):
+        validators = []
+        for websocket, client_data in self.clients.items():
+            if client_data["val_hotkey"] and client_data["version_commit_hash"]:
+                relative_version_num = get_relative_version_num(client_data["version_commit_hash"])
+                validators.append({
+                    "validator_hotkey": client_data["val_hotkey"],
+                    "relative_version_num": relative_version_num,
+                    "commit_hash": client_data["version_commit_hash"]
+                })
+        return validators
 
     async def start(self):
         self.server = await websockets.serve(self.handle_connection, self.host, self.port, ping_timeout=None) # Timeout stuff is for a bug fix, look into it later

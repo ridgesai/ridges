@@ -505,6 +505,83 @@ class DatabaseManager:
                     code=None
                 )
             return None
+        
+    def get_latest_agent_by_miner_hotkey(self, miner_hotkey: str, scored: bool) -> Optional[AgentSummary]:
+        """
+        Get the latest agent from the database by miner_hotkey. Return None if not found.
+        If scored=True, only returns agents that have a scored version.
+        """
+        with self.conn.cursor() as cursor:
+            if scored:
+                cursor.execute("""
+                    SELECT 
+                        a.agent_id,
+                        a.miner_hotkey,
+                        a.name,
+                        a.latest_version,
+                        a.created_at,
+                        a.last_updated,
+                        latest_scored.version_id,
+                        latest_scored.version_num,
+                        latest_scored.created_at as version_created_at,
+                        latest_scored.score
+                    FROM agents a
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (agent_id) 
+                            agent_id,
+                            version_id,
+                            version_num,
+                            created_at,
+                            score
+                        FROM agent_versions 
+                        WHERE score IS NOT NULL
+                        ORDER BY agent_id, created_at DESC
+                    ) latest_scored ON a.agent_id = latest_scored.agent_id
+                    WHERE a.miner_hotkey = %s
+                    AND latest_scored.score IS NOT NULL
+                """, (miner_hotkey,))
+            else:
+                cursor.execute("""
+                    SELECT 
+                        a.agent_id,
+                        a.miner_hotkey,
+                        a.name,
+                        a.latest_version,
+                        a.created_at,
+                        a.last_updated,
+                        latest_ver.version_id,
+                        latest_ver.version_num,
+                        latest_ver.created_at as version_created_at,
+                        latest_ver.score
+                    FROM agents a
+                    LEFT JOIN (
+                        SELECT DISTINCT ON (agent_id) 
+                            agent_id,
+                            version_id,
+                            version_num,
+                            created_at,
+                            score
+                        FROM agent_versions 
+                        ORDER BY agent_id, created_at DESC
+                    ) latest_ver ON a.agent_id = latest_ver.agent_id
+                    WHERE a.miner_hotkey = %s
+                """, (miner_hotkey,))
+            
+            row = cursor.fetchone()
+            if row:
+                return AgentSummary(
+                    miner_hotkey=row[1],
+                    name=row[2],
+                    latest_version=AgentVersion(
+                        version_id=row[6],
+                        agent_id=row[0],
+                        version_num=row[7],
+                        created_at=row[8],
+                        score=row[9]
+                    ),
+                    code=None
+                )
+            return None
 
     def get_recent_executions(self, num_executions: int) -> List[Execution]:
         """
