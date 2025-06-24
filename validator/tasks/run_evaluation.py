@@ -42,7 +42,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     try:
         # Create sandbox manager
         sbox_manager = SandboxManager()
-        evaluation_runs = []
+        evaluation_runs: List[EvaluationRun] = []
 
         # Create a client with longer timeout for agent operations
         async with httpx.AsyncClient(timeout=CHALLENGE_TIMEOUT.total_seconds() * 2) as client:
@@ -99,6 +99,19 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         logger.info("Waiting on sandboxes...")
         await sbox_manager.wait_for_all_sandboxes()
 
+        # Upload patches to Ridges
+        for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
+            evaluation_run: EvaluationRun = next(run for run in evaluation_runs if run.swebench_instance_id == instance_id)
+            if not success:
+                evaluation_run.error=error
+                evaluation_run.solved=False
+                evaluation_run.finished_at=datetime.now()
+                await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
+                continue
+            
+            evaluation_run.response=patch
+            await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
+
         # Run evaluation
         logger.info("Running evaluation...")
         client = docker.from_env()
@@ -106,14 +119,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
             evaluation_run: EvaluationRun = next(run for run in evaluation_runs if run.swebench_instance_id == instance_id)
 
-            if not success:
-                evaluation_run.error=error
-                evaluation_run.solved=False
-                evaluation_run.finished_at=datetime.now()
-                await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
-                continue
-            evaluation_run.response=patch
-            
+            logger.info(f"Running evaluation for run {evaluation_run.run_id} on instance {instance_id}")
+
             prediction = {
                 "instance_id": instance_id,
                 "model_name_or_path": f"{agent_version.agent_id}v{agent_version.version_num}",
@@ -132,7 +139,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             run_result = run_instance(
                 test_spec=test_spec,
                 pred=prediction,
-                rm_image=True,  # Clean up after each run
+                rm_image=False,  # Clean up after each run
                 force_rebuild=False,
                 client=client,
                 run_id=evaluation_run.run_id,
