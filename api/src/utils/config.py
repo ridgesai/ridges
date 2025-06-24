@@ -37,4 +37,4 @@ PERMISSABLE_PACKAGES = [
     "sklearn.feature_extraction.text",
     "sklearn.feature_extraction.text.TfidfVectorizer",
 ]
-MODEL_PRICE_PER_1M_TOKENS = {"deepseek-ai/DeepSeek-V3-0324": 0}
+MODEL_PRICE_PER_1M_TOKENS = {"deepseek-ai/DeepSeek-V3-0324": 0, "agentica-org/DeepCoder-14B-Preview": 0}
