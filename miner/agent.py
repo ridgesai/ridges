@@ -48,6 +48,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List
 import urllib.request as _urlreq
 import urllib.error as _urlerr
+import re
 
 # ---------------------------------------------------------------------------
 # Environment tweaks ---------------------------------------------------------
@@ -329,7 +330,13 @@ ONESHOT_SYSTEM_PROMPT = (
     "4. Every changed file needs its own header block as in rule 2.\n"
     "5. End the patch with a trailing newline.\n\n"
     "Be exact: if the diff is syntactically malformed or wrapped in extra "
-    "text the automated patch tool will fail."
+    "text the automated patch tool will fail.\n\n"
+    "OUTPUT RULES (VERY IMPORTANT)\n"
+    "• You MUST end your reply with a *raw* JSON object – nothing else – that has exactly two keys: 'text_response' and 'code_response'.\n"
+    "• Do NOT surround the JSON with Markdown back-ticks or any other fencing.\n"
+    "• 'text_response' can hold arbitrary explanatory text (may be empty).\n"
+    "• 'code_response' must hold the unified diff from rules 1-5 *verbatim*.\n"
+    "Example format: {\"text_response\": \"short explanation\", \"code_response\": \"diff --git a/foo.py b/foo.py\n...\"}."
 )
 
 # Small helper – language tag for triple-backticks (very rough heuristic)
@@ -368,7 +375,7 @@ def run_oneshot(
     proxy_url: str,
     model_name: str,
     run_id: str,
-    top_k: int = 30,
+    top_k: int = 20,
 ) -> str:
     """Build repository summary and send a single LLM call.
 
@@ -386,6 +393,42 @@ def run_oneshot(
 
     file_paths = list(repo_texts.keys())
     file_bodies = list(repo_texts.values())
+
+    # --------------------------------------------------------------------
+    # Stack-trace anchoring ------------------------------------------------
+    # --------------------------------------------------------------------
+    # Extract file paths (and optional line numbers) that appear in Python
+    # tracebacks inside *problem_text* – lines like:
+    #     File "django/db/models/fields/related_descriptors.py", line 738, in ...
+    # These files are strong signals for the buggy location, so we force them
+    # into the prompt before doing similarity ranking.
+
+    trace_re = re.compile(r"File \"([^\"]+)\", line (\d+)")
+    anchor_candidates: list[tuple[str, int | None]] = []
+    for m in trace_re.finditer(problem_text):
+        path_str, line_str = m.groups()
+        try:
+            line_no = int(line_str)
+        except Exception:
+            line_no = None
+        anchor_candidates.append((path_str, line_no))
+
+    # Map the extracted path fragments to *repo*-relative paths.
+    anchor_paths: list[tuple[str, int | None]] = []
+    for cand_path, line_no in anchor_candidates:
+        # Normalise path separators
+        cand_norm = cand_path.replace("\\", "/")
+        for repo_path in repo_texts.keys():
+            if repo_path.replace("\\", "/").endswith(cand_norm):
+                anchor_paths.append((repo_path, line_no))
+                break  # first match is fine
+
+    anchor_indices: list[int] = []
+    for repo_path, _ln in anchor_paths:
+        try:
+            anchor_indices.append(file_paths.index(repo_path))
+        except ValueError:
+            continue
 
     # ------------------------------------------------------------
     # 1) Try fast MiniLM embeddings (preferred) ------------------
@@ -424,15 +467,79 @@ def run_oneshot(
         # already L2-normalised by sklearn (norm="l2" default), we can use dot.
         sims = (file_mat @ query_vec)  # shape (n_files,)
 
-    top_idx = np.argsort(-sims)[: top_k]
-    top_file_paths = [file_paths[idx] for idx in top_idx]
+    # --------------------------------------------------------------------
+    # Heuristic keyword boost --------------------------------------------
+    # --------------------------------------------------------------------
+    # Extract the most common non-stopword tokens (>3 letters) from the
+    # problem statement.  If a token appears in a file's *path* (not body),
+    # give that file a small bonus so domain-specific modules outrank very
+    # generic ones.
+
+    import collections, re
+
+    tokens = re.findall(r"[A-Za-z]{4,}", problem_text.lower())
+    common = [tok for tok, _ in collections.Counter(tokens).most_common(15)]
+
+    bonus = np.zeros_like(sims)
+    for i, p in enumerate(file_paths):
+        pl = p.lower()
+        cnt = sum(1 for kw in common if kw in pl)
+        if cnt:
+            bonus[i] = 0.25 * cnt  # 0.25 per keyword match
+
+    sims = sims + bonus
+
+    ranked_idx = list(np.argsort(-sims))
+
+    # Build final ordered list: anchors first (in original traceback order),
+    # then the normal similarity ranking skipping duplicates.
+    ordered_idx: list[int] = []
+    for a in anchor_indices:
+        if a not in ordered_idx:
+            ordered_idx.append(a)
+    for idx in ranked_idx:
+        if idx not in ordered_idx:
+            ordered_idx.append(idx)
 
     summary_parts: list[str] = []
-    for idx in top_idx:
+    seen_signatures: set[str] = set()
+
+    for idx in ordered_idx:
         path = file_paths[idx]
-        body = file_bodies[idx][:2000]  # truncate per file
+        body = file_bodies[idx]
+
+        # ------- choose snippet body with dynamic slice ------------------
+        body_full = body
+
+        # Anchor contextual window already extracted earlier
+        window_body = None
+        for apath, line_no in anchor_paths:
+            if apath == path and line_no is not None:
+                lines = body_full.splitlines()
+                start = max(line_no - 41, 0)
+                end = min(line_no + 40, len(lines))
+                window_body = "\n".join(lines[start:end])
+                break
+
+        if window_body is not None:
+            body = window_body
+        else:
+            # Dynamic slice: include entire file if prompt will remain small
+            if top_k <= 8 or len(body_full) <= 8000:
+                body = body_full
+            else:
+                body = body_full[:8000]
+
+        sig = re.sub(r"\s+", "", body[:400])
+        if sig in seen_signatures:
+            continue  # duplicate content – skip
+        seen_signatures.add(sig)
+
         tag = _lang_tag(path)
         summary_parts.append(f"### {path}\n```{tag}\n{body}\n```")
+
+        if len(summary_parts) >= top_k:
+            break  # reached desired count
 
     repo_summary = "\n\n".join(summary_parts)
 
@@ -471,8 +578,43 @@ def run_oneshot(
                 raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
             continue
 
-        text_resp = (proxy_resp.get("text_response") or "").lstrip()
-        code_resp = (proxy_resp.get("code_response") or "").lstrip()
+        if isinstance(proxy_resp, str):
+            print(f"[agent] Proxy response is not a string: {proxy_resp}")
+            raise Exception(f"Proxy response is not a string: {proxy_resp}")
+
+        # ------------------------------------------------------------
+        # Robust extraction – handle raw-string replies that include a
+        # <think> pre-amble or any non-JSON chatter.  We try: direct dict →
+        # JSON inside </think> → first JSON object containing both keys.
+        # ------------------------------------------------------------
+
+        def _coerce_to_dict(raw: Any) -> dict | None:
+            if isinstance(raw, dict):
+                return raw
+            if isinstance(raw, str):
+                # Strip any leading thinker tags
+                if "</think>" in raw:
+                    raw = raw.split("</think>")[-1]
+                raw = raw.strip().lstrip("`{}").rstrip("`").strip()
+                try:
+                    return json.loads(raw)
+                except Exception:
+                    # Try to locate the JSON blob with a regex
+                    import re, json as _json
+                    m = re.search(r"\{\s*\"text_response\".*\"code_response\".*\}", raw, re.DOTALL)
+                    if m:
+                        try:
+                            return _json.loads(m.group(0))
+                        except Exception:
+                            return None
+            return None
+
+        parsed = _coerce_to_dict(proxy_resp)
+        if parsed is None:
+            raise RuntimeError("Could not parse proxy response as JSON with required keys. Raw response:\n" + str(proxy_resp)[:500])
+
+        text_resp = (parsed.get("text_response") or "").lstrip()
+        code_resp = (parsed.get("code_response") or "").lstrip()
 
         patch_text = None
         for cand in (text_resp, code_resp):
@@ -533,8 +675,8 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
         "return_code": True,
     }
     
-    if model:
-        request_data["model"] = model
+    # request_data["model"] = "agentica-org/DeepCoder-14B-Preview"
+    request_data["model"] = "deepseek-ai/DeepSeek-V3-0324"
 
     # Send HTTP request
     url = f"{proxy_url.rstrip('/')}/agents/inference"
@@ -551,9 +693,14 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
             response_body = resp.read()
             print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)")
             
-            response_json = json.loads(response_body.decode("utf-8"))
-            print(f"[agent] Response: {response_json}")
-            return response_json
+            try:
+                response_parsed = json.loads(response_body.decode("utf-8"))
+            except json.JSONDecodeError:
+                # Proxy returned plain text – pass it upstream for secondary parsing.
+                response_parsed = response_body.decode("utf-8", errors="replace")
+
+            print(f"[agent] Response (parsed): {response_parsed}")
+            return response_parsed
             
     except Exception as e:
         print(f"[agent] Inference request failed: {e}")
