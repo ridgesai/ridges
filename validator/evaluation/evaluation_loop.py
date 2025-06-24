@@ -16,7 +16,7 @@ import difflib
 
 logger = get_logger(__name__)
 
-def are_patches_too_similar(patch1: str, patch2: str, threshold: float = 0.95) -> bool:
+def are_patches_too_similar(patch1: str, patch2: str, threshold: float = 0.98) -> bool:
     """Returns True if two patches are too alike using SequenceMatcher ratio."""
     # quick_ratio is fast and good enough for near-duplicate detection
     similarity = difflib.SequenceMatcher(None, patch1, patch2).quick_ratio()
