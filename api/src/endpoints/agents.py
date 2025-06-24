@@ -28,6 +28,7 @@ async def inference(request: InferenceRequest):
         raise HTTPException(status_code=404, detail="Evaluation run not found")
 
     try:
+        logger.info(f"Messages: {request.messages}")
         response = await chutes.inference(
             request.run_id, 
             request.messages,
