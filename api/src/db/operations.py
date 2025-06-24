@@ -599,11 +599,25 @@ class DatabaseManager:
             
             return executions
         
-    def get_recent_executions_by_agent(self, agent_id: str, num_executions: int) -> List[Execution]:
+    def get_num_agents(self) -> int:
         """
-        Get the X most recent executions for an agent.
+        Get the number of agents in the database.
         """
         with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) FROM agents
+            """)
+            return cursor.fetchone()[0]
+
+    def get_latest_execution_by_agent(self, agent_id: str) -> Optional[Execution]:
+        """
+        Get the current execution for an agent with priority:
+        1. Most recent running evaluation
+        2. Most recent scored evaluation  
+        3. None if neither exists
+        """
+        with self.conn.cursor() as cursor:
+            # First, try to get the most recent running evaluation
             cursor.execute("""
                 SELECT 
                     e.evaluation_id,
@@ -614,106 +628,131 @@ class DatabaseManager:
                     e.created_at,
                     e.started_at,
                     e.finished_at,
-                    a.agent_id,
+                    av.version_id as av_version_id,
+                    av.agent_id,
+                    av.version_num,
+                    av.created_at as agent_version_created_at,
+                    av.score,
+                    a.agent_id as agent_agent_id,
                     a.miner_hotkey,
                     a.name,
                     a.latest_version,
                     a.created_at as agent_created_at,
-                    a.last_updated,
-                    av.version_id as av_version_id,
-                    av.agent_id as av_agent_id,
-                    av.version_num,
-                    av.created_at as version_created_at,
-                    av.score
+                    a.last_updated
                 FROM evaluations e
                 JOIN agent_versions av ON e.version_id = av.version_id
                 JOIN agents a ON av.agent_id = a.agent_id
-                WHERE a.agent_id = %s 
+                WHERE a.agent_id = %s AND e.status = 'running'
                 ORDER BY e.created_at DESC 
-                LIMIT %s
-            """, (agent_id, num_executions))
-            rows = cursor.fetchall()
-            executions = []
+                LIMIT 1
+            """, (agent_id,))
             
-            for row in rows:
-                evaluation_id = row[0]
-                
-                # Get evaluation runs for this evaluation
+            row = cursor.fetchone()
+            
+            # If no running evaluation, get the most recent scored evaluation
+            if not row:
                 cursor.execute("""
                     SELECT 
-                        run_id,
-                        evaluation_id,
-                        swebench_instance_id,
-                        response,
-                        error,
-                        pass_to_fail_success,
-                        fail_to_pass_success,
-                        pass_to_pass_success,
-                        fail_to_fail_success,
-                        solved,
-                        started_at,
-                        finished_at
-                    FROM evaluation_runs 
-                    WHERE evaluation_id = %s
-                """, (evaluation_id,))
+                        e.evaluation_id,
+                        e.version_id,
+                        e.validator_hotkey,
+                        e.status,
+                        e.terminated_reason,
+                        e.created_at,
+                        e.started_at,
+                        e.finished_at,
+                        av.version_id as av_version_id,
+                        av.agent_id,
+                        av.version_num,
+                        av.created_at as agent_version_created_at,
+                        av.score,
+                        a.agent_id as agent_agent_id,
+                        a.miner_hotkey,
+                        a.name,
+                        a.latest_version,
+                        a.created_at as agent_created_at,
+                        a.last_updated
+                    FROM evaluations e
+                    JOIN agent_versions av ON e.version_id = av.version_id
+                    JOIN agents a ON av.agent_id = a.agent_id
+                    WHERE a.agent_id = %s AND av.score IS NOT NULL
+                    ORDER BY e.created_at DESC 
+                    LIMIT 1
+                """, (agent_id,))
                 
-                run_rows = cursor.fetchall()
-                evaluation_runs = [
-                    EvaluationRun(
-                        run_id=run_row[0],
-                        evaluation_id=run_row[1],
-                        swebench_instance_id=run_row[2],
-                        response=run_row[3],
-                        error=run_row[4],
-                        pass_to_fail_success=run_row[5],
-                        fail_to_pass_success=run_row[6],
-                        pass_to_pass_success=run_row[7],
-                        fail_to_fail_success=run_row[8],
-                        solved=run_row[9],
-                        started_at=run_row[10],
-                        finished_at=run_row[11]
-                    ) for run_row in run_rows
-                ]
-                
-                # Create Execution object
-                execution = Execution(
-                    evaluation=Evaluation(
-                        evaluation_id=row[0],
-                        version_id=row[1],
-                        validator_hotkey=row[2],
-                        status=row[3],
-                        terminated_reason=row[4],
-                        created_at=row[5],
-                        started_at=row[6],
-                        finished_at=row[7]
-                    ),
-                    evaluation_runs=evaluation_runs,
-                    agent=Agent(
-                        agent_id=row[8],
-                        miner_hotkey=row[9],
-                        name=row[10],
-                        latest_version=row[11],
-                        created_at=row[12],
-                        last_updated=row[13]
-                    ),
-                    agent_version=AgentVersion(
-                        version_id=row[14],
-                        agent_id=row[15],
-                        version_num=row[16],
-                        created_at=row[17],
-                        score=row[18]
-                    )
-                )
-                executions.append(execution)
+                row = cursor.fetchone()
             
-            return executions
-        
-    def get_num_agents(self) -> int:
-        """
-        Get the number of agents in the database.
-        """
-        with self.conn.cursor() as cursor:
+            # If still no row found, return None
+            if not row:
+                return None
+            
+            evaluation_id = row[0]
+            
+            # Get evaluation runs for this evaluation
             cursor.execute("""
-                SELECT COUNT(*) FROM agents
-            """)
-            return cursor.fetchone()[0]
+                SELECT 
+                    run_id,
+                    evaluation_id,
+                    swebench_instance_id,
+                    response,
+                    error,
+                    pass_to_fail_success,
+                    fail_to_pass_success,
+                    pass_to_pass_success,
+                    fail_to_fail_success,
+                    solved,
+                    started_at,
+                    finished_at
+                FROM evaluation_runs 
+                WHERE evaluation_id = %s
+            """, (evaluation_id,))
+            
+            run_rows = cursor.fetchall()
+            evaluation_runs = [
+                EvaluationRun(
+                    run_id=run_row[0],
+                    evaluation_id=run_row[1],
+                    swebench_instance_id=run_row[2],
+                    response=run_row[3],
+                    error=run_row[4],
+                    pass_to_fail_success=run_row[5],
+                    fail_to_pass_success=run_row[6],
+                    pass_to_pass_success=run_row[7],
+                    fail_to_fail_success=run_row[8],
+                    solved=run_row[9],
+                    started_at=run_row[10],
+                    finished_at=run_row[11]
+                ) for run_row in run_rows
+            ]
+            
+            # Create Execution object
+            execution = Execution(
+                evaluation=Evaluation(
+                    evaluation_id=row[0],
+                    version_id=row[1],
+                    validator_hotkey=row[2],
+                    status=row[3],
+                    terminated_reason=row[4],
+                    created_at=row[5],
+                    started_at=row[6],
+                    finished_at=row[7]
+                ),
+                evaluation_runs=evaluation_runs,
+                agent=Agent(
+                    agent_id=row[13],
+                    miner_hotkey=row[14],
+                    name=row[15],
+                    latest_version=row[16],
+                    created_at=row[17],
+                    last_updated=row[18]
+                ),
+                agent_version=AgentVersion(
+                    version_id=row[8],
+                    agent_id=row[9],
+                    version_num=row[10],
+                    created_at=row[11],
+                    score=row[12]
+                )
+            )
+            
+            return execution
