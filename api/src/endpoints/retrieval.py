@@ -115,9 +115,18 @@ def get_recent_executions(num_executions: int = 3):
     return executions
 
 def get_num_agents():
-    return db.get_num_agents()
+    try:
+        num_agents = db.get_num_agents()
+    except Exception as e:
+        logger.error(f"Error retrieving number of agents: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving number of agents. Please try again later."
+        )
+    
+    return num_agents
 
-def get_total_rewards_24h():
+def get_total_rewards_per_day():
 
     url = "https://api.taostats.io/api/dtao/pool/latest/v1?page=1"
 
@@ -154,6 +163,18 @@ def get_total_rewards_24h():
 
     return usd_per_day
 
+def get_recent_executions_by_agent(agent_id: str, num_executions: int = 3):
+    try:
+        executions = db.get_recent_executions_by_agent(agent_id, num_executions)
+    except Exception as e:
+        logger.error(f"Error retrieving recent executions by agent {agent_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving recent executions by agent. Please try again later."
+        )
+    
+    return executions
+
 router = APIRouter()
 
 routes = [
@@ -163,7 +184,8 @@ routes = [
     ("/agent-version-code", get_agent_version_code),
     ("/recent-executions", get_recent_executions),
     ("/num-agents", get_num_agents),
-    ("/total-rewards-24h", get_total_rewards_24h),
+    ("/total-rewards-per-day", get_total_rewards_per_day),
+    ("/recent-executions-by-agent", get_recent_executions_by_agent),
 ]
 
 for path, endpoint in routes:
