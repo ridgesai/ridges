@@ -73,7 +73,16 @@ class WebSocketServer:
 
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
-                    upsert_evaluation_run(response_json["evaluation_run"]) 
+                    eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
+                    if eval_run.finished_at:
+                        # Convert Pydantic model to dict with datetime serialization
+                        eval_run_dict = eval_run.model_dump(mode='json')
+                        for client_websocket in self.clients.keys():
+                            try:
+                                await client_websocket.send(json.dumps({"event": "evaluation-run-finished", "evaluation_run": eval_run_dict}))
+                            except websockets.ConnectionClosed:
+                                pass
+                        logger.info(f"Platform socket broadcasted evaluation run {eval_run.run_id} to {len(self.clients)} connected clients")
 
         except websockets.ConnectionClosed:
             logger.info(f"Validator at {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
@@ -110,7 +119,7 @@ class WebSocketServer:
         except Exception as e:
             logger.error(f"Error getting next evaluation: {str(e)}")
             return None
-    
+
     async def start(self):
         self.server = await websockets.serve(self.handle_connection, self.host, self.port, ping_timeout=None) # Timeout stuff is for a bug fix, look into it later
         logger.info(f"Platform socket started on {self.uri}")

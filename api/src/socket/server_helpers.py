@@ -65,7 +65,7 @@ def get_agent_version_for_validator(version_id: str) -> AgentVersionForValidator
     )
     return agent_version_for_validator
 
-def upsert_evaluation_run(evaluation_run: dict):
+def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
     """
     Upsert an evaluation run into the database.
     """
@@ -85,6 +85,8 @@ def upsert_evaluation_run(evaluation_run: dict):
         finished_at=evaluation_run["finished_at"]
     )
     db.store_evaluation_run(evaluation_run)
+
+    return evaluation_run
 
 def create_evaluation(version_id: str, validator_hotkey: str) -> str:
     """
