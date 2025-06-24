@@ -36,17 +36,13 @@ A `trajectory.jsonl` file with the full conversation is written for debugging.
 """
 from __future__ import annotations
 
-import argparse
 import json
 import os
-import re
 import shlex
 import subprocess
-import sys
 import textwrap
 import time
 import traceback
-import random
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List
@@ -470,7 +466,7 @@ def run_oneshot(
         try:
             proxy_resp = inference(messages, proxy_url, run_id, model_name)
         except Exception as e:
-            print(f"[agent] Request failed (attempt {attempt + 1}): {e}", file=sys.stderr)
+            print(f"[agent] Request failed (attempt {attempt + 1}): {e}")
             if attempt == ATTEMPTS - 1:
                 raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
             continue
@@ -485,9 +481,9 @@ def run_oneshot(
                 break
 
         if patch_text is None:
-            print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...", file=sys.stderr)
-            print(f"[agent] code_response: {code_resp[:200]}...", file=sys.stderr)
-            print(f"[agent] Full proxy response: {proxy_resp}", file=sys.stderr)
+            print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...")
+            print(f"[agent] code_response: {code_resp[:200]}...")
+            print(f"[agent] Full proxy response: {proxy_resp}")
             raise Exception(f"No valid patch in response. Response: {proxy_resp}")
 
         ok, dry_out = _dry_run_patch(patch_text)
@@ -544,8 +540,8 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
     url = f"{proxy_url.rstrip('/')}/agents/inference"
     request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
     
-    print(f"[agent] Making inference request to {url}", file=sys.stderr)
-    print(f"[agent] Request data: {request_data}", file=sys.stderr)
+    print(f"[agent] Making inference request to {url}")
+    print(f"[agent] Request data: {request_data}")
     
     try:
         req = _urlreq.Request(url, data=request_bytes, method="POST")
@@ -553,14 +549,14 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
         
         with _urlreq.urlopen(req, timeout=30) as resp:
             response_body = resp.read()
-            print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)", file=sys.stderr)
+            print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)")
             
             response_json = json.loads(response_body.decode("utf-8"))
-            print(f"[agent] Response: {response_json}", file=sys.stderr)
+            print(f"[agent] Response: {response_json}")
             return response_json
             
     except Exception as e:
-        print(f"[agent] Inference request failed: {e}", file=sys.stderr)
+        print(f"[agent] Inference request failed: {e}")
         raise RuntimeError(f"Inference request failed: {e}")
 
 # ---------------------------------------------------------------------------
@@ -594,7 +590,7 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
     for step in range(1, MAX_STEPS + 1):
         if time.time() - start_time > timeout:
-            print("[agent] global timeout reached", file=sys.stderr)
+            print("[agent] global timeout reached")
             return "Global timeout reached"
 
         proxy_resp = inference(messages, proxy_url, run_id, model_name)
@@ -671,7 +667,7 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
             traj_file.close()
             return "FINISH called"
 
-    print("[agent] max steps exceeded", file=sys.stderr)
+    print("[agent] max steps exceeded")
     traj_file.close()
     return "Max steps exceeded"
 
