@@ -117,6 +117,9 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         client = docker.from_env()
 
         for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
+            if not success:
+                continue
+
             evaluation_run: EvaluationRun = next(run for run in evaluation_runs if run.swebench_instance_id == instance_id)
 
             logger.info(f"Running evaluation for run {evaluation_run.run_id} on instance {instance_id}")
