@@ -156,7 +156,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM evaluations WHERE validator_hotkey = %s AND status = 'waiting' ORDER BY created_at ASC LIMIT 1;
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                FROM evaluations WHERE validator_hotkey = %s AND status = 'waiting' ORDER BY created_at ASC LIMIT 1;
             """, (validator_hotkey,))
             row = cursor.fetchone()
             if row:
@@ -180,7 +181,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM evaluations WHERE evaluation_id = %s
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                FROM evaluations WHERE evaluation_id = %s
             """, (evaluation_id,))
             row = cursor.fetchone()
             if row:
@@ -204,7 +206,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM evaluation_runs WHERE run_id = %s
+                SELECT run_id, evaluation_id, swebench_instance_id, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, finished_at 
+                FROM evaluation_runs WHERE run_id = %s
             """, (run_id,))
             row = cursor.fetchone()
             if row:
@@ -231,7 +234,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM agents WHERE miner_hotkey = %s
+                SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                FROM agents WHERE miner_hotkey = %s
             """, (miner_hotkey,))
             row = cursor.fetchone()
             if row:
@@ -251,7 +255,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM agents WHERE agent_id = %s
+                SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                FROM agents WHERE agent_id = %s
             """, (agent_id,))
             row = cursor.fetchone()
             if row:
@@ -267,11 +272,14 @@ class DatabaseManager:
     
     def get_agent_by_version_id(self, version_id: str) -> Optional[Agent]:
         """
-        Get an agent from the database. Return None if not found.
+        Get an agent from the database by version_id. Return None if not found.
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM agents WHERE version_id = %s
+                SELECT a.agent_id, a.miner_hotkey, a.name, a.latest_version, a.created_at, a.last_updated 
+                FROM agents a
+                JOIN agent_versions av ON a.agent_id = av.agent_id
+                WHERE av.version_id = %s
             """, (version_id,))
             row = cursor.fetchone()
             if row:
@@ -291,7 +299,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM agent_versions WHERE version_id = %s
+                SELECT version_id, agent_id, version_num, created_at, score 
+                FROM agent_versions WHERE version_id = %s
             """, (version_id,))
             row = cursor.fetchone()
             if row:
@@ -310,7 +319,8 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM evaluations WHERE version_id = %s
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                FROM evaluations WHERE version_id = %s
             """, (version_id,))
             rows = cursor.fetchall()
             return [Evaluation(
@@ -331,7 +341,10 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM agent_versions WHERE agent_id = %s
+                SELECT version_id, agent_id, version_num, created_at, score 
+                FROM agent_versions WHERE agent_id = %s
+                ORDER BY created_at DESC
+                LIMIT 1
             """, (agent_id,))
             row = cursor.fetchone()
             if row:
@@ -344,13 +357,14 @@ class DatabaseManager:
                 )
             return None
         
-    def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Evaluation:
+    def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
         Get the running evaluation for a validator. Return None if not found.
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT * FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
             """, (validator_hotkey,))
             row = cursor.fetchone()
             if row:
