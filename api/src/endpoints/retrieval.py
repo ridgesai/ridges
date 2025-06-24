@@ -60,9 +60,19 @@ def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[Agen
 
     return agent_summaries
 
-def get_agent(agent_id: str, include_code: bool = False) -> AgentQueryResponse:
-    latest_agent = db.get_latest_agent(agent_id, scored=False)
-    latest_scored_agent = db.get_latest_agent(agent_id, scored=True)
+def get_agent(agent_id: str= None, miner_hotkey: str= None, include_code: bool = False) -> AgentQueryResponse:
+    if not agent_id and not miner_hotkey:
+        raise HTTPException(
+            status_code=400,
+            detail="Either agent_id or miner_hotkey must be provided"
+        )
+    
+    if agent_id:
+        latest_agent = db.get_latest_agent(agent_id, scored=False)
+        latest_scored_agent = db.get_latest_agent(agent_id, scored=True)
+    else:
+        latest_agent = db.get_latest_agent_by_miner_hotkey(miner_hotkey, scored=False)
+        latest_scored_agent = db.get_latest_agent_by_miner_hotkey(miner_hotkey, scored=True)
 
     if not latest_agent and not latest_scored_agent:
         logger.info(f"Agent {agent_id} was requested but not found in our database")
