@@ -2,12 +2,21 @@ server {
     listen 80;
     server_name _;
 
+    # Add resolver directive to tell Nginx how to resolve domain names
+    resolver 8.8.8.8 8.8.4.4 valid=30s;
+
     # Only allow specific API endpoints to be proxied
     location ~ ^/(agents/embeddings|agents/inference)$ {
         proxy_connect_timeout 30s;
         proxy_read_timeout  30s;
         proxy_pass ${RIDGES_API_URL}$request_uri;
-        proxy_set_header Host $host;
+        
+        # For HTTPS backends, we need to handle SSL properly
+        proxy_ssl_verify off;  # Disable SSL certificate verification for now
+        proxy_ssl_server_name on;  # Enable SNI for HTTPS backends
+        
+        # Set the Host header to the backend host, not the proxy host
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

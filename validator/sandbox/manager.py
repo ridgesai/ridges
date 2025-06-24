@@ -264,20 +264,22 @@ class SandboxManager:
     def _start_proxy_container(self):
         """Start the nginx proxy container."""
         try:
-            # Start container on the default bridge network so it can reach the host API
+            # Start container on the internal sandbox network
             container = self.docker.containers.run(
                 image=PROXY_DOCKER_IMAGE,
                 name=PROXY_CONTAINER_NAME,
                 detach=True,
+                network=SANDBOX_NETWORK_NAME,  # Start on the internal network
+                dns=["8.8.8.8", "8.8.4.4"],  # Use Google DNS servers
                 environment={ "RIDGES_API_URL": RIDGES_API_URL }
             )
 
-            # Also connect it to the internal sandbox network so sandboxes can reach it
+            # Also connect it to the default bridge network for external access
             try:
-                self.docker.networks.get(SANDBOX_NETWORK_NAME).connect(container)
-                logger.info(f"Connected proxy container to {SANDBOX_NETWORK_NAME}")
+                self.docker.networks.get("bridge").connect(container)
+                logger.info(f"Connected proxy container to default bridge network")
             except Exception as net_e:
-                logger.error(f"Failed to attach proxy container to internal network: {net_e}")
+                logger.error(f"Failed to attach proxy container to bridge network: {net_e}")
 
             # Allow some time for Nginx to become ready
             time.sleep(2)
