@@ -106,7 +106,8 @@ def create_evaluation(version_id: str, validator_hotkey: str) -> str:
         terminated_reason=None,
         created_at=datetime.now(),
         started_at=None,
-        finished_at=None
+        finished_at=None,
+        score=None
     )
     db.store_evaluation(evaluation_object)
 

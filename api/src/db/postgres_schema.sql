@@ -26,6 +26,7 @@ CREATE TABLE evaluations (
     created_at TIMESTAMP NOT NULL,
     started_at TIMESTAMP,
     finished_at TIMESTAMP
+    score FLOAT
 );
 
 -- Evaluation Runs table

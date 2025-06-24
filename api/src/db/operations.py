@@ -111,14 +111,15 @@ class DatabaseManager:
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (evaluation_id) DO UPDATE SET
                         status = EXCLUDED.status,
                         started_at = EXCLUDED.started_at,
                         finished_at = EXCLUDED.finished_at,
-                        terminated_reason = EXCLUDED.terminated_reason
-                """, (evaluation.evaluation_id, evaluation.version_id, evaluation.validator_hotkey, evaluation.status, evaluation.created_at, evaluation.started_at, evaluation.finished_at, evaluation.terminated_reason))
+                        terminated_reason = EXCLUDED.terminated_reason,
+                        score = EXCLUDED.score
+                """, (evaluation.evaluation_id, evaluation.version_id, evaluation.validator_hotkey, evaluation.status, evaluation.created_at, evaluation.started_at, evaluation.finished_at, evaluation.terminated_reason, evaluation.score))
                 logger.info(f"Evaluation {evaluation.evaluation_id} stored successfully")
                 return 1
         except Exception as e:
@@ -156,7 +157,7 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
                 FROM evaluations WHERE validator_hotkey = %s AND status = 'waiting' ORDER BY created_at ASC LIMIT 1;
             """, (validator_hotkey,))
             row = cursor.fetchone()
@@ -170,7 +171,8 @@ class DatabaseManager:
                     terminated_reason=row[4],
                     created_at=row[5],
                     started_at=row[6],
-                    finished_at=row[7]
+                    finished_at=row[7],
+                    score=row[8]
                 )
             logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey}")
             return None
@@ -181,7 +183,7 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
                 FROM evaluations WHERE evaluation_id = %s
             """, (evaluation_id,))
             row = cursor.fetchone()
@@ -195,7 +197,8 @@ class DatabaseManager:
                     terminated_reason=row[4],
                     created_at=row[5],
                     started_at=row[6],
-                    finished_at=row[7]
+                    finished_at=row[7],
+                    score=row[8]
                 )
             logger.info(f"Evaluation {evaluation_id} not found in the database")
             return None
@@ -319,7 +322,7 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
                 FROM evaluations WHERE version_id = %s
             """, (version_id,))
             rows = cursor.fetchall()
@@ -331,7 +334,8 @@ class DatabaseManager:
                 terminated_reason=row[4],
                 created_at=row[5],
                 started_at=row[6],
-                finished_at=row[7]
+                finished_at=row[7],
+                score=row[8]
             ) for row in rows]
         
     
@@ -363,7 +367,7 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at 
+                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
                 FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
             """, (validator_hotkey,))
             row = cursor.fetchone()
@@ -376,7 +380,8 @@ class DatabaseManager:
                 terminated_reason=row[4],
                 created_at=row[5],
                 started_at=row[6],
-                finished_at=row[7]
+                finished_at=row[7],
+                score=row[8]
             )
             return None
 
@@ -598,6 +603,7 @@ class DatabaseManager:
                     e.created_at,
                     e.started_at,
                     e.finished_at,
+                    e.score,
                     av.version_id as agent_version_id,
                     av.agent_id,
                     av.version_num,
@@ -669,23 +675,24 @@ class DatabaseManager:
                         terminated_reason=row[4],
                         created_at=row[5],
                         started_at=row[6],
-                        finished_at=row[7]
+                        finished_at=row[7],
+                        score=row[8]
                     ),
                     evaluation_runs=evaluation_runs,
                     agent=Agent(
-                        agent_id=row[13],
-                        miner_hotkey=row[14],
-                        name=row[15],
-                        latest_version=row[16],
-                        created_at=row[17],
-                        last_updated=row[18]
+                        agent_id=row[14],
+                        miner_hotkey=row[15],
+                        name=row[16],
+                        latest_version=row[17],
+                        created_at=row[18],
+                        last_updated=row[19]
                     ),
                     agent_version=AgentVersion(
-                        version_id=row[8],
-                        agent_id=row[9],
-                        version_num=row[10],
-                        created_at=row[11],
-                        score=row[12]
+                        version_id=row[9],
+                        agent_id=row[10],
+                        version_num=row[11],
+                        created_at=row[12],
+                        score=row[13]
                     )
                 )
                 executions.append(execution)
@@ -721,6 +728,7 @@ class DatabaseManager:
                     e.created_at,
                     e.started_at,
                     e.finished_at,
+                    e.score,
                     av.version_id as av_version_id,
                     av.agent_id,
                     av.version_num,
@@ -754,6 +762,7 @@ class DatabaseManager:
                         e.created_at,
                         e.started_at,
                         e.finished_at,
+                        e.score,
                         av.version_id as av_version_id,
                         av.agent_id,
                         av.version_num,
@@ -828,23 +837,24 @@ class DatabaseManager:
                     terminated_reason=row[4],
                     created_at=row[5],
                     started_at=row[6],
-                    finished_at=row[7]
+                    finished_at=row[7],
+                    score=row[8]
                 ),
                 evaluation_runs=evaluation_runs,
                 agent=Agent(
-                    agent_id=row[13],
-                    miner_hotkey=row[14],
-                    name=row[15],
-                    latest_version=row[16],
-                    created_at=row[17],
-                    last_updated=row[18]
+                    agent_id=row[14],
+                    miner_hotkey=row[15],
+                    name=row[16],
+                    latest_version=row[17],
+                    created_at=row[18],
+                    last_updated=row[19]
                 ),
                 agent_version=AgentVersion(
-                    version_id=row[8],
-                    agent_id=row[9],
-                    version_num=row[10],
-                    created_at=row[11],
-                    score=row[12]
+                    version_id=row[9],
+                    agent_id=row[10],
+                    version_num=row[11],
+                    created_at=row[12],
+                    score=row[13]
                 )
             )
             

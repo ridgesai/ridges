@@ -54,6 +54,7 @@ class Evaluation(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
+    score: Optional[float]
 
 class Execution(BaseModel):
     evaluation: Evaluation
