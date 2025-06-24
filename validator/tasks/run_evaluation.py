@@ -113,7 +113,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
 
         # Run evaluation
-        logger.info("Running evaluation...")
+        logger.info(f"Running evaluation {evaluation_id}...")
         client = docker.from_env()
 
         for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
