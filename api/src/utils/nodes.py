@@ -12,6 +12,4 @@ async def get_subnet_hotkeys():
 
     hotkeys = [node.hotkey for node in active_nodes]
 
-    print(hotkeys)
-    
     return hotkeys
