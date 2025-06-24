@@ -35,7 +35,7 @@ async def inference(request: InferenceRequest):
             request.temperature,
             request.model
         )
-        logger.info(f"Inference for {request.run_id} was requested and returned")
+        logger.info(f"Inference for {request.run_id} was requested and returned \"{response}\"")
         return response
     except Exception as e:
         logger.error(f"Error getting inference for {request.run_id}: {e}")
