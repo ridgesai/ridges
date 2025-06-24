@@ -17,7 +17,7 @@ class WebSocketServer:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, host: str = "0.0.0.0", port: int = 8765):
+    def __init__(self, host: str = "0.0.0.0", port: int = 8000):
         if not self._initialized:
             self.host = host
             self.port = port
