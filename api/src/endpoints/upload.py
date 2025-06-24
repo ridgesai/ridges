@@ -104,22 +104,19 @@ async def post_agent (
     try:
         # Parse the file content
         tree = ast.parse(content.decode('utf-8'))
-        
-        # Check for if __name__ == "__main__"
-        has_main_check = False
+
+        # Check for a function called agent_main
+        has_agent_main = False
         for node in ast.walk(tree):
-            if isinstance(node, ast.If):
-                if isinstance(node.test, ast.Compare):
-                    if isinstance(node.test.left, ast.Name) and node.test.left.id == "__name__":
-                        if len(node.test.ops) == 1 and isinstance(node.test.ops[0], ast.Eq):
-                            if isinstance(node.test.comparators[0], ast.Constant) and node.test.comparators[0].value == "__main__":
-                                has_main_check = True
-                                break
+            if isinstance(node, ast.FunctionDef):
+                if node.name == "agent_main":
+                    has_agent_main = True
+                    break
         
-        if not has_main_check:
+        if not has_agent_main:
             raise HTTPException(
                 status_code=400,
-                detail='File must contain "if __name__ == "__main__":"'
+                detail='File must contain a function called "agent_main"'
             )
         
         # Check imports
