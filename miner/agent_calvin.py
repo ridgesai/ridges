@@ -67,6 +67,9 @@ import urllib.error as _urlerr
 
 os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
+# Always capture prompt diagnostics unless the caller explicitly disables it.
+os.environ.setdefault("AGENT_DEBUG", "1")
+
 # Some recent versions of `transformers` still unconditionally import the legacy
 # compatibility package `tf_keras` (a thin shim around Keras 2.x).  Rather than
 # pulling in heavy TensorFlow dependencies or pinning older libraries, we
@@ -99,7 +102,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Defaults via environment variables ----------------------------------------
 # ---------------------------------------------------------------------------
-DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
+DEFAULT_SOCKET = os.getenv("AI_PROXY_SOCK", "/tmp/sandbox_proxy.sock")
 DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
 DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
 DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
@@ -257,27 +260,15 @@ def _apply_patch(patch: str) -> str:
                 timeout=60,
             )
 
-        # Try multiple patch strip levels then fallback to git apply
-        out = ""
-        proc = None
-        for level in ("-p1", "-p0", "-p2", "-p3"):
-            proc = _run_patch(level)
-            out += f"\n--- attempt {level} ---\n" + proc.stdout + proc.stderr
-            if proc.returncode in (0, 1):
-                break  # applied or with rejects
+        proc = _run_patch("-p1")
+        out = proc.stdout + proc.stderr
 
-        # Fallback to git apply if available and previous attempts failed
         if proc.returncode not in (0, 1):
-            git_proc = subprocess.run(
-                ["git", "apply", "--unsafe-paths", tmp_path],
-                text=True,
-                capture_output=True,
-                timeout=60,
-            )
-            out += "\n--- git apply fallback ---\n" + git_proc.stdout + git_proc.stderr
-            if git_proc.returncode == 0:
-                proc = git_proc
-         
+            # Retry with -p0 – paths may already be relative.
+            proc2 = _run_patch("-p0")
+            out += "\n--- retry with -p0 ---\n" + proc2.stdout + proc2.stderr
+            proc = proc2
+
         if proc.returncode == 0:
             return "Patch applied successfully.\n" + out
         elif proc.returncode == 1:
@@ -368,10 +359,10 @@ def _collect_repo_texts(root: str = ".", *, max_file_bytes: int = 100_000) -> Di
 def run_oneshot(
     problem_text: str,
     *,
-    proxy_url: str,
+    socket_path: str,
     model_name: str,
     run_id: str,
-    top_k: int = 30,
+    top_k: int = 50,
 ) -> str:
     """Build repository summary and send a single LLM call.
 
@@ -433,7 +424,13 @@ def run_oneshot(
     summary_parts: list[str] = []
     for idx in top_idx:
         path = file_paths[idx]
-        body = file_bodies[idx][:2000]  # truncate per file
+        # If we are only including a handful of files, send the entire file
+        # to the model; otherwise trim to first 2 000 bytes to stay within
+        # context limits.
+        if top_k <= 10:
+            body = file_bodies[idx]
+        else:
+            body = file_bodies[idx][:2000]
         tag = _lang_tag(path)
         summary_parts.append(f"### {path}\n```{tag}\n{body}\n```")
 
@@ -484,10 +481,7 @@ def run_oneshot(
                 break
 
         if patch_text is None:
-            print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...", file=sys.stderr)
-            print(f"[agent] code_response: {code_resp[:200]}...", file=sys.stderr)
-            print(f"[agent] Full proxy response: {proxy_resp}", file=sys.stderr)
-            raise Exception(f"No valid patch in response. Response: {proxy_resp}")
+            raise Exception(proxy_resp)
 
         ok, dry_out = _dry_run_patch(patch_text)
         if ok:
@@ -695,14 +689,14 @@ def agent_main(input_dict: Dict[str, Any]):
         raise ValueError("input_dict must contain 'problem_statement'.")
 
     # Environment overrides (the validator sets these); fall back to CLI defaults.
-    proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
+    socket_path = os.getenv("AI_PROXY_SOCK", DEFAULT_SOCKET)
     timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
 
     # Force one-shot MiniLM retrieval mode for every run.
     patch_text = run_oneshot(
         problem_text,
-        proxy_url=proxy_url,
+        socket_path=socket_path,
         model_name=model_name,
         run_id=input_dict.get("run_id", ""),
     )
@@ -774,21 +768,12 @@ def _dry_run_patch(patch: str) -> tuple[bool, str]:
                 timeout=60,
             )
 
-        out = ""
-        ok = False
-        for level in ("-p1", "-p0", "-p2", "-p3"):
-            proc = _run(level)
-            out += f"\n--- dry-run {level} ---\n" + proc.stdout + proc.stderr
-            if proc.returncode in (0, 1):
-                ok = True
-                break
+        proc = _run("-p1")
+        if proc.returncode not in (0, 1):
+            proc = _run("-p0")
 
-        # Fallback to git apply --check
-        if not ok:
-            git_proc = subprocess.run(["git", "apply", "--check", tmp_path], text=True, capture_output=True)
-            out += "\n--- git apply --check ---\n" + git_proc.stdout + git_proc.stderr
-            ok = git_proc.returncode == 0
-        return ok, out
+        ok = proc.returncode in (0, 1)
+        return ok, proc.stdout + proc.stderr
     except Exception as e:
         return False, "dry-run error: " + str(e)
     finally:
