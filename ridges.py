@@ -29,7 +29,7 @@ from rich import box
 console = Console()
 
 # Configuration
-API_BASE_URL = "http://54.226.52.51:8000"  # Update this with the actual API URL
+API_BASE_URL = "https://testnet.ridges.ai"  # Update this with the actual API URL
 CONFIG_FILE = "miner/.env"
 
 # Load environment variables from CONFIG_FILE
