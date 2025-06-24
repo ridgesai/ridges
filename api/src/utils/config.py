@@ -31,6 +31,7 @@ PERMISSABLE_PACKAGES = [
     "urllib3",
     "urllib.parse",
     "urllib.request",
+    "urllib.error",
     "socket",
     "sentence_transformers",
     "sklearn.feature_extraction.text",
