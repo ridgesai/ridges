@@ -131,7 +131,8 @@ def finish_evaluation(evaluation_id: str, errored: bool):
     evaluation = db.get_evaluation(evaluation_id)
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
-    db.store_evaluation(evaluation)
+    db.store_evaluation(evaluation, score=True)
+    db.update_agent_version_score(version_id=evaluation.version_id)
 
 def reset_running_evaluations(validator_hotkey: str):
     """
