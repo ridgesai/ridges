@@ -163,17 +163,17 @@ def get_total_rewards_per_day():
 
     return usd_per_day
 
-def get_recent_executions_by_agent(agent_id: str, num_executions: int = 3):
+def get_latest_execution_by_agent(agent_id: str):
     try:
-        executions = db.get_recent_executions_by_agent(agent_id, num_executions)
+        execution = db.get_latest_execution_by_agent(agent_id)
     except Exception as e:
-        logger.error(f"Error retrieving recent executions by agent {agent_id}: {e}")
+        logger.error(f"Error retrieving latest execution by agent {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Internal server error while retrieving recent executions by agent. Please try again later."
+            detail="Internal server error while retrieving latest execution by agent. Please try again later."
         )
     
-    return executions
+    return execution
 
 router = APIRouter()
 
@@ -185,7 +185,7 @@ routes = [
     ("/recent-executions", get_recent_executions),
     ("/num-agents", get_num_agents),
     ("/total-rewards-per-day", get_total_rewards_per_day),
-    ("/recent-executions-by-agent", get_recent_executions_by_agent),
+    ("/latest-execution-by-agent", get_latest_execution_by_agent),
 ]
 
 for path, endpoint in routes:
