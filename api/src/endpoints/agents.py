@@ -27,21 +27,11 @@ async def inference(request: InferenceRequest):
         logger.info(f"Inference for {request.run_id} was requested but no such evaluation run was found in our database")
         raise HTTPException(status_code=404, detail="Evaluation run not found")
 
-    if not request.input_text and not request.input_code:
-        logger.info(f"Inference for {request.run_id} was requested but no input_text or input_code was provided")
-        raise HTTPException(status_code=400, detail="Either input_text or input_code must be provided.")
-
-    if not request.return_text and not request.return_code:
-        logger.info(f"Inference for {request.run_id} was requested but no output type was specified.")
-        raise HTTPException(status_code=400, detail="Either return_text or return_code must be True.")
-
     try:
         return await chutes.inference(
             request.run_id, 
-            request.input_text, 
-            request.input_code, 
-            request.return_text, 
-            request.return_code, 
+            request.messages,
+            request.temperature,
             request.model
         )
     except Exception as e:

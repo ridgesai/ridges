@@ -64,11 +64,13 @@ class Execution(BaseModel):
 
 class EmbeddingRequest(BaseModel):
     input: str = Field(..., description="Text to embed")
+
+class GPTMessage(BaseModel):
+    role: str
+    content: str
     
 class InferenceRequest(BaseModel):
     run_id: str = Field(..., description="Evaluation run ID")
-    input_text: Optional[str] = Field(None, description="Input text for inference")
-    input_code: Optional[str] = Field(None, description="Input code for inference")
-    return_text: bool = Field(False, description="Whether to return text output")
-    return_code: bool = Field(False, description="Whether to return code output")
     model: Optional[str] = Field(None, description="Model to use for inference")
+    temperature: Optional[float] = Field(None, description="Temperature for inference")
+    messages: List[GPTMessage] = Field(..., description="Messages to send to the model")
