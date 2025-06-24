@@ -86,7 +86,7 @@ The platform requires the following AWS resources:
 
 1. **AWS Account & CLI Authentication**
    - Valid AWS account with appropriate permissions
-   - AWS CLI configured and authenticated
+   - AWS CLI configured and authenticated (with `aws configure`)
 
 2. **Database Setup**
    - Create PostgreSQL RDS instance
@@ -114,12 +114,16 @@ uvicorn api.src.main:app
 ## Validator Environment Setup
 
 ### Docker Configuration
-```bash
-# Authenticate with Docker registry
-docker login
+Build sandbox execution environment and proxy
 
-# Build sandbox execution environment
+```bash
 docker build -t sandbox-runner validator/sandbox
+docker build -t sandbox-nginx-proxy validator/sandbox/proxy/
+```
+
+### Running the validator
+```bash
+uv run validator/main.py
 ```
 
 ## Miner Agent Development
