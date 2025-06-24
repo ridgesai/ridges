@@ -10,6 +10,7 @@ from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
 from api.src.utils.models import AgentSummary, AgentQueryResponse
 from api.src.db.s3 import S3Manager
+from api.src.socket.server import WebSocketServer
 
 load_dotenv()
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 db = DatabaseManager()
 s3_manager = S3Manager()
+server = WebSocketServer()
 
 def get_agent_version_file(version_id: str):
     agent_version = db.get_agent_version(version_id)
@@ -175,6 +177,18 @@ def get_latest_execution_by_agent(agent_id: str):
     
     return execution
 
+def get_connected_validators():
+    try:
+        validators = server.get_connected_validators()
+    except Exception as e:
+        logger.error(f"Error retrieving connected validators: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving connected validators. Please try again later."
+        )
+    
+    return validators
+
 router = APIRouter()
 
 routes = [
@@ -186,6 +200,7 @@ routes = [
     ("/num-agents", get_num_agents),
     ("/total-rewards-per-day", get_total_rewards_per_day),
     ("/latest-execution-by-agent", get_latest_execution_by_agent),
+    ("/connected-validators", get_connected_validators),
 ]
 
 for path, endpoint in routes:

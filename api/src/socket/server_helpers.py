@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 db = DatabaseManager()
 
-def get_recent_commit_hashes(history_length: int = 30) -> list:
+def get_relative_version_num(commit_hash: str, history_length: int = 30) -> int:
     """
     Get the previous commits from ridgesai/ridges.
     
@@ -32,11 +32,16 @@ def get_recent_commit_hashes(history_length: int = 30) -> list:
             response.raise_for_status()
             commits = response.json()
             
-            return [commit["sha"] for commit in commits]
+            commit_list = [commit["sha"] for commit in commits]
+            if commit_hash not in commit_list:
+                logger.warning(f"Commit {commit_hash} not found in commit list")
+                return -1
+            
+            return commit_list.index(commit_hash)
             
     except Exception as e:
-        logger.error(f"Failed to get commits: {e}")
-        return []
+        logger.error(f"Failed to get determine relative version number for commit {commit_hash}: {e}")
+        return -1
 
 def get_next_evaluation(validator_hotkey: str) -> Optional[Evaluation]:
     """
