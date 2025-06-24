@@ -25,8 +25,6 @@ CONFIG_FILE = "miner/.env"
 
 load_dotenv(CONFIG_FILE)
 
-def animate_loading(message: str, duration: float = 2.0):
-
 def run_command(cmd: str, capture_output: bool = True) -> tuple[int, str, str]:
     """Run a shell command and return (return_code, stdout, stderr)"""
     try:
