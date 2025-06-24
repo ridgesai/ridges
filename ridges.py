@@ -302,7 +302,7 @@ def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Option
                     console.print(Panel(
                         f"[bold green]🎉 Upload Complete[/bold green]\n"
                         f"[cyan]Your miner '{name}' has been uploaded to the Ridges network![/cyan]\n"
-                        f"[cyan]It has been queued for evaluation.:[/cyan]",
+                        f"[cyan]It has been queued for evaluation.[/cyan]",
                         title="✨ Success",
                         border_style="green"
                     ))
