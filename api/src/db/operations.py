@@ -104,11 +104,31 @@ class DatabaseManager:
             logger.error(f"Error storing agent version {agent_version.version_id}: {str(e)}")
             return 0
     
-    def store_evaluation(self, evaluation: Evaluation) -> int:
+    def store_evaluation(self, evaluation: Evaluation, score: bool = False) -> int:
         """
         Store an evaluation in the database. Return 1 if successful, 0 if not. If the evaluation already exists, update the status, started_at, and finished_at.
+        If score=True, dynamically calculate the score from evaluation runs.
         """
         try:
+            if score:
+                with self.conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT COUNT(*) as total_runs, 
+                               COUNT(CASE WHEN solved = true THEN 1 END) as solved_runs
+                        FROM evaluation_runs 
+                        WHERE evaluation_id = %s
+                    """, (evaluation.evaluation_id,))
+                    result = cursor.fetchone()
+                    total_runs = result[0]
+                    solved_runs = result[1]
+                    
+                    if total_runs > 0:
+                        evaluation.score = solved_runs / total_runs
+                    else:
+                        evaluation.score = 0.0
+                    
+                    logger.info(f"Calculated score for evaluation {evaluation.evaluation_id}: {evaluation.score} ({solved_runs}/{total_runs})")
+            
             with self.conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
@@ -124,6 +144,39 @@ class DatabaseManager:
                 return 1
         except Exception as e:
             logger.error(f"Error storing evaluation {evaluation.evaluation_id}: {str(e)}")
+            return 0
+        
+    def update_agent_version_score(self, version_id: str) -> int:
+        """
+        Update the score for an agent version. Return 1 if successful, 0 if not.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+
+                cursor.execute("""
+                    SELECT AVG(score) as avg_score
+                    FROM evaluations 
+                    WHERE version_id = %s AND score IS NOT NULL
+                """, (version_id,))
+                result = cursor.fetchone()
+                
+                if result and result[0] is not None:
+                    avg_score = float(result[0])
+                    
+                    cursor.execute("""
+                        UPDATE agent_versions 
+                        SET score = %s 
+                        WHERE version_id = %s
+                    """, (avg_score, version_id))
+                    
+                    logger.info(f"Updated agent version {version_id} with score {avg_score}")
+                    return 1
+                else:
+                    logger.info(f"Tried to update agent version {version_id} with a score, but no scored evaluations found")
+                    return 0
+                    
+        except Exception as e:
+            logger.error(f"Error updating agent version score for {version_id}: {str(e)}")
             return 0
 
     def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
