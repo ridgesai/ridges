@@ -89,7 +89,11 @@ def get_agent(agent_id: str= None, miner_hotkey: str= None, include_code: bool =
     if latest_scored_agent and latest_scored_agent.latest_version.version_id == latest_agent.latest_version.version_id:
         latest_scored_agent = None
 
+    if miner_hotkey:
+        agent_id = db.get_agent_by_hotkey(miner_hotkey).agent_id
+
     return AgentQueryResponse(
+        agent_id=agent_id,
         latest_agent=latest_agent,
         latest_scored_agent=latest_scored_agent
     )

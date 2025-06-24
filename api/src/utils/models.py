@@ -27,6 +27,7 @@ class AgentSummary(BaseModel):
     code: Optional[str]
 
 class AgentQueryResponse(BaseModel):
+    agent_id: str
     latest_agent: AgentSummary
     latest_scored_agent: Optional[AgentSummary]
 
