@@ -10,7 +10,7 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://localhost:3000"],  # Add your frontend URL
+    allow_origins=["http://localhost:3000", "https://localhost:3000", 'https://www.ridges.ai'],
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
