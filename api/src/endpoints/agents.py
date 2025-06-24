@@ -28,12 +28,14 @@ async def inference(request: InferenceRequest):
         raise HTTPException(status_code=404, detail="Evaluation run not found")
 
     try:
-        return await chutes.inference(
+        response = await chutes.inference(
             request.run_id, 
             request.messages,
             request.temperature,
             request.model
         )
+        logger.info(f"Inference for {request.run_id} was requested and returned")
+        return response
     except Exception as e:
         logger.error(f"Error getting inference for {request.run_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get inference due to internal server error. Please try again later.")
