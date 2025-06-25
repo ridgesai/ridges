@@ -6,7 +6,7 @@ server {
     resolver 8.8.8.8 8.8.4.4 valid=30s;
 
     # Only allow specific API endpoints to be proxied
-    location ~ ^/(agents/embeddings|agents/inference)$ {
+    location ~ ^/(agents/embedding|agents/inference)$ {
         proxy_connect_timeout 30s;
         proxy_read_timeout  30s;
         proxy_pass ${RIDGES_API_URL}$request_uri;
