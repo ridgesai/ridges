@@ -233,6 +233,18 @@ def get_agent_summary(agent_id: str, include_code: bool = False):
     
     return agent_summary
 
+def get_evaluations(version_id: str):
+    try:
+        evaluations = db.get_evaluations(version_id)
+    except Exception as e:
+        logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving evaluations. Please try again later."
+        )
+    
+    return evaluations
+
 router = APIRouter()
 
 routes = [
@@ -247,6 +259,7 @@ routes = [
     ("/connected-validators", get_connected_validators),
     ("/random-agent", get_random_agent),
     ("/agent-summary", get_agent_summary),
+    ("/evaluations", get_evaluations),
 ]
 
 for path, endpoint in routes:

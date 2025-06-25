@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew
 from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
@@ -1010,6 +1010,95 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting agent summary for {agent_id}: {str(e)}")
             return None
+        
+    def get_evaluations(self, version_id: str) -> List[ExecutionNew]:
+        """
+        Get all evaluations for a specific agent version, including their evaluation runs.
+        Returns a list of ExecutionNew objects.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                
+                cursor.execute("""
+                    SELECT 
+                        evaluation_id,
+                        version_id,
+                        validator_hotkey,
+                        status,
+                        terminated_reason,
+                        created_at,
+                        started_at,
+                        finished_at,
+                        score
+                    FROM evaluations 
+                    WHERE version_id = %s
+                    ORDER BY created_at DESC
+                """, (version_id,))
+                
+                evaluation_rows = cursor.fetchall()
+                executions = []
+                
+                for eval_row in evaluation_rows:
+                    evaluation_id = eval_row[0]
+                    
+                    cursor.execute("""
+                        SELECT 
+                            run_id,
+                            evaluation_id,
+                            swebench_instance_id,
+                            response,
+                            error,
+                            pass_to_fail_success,
+                            fail_to_pass_success,
+                            pass_to_pass_success,
+                            fail_to_fail_success,
+                            solved,
+                            started_at,
+                            finished_at
+                        FROM evaluation_runs 
+                        WHERE evaluation_id = %s
+                        ORDER BY started_at
+                    """, (evaluation_id,))
+                    
+                    run_rows = cursor.fetchall()
+                    evaluation_runs = [
+                        EvaluationRun(
+                            run_id=run_row[0],
+                            evaluation_id=run_row[1],
+                            swebench_instance_id=run_row[2],
+                            response=run_row[3],
+                            error=run_row[4],
+                            pass_to_fail_success=run_row[5],
+                            fail_to_pass_success=run_row[6],
+                            pass_to_pass_success=run_row[7],
+                            fail_to_fail_success=run_row[8],
+                            solved=run_row[9],
+                            started_at=run_row[10],
+                            finished_at=run_row[11]
+                        ) for run_row in run_rows
+                    ]
+                    
+                    # Create ExecutionNew object
+                    execution = ExecutionNew(
+                        evaluation_id=eval_row[0],
+                        agent_version_id=eval_row[1],
+                        validator_hotkey=eval_row[2],
+                        status=eval_row[3],
+                        terminated_reason=eval_row[4],
+                        created_at=eval_row[5],
+                        started_at=eval_row[6],
+                        finished_at=eval_row[7],
+                        score=eval_row[8],
+                        evaluation_runs=evaluation_runs
+                    )
+                    
+                    executions.append(execution)
+                
+                return executions
+                
+        except Exception as e:
+            logger.error(f"Error getting evaluations for version {version_id}: {str(e)}")
+            return []
 
     def store_weights(self, miner_weights: dict, time_since_last_update=None) -> int:
         """
