@@ -1,6 +1,7 @@
 import os
 import json
 import shutil
+import tempfile
 import time
 import asyncio
 from typing import List, Tuple
@@ -9,6 +10,7 @@ from pathlib import Path
 from shared.logging_utils import get_logger
 
 from validator.config import RIDGES_API_URL
+from validator.sandbox.clone_repo import clone_repo
 from validator.utils.temp_files import create_temp_file
 from validator.sandbox.validator import validate_sandbox_dir
 
@@ -57,7 +59,7 @@ class Sandbox:
     _id_counter = 1
 
 
-    def __init__(self, swebench_instance_id, manager: 'SandboxManager', src_dir: str, repo_dir_path: str):        
+    def __init__(self, swebench_instance_id, manager: 'SandboxManager', src_dir: str):        
         self.swebench_instance_id = swebench_instance_id
         self.manager = manager
 
@@ -65,7 +67,7 @@ class Sandbox:
         Sandbox._id_counter += 1
 
         self.src_dir = src_dir
-        self.repo_dir_path = repo_dir_path
+        self.repo_dir_path = Path(tempfile.mkdtemp())
         
         self.running = False
         
@@ -116,6 +118,8 @@ class Sandbox:
             with open(self.input_file, 'w') as f:
                 json.dump(challenge, f)
 
+            clone_repo(self.repo_dir_path, challenge.get('repo'), challenge.get('base_commit'))
+
             # Create the Docker container, and run the Main.py script
             self.start_time = time.time()
             self.container = self.manager.docker.containers.run(
@@ -129,6 +133,7 @@ class Sandbox:
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
+                    os.path.abspath(self.repo_dir_path): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
                 },
                 working_dir=SANDBOX_DIR,
                 environment={
@@ -165,6 +170,7 @@ class Sandbox:
     
     def cleanup(self):
         shutil.rmtree(self.src_dir, ignore_errors=True)
+        shutil.rmtree(self.repo_dir_path, ignore_errors=True)
 
 
 
@@ -231,8 +237,8 @@ class SandboxManager:
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
         
-    def add_sandbox(self, swebench_instance_id: str, src_dir: str, repo_dir_path: str):
-        sandbox = Sandbox(swebench_instance_id=swebench_instance_id, manager=self, src_dir=src_dir, repo_dir_path=repo_dir_path)
+    def add_sandbox(self, swebench_instance_id: str, src_dir: str):
+        sandbox = Sandbox(swebench_instance_id=swebench_instance_id, manager=self, src_dir=src_dir)
         self.sandboxes.append(sandbox)
         return sandbox
 

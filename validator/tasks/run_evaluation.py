@@ -85,10 +85,12 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     )
                     evaluation_runs.append(evaluation_run)
                     await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
-                    sbox = sbox_manager.add_sandbox(instance["instance_id"], src_dir=temp_dir, repo_dir_path=agent_file_path)
+                    sbox = sbox_manager.add_sandbox(instance["instance_id"], src_dir=temp_dir)
                     await sbox.run_async({
                         "run_id": evaluation_run.run_id,
                         "problem_statement": instance["problem_statement"],
+                        "repo": instance["repo"],
+                        "base_commit": instance["base_commit"]
                     })
             except Exception as e:
                 logger.error(
