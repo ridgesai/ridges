@@ -96,6 +96,8 @@ class ChutesManager:
                 "content": message.content
             })
 
+        logger.info(f"Body: {body}")
+
         # TODO: Fix this: don't use streaming
         response_chunks = []
         async with aiohttp.ClientSession() as session:
