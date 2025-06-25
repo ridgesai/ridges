@@ -20,7 +20,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 
 console = Console()
-API_BASE_URL = "https://testnet.ridges.ai"
+DEFAULT_API_BASE_URL = "https://testnet.ridges.ai"
 CONFIG_FILE = "miner/.env"
 
 load_dotenv(CONFIG_FILE)
@@ -111,8 +111,8 @@ class RidgesConfig:
         return value
 
 class RidgesCLI:
-    def __init__(self):
-        self.api_url = API_BASE_URL
+    def __init__(self, api_url: Optional[str] = None):
+        self.api_url = api_url or DEFAULT_API_BASE_URL
         self.config = RidgesConfig()
         
     def get_coldkey_name(self) -> str:
@@ -132,18 +132,23 @@ class RidgesCLI:
 
 @click.group()
 @click.version_option(version="1.0.0")
-def cli():
+@click.option("--url", help=f"Custom API URL (default: {DEFAULT_API_BASE_URL})")
+@click.pass_context
+def cli(ctx, url):
     """Ridges CLI - Manage your Ridges miners"""
-    pass
+    ctx.ensure_object(dict)
+    ctx.obj['url'] = url
 
 @cli.command()
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
 @click.option("--name", help="Name for the miner agent")
-def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str], name: Optional[str]):
+@click.pass_context
+def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str], name: Optional[str]):
     """Upload a miner agent to the Ridges API."""
-    ridges = RidgesCLI()
+    api_url = ctx.obj.get('url')
+    ridges = RidgesCLI(api_url)
     
     file = file or ridges.get_agent_file_path()
     coldkey_name = coldkey_name or ridges.get_coldkey_name()
@@ -163,7 +168,8 @@ def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Option
         f"[yellow]File:[/yellow] {file}\n"
         f"[yellow]Name:[/yellow] {name}\n"
         f"[yellow]Coldkey:[/yellow] {coldkey_name}\n"
-        f"[yellow]Hotkey:[/yellow] {hotkey_name}",
+        f"[yellow]Hotkey:[/yellow] {hotkey_name}\n"
+        f"[yellow]API URL:[/yellow] {ridges.api_url}",
         title="🚀 Upload Configuration",
         border_style="cyan"
     ))
@@ -185,7 +191,7 @@ def upload(hotkey_name: Optional[str], file: Optional[str], coldkey_name: Option
             with httpx.Client() as client:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
                     progress.add_task("📡 Uploading to Ridges API...", total=None)
-                    response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=60)
+                    response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
                 
                 if response.status_code == 200:
                     result = response.json()
