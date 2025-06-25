@@ -1,5 +1,5 @@
 -- Agents table
-CREATE TABLE agents (
+CREATE TABLE IF NOT EXISTS agents (
     agent_id UUID PRIMARY KEY NOT NULL,
     miner_hotkey TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE agents (
 );
 
 -- Agent Versions table
-CREATE TABLE agent_versions (
+CREATE TABLE IF NOT EXISTS agent_versions (
     version_id UUID PRIMARY KEY NOT NULL,
     agent_id UUID NOT NULL REFERENCES agents(agent_id),
     version_num INT NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE agent_versions (
     score FLOAT
 );
 
-CREATE TABLE evaluations (
+CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES agent_versions(version_id),
     validator_hotkey TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE evaluations (
 );
 
 -- Evaluation Runs table
-CREATE TABLE evaluation_runs (
+CREATE TABLE IF NOT EXISTS evaluation_runs (
     run_id UUID PRIMARY KEY NOT NULL,
     evaluation_id UUID NOT NULL REFERENCES evaluations(evaluation_id),
     swebench_instance_id TEXT NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE evaluation_runs (
 );
 
 -- Weights History table
-CREATE TABLE weights_history (
+CREATE TABLE IF NOT EXISTS weights_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
     time_since_last_update INTERVAL,

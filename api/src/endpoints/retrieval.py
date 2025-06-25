@@ -203,6 +203,21 @@ def get_connected_validators():
     
     return validators
 
+def get_random_agent(include_code: bool = False):
+    try:
+        agent = db.get_random_agent()
+    except Exception as e:
+        logger.error(f"Error retrieving random agent: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving random agent. Please try again later."
+        )
+    
+    if include_code:
+        agent.code = s3_manager.get_file_text(f"{agent.latest_version.version_id}/agent.py")
+    
+    return agent
+
 router = APIRouter()
 
 routes = [
@@ -215,6 +230,7 @@ routes = [
     ("/total-rewards-per-day", get_total_rewards_per_day),
     ("/latest-execution-by-agent", get_latest_execution_by_agent),
     ("/connected-validators", get_connected_validators),
+    ("/random-agent", get_random_agent),
 ]
 
 for path, endpoint in routes:

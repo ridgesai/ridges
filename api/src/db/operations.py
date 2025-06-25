@@ -326,6 +326,49 @@ class DatabaseManager:
                     last_updated=row[5]
                 )
             return None
+        
+    def get_random_agent(self) -> Optional[AgentSummary]:
+        """
+        Get a random agent from the database. Return None if not found.
+        """
+        with self.conn.cursor() as cursor:
+            cursor.execute("""
+                SELECT agent_id, miner_hotkey, name, latest_version
+                FROM agents
+                ORDER BY RANDOM()
+                LIMIT 1
+            """)
+            agent_row = cursor.fetchone()
+            
+            if not agent_row:
+                return None
+            
+            agent_id, miner_hotkey, name, latest_version_num = agent_row
+            
+            cursor.execute("""
+                SELECT version_id, agent_id, version_num, created_at, score
+                FROM agent_versions
+                WHERE agent_id = %s
+                ORDER BY version_num DESC
+                LIMIT 1
+            """, (agent_id,))
+            
+            version_row = cursor.fetchone()
+            if version_row:
+                agent_version = AgentVersion(
+                    version_id=version_row[0],
+                    agent_id=version_row[1],
+                    version_num=version_row[2],
+                    created_at=version_row[3],
+                    score=version_row[4]
+                )
+                return AgentSummary(
+                    miner_hotkey=miner_hotkey,
+                    name=name,
+                    latest_version=agent_version,
+                    code=None
+                )
+            return None
     
     def get_agent_by_version_id(self, version_id: str) -> Optional[Agent]:
         """
