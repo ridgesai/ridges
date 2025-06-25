@@ -129,22 +129,42 @@ class ChutesManager:
                                 chunk_json = json.loads(data)
                                 logger.debug(f"Parsed chunk: {chunk_json}")
                                 
-                                # Handle content chunks
-                                if (
-                                    'choices' in chunk_json and 
-                                    isinstance(chunk_json['choices'], list) and
-                                    chunk_json['choices'] and 
-                                    chunk_json['choices'][0] is not None
-                                ):
+                                # Handle content chunks - try multiple possible structures
+                                if 'choices' in chunk_json and isinstance(chunk_json['choices'], list) and chunk_json['choices']:
+                                    choice = chunk_json['choices'][0]
+                                    logger.debug(f"Choice structure: {choice}")
                                     
-                                    delta = chunk_json['choices'][0].get('delta')
-                                    logger.debug(f"Delta structure: {delta}")
-                                    if isinstance(delta, dict) and 'content' in delta:
-                                        content = delta['content']
+                                    # Try different possible content locations
+                                    content = None
+                                    
+                                    # Method 1: Check for delta.content (standard OpenAI format)
+                                    if 'delta' in choice and isinstance(choice['delta'], dict):
+                                        delta = choice['delta']
+                                        logger.debug(f"Delta structure: {delta}")
+                                        if 'content' in delta:
+                                            content = delta['content']
+                                            logger.debug(f"Found content in delta: {repr(content)}")
+                                    
+                                    # Method 2: Check for direct content in choice
+                                    elif 'content' in choice:
+                                        content = choice['content']
+                                        logger.debug(f"Found content directly in choice: {repr(content)}")
+                                    
+                                    # Method 3: Check for message.content
+                                    elif 'message' in choice and isinstance(choice['message'], dict):
+                                        message = choice['message']
+                                        if 'content' in message:
+                                            content = message['content']
+                                            logger.debug(f"Found content in message: {repr(content)}")
+                                    
+                                    # Add content if found
+                                    if content is not None:
                                         logger.debug(f"Content type: {type(content)}, Content value: {repr(content)}")
                                         if content:
                                             logger.debug(f"Adding content: {repr(content)}")
                                             response_chunks.append(content)
+                                    else:
+                                        logger.debug(f"No content found in choice: {choice}")
                                 
                                 # Handle usage data (usually comes in final chunk)
                                 if 'usage' in chunk_json:
@@ -176,5 +196,7 @@ class ChutesManager:
         response_text = "".join(response_chunks)
         logger.info(f"Final response length: {len(response_text)}")
         logger.debug(f"Final response: {repr(response_text)}")
+        logger.info(f"Number of response chunks collected: {len(response_chunks)}")
+        logger.debug(f"Response chunks: {response_chunks}")
         
         return response_text
