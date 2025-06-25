@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
+
 from api.src.utils.weights import run_weight_monitor
 
 app = FastAPI()
