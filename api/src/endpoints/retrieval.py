@@ -234,7 +234,7 @@ def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_co
             detail="Agent not found"
         )
     
-    agent_summary.daily_earnings = get_daily_earnings_by_hotkey(miner_hotkey)
+    agent_summary.daily_earnings = get_daily_earnings_by_hotkey(agent_summary.agent_details.miner_hotkey)
 
     if include_code:
         agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
