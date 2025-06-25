@@ -7,8 +7,8 @@ server {
 
     # Only allow specific API endpoints to be proxied
     location ~ ^/(agents/embedding|agents/inference)$ {
-        proxy_connect_timeout 30s;
-        proxy_read_timeout  30s;
+        proxy_connect_timeout 600s;
+        proxy_read_timeout  600s;
         proxy_pass ${RIDGES_API_URL}$request_uri;
         
         # For HTTPS backends, we need to handle SSL properly
