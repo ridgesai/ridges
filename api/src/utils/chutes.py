@@ -98,35 +98,78 @@ class ChutesManager:
 
         logger.info(f"Body: {body}")
 
-        # TODO: Fix this: don't use streaming
+        # Fixed streaming response handling
         response_chunks = []
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://llm.chutes.ai/v1/chat/completions", 
-                headers=headers,
-                json=body
-            ) as response:
-                async for line in response.content:
-                    line = line.decode("utf-8").strip()
-                    if line.startswith("data: "):
-                        data = line[6:]
-                        if data == "[DONE]":
-                            break
-                        try:
-                            chunk = data.strip()
-                            chunk_json = json.loads(chunk)
-                            if chunk_json['choices'][0]['delta']['content']:
-                                response_chunks.append(chunk_json['choices'][0]['delta']['content'])
-                            elif chunk_json['usage']['total_tokens']:
-                                total_tokens = chunk_json['usage']['total_tokens']
-                                total_cost = total_tokens * self.pricing[model] / 1000000
-                                key = run_id
-                                self.costs_data[key] = {
-                                    "spend": self.costs_data.get(key, {}).get("spend", 0) + total_cost,
-                                    "started_at": self.costs_data.get(key, {}).get("started_at", datetime.now())
-                                }
-                        except Exception as e:
-                            logger.warning(f"Error parsing chunk: {e}")
+        total_tokens = 0
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://llm.chutes.ai/v1/chat/completions", 
+                    headers=headers,
+                    json=body
+                ) as response:
+                    logger.info(f"Response status: {response.status}")
+                    
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"API request failed with status {response.status}: {error_text}")
+                        return f"API request failed with status {response.status}: {error_text}"
+                    
+                    async for line in response.content:
+                        line = line.decode("utf-8").strip()
+                        logger.debug(f"Raw line: {line}")
+                        
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            if data == "[DONE]":
+                                logger.info("Received [DONE] signal")
+                                break
+                            
+                            try:
+                                chunk_json = json.loads(data)
+                                logger.debug(f"Parsed chunk: {chunk_json}")
+                                
+                                # Handle content chunks
+                                if ('choices' in chunk_json and 
+                                    chunk_json['choices'] and 
+                                    len(chunk_json['choices']) > 0 and
+                                    chunk_json['choices'][0] is not None):
+                                    
+                                    delta = chunk_json['choices'][0].get('delta')
+                                    if isinstance(delta, dict) and 'content' in delta and delta['content']:
+                                        logger.debug(f"Adding content: {repr(delta['content'])}")
+                                        response_chunks.append(delta['content'])
+                                
+                                # Handle usage data (usually comes in final chunk)
+                                if 'usage' in chunk_json:
+                                    usage = chunk_json['usage']
+                                    if 'total_tokens' in usage:
+                                        total_tokens = usage['total_tokens']
+                                        logger.info(f"Received usage data: {total_tokens} tokens")
+                                        
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Failed to parse JSON chunk: {e}, data: {data}")
+                            except Exception as e:
+                                logger.warning(f"Error processing chunk: {e}")
+                                logger.warning(f"Chunk data: {data}")
+        
+        except Exception as e:
+            logger.error(f"Error in inference request: {e}")
+            return f"Error in inference request: {e}"
+        
+        # Update costs data if we received usage information
+        if total_tokens > 0:
+            total_cost = total_tokens * self.pricing[model] / 1000000
+            key = run_id
+            self.costs_data[key] = {
+                "spend": self.costs_data.get(key, {}).get("spend", 0) + total_cost,
+                "started_at": self.costs_data.get(key, {}).get("started_at", datetime.now())
+            }
+            logger.info(f"Updated costs for run {run_id}: {total_cost} (total: {self.costs_data[key]['spend']})")
         
         response_text = "".join(response_chunks)
+        logger.info(f"Final response length: {len(response_text)}")
+        logger.debug(f"Final response: {repr(response_text)}")
+        
         return response_text
