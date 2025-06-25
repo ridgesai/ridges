@@ -1,14 +1,9 @@
-import sys
-import os
 import time
 from datetime import datetime
-from bittensor.core.subtensor import Subtensor
-
-# Add the project root directory to the Python path (FIX THIS)
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
 
 from api.src.db.operations import DatabaseManager
 from api.src.utils.logging_utils import get_logger
+from api.src.utils.subtensor import get_current_weights
 
 logger = get_logger(__name__)
 
@@ -17,10 +12,8 @@ db = DatabaseManager()
 def get_miner_weights(netuid=62):
     """Get a dictionary mapping miner UIDs to their weights as decimals."""
     
-    bittensor_client = Subtensor(network="finney")
-
     try:
-        weights_data = bittensor_client.weights(netuid=netuid)
+        weights_data = get_current_weights(netuid=netuid)
     except Exception as e:
         logger.error(f"Error getting weights: {e}")
         return {}
