@@ -92,3 +92,15 @@ class AgentSummaryResponse(BaseModel):
     agent_details: AgentDetailsNew
     latest_version: AgentVersionNew
     all_versions: List[AgentVersionNew]
+
+class ExecutionNew(BaseModel):
+    evaluation_id: str
+    agent_version_id: str
+    validator_hotkey: str
+    status: Literal["waiting", "running", "completed", "timedout", "error", "replaced"]
+    terminated_reason: Optional[str]
+    created_at: datetime
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+    score: Optional[float]
+    evaluation_runs: List[EvaluationRun]

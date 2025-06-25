@@ -33,7 +33,7 @@ def get_miner_weights(netuid=62):
     
     return miner_weights_decimal
 
-async def run_weight_monitor(netuid=62, interval_seconds=3600):
+async def run_weight_monitor(netuid=62, interval_seconds=360):
     """Continuously monitor miner weights, updating every specified interval."""
     
     logger.info(f"Starting weight monitor for subnet {netuid}. Updating every {interval_seconds} seconds")
