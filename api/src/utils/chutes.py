@@ -98,7 +98,6 @@ class ChutesManager:
 
         logger.info(f"Body: {body}")
 
-        # Fixed streaming response handling
         response_chunks = []
         total_tokens = 0
         
@@ -131,15 +130,21 @@ class ChutesManager:
                                 logger.debug(f"Parsed chunk: {chunk_json}")
                                 
                                 # Handle content chunks
-                                if ('choices' in chunk_json and 
+                                if (
+                                    'choices' in chunk_json and 
+                                    isinstance(chunk_json['choices'], list) and
                                     chunk_json['choices'] and 
-                                    len(chunk_json['choices']) > 0 and
-                                    chunk_json['choices'][0] is not None):
+                                    chunk_json['choices'][0] is not None
+                                ):
                                     
                                     delta = chunk_json['choices'][0].get('delta')
-                                    if isinstance(delta, dict) and 'content' in delta and delta['content']:
-                                        logger.debug(f"Adding content: {repr(delta['content'])}")
-                                        response_chunks.append(delta['content'])
+                                    logger.debug(f"Delta structure: {delta}")
+                                    if isinstance(delta, dict) and 'content' in delta:
+                                        content = delta['content']
+                                        logger.debug(f"Content type: {type(content)}, Content value: {repr(content)}")
+                                        if content:
+                                            logger.debug(f"Adding content: {repr(content)}")
+                                            response_chunks.append(content)
                                 
                                 # Handle usage data (usually comes in final chunk)
                                 if 'usage' in chunk_json:
