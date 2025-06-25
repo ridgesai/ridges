@@ -4,7 +4,7 @@ import httpx
 import uuid
 from datetime import datetime
 
-from api.src.utils.logging import get_logger
+from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 from api.src.utils.models import AgentVersionForValidator, EvaluationRun, Evaluation
 

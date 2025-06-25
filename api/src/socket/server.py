@@ -3,7 +3,7 @@ import websockets
 import json
 from typing import Optional
 
-from api.src.utils.logging import get_logger
+from api.src.utils.logging_utils import get_logger
 from api.src.socket.server_helpers import upsert_evaluation_run, get_next_evaluation, get_agent_version_for_validator, create_evaluation, start_evaluation, finish_evaluation, reset_running_evaluations, get_relative_version_num
 
 logger = get_logger(__name__)

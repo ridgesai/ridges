@@ -3,11 +3,12 @@ from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution
-from logging import getLogger
+from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
 
-logger = getLogger(__name__)
+logger = get_logger(__name__)
+
 class DatabaseManager:
     def __init__(self):
         self.conn = psycopg2.connect(
@@ -35,13 +36,13 @@ class DatabaseManager:
                     SELECT table_name 
                     FROM information_schema.tables 
                     WHERE table_schema = 'public' 
-                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs')
+                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history')
                 """)
                 existing_tables = [row[0] for row in cursor.fetchall()]
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            if len(existing_tables) == 4:
+            if len(existing_tables) == 5:
                 logger.info("All required tables already exist")
                 return
             
@@ -912,3 +913,86 @@ class DatabaseManager:
             )
             
             return execution
+
+    def store_weights(self, miner_weights: dict, time_since_last_update=None) -> int:
+        """
+        Store miner weights in the weights_history table. Return 1 if successful, 0 if not.
+        """
+        try:
+            import json
+            from datetime import datetime
+            
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO weights_history (timestamp, time_since_last_update, miner_weights)
+                    VALUES (%s, %s, %s)
+                """, (datetime.now(), time_since_last_update, json.dumps(miner_weights)))
+                logger.info(f"Weights stored successfully with {len(miner_weights)} miners")
+                return 1
+        except Exception as e:
+            logger.error(f"Error storing weights: {str(e)}")
+            return 0
+
+    def get_latest_weights(self) -> Optional[dict]:
+        """
+        Get the most recent weights from the weights_history table. Return None if not found.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT miner_weights, timestamp, time_since_last_update
+                    FROM weights_history 
+                    ORDER BY timestamp DESC 
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                
+                if row:
+                    return {
+                        'weights': row[0],  # JSONB is already a dict, no need to parse
+                        'timestamp': row[1],
+                        'time_since_last_update': row[2]
+                    }
+                return None
+        except Exception as e:
+            logger.error(f"Error getting latest weights: {str(e)}")
+            return None
+
+    def weights_are_different(self, current_weights: dict, stored_weights: dict) -> bool:
+        """
+        Compare current weights with stored weights to check if they're different.
+        Returns True if weights are different, False if they're the same.
+        """
+        try:
+            current_uids = set(str(uid) for uid in current_weights.keys())
+            stored_uids = set(str(uid) for uid in stored_weights.keys())
+            
+            if current_uids != stored_uids:
+                added_miners = current_uids - stored_uids
+                removed_miners = stored_uids - current_uids
+                
+                if added_miners:
+                    logger.info(f"Added miners: {added_miners}. Updating weights in database.")
+                if removed_miners:
+                    logger.info(f"Removed miners: {removed_miners}. Updating weights in database.")
+                
+                return True
+            
+            # Check if any weights have changed (with small tolerance for floating point)
+            tolerance = 1e-6
+            for uid in current_weights.keys():
+                current_weight = current_weights[uid]
+                stored_weight = stored_weights.get(str(uid))
+                
+                if stored_weight is None:
+                    logger.info(f"UID {uid} not found in stored weights. Updating weights in database.")
+                    return True
+                
+                if abs(current_weight - stored_weight) > tolerance:
+                    logger.info(f"Weight changed for UID {uid}: {stored_weight} -> {current_weight}. Updating database.")
+                    return True
+            
+            return False
+        except Exception as e:
+            logger.error(f"Error comparing weights: {str(e)}")
+            return False 
