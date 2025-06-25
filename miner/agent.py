@@ -45,9 +45,13 @@ import time
 import traceback
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NamedTuple
 import urllib.request as _urlreq
 import urllib.error as _urlerr
+from dataclasses import dataclass
+import ast
+import re
+import math
 
 # ---------------------------------------------------------------------------
 # Environment tweaks ---------------------------------------------------------
@@ -105,6 +109,11 @@ DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3-0324")
 MAX_STEPS = 50
 MAX_OBS_CHARS = 20_000
 MAX_BYTES_READ = 4_000
+MAX_EMBED_TOKENS = 512
+MAX_EMBED_CHARS = MAX_EMBED_TOKENS * 4  # reserve but we'll split by tokens
+
+# New env flag – set EMBED_WHOLE_FILES=1 to revert to legacy behaviour.
+USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
 
 # ---------------------------------------------------------------------------
 # Prompt templates (adapted from SWE-agent/config/default.yaml) --------------
@@ -179,6 +188,33 @@ DEFAULT_INSTANCE_TEMPLATE = textwrap.dedent(
 # When the last tool produced no output we can use this as a gentle reminder
 DEFAULT_NO_OUTPUT_MSG = (
     "Your command ran successfully and did not produce any output."
+)
+
+# ---------------------------------------------------------------------------
+# One-shot mode system prompt ----------------------------------------------
+# ---------------------------------------------------------------------------
+
+ONESHOT_SYSTEM_PROMPT = (
+    "You are an autonomous programmer. The user will provide a bug report or "
+    "feature request (the \"problem\") plus a compact summary of the most "
+    "relevant repository files.  Your job is to return ONE *valid* unified "
+    "diff patch that fixes the problem. If you have any questions, do not ask the user. "
+    "Instead, solve it to the best of your ability with the knowledge you have.\n\n"
+    "STRICT FORMAT RULES\n"
+    "1. Return *only* the diff – no prose, no Markdown back-ticks.\n"
+    "2. The diff must start with 'diff --git a/<path> b/<path>' followed by "
+    "   the standard \"--- a/<path>\" and \"+++ b/<path>\" headers.\n"
+    "3. Use -u style context hunks that begin with lines like @@ -N,M +N,M @@.\n"
+    "4. Every changed file needs its own header block as in rule 2.\n"
+    "5. End the patch with a trailing newline.\n\n"
+    "Be exact: if the diff is syntactically malformed or wrapped in extra "
+    "text the automated patch tool will fail.\n\n"
+    "OUTPUT RULES (VERY IMPORTANT)\n"
+    "• You MUST end your reply with a *raw* JSON object – nothing else – that has exactly two keys: 'text_response' and 'code_response'.\n"
+    "• Do NOT surround the JSON with Markdown back-ticks or any other fencing.\n"
+    "• 'text_response' can hold arbitrary explanatory text (may be empty).\n"
+    "• 'code_response' must hold the unified diff from rules 1-5 *verbatim*.\n"
+    "Example: {\"text_response\": \"<explanation>\", \"code_response\": \"diff --git a/foo.py b/foo.py\n...\"}."
 )
 
 # ---------------------------------------------------------------------------
@@ -312,61 +348,80 @@ _COMMAND_DOCS = "\n".join(
 DEFAULT_SYSTEM_PROMPT = _RAW_SYSTEM_PROMPT.format(command_docs=_COMMAND_DOCS)
 
 # ---------------------------------------------------------------------------
-# One-shot (MiniLM retrieval) mode -------------------------------------------
+# Embedding cache and helper -------------------------------------------------
 # ---------------------------------------------------------------------------
 
-ONESHOT_SYSTEM_PROMPT = (
-    "You are an autonomous programmer. The user will provide a bug report or "
-    "feature request (the \"problem\") plus a compact summary of the most "
-    "relevant repository files.  Your job is to return ONE *valid* unified "
-    "diff patch that fixes the problem. If you have any questions, do not ask the user. "
-    "Instead, solve it to the best of your ability with the knowledge you have.\n\n"
-    "STRICT FORMAT RULES\n"
-    "1. Return *only* the diff – no prose, no Markdown back-ticks.\n"
-    "2. The diff must start with 'diff --git a/<path> b/<path>' followed by "
-    "   the standard \"--- a/<path>\" and \"+++ b/<path>\" headers.\n"
-    "3. Use -u style context hunks that begin with lines like @@ -N,M +N,M @@.\n"
-    "4. Every changed file needs its own header block as in rule 2.\n"
-    "5. End the patch with a trailing newline.\n\n"
-    "Be exact: if the diff is syntactically malformed or wrapped in extra "
-    "text the automated patch tool will fail.\n\n"
-    "OUTPUT RULES (VERY IMPORTANT)\n"
-    "• You MUST end your reply with a *raw* JSON object – nothing else – that has exactly two keys: 'text_response' and 'code_response'.\n"
-    "• Do NOT surround the JSON with Markdown back-ticks or any other fencing.\n"
-    "• 'text_response' can hold arbitrary explanatory text (may be empty).\n"
-    "• 'code_response' must hold the unified diff from rules 1-5 *verbatim*.\n"
-    "Example format: {\"text_response\": \"short explanation\", \"code_response\": \"diff --git a/foo.py b/foo.py\n...\"}."
-)
-
-# Small helper – language tag for triple-backticks (very rough heuristic)
-def _lang_tag(path: str) -> str:
-    ext = os.path.splitext(path)[1].lower()
-    return {
-        ".py": "python",
-        ".js": "javascript",
-        ".ts": "typescript",
-        ".java": "java",
-        ".go": "go",
-    }.get(ext, "")
+_EMBED_CACHE: Dict[str, List[float]] = {}
+ZERO_VEC: List[float] = [0.0] * 1024  # embedding for empty input
 
 
-def _collect_repo_texts(root: str = ".", *, max_file_bytes: int = 100_000) -> Dict[str, str]:
-    """Return {rel_path: text} for every reasonably-sized text file under *root*."""
-    texts: Dict[str, str] = {}
-    for dirpath, _dirs, files in os.walk(root):
-        if ".git" in dirpath.split(os.sep):
-            continue  # skip git internals
-        for fn in files:
-            path = os.path.join(dirpath, fn)
-            try:
-                if os.path.getsize(path) > max_file_bytes:
+def _remote_embed(text: str, proxy_url: str) -> List[float]:
+    """Return embedding vector for *text* via the proxy /agents/embedding endpoint.
+
+    Caches results in-memory to avoid duplicate HTTP calls.
+    """
+    # Short-circuit empty or whitespace-only inputs.
+    if not text.strip():
+        return _EMBED_CACHE.setdefault("", [0.0] * 1024)
+
+    # Retry–shrink loop to satisfy 512-token limit
+    attempt_text = text
+    for _ in range(2):  # original + 1 retry after halving
+        tokens = attempt_text.split()
+        if len(tokens) > MAX_EMBED_TOKENS:
+            attempt_text = " ".join(tokens[:MAX_EMBED_TOKENS])
+
+        url = f"{proxy_url.rstrip('/')}/agents/embedding"
+        req = _urlreq.Request(
+            url,
+            data=json.dumps({"input": attempt_text}, ensure_ascii=False).encode(),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+
+        try:
+            with _urlreq.urlopen(req, timeout=30) as resp:
+                data_raw = resp.read()
+                data = json.loads(data_raw.decode())
+
+                if isinstance(data, list):
+                    vec = data[0] if (len(data) == 1 and isinstance(data[0], list)) else data
+                    _EMBED_CACHE[text] = vec
+                    return vec
+                if isinstance(data, dict) and "embedding" in data:
+                    vec = data["embedding"]
+                    _EMBED_CACHE[text] = vec
+                    return vec
+
+                # If we received a validation error about tokens, halve and retry
+                if isinstance(data, dict) and data.get("error_type") == "Validation":
+                    attempt_text = " ".join(tokens[: len(tokens) // 2])
                     continue
-                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                    texts[os.path.relpath(path, root)] = fh.read()
-            except Exception:
-                continue  # binary or unreadable
-    return texts
 
+                raise ValueError(f"unexpected embedding response: {data!r}")
+        except Exception as exc:
+            if "less than 512 tokens" in str(exc):
+                attempt_text = " ".join(tokens[: len(tokens) // 2])
+                continue
+            raise RuntimeError(f"embedding request failed: {exc}")
+
+    # If all retries failed, return zero vector to keep pipeline alive
+    _EMBED_CACHE[text] = ZERO_VEC
+    return ZERO_VEC
+
+
+def _cosine(u: List[float], v: List[float]) -> float:
+    """Cosine similarity between two equal-length vectors."""
+    s = sum(a * b for a, b in zip(u, v))
+    nu = math.sqrt(sum(a * a for a in u))
+    nv = math.sqrt(sum(b * b for b in v))
+    if nu == 0 or nv == 0:
+        return 0.0
+    return s / (nu * nv)
+
+# ---------------------------------------------------------------------------
+# One-shot retrieval using remote embeddings --------------------------------
+# ---------------------------------------------------------------------------
 
 def run_oneshot(
     problem_text: str,
@@ -378,67 +433,63 @@ def run_oneshot(
 ) -> str:
     """Build repository summary and send a single LLM call.
 
-    We *prefer* to embed texts with `sentence_transformers` (MiniLM).  If that
-    model cannot be loaded – e.g. no internet to download weights – we fall
-    back to a plain TF-IDF vectoriser from scikit-learn so the agent still
-    operates fully offline.
+    Embeddings are fetched from the internal `/agents/embedding` proxy endpoint, so no model weights or internet access are required inside the sandbox.
     """
 
-    import numpy as np  # local import to avoid cost when not used
-
-    repo_texts = _collect_repo_texts()
-    if not repo_texts:
-        raise RuntimeError("repository appears empty – nothing to embed")
-
-    file_paths = list(repo_texts.keys())
-    file_bodies = list(repo_texts.values())
-
-    # ------------------------------------------------------------
-    # 1) Try fast MiniLM embeddings (preferred) ------------------
-    # ------------------------------------------------------------
-    use_fallback = False
-    try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
-
-        try:
-            encoder = SentenceTransformer("all-MiniLM-L6-v2")
-        except Exception:
-            # Most likely offline – fall back.
-            use_fallback = True
-    except Exception:
-        use_fallback = True
-
-    if not use_fallback:
-        file_vecs = encoder.encode(file_bodies, normalize_embeddings=True)
-        query_vec = encoder.encode([problem_text], normalize_embeddings=True)[0]
-
-        sims = file_vecs @ query_vec  # cosine similarity
+    if USE_FUNCTION_CHUNKS:
+        code_chunks = _collect_code_chunks()
+        if not code_chunks:
+            raise RuntimeError("repository appears empty – nothing to embed")
+        chunk_texts = [c.text for c in code_chunks]
     else:
-        # --------------------------------------------------------
-        # 2) Offline fallback: TF-IDF ----------------------------
-        # --------------------------------------------------------
-        from sklearn.feature_extraction.text import TfidfVectorizer
+        repo_texts = _collect_repo_texts()
+        if not repo_texts:
+            raise RuntimeError("repository appears empty – nothing to embed")
+        code_chunks = [Chunk(file=fp, start_line=1, end_line=text.count("\n") + 1, text=text) for fp, text in repo_texts.items()]
+        chunk_texts = [c.text for c in code_chunks]
 
-        corpus = [problem_text] + file_bodies
-        vectorizer = TfidfVectorizer(stop_words="english", max_features=50_000)
-        mat = vectorizer.fit_transform(corpus).astype(np.float32)
+    # --------------------------------------------------------------------
+    # Obtain embeddings via proxy endpoint --------------------------------
+    # --------------------------------------------------------------------
 
-        query_vec = mat[0].toarray()[0]
-        file_mat = mat[1:]
+    query_vec = _remote_embed(problem_text, proxy_url)
+    chunk_vecs = [ _remote_embed(txt, proxy_url) for txt in chunk_texts ]
 
-        # Cosine similarity: dot(u, v)/(||u||*||v||). Since TF-IDF vectors are
-        # already L2-normalised by sklearn (norm="l2" default), we can use dot.
-        sims = (file_mat @ query_vec)  # shape (n_files,)
+    sims = [ _cosine(vec, query_vec) for vec in chunk_vecs ]
 
-    top_idx = np.argsort(-sims)[: top_k]
-    top_file_paths = [file_paths[idx] for idx in top_idx]
+    # --------------------------------------------------------------------
+    # Light path-based bonus if filename is mentioned in the problem text --
+    # --------------------------------------------------------------------
+    prob_lower = problem_text.lower()
+    for idx, ch in enumerate(code_chunks):
+        base = os.path.basename(ch.file).lower()
+        if base in prob_lower or base.split(".")[0] in prob_lower:
+            sims[idx] += 0.2
+
+    sorted_idx = sorted(range(len(sims)), key=lambda i: -sims[i])
+
+    TARGET_TOKENS = 12_000
+    token_budget = int(TARGET_TOKENS * 0.85)
+    token_total = 0
+    top_idx: list[int] = []
+    for idx in sorted_idx:
+        tok = _guess_tokens(chunk_texts[idx])
+        if token_total + tok > token_budget:
+            break
+        token_total += tok
+        top_idx.append(idx)
+
+    # Fallback to at most top_k if budget yields too many
+    if len(top_idx) > top_k:
+        top_idx = top_idx[:top_k]
 
     summary_parts: list[str] = []
     for idx in top_idx:
-        path = file_paths[idx]
-        body = file_bodies[idx][:2000]  # truncate per file
-        tag = _lang_tag(path)
-        summary_parts.append(f"### {path}\n```{tag}\n{body}\n```")
+        ch = code_chunks[idx]
+        body = ch.text[:2000]
+        tag = _lang_tag(ch.file)
+        header = f"### {ch.file}:L{ch.start_line}-{ch.end_line}"
+        summary_parts.append(f"{header}\n```{tag}\n{body}\n```")
 
     repo_summary = "\n\n".join(summary_parts)
 
@@ -687,7 +738,7 @@ def agent_main(input_dict: Dict[str, Any]):
     timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
 
-    # Force one-shot MiniLM retrieval mode for every run.
+    # Always use one-shot retrieval with proxy-hosted embeddings.
     patch_text = run_oneshot(
         problem_text,
         proxy_url=proxy_url,
@@ -784,3 +835,141 @@ def _dry_run_patch(patch: str) -> tuple[bool, str]:
             os.remove(tmp_path)
         except Exception:
             pass
+
+# ---------------------------------------------------------------------------
+# Misc helper functions ------------------------------------------------------
+# ---------------------------------------------------------------------------
+
+def _lang_tag(path: str) -> str:
+    """Return a language tag for markdown fencing based on file extension."""
+    ext = os.path.splitext(path)[1].lower()
+    return {
+        ".py": "python",
+        ".js": "javascript",
+        ".ts": "typescript",
+        ".java": "java",
+        ".go": "go",
+    }.get(ext, "")
+
+
+def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
+    """Return {rel_path: text} for every text file under *root* (best-effort)."""
+    texts: Dict[str, str] = {}
+    for dirpath, _dirs, files in os.walk(root):
+        if ".git" in dirpath.split(os.sep):
+            continue
+        for fn in files:
+            path = os.path.join(dirpath, fn)
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                    texts[os.path.relpath(path, root)] = fh.read()
+            except Exception:
+                # binary or unreadable
+                continue
+    return texts
+
+# ---------------------------------------------------------------------------
+# Chunk representation and collector ---------------------------------------
+# ---------------------------------------------------------------------------
+
+from typing import NamedTuple
+
+
+class Chunk(NamedTuple):
+    file: str
+    start_line: int
+    end_line: int
+    text: str
+
+
+def _guess_tokens(text: str) -> int:
+    """Rough heuristic: 1 token ≈ 4 characters."""
+    return max(1, len(text) // 4)
+
+
+def _collect_code_chunks(root: str = ".") -> List[Chunk]:
+    """Walk the repository and split source files into function/class chunks.
+
+    • Python: real AST split.
+    • Other langs: regex heuristic on `function` / `class` keywords.
+    • Files without matches fall back to one chunk (whole file).
+    """
+    chunks: List[Chunk] = []
+    root_path = Path(root)
+
+    for path in root_path.rglob("*"):
+        if path.is_dir() or ".git" in path.parts:
+            continue
+        rel_path = str(path.relative_to(root_path))
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue  # binary/unreadable
+
+        if rel_path.endswith(".py"):
+            try:
+                tree = ast.parse(text)
+                for node in ast.walk(tree):
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and hasattr(node, "end_lineno"):
+                        start, end = node.lineno, node.end_lineno
+                        lines = text.splitlines()[start - 1 : end]
+                        # break very long bodies into 400-line windows
+                        MAX_LINES = 400
+                        for i in range(0, len(lines), MAX_LINES):
+                            sub_lines = lines[i : i + MAX_LINES]
+                            if not sub_lines:
+                                continue
+                            sub_text = "\n".join(sub_lines)
+                            # further split on tokens <= 512
+                            offset = 0
+                            for piece in _token_windows(sub_text):
+                                piece_lines = piece.count("\n")
+                                sub_start = start + i + sub_text[:offset].count("\n")
+                                sub_end = sub_start + piece_lines
+                                offset += len(piece) + 1  # approximate advance
+                                chunks.append(Chunk(rel_path, sub_start, sub_end, piece))
+            except Exception:
+                for piece in _token_windows(text):
+                    end_line = piece.count("\n") + 1
+                    chunks.append(Chunk(rel_path, 1, end_line, piece))
+        else:
+            pattern = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\b|^\s*class\b", re.MULTILINE)
+            indices = [m.start() for m in pattern.finditer(text)]
+            if not indices:
+                chunks.append(Chunk(rel_path, 1, text.count("\n") + 1, text))
+            else:
+                indices.append(len(text))
+                for j, start_char in enumerate(indices[:-1]):
+                    end_char = indices[j + 1]
+                    chunk_text = text[start_char:end_char]
+                    start_line = text[:start_char].count("\n") + 1
+                    end_line = start_line + chunk_text.count("\n")
+                    chunks.append(Chunk(rel_path, start_line, end_line, chunk_text))
+
+                    if not chunk_text.strip():
+                        continue  # skip empty slices
+
+                    # enforce embedding size limit by token windows
+                    offset_chars = 0
+                    for piece in _token_windows(chunk_text):
+                        off_start_line = start_line + chunk_text[:offset_chars].count("\n")
+                        off_end_line = off_start_line + piece.count("\n")
+                        chunks.append(Chunk(rel_path, off_start_line, off_end_line, piece))
+                        offset_chars += len(piece) + 1
+
+    # Final safety: truncate if some text >512 tokens slipped through.
+    tokens = text.split()
+    if len(tokens) > MAX_EMBED_TOKENS:
+        text = " ".join(tokens[:MAX_EMBED_TOKENS])
+
+    return chunks
+
+# Helper to split long texts by token count
+def _token_windows(text: str, max_tokens: int = MAX_EMBED_TOKENS) -> List[str]:
+    words = text.split()
+    windows: List[str] = []
+    for i in range(0, len(words), max_tokens):
+        seg = " ".join(words[i : i + max_tokens])
+        if seg.strip():
+            windows.append(seg)
+    return windows or [""]
