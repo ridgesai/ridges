@@ -46,11 +46,13 @@ async def post_agent (
 
     
     existing_agent = db.get_agent_by_hotkey(miner_hotkey)
-    if existing_agent and existing_agent.last_updated > datetime.now() - timedelta(seconds=AGENT_RATE_LIMIT_SECONDS):
-        raise HTTPException(
-            status_code=400,
-            detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
-        )
+    if existing_agent:
+        earliest_allowed_time = existing_agent.last_updated + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
+        if datetime.now() < earliest_allowed_time:
+            raise HTTPException(
+                status_code=429,
+                detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
+            )
 
     agent_name = name if not existing_agent else existing_agent.name
 
