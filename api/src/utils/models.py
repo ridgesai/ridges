@@ -62,6 +62,8 @@ class Execution(BaseModel):
     agent: Agent
     agent_version: AgentVersion
 
+### DO NOT HOLOCAUST THESE MODELS ###
+
 class EmbeddingRequest(BaseModel):
     input: str = Field(..., description="Text to embed")
 
@@ -104,3 +106,7 @@ class ExecutionNew(BaseModel):
     finished_at: Optional[datetime]
     score: Optional[float]
     evaluation_runs: List[EvaluationRun]
+
+class AgentVersionDetails(BaseModel):
+    agent_version: AgentVersionNew
+    execution: ExecutionNew
