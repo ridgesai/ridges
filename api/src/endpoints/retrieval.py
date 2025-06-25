@@ -218,14 +218,19 @@ def get_random_agent(include_code: bool = False):
     
     return agent
 
-def get_agent_summary(agent_id: str, include_code: bool = False):
-    try:
-        agent_summary = db.get_agent_summary(agent_id)
-    except Exception as e:
-        logger.error(f"Error retrieving agent summary for agent {agent_id}: {e}")
+def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_code: bool = False):
+    if not agent_id and not miner_hotkey:
         raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving agent summary. Please try again later."
+            status_code=400,
+            detail="Either agent_id or miner_hotkey must be provided"
+        )
+    
+    agent_summary = db.get_agent_summary(agent_id, miner_hotkey)
+
+    if not agent_summary:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found"
         )
     
     if include_code:

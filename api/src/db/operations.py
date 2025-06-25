@@ -957,22 +957,34 @@ class DatabaseManager:
             
             return execution
         
-    def get_agent_summary(self, agent_id: str) -> AgentSummaryResponse:
+    def get_agent_summary(self, agent_id: str = None, miner_hotkey: str = None) -> AgentSummaryResponse:
         """
         Get a summary of an agent including its details, latest version, and all versions.
         Returns AgentSummaryResponse with agent_details, latest_version, and all_versions.
         """
         try:
             with self.conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT agent_id, miner_hotkey, name, created_at
-                    FROM agents 
-                    WHERE agent_id = %s
-                """, (agent_id,))
+                # Use agent_id if provided, otherwise use miner_hotkey
+                if agent_id:
+                    cursor.execute("""
+                        SELECT agent_id, miner_hotkey, name, created_at
+                        FROM agents 
+                        WHERE agent_id = %s
+                    """, (agent_id,))
+                    search_param = agent_id
+                    search_type = "ID"
+                else:
+                    cursor.execute("""
+                        SELECT agent_id, miner_hotkey, name, created_at
+                        FROM agents 
+                        WHERE miner_hotkey = %s
+                    """, (miner_hotkey,))
+                    search_param = miner_hotkey
+                    search_type = "miner hotkey"
                 
                 agent_row = cursor.fetchone()
                 if not agent_row:
-                    raise ValueError(f"Agent with ID {agent_id} not found")
+                    raise ValueError(f"Agent with {search_type} {search_param} not found")
                 
                 agent_details = AgentDetailsNew(
                     agent_id=agent_row[0],
@@ -986,7 +998,7 @@ class DatabaseManager:
                     FROM agent_versions 
                     WHERE agent_id = %s
                     ORDER BY version_num DESC
-                """, (agent_id,))
+                """, (agent_row[0],))  # Use agent_id from the query result
                 
                 version_rows = cursor.fetchall()
                 all_versions = [
@@ -1008,9 +1020,9 @@ class DatabaseManager:
                 )
                 
         except Exception as e:
-            logger.error(f"Error getting agent summary for {agent_id}: {str(e)}")
+            logger.error(f"Error getting agent summary for {search_param}: {str(e)}")
             return None
-        
+
     def get_evaluations(self, version_id: str) -> List[ExecutionNew]:
         """
         Get all evaluations for a specific agent version, including their evaluation runs.
@@ -1018,7 +1030,7 @@ class DatabaseManager:
         """
         try:
             with self.conn.cursor() as cursor:
-                
+
                 cursor.execute("""
                     SELECT 
                         evaluation_id,
