@@ -5,6 +5,8 @@ from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
 
+from api.src.utils.weights import run_weight_monitor
+
 app = FastAPI()
 
 # Configure CORS
@@ -15,6 +17,9 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# Run weight monitor
+run_weight_monitor(netuid=62)
 
 # Include ingestion routes
 app.include_router(
