@@ -7,7 +7,7 @@ from typing import List
 from datetime import datetime, timedelta
 import asyncio
 
-from api.src.utils.logging import get_logger
+from api.src.utils.logging_utils import get_logger
 from api.src.utils.config import MODEL_PRICE_PER_1M_TOKENS
 from api.src.utils.models import GPTMessage
 

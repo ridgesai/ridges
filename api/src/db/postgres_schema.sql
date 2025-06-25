@@ -25,7 +25,7 @@ CREATE TABLE evaluations (
     terminated_reason TEXT,
     created_at TIMESTAMP NOT NULL,
     started_at TIMESTAMP,
-    finished_at TIMESTAMP
+    finished_at TIMESTAMP,
     score FLOAT
 );
 
@@ -43,4 +43,12 @@ CREATE TABLE evaluation_runs (
     solved BOOLEAN,
     started_at TIMESTAMP NOT NULL,
     finished_at TIMESTAMP
+);
+
+-- Weights History table
+CREATE TABLE weights_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+    time_since_last_update INTERVAL,
+    miner_weights JSONB NOT NULL -- Stores {miner_hotkey: weight} pairs dynamically
 );
