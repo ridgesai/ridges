@@ -529,8 +529,11 @@ def run_oneshot(
             continue
         
 
-        if isinstance(proxy_resp, str):
-            raise Exception(proxy_resp)
+        try:
+            proxy_resp = json.loads(proxy_resp)
+        except Exception as e:
+            print(f"[agent] Error parsing proxy response: {e}")
+            raise Exception(f"Error parsing proxy response: {proxy_resp} {e}")
 
         text_resp = (proxy_resp.get("text_response") or "").lstrip()
         code_resp = (proxy_resp.get("code_response") or "").lstrip()
@@ -589,7 +592,7 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
         req = _urlreq.Request(url, data=request_bytes, method="POST")
         req.add_header("Content-Type", "application/json")
         
-        with _urlreq.urlopen(req, timeout=30) as resp:
+        with _urlreq.urlopen(req, timeout=300) as resp:
             response_body = resp.read()
             print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)")
             
