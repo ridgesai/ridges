@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary, AgentQueryResponse
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails
 from api.src.db.s3 import S3Manager
 from api.src.socket.server import WebSocketServer
 
@@ -250,6 +250,27 @@ def get_evaluations(version_id: str):
     
     return evaluations
 
+def get_agent_version(version_id: str, include_code: bool = True) -> AgentVersionDetails:
+    try:
+        agent_version = db.get_agent_version_new(version_id)
+    except Exception as e:
+        logger.error(f"Error retrieving agent version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving agent version. Please try again later."
+        )
+    
+    if not agent_version:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent version not found"
+        )
+    
+    if include_code:
+        agent_version.agent_version.code = s3_manager.get_file_text(f"{agent_version.agent_version.version_id}/agent.py")
+    
+    return agent_version
+
 router = APIRouter()
 
 routes = [
@@ -265,6 +286,7 @@ routes = [
     ("/random-agent", get_random_agent),
     ("/agent-summary", get_agent_summary),
     ("/evaluations", get_evaluations),
+    ("/agent-version", get_agent_version),
 ]
 
 for path, endpoint in routes:

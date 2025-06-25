@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails
 from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
@@ -1021,6 +1021,113 @@ class DatabaseManager:
                 
         except Exception as e:
             logger.error(f"Error getting agent summary for {search_param}: {str(e)}")
+            return None
+        
+    def get_agent_version_new(self, version_id: str) -> AgentVersionDetails:
+        """
+        Get detailed information about an agent version including its execution data.
+        Returns AgentVersionDetails with agent_version and execution.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT version_id, version_num, created_at, score
+                    FROM agent_versions 
+                    WHERE version_id = %s
+                """, (version_id,))
+                
+                version_row = cursor.fetchone()
+                if not version_row:
+                    raise ValueError(f"Agent version with ID {version_id} not found")
+                
+                agent_version = AgentVersionNew(
+                    version_id=version_row[0],
+                    version_num=version_row[1],
+                    created_at=version_row[2],
+                    score=version_row[3],
+                    code=None
+                )
+                
+                cursor.execute("""
+                    SELECT 
+                        evaluation_id,
+                        version_id,
+                        validator_hotkey,
+                        status,
+                        terminated_reason,
+                        created_at,
+                        started_at,
+                        finished_at,
+                        score
+                    FROM evaluations 
+                    WHERE version_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (version_id,))
+                
+                execution_row = cursor.fetchone()
+                if not execution_row:
+                    raise ValueError(f"No execution found for version {version_id}")
+                
+                evaluation_id = execution_row[0]
+                
+                cursor.execute("""
+                    SELECT 
+                        run_id,
+                        evaluation_id,
+                        swebench_instance_id,
+                        response,
+                        error,
+                        pass_to_fail_success,
+                        fail_to_pass_success,
+                        pass_to_pass_success,
+                        fail_to_fail_success,
+                        solved,
+                        started_at,
+                        finished_at
+                    FROM evaluation_runs 
+                    WHERE evaluation_id = %s
+                    ORDER BY started_at
+                """, (evaluation_id,))
+                
+                run_rows = cursor.fetchall()
+                evaluation_runs = [
+                    EvaluationRun(
+                        run_id=run_row[0],
+                        evaluation_id=run_row[1],
+                        swebench_instance_id=run_row[2],
+                        response=run_row[3],
+                        error=run_row[4],
+                        pass_to_fail_success=run_row[5],
+                        fail_to_pass_success=run_row[6],
+                        pass_to_pass_success=run_row[7],
+                        fail_to_fail_success=run_row[8],
+                        solved=run_row[9],
+                        started_at=run_row[10],
+                        finished_at=run_row[11]
+                    ) for run_row in run_rows
+                ]
+                
+                execution = ExecutionNew(
+                    evaluation_id=execution_row[0],
+                    agent_version_id=execution_row[1],
+                    validator_hotkey=execution_row[2],
+                    status=execution_row[3],
+                    terminated_reason=execution_row[4],
+                    created_at=execution_row[5],
+                    started_at=execution_row[6],
+                    finished_at=execution_row[7],
+                    score=execution_row[8],
+                    evaluation_runs=evaluation_runs
+                )
+                
+                return AgentVersionDetails(
+                    agent_version=agent_version,
+                    execution=execution
+                )
+                
+        except Exception as e:
+            logger.error(f"Error getting agent version details for {version_id}: {str(e)}")
             return None
 
     def get_evaluations(self, version_id: str) -> List[ExecutionNew]:
