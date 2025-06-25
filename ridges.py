@@ -198,7 +198,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
                     console.print(f"✨ {result.get('message', 'Upload successful')}", style="bold green")
                     console.print(Panel(
                         f"[bold green]🎉 Upload Complete[/bold green]\n"
-                        f"[cyan]Your miner '{name}' has been uploaded to the Ridges network![/cyan]\n"
+                        f"[cyan]Your miner '{name}' has been uploaded to {ridges.api_url}[/cyan]\n"
                         f"[cyan]It has been queued for evaluation.[/cyan]",
                         title="✨ Success",
                         border_style="green"
