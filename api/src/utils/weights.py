@@ -1,4 +1,4 @@
-import time
+import asyncio
 from datetime import datetime
 
 from api.src.db.operations import DatabaseManager
@@ -33,7 +33,7 @@ def get_miner_weights(netuid=62):
     
     return miner_weights_decimal
 
-def run_weight_monitor(netuid=62, interval_seconds=12):
+async def run_weight_monitor(netuid=62, interval_seconds=12):
     """Continuously monitor miner weights, updating every specified interval."""
     
     logger.info(f"Starting weight monitor for subnet {netuid}. Updating every {interval_seconds} seconds")
@@ -62,10 +62,7 @@ def run_weight_monitor(netuid=62, interval_seconds=12):
                 db.store_weights(weights)
             
             logger.info(f"Next weight check in {interval_seconds} seconds...")
-            time.sleep(interval_seconds)
+            await asyncio.sleep(interval_seconds)
             
     except Exception as e:
         logger.error(f"Error in weight monitor: {e}")
-
-if __name__ == "__main__":
-    run_weight_monitor(netuid=62) 

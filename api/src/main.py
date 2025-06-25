@@ -1,10 +1,10 @@
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
-
 from api.src.utils.weights import run_weight_monitor
 
 app = FastAPI()
@@ -18,10 +18,6 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-# Run weight monitor
-run_weight_monitor(netuid=62)
-
-# Include ingestion routes
 app.include_router(
     upload_router,
     prefix="/upload",
@@ -36,3 +32,8 @@ app.include_router(
     agents_router,
     prefix="/agents",
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the weight monitor as a background task when the app starts."""
+    asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=12))

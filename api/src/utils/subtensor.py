@@ -26,6 +26,3 @@ def get_current_weights(netuid: int):
         
     except Exception as e:
         return {"error": f"Error getting weights from substrate: {e}"}
-
-if __name__ == "__main__":
-    result3 = get_current_weights(netuid=62)
