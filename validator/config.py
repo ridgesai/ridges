@@ -48,7 +48,7 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 RIDGES_API_URL = os.getenv("RIDGES_API_URL", "https://testnet.ridges.ai")
-RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://54.226.52.51:8765")
+RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", "ws://54.156.245.111:8765")
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 EASY_INSTANCES = [
