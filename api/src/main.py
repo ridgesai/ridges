@@ -19,7 +19,7 @@ app.add_middleware(
 )
 
 # Run weight monitor
-run_weight_monitor(netuid=62)
+# run_weight_monitor(netuid=62)
 
 # Include ingestion routes
 app.include_router(
