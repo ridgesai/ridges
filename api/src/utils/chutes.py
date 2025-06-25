@@ -87,7 +87,7 @@ class ChutesManager:
             "messages": [],
             "stream": True,
             "max_tokens": 1024,
-            "temperature": temperature
+            "temperature": temperature if temperature is not None else 0.7
         }
 
         # Check if messages is not None before iterating
