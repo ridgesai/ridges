@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Literal, List
 
 class Agent(BaseModel):
@@ -94,6 +94,7 @@ class AgentSummaryResponse(BaseModel):
     agent_details: AgentDetailsNew
     latest_version: AgentVersionNew
     all_versions: List[AgentVersionNew]
+    daily_earnings: Optional[float] = None
 
 class ExecutionNew(BaseModel):
     evaluation_id: str
@@ -110,3 +111,9 @@ class ExecutionNew(BaseModel):
 class AgentVersionDetails(BaseModel):
     agent_version: AgentVersionNew
     execution: ExecutionNew
+
+class WeightsData(BaseModel):
+    id: str
+    timestamp: datetime
+    time_since_last_update: Optional[timedelta]
+    miner_weights: dict

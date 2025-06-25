@@ -8,9 +8,10 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse
 from api.src.db.s3 import S3Manager
 from api.src.socket.server import WebSocketServer
+from api.src.utils.subtensor import get_daily_earnings_by_hotkey
 
 load_dotenv()
 
@@ -218,7 +219,7 @@ def get_random_agent(include_code: bool = False):
     
     return agent
 
-def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_code: bool = False):
+def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_code: bool = False) -> AgentSummaryResponse:
     if not agent_id and not miner_hotkey:
         raise HTTPException(
             status_code=400,
@@ -233,6 +234,8 @@ def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_co
             detail="Agent not found"
         )
     
+    agent_summary.daily_earnings = get_daily_earnings_by_hotkey(agent_summary.agent_details.miner_hotkey)
+
     if include_code:
         agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
     

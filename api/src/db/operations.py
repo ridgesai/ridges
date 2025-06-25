@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData
 from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
@@ -1300,4 +1300,136 @@ class DatabaseManager:
             return False
         except Exception as e:
             logger.error(f"Error comparing weights: {str(e)}")
-            return False 
+            return False
+
+    def get_top_miner_fraction_last_24h(self, miner_hotkey: str) -> float:
+        """
+        Calculate the fraction of the last 24 hours that a miner held the top weight position.
+        Returns a value between 0.0 and 1.0 representing the fraction of time they were the top miner.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    WITH weight_periods AS (
+                        -- Get all weight snapshots from the last 24 hours
+                        SELECT 
+                            timestamp,
+                            miner_weights,
+                            LAG(timestamp) OVER (ORDER BY timestamp) as prev_timestamp
+                        FROM weights_history 
+                        WHERE timestamp >= NOW() - INTERVAL '24 hours'
+                        ORDER BY timestamp
+                    ),
+                    top_miner_periods AS (
+                        -- For each period, identify who was the top miner
+                        SELECT 
+                            timestamp,
+                            prev_timestamp,
+                            -- Extract the miner with the highest weight for each snapshot
+                            (SELECT key FROM jsonb_each(miner_weights) 
+                             ORDER BY value::float DESC 
+                             LIMIT 1) as top_miner_hotkey,
+                            -- Calculate the duration of this period
+                            CASE 
+                                WHEN prev_timestamp IS NULL THEN 
+                                    EXTRACT(EPOCH FROM (timestamp - (NOW() - INTERVAL '24 hours'))) / 86400.0
+                                ELSE 
+                                    EXTRACT(EPOCH FROM (timestamp - prev_timestamp)) / 86400.0
+                            END as period_duration
+                        FROM weight_periods
+                    ),
+                    miner_top_time AS (
+                        -- Sum up the time periods where this miner was on top
+                        SELECT 
+                            SUM(period_duration) as total_top_time
+                        FROM top_miner_periods 
+                        WHERE top_miner_hotkey = %s
+                    )
+                    SELECT COALESCE(total_top_time, 0.0) as fraction
+                    FROM miner_top_time
+                """, (miner_hotkey,))
+                
+                result = cursor.fetchone()
+                if result:
+                    fraction = float(result[0])
+                    logger.info(f"Miner {miner_hotkey} was top miner for {fraction:.4f} fraction of the last 24 hours")
+                    return fraction
+                else:
+                    logger.warning(f"No weight history found for miner {miner_hotkey} in the last 24 hours")
+                    return 0.0
+                    
+        except Exception as e:
+            logger.error(f"Error calculating top miner fraction for {miner_hotkey}: {str(e)}")
+            return 0.0
+
+    def get_current_top_miner(self) -> Optional[str]:
+        """
+        Get the miner hotkey with the highest weight from the most recent weights snapshot.
+        Returns the miner hotkey if found, None if no weights are available.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT miner_weights
+                    FROM weights_history 
+                    ORDER BY timestamp DESC 
+                    LIMIT 1
+                """)
+                row = cursor.fetchone()
+                
+                if not row or not row[0]:
+                    logger.warning("No weights found in database")
+                    return None
+                
+                # miner_weights is already a dict, find the miner with highest weight
+                miner_weights = row[0]
+                if not miner_weights:
+                    logger.warning("Empty weights found in the latest snapshot")
+                    return None
+                
+                # Find the miner with the highest weight
+                top_miner_hotkey = max(miner_weights.items(), key=lambda x: float(x[1]))[0]
+                top_weight = miner_weights[top_miner_hotkey]
+                
+                logger.info(f"Current top miner: {top_miner_hotkey} with weight {top_weight}")
+                return top_miner_hotkey
+                    
+        except Exception as e:
+            logger.error(f"Error getting current top miner: {str(e)}")
+            return None
+
+    def get_weights_history_last_24h_with_prior(self) -> List[WeightsData]:
+        """
+        Returns all rows from weights_history with timestamp >= NOW() - INTERVAL '24 hours',
+        plus one row immediately before that window (if it exists), ordered by timestamp ascending.
+        Returns a list of WeightsData models.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    (
+                        SELECT id, timestamp, time_since_last_update, miner_weights
+                        FROM weights_history
+                        WHERE timestamp < NOW() - INTERVAL '24 hours'
+                        ORDER BY timestamp DESC
+                        LIMIT 1
+                    )
+                    UNION ALL
+                    (
+                        SELECT id, timestamp, time_since_last_update, miner_weights
+                        FROM weights_history
+                        WHERE timestamp >= NOW() - INTERVAL '24 hours'
+                        ORDER BY timestamp ASC
+                    )
+                    ORDER BY timestamp ASC
+                """)
+                rows = cursor.fetchall()
+                return [WeightsData(
+                    id=row[0],
+                    timestamp=row[1],
+                    time_since_last_update=row[2],
+                    miner_weights=row[3]
+                ) for row in rows]
+        except Exception as e:
+            logger.error(f"Error fetching weights_history for last 24h with prior: {str(e)}")
+            return []
