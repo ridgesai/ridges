@@ -37,4 +37,4 @@ app.include_router(
 @app.on_event("startup")
 async def startup_event():
     """Start the weight monitor as a background task when the app starts."""
-    asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=12))
+    asyncio.create_task(run_weight_monitor())
