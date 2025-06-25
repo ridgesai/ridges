@@ -90,11 +90,14 @@ class ChutesManager:
             "temperature": temperature
         }
 
-        for message in messages:
-            body['messages'].append({
-                "role": message.role,
-                "content": message.content
-            })
+        # Check if messages is not None before iterating
+        if messages is not None:
+            for message in messages:
+                if message is not None:
+                    body['messages'].append({
+                        "role": message.role,
+                        "content": message.content
+                    })
 
         logger.info(f"Body: {body}")
 
@@ -115,72 +118,53 @@ class ChutesManager:
                         logger.error(f"API request failed with status {response.status}: {error_text}")
                         return f"API request failed with status {response.status}: {error_text}"
                     
-                    async for line in response.content:
-                        line = line.decode("utf-8").strip()
-                        logger.debug(f"Raw line: {line}")
-                        
-                        if line.startswith("data: "):
-                            data = line[6:]
-                            if data == "[DONE]":
-                                logger.info("Received [DONE] signal")
-                                break
-                            
-                            try:
-                                chunk_json = json.loads(data)
-                                logger.debug(f"Parsed chunk: {chunk_json}")
-                                
-                                # Handle content chunks - try multiple possible structures
-                                if 'choices' in chunk_json and isinstance(chunk_json['choices'], list) and chunk_json['choices']:
-                                    choice = chunk_json['choices'][0]
-                                    logger.debug(f"Choice structure: {choice}")
-                                    
-                                    # Try different possible content locations
-                                    content = None
-                                    
-                                    # Method 1: Check for delta.content (standard OpenAI format)
-                                    if 'delta' in choice and isinstance(choice['delta'], dict):
-                                        delta = choice['delta']
-                                        logger.debug(f"Delta structure: {delta}")
-                                        if 'content' in delta:
-                                            content = delta['content']
-                                            logger.debug(f"Found content in delta: {repr(content)}")
-                                    
-                                    # Method 2: Check for direct content in choice
-                                    elif 'content' in choice:
-                                        content = choice['content']
-                                        logger.debug(f"Found content directly in choice: {repr(content)}")
-                                    
-                                    # Method 3: Check for message.content
-                                    elif 'message' in choice and isinstance(choice['message'], dict):
-                                        message = choice['message']
-                                        if 'content' in message:
-                                            content = message['content']
-                                            logger.debug(f"Found content in message: {repr(content)}")
-                                    
-                                    # Add content if found
-                                    if content is not None:
-                                        logger.debug(f"Content type: {type(content)}, Content value: {repr(content)}")
-                                        if content:
-                                            logger.debug(f"Adding content: {repr(content)}")
-                                            response_chunks.append(content)
-                                    else:
-                                        logger.debug(f"No content found in choice: {choice}")
-                                
-                                # Handle usage data (usually comes in final chunk)
-                                if 'usage' in chunk_json:
-                                    usage = chunk_json['usage']
-                                    if 'total_tokens' in usage:
-                                        total_tokens = usage['total_tokens']
-                                        logger.info(f"Received usage data: {total_tokens} tokens")
+                    # Read the entire response as text first
+                    response_text = await response.text()
+                    logger.info(f"Raw response: {response_text}")
+                    
+                    # Check if response contains an error message despite 200 status
+                    if response_text and ("Internal Server Error" in response_text or "exhausted all available targets" in response_text):
+                        logger.error(f"API returned error in response body: {response_text}")
+                        return f"API Error: {response_text}"
+                    
+                    # If it's a streaming response, parse the lines
+                    if response_text:
+                        lines = response_text.strip().split('\n')
+                        if lines:
+                            for line in lines:
+                                if line is not None:
+                                    line = line.strip()
+                                    if not line:
+                                        continue
                                         
-                            except json.JSONDecodeError as e:
-                                logger.warning(f"Failed to parse JSON chunk: {e}, data: {data}")
-                            except Exception as e:
-                                logger.warning(f"Error processing chunk: {e}")
-                                logger.warning(f"Chunk data: {data}")
+                                    if line.startswith("data: "):
+                                        data = line[6:]
+                                        if data == "[DONE]":
+                                            break
+                                        
+                                        try:
+                                            chunk_json = json.loads(data)
+                                            
+                                            # Extract content from delta
+                                            if chunk_json and 'choices' in chunk_json and chunk_json['choices']:
+                                                choice = chunk_json['choices'][0]
+                                                if choice and 'delta' in choice and 'content' in choice['delta']:
+                                                    content = choice['delta']['content']
+                                                    if content:
+                                                        response_chunks.append(content)
+                                            
+                                            # Extract usage data
+                                            if chunk_json and 'usage' in chunk_json and chunk_json['usage'] is not None and 'total_tokens' in chunk_json['usage']:
+                                                total_tokens = chunk_json['usage']['total_tokens']
+                                                    
+                                        except json.JSONDecodeError:
+                                            pass
+                        else:
+                            logger.error(f"No lines found in response: {response_text}")
+                            return f"No lines found in response: {response_text}"
         
         except Exception as e:
-            logger.error(f"Error in inference request: {e}")
+            logger.error(f"Error in inference request: {e}", stack_info=True, exc_info=True)
             return f"Error in inference request: {e}"
         
         # Update costs data if we received usage information
@@ -195,8 +179,10 @@ class ChutesManager:
         
         response_text = "".join(response_chunks)
         logger.info(f"Final response length: {len(response_text)}")
-        logger.debug(f"Final response: {repr(response_text)}")
-        logger.info(f"Number of response chunks collected: {len(response_chunks)}")
-        logger.debug(f"Response chunks: {response_chunks}")
+        
+        # If we got no response chunks but the API call succeeded, return a fallback message
+        if not response_chunks:
+            logger.warning("No response chunks collected, returning fallback message")
+            return "No response content received from the model"
         
         return response_text
