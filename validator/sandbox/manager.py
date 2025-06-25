@@ -1,10 +1,9 @@
 import os
 import json
 import shutil
-import tempfile
 import time
 import asyncio
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 import docker
 from pathlib import Path
 from shared.logging_utils import get_logger
@@ -53,6 +52,10 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
 PROXY_CONTAINER_NAME = "sandbox-proxy"
 
+# Directory to cache cloned repositories for reuse across validations
+# Repositories will be stored at validator/repos/<org>/<repo>
+REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
+
 class Sandbox:
     swebench_instance_id: str
     manager: 'SandboxManager'
@@ -67,7 +70,9 @@ class Sandbox:
         Sandbox._id_counter += 1
 
         self.src_dir = src_dir
-        self.repo_dir_path = Path(tempfile.mkdtemp())
+        # Repo directory will be determined lazily in _run() because we need
+        # information from the `challenge` dict (repo name & commit).
+        self.repo_dir_path = None  # type: Optional[Path]
         
         self.running = False
         
@@ -118,7 +123,39 @@ class Sandbox:
             with open(self.input_file, 'w') as f:
                 json.dump(challenge, f)
 
-            clone_repo(self.repo_dir_path, challenge.get('repo'), challenge.get('base_commit'))
+            # -------------------------------------------------------------
+            # Prepare (and if necessary, clone) the repository for this run.
+            # Repositories are cached inside `validator/repos` so they can be
+            # reused by subsequent runs and avoid costly network operations.
+            # -------------------------------------------------------------
+            repo_name = challenge.get("repo")
+            base_commit = challenge.get("base_commit")
+
+            # Build the target path (validator/repos/<org>/<repo>)
+            self.repo_dir_path = REPOS_BASE_DIR / repo_name
+
+            # Ensure parent directories exist
+            self.repo_dir_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not self.repo_dir_path.exists():
+                # Fresh clone when we see this repository for the first time
+                logger.info(f"Cloning repository {repo_name} into cache {self.repo_dir_path}")
+                clone_repo(self.repo_dir_path, repo_name, base_commit)
+            else:
+                # Repository already exists – just ensure the requested commit
+                # is available and checked out.
+                from git import Repo as GitRepo  # local import to avoid top-level cost
+                try:
+                    repo = GitRepo(self.repo_dir_path)
+                    # Fetch updates from origin in case the requested commit is missing
+                    repo.git.fetch()
+                    if base_commit:
+                        repo.git.checkout(base_commit)
+                except Exception as e:
+                    # If something goes wrong (e.g., corrupt repo), reclone it
+                    logger.warning(f"Encountered issue with cached repo at {self.repo_dir_path}: {e}. Re-cloning…")
+                    shutil.rmtree(self.repo_dir_path, ignore_errors=True)
+                    clone_repo(self.repo_dir_path, repo_name, base_commit)
 
             # Create the Docker container, and run the Main.py script
             self.start_time = time.time()
@@ -133,7 +170,7 @@ class Sandbox:
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
-                    os.path.abspath(self.repo_dir_path): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
+                    os.path.abspath(self.repo_dir_path): {"bind": SANDBOX_REPO_DIR, "mode": "ro"},
                 },
                 working_dir=SANDBOX_DIR,
                 environment={
@@ -169,8 +206,8 @@ class Sandbox:
         self.running = False
     
     def cleanup(self):
+        # Clean up temporary agent source directory
         shutil.rmtree(self.src_dir, ignore_errors=True)
-        shutil.rmtree(self.repo_dir_path, ignore_errors=True)
 
 
 
