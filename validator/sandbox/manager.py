@@ -42,7 +42,7 @@ SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don
 SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
-SANDBOX_MAX_CPU_USAGE = 70 # %
+SANDBOX_MAX_CPU_USAGE = 90 # %
 SANDBOX_MAX_RAM_USAGE = 512 * 4# MiB 
 SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 
@@ -224,11 +224,12 @@ class SandboxManager:
         # logger.debug(f'sandbox {sandbox.id}: cpu: {sandbox.cpu_usage:.1f}, ram: {sandbox.ram_usage:.1f} MiB, runtime: {runtime:.1f} seconds') 
         
         # Check if the sandbox is using too many resources, if so, kill it and set the error
-        if sandbox.cpu_usage > SANDBOX_MAX_CPU_USAGE:
-            sandbox.error = 'CPU limit exceeded'
-            sandbox.container.kill()
-            logger.warning(f'Killed sandbox {sandbox.id} because CPU limit exceeded')
-        elif sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
+        # if sandbox.cpu_usage > SANDBOX_MAX_CPU_USAGE:
+        #     sandbox.error = 'CPU limit exceeded'
+        #     sandbox.container.kill()
+        #     logger.warning(f'Killed sandbox {sandbox.id} because CPU limit exceeded')
+        # elif sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
+        if sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
             sandbox.error = 'RAM limit exceeded'
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because RAM limit exceeded')
@@ -270,22 +271,20 @@ class SandboxManager:
     def _start_proxy_container(self):
         """Start the nginx proxy container."""
         try:
-            # Start container on the internal sandbox network
+            # Start container on the default bridge network so it can reach the host API
             container = self.docker.containers.run(
                 image=PROXY_DOCKER_IMAGE,
                 name=PROXY_CONTAINER_NAME,
                 detach=True,
-                network=SANDBOX_NETWORK_NAME,  # Start on the internal network
-                dns=["8.8.8.8", "8.8.4.4"],  # Use Google DNS servers
                 environment={ "RIDGES_API_URL": RIDGES_API_URL }
             )
 
-            # Also connect it to the default bridge network for external access
+            # Also connect it to the internal sandbox network so sandboxes can reach it
             try:
-                self.docker.networks.get("bridge").connect(container)
-                logger.info(f"Connected proxy container to default bridge network")
+                self.docker.networks.get(SANDBOX_NETWORK_NAME).connect(container)
+                logger.info(f"Connected proxy container to {SANDBOX_NETWORK_NAME}")
             except Exception as net_e:
-                logger.error(f"Failed to attach proxy container to bridge network: {net_e}")
+                logger.error(f"Failed to attach proxy container to internal network: {net_e}")
 
             # Allow some time for Nginx to become ready
             time.sleep(2)

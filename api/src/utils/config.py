@@ -36,5 +36,6 @@ PERMISSABLE_PACKAGES = [
     "sentence_transformers",
     "sklearn.feature_extraction.text",
     "sklearn.feature_extraction.text.TfidfVectorizer",
+    "concurrent.futures",
 ]
 MODEL_PRICE_PER_1M_TOKENS = {"deepseek-ai/DeepSeek-V3-0324": 0, "agentica-org/DeepCoder-14B-Preview": 0}

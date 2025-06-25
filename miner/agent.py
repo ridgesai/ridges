@@ -2,7 +2,7 @@
 """One-file autonomous coding agent ("base-miner").
 
 The validator mounts a repository and a problem statement inside a sandbox and
-executes this file.  The agent talks to a local *AI-proxy* over HTTP using the
+executes this file.  It talks to a local *AI-proxy* over HTTP using the
 OpenAI function-calling protocol.  It exposes a minimal but sufficient set of
 tools so the language-model can inspect and modify the repository and finally
 indicate it is done.
@@ -52,6 +52,7 @@ from dataclasses import dataclass
 import ast
 import re
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------------------------------------------------------------------------
 # Environment tweaks ---------------------------------------------------------
@@ -109,7 +110,7 @@ DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3-0324")
 MAX_STEPS = 50
 MAX_OBS_CHARS = 20_000
 MAX_BYTES_READ = 4_000
-MAX_EMBED_TOKENS = 512
+MAX_EMBED_TOKENS = 512000
 MAX_EMBED_CHARS = MAX_EMBED_TOKENS * 4  # reserve but we'll split by tokens
 
 # New env flag – set EMBED_WHOLE_FILES=1 to revert to legacy behaviour.
@@ -380,7 +381,7 @@ def _remote_embed(text: str, proxy_url: str) -> List[float]:
         )
 
         try:
-            with _urlreq.urlopen(req, timeout=30) as resp:
+            with _urlreq.urlopen(req, timeout=300) as resp:
                 data_raw = resp.read()
                 data = json.loads(data_raw.decode())
 
@@ -449,11 +450,51 @@ def run_oneshot(
         chunk_texts = [c.text for c in code_chunks]
 
     # --------------------------------------------------------------------
+    # Cheap TF-IDF pre-filter to limit expensive embedding calls ----------
+    # --------------------------------------------------------------------
+
+    PRE_FILTER_TOP = int(os.getenv("PREFILTER_TOP", "400"))
+
+    if len(chunk_texts) > PRE_FILTER_TOP:
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
+
+            tfidf_vec = TfidfVectorizer(stop_words="english", max_features=20_000)
+            mat = tfidf_vec.fit_transform([problem_text] + chunk_texts).astype("float32")
+
+            query_vec = mat[0]
+            chunk_mat = mat[1:]
+            sims_quick = (chunk_mat @ query_vec.T).toarray().ravel()  # cosine; TF-IDF rows are L2-normed
+
+            top_idx_quick = sims_quick.argsort()[-PRE_FILTER_TOP:][::-1]
+
+            chunk_texts = [chunk_texts[i] for i in top_idx_quick]
+            code_chunks = [code_chunks[i] for i in top_idx_quick]
+        except Exception as _e:
+            # If sklearn unavailable, skip pre-filter gracefully.
+            pass
+
+    # --------------------------------------------------------------------
     # Obtain embeddings via proxy endpoint --------------------------------
     # --------------------------------------------------------------------
 
     query_vec = _remote_embed(problem_text, proxy_url)
-    chunk_vecs = [ _remote_embed(txt, proxy_url) for txt in chunk_texts ]
+
+    # Parallel embedding of chunks to avoid long serial wait times.
+    chunk_vecs: List[List[float]] = [ZERO_VEC] * len(chunk_texts)
+    MAX_WORKERS = int(os.getenv("EMBED_CONCURRENCY", "8"))
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        fut_to_idx = {pool.submit(_remote_embed, txt, proxy_url): idx for idx, txt in enumerate(chunk_texts)}
+
+        for fut in as_completed(fut_to_idx):
+            idx = fut_to_idx[fut]
+            try:
+                chunk_vecs[idx] = fut.result()
+            except Exception as exc:
+                # Log and keep zero vector; retrieval will simply rank it low.
+                print(f"[agent] embedding error (chunk {idx}): {exc}")
+                chunk_vecs[idx] = ZERO_VEC
 
     sims = [ _cosine(vec, query_vec) for vec in chunk_vecs ]
 
@@ -528,12 +569,10 @@ def run_oneshot(
                 raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
             continue
         
-
-        try:
-            proxy_resp = json.loads(proxy_resp)
-        except Exception as e:
-            print(f"[agent] Error parsing proxy response: {e}")
-            raise Exception(f"Error parsing proxy response: {proxy_resp} {e}")
+        # proxy_resp is already a dict from inference(); no need to decode again.
+        if isinstance(proxy_resp, str):
+            # In case inference ever returns plain text, fail fast for inspection.
+            raise Exception(proxy_resp)
 
         text_resp = (proxy_resp.get("text_response") or "").lstrip()
         code_resp = (proxy_resp.get("code_response") or "").lstrip()
@@ -598,6 +637,33 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
             
             response_json = json.loads(response_body.decode("utf-8"))
             print(f"[agent] Response: {response_json}")
+
+            # The proxy may return a plain string instead of a JSON object with
+            # separate text / code fields.  In that case we wrap it in the
+            # expected shape so downstream logic can stay unchanged.
+            if isinstance(response_json, str):
+                raw_text: str = response_json.lstrip()
+
+                # Attempt to separate a unified diff from the explanatory text.
+                diff_start = None
+                if raw_text.startswith("diff") or raw_text.startswith("--- "):
+                    diff_start = 0
+                else:
+                    # Look for the first occurrence of a diff header inside the text.
+                    for marker in ("\ndiff --git", "\n--- "):
+                        idx = raw_text.find(marker)
+                        if idx != -1:
+                            diff_start = idx + 1  # skip the leading newline
+                            break
+
+                code_resp = ""
+                text_resp = raw_text
+                if diff_start is not None:
+                    code_resp = raw_text[diff_start:].lstrip()
+                    text_resp = raw_text[:diff_start].strip()
+
+                response_json = {"text_response": text_resp, "code_response": code_resp}
+
             return response_json
             
     except Exception as e:
@@ -740,6 +806,14 @@ def agent_main(input_dict: Dict[str, Any]):
     proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
     timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
     model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
+
+    # If the validator mounted the target repository at /sandbox/repo, switch
+    # to that directory so that all relative file paths and patch operations
+    # resolve correctly.  If the directory is absent we keep the current CWD
+    # (useful for local testing).
+    repo_root = Path("/sandbox/repo")
+    if repo_root.exists() and repo_root.is_dir():
+        os.chdir(repo_root)
 
     # Always use one-shot retrieval with proxy-hosted embeddings.
     patch_text = run_oneshot(
@@ -904,6 +978,11 @@ def _collect_code_chunks(root: str = ".") -> List[Chunk]:
         if path.is_dir() or ".git" in path.parts:
             continue
         rel_path = str(path.relative_to(root_path))
+
+        # Skip the agent itself (both the original and sandbox copy) to avoid polluting retrieval.
+        if rel_path == "miner/agent.py" or rel_path == "src/agent.py" or rel_path.endswith("/miner/agent.py"):
+            continue
+
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except Exception:
