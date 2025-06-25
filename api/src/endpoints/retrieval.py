@@ -218,6 +218,21 @@ def get_random_agent(include_code: bool = False):
     
     return agent
 
+def get_agent_summary(agent_id: str, include_code: bool = False):
+    try:
+        agent_summary = db.get_agent_summary(agent_id)
+    except Exception as e:
+        logger.error(f"Error retrieving agent summary for agent {agent_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving agent summary. Please try again later."
+        )
+    
+    if include_code:
+        agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
+    
+    return agent_summary
+
 router = APIRouter()
 
 routes = [
@@ -231,6 +246,7 @@ routes = [
     ("/latest-execution-by-agent", get_latest_execution_by_agent),
     ("/connected-validators", get_connected_validators),
     ("/random-agent", get_random_agent),
+    ("/agent-summary", get_agent_summary),
 ]
 
 for path, endpoint in routes:

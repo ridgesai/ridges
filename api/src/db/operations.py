@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew
 from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
@@ -956,6 +956,60 @@ class DatabaseManager:
             )
             
             return execution
+        
+    def get_agent_summary(self, agent_id: str) -> AgentSummaryResponse:
+        """
+        Get a summary of an agent including its details, latest version, and all versions.
+        Returns AgentSummaryResponse with agent_details, latest_version, and all_versions.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT agent_id, miner_hotkey, name, created_at
+                    FROM agents 
+                    WHERE agent_id = %s
+                """, (agent_id,))
+                
+                agent_row = cursor.fetchone()
+                if not agent_row:
+                    raise ValueError(f"Agent with ID {agent_id} not found")
+                
+                agent_details = AgentDetailsNew(
+                    agent_id=agent_row[0],
+                    miner_hotkey=agent_row[1],
+                    name=agent_row[2],
+                    created_at=agent_row[3]
+                )
+                
+                cursor.execute("""
+                    SELECT version_id, version_num, created_at, score
+                    FROM agent_versions 
+                    WHERE agent_id = %s
+                    ORDER BY version_num DESC
+                """, (agent_id,))
+                
+                version_rows = cursor.fetchall()
+                all_versions = [
+                    AgentVersionNew(
+                        version_id=row[0],
+                        version_num=row[1],
+                        created_at=row[2],
+                        score=row[3],
+                        code=None
+                    ) for row in version_rows
+                ]
+                
+                latest_version = all_versions[0].copy() if all_versions else None
+                
+                return AgentSummaryResponse(
+                    agent_details=agent_details,
+                    latest_version=latest_version,
+                    all_versions=all_versions
+                )
+                
+        except Exception as e:
+            logger.error(f"Error getting agent summary for {agent_id}: {str(e)}")
+            return None
 
     def store_weights(self, miner_weights: dict, time_since_last_update=None) -> int:
         """

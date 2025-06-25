@@ -74,3 +74,21 @@ class InferenceRequest(BaseModel):
     model: Optional[str] = Field(None, description="Model to use for inference")
     temperature: Optional[float] = Field(None, description="Temperature for inference")
     messages: List[GPTMessage] = Field(..., description="Messages to send to the model")
+
+class AgentVersionNew(BaseModel):
+    version_id: str
+    version_num: int
+    created_at: datetime
+    score: Optional[float]
+    code: Optional[str]
+
+class AgentDetailsNew(BaseModel):
+    agent_id: str
+    miner_hotkey: str
+    name: str
+    created_at: datetime
+
+class AgentSummaryResponse(BaseModel):
+    agent_details: AgentDetailsNew
+    latest_version: AgentVersionNew
+    all_versions: List[AgentVersionNew]
