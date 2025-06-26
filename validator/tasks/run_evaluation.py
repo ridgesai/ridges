@@ -3,6 +3,7 @@
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING, List
 import uuid
@@ -12,13 +13,7 @@ from validator.dependencies import get_session_factory
 from validator.sandbox.manager import SandboxManager
 from shared.logging_utils import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, CHALLENGE_TIMEOUT, validator_hotkey, MEDIUM_INSTANCES
-from swebench.harness.run_evaluation import (
-    load_swebench_dataset,
-    run_instance,
-    make_test_spec
-)
-import docker
-from swebench.harness.docker_build import build_env_images
+from swebench.harness.run_evaluation import load_swebench_dataset
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
@@ -41,8 +36,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     sbox_manager = None  # Initialize to None to avoid UnboundLocalError
     try:
         # Create sandbox manager
-        sbox_manager = SandboxManager()
-        evaluation_runs: List[EvaluationRun] = []
+        sbox_manager = SandboxManager(websocket_app)
 
         # Create a client with longer timeout for agent operations
         async with httpx.AsyncClient(timeout=CHALLENGE_TIMEOUT.total_seconds() * 2) as client:
@@ -82,109 +76,33 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                         solved=None,
                         status="started",
                         started_at=datetime.now(),
+                        sandbox_created_at=None,
+                        patch_generated_at=None,
+                        eval_started_at=None,
                         result_scored_at=None
                     )
-                    evaluation_runs.append(evaluation_run)
                     await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
-                    sbox = sbox_manager.add_sandbox(instance["instance_id"], src_dir=temp_dir)
-                    await sbox.run_async({
+                    sbox = sbox_manager.add_sandbox(evaluation_run, src_dir=Path(temp_dir))
+                    await sbox.run({
                         "run_id": evaluation_run.run_id,
                         "problem_statement": instance["problem_statement"],
                         "repo": instance["repo"],
                         "base_commit": instance["base_commit"]
                     })
+
             except Exception as e:
                 logger.error(
-                    f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.version_num}: {e}"
+                    f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.version_num}: {e}",
+                    exc_info=True,
+                    stack_info=True
                 )
 
-        # Wait for all sandboxes to finish
-        logger.info("Waiting on sandboxes...")
+        # Wait for all sandboxes (which now also run evaluation) to finish
+        logger.info("Waiting on sandboxes (patch generation + evaluation)...")
         await sbox_manager.wait_for_all_sandboxes()
 
-        # Upload patches to Ridges
-        for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
-            evaluation_run: EvaluationRun = next(run for run in evaluation_runs if run.swebench_instance_id == instance_id)
-            if not success:
-                evaluation_run.error=error
-                evaluation_run.solved=False
-                evaluation_run.status="result_scored"
-                evaluation_run.result_scored_at=datetime.now()
-                await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
-                continue
-            
-            evaluation_run.response=patch
-            await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
-
-        # Run evaluation
-        logger.info(f"Running evaluation {evaluation_id}...")
-        client = docker.from_env()
-
-        for success, instance_id, patch, error in sbox_manager.get_patches_and_errors():
-            if not success:
-                continue
-
-            evaluation_run: EvaluationRun = next(run for run in evaluation_runs if run.swebench_instance_id == instance_id)
-
-            logger.info(f"Running evaluation for run {evaluation_run.run_id} on instance {instance_id}")
-
-            prediction = {
-                "instance_id": instance_id,
-                "model_name_or_path": f"{agent_version.agent_id}v{agent_version.version_num}",
-                "model_patch": patch
-            }
-        
-            instance = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", [instance_id])[0]
-            if not instance:
-                logger.error(f"Instance {instance_id} not found in dataset")
-                continue
-            
-            # Create test spec for our instance
-            test_spec = make_test_spec(instance)
-            build_env_images(client, [test_spec], max_workers=1)
-
-            run_result = run_instance(
-                test_spec=test_spec,
-                pred=prediction,
-                rm_image=False,  # Clean up after each run
-                force_rebuild=False,
-                client=client,
-                run_id=evaluation_run.run_id,
-                timeout=1800,
-                rewrite_reports=False
-            )
-
-            evaluation_run.status="result_scored"
-            evaluation_run.result_scored_at=datetime.now()
-            if run_result:
-                instance_id, report = run_result
-                report = report[instance_id]
-                evaluation_run.fail_to_pass_success=json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"])
-                evaluation_run.pass_to_pass_success=json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"])
-                evaluation_run.fail_to_fail_success=json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"])
-                evaluation_run.pass_to_fail_success=json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"])
-                evaluation_run.solved=report["resolved"]
-            else:
-                logger.info(f"Agent {agent_version.agent_id} version {agent_version.version_num} failed to run instance {instance_id}")
-                evaluation_run.solved=False
-                evaluation_run.error=error or "Patch did not apply"
-                # with open(f"logs/run_evalulation/{evaluation_run.run_id}/{evaluation_run.run_id}.log", "r") as f:
-                #     evaluation_run.error = f.read()
-            
-            await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()}) # Run finished
-            
-        # Save evaluation runs to database
-        if evaluation_runs:
-            SessionFactory = get_session_factory()
-            session = SessionFactory()
-            try:
-                session.add_all(evaluation_runs)
-                session.commit()
-                logger.info(f"Saved {len(evaluation_runs)} evaluation runs to database")
-            finally:
-                session.close()
     except Exception as e:
-        logger.error(f"Error evaluating agent version: {e}")
+        logger.error(f"Error evaluating agent version: {e}", exc_info=True, stack_info=True)
         errored = True
     finally:
         if sbox_manager:

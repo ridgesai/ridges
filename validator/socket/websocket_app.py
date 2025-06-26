@@ -28,7 +28,7 @@ class WebsocketApp:
             return
         
         try:
-            logger.info(f"Sending message: {message.get('event', str(message))}")
+            logger.debug(f"Sending message: {message.get('event', str(message))}")
             await self.ws.send(json.dumps(message))
             logger.info(f"Message sent: {message.get('event')}")
         except Exception as e:
