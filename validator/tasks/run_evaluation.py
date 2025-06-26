@@ -80,8 +80,9 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                         response=None,
                         error=None,
                         solved=None,
+                        status="started",
                         started_at=datetime.now(),
-                        finished_at=None
+                        result_scored_at=None
                     )
                     evaluation_runs.append(evaluation_run)
                     await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
@@ -107,7 +108,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             if not success:
                 evaluation_run.error=error
                 evaluation_run.solved=False
-                evaluation_run.finished_at=datetime.now()
+                evaluation_run.status="result_scored"
+                evaluation_run.result_scored_at=datetime.now()
                 await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
                 continue
             
@@ -152,7 +154,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                 rewrite_reports=False
             )
 
-            evaluation_run.finished_at=datetime.now()
+            evaluation_run.status="result_scored"
+            evaluation_run.result_scored_at=datetime.now()
             if run_result:
                 instance_id, report = run_result
                 report = report[instance_id]
