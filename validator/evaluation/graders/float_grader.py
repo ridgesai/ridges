@@ -27,6 +27,7 @@ from validator.utils.clean_patch import (
     remove_logging_calls,
     strip_non_diff_preamble,
 )
+from validator.utils.injection_guard import ban_if_injection
 
 # Constants for scoring weights
 DYNAMIC_CHECKLIST_WEIGHT = 0.2
@@ -175,6 +176,18 @@ class FloatGrader(GraderInterface):
         without_header_noise = drop_header_noise(without_unused)
         without_print_statements = remove_print_statements(without_header_noise)
         cleaned_patch = without_print_statements.strip()
+
+        # ------------------------------------------------------------------
+        # Last-line of defence – if the cleaned patch still carries any exact
+        # prompt-injection payload we know of, permanently ban the miner and
+        # short-circuit grading.
+        # ------------------------------------------------------------------
+        if ban_if_injection(response.miner_hotkey, cleaned_patch):
+            self.logger.warning(
+                "Banned miner %s for prompt-injection pattern; skipping grading.",
+                response.miner_hotkey,
+            )
+            return EMPTY_PATCH_SCORE, 0.0
 
         # Re-phrase checklist items to nudge the LLM toward partial-credit answers.
         checklist_for_prompt = [f"Rate 0-1: {item}" for item in self.problem.dynamic_checklist]

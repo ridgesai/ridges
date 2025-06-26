@@ -30,6 +30,7 @@ from validator.utils.clean_patch import (
 
 from validator.db.operations import DatabaseManager
 from validator.utils.async_utils import AsyncBarrier
+from validator.utils.injection_guard import is_banned
 
 import hashlib
 from pathlib import Path
@@ -148,6 +149,19 @@ class BaseChallenge(ABC):
         This is the main template method that handles the common sending logic.
         Subclasses can override specific parts if needed.
         """
+        
+        # ------------------------------------------------------------------
+        # Denylist check – do not waste resources sending work to a banned
+        # miner.  We immediately return a 403-like Response so upstream logic
+        # can treat it as a handled failure.
+        # ------------------------------------------------------------------
+        if is_banned(hotkey):
+            logger.warning("Attempted to send challenge %s to banned miner %s; skipping.", self.challenge_id, hotkey)
+            return httpx.Response(
+                status_code=403,
+                json={"error": "miner banned for prompt-injection"},
+                request=httpx.Request("POST", self.get_endpoint()),
+            )
         
         endpoint = self.get_endpoint()
         payload = self.to_dict()
