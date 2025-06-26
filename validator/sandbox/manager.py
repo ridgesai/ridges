@@ -167,21 +167,6 @@ class Sandbox:
                 # Fresh clone when we see this repository for the first time
                 logger.info(f"Cloning repository {repo_name} into cache {self.repo_dir_path}")
                 clone_repo(self.repo_dir_path, repo_name, base_commit)
-            else:
-                # Repository already exists – just ensure the requested commit
-                # is available and checked out.
-                from git import Repo as GitRepo  # local import to avoid top-level cost
-                try:
-                    repo = GitRepo(self.repo_dir_path)
-                    # Fetch updates from origin in case the requested commit is missing
-                    repo.git.fetch()
-                    if base_commit:
-                        repo.git.checkout(base_commit)
-                except Exception as e:
-                    # If something goes wrong (e.g., corrupt repo), reclone it
-                    logger.warning(f"Encountered issue with cached repo at {self.repo_dir_path}: {e}. Re-cloning…")
-                    shutil.rmtree(self.repo_dir_path, ignore_errors=True)
-                    clone_repo(self.repo_dir_path, repo_name, base_commit)
 
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
@@ -264,7 +249,7 @@ class SandboxManager:
 
     def __init__(self, websocket_app: "WebsocketApp"):
         self.websocket_app = websocket_app
-        self.docker = docker.from_env()
+        self.docker = docker.from_env(max_pool_size=100)
         self.create_internal_network()
         self.proxy_container = self._start_proxy_container()
         logger.info("Nginx proxy container started successfully")
@@ -399,9 +384,8 @@ class SandboxManager:
             }
 
             test_spec = make_test_spec(instance)
-            client: docker.DockerClient = docker.from_env()
             # Build the environment image for this instance (cached if already built)
-            build_env_images(client, [test_spec], max_workers=4)
+            build_env_images(self.docker, [test_spec], max_workers=4)
 
             # Execute the evaluation
             run_result = run_instance(
@@ -409,7 +393,7 @@ class SandboxManager:
                 pred=prediction,
                 rm_image=False,  # Clean up after each run
                 force_rebuild=False,
-                client=client,
+                client=self.docker,
                 run_id=evaluation_run.run_id,
                 timeout=1800,
                 rewrite_reports=False,
