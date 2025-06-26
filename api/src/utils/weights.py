@@ -38,8 +38,8 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
     
     logger.info(f"Starting weight monitor for subnet {netuid}. Updating every {interval_seconds} seconds")
     
-    try:
-        while True:
+    while True:
+        try:
             weights = get_miner_weights(netuid=netuid)
             latest_stored = db.get_latest_weights()
             
@@ -63,6 +63,7 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
             
             logger.info(f"Next weight check in {interval_seconds} seconds...")
             await asyncio.sleep(interval_seconds)
-            
-    except Exception as e:
-        logger.error(f"Error in weight monitor: {e}")
+        except Exception as e:
+            logger.error(f"Error in weight monitor: {e}")
+            await asyncio.sleep(interval_seconds)
+        
