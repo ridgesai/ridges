@@ -79,6 +79,7 @@ def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         run_id=evaluation_run["run_id"],
         evaluation_id=evaluation_run["evaluation_id"],
         swebench_instance_id=evaluation_run["swebench_instance_id"],
+        status=evaluation_run["status"],
         response=evaluation_run["response"],
         error=evaluation_run["error"],
         pass_to_fail_success=evaluation_run["pass_to_fail_success"],
@@ -87,7 +88,10 @@ def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         fail_to_fail_success=evaluation_run["fail_to_fail_success"],
         solved=evaluation_run["solved"],
         started_at=evaluation_run["started_at"],
-        finished_at=evaluation_run["finished_at"]
+        sandbox_created_at=evaluation_run["sandbox_created_at"],
+        patch_generated_at=evaluation_run["patch_generated_at"],
+        eval_started_at=evaluation_run["eval_started_at"],
+        result_scored_at=evaluation_run["result_scored_at"]
     )
     db.store_evaluation_run(evaluation_run)
 
@@ -131,7 +135,7 @@ def finish_evaluation(evaluation_id: str, errored: bool):
     evaluation = db.get_evaluation(evaluation_id)
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
-    db.store_evaluation(evaluation, score=True)
+    db.store_evaluation(evaluation)
     db.update_agent_version_score(version_id=evaluation.version_id)
 
 def reset_running_evaluations(validator_hotkey: str):

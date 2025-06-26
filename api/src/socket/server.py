@@ -74,7 +74,7 @@ class WebSocketServer:
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
                     eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
-                    if eval_run.finished_at:
+                    if eval_run.result_scored_at:
                         # Convert Pydantic model to dict with datetime serialization
                         eval_run_dict = eval_run.model_dump(mode='json')
                         for client_websocket in self.clients.keys():

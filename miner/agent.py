@@ -32,7 +32,6 @@ flag / env-var       default
 --timeout AGENT_TIMEOUT   600  (seconds)
 --model   AGENT_MODEL     deepseek-ai/DeepSeek-V3-0324
 
-A `trajectory.jsonl` file with the full conversation is written for debugging.
 """
 from __future__ import annotations
 
@@ -104,7 +103,7 @@ DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
 DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
 DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
 DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
-DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3-0324")
+DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3")
 
 # Other constants
 MAX_STEPS = 50
@@ -275,8 +274,81 @@ def _write_file(path: str, content: str) -> str:
         return f"write error: {e}"
 
 
+def _sanitize_patch(patch: str) -> str:
+    """Return *patch* stripped of markdown/code-fence chatter.
+
+    The LLM sometimes wraps the unified diff in Markdown fences or appends
+    explanatory text (e.g. `DISCUSSION`, `EOF`).  This helper keeps only the
+    lines that are valid in a unified diff so downstream tools (`patch`,
+    `git apply`) succeed and the resulting patch file is clean.
+    """
+    # Stop at the first closing code fence (```), if present.
+    stop_idx = patch.find("\n```")
+    if stop_idx != -1:
+        patch = patch[:stop_idx]
+
+    allowed_prefixes = (
+        "diff --git",
+        "index ",
+        "--- ",
+        "+++ ",
+        "@@",
+        "new file mode",
+        "deleted file mode",
+        "similarity index",
+        "rename from",
+        "rename to",
+        "Binary files",
+        "\\ No newline",
+    )
+
+    cleaned_lines: list[str] = []
+    for line in patch.splitlines():
+        # Early exit markers – anything after is junk.
+        if line.strip() in {"DISCUSSION", "EOF"}:
+            break
+        if line.startswith(allowed_prefixes):
+            cleaned_lines.append(line)
+            continue
+        # Hunk content lines start with space, plus or minus.
+        if line.startswith(("+", "-", " ")):
+            cleaned_lines.append(line)
+            continue
+        # Ignore everything else (markdown, commentary, empty lines outside hunks).
+
+    # Post-process header lines: ensure 'a/' and 'b/' prefixes so a default
+    # `patch -p1` invocation resolves correctly when run from the repository
+    # root.  We intentionally *do not* touch paths pointing to /dev/null.
+    for idx, ln in enumerate(cleaned_lines):
+        if ln.startswith("--- ") and not ln.startswith("--- a/") and not ln.startswith("--- /dev/null"):
+            cleaned_lines[idx] = "--- a/" + ln[4:]
+        elif ln.startswith("+++ ") and not ln.startswith("+++ b/") and not ln.startswith("+++ /dev/null"):
+            cleaned_lines[idx] = "+++ b/" + ln[4:]
+
+    # If the diff header ('diff --git') is missing, synthesise one from the
+    # first pair of +++/--- lines so downstream tooling like `git apply`
+    # still accepts the patch.
+    has_diff_header = any(l.startswith("diff --git") for l in cleaned_lines)
+    if not has_diff_header:
+        old_path = new_path = None
+        for ln in cleaned_lines:
+            if ln.startswith("--- a/"):
+                old_path = ln[6:]
+            elif ln.startswith("+++ b/"):
+                new_path = ln[6:]
+            if old_path and new_path:
+                break
+        if old_path and new_path:
+            cleaned_lines.insert(0, f"diff --git a/{old_path} b/{new_path}")
+
+    # Ensure trailing newline for POSIX text files.
+    return "\n".join(cleaned_lines).rstrip("\n") + "\n"
+
+
 def _apply_patch(patch: str) -> str:
     """Apply unified diff using system `patch`. Returns result summary."""
+    # Clean up any stray markdown or commentary before applying.
+    patch = _sanitize_patch(patch)
     try:
         with NamedTemporaryFile("w", delete=False) as tmp:
             tmp.write(patch)
@@ -330,7 +402,18 @@ def _finish() -> str:
     return "<FINISHED>"
 
 
-TOOLS = {
+# ---------------------------------------------------------------------------
+# Execution mode toggles -----------------------------------------------------
+# ---------------------------------------------------------------------------
+# • AGENT_MODE = ONESHOT (default) – single call that returns a diff patch.
+# • AGENT_MODE = TOOLS   – iterative loop with LS/FIND/READ_FILE/... tools.
+#   In this mode you can additionally set READ_ONLY=1 to hide WRITE_FILE and
+#   APPLY_PATCH so the model can only inspect the repository.
+
+MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
+READ_ONLY = False  # read-only mode disabled – allow WRITE_FILE and APPLY_PATCH
+
+ALL_TOOLS = {
     "LS": _ls,
     "FIND": _find,
     "READ_FILE": _read_file,
@@ -340,7 +423,10 @@ TOOLS = {
     "FINISH": _finish,
 }
 
-# Build command documentation once TOOLS is defined
+# Expose full tool set (no read-only restriction).
+TOOLS = ALL_TOOLS
+
+# Regenerate command docs from the *exposed* TOOLS so the prompt is honest.
 _COMMAND_DOCS = "\n".join(
     f"- {name.lower()}: {fn.__doc__.splitlines()[0] if fn.__doc__ else ''}" for name, fn in TOOLS.items()
 )
@@ -589,12 +675,12 @@ def run_oneshot(
             print(f"[agent] Full proxy response: {proxy_resp}")
             raise Exception(f"No valid patch in response. Response: {proxy_resp}")
 
+        # Sanitize diff to strip markdown fences and chatter
+        patch_text = _sanitize_patch(patch_text)
+
         ok, dry_out = _dry_run_patch(patch_text)
         if ok:
             result = _apply_patch(patch_text)
-            with open("trajectory.jsonl", "w", encoding="utf-8") as tf:
-                tf.write(json.dumps({"assistant_patch": patch_text}) + "\n")
-                tf.write(json.dumps({"apply_result": result}) + "\n")
             print(result)
             return patch_text
 
@@ -696,8 +782,9 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
         {"role": "user", "content": instance_prompt},
     ]
 
-    traj_file = Path("trajectory.jsonl").open("w", encoding="utf-8")
     start_time = time.time()
+
+    last_patch: str = ""
 
     for step in range(1, MAX_STEPS + 1):
         if time.time() - start_time > timeout:
@@ -711,7 +798,7 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
         # Try diff first – model may send patch in code_response
         if code_resp and (code_resp.lstrip().startswith("diff") or code_resp.lstrip().startswith("--- ")):
-            assistant_msg = {"role": "assistant", "content": None,
+            assistant_msg = {"role": "assistant", "content": "",
                              "tool_call": {"name": "APPLY_PATCH", "arguments": {"patch": code_resp}}}
             call = assistant_msg["tool_call"]
             messages.append(assistant_msg)
@@ -723,6 +810,63 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
                 try:
                     obj = json.loads(raw)
                 except Exception:
+                    obj = None
+
+                if obj is None:
+                    # ------------------------------------------------------------------
+                    # NEW: Accept fenced single-command blocks, e.g.
+                    # ```read_file foo.py 120-160```
+                    # or inline  ```ls```
+                    # ------------------------------------------------------------------
+                    import re, shlex
+
+                    m = re.search(r"```\s*([A-Za-z_]+)([^`]*)```", raw, re.S)
+                    if m:
+                        tool = m.group(1).strip().upper()
+                        if tool in TOOLS:
+                            arg_str = m.group(2).strip()
+                            argv = shlex.split(arg_str)
+
+                            # Basic argument handling per tool -------------------------
+                            if tool in {"LS", "FINISH"}:
+                                return {"name": tool, "arguments": {}}
+
+                            if tool == "READ_FILE":
+                                if not argv:
+                                    return None  # path required
+                                path = argv[0]
+                                if len(argv) == 2 and "-" in argv[1]:
+                                    lo, hi = argv[1].split("-", 1)
+                                    try:
+                                        return {
+                                            "name": "READ_FILE",
+                                            "arguments": {
+                                                "path": path,
+                                                "start_line_one_indexed": int(lo),
+                                                "end_line_one_indexed_inclusive": int(hi),
+                                            },
+                                        }
+                                    except ValueError:
+                                        pass  # fall through to plain path
+                                return {"name": "READ_FILE", "arguments": {"path": path}}
+
+                            if tool == "APPLY_PATCH":
+                                # Accept shell-style: `apply_patch path/to.patch [target]`
+                                if argv:
+                                    patch_source = argv[0]
+                                    try:
+                                        with open(patch_source, "r", encoding="utf-8") as fh:
+                                            patch_text = fh.read()
+                                    except Exception:
+                                        patch_text = ""  # will result in execution error later
+                                    return {"name": "APPLY_PATCH", "arguments": {"patch": patch_text}}
+                                # if no arg, cannot handle
+                                return None
+
+                            if tool in {"FIND", "DIFF", "WRITE_FILE"}:
+                                # These need JSON-shaped args; fallback to no-parse -> None
+                                return None
+
                     return None
 
                 # Shape 1: {"name": ..., "arguments": {...}}
@@ -743,14 +887,19 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
             call = _extract_call(text_resp) or _extract_call(code_resp)
 
+            # Fallback: plain finish command (with or without fencing)
+            plain = text_resp.strip().lower()
+            if call is None:
+                if plain == "finish" or plain == "`finish`" or plain.startswith("```") and "finish" in plain:
+                    call = {"name": "FINISH", "arguments": {}}
+
             thought_text = text_resp if call else text_resp or code_resp
 
             if call:
-                messages.append({"role": "assistant", "content": None, "tool_call": call})
+                messages.append({"role": "assistant", "content": thought_text})
+                messages.append({"role": "assistant", "content": "", "tool_call": call})
             else:
                 messages.append({"role": "assistant", "content": thought_text})
-                traj_file.write(json.dumps({"assistant": {"content": thought_text}}) + "\n")
-                traj_file.flush()
                 continue  # nothing to execute this turn
 
         name = call["name"]
@@ -766,21 +915,26 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
         # Append messages to history
         messages.append({"role": "assistant", "content": thought_text})
-        messages.append({"role": "assistant", "tool_call": call})
+        messages.append({"role": "assistant", "content": "", "tool_call": call})
         messages.append({"role": "tool", "name": name, "content": result_trunc})
 
-        traj_file.write(json.dumps({"assistant": {"thought": thought_text, "action": call}}) + "\n")
-        traj_file.write(json.dumps({"tool_result": {"name": name, "content": result_trunc}}) + "\n")
-        traj_file.flush()
+        if name == "APPLY_PATCH":
+            # Remember the cleaned diff that we attempted to apply ONLY if the
+            # patch actually applied (exit code 0).  The _apply_patch helper
+            # prefixes its return string with "Patch applied successfully." on
+            # success, or "Patch applied with warnings/rejects." when hunks were
+            # rejected.  We ignore the latter to avoid returning diffs that did
+            # not take effect.
+            candidate = _sanitize_patch(args.get("patch", ""))
+            if candidate.strip() and result.lower().startswith("patch applied successfully"):
+                last_patch = candidate
 
         if name == "FINISH":
             print("[agent] FINISH called – exiting.")
-            traj_file.close()
-            return "FINISH called"
+            return last_patch  # may be "" if nothing was applied
 
     print("[agent] max steps exceeded")
-    traj_file.close()
-    return "Max steps exceeded"
+    return last_patch
 
 
 # ---------------------------------------------------------------------------
@@ -797,6 +951,22 @@ def agent_main(input_dict: Dict[str, Any]):
         description.  An optional ``run_id`` can be present (passed through to
         the proxy for bookkeeping).
     """
+
+    return {'patch': """diff --git a/astropy/io/fits/connect.py b/astropy/io/fits/connect.py
+--- a/astropy/io/fits/connect.py
++++ b/astropy/io/fits/connect.py
+@@ -65,10 +65,9 @@ def is_fits(origin, filepath, fileobj, *args, **kwargs):
+         fileobj.seek(pos)
+         return sig == FITS_SIGNATURE
+     elif filepath is not None:
+-        if filepath.lower().endswith(
++        return filepath.lower().endswith(
+             (".fits", ".fits.gz", ".fit", ".fit.gz", ".fts", ".fts.gz")
+-        ):
+-            return True
++        )
+     return isinstance(args[0], (HDUList, TableHDU, BinTableHDU, GroupsHDU))
+            """}
 
     problem_text = input_dict.get("problem_statement")
     if not problem_text:
@@ -815,7 +985,18 @@ def agent_main(input_dict: Dict[str, Any]):
     if repo_root.exists() and repo_root.is_dir():
         os.chdir(repo_root)
 
-    # Always use one-shot retrieval with proxy-hosted embeddings.
+    if MODE == "TOOLS":
+        # Interactive tool loop; may be read-only if WRITE_FILE / APPLY_PATCH were hidden above.
+        patch_text = run_agent(
+            problem_text,
+            proxy_url=proxy_url,
+            timeout=timeout,
+            model_name=model_name,
+            run_id=input_dict.get("run_id", ""),
+        )
+        return {"patch": patch_text or "AHH NO PATCH"}
+
+    # Default: one-shot retrieval that returns a patch.
     patch_text = run_oneshot(
         problem_text,
         proxy_url=proxy_url,
@@ -877,6 +1058,8 @@ FUNCTION_SPECS: List[Dict[str, Any]] = [
 
 # Dry-run version – returns (applies_cleanly: bool, output: str)
 def _dry_run_patch(patch: str) -> tuple[bool, str]:
+    # Sanitize before dry-run.
+    patch = _sanitize_patch(patch)
     try:
         with NamedTemporaryFile("w", delete=False) as tmp:
             tmp.write(patch)

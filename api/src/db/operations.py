@@ -105,31 +105,11 @@ class DatabaseManager:
             logger.error(f"Error storing agent version {agent_version.version_id}: {str(e)}")
             return 0
     
-    def store_evaluation(self, evaluation: Evaluation, score: bool = False) -> int:
+    def store_evaluation(self, evaluation: Evaluation) -> int:
         """
         Store an evaluation in the database. Return 1 if successful, 0 if not. If the evaluation already exists, update the status, started_at, and finished_at.
-        If score=True, dynamically calculate the score from evaluation runs.
         """
         try:
-            if score:
-                with self.conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT COUNT(*) as total_runs, 
-                               COUNT(CASE WHEN solved = true THEN 1 END) as solved_runs
-                        FROM evaluation_runs 
-                        WHERE evaluation_id = %s
-                    """, (evaluation.evaluation_id,))
-                    result = cursor.fetchone()
-                    total_runs = result[0]
-                    solved_runs = result[1]
-                    
-                    if total_runs > 0:
-                        evaluation.score = solved_runs / total_runs
-                    else:
-                        evaluation.score = 0.0
-                    
-                    logger.info(f"Calculated score for evaluation {evaluation.evaluation_id}: {evaluation.score} ({solved_runs}/{total_runs})")
-            
             with self.conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
@@ -187,9 +167,29 @@ class DatabaseManager:
         try:
             with self.conn.cursor() as cursor:
                 cursor.execute("""
-                    INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, finished_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO evaluation_runs (
+                        run_id,
+                        evaluation_id,
+                        swebench_instance_id,
+                        status,
+                        response,
+                        error,
+                        pass_to_fail_success,
+                        fail_to_pass_success,
+                        pass_to_pass_success,
+                        fail_to_fail_success,
+                        solved,
+                        started_at,
+                        sandbox_created_at,
+                        patch_generated_at,
+                        eval_started_at,
+                        result_scored_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    )
                     ON CONFLICT (run_id) DO UPDATE SET
+                        status = EXCLUDED.status,
                         response = EXCLUDED.response,
                         error = EXCLUDED.error,
                         pass_to_fail_success = EXCLUDED.pass_to_fail_success,
@@ -197,9 +197,40 @@ class DatabaseManager:
                         pass_to_pass_success = EXCLUDED.pass_to_pass_success,
                         fail_to_fail_success = EXCLUDED.fail_to_fail_success,
                         solved = EXCLUDED.solved,
-                        finished_at = EXCLUDED.finished_at
-                """, (evaluation_run.run_id, evaluation_run.evaluation_id, evaluation_run.swebench_instance_id, evaluation_run.response, evaluation_run.error, evaluation_run.pass_to_fail_success, evaluation_run.fail_to_pass_success, evaluation_run.pass_to_pass_success, evaluation_run.fail_to_fail_success, evaluation_run.solved, evaluation_run.started_at, evaluation_run.finished_at))
+                        sandbox_created_at = EXCLUDED.sandbox_created_at,
+                        patch_generated_at = EXCLUDED.patch_generated_at,
+                        eval_started_at = EXCLUDED.eval_started_at,
+                        result_scored_at = EXCLUDED.result_scored_at
+                """, (
+                        evaluation_run.run_id,
+                        evaluation_run.evaluation_id,
+                        evaluation_run.swebench_instance_id,
+                        evaluation_run.status,
+                        evaluation_run.response,
+                        evaluation_run.error,
+                        evaluation_run.pass_to_fail_success,
+                        evaluation_run.fail_to_pass_success,
+                        evaluation_run.pass_to_pass_success,
+                        evaluation_run.fail_to_fail_success,
+                        evaluation_run.solved,
+                        evaluation_run.started_at,
+                        evaluation_run.sandbox_created_at,
+                        evaluation_run.patch_generated_at,
+                        evaluation_run.eval_started_at,
+                        evaluation_run.result_scored_at
+                    ))
                 logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
+
+                # Update the score for the associated evaluation
+                cursor.execute("""
+                    UPDATE evaluations
+                    SET score = (SELECT AVG(CASE WHEN solved THEN 1 ELSE 0 END)
+                                FROM evaluation_runs
+                                WHERE evaluation_id = %s)
+                    WHERE evaluation_id = %s
+                """, (evaluation_run.evaluation_id, evaluation_run.evaluation_id))
+                logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
+
                 return 1
         except Exception as e:
             logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
@@ -263,7 +294,7 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                SELECT run_id, evaluation_id, swebench_instance_id, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, finished_at 
+                SELECT run_id, evaluation_id, swebench_instance_id, status, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, sandbox_created_at, patch_generated_at, eval_started_at, result_scored_at 
                 FROM evaluation_runs WHERE run_id = %s
             """, (run_id,))
             row = cursor.fetchone()
@@ -272,15 +303,19 @@ class DatabaseManager:
                     run_id=row[0],
                     evaluation_id=row[1],
                     swebench_instance_id=row[2],
-                    response=row[3],
-                    error=row[4],
-                    pass_to_fail_success=row[5],
-                    fail_to_pass_success=row[6],
-                    pass_to_pass_success=row[7],
-                    fail_to_fail_success=row[8],
-                    solved=row[9],
-                    started_at=row[10],
-                    finished_at=row[11]
+                    status=row[3],
+                    response=row[4],
+                    error=row[5],
+                    pass_to_fail_success=row[6],
+                    fail_to_pass_success=row[7],
+                    pass_to_pass_success=row[8],
+                    fail_to_fail_success=row[9],
+                    solved=row[10],
+                    started_at=row[11],
+                    sandbox_created_at=row[12],
+                    patch_generated_at=row[13],
+                    eval_started_at=row[14],
+                    result_scored_at=row[15]
                 )
             logger.info(f"Evaluation run {run_id} not found in the database")
             return None
@@ -731,6 +766,7 @@ class DatabaseManager:
                         run_id,
                         evaluation_id,
                         swebench_instance_id,
+                        status,
                         response,
                         error,
                         pass_to_fail_success,
@@ -739,7 +775,10 @@ class DatabaseManager:
                         fail_to_fail_success,
                         solved,
                         started_at,
-                        finished_at
+                        sandbox_created_at,
+                        patch_generated_at,
+                        eval_started_at,
+                        result_scored_at
                     FROM evaluation_runs 
                     WHERE evaluation_id = %s
                 """, (evaluation_id,))
@@ -750,15 +789,19 @@ class DatabaseManager:
                         run_id=run_row[0],
                         evaluation_id=run_row[1],
                         swebench_instance_id=run_row[2],
-                        response=run_row[3],
-                        error=run_row[4],
-                        pass_to_fail_success=run_row[5],
-                        fail_to_pass_success=run_row[6],
-                        pass_to_pass_success=run_row[7],
-                        fail_to_fail_success=run_row[8],
-                        solved=run_row[9],
-                        started_at=run_row[10],
-                        finished_at=run_row[11]
+                        status=run_row[3],
+                        response=run_row[4],
+                        error=run_row[5],
+                        pass_to_fail_success=run_row[6],
+                        fail_to_pass_success=run_row[7],
+                        pass_to_pass_success=run_row[8],
+                        fail_to_fail_success=run_row[9],
+                        solved=run_row[10],
+                        started_at=run_row[11],
+                        sandbox_created_at=run_row[12],
+                        patch_generated_at=run_row[13],
+                        eval_started_at=run_row[14],
+                        result_scored_at=run_row[15]
                     ) for run_row in run_rows
                 ]
                 
@@ -893,6 +936,7 @@ class DatabaseManager:
                     run_id,
                     evaluation_id,
                     swebench_instance_id,
+                    status,
                     response,
                     error,
                     pass_to_fail_success,
@@ -901,7 +945,10 @@ class DatabaseManager:
                     fail_to_fail_success,
                     solved,
                     started_at,
-                    finished_at
+                    sandbox_created_at,
+                    patch_generated_at,
+                    eval_started_at,
+                    result_scored_at
                 FROM evaluation_runs 
                 WHERE evaluation_id = %s
             """, (evaluation_id,))
@@ -912,15 +959,19 @@ class DatabaseManager:
                     run_id=run_row[0],
                     evaluation_id=run_row[1],
                     swebench_instance_id=run_row[2],
-                    response=run_row[3],
-                    error=run_row[4],
-                    pass_to_fail_success=run_row[5],
-                    fail_to_pass_success=run_row[6],
-                    pass_to_pass_success=run_row[7],
-                    fail_to_fail_success=run_row[8],
-                    solved=run_row[9],
-                    started_at=run_row[10],
-                    finished_at=run_row[11]
+                    status=run_row[3],
+                    response=run_row[4],
+                    error=run_row[5],
+                    pass_to_fail_success=run_row[6],
+                    fail_to_pass_success=run_row[7],
+                    pass_to_pass_success=run_row[8],
+                    fail_to_fail_success=run_row[9],
+                    solved=run_row[10],
+                    started_at=run_row[11],
+                    sandbox_created_at=run_row[12],
+                    patch_generated_at=run_row[13],
+                    eval_started_at=run_row[14],
+                    result_scored_at=run_row[15]
                 ) for run_row in run_rows
             ]
             
@@ -1076,6 +1127,7 @@ class DatabaseManager:
                         run_id,
                         evaluation_id,
                         swebench_instance_id,
+                        status,
                         response,
                         error,
                         pass_to_fail_success,
@@ -1084,7 +1136,10 @@ class DatabaseManager:
                         fail_to_fail_success,
                         solved,
                         started_at,
-                        finished_at
+                        sandbox_created_at,
+                        patch_generated_at,
+                        eval_started_at,
+                        result_scored_at
                     FROM evaluation_runs 
                     WHERE evaluation_id = %s
                     ORDER BY started_at
@@ -1096,15 +1151,19 @@ class DatabaseManager:
                         run_id=run_row[0],
                         evaluation_id=run_row[1],
                         swebench_instance_id=run_row[2],
-                        response=run_row[3],
-                        error=run_row[4],
-                        pass_to_fail_success=run_row[5],
-                        fail_to_pass_success=run_row[6],
-                        pass_to_pass_success=run_row[7],
-                        fail_to_fail_success=run_row[8],
-                        solved=run_row[9],
-                        started_at=run_row[10],
-                        finished_at=run_row[11]
+                        status=run_row[3],
+                        response=run_row[4],
+                        error=run_row[5],
+                        pass_to_fail_success=run_row[6],
+                        fail_to_pass_success=run_row[7],
+                        pass_to_pass_success=run_row[8],
+                        fail_to_fail_success=run_row[9],
+                        solved=run_row[10],
+                        started_at=run_row[11],
+                        sandbox_created_at=run_row[12],
+                        patch_generated_at=run_row[13],
+                        eval_started_at=run_row[14],
+                        result_scored_at=run_row[15]
                     ) for run_row in run_rows
                 ]
                 
@@ -1165,6 +1224,7 @@ class DatabaseManager:
                             run_id,
                             evaluation_id,
                             swebench_instance_id,
+                            status,
                             response,
                             error,
                             pass_to_fail_success,
@@ -1173,7 +1233,10 @@ class DatabaseManager:
                             fail_to_fail_success,
                             solved,
                             started_at,
-                            finished_at
+                            sandbox_created_at,
+                            patch_generated_at,
+                            eval_started_at,
+                            result_scored_at
                         FROM evaluation_runs 
                         WHERE evaluation_id = %s
                         ORDER BY started_at
@@ -1185,15 +1248,19 @@ class DatabaseManager:
                             run_id=run_row[0],
                             evaluation_id=run_row[1],
                             swebench_instance_id=run_row[2],
-                            response=run_row[3],
-                            error=run_row[4],
-                            pass_to_fail_success=run_row[5],
-                            fail_to_pass_success=run_row[6],
-                            pass_to_pass_success=run_row[7],
-                            fail_to_fail_success=run_row[8],
-                            solved=run_row[9],
-                            started_at=run_row[10],
-                            finished_at=run_row[11]
+                            status=run_row[3],
+                            response=run_row[4],
+                            error=run_row[5],
+                            pass_to_fail_success=run_row[6],
+                            fail_to_pass_success=run_row[7],
+                            pass_to_pass_success=run_row[8],
+                            fail_to_fail_success=run_row[9],
+                            solved=run_row[10],
+                            started_at=run_row[11],
+                            sandbox_created_at=run_row[12],
+                            patch_generated_at=run_row[13],
+                            eval_started_at=run_row[14],
+                            result_scored_at=run_row[15]
                         ) for run_row in run_rows
                     ]
                     

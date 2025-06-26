@@ -3,15 +3,24 @@ import json
 import shutil
 import time
 import asyncio
-from typing import List, Tuple, Optional
-import docker
+from datetime import datetime
+from typing import TYPE_CHECKING, List, Tuple, Optional
 from pathlib import Path
 from shared.logging_utils import get_logger
+import docker
+from docker import DockerClient
+from docker.models.containers import Container
 
 from validator.config import RIDGES_API_URL
+from validator.db.schema import EvaluationRun
 from validator.sandbox.clone_repo import clone_repo
 from validator.utils.temp_files import create_temp_file
 from validator.sandbox.validator import validate_sandbox_dir
+from swebench.harness.run_evaluation import load_swebench_dataset, run_instance, make_test_spec
+from swebench.harness.docker_build import build_env_images
+
+if TYPE_CHECKING:
+    from validator.socket.websocket_app import WebsocketApp
 
 # Set up logger
 logger = get_logger(__name__)
@@ -42,7 +51,7 @@ SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
 SANDBOX_MAX_CPU_USAGE = 90 # %
-SANDBOX_MAX_RAM_USAGE = 512 * 4# MiB 
+SANDBOX_MAX_RAM_USAGE = 512 * 4 # MiB 
 SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 
 # The name of the network that the sandbox will be connected to
@@ -57,116 +66,116 @@ PROXY_CONTAINER_NAME = "sandbox-proxy"
 REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
 
 class Sandbox:
-    swebench_instance_id: str
+    evaluation_run: 'EvaluationRun'
+    src_dir: Path
+    repo_dir_path: Path = None
     manager: 'SandboxManager'
-    _id_counter = 1
+    container: Optional["Container"] = None
+    running: bool
+    cpu_usage: float = 0
+    ram_usage: float = 0
+    _task: Optional[asyncio.Task] = None
 
-
-    def __init__(self, swebench_instance_id, manager: 'SandboxManager', src_dir: str):        
-        self.swebench_instance_id = swebench_instance_id
+    def __init__(self, evaluation_run: 'EvaluationRun', src_dir: Path, manager: 'SandboxManager'):        
+        self.evaluation_run = evaluation_run
+        self.src_dir = src_dir.absolute()
         self.manager = manager
 
-        self.id = Sandbox._id_counter
-        Sandbox._id_counter += 1
-
-        self.src_dir = src_dir
-        # Repo directory will be determined lazily in _run() because we need
-        # information from the `challenge` dict (repo name & commit).
-        self.repo_dir_path = None  # type: Optional[Path]
-        
         self.running = False
-        
-        self.success = None # None until run_*() is called, then True/False after the sandbox finishes running
-        self.output = None # Set if success is True
-        self.error = None # Set if success is False
 
-        # Validate the sandbox directory
         try:
             validate_sandbox_dir(src_dir)
         except ValueError as e:
-            self.success = False
-            self.error = str(e)
+            self.evaluation_run.status = "result_scored"
+            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.error = str(e)
+            manager.websocket_app.send({
+                "event": "upsert-evaluation-run",
+                "evaluation_run": self.evaluation_run.to_dict()
+            })
 
-    def run_sync(self, challenge: dict):
-        self.running = True
-        self._run(challenge)
-
-    async def run_async(self, challenge: dict):
+    async def run(self, challenge: dict):
         self.running = True
         
         async def _async_main():
-            logger.info(f'Running sandbox {self.id}')
+            logger.info(f'Running sandbox for run {self.evaluation_run.run_id}')
+            self.evaluation_run.status = "sandbox_created"
+            self.evaluation_run.sandbox_created_at = datetime.now()
+            await self.manager.websocket_app.send({
+                "event": "upsert-evaluation-run",
+                "evaluation_run": self.evaluation_run.to_dict()
+            })
+
             await asyncio.to_thread(self._run, challenge)
-            if self.success:
-                logger.info(f'Sandbox {self.id} ran successfully')
-            else:
-                logger.error(f'Sandbox {self.id} ran unsuccessfully, error: {self.error}')
-        
-        # Start the async task
+
+            # Send update after patch generation (or error)
+            await self.manager.websocket_app.send({
+                "event": "upsert-evaluation-run",
+                "evaluation_run": self.evaluation_run.to_dict()
+            })
+
+            if self.evaluation_run.error:
+                logger.error(f'Sandbox for run {self.evaluation_run.run_id} encountered error during patch generation: {self.evaluation_run.error}')
+            elif self.evaluation_run.response:
+                logger.info(f'Sandbox for run {self.evaluation_run.run_id} generated patch successfully; starting evaluation.')
+
+                self.evaluation_run.status = "eval_started"
+                self.evaluation_run.eval_started_at = datetime.now()
+                await self.manager.websocket_app.send({
+                    "event": "upsert-evaluation-run",
+                    "evaluation_run": self.evaluation_run.to_dict()
+                })
+
+                # ---------------- Evaluation ----------------
+                await asyncio.to_thread(self._run_evaluation)
+
+                # Send update after evaluation completes
+                await self.manager.websocket_app.send({
+                    "event": "upsert-evaluation-run",
+                    "evaluation_run": self.evaluation_run.to_dict()
+                })
+
         self._task = asyncio.create_task(_async_main())
     
     async def wait(self):
-        if self.running and hasattr(self, '_task'):
+        if not self._task:
+            logger.warning(f"Sandbox {self.evaluation_run.run_id} has no task to wait for")
+        if self.running and hasattr(self, '_task') and self._task:
             await self._task
 
     def _run(self, challenge: dict):
-        if (self.success is not None):
+        if (self.evaluation_run.error is not None):
             self.running = False
             return
         
         try:
             # Create an input and output file on the host filesystem
-            self.input_file = create_temp_file()
-            self.output_file = create_temp_file()
+            input_file = create_temp_file()
+            output_file = create_temp_file()
 
             # Write the input to the input file
-            with open(self.input_file, 'w') as f:
+            with open(input_file, 'w') as f:
                 json.dump(challenge, f)
 
-            # -------------------------------------------------------------
-            # Prepare (and if necessary, clone) the repository for this run.
-            # Repositories are cached inside `validator/repos` so they can be
-            # reused by subsequent runs and avoid costly network operations.
-            # -------------------------------------------------------------
             repo_name = challenge.get("repo")
             base_commit = challenge.get("base_commit")
 
-            # Build the target path (validator/repos/<org>/<repo>)
             self.repo_dir_path = REPOS_BASE_DIR / repo_name
-
-            # Ensure parent directories exist
             self.repo_dir_path.parent.mkdir(parents=True, exist_ok=True)
 
             if not self.repo_dir_path.exists():
                 # Fresh clone when we see this repository for the first time
                 logger.info(f"Cloning repository {repo_name} into cache {self.repo_dir_path}")
                 clone_repo(self.repo_dir_path, repo_name, base_commit)
-            else:
-                # Repository already exists – just ensure the requested commit
-                # is available and checked out.
-                from git import Repo as GitRepo  # local import to avoid top-level cost
-                try:
-                    repo = GitRepo(self.repo_dir_path)
-                    # Fetch updates from origin in case the requested commit is missing
-                    repo.git.fetch()
-                    if base_commit:
-                        repo.git.checkout(base_commit)
-                except Exception as e:
-                    # If something goes wrong (e.g., corrupt repo), reclone it
-                    logger.warning(f"Encountered issue with cached repo at {self.repo_dir_path}: {e}. Re-cloning…")
-                    shutil.rmtree(self.repo_dir_path, ignore_errors=True)
-                    clone_repo(self.repo_dir_path, repo_name, base_commit)
 
-            # Create the Docker container, and run the Main.py script
-            self.start_time = time.time()
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
                 volumes={
                     # Mount the appropriate files
                     os.path.abspath(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
-                    self.input_file: {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
-                    self.output_file: {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
+                    input_file: {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
+                    output_file: {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
@@ -183,61 +192,86 @@ class Sandbox:
             self.container.wait()
             self.container.remove()
 
-            # An error might have occurred on another thread (e.g., the monitor thread killed the sandbox because it exceeded a resource limit)
-            if (self.error):
-                self.success = False
-            else:
-                with open(self.output_file, 'r') as f:
-                    output = json.load(f)
-                    if (output.get('success')):
-                        self.success = True
-                        self.output = output.get('output')
-                    else:
-                        self.success = False
-                        self.error = output.get('error')
+            self.evaluation_run.status = "patch_generated"
+            self.evaluation_run.patch_generated_at = datetime.now()
 
-            # Delete the input and output files
-            os.remove(self.input_file)
-            os.remove(self.output_file)
+            if not self.evaluation_run.error:
+                with open(output_file, 'r') as f:
+                    try:
+                        output = json.load(f)
+                        logger.info(f"Output: {output}")
+                        if (output.get('success')):
+                            self.evaluation_run.response = output.get('output').get('patch')
+                        else:
+                            self.evaluation_run.status = "result_scored"
+                            self.evaluation_run.solved = False
+                            self.evaluation_run.result_scored_at = datetime.now()
+                            self.evaluation_run.error = output.get('error')
+                    except Exception as e:
+                        self.evaluation_run.status = "result_scored"
+                        self.evaluation_run.solved = False
+                        self.evaluation_run.result_scored_at = datetime.now()
+                        self.evaluation_run.error = "JSON parsing error: " + str(e)
+
         except Exception as e:
-            self.success = False
-            self.error = str(e)
-        
-        self.running = False
+            self.evaluation_run.status = "result_scored"
+            self.evaluation_run.solved = False
+            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.error = str(e)
+        finally:
+            os.remove(input_file)
+            os.remove(output_file)
+            self.running = False
     
     def cleanup(self):
         # Clean up temporary agent source directory
         shutil.rmtree(self.src_dir, ignore_errors=True)
 
+    def _run_evaluation(self):
+        """Blocking helper that runs evaluation for this sandbox's run."""
+        try:
+            self.manager.evaluate_run(self.evaluation_run)
+        except Exception as e:
+            # Capture evaluation errors so they don't crash the event-loop thread
+            self.evaluation_run.solved = False
+            self.evaluation_run.status = "result_scored"
+            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.error = str(e)
+
 
 
 class SandboxManager:
+    websocket_app: "WebsocketApp"
+    proxy_container: Optional["Container"] = None
+    docker: DockerClient
     sandboxes: List[Sandbox]
+    _monitor_task: asyncio.Task
 
-    def __init__(self):
-        # Connect to the locally running Docker daemon
-        self.docker = docker.from_env()
+    def __init__(self, websocket_app: "WebsocketApp"):
+        self.websocket_app = websocket_app
+        self.docker = docker.from_env(max_pool_size=100)
+        self.create_internal_network()
+        self.proxy_container = self._start_proxy_container()
+        logger.info("Nginx proxy container started successfully")
+            
+        self.sandboxes = []
+        self._monitor_task = asyncio.create_task(self._monitor())
 
-        # Create (or ensure) an isolated internal sandbox network – containers on this
-        # network have *no* external connectivity.
+    def create_internal_network(self):
+        """
+        Create (or ensure) an isolated internal sandbox network – containers on this
+        network have *no* external connectivity.
+        """
         try:
             self.docker.networks.get(SANDBOX_NETWORK_NAME)
         except docker.errors.NotFound:
             logger.info(f"Creating isolated docker network '{SANDBOX_NETWORK_NAME}' (internal=True)")
             self.docker.networks.create(SANDBOX_NETWORK_NAME, driver='bridge', internal=True)
-
-        # Build and start the nginx forward proxy container.
-        self.proxy_container = self._start_proxy_container()
-        logger.info("Nginx proxy container started successfully")
-            
-        self.sandboxes = []
-        # Start the monitor as an asyncio task
-        self._monitor_task = asyncio.create_task(self._monitor())
     
     async def _monitor(self):
         while True:
             for sandbox in self.sandboxes:
-                if sandbox.running and sandbox.success is None:
+                if sandbox.running and sandbox.evaluation_run.error is None:
                     try:
                         await asyncio.to_thread(self._monitor_sandbox, sandbox)
                     except Exception:
@@ -245,7 +279,7 @@ class SandboxManager:
             
             await asyncio.sleep(1)
 
-    def _monitor_sandbox(self, sandbox):
+    def _monitor_sandbox(self, sandbox: Sandbox):
         # Get the stats
         stats = sandbox.container.stats(stream=False)
         
@@ -267,16 +301,16 @@ class SandboxManager:
         #     logger.warning(f'Killed sandbox {sandbox.id} because CPU limit exceeded')
         # elif sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
         if sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
-            sandbox.error = 'RAM limit exceeded'
+            sandbox.evaluation_run.error = 'RAM limit exceeded'
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because RAM limit exceeded')
         elif runtime > SANDBOX_MAX_RUNTIME:
-            sandbox.error = 'Runtime limit exceeded'
+            sandbox.evaluation_run.error = 'Runtime limit exceeded'
             sandbox.container.kill()
             logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
         
-    def add_sandbox(self, swebench_instance_id: str, src_dir: str):
-        sandbox = Sandbox(swebench_instance_id=swebench_instance_id, manager=self, src_dir=src_dir)
+    def add_sandbox(self, evaluation_run: "EvaluationRun", src_dir: Path):
+        sandbox = Sandbox(evaluation_run=evaluation_run, src_dir=src_dir, manager=self)
         self.sandboxes.append(sandbox)
         return sandbox
 
@@ -284,22 +318,14 @@ class SandboxManager:
         for sandbox in self.sandboxes:
             await sandbox.wait()
     
-    def get_patches_and_errors(self) -> List[Tuple[bool, str, str, str]]:
-        patches_and_errors = []
-        for sandbox in self.sandboxes:
-            if sandbox.success:
-                patches_and_errors.append((True,sandbox.swebench_instance_id, sandbox.output.get("patch"), None))
-            else:
-                patches_and_errors.append((False, sandbox.swebench_instance_id, None, sandbox.error))
-        return patches_and_errors
+    def get_evaluation_runs(self) -> List["EvaluationRun"]:
+        return [sandbox.evaluation_run for sandbox in self.sandboxes]
     
     def cleanup(self):
-        # Stop the proxy container gracefully
-        if hasattr(self, 'proxy_container'):
-            try:
-                self.proxy_container.remove(force=True)
-            except Exception:
-                pass
+        try:
+            self.proxy_container.remove(force=True)
+        except Exception:
+            pass
         
         for sandbox in self.sandboxes:
             sandbox.cleanup()
@@ -334,3 +360,66 @@ class SandboxManager:
         except Exception as e:
             logger.error(f"Error starting proxy container: {e}")
             raise
+
+    def evaluate_run(self, evaluation_run: "EvaluationRun"):
+        """Synchronously evaluate the generated patch for a single EvaluationRun."""
+        try:
+            # Mark evaluation start
+            evaluation_run.status = "eval_started"
+            evaluation_run.eval_started_at = datetime.now()
+
+            # Fetch the corresponding SWE-bench instance
+            instance_id = evaluation_run.swebench_instance_id
+            instance = load_swebench_dataset(
+                "SWE-bench/SWE-bench_Verified", "test", [instance_id]
+            )[0]
+            if not instance:
+                raise RuntimeError(f"Instance {instance_id} not found in SWE-bench dataset")
+
+            # Prepare prediction & test spec
+            prediction = {
+                "instance_id": instance_id,
+                "model_name_or_path": evaluation_run.run_id,
+                "model_patch": evaluation_run.response,
+            }
+
+            test_spec = make_test_spec(instance)
+            # Build the environment image for this instance (cached if already built)
+            build_env_images(self.docker, [test_spec], max_workers=4)
+
+            # Execute the evaluation
+            run_result = run_instance(
+                test_spec=test_spec,
+                pred=prediction,
+                rm_image=False,  # Clean up after each run
+                force_rebuild=False,
+                client=self.docker,
+                run_id=evaluation_run.run_id,
+                timeout=1800,
+                rewrite_reports=False,
+            )
+
+            # Parse results
+            if run_result:
+                instance_id, report = run_result
+                report = report[instance_id]
+
+                if report["patch_is_None"]:
+                    evaluation_run.solved = False
+                    evaluation_run.error = "Patch was empty"
+                else:
+                    evaluation_run.fail_to_pass_success = json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"])
+                    evaluation_run.pass_to_pass_success = json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"])
+                    evaluation_run.fail_to_fail_success = json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"])
+                    evaluation_run.pass_to_fail_success = json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"])
+                    evaluation_run.solved = report["resolved"]
+            else:
+                evaluation_run.solved = False
+                evaluation_run.error = "Patch did not apply"
+
+        except Exception as e:
+            evaluation_run.solved = False
+            evaluation_run.error = str(e)
+        finally:
+            evaluation_run.status = "result_scored"
+            evaluation_run.result_scored_at = datetime.now()

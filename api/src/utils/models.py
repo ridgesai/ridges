@@ -42,8 +42,12 @@ class EvaluationRun(BaseModel):
     pass_to_pass_success: Optional[str]
     fail_to_fail_success: Optional[str]
     solved: Optional[bool]
+    status: Literal["started", "sandbox_created", "patch_generated", "eval_started", "result_scored"]
     started_at: datetime
-    finished_at: Optional[datetime]
+    sandbox_created_at: Optional[datetime] = None
+    patch_generated_at: Optional[datetime] = None
+    eval_started_at: Optional[datetime] = None
+    result_scored_at: Optional[datetime] = None
 
 class Evaluation(BaseModel):
     evaluation_id: str

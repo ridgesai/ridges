@@ -54,6 +54,13 @@ async def post_agent (
                 detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
             )
 
+    latest_version_num = int(file_info.split(":")[-1])
+    if existing_agent and latest_version_num != existing_agent.latest_version:
+        raise HTTPException(
+            status_code=409,
+            detail="This upload request has already been processed"
+        )
+
     agent_name = name if not existing_agent else existing_agent.name
 
     # Check filename

@@ -89,9 +89,9 @@ def get_latest_scores_by_hotkey() -> dict[str, float]:
         latest_runs = session.query(
             EvaluationRun.evaluation_id,
             EvaluationRun.solved,
-            EvaluationRun.finished_at
+            EvaluationRun.result_scored_at
         ).order_by(
-            EvaluationRun.finished_at.desc()
+            EvaluationRun.result_scored_at.desc()
         ).all()
         
         # Group by version_id to get the most recent run for each version
