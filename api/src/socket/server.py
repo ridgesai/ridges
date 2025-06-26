@@ -37,7 +37,7 @@ class WebSocketServer:
     async def handle_connection(self, websocket):
         # Add new client to the set
         self.clients[websocket] = {"val_hotkey": None, "version_commit_hash": None}
-        logger.info(f"Validator at {websocket.remote_address} connected to platform socket. Total validators connected: {len(self.clients)}")
+        logger.info(f"Client at {websocket.remote_address} connected to platform socket. Total clients connected: {len(self.clients)}")
         
         try:
             # Keep the connection alive and wait for messages
@@ -107,12 +107,15 @@ class WebSocketServer:
             del self.clients[websocket]
 
     async def notify_all_clients(self, event: str, data: dict):
+        non_validators = 0
         for websocket in self.clients.keys():
-            try:
-                await websocket.send(json.dumps({"event": event, "data": data}))
-            except websockets.ConnectionClosed:
-                pass
-        logger.info(f"Platform socket broadcasted {event} to {len(self.clients)} connected clients")
+            if self.clients[websocket]["val_hotkey"] is None:
+                non_validators += 1
+                try:
+                    await websocket.send(json.dumps({"event": event, "data": data}))
+                except websockets.ConnectionClosed:
+                    pass
+        logger.info(f"Platform socket broadcasted {event} to {len(self.clients) - non_validators} non-validator clients")
 
     async def create_new_evaluations(self, version_id: str):
         for websocket, client_data in self.clients.items():
