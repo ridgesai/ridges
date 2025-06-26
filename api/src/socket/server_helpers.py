@@ -117,7 +117,7 @@ def create_evaluation(version_id: str, validator_hotkey: str) -> str:
 
     return evaluation_object.evaluation_id
 
-def start_evaluation(evaluation_id: str):
+def start_evaluation(evaluation_id: str) -> Evaluation:
     """
     Start an evaluation in the database.
     """
@@ -127,7 +127,9 @@ def start_evaluation(evaluation_id: str):
     evaluation.started_at = datetime.now()
     db.store_evaluation(evaluation)
 
-def finish_evaluation(evaluation_id: str, errored: bool):
+    return evaluation
+
+def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     """
     Finish an evaluation in the database.
     """
@@ -137,6 +139,8 @@ def finish_evaluation(evaluation_id: str, errored: bool):
     evaluation.finished_at = datetime.now()
     db.store_evaluation(evaluation)
     db.update_agent_version_score(version_id=evaluation.version_id)
+
+    return evaluation
 
 def reset_running_evaluations(validator_hotkey: str):
     """

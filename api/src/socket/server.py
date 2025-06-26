@@ -50,6 +50,14 @@ class WebSocketServer:
                     self.clients[websocket]["val_hotkey"] = response_json["validator_hotkey"]
                     self.clients[websocket]["version_commit_hash"] = response_json["version_commit_hash"]
                     logger.info(f"Validator at {websocket.remote_address} has sent their validator version and version commit hash to the platform socket. Validator hotkey: {self.clients[websocket]['val_hotkey']}, Version commit hash: {self.clients[websocket]['version_commit_hash']}")
+
+                    relative_version_num = get_relative_version_num(self.clients[websocket]["version_commit_hash"])
+                    await self.notify_all_clients("validator-connected", {
+                        "validator_hotkey": self.clients[websocket]["val_hotkey"],
+                        "relative_version_num": relative_version_num,
+                        "version_commit_hash": self.clients[websocket]["version_commit_hash"]
+                    })
+
                     next_evaluation = get_next_evaluation(self.clients[websocket]["val_hotkey"])
                     if next_evaluation:
                         await websocket.send(json.dumps({"event": "evaluation-available"}))
@@ -65,31 +73,46 @@ class WebSocketServer:
                 
                 if response_json["event"] == "start-evaluation":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} has started an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    start_evaluation(response_json["evaluation_id"])
+                    eval = start_evaluation(response_json["evaluation_id"])
+
+                    eval_dict = eval.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-started", eval_dict)
 
                 if response_json["event"] == "finish-evaluation":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} has finished an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    finish_evaluation(response_json["evaluation_id"], response_json["errored"])
+                    eval = finish_evaluation(response_json["evaluation_id"], response_json["errored"])
+
+                    evaluation_dict = eval.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-finished", evaluation_dict)
 
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
                     eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
-                    if eval_run.result_scored_at:
-                        # Convert Pydantic model to dict with datetime serialization
-                        eval_run_dict = eval_run.model_dump(mode='json')
-                        for client_websocket in self.clients.keys():
-                            try:
-                                await client_websocket.send(json.dumps({"event": "evaluation-run-finished", "evaluation_run": eval_run_dict}))
-                            except websockets.ConnectionClosed:
-                                pass
-                        logger.info(f"Platform socket broadcasted evaluation run {eval_run.run_id} to {len(self.clients)} connected clients")
+
+                    eval_run_dict = eval_run.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-run-updated", eval_run_dict)
 
         except websockets.ConnectionClosed:
             logger.info(f"Validator at {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
+
+            relative_version_num = get_relative_version_num(self.clients[websocket]["version_commit_hash"])
+            await self.notify_all_clients("validator-disconnected", {
+                "validator_hotkey": self.clients[websocket]["val_hotkey"],
+                "relative_version_num": relative_version_num,
+                "version_commit_hash": self.clients[websocket]["version_commit_hash"]
+            })
+
             reset_running_evaluations(self.clients[websocket]["val_hotkey"])
         finally:
-            # Remove client when they disconnect
             del self.clients[websocket]
+
+    async def notify_all_clients(self, event: str, data: dict):
+        for websocket in self.clients.keys():
+            try:
+                await websocket.send(json.dumps({"event": event, "data": data}))
+            except websockets.ConnectionClosed:
+                pass
+        logger.info(f"Platform socket broadcasted {event} to {len(self.clients)} connected clients")
 
     async def create_new_evaluations(self, version_id: str):
         for websocket, client_data in self.clients.items():
