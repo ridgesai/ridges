@@ -11,17 +11,17 @@ def validate_sandbox_dir(dir_path: str) -> None:
     if not os.path.isdir(dir_path):
         raise ValueError(f'Failed to find {dir_path}')
 
-    # Then, check if the AgentMain.py file exists
+    # Then, check if the agent.py file exists
     agent_main_path = os.path.join(dir_path, 'agent.py')
     if not os.path.isfile(agent_main_path):
         raise ValueError(f'Failed to find agent.py')
 
-    # Then, parse the AgentMain.py file
+    # Then, parse the agent.py file
     try:
         with open(agent_main_path, 'r') as f:
             tree = ast.parse(f.read())
     except Exception as e:
-        raise ValueError(f'Failed to parse AgentMain.py: {str(e)}')
+        raise ValueError(f'Failed to parse agent.py: {str(e)}')
 
     # Finally, look for top-level agent_main function
     found_agent_main = False

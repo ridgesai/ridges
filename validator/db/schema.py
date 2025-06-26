@@ -41,8 +41,12 @@ class EvaluationRun(Base):
     fail_to_fail_success: Mapped[str] = mapped_column(String, nullable=True)
     pass_to_fail_success: Mapped[str] = mapped_column(String, nullable=True)
     solved: Mapped[bool] = mapped_column(Boolean, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    finished_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    sandbox_created_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    patch_generated_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    eval_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    result_scored_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     def to_dict(self):
         return {
@@ -57,6 +61,10 @@ class EvaluationRun(Base):
             "fail_to_fail_success": self.fail_to_fail_success,
             "pass_to_fail_success": self.pass_to_fail_success,
             "solved": self.solved,
+            "status": self.status,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "sandbox_created_at": self.sandbox_created_at.isoformat() if self.sandbox_created_at else None,
+            "patch_generated_at": self.patch_generated_at.isoformat() if self.patch_generated_at else None,
+            "eval_started_at": self.eval_started_at.isoformat() if self.eval_started_at else None,
+            "result_scored_at": self.result_scored_at.isoformat() if self.result_scored_at else None,
         }

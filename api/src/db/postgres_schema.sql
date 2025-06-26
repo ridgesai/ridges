@@ -41,8 +41,13 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     pass_to_pass_success TEXT,
     fail_to_fail_success TEXT,
     solved BOOLEAN,
+    status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored
     started_at TIMESTAMP NOT NULL,
-    finished_at TIMESTAMP
+    sandbox_created_at TIMESTAMP,
+    patch_generated_at TIMESTAMP,
+    eval_started_at TIMESTAMP,
+    result_scored_at TIMESTAMP
+    -- finished_at removed; last stage is result_scored_at
 );
 
 -- Weights History table
