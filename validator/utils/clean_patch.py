@@ -501,3 +501,16 @@ def remove_logging_calls(patch_content: str) -> str:
         cleaned.append(line)
 
     return "\n".join(cleaned)
+
+def strip_non_diff_preamble(patch: str) -> str:
+    """Return *patch* starting from the first ``diff --git`` line.
+
+    Any arbitrary text (including prompt-injection metadata) that precedes the
+    real diff is discarded so it never reaches the LLM or `git apply`.
+    """
+    lines = patch.splitlines()
+    for i, ln in enumerate(lines):
+        if ln.startswith("diff --git"):
+            return "\n".join(lines[i:])
+    # no diff marker – return as-is
+    return patch

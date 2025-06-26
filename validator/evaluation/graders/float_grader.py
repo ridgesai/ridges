@@ -25,6 +25,7 @@ from validator.utils.clean_patch import (
     drop_header_noise,
     remove_print_statements,
     remove_logging_calls,
+    strip_non_diff_preamble,
 )
 
 # Constants for scoring weights
@@ -166,7 +167,14 @@ class FloatGrader(GraderInterface):
             return EMPTY_PATCH_SCORE, 0.0
 
         # Preprocess the patch
-        cleaned_patch = self._preprocess_patch(response.response_patch)
+        patch = strip_non_diff_preamble(response.response_patch)
+        without_comments = remove_comments(patch)
+        without_docstrings = remove_docstrings(without_comments)
+        without_logs = remove_logging_calls(without_docstrings)
+        without_unused = remove_unused(without_logs)
+        without_header_noise = drop_header_noise(without_unused)
+        without_print_statements = remove_print_statements(without_header_noise)
+        cleaned_patch = without_print_statements.strip()
 
         # Re-phrase checklist items to nudge the LLM toward partial-credit answers.
         checklist_for_prompt = [f"Rate 0-1: {item}" for item in self.problem.dynamic_checklist]
@@ -216,16 +224,6 @@ class FloatGrader(GraderInterface):
 
         return miner_output_score, cost
 
-    def _preprocess_patch(self, patch: str) -> str:
-        """Preprocess a patch by removing comments, docstrings, and unused code."""
-        without_comments = remove_comments(patch)
-        without_docstrings = remove_docstrings(without_comments)
-        without_logs = remove_logging_calls(without_docstrings)
-        without_unused = remove_unused(without_logs)
-        without_header_noise = drop_header_noise(without_unused)
-        without_print_statements = remove_print_statements(without_header_noise)
-        return without_print_statements.strip()
-
     def _is_syntax_valid(self, patch: str) -> bool:
         """Return True if the added code in *patch* parses successfully with ast.parse()."""
         code_only, _, _ = extract_code_from_patch(patch)
@@ -254,3 +252,15 @@ class FloatGrader(GraderInterface):
             static_score +
             DYNAMIC_CHECKLIST_WEIGHT * mean(miner_output_score.dynamic_checklist_scores)
         )
+
+    def _preprocess_patch(self, patch: str) -> str:  # pylint: disable=protected-access
+        """Apply the same cleaning steps used both in validator and grader."""
+
+        patch = strip_non_diff_preamble(patch)
+        without_comments = remove_comments(patch)
+        without_docstrings = remove_docstrings(without_comments)
+        without_logs = remove_logging_calls(without_docstrings)
+        without_unused = remove_unused(without_logs)
+        without_header_noise = drop_header_noise(without_unused)
+        without_print_statements = remove_print_statements(without_header_noise)
+        return without_print_statements.strip()

@@ -25,6 +25,7 @@ from validator.utils.clean_patch import (
     remove_logging_calls,
     remove_unused,
     drop_header_noise,
+    strip_non_diff_preamble,
 )
 
 from validator.db.operations import DatabaseManager
@@ -438,6 +439,8 @@ class BaseChallenge(ABC):
         if not patch:
             return ""
         
+        patch = strip_non_diff_preamble(patch)
+
         without_comments = remove_comments(patch)
         without_docstrings = remove_docstrings(without_comments)
         without_logs = remove_logging_calls(without_docstrings)
