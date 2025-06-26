@@ -126,9 +126,6 @@ class RidgesCLI:
     
     def get_agent_file_path(self) -> str:
         return self.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", default="miner/agent.py")
-    
-    def get_agent_name(self) -> str:
-        return self.config.get_or_prompt("RIDGES_AGENT_NAME", "Enter a name for your miner agent")
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -143,9 +140,8 @@ def cli(ctx, url):
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
-@click.option("--name", help="Name for the miner agent")
 @click.pass_context
-def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str], name: Optional[str]):
+def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str]):
     """Upload a miner agent to the Ridges API."""
     api_url = ctx.obj.get('url')
     ridges = RidgesCLI(api_url)
@@ -153,7 +149,6 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
     file = file or ridges.get_agent_file_path()
     coldkey_name = coldkey_name or ridges.get_coldkey_name()
     hotkey_name = hotkey_name or ridges.get_hotkey_name()
-    name = name or ridges.get_agent_name()
     
     if not os.path.exists(file):
         console.print(f"💥 File not found: {file}", style="bold red")
@@ -166,13 +161,13 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
     console.print(Panel(
         f"[bold cyan]📤 Uploading Agent[/bold cyan]\n"
         f"[yellow]File:[/yellow] {file}\n"
-        f"[yellow]Name:[/yellow] {name}\n"
         f"[yellow]Coldkey:[/yellow] {coldkey_name}\n"
         f"[yellow]Hotkey:[/yellow] {hotkey_name}\n"
         f"[yellow]API URL:[/yellow] {ridges.api_url}",
         title="🚀 Upload Configuration",
         border_style="cyan"
     ))
+
     
     try:
         with open(file, 'rb') as f:
@@ -180,7 +175,14 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             content_hash = hashlib.sha256(f.read()).hexdigest()
             keypair = ridges.get_keypair()
             public_key = keypair.public_key.hex()
-            file_info = f"{keypair.ss58_address}:{content_hash}"
+            name_and_version = get_name_and_version_number(ridges.api_url, keypair.ss58_address)
+            if name_and_version is None:
+                name = Prompt.ask("Enter a name for your miner agent")
+                version_num = -1
+            else:
+                name, version_num = name_and_version
+
+            file_info = f"{keypair.ss58_address}:{content_hash}:{version_num}"
             signature = keypair.sign(file_info).hex()
             payload = {'miner_hotkey': keypair.ss58_address, 'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
 
@@ -190,7 +192,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             
             with httpx.Client() as client:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-                    progress.add_task("📡 Uploading to Ridges API...", total=None)
+                    progress.add_task(f"📡 Uploading {name} to Ridges API...", total=None)
                     response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
                 
                 if response.status_code == 200:
@@ -214,6 +216,21 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
     except Exception as e:
         console.print(f"💥 Unexpected error: {e}", style="bold red")
         sys.exit(1)
+
+def get_name_and_version_number(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
+    try:
+        with httpx.Client() as client:
+            response = client.get(f"{url}/retrieval/agent?miner_hotkey={miner_hotkey}&include_code=false")
+            if response.status_code == 200:
+                latest_agent = response.json().get("latest_agent")
+                if not latest_agent:
+                    return None
+                latest_version = latest_agent.get("latest_version")
+                return latest_agent.get("name"), latest_version.get("version_num")
+            else:
+                return None
+    except Exception as e:
+        return None
 
 @cli.command()
 def version():
