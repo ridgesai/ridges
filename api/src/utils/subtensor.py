@@ -19,17 +19,16 @@ _cached_time = 0
 _cached_tao_usd_price = None
 _cached_tao_usd_time = 0
 
-substrate = SubstrateInterface (
-            url="wss://entrypoint-finney.opentensor.ai:443",
-            ss58_format=42, 
-            type_registry_preset="substrate-node-template"
-        )
-
 def get_current_weights(netuid: int = 62) -> dict:
     """
     Method using substrate-interface library to get weights in bittensor format. Returns None if there is an error.
     """
     try:
+        substrate = SubstrateInterface (
+            url="wss://entrypoint-finney.opentensor.ai:443",
+            ss58_format=42, 
+            type_registry_preset="substrate-node-template"
+        )
         
         result = substrate.query_map(
             module="SubtensorModule",
@@ -50,6 +49,11 @@ def get_uid_for_hotkey_on_subnet(hotkey: str, netuid: int = 62) -> int:
         Get the UID for a hotkey on a subnet. Returns None if there is an error.
         """
         try:
+            substrate = SubstrateInterface (
+                url="wss://entrypoint-finney.opentensor.ai:443",
+                ss58_format=42, 
+                type_registry_preset="substrate-node-template"
+            )
             
             result = substrate.query(
                 module="SubtensorModule",
@@ -154,7 +158,7 @@ def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
             if not prev_weights:
                 continue
             top_uid = max(prev_weights.items(), key=lambda x: float(x[1]))[0]
-            
+
             if int(top_uid) == int(miner_uid):
                 uid_top_seconds += dt
 
