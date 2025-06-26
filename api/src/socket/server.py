@@ -73,19 +73,24 @@ class WebSocketServer:
                 
                 if response_json["event"] == "start-evaluation":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} has started an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    start_evaluation(response_json["evaluation_id"])
+                    eval = start_evaluation(response_json["evaluation_id"])
+
+                    eval_dict = eval.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-started", eval_dict)
 
                 if response_json["event"] == "finish-evaluation":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} has finished an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    finish_evaluation(response_json["evaluation_id"], response_json["errored"])
+                    eval = finish_evaluation(response_json["evaluation_id"], response_json["errored"])
+
+                    evaluation_dict = eval.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-finished", evaluation_dict)
 
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
                     eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
-                    if eval_run.result_scored_at:
-                        # Convert Pydantic model to dict with datetime serialization
-                        eval_run_dict = eval_run.model_dump(mode='json')
-                        await self.notify_all_clients("evaluation-run-finished", eval_run_dict)
+
+                    eval_run_dict = eval_run.model_dump(mode='json')
+                    await self.notify_all_clients("evaluation-run-updated", eval_run_dict)
 
         except websockets.ConnectionClosed:
             logger.info(f"Validator at {websocket.remote_address} with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
@@ -99,7 +104,6 @@ class WebSocketServer:
 
             reset_running_evaluations(self.clients[websocket]["val_hotkey"])
         finally:
-            # Remove client when they disconnect
             del self.clients[websocket]
 
     async def notify_all_clients(self, event: str, data: dict):
