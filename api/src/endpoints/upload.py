@@ -105,10 +105,9 @@ async def post_agent (
     if not keypair.verify(file_info, bytes.fromhex(signature)):
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # TODO: uncoment when testnet is back up
-    # # Check if hotkey is registered using fiber
-    # if miner_hotkey not in await get_subnet_hotkeys():
-    #     raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
+    # Check if hotkey is registered using fiber
+    if miner_hotkey not in await get_subnet_hotkeys():
+        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
     # Check if file is a valid python file
     try:
