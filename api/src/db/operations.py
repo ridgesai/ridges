@@ -105,31 +105,11 @@ class DatabaseManager:
             logger.error(f"Error storing agent version {agent_version.version_id}: {str(e)}")
             return 0
     
-    def store_evaluation(self, evaluation: Evaluation, score: bool = False) -> int:
+    def store_evaluation(self, evaluation: Evaluation) -> int:
         """
         Store an evaluation in the database. Return 1 if successful, 0 if not. If the evaluation already exists, update the status, started_at, and finished_at.
-        If score=True, dynamically calculate the score from evaluation runs.
         """
         try:
-            if score:
-                with self.conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT COUNT(*) as total_runs, 
-                               COUNT(CASE WHEN solved = true THEN 1 END) as solved_runs
-                        FROM evaluation_runs 
-                        WHERE evaluation_id = %s
-                    """, (evaluation.evaluation_id,))
-                    result = cursor.fetchone()
-                    total_runs = result[0]
-                    solved_runs = result[1]
-                    
-                    if total_runs > 0:
-                        evaluation.score = solved_runs / total_runs
-                    else:
-                        evaluation.score = 0.0
-                    
-                    logger.info(f"Calculated score for evaluation {evaluation.evaluation_id}: {evaluation.score} ({solved_runs}/{total_runs})")
-            
             with self.conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
@@ -240,6 +220,17 @@ class DatabaseManager:
                         evaluation_run.result_scored_at
                     ))
                 logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
+
+                # Update the score for the associated evaluation
+                cursor.execute("""
+                    UPDATE evaluations
+                    SET score = (SELECT AVG(CASE WHEN solved THEN 1 ELSE 0 END)
+                                FROM evaluation_runs
+                                WHERE evaluation_id = %s)
+                    WHERE evaluation_id = %s
+                """, (evaluation_run.evaluation_id, evaluation_run.evaluation_id))
+                logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
+
                 return 1
         except Exception as e:
             logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
