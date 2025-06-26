@@ -202,6 +202,11 @@ class Sandbox:
                         logger.info(f"Output: {output}")
                         if (output.get('success')):
                             self.evaluation_run.response = output.get('output').get('patch')
+                            if self.evaluation_run.response == "":
+                                self.evaluation_run.status = "result_scored"
+                                self.evaluation_run.solved = False
+                                self.evaluation_run.result_scored_at = datetime.now()
+                                self.evaluation_run.error = "Empty patch returned from agent.py"
                         else:
                             self.evaluation_run.status = "result_scored"
                             self.evaluation_run.solved = False
