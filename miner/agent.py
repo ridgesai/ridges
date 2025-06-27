@@ -100,7 +100,7 @@ _RAW_SYSTEM_PROMPT = textwrap.dedent(
     • DIFF              → ```diff <file1> <file2>```
     • WRITE_FILE        → ```write_file <path>```  ← will be followed by the new file content in a separate message.
     • APPLY_PATCH       → ```apply_patch <path_to_.patch>```  (patch must be written beforehand)
-    • FINISH            → ```finish```
+    • FINISH / EXIT     → ```finish``` (or ```exit```)
 
     Notes:
     • Tool names are case-insensitive but using UPPER-CASE (as shown) is recommended.
@@ -225,13 +225,39 @@ def _find(pattern: str, dir: str = ".") -> str:
         return f"find error: {e}"
 
 
-def _read_file(path: str, max_bytes: int = MAX_BYTES_READ) -> str:
+def _read_file(
+    path: str,
+    *,
+    max_bytes: int = MAX_BYTES_READ,
+    start_line_one_indexed: int | None = None,
+    end_line_one_indexed_inclusive: int | None = None,
+) -> str:
+    """Read *path* and optionally return only the given line range.
+
+    Parameters
+    ----------
+    path : str
+        File to read.
+    max_bytes : int, optional
+        Hard cap for bytes to read (applied before line slicing).
+    start_line_one_indexed, end_line_one_indexed_inclusive : int, optional
+        1-based line range. If only *start* is provided we return that single
+        line. If neither is provided the whole file up to *max_bytes* is
+        returned.
+    """
     p = Path(path)
     if not p.exists():
         return f"File not found: {path}"
     try:
-        data = p.read_bytes()[:max_bytes]
-        return data.decode(errors="replace")
+        raw = p.read_bytes()[:max_bytes].decode(errors="replace")
+        if start_line_one_indexed is None and end_line_one_indexed_inclusive is None:
+            return raw
+
+        lines = raw.splitlines()
+        lo = (start_line_one_indexed or 1) - 1
+        hi = (end_line_one_indexed_inclusive or start_line_one_indexed or len(lines))
+        clip = "\n".join(lines[lo:hi])
+        return clip
     except Exception as e:
         return f"read error: {e}"
 
@@ -411,6 +437,7 @@ ALL_TOOLS = {
     "DIFF": _diff,
     "WRITE_FILE": _write_file,
     "APPLY_PATCH": _apply_patch,
+    "EXIT": _finish,  # alias send by some models
     "FINISH": _finish,
 }
 
@@ -432,8 +459,10 @@ DEFAULT_SYSTEM_PROMPT = _RAW_SYSTEM_PROMPT.format(command_docs=_COMMAND_DOCS)
 _EMBED_CACHE: Dict[str, List[float]] = {}
 ZERO_VEC: List[float] = [0.0] * 1024  # embedding for empty input
 
+# NOTE: run_id is optional; when provided the backend can correlate
+# embedding requests with an overall agent run (useful for logging & quota).
 
-def _remote_embed(text: str, proxy_url: str) -> List[float]:
+def _remote_embed(text: str, proxy_url: str, run_id: str | None = None) -> List[float]:
     """Return embedding vector for *text* via the proxy /agents/embedding endpoint.
 
     Caches results in-memory to avoid duplicate HTTP calls.
@@ -450,9 +479,13 @@ def _remote_embed(text: str, proxy_url: str) -> List[float]:
             attempt_text = " ".join(tokens[:MAX_EMBED_TOKENS])
 
         url = f"{proxy_url.rstrip('/')}/agents/embedding"
+        payload = {"input": attempt_text}
+        if run_id:
+            payload["run_id"] = run_id
+
         req = _urlreq.Request(
             url,
-            data=json.dumps({"input": attempt_text}, ensure_ascii=False).encode(),
+            data=json.dumps(payload, ensure_ascii=False).encode(),
             method="POST",
             headers={"Content-Type": "application/json"},
         )
@@ -522,7 +555,12 @@ def run_oneshot(
     else:
         repo_texts = _collect_repo_texts()
         if not repo_texts:
-            raise RuntimeError("repository appears empty – nothing to embed")
+            print("[agent] repository appears empty – waiting 10 minutes for inspection…")
+            try:
+                time.sleep(600)
+            except Exception:
+                pass
+            raise RuntimeError("repository appears empty – nothing to embed (after wait)")
         code_chunks = [Chunk(file=fp, start_line=1, end_line=text.count("\n") + 1, text=text) for fp, text in repo_texts.items()]
         chunk_texts = [c.text for c in code_chunks]
 
@@ -530,7 +568,7 @@ def run_oneshot(
     # Cheap TF-IDF pre-filter to limit expensive embedding calls ----------
     # --------------------------------------------------------------------
 
-    PRE_FILTER_TOP = int(os.getenv("PREFILTER_TOP", "400"))
+    PRE_FILTER_TOP = int(os.getenv("PREFILTER_TOP", "800"))
 
     if len(chunk_texts) > PRE_FILTER_TOP:
         try:
@@ -555,14 +593,14 @@ def run_oneshot(
     # Obtain embeddings via proxy endpoint --------------------------------
     # --------------------------------------------------------------------
 
-    query_vec = _remote_embed(problem_text, proxy_url)
+    query_vec = _remote_embed(problem_text, proxy_url, run_id)
 
     # Parallel embedding of chunks to avoid long serial wait times.
     chunk_vecs: List[List[float]] = [ZERO_VEC] * len(chunk_texts)
     MAX_WORKERS = int(os.getenv("EMBED_CONCURRENCY", "8"))
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        fut_to_idx = {pool.submit(_remote_embed, txt, proxy_url): idx for idx, txt in enumerate(chunk_texts)}
+        fut_to_idx = {pool.submit(_remote_embed, txt, proxy_url, run_id): idx for idx, txt in enumerate(chunk_texts)}
 
         for fut in as_completed(fut_to_idx):
             idx = fut_to_idx[fut]
@@ -586,7 +624,7 @@ def run_oneshot(
 
     sorted_idx = sorted(range(len(sims)), key=lambda i: -sims[i])
 
-    TARGET_TOKENS = 48_000
+    TARGET_TOKENS = 256_000
     token_budget = int(TARGET_TOKENS * 0.85)
     token_total = 0
     top_idx: list[int] = []
@@ -621,7 +659,7 @@ def run_oneshot(
         {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
     ]
 
-    ATTEMPTS = 8
+    ATTEMPTS = 26
 
     for attempt in range(ATTEMPTS):
         messages = [
@@ -921,8 +959,10 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
 
         if name == "APPLY_PATCH":
-            last_patch = _sanitize_patch(args.get("patch", ""))
-
+            last_patch = _sanitize_patch(args.get("patch"))
+            # _raw = args.get("patch", "")
+            # _clean = _sanitize_patch(_raw)
+            # last_patch = json.dumps({"raw": _raw, "san": _clean}, ensure_ascii=False)
         if name == "FINISH":
             print("[agent] FINISH called – exiting.")
             return last_patch  # may be "" if nothing was applied
@@ -1091,21 +1131,43 @@ def _lang_tag(path: str) -> str:
 
 
 def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
-    """Return {rel_path: text} for every text file under *root* (best-effort)."""
+    """Return {rel_path: text} for readable source files under *root*.
+
+    Preference order:
+    1. Python files (`*.py`).
+    2. If *no* Python file is found, fall back to any UTF-8 decodable text file
+       smaller than ~200 kB so the agent can still operate on non-Python repos
+       (Rust, JS, etc.).
+    """
     texts: Dict[str, str] = {}
     for dirpath, _dirs, files in os.walk(root):
         if ".git" in dirpath.split(os.sep):
             continue
         for fn in files:
-            if not fn.endswith(".py"):
-                continue  # only Python source
-            path = os.path.join(dirpath, fn)
-            try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                    texts[os.path.relpath(path, root)] = fh.read()
-            except Exception:
-                # binary or unreadable
+            if fn.endswith(".py"):
+                path = os.path.join(dirpath, fn)
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                        texts[os.path.relpath(path, root)] = fh.read()
+                except Exception:
+                    continue
+
+    # If nothing collected, relax filter and read small-ish text files.
+    if not texts:
+        for dirpath, _dirs, files in os.walk(root):
+            if ".git" in dirpath.split(os.sep):
                 continue
+            for fn in files:
+                path = os.path.join(dirpath, fn)
+                try:
+                    if os.path.getsize(path) > 200_000:
+                        continue
+                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
+                        texts[os.path.relpath(path, root)] = fh.read()
+                except Exception:
+                    continue
+                if len(texts) > 1000:  # sanity cap
+                    break
     return texts
 
 # ---------------------------------------------------------------------------
@@ -1206,10 +1268,10 @@ def _collect_code_chunks(root: str = ".") -> List[Chunk]:
                         chunks.append(Chunk(rel_path, off_start_line, off_end_line, piece))
                         offset_chars += len(piece) + 1
 
-    # Final safety: truncate if some text >512 tokens slipped through.
-    tokens = text.split()
-    if len(tokens) > MAX_EMBED_TOKENS:
-        text = " ".join(tokens[:MAX_EMBED_TOKENS])
+    # No need for a final text-level truncate here – each piece added to
+    # `chunks` is already guaranteed to be ≤ `MAX_EMBED_TOKENS` by
+    # `_token_windows`.  Returning as-is avoids referencing an undefined
+    # `text` variable when the repository contains zero Python files.
 
     return chunks
 
