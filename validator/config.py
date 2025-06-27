@@ -49,6 +49,9 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 RIDGES_API_URL = "http://<YOUR_IP_ADDRESS>:8000" # When testing locally, use your local IP address (e.g. http://10.0.0.134:8000 and :8765)
 RIDGES_WS_URL = "ws://<YOUR_IP_ADDRESS>:8765" # If you use a loopback like localhost, 127.0.0.1, or 0.0.0.0, you will get 502 connection errors while proxying
+if RIDGES_API_URL in ["http://<YOUR_IP_ADDRESS>:8000", "http://localhost:8000", "http://127.0.0.1:8000", "http://0.0.0.0:8000"]:
+    print(f"Set your local IP address in this file: {__file__}")
+    exit(1)
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 EASY_INSTANCES = [
