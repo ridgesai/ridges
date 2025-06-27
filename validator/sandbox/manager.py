@@ -425,6 +425,15 @@ class SandboxManager:
     def _start_proxy_container(self):
         """Start the nginx proxy container."""
         try:
+            # Check if a container with the same name already exists and remove it
+            try:
+                existing_container = self.docker.containers.get(PROXY_CONTAINER_NAME)
+                logger.info(f"Found existing proxy container {existing_container.id}, removing it")
+                existing_container.remove(force=True)
+            except docker.errors.NotFound:
+                # Container doesn't exist, which is fine
+                pass
+
             # Start container on the default bridge network so it can reach the host API
             container = self.docker.containers.run(
                 image=PROXY_DOCKER_IMAGE,
