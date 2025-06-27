@@ -1,5 +1,8 @@
 import asyncio
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Internal package imports
 from shared.logging_utils import get_logger
 from validator.db.schema import init_db
