@@ -70,6 +70,7 @@ class Execution(BaseModel):
 
 class EmbeddingRequest(BaseModel):
     input: str = Field(..., description="Text to embed")
+    run_id: str = Field(..., description="Evaluation run ID")
 
 class GPTMessage(BaseModel):
     role: str

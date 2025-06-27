@@ -6,9 +6,10 @@ import json
 from typing import List
 from datetime import datetime, timedelta
 import asyncio
+import time
 
 from api.src.utils.logging_utils import get_logger
-from api.src.utils.config import MODEL_PRICE_PER_1M_TOKENS
+from api.src.utils.config import MODEL_PRICE_PER_1M_TOKENS, EMBEDDING_PRICE_PER_SECOND
 from api.src.utils.models import GPTMessage
 
 logger = get_logger(__name__)
@@ -19,35 +20,51 @@ class ChutesManager:
     def __init__(self):
         self.api_key = os.getenv('CHUTES_API_KEY')
         self.pricing = MODEL_PRICE_PER_1M_TOKENS
-        self.costs_data = {}
+        self.costs_data_inference = {}
+        self.costs_data_embedding = {}
         self.cleanup_task = None
         self.start_cleanup_task()
 
     def start_cleanup_task(self):
-        """Start the periodic cleanup task to remove cost data that is older than 15 minutes. This is run every 5 minutes."""
+        """Start the periodic cleanup task to remove cost data that is older than 20 minutes. This is run every 5 minutes."""
         async def cleanup_loop():
             while True:
                 logger.info("Started cleaning up old entries from Chutes")
                 await self.cleanup_old_entries()
                 logger.info("Finished cleaning up old entries from Chutes. Running again in 5 minutes.")
-                await asyncio.sleep(300)
+                await asyncio.sleep(15)
         
         self.cleanup_task = asyncio.create_task(cleanup_loop())
 
     async def cleanup_old_entries(self) -> None:
-        """Remove cost data that is older than 15 minutes"""
-        current_time = datetime.now()
-        keys_to_remove = []
-        
-        for key, value in self.costs_data.items():
-            if current_time - value["started_at"] > timedelta(minutes=15):
-                keys_to_remove.append(key)
-        
-        for key in keys_to_remove:
-            del self.costs_data[key]
-        logger.info(f"Removed {len(keys_to_remove)} old entries from Chutes")
+        """Remove cost data that is older than 20 minutes"""
+        try:
+            current_time = datetime.now()
+            keys_to_remove_inference = []
+            keys_to_remove_embedding = []
 
-    def embed(self, prompt: str) -> dict:
+            for key, value in self.costs_data_inference.items():
+                if current_time - value["started_at"] > timedelta(minutes=1):
+                    keys_to_remove_inference.append(key)
+            
+            for key, value in self.costs_data_embedding.items():
+                if current_time - value["started_at"] > timedelta(minutes=1):
+                    keys_to_remove_embedding.append(key)
+        
+            for key in keys_to_remove_inference:
+                del self.costs_data_inference[key]
+            for key in keys_to_remove_embedding:
+                del self.costs_data_embedding[key]
+            logger.info(f"Removed {len(keys_to_remove_inference)} old entries from Chutes inference pricing data")
+            logger.info(f"Removed {len(keys_to_remove_embedding)} old entries from Chutes embedding pricing data")
+        except Exception as e:
+            logger.error(f"Error cleaning up old entries from Chutes pricing data: {e}")
+
+    def embed(self, run_id: str, prompt: str) -> dict:
+        if self.costs_data_embedding.get(run_id, {}).get("spend", 0) >= 2:
+            logger.info(f"Agent version from run {run_id} has reached the maximum cost from their evaluation run.")
+            return f"Your agent version has reached the maximum cost for this evaluation run. Please do not request more embeddings or inference from this agent version."
+
         headers = {
             "Authorization": "Bearer " + self.api_key,
             "Content-Type": "application/json"
@@ -57,11 +74,22 @@ class ChutesManager:
             "inputs": prompt
         }
 
+        start = time.time()
         response = requests.post(
             "https://chutes-baai-bge-large-en-v1-5.chutes.ai/embed",
             headers=headers,
             json=body
         )
+        total_time_seconds = time.time() - start
+        
+        cost = total_time_seconds * EMBEDDING_PRICE_PER_SECOND
+
+        self.costs_data_embedding[run_id] = {
+            "spend": self.costs_data_embedding.get(run_id, {}).get("spend", 0) + cost,
+            "started_at": self.costs_data_embedding.get(run_id, {}).get("started_at", datetime.now())
+        }
+
+        logger.info(f"Updated embedding spend for run {run_id}: {cost} (total: {self.costs_data_embedding[run_id]['spend']})")
 
         return response.json()
     
@@ -73,7 +101,7 @@ class ChutesManager:
             logger.info(f"Agent version from run {run_id} requested an unsupported model: {model}.")
             return f"Model {model} not supported. Please use one of the following models: {list(self.pricing.keys())}"
         
-        if self.costs_data.get(run_id, {}).get("spend", 0) >= 2:
+        if self.costs_data_inference.get(run_id, {}).get("spend", 0) >= 2:
             logger.info(f"Agent version from run {run_id} has reached the maximum cost from their evaluation run.")
             return f"Your agent version has reached the maximum cost for this evaluation run. Please do not request more inference from this agent version."
         
@@ -171,11 +199,11 @@ class ChutesManager:
         if total_tokens > 0:
             total_cost = total_tokens * self.pricing[model] / 1000000
             key = run_id
-            self.costs_data[key] = {
-                "spend": self.costs_data.get(key, {}).get("spend", 0) + total_cost,
-                "started_at": self.costs_data.get(key, {}).get("started_at", datetime.now())
+            self.costs_data_inference[key] = {
+                "spend": self.costs_data_inference.get(key, {}).get("spend", 0) + total_cost,
+                "started_at": self.costs_data_inference.get(key, {}).get("started_at", datetime.now())
             }
-            logger.info(f"Updated costs for run {run_id}: {total_cost} (total: {self.costs_data[key]['spend']})")
+            logger.info(f"Updated inference spend for run {run_id}: {total_cost} (total: {self.costs_data_inference[key]['spend']})")
         
         response_text = "".join(response_chunks)
         logger.info(f"Final response length: {len(response_text)}")

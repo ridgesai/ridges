@@ -14,7 +14,7 @@ chutes = ChutesManager()
 
 def embedding(request: EmbeddingRequest):
     try:
-        embedding = chutes.embed(request.input)
+        embedding = chutes.embed(request.input, request.run_id)
     except Exception as e:
         logger.error(f"Error getting embedding for {request.input}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get embedding due to internal server error. Please try again later.")

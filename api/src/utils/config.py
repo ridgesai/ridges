@@ -38,4 +38,5 @@ PERMISSABLE_PACKAGES = [
     "sklearn.feature_extraction.text.TfidfVectorizer",
     "concurrent.futures",
 ]
-MODEL_PRICE_PER_1M_TOKENS = {"deepseek-ai/DeepSeek-V3-0324": 0, "agentica-org/DeepCoder-14B-Preview": 0, "deepseek-ai/DeepSeek-V3": 0.3024}
+MODEL_PRICE_PER_1M_TOKENS = {"deepseek-ai/DeepSeek-V3-0324": 0.2722, "agentica-org/DeepCoder-14B-Preview": 0.02, "deepseek-ai/DeepSeek-V3": 0.2722}
+EMBEDDING_PRICE_PER_SECOND = 0.0001

@@ -43,12 +43,17 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             try:
                 # Download the agent code from Ridges API
                 logger.info(f"Downloading agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
-                response = await client.get(
-                    f"{RIDGES_API_URL}/retrieval/agent-version-file",
-                    params={"version_id": agent_version.version_id},
-                )
-                response.raise_for_status()
-                logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
+                try:
+                    response = await client.get(
+                        f"{RIDGES_API_URL}/retrieval/agent-version-file",
+                        params={"version_id": agent_version.version_id},
+                    )
+                    response.raise_for_status()
+                    logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
+                except Exception as e:
+                    logger.error(f"Failed to download from {RIDGES_API_URL}/retrieval/agent-version-file")
+                    logger.error(f"Error downloading agent code for agent {agent_version.agent_id} version {agent_version.version_num}: {e}")
+                    raise e
 
                 # Create a temp directory for the agent code
                 temp_dir = tempfile.mkdtemp()
