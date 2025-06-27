@@ -6,7 +6,7 @@ from fiber.chain import chain_utils, interface, metagraph, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
 from shared.logging_utils import get_logger
-
+from validator.utils.injection_guard import is_banned
 
 from validator.db.operations import DatabaseManager
 from validator.config import (
@@ -103,7 +103,10 @@ async def set_weights(db_manager: DatabaseManager):
         nodes = get_nodes_for_netuid(substrate, NETUID)
 
         average_scores_by_hotkey = db_manager.get_average_scores_by_hotkey(hours=24)
-        scores = np.array([average_scores_by_hotkey.get(node.hotkey, NO_RESPONSE_MIN_SCORE) for node in nodes])
+        scores = np.array([
+            0.0 if is_banned(node.hotkey) else average_scores_by_hotkey.get(node.hotkey, NO_RESPONSE_MIN_SCORE)
+            for node in nodes
+        ])
         
         # Calculate the average reward for each uid across non-zero values.
         # Compute the norm of the scores
@@ -210,7 +213,7 @@ async def set_weights_bayesian(
             hotkey = node.hotkey
 
             # Get Bayesian score for this node, default to 0 if not found
-            bayesian_score = hotkey_to_bayesian_score.get(hotkey, 0.0)
+            bayesian_score = 0.0 if is_banned(hotkey) else hotkey_to_bayesian_score.get(hotkey, 0.0)
             adjusted_score = bayesian_score ** (3 * ALPHA_SCORING_MULTIPLICATOR)
 
             node_ids.append(node_id)
@@ -229,7 +232,7 @@ async def set_weights_bayesian(
         logger.info(f"Setting weights for {len(nodes)} nodes")
         for node_id, weight, node in zip(node_ids, node_weights, nodes):
             hotkey = node.hotkey
-            bayesian_score = hotkey_to_bayesian_score.get(hotkey, 0.0)
+            bayesian_score = 0.0 if is_banned(hotkey) else hotkey_to_bayesian_score.get(hotkey, 0.0)
             score_logs.append(ScoreLog(type="weight", validator_hotkey=validator_hotkey, miner_hotkey=hotkey, score=weight))
             
             # Get additional info if available
