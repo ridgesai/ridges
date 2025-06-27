@@ -377,7 +377,7 @@ def stop():
     stopped_processes = []
     
     for process in processes_to_stop:
-        returncode, stdout, stderr = run_command(f"pm2 stop {process}")
+        returncode, stdout, stderr = run_command(f"pm2 delete {process}")
         if returncode == 0:
             stopped_processes.append(process)
             console.print(f"✅ Stopped {process}", style="green")
@@ -405,6 +405,165 @@ def logs():
     
     if returncode != 0:
         console.print("💥 Failed to show logs", style="red")
+        sys.exit(1)
+
+@validator.command()
+def restart():
+    """Restart the Ridges validator and auto-updater."""
+    console.print("🔄 Restarting Ridges validator processes...", style="yellow")
+    
+    # Stop both processes
+    processes_to_restart = ["ridges-validator", "ridges-validator-updater"]
+    stopped_processes = []
+    
+    for process in processes_to_restart:
+        returncode, stdout, stderr = run_command(f"pm2 delete {process}")
+        if returncode == 0:
+            stopped_processes.append(process)
+            console.print(f"✅ Stopped {process}", style="green")
+        else:
+            console.print(f"⚠️  {process} was not running or could not be stopped", style="yellow")
+    
+    if stopped_processes:
+        console.print("⏳ Waiting 2 seconds before restarting...", style="cyan")
+        time.sleep(2)
+        
+        # Restart the auto-updater
+        console.print("🚀 Restarting auto-updater...", style="yellow")
+        returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
+        
+        if returncode == 0:
+            console.print(Panel(
+                "[bold green]🎉 Validator restarted successfully![/bold green]\n"
+                "[cyan]The validator is now running and will auto-update every 5 minutes.[/cyan]",
+                title="✨ Restart Complete",
+                border_style="green"
+            ))
+        else:
+            console.print("💥 Failed to restart validator", style="red")
+            sys.exit(1)
+    else:
+        console.print("ℹ️  No validator processes were running to restart", style="cyan")
+
+@cli.group()
+def platform():
+    """Manage Ridges API platform"""
+    pass
+
+@platform.command()
+@click.option("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
+@click.option("--port", default=8000, help="Port to bind to (default: 8000)")
+def run(host: str, port: int):
+    """Run the Ridges API platform using PM2."""
+    console.print(Panel(
+        f"[bold cyan]🚀 Starting Ridges API Platform[/bold cyan]\n"
+        f"[yellow]Host:[/yellow] {host}\n"
+        f"[yellow]Port:[/yellow] {port}\n"
+        f"[yellow]Process:[/yellow] ridges-api-platform",
+        title="🌐 Platform Configuration",
+        border_style="cyan"
+    ))
+    
+    # Check if platform is already running
+    is_running, _ = check_pm2_process("ridges-api-platform")
+    if is_running:
+        console.print(Panel(
+            "[bold yellow]⚠️  API platform is already running![/bold yellow]\n"
+            "[cyan]Use 'ridges.py platform logs' to view logs[/cyan]\n"
+            "[cyan]Use 'ridges.py platform stop' to stop the platform[/cyan]",
+            title="🔄 Platform Status",
+            border_style="yellow"
+        ))
+        return
+    
+    # Start the platform with PM2
+    returncode, stdout, stderr = run_command(f"pm2 start 'uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform", capture_output=False)
+    
+    if returncode != 0:
+        console.print(f"💥 Failed to start API platform", style="red")
+        sys.exit(1)
+    
+    # Verify it started
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        task = progress.add_task("Starting API platform...", total=None)
+        time.sleep(3)  # Show loading indicator for 3 seconds
+    
+    is_running, _ = check_pm2_process("ridges-api-platform")
+    
+    if is_running:
+        console.print(Panel(
+            "[bold green]🎉 API platform started successfully![/bold green]\n"
+            f"[cyan]Platform is running on {host}:{port}[/cyan]\n"
+            "[cyan]Use 'ridges.py platform logs' to view real-time logs[/cyan]",
+            title="✨ Success",
+            border_style="green"
+        ))
+    else:
+        console.print("💥 API platform failed to start properly", style="red")
+        sys.exit(1)
+
+@platform.command()
+def stop():
+    """Stop the Ridges API platform."""
+    console.print("🛑 Stopping Ridges API platform...", style="yellow")
+    
+    returncode, stdout, stderr = run_command("pm2 delete ridges-api-platform")
+    if returncode == 0:
+        console.print(Panel(
+            "[bold green]🎉 API platform stopped successfully![/bold green]",
+            title="✨ Stop Complete",
+            border_style="green"
+        ))
+    else:
+        console.print("⚠️  API platform was not running or could not be stopped", style="yellow")
+
+@platform.command()
+def logs():
+    """Show real-time logs from the Ridges API platform."""
+    console.print("📋 Showing real-time logs from API platform...", style="cyan")
+    console.print("Press Ctrl+C to stop", style="yellow")
+    
+    # Show logs from the API platform
+    returncode, stdout, stderr = run_command("pm2 logs ridges-api-platform", capture_output=False)
+    
+    if returncode != 0:
+        console.print("💥 Failed to show logs", style="red")
+        sys.exit(1)
+
+@platform.command()
+def restart():
+    """Restart the Ridges API platform."""
+    console.print("🔄 Restarting Ridges API platform...", style="yellow")
+    
+    # Stop the platform
+    returncode, stdout, stderr = run_command("pm2 delete ridges-api-platform")
+    if returncode == 0:
+        console.print("✅ Stopped API platform", style="green")
+    else:
+        console.print("⚠️  API platform was not running or could not be stopped", style="yellow")
+    
+    console.print("⏳ Waiting 2 seconds before restarting...", style="cyan")
+    time.sleep(2)
+    
+    # Restart the platform with default settings
+    console.print("🚀 Restarting API platform...", style="yellow")
+    returncode, stdout, stderr = run_command("pm2 start 'uvicorn api.src.main:app --host 0.0.0.0 --port 8000' --name ridges-api-platform", capture_output=False)
+    
+    if returncode == 0:
+        console.print(Panel(
+            "[bold green]🎉 API platform restarted successfully![/bold green]\n"
+            "[cyan]Platform is running on 0.0.0.0:8000[/cyan]\n"
+            "[cyan]Use 'ridges.py platform logs' to view real-time logs[/cyan]",
+            title="✨ Restart Complete",
+            border_style="green"
+        ))
+    else:
+        console.print("💥 Failed to restart API platform", style="red")
         sys.exit(1)
 
 if __name__ == "__main__":
