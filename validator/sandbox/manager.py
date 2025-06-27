@@ -1,11 +1,14 @@
 import os
 import json
 import shutil
+import subprocess
+import tempfile
 import time
 import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Tuple, Optional
 from pathlib import Path
+import uuid
 from shared.logging_utils import get_logger
 import docker
 from docker import DockerClient
@@ -235,13 +238,96 @@ class Sandbox:
     def _run_evaluation(self):
         """Blocking helper that runs evaluation for this sandbox's run."""
         try:
-            self.manager.evaluate_run(self.evaluation_run)
+            # Perform evaluation within the sandbox itself
+            self._evaluate_run()
         except Exception as e:
             # Capture evaluation errors so they don't crash the event-loop thread
             self.evaluation_run.solved = False
             self.evaluation_run.status = "result_scored"
             self.evaluation_run.result_scored_at = datetime.now()
             self.evaluation_run.error = str(e)
+
+    def _evaluate_run(self):
+        try:
+            # Mark evaluation start
+            self.evaluation_run.status = "eval_started"
+            self.evaluation_run.eval_started_at = datetime.now()
+
+            # Fetch the corresponding SWE-bench instance
+            instance_id = self.evaluation_run.swebench_instance_id
+            instance = load_swebench_dataset(
+                "SWE-bench/SWE-bench_Verified", "test", [instance_id]
+            )[0]
+            if not instance:
+                raise RuntimeError(f"Instance {instance_id} not found in SWE-bench dataset")
+
+            # Prepare prediction & test spec
+            prediction = {
+                "instance_id": instance_id,
+                "model_name_or_path": self.evaluation_run.run_id,
+                "model_patch": self.evaluation_run.response,
+            }
+
+            test_spec = make_test_spec(instance)
+
+            # Build the environment image for this instance (cached if already built)
+            build_env_images(self.manager.docker, [test_spec], max_workers=4)
+
+            # Execute the evaluation
+            run_result = run_instance(
+                test_spec=test_spec,
+                pred=prediction,
+                rm_image=False,  # Clean up after each run
+                force_rebuild=False,
+                client=self.manager.docker,
+                run_id=self.evaluation_run.run_id,
+                timeout=1800,
+                rewrite_reports=False,
+            )
+
+            # Parse results
+            if run_result:
+                instance_id, report = run_result
+                report = report[instance_id]
+
+                if report["patch_is_None"]:
+                    self.evaluation_run.solved = False
+                    self.evaluation_run.error = "Patch was empty"
+                else:
+                    self.evaluation_run.fail_to_pass_success = json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"])
+                    self.evaluation_run.pass_to_pass_success = json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"])
+                    self.evaluation_run.fail_to_fail_success = json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"])
+                    self.evaluation_run.pass_to_fail_success = json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"])
+                    self.evaluation_run.solved = report["resolved"]
+            else:
+                self.evaluation_run.solved = False
+                self.evaluation_run.error = self._get_patch_apply_error() or "Patch did not apply"
+
+        except Exception as e:
+            self.evaluation_run.solved = False
+            self.evaluation_run.error = str(e)
+        finally:
+            self.evaluation_run.status = "result_scored"
+            self.evaluation_run.result_scored_at = datetime.now()
+
+    def _get_patch_apply_error(self) -> str | None:
+        patch_path = Path(tempfile.mkstemp(suffix=".patch")[1])
+        patch_path.write_text(self.evaluation_run.response)
+        branch = f"patch-test-{uuid.uuid4().hex[:8]}"
+        try:
+            current_commit_hash = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo_dir_path, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
+            subprocess.run(["git", "checkout", "-b", branch, current_commit_hash], cwd=self.repo_dir_path, check=True,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            result = subprocess.run(["git", "apply", "--verbose", "--reject", "--unidiff-zero", str(patch_path)],
+                                    cwd=self.repo_dir_path, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            return result.stdout.strip() if result.returncode else None
+        except subprocess.CalledProcessError as e:
+            return e.stderr.strip() or str(e)
+        finally:
+            subprocess.run(["git", "checkout", "-"], cwd=self.repo_dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "branch", "-D", branch], cwd=self.repo_dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            patch_path.unlink(missing_ok=True)
+
 
 
 
@@ -365,66 +451,3 @@ class SandboxManager:
         except Exception as e:
             logger.error(f"Error starting proxy container: {e}")
             raise
-
-    def evaluate_run(self, evaluation_run: "EvaluationRun"):
-        """Synchronously evaluate the generated patch for a single EvaluationRun."""
-        try:
-            # Mark evaluation start
-            evaluation_run.status = "eval_started"
-            evaluation_run.eval_started_at = datetime.now()
-
-            # Fetch the corresponding SWE-bench instance
-            instance_id = evaluation_run.swebench_instance_id
-            instance = load_swebench_dataset(
-                "SWE-bench/SWE-bench_Verified", "test", [instance_id]
-            )[0]
-            if not instance:
-                raise RuntimeError(f"Instance {instance_id} not found in SWE-bench dataset")
-
-            # Prepare prediction & test spec
-            prediction = {
-                "instance_id": instance_id,
-                "model_name_or_path": evaluation_run.run_id,
-                "model_patch": evaluation_run.response,
-            }
-
-            test_spec = make_test_spec(instance)
-            # Build the environment image for this instance (cached if already built)
-            build_env_images(self.docker, [test_spec], max_workers=4)
-
-            # Execute the evaluation
-            run_result = run_instance(
-                test_spec=test_spec,
-                pred=prediction,
-                rm_image=False,  # Clean up after each run
-                force_rebuild=False,
-                client=self.docker,
-                run_id=evaluation_run.run_id,
-                timeout=1800,
-                rewrite_reports=False,
-            )
-
-            # Parse results
-            if run_result:
-                instance_id, report = run_result
-                report = report[instance_id]
-
-                if report["patch_is_None"]:
-                    evaluation_run.solved = False
-                    evaluation_run.error = "Patch was empty"
-                else:
-                    evaluation_run.fail_to_pass_success = json.dumps(report["tests_status"]["FAIL_TO_PASS"]["success"])
-                    evaluation_run.pass_to_pass_success = json.dumps(report["tests_status"]["PASS_TO_PASS"]["success"])
-                    evaluation_run.fail_to_fail_success = json.dumps(report["tests_status"]["FAIL_TO_FAIL"]["success"])
-                    evaluation_run.pass_to_fail_success = json.dumps(report["tests_status"]["PASS_TO_FAIL"]["success"])
-                    evaluation_run.solved = report["resolved"]
-            else:
-                evaluation_run.solved = False
-                evaluation_run.error = "Patch did not apply"
-
-        except Exception as e:
-            evaluation_run.solved = False
-            evaluation_run.error = str(e)
-        finally:
-            evaluation_run.status = "result_scored"
-            evaluation_run.result_scored_at = datetime.now()
