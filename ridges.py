@@ -327,8 +327,7 @@ def run(no_auto_update: bool):
         ))
         return
     
-    # Start auto-updater
-    console.print("🚀 Starting auto-updater...", style="yellow")
+    console.print("🚀 Starting validator...", style="yellow")
     
     # Run the auto-updater script under PM2 using the specified process name
     returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
@@ -367,6 +366,33 @@ def run(no_auto_update: bool):
     else:
         console.print("💥 Auto-updater failed to start properly", style="red")
         sys.exit(1)
+
+@validator.command()
+def stop():
+    """Stop the Ridges validator and auto-updater."""
+    console.print("🛑 Stopping Ridges validator processes...", style="yellow")
+    
+    # Stop both processes
+    processes_to_stop = ["ridges-validator", "ridges-validator-updater"]
+    stopped_processes = []
+    
+    for process in processes_to_stop:
+        returncode, stdout, stderr = run_command(f"pm2 stop {process}")
+        if returncode == 0:
+            stopped_processes.append(process)
+            console.print(f"✅ Stopped {process}", style="green")
+        else:
+            console.print(f"⚠️  {process} was not running or could not be stopped", style="yellow")
+    
+    if stopped_processes:
+        console.print(Panel(
+            f"[bold green]🎉 Successfully stopped:[/bold green]\n"
+            f"[cyan]{', '.join(stopped_processes)}[/cyan]",
+            title="✨ Stop Complete",
+            border_style="green"
+        ))
+    else:
+        console.print("ℹ️  No validator processes were running", style="cyan")
 
 if __name__ == "__main__":
     cli() 
