@@ -2,7 +2,7 @@ import os
 from typing import Optional, List
 import psycopg2
 from dotenv import load_dotenv
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo
 from api.src.utils.logging_utils import get_logger
 
 load_dotenv()
@@ -1511,4 +1511,52 @@ class DatabaseManager:
                 ) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching weights_history for last 24h with prior: {str(e)}")
+            return []
+        
+    def get_queue_info(self, version_id: str) -> List[QueueInfo]:
+        """
+        For a given version_id, for each evaluation:
+        - If running, place_in_queue=0
+        - If waiting, place_in_queue=(number of waiting for that validator with earlier created_at)+1
+        - If completed, place_in_queue=-1
+        - If replaced, place_in_queue=None
+        Returns a list of QueueInfo(validator_hotkey, place_in_queue) for each evaluation for the version.
+        """
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT validator_hotkey, created_at, status
+                    FROM evaluations
+                    WHERE version_id = %s
+                    ORDER BY created_at ASC
+                """, (version_id,))
+                evals = cursor.fetchall()
+                if not evals:
+                    return []
+
+                queue_info_list = []
+                for validator_hotkey, created_at, status in evals:
+                    if status == "running":
+                        place_in_queue = 0
+                    elif status == "waiting":
+                        cursor.execute("""
+                            SELECT COUNT(*)
+                            FROM evaluations
+                            WHERE status = 'waiting' AND validator_hotkey = %s AND created_at < %s
+                        """, (validator_hotkey, created_at))
+                        place_in_queue = cursor.fetchone()[0] + 1
+                    elif status == "completed":
+                        place_in_queue = -1
+                    elif status == "replaced":
+                        place_in_queue = None
+                    else:
+                        place_in_queue = None
+                    queue_info_list.append(QueueInfo(
+                        validator_hotkey=validator_hotkey,
+                        place_in_queue=place_in_queue
+                    ))
+                logger.info(f"Found queue info for {len(queue_info_list)} evaluations for version {version_id}")
+                return queue_info_list
+        except Exception as e:
+            logger.error(f"Error getting queue info for version {version_id}: {str(e)}")
             return []

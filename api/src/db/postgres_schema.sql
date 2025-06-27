@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES agent_versions(version_id),
     validator_hotkey TEXT NOT NULL,
-    status TEXT NOT NULL, -- AARON NAMED THIS 'STATUS'. IT MAY BE A RESERVED WORD. FIRE HIM IF IT BREAKS EVERYTHING. One of (waiting, running, completed, timedout, error, replaced)
+    status TEXT NOT NULL, -- AARON NAMED THIS 'STATUS'. IT MAY BE A RESERVED WORD. FIRE HIM IF IT BREAKS EVERYTHING. One of (waiting, running, completed, replaced)
     terminated_reason TEXT,
     created_at TIMESTAMP NOT NULL,
     started_at TIMESTAMP,

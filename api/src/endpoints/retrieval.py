@@ -274,6 +274,18 @@ def get_agent_version(version_id: str, include_code: bool = True) -> AgentVersio
     
     return agent_version
 
+def get_queue_info(version_id: str):
+    try:
+        queue_info = db.get_queue_info(version_id)
+    except Exception as e:
+        logger.error(f"Error retrieving queue info for version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving queue info. Please try again later."
+        )
+    
+    return queue_info
+
 router = APIRouter()
 
 routes = [
@@ -290,6 +302,7 @@ routes = [
     ("/agent-summary", get_agent_summary),
     ("/evaluations", get_evaluations),
     ("/agent-version", get_agent_version),
+    ("/queue-info", get_queue_info),
 ]
 
 for path, endpoint in routes:

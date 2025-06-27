@@ -122,3 +122,7 @@ class WeightsData(BaseModel):
     timestamp: datetime
     time_since_last_update: Optional[timedelta]
     miner_weights: dict
+
+class QueueInfo(BaseModel):
+    validator_hotkey: str
+    place_in_queue: int
