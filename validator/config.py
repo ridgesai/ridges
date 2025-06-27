@@ -52,6 +52,12 @@ RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", None)
 if RIDGES_API_URL is None or RIDGES_WS_URL is None:
     print("RIDGES_API_URL and RIDGES_WS_URL must be set. Set them in validator/.env")
     exit(1)
+if RIDGES_API_URL == "http://<YOUR_IP_ADDRESS>:8000":
+    print("Set your local IP address in validator/.env")
+    exit(1)
+if RIDGES_API_URL in ["http://127.0.0.1:8000", "http://localhost:8000", "http://0.0.0.0:8000"]:
+    print("You are running the validator on a loopback address. This will cause 502 connection errors while proxying. Please use your local IP address.")
+    exit(1)
 
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
