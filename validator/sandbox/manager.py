@@ -163,13 +163,11 @@ class Sandbox:
             repo_name = challenge.get("repo")
             base_commit = challenge.get("base_commit")
 
-            self.repo_dir_path = REPOS_BASE_DIR / repo_name
+            self.repo_dir_path = REPOS_BASE_DIR / self.evaluation_run.run_id
             self.repo_dir_path.parent.mkdir(parents=True, exist_ok=True)
 
-            if not self.repo_dir_path.exists():
-                # Fresh clone when we see this repository for the first time
-                logger.info(f"Cloning repository {repo_name} into cache {self.repo_dir_path}")
-                clone_repo(self.repo_dir_path, repo_name, base_commit)
+            logger.info(f"Cloning repository {repo_name} into {self.repo_dir_path}")
+            clone_repo(self.repo_dir_path, repo_name, base_commit)
 
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
@@ -182,7 +180,7 @@ class Sandbox:
 
                     # Mount the source directory
                     os.path.abspath(self.src_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
-                    os.path.abspath(self.repo_dir_path): {"bind": SANDBOX_REPO_DIR, "mode": "ro"},
+                    os.path.abspath(self.repo_dir_path): {"bind": SANDBOX_REPO_DIR, "mode": "rw"}, # Since tool calls can modify the repo
                 },
                 working_dir=SANDBOX_DIR,
                 environment={
@@ -234,6 +232,7 @@ class Sandbox:
     def cleanup(self):
         # Clean up temporary agent source directory
         shutil.rmtree(self.src_dir, ignore_errors=True)
+        shutil.rmtree(self.repo_dir_path, ignore_errors=True)
 
     def _run_evaluation(self):
         """Blocking helper that runs evaluation for this sandbox's run."""
