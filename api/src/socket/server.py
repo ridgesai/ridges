@@ -90,6 +90,7 @@ class WebSocketServer:
                     eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
 
                     eval_run_dict = eval_run.model_dump(mode='json')
+                    eval_run_dict["validator_hotkey"] = self.clients[websocket]["val_hotkey"]
                     await self.notify_all_clients("evaluation-run-updated", eval_run_dict)
 
         except websockets.ConnectionClosed:
@@ -119,8 +120,9 @@ class WebSocketServer:
 
     async def create_new_evaluations(self, version_id: str):
         for websocket, client_data in self.clients.items():
-            create_evaluation(version_id, client_data["val_hotkey"])
-            await websocket.send(json.dumps({"event": "evaluation-available"}))
+            if client_data["val_hotkey"] is not None:
+                create_evaluation(version_id, client_data["val_hotkey"])
+                await websocket.send(json.dumps({"event": "evaluation-available"}))
     
     async def get_next_evaluation(self, validator_hotkey: str):
         try:
