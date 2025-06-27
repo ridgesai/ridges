@@ -53,18 +53,39 @@ def check_pm2_process(process_name: str = "ridges-validator") -> tuple[bool, str
     """Check if PM2 process is running and return (is_running, last_check_time)"""
     returncode, stdout, _ = run_command(f"pm2 list | grep {process_name}")
     if returncode == 0 and process_name in stdout:
-        # Try to get last restart time from PM2 logs
-        log_returncode, log_output, _ = run_command(f"pm2 logs {process_name} --lines 1 --nostream")
-        if log_returncode == 0 and log_output:
-            # Extract timestamp from log line
-            lines = log_output.strip().split('\n')
-            if lines:
-                first_line = lines[0]
-                # Look for timestamp pattern
+        # Try to get last check time from PM2 logs
+        if process_name == "ridges-validator-updater":
+            # For updater, look for "Checking for updates" lines
+            log_returncode, log_output, _ = run_command(f"pm2 logs {process_name} --lines 20 --nostream")
+            if log_returncode == 0 and log_output:
+                # Look for the most recent "Checking for updates" line
                 import re
-                timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', first_line)
-                if timestamp_match:
-                    return True, timestamp_match.group(1)
+                from datetime import datetime
+                for line in log_output.strip().split('\n'):
+                    if "Checking for updates" in line:
+                        timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
+                        if timestamp_match:
+                            timestamp_str = timestamp_match.group(1)
+                            try:
+                                timestamp_dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
+                                diff = datetime.now() - timestamp_dt
+                                relative = f"{diff.seconds // 60}m {diff.seconds % 60}s ago"
+                                return True, f"{timestamp_str} ({relative})"
+                            except ValueError:
+                                return True, timestamp_str
+        else:
+            # For other processes, use the original logic
+            log_returncode, log_output, _ = run_command(f"pm2 logs {process_name} --lines 2 --nostream")
+            if log_returncode == 0 and log_output:
+                # Extract timestamp from log line
+                lines = log_output.strip().split('\n')
+                if lines:
+                    first_line = lines[0]
+                    # Look for timestamp pattern
+                    import re
+                    timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', first_line)
+                    if timestamp_match:
+                        return True, timestamp_match.group(1)
         return True, "unknown"
     return False, ""
 
@@ -270,7 +291,7 @@ def run(no_auto_update: bool):
             border_style="yellow"
         ))
         
-        if not Prompt.ask("Would you like to build the missing containers?", choices=["y", "n"], default="y") == "y":
+        if not Prompt.ask("Would you like to build the missing containers?", choices=["Y", "n"], default="y") == "y":
             console.print("❌ Aborting - containers required", style="red")
             sys.exit(1)
         
@@ -294,7 +315,7 @@ def run(no_auto_update: bool):
     
     # Check if auto-updater is running
     console.print("🔍 Checking auto-updater status...", style="cyan")
-    is_running, last_check = check_pm2_process()
+    is_running, last_check = check_pm2_process("ridges-validator-updater")
     
     if is_running:
         console.print(Panel(
@@ -309,16 +330,23 @@ def run(no_auto_update: bool):
     # Start auto-updater
     console.print("🚀 Starting auto-updater...", style="yellow")
     
-    # Run the auto-updater script with visible output
-    returncode, stdout, stderr = run_command("./validator_auto_update.sh --skip-confirm-env", capture_output=False)
+    # Run the auto-updater script under PM2 using the specified process name
+    returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
     
     if returncode != 0:
         console.print(f"💥 Failed to start auto-updater", style="red")
         sys.exit(1)
     
     # Verify it started and show logs
-    time.sleep(2)  # Give it a moment to start
-    is_running, _ = check_pm2_process()
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True
+    ) as progress:
+        task = progress.add_task("Starting auto-updater...", total=None)
+        time.sleep(3)  # Show loading indicator for 3 seconds
+    is_running, _ = check_pm2_process("ridges-validator-updater")
     
     if is_running:
         console.print(Panel(

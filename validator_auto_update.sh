@@ -14,16 +14,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --help: Show this help message"
             exit 0
             ;;
-        --skip-confirm-env)
-            SKIP_CONFIRM_ENV=true
-            shift
-            ;;
-        *)
-            if [ -z "$PM2_PROCESS_NAME" ]; then
-                PM2_PROCESS_NAME="$1"
-            fi
-            shift
-            ;;
     esac
 done
 
@@ -53,7 +43,7 @@ activate_venv() {
 }
 
 function is_validator_running() {
-  pm2 list | grep $PM2_PROCESS_NAME
+  pm2 list | grep "$PM2_PROCESS_NAME " | grep -v "ridges-validator " | grep -q "online"
 }
 
 # Activate virtual environment initially
@@ -76,24 +66,6 @@ if ! is_validator_running; then
         exit 1
     fi
     
-    # Make user confirm (y/N) if the fields in their validator/.env are correct (ignore lines that start with #)
-    if [ "$SKIP_CONFIRM_ENV" = false ]; then
-        echo "Please confirm the following values in validator/.env are correct:"
-        echo "  NETUID: $(grep -v '^#' validator/.env | grep NETUID | cut -d '=' -f2)"
-        echo "  SUBTENSOR_NETWORK: $(grep -v '^#' validator/.env | grep SUBTENSOR_NETWORK | cut -d '=' -f2)"
-        echo "  SUBTENSOR_ADDRESS: $(grep -v '^#' validator/.env | grep SUBTENSOR_ADDRESS | cut -d '=' -f2)"
-        echo "  WALLET_NAME: $(grep -v '^#' validator/.env | grep WALLET_NAME | cut -d '=' -f2)"
-        echo "  HOTKEY_NAME: $(grep -v '^#' validator/.env | grep HOTKEY_NAME | cut -d '=' -f2)"
-        echo "  OPENAI_API_KEY: $(grep -v '^#' validator/.env | grep OPENAI_API_KEY | cut -d '=' -f2)"
-        echo ""
-        read -p "Are these values correct? (y/N) " confirm
-        if [ "$confirm" != "y" ]; then
-            echo "Please update the values in validator/.env and run this script again."
-            exit 1
-        fi
-    else
-        echo "Skipping environment variable confirmation (--skip-confirm-env flag set)"
-    fi
     uv pip install -e "."
     pm2 start uv  --name $PM2_PROCESS_NAME -- run validator/main.py
 else
