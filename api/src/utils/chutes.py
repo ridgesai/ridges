@@ -32,7 +32,7 @@ class ChutesManager:
                 logger.info("Started cleaning up old entries from Chutes")
                 await self.cleanup_old_entries()
                 logger.info("Finished cleaning up old entries from Chutes. Running again in 5 minutes.")
-                await asyncio.sleep(15)
+                await asyncio.sleep(300)
         
         self.cleanup_task = asyncio.create_task(cleanup_loop())
 
@@ -44,11 +44,11 @@ class ChutesManager:
             keys_to_remove_embedding = []
 
             for key, value in self.costs_data_inference.items():
-                if current_time - value["started_at"] > timedelta(minutes=1):
+                if current_time - value["started_at"] > timedelta(minutes=20):
                     keys_to_remove_inference.append(key)
             
             for key, value in self.costs_data_embedding.items():
-                if current_time - value["started_at"] > timedelta(minutes=1):
+                if current_time - value["started_at"] > timedelta(minutes=20):
                     keys_to_remove_embedding.append(key)
         
             for key in keys_to_remove_inference:
