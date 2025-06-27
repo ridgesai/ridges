@@ -394,5 +394,18 @@ def stop():
     else:
         console.print("ℹ️  No validator processes were running", style="cyan")
 
+@validator.command()
+def logs():
+    """Show real-time logs from the Ridges validator and auto-updater."""
+    console.print("📋 Showing real-time logs from validator processes...", style="cyan")
+    console.print("Press Ctrl+C to stop", style="yellow")
+    
+    # Show logs from both processes
+    returncode, stdout, stderr = run_command("pm2 logs ridges-validator ridges-validator-updater", capture_output=False)
+    
+    if returncode != 0:
+        console.print("💥 Failed to show logs", style="red")
+        sys.exit(1)
+
 if __name__ == "__main__":
     cli() 
