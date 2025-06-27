@@ -54,49 +54,6 @@ import math
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------------------------------------------------------------------------
-# Environment tweaks ---------------------------------------------------------
-# ---------------------------------------------------------------------------
-# The `sentence_transformers` / `transformers` stack attempts to import the
-# TensorFlow / Keras backend by default.  In the constrained sandbox image we
-# don't ship those heavy dependencies, and recent `keras==3` is incompatible
-# with `transformers`, causing an immediate import failure.  Setting the
-# following environment variable instructs `transformers` to entirely skip any
-# TensorFlow components so that the pure PyTorch code paths are used instead.
-# IMPORTANT: This must be done *before* importing anything from transformers or
-# sentence_transformers.
-
-os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
-
-# Some recent versions of `transformers` still unconditionally import the legacy
-# compatibility package `tf_keras` (a thin shim around Keras 2.x).  Rather than
-# pulling in heavy TensorFlow dependencies or pinning older libraries, we
-# provide an empty stub so that the import succeeds without side-effects.
-
-import types as _types
-import sys as _sys
-if "tf_keras" not in _sys.modules:
-    _sys.modules["tf_keras"] = _types.ModuleType("tf_keras")
-
-# Some helper classes referenced by `transformers.integrations` are only
-# defined when TensorFlow support is available.  We create lightweight stubs
-# so that static imports succeed even though the functionality is absent.
-
-try:
-    import importlib as _importlib
-
-    _tfm = _importlib.import_module("transformers")  # ensure it's loaded
-
-    if not hasattr(_tfm, "TFPreTrainedModel"):
-        class _DummyTFPreTrainedModel:  # noqa: N801 (class name style)
-            pass
-
-        _tfm.TFPreTrainedModel = _DummyTFPreTrainedModel
-except Exception:
-    # If transformers itself isn't importable for some reason we'll find out
-    # later when sentence_transformers attempts; nothing to do here.
-    pass
-
-# ---------------------------------------------------------------------------
 # Defaults via environment variables ----------------------------------------
 # ---------------------------------------------------------------------------
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
@@ -106,14 +63,15 @@ DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
 DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3")
 
 # Other constants
-MAX_STEPS = 50
-MAX_OBS_CHARS = 20_000
-MAX_BYTES_READ = 4_000
+MAX_STEPS = 100
+MAX_OBS_CHARS = 200_000
+MAX_BYTES_READ = 400_000
 MAX_EMBED_TOKENS = 512000
 MAX_EMBED_CHARS = MAX_EMBED_TOKENS * 4  # reserve but we'll split by tokens
 
 # New env flag – set EMBED_WHOLE_FILES=1 to revert to legacy behaviour.
-USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
+# USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
+USE_FUNCTION_CHUNKS = 0
 
 # ---------------------------------------------------------------------------
 # Prompt templates (adapted from SWE-agent/config/default.yaml) --------------
@@ -134,8 +92,31 @@ _RAW_SYSTEM_PROMPT = textwrap.dedent(
     COMMANDS:
     {command_docs}
 
+    AVAILABLE TOOLS (exact names & how to call)
+    ------------------------------------------------
+    • LS                → ```ls <optional_dir>```
+    • FIND              → ```find <regex> <optional_dir>```
+    • READ_FILE         → ```read_file <path> [lo-hi]```
+    • DIFF              → ```diff <file1> <file2>```
+    • WRITE_FILE        → ```write_file <path>```  ← will be followed by the new file content in a separate message.
+    • APPLY_PATCH       → ```apply_patch <path_to_.patch>```  (patch must be written beforehand)
+    • FINISH            → ```finish```
+
+    Notes:
+    • Tool names are case-insensitive but using UPPER-CASE (as shown) is recommended.
+    • Only one tool call per assistant turn.
+
     Please note that THE EDIT COMMAND REQUIRES PROPER INDENTATION.
     If you'd like to add the line '        print(x)' you must fully write that out, with all those spaces before the code! Indentation is important and code that is not indented correctly will fail and require fixing before it can be run.
+
+    IMPORTANT FOR PATCHES:
+    When you later construct a *unified diff* (either via WRITE_FILE + APPLY_PATCH
+    or directly in code fences), every line inside the hunk **must keep the exact
+    leading whitespace that exists in the file on disk**.  Context lines (those
+    that begin with a single space), removed lines (-) and added lines (+) are
+    matched verbatim by the `patch` tool; if the indentation differs by even
+    one space the hunk will fail.  Always use READ_FILE or DIFF to confirm the
+    current indentation before you craft the patch.
 
     RESPONSE FORMAT:
     Your shell prompt is formatted as follows:
@@ -152,7 +133,7 @@ _RAW_SYSTEM_PROMPT = textwrap.dedent(
     You should only include a *SINGLE* command in the command section and then wait for a response from the shell before continuing with more discussion and commands.
     If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Instead submit the first command, wait for feedback, then issue the second.
 
-    You're free to use any other bash commands you want (e.g. find, grep, cat, ls, cd) in addition to the special commands listed above.
+    You're free to use any other bash commands you want (e.g. FIND, READ_FILE, WRITE_FILE, APPLY_PATCH, LS, DIFF) in addition to the special commands listed above.
     However, the environment does NOT support interactive session commands (e.g. python, vim), so please do not invoke them.
     """
 )
@@ -206,7 +187,9 @@ ONESHOT_SYSTEM_PROMPT = (
     "   the standard \"--- a/<path>\" and \"+++ b/<path>\" headers.\n"
     "3. Use -u style context hunks that begin with lines like @@ -N,M +N,M @@.\n"
     "4. Every changed file needs its own header block as in rule 2.\n"
-    "5. End the patch with a trailing newline.\n\n"
+    "5. End the patch with a trailing newline.\n"
+    "6. Preserve the *exact* indentation that appears in the original file —\n"
+    "   mismatched leading spaces will cause the patch to be rejected.\n\n"
     "Be exact: if the diff is syntactically malformed or wrapped in extra "
     "text the automated patch tool will fail.\n\n"
     "OUTPUT RULES (VERY IMPORTANT)\n"
@@ -282,10 +265,17 @@ def _sanitize_patch(patch: str) -> str:
     lines that are valid in a unified diff so downstream tools (`patch`,
     `git apply`) succeed and the resulting patch file is clean.
     """
-    # Stop at the first closing code fence (```), if present.
-    stop_idx = patch.find("\n```")
-    if stop_idx != -1:
-        patch = patch[:stop_idx]
+    # If the diff is wrapped inside Markdown fences, unwrap them.
+    if "```" in patch:
+        import re
+        m = re.search(r"```[a-zA-Z0-9_+.-]*\n(.*?)\n```", patch, re.S)
+        if m:
+            patch = m.group(1)
+        else:
+            # Remove any sole opening fence on the first line
+            lines = patch.splitlines()
+            if lines and lines[0].strip().startswith("```"):
+                patch = "\n".join(lines[1:])
 
     allowed_prefixes = (
         "diff --git",
@@ -410,7 +400,8 @@ def _finish() -> str:
 #   In this mode you can additionally set READ_ONLY=1 to hide WRITE_FILE and
 #   APPLY_PATCH so the model can only inspect the repository.
 
-MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
+# MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
+MODE = os.getenv("AGENT_MODE", "ONESHOT").upper()
 READ_ONLY = False  # read-only mode disabled – allow WRITE_FILE and APPLY_PATCH
 
 ALL_TOOLS = {
@@ -516,7 +507,7 @@ def run_oneshot(
     proxy_url: str,
     model_name: str,
     run_id: str,
-    top_k: int = 30,
+    top_k: int = 100,
 ) -> str:
     """Build repository summary and send a single LLM call.
 
@@ -595,7 +586,7 @@ def run_oneshot(
 
     sorted_idx = sorted(range(len(sims)), key=lambda i: -sims[i])
 
-    TARGET_TOKENS = 12_000
+    TARGET_TOKENS = 48_000
     token_budget = int(TARGET_TOKENS * 0.85)
     token_total = 0
     top_idx: list[int] = []
@@ -606,14 +597,14 @@ def run_oneshot(
         token_total += tok
         top_idx.append(idx)
 
-    # Fallback to at most top_k if budget yields too many
-    if len(top_idx) > top_k:
-        top_idx = top_idx[:top_k]
+    # # Fallback to at most top_k if budget yields too many
+    # if len(top_idx) > top_k:
+    #     top_idx = top_idx[:top_k]
 
     summary_parts: list[str] = []
     for idx in top_idx:
         ch = code_chunks[idx]
-        body = ch.text[:2000]
+        body = ch.text
         tag = _lang_tag(ch.file)
         header = f"### {ch.file}:L{ch.start_line}-{ch.end_line}"
         summary_parts.append(f"{header}\n```{tag}\n{body}\n```")
@@ -629,14 +620,6 @@ def run_oneshot(
         {"role": "user", "content": problem_text},
         {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
     ]
-
-    # The proxy now streams requests fully, so the hard 8-KiB ceiling is gone.
-    # We keep a *very* generous soft cap (512 KiB) just to avoid accidentally
-    # flooding the proxy with multi-MB payloads when a problem statement is
-    # huge.  If the request still exceeds this after all summary files are
-    # dropped we just send it – the proxy will handle it.
-
-    SOFT_CAP_BYTES = 512 * 1024  # 512 KiB
 
     ATTEMPTS = 8
 
@@ -663,11 +646,29 @@ def run_oneshot(
         text_resp = (proxy_resp.get("text_response") or "").lstrip()
         code_resp = (proxy_resp.get("code_response") or "").lstrip()
 
+        import re, json as _json
         patch_text = None
-        for cand in (text_resp, code_resp):
-            if cand and (cand.startswith("diff") or cand.startswith("--- ")):
+        for cand in (code_resp, text_resp):
+            if not cand:
+                continue
+            if cand.lstrip().startswith("diff") or cand.lstrip().startswith("--- "):
                 patch_text = cand
                 break
+            # Look for an embedded diff header somewhere inside.
+            m = re.search(r"^diff --git .*$", cand, re.M)
+            if m:
+                patch_text = cand[m.start():]
+                break
+            # Detect nested JSON layer produced by some models.
+            if cand.strip().startswith("{"):
+                try:
+                    inner = _json.loads(cand)
+                    inner_cand = (inner.get("code_response") or inner.get("text_response") or "").lstrip()
+                    if inner_cand.startswith("diff") or inner_cand.startswith("--- "):
+                        patch_text = inner_cand
+                        break
+                except Exception:
+                    pass
 
         if patch_text is None:
             print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...")
@@ -871,7 +872,7 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
 
                 # Shape 1: {"name": ..., "arguments": {...}}
                 if isinstance(obj, dict) and "name" in obj:
-                    return {"name": obj["name"], "arguments": obj.get("arguments", {})}
+                    return {"name": str(obj["name"]).upper(), "arguments": obj.get("arguments", {})}
 
                 # Shape 2: {"tool_calls": [ {"function": {"name":..., "arguments":"{...}"}} ]}
                 if isinstance(obj, dict) and "tool_calls" in obj:
@@ -879,7 +880,7 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
                         fc = obj["tool_calls"][0]["function"]
                         args_str = fc.get("arguments", "{}")
                         args = json.loads(args_str) if isinstance(args_str, str) else args_str
-                        return {"name": fc["name"], "arguments": args}
+                        return {"name": str(fc["name"]).upper(), "arguments": args}
                     except Exception:
                         return None
 
@@ -918,16 +919,9 @@ def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: st
         messages.append({"role": "assistant", "content": "", "tool_call": call})
         messages.append({"role": "tool", "name": name, "content": result_trunc})
 
+
         if name == "APPLY_PATCH":
-            # Remember the cleaned diff that we attempted to apply ONLY if the
-            # patch actually applied (exit code 0).  The _apply_patch helper
-            # prefixes its return string with "Patch applied successfully." on
-            # success, or "Patch applied with warnings/rejects." when hunks were
-            # rejected.  We ignore the latter to avoid returning diffs that did
-            # not take effect.
-            candidate = _sanitize_patch(args.get("patch", ""))
-            if candidate.strip() and result.lower().startswith("patch applied successfully"):
-                last_patch = candidate
+            last_patch = _sanitize_patch(args.get("patch", ""))
 
         if name == "FINISH":
             print("[agent] FINISH called – exiting.")
@@ -951,22 +945,6 @@ def agent_main(input_dict: Dict[str, Any]):
         description.  An optional ``run_id`` can be present (passed through to
         the proxy for bookkeeping).
     """
-
-    return {'patch': """diff --git a/astropy/io/fits/connect.py b/astropy/io/fits/connect.py
---- a/astropy/io/fits/connect.py
-+++ b/astropy/io/fits/connect.py
-@@ -65,10 +65,9 @@ def is_fits(origin, filepath, fileobj, *args, **kwargs):
-         fileobj.seek(pos)
-         return sig == FITS_SIGNATURE
-     elif filepath is not None:
--        if filepath.lower().endswith(
-+        return filepath.lower().endswith(
-             (".fits", ".fits.gz", ".fit", ".fit.gz", ".fts", ".fts.gz")
--        ):
--            return True
-+        )
-     return isinstance(args[0], (HDUList, TableHDU, BinTableHDU, GroupsHDU))
-            """}
 
     problem_text = input_dict.get("problem_statement")
     if not problem_text:
@@ -994,7 +972,7 @@ def agent_main(input_dict: Dict[str, Any]):
             model_name=model_name,
             run_id=input_dict.get("run_id", ""),
         )
-        return {"patch": patch_text or "AHH NO PATCH"}
+        return {"patch": patch_text}
 
     # Default: one-shot retrieval that returns a patch.
     patch_text = run_oneshot(
@@ -1119,6 +1097,8 @@ def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
         if ".git" in dirpath.split(os.sep):
             continue
         for fn in files:
+            if not fn.endswith(".py"):
+                continue  # only Python source
             path = os.path.join(dirpath, fn)
             try:
                 with open(path, "r", encoding="utf-8", errors="ignore") as fh:
@@ -1162,8 +1142,12 @@ def _collect_code_chunks(root: str = ".") -> List[Chunk]:
             continue
         rel_path = str(path.relative_to(root_path))
 
-        # Skip the agent itself (both the original and sandbox copy) to avoid polluting retrieval.
-        if rel_path == "miner/agent.py" or rel_path == "src/agent.py" or rel_path.endswith("/miner/agent.py"):
+        # Ignore non-Python files outright – the task set is Python-only.
+        if not rel_path.endswith(".py"):
+            continue
+
+        # Skip the agent itself to avoid feedback.
+        if rel_path == "miner/agent.py" or rel_path.endswith("/miner/agent.py"):
             continue
 
         try:
