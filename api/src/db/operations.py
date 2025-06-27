@@ -525,64 +525,66 @@ class DatabaseManager:
         """
         with self.conn.cursor() as cursor:
             cursor.execute("""
-                (
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_scored.version_id,
-                        latest_scored.version_num,
-                        latest_scored.created_at as version_created_at,
-                        latest_scored.score,
-                        1 as sort_order
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        WHERE score IS NOT NULL
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_scored ON a.agent_id = latest_scored.agent_id
-                    WHERE latest_scored.score IS NOT NULL
-                    ORDER BY latest_scored.score DESC
-                    LIMIT %s
-                )
-                UNION ALL
-                (
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_ver.version_id,
-                        latest_ver.version_num,
-                        latest_ver.created_at as version_created_at,
-                        latest_ver.score,
-                        2 as sort_order
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_ver ON a.agent_id = latest_ver.agent_id
-                    WHERE latest_ver.score IS NULL
-                    ORDER BY a.created_at DESC
-                )
+                SELECT * FROM (
+                    (
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_scored.version_id,
+                            latest_scored.version_num,
+                            latest_scored.created_at as version_created_at,
+                            latest_scored.score,
+                            1 as sort_order
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            WHERE score IS NOT NULL
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_scored ON a.agent_id = latest_scored.agent_id
+                        WHERE latest_scored.score IS NOT NULL
+                        ORDER BY latest_scored.score DESC
+                    )
+                    UNION ALL
+                    (
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_ver.version_id,
+                            latest_ver.version_num,
+                            latest_ver.created_at as version_created_at,
+                            latest_ver.score,
+                            2 as sort_order
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_ver ON a.agent_id = latest_ver.agent_id
+                        WHERE latest_ver.score IS NULL
+                        ORDER BY a.created_at DESC
+                    )
+                ) combined_results
                 ORDER BY sort_order, score DESC NULLS LAST
+                LIMIT %s
             """, (num_agents,))
             rows = cursor.fetchall()
             return [AgentSummary(
