@@ -77,7 +77,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     agent_dir = AGENTS_BASE_DIR / evaluation_run.run_id
                     agent_file_path = agent_dir / "agent.py"
 
-                    with open(agent_file_path, "wb") as f:
+                    with open(agent_file_path, "w") as f:
                         f.write(agent_file_content)
 
                     sbox = sbox_manager.add_sandbox(evaluation_run, agent_dir=Path(agent_dir))
