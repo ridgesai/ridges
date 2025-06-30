@@ -213,7 +213,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             
             with httpx.Client() as client:
                 with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-                    progress.add_task(f"📡 Uploading {name} to Ridges API...", total=None)
+                    progress.add_task(f"📡 Uploading {name} to the Ridges API at {ridges.api_url}...", total=None)
                     response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
                 
                 if response.status_code == 200:
