@@ -8,7 +8,6 @@ from validator.config import validator_hotkey
 
 logger = get_logger(__name__)
 
-
 async def handle_evaluation(websocket_app, json_message):
     """Handle agent version events.
 

@@ -3,7 +3,6 @@ from pathlib import Path
 import os
 import subprocess
 
-
 # External package imports
 from fiber.chain.chain_utils import load_hotkey_keypair
 
