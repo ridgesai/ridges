@@ -1,3 +1,34 @@
+"""
+Database Operations Module
+
+This module has been partially refactored to use SQLAlchemy for better maintainability.
+
+REFACTORED METHODS (using SQLAlchemy with psycopg2 fallback):
+- store_agent: Store agent with conflict resolution
+- store_agent_version: Store agent version with conflict resolution  
+- get_agent_by_hotkey: Retrieve agent by miner hotkey
+- get_agent: Retrieve agent by ID
+- get_agent_version: Retrieve agent version by version ID
+- get_latest_agent_version: Get latest version for an agent
+- get_num_agents: Count total agents
+- store_weights: Store miner weights history
+- get_latest_weights: Get most recent weights
+- get_current_top_miner: Get miner with highest current weight
+
+COMPLEX QUERIES (still using raw SQL):
+- get_top_agents: Complex ranking query with DISTINCT ON and CASE statements
+- get_recent_executions: Multi-table joins with nested loops for evaluation runs
+- get_latest_execution_by_agent: Complex priority-based selection logic
+- get_agent_summary: Multi-step query with various aggregations
+- get_evaluations: Complex filtering and ordering
+- get_top_miner_fraction_last_24h: Complex time-window analysis with CTEs
+- get_weights_history_last_24h_with_prior: Complex UNION query with time intervals
+- get_queue_info: Complex queue position calculation logic
+
+The module maintains backwards compatibility while gradually introducing SQLAlchemy.
+Each refactored method includes fallback to the original raw SQL implementation.
+"""
+
 import os
 from typing import Optional, List
 import psycopg2
@@ -6,6 +37,7 @@ import threading
 from dotenv import load_dotenv
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo
 from api.src.utils.logging_utils import get_logger
+from .sqlalchemy_manager import SQLAlchemyDatabaseManager
 
 load_dotenv()
 
@@ -30,6 +62,8 @@ class DatabaseManager:
                 if not self._initialized:
                     self._initialize_pool()
                     self.init_tables()
+                    # Initialize SQLAlchemy manager for modern operations
+                    self.sqlalchemy_manager = SQLAlchemyDatabaseManager()
                     self._initialized = True
     
     def _initialize_pool(self):
@@ -124,51 +158,63 @@ class DatabaseManager:
     def store_agent(self, agent: Agent) -> int:
         """
         Store an agent in the database. If the agent already exists, update latest_version and last_updated. Return 1 if successful, 0 if not.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            conn.autocommit = True
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO agents (agent_id, miner_hotkey, name, latest_version, created_at, last_updated)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (agent_id) DO UPDATE SET
-                        latest_version = EXCLUDED.latest_version,
-                        last_updated = EXCLUDED.last_updated
-                """, (agent.agent_id, agent.miner_hotkey, agent.name, agent.latest_version, agent.created_at, agent.last_updated))
-                logger.info(f"Agent {agent.agent_id} stored successfully")
-                return 1
+            return self.sqlalchemy_manager.store_agent(agent)
         except Exception as e:
-            logger.error(f"Error storing agent {agent.agent_id}: {str(e)}")
-            return 0
-        finally:
-            if conn:
-                self.return_connection(conn)
+            logger.error(f"SQLAlchemy method failed for storing agent {agent.agent_id}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                conn.autocommit = True
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO agents (agent_id, miner_hotkey, name, latest_version, created_at, last_updated)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (agent_id) DO UPDATE SET
+                            latest_version = EXCLUDED.latest_version,
+                            last_updated = EXCLUDED.last_updated
+                    """, (agent.agent_id, agent.miner_hotkey, agent.name, agent.latest_version, agent.created_at, agent.last_updated))
+                    logger.info(f"Agent {agent.agent_id} stored successfully via fallback")
+                    return 1
+            except Exception as fallback_error:
+                logger.error(f"Error storing agent {agent.agent_id}: {str(fallback_error)}")
+                return 0
+            finally:
+                if conn:
+                    self.return_connection(conn)
         
     def store_agent_version(self, agent_version: AgentVersion) -> int:
         """
         Store an agent version in the database. Return 1 if successful, 0 if not. If the agent version already exists, update the score.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            conn.autocommit = True
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO agent_versions (version_id, agent_id, version_num, created_at, score)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (version_id) DO UPDATE SET
-                        score = EXCLUDED.score
-                    """, (agent_version.version_id, agent_version.agent_id, agent_version.version_num, agent_version.created_at, agent_version.score))
-                logger.info(f"Agent version {agent_version.version_id} stored successfully")
-                return 1
+            return self.sqlalchemy_manager.store_agent_version(agent_version)
         except Exception as e:
-            logger.error(f"Error storing agent version {agent_version.version_id}: {str(e)}")
-            return 0
-        finally:
-            if conn:
-                self.return_connection(conn)
+            logger.error(f"SQLAlchemy method failed for storing agent version {agent_version.version_id}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                conn.autocommit = True
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO agent_versions (version_id, agent_id, version_num, created_at, score)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (version_id) DO UPDATE SET
+                            score = EXCLUDED.score
+                        """, (agent_version.version_id, agent_version.agent_id, agent_version.version_num, agent_version.created_at, agent_version.score))
+                    logger.info(f"Agent version {agent_version.version_id} stored successfully via fallback")
+                    return 1
+            except Exception as fallback_error:
+                logger.error(f"Error storing agent version {agent_version.version_id}: {str(fallback_error)}")
+                return 0
+            finally:
+                if conn:
+                    self.return_connection(conn)
     
     def store_evaluation(self, evaluation: Evaluation) -> int:
         """
@@ -424,56 +470,68 @@ class DatabaseManager:
     def get_agent_by_hotkey(self, miner_hotkey: str) -> Agent:
         """
         Get an agent from the database. Return None if not found.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
-                    FROM agents WHERE miner_hotkey = %s
-                """, (miner_hotkey,))
-                row = cursor.fetchone()
-                if row:
-                    return Agent(
-                        agent_id=row[0],
-                        miner_hotkey=row[1],
-                        name=row[2],
-                        latest_version=row[3],
-                        created_at=row[4],
-                        last_updated=row[5]
-                    )
-                return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            return self.sqlalchemy_manager.get_agent_by_hotkey(miner_hotkey)
+        except Exception as e:
+            logger.error(f"SQLAlchemy method failed for getting agent by hotkey {miner_hotkey}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                        FROM agents WHERE miner_hotkey = %s
+                    """, (miner_hotkey,))
+                    row = cursor.fetchone()
+                    if row:
+                        return Agent(
+                            agent_id=row[0],
+                            miner_hotkey=row[1],
+                            name=row[2],
+                            latest_version=row[3],
+                            created_at=row[4],
+                            last_updated=row[5]
+                        )
+                    return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
         
     def get_agent(self, agent_id: str) -> Agent:
         """
         Get an agent from the database. Return None if not found.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
-                    FROM agents WHERE agent_id = %s
-                """, (agent_id,))
-                row = cursor.fetchone()
-                if row:
-                    return Agent(
-                        agent_id=row[0],
-                        miner_hotkey=row[1],
-                        name=row[2],
-                        latest_version=row[3],
-                        created_at=row[4],
-                        last_updated=row[5]
-                    )
-                return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            return self.sqlalchemy_manager.get_agent(agent_id)
+        except Exception as e:
+            logger.error(f"SQLAlchemy method failed for getting agent {agent_id}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                        FROM agents WHERE agent_id = %s
+                    """, (agent_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return Agent(
+                            agent_id=row[0],
+                            miner_hotkey=row[1],
+                            name=row[2],
+                            latest_version=row[3],
+                            created_at=row[4],
+                            last_updated=row[5]
+                        )
+                    return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
         
     def get_random_agent(self) -> Optional[AgentSummary]:
         """
@@ -556,28 +614,34 @@ class DatabaseManager:
     def get_agent_version(self, version_id: str) -> Optional[AgentVersion]:
         """
         Get an agent version from the database. Return None if not found.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT version_id, agent_id, version_num, created_at, score 
-                    FROM agent_versions WHERE version_id = %s
-                """, (version_id,))
-                row = cursor.fetchone()
-                if row:
-                    return AgentVersion(
-                        version_id=row[0],
-                        agent_id=row[1],
-                        version_num=row[2],
-                        created_at=row[3],
-                        score=row[4]
-                    )
-                return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            return self.sqlalchemy_manager.get_agent_version(version_id)
+        except Exception as e:
+            logger.error(f"SQLAlchemy method failed for getting agent version {version_id}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT version_id, agent_id, version_num, created_at, score 
+                        FROM agent_versions WHERE version_id = %s
+                    """, (version_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return AgentVersion(
+                            version_id=row[0],
+                            agent_id=row[1],
+                            version_num=row[2],
+                            created_at=row[3],
+                            score=row[4]
+                        )
+                    return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
         
     def get_evaluations_by_version_id(self, version_id: str) -> List[Evaluation]:
         """
@@ -611,30 +675,36 @@ class DatabaseManager:
     def get_latest_agent_version(self, agent_id: str) -> Optional[AgentVersion]:
         """
         Get the latest agent version from the database. Return None if not found.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT version_id, agent_id, version_num, created_at, score 
-                    FROM agent_versions WHERE agent_id = %s
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """, (agent_id,))
-                row = cursor.fetchone()
-                if row:
-                    return AgentVersion(
-                        version_id=row[0],
-                        agent_id=row[1],
-                        version_num=row[2],
-                        created_at=row[3],
-                        score=row[4]
-                    )
-                return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            return self.sqlalchemy_manager.get_latest_agent_version(agent_id)
+        except Exception as e:
+            logger.error(f"SQLAlchemy method failed for getting latest agent version for {agent_id}, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT version_id, agent_id, version_num, created_at, score 
+                        FROM agent_versions WHERE agent_id = %s
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                    """, (agent_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        return AgentVersion(
+                            version_id=row[0],
+                            agent_id=row[1],
+                            version_num=row[2],
+                            created_at=row[3],
+                            score=row[4]
+                        )
+                    return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
         
     def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
@@ -1027,18 +1097,24 @@ class DatabaseManager:
     def get_num_agents(self) -> int:
         """
         Get the number of agents in the database.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT COUNT(*) FROM agents
-                """)
-                return cursor.fetchone()[0]
-        finally:
-            if conn:
-                self.return_connection(conn)
+            return self.sqlalchemy_manager.get_num_agents()
+        except Exception as e:
+            logger.error(f"SQLAlchemy method failed for getting agent count, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM agents
+                    """)
+                    return cursor.fetchone()[0]
+            finally:
+                if conn:
+                    self.return_connection(conn)
 
     def get_latest_execution_by_agent(self, agent_id: str) -> Optional[Execution]:
         """
@@ -1501,57 +1577,69 @@ class DatabaseManager:
     def store_weights(self, miner_weights: dict, time_since_last_update=None) -> int:
         """
         Store miner weights in the weights_history table. Return 1 if successful, 0 if not.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            import json
-            from datetime import datetime
-            
-            conn = self.get_connection()
-            conn.autocommit = True
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO weights_history (timestamp, time_since_last_update, miner_weights)
-                    VALUES (%s, %s, %s)
-                """, (datetime.now(), time_since_last_update, json.dumps(miner_weights)))
-                logger.info(f"Weights stored successfully with {len(miner_weights)} miners")
-                return 1
+            return self.sqlalchemy_manager.store_weights(miner_weights, time_since_last_update)
         except Exception as e:
-            logger.error(f"Error storing weights: {str(e)}")
-            return 0
-        finally:
-            if conn:
-                self.return_connection(conn)
+            logger.error(f"SQLAlchemy method failed for storing weights, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                import json
+                from datetime import datetime
+                
+                conn = self.get_connection()
+                conn.autocommit = True
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        INSERT INTO weights_history (timestamp, time_since_last_update, miner_weights)
+                        VALUES (%s, %s, %s)
+                    """, (datetime.now(), time_since_last_update, json.dumps(miner_weights)))
+                    logger.info(f"Weights stored successfully with {len(miner_weights)} miners via fallback")
+                    return 1
+            except Exception as fallback_error:
+                logger.error(f"Error storing weights: {str(fallback_error)}")
+                return 0
+            finally:
+                if conn:
+                    self.return_connection(conn)
 
     def get_latest_weights(self) -> Optional[dict]:
         """
         Get the most recent weights from the weights_history table. Return None if not found.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT miner_weights, timestamp, time_since_last_update
-                    FROM weights_history 
-                    ORDER BY timestamp DESC 
-                    LIMIT 1
-                """)
-                row = cursor.fetchone()
-                
-                if row:
-                    return {
-                        'weights': row[0],  # JSONB is already a dict, no need to parse
-                        'timestamp': row[1],
-                        'time_since_last_update': row[2]
-                    }
-                return None
+            return self.sqlalchemy_manager.get_latest_weights()
         except Exception as e:
-            logger.error(f"Error getting latest weights: {str(e)}")
-            return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            logger.error(f"SQLAlchemy method failed for getting latest weights, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT miner_weights, timestamp, time_since_last_update
+                        FROM weights_history 
+                        ORDER BY timestamp DESC 
+                        LIMIT 1
+                    """)
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        return {
+                            'weights': row[0],  # JSONB is already a dict, no need to parse
+                            'timestamp': row[1],
+                            'time_since_last_update': row[2]
+                        }
+                    return None
+            except Exception as fallback_error:
+                logger.error(f"Error getting latest weights: {str(fallback_error)}")
+                return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
 
     def weights_are_different(self, current_weights: dict, stored_weights: dict) -> bool:
         """
@@ -1661,42 +1749,48 @@ class DatabaseManager:
         """
         Get the miner hotkey with the highest weight from the most recent weights snapshot.
         Returns the miner hotkey if found, None if no weights are available.
+        Uses SQLAlchemy for better maintainability.
         """
-        conn = None
         try:
-            conn = self.get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    SELECT miner_weights
-                    FROM weights_history 
-                    ORDER BY timestamp DESC 
-                    LIMIT 1
-                """)
-                row = cursor.fetchone()
-                
-                if not row or not row[0]:
-                    logger.warning("No weights found in database")
-                    return None
-                
-                # miner_weights is already a dict, find the miner with highest weight
-                miner_weights = row[0]
-                if not miner_weights:
-                    logger.warning("Empty weights found in the latest snapshot")
-                    return None
-                
-                # Find the miner with the highest weight
-                top_miner_hotkey = max(miner_weights.items(), key=lambda x: float(x[1]))[0]
-                top_weight = miner_weights[top_miner_hotkey]
-                
-                logger.info(f"Current top miner: {top_miner_hotkey} with weight {top_weight}")
-                return top_miner_hotkey
-                    
+            return self.sqlalchemy_manager.get_current_top_miner()
         except Exception as e:
-            logger.error(f"Error getting current top miner: {str(e)}")
-            return None
-        finally:
-            if conn:
-                self.return_connection(conn)
+            logger.error(f"SQLAlchemy method failed for getting current top miner, falling back to raw SQL: {str(e)}")
+            # Fallback to original method
+            conn = None
+            try:
+                conn = self.get_connection()
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT miner_weights
+                        FROM weights_history 
+                        ORDER BY timestamp DESC 
+                        LIMIT 1
+                    """)
+                    row = cursor.fetchone()
+                    
+                    if not row or not row[0]:
+                        logger.warning("No weights found in database")
+                        return None
+                    
+                    # miner_weights is already a dict, find the miner with highest weight
+                    miner_weights = row[0]
+                    if not miner_weights:
+                        logger.warning("Empty weights found in the latest snapshot")
+                        return None
+                    
+                    # Find the miner with the highest weight
+                    top_miner_hotkey = max(miner_weights.items(), key=lambda x: float(x[1]))[0]
+                    top_weight = miner_weights[top_miner_hotkey]
+                    
+                    logger.info(f"Current top miner: {top_miner_hotkey} with weight {top_weight}")
+                    return top_miner_hotkey
+                        
+            except Exception as fallback_error:
+                logger.error(f"Error getting current top miner: {str(fallback_error)}")
+                return None
+            finally:
+                if conn:
+                    self.return_connection(conn)
 
     def get_weights_history_last_24h_with_prior(self) -> List[WeightsData]:
         """
