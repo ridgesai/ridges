@@ -22,7 +22,5 @@ async def handle_message(websocket_app, message: str):
             await handle_evaluation_available(websocket_app)
         case "evaluation":
             await handle_evaluation(websocket_app, json_message)
-        case "evaluation-run-finished":
-            pass
         case _:
             logger.info(f"Received unrecognized message: {message}")

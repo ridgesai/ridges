@@ -8,7 +8,7 @@ import httpx
 from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.sandbox.manager import AGENTS_BASE_DIR, SandboxManager
 from validator.utils.logging import get_logger
-from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey, MEDIUM_INSTANCES
+from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey
 from swebench.harness.run_evaluation import load_swebench_dataset
 
 if TYPE_CHECKING:
@@ -29,9 +29,10 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     })
 
     errored = False
-    sbox_manager = None
+    sandbox_manager = None
+
     try:
-        sbox_manager = SandboxManager(websocket_app)
+        sandbox_manager = SandboxManager(websocket_app)
 
         async with httpx.AsyncClient(timeout=300) as client:
             try:
@@ -45,13 +46,14 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     response.raise_for_status()
                     logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
                 except Exception as e:
-                    logger.error(f"Failed to download from {RIDGES_API_URL}/retrieval/agent-version-file")
-                    logger.error(f"Error downloading agent code for agent {agent_version.agent_id} version {agent_version.version_num}: {e}")
+                    logger.error(f"Failed to download from {RIDGES_API_URL}/retrieval/agent-version-file for agent {agent_version.agent_id} (version {agent_version.version_id}): {e}")
                     raise e
                 
                 agent_file_content = response.content
 
-                instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES + MEDIUM_INSTANCES)
+                # Load only easy SWE-Bench instances for now 
+                instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES)
+
                 for instance in instances:
                     evaluation_run = EvaluationRun(
                         run_id=str(uuid.uuid4()),
@@ -72,6 +74,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                         eval_started_at=None,
                         result_scored_at=None
                     )
+
                     await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
 
                     agent_dir = AGENTS_BASE_DIR / evaluation_run.run_id
@@ -81,8 +84,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     with open(agent_file_path, "wb") as f:
                         f.write(agent_file_content)
 
-                    sbox = sbox_manager.add_sandbox(evaluation_run, agent_dir=Path(agent_dir))
-                    await sbox.run({
+                    sandbox = sandbox_manager.add_sandbox(evaluation_run, agent_dir=Path(agent_dir))
+                    await sandbox.run({
                         "run_id": evaluation_run.run_id,
                         "problem_statement": instance["problem_statement"],
                         "repo": instance["repo"],
@@ -98,14 +101,14 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
 
         # Wait for all sandboxes (which now also run evaluation) to finish
         logger.info("Waiting on sandboxes (patch generation + evaluation)...")
-        await sbox_manager.wait_for_all_sandboxes()
+        await sandbox_manager.wait_for_all_sandboxes()
 
     except Exception as e:
         logger.error(f"Error evaluating agent version: {e}", exc_info=True, stack_info=True)
         errored = True
     finally:
-        if sbox_manager:
-            sbox_manager.cleanup()
+        if sandbox_manager:
+            sandbox_manager.cleanup()
         await websocket_app.send({
             "event": "finish-evaluation",
             "evaluation_id": evaluation_id,
