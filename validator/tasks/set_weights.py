@@ -8,7 +8,7 @@ import numpy as np
 from shared.logging_utils import get_logger
 
 from validator.dependencies import get_session_factory
-from validator.db.schema import AgentVersion, EvaluationRun
+from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.utils.weight_utils import process_weights_for_netuid
 
 from validator.config import (

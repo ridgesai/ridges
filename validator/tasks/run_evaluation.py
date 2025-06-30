@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 import uuid
 import httpx
-from validator.db.schema import AgentVersion, EvaluationRun
+from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.sandbox.manager import AGENTS_BASE_DIR, SandboxManager
 from shared.logging_utils import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey, MEDIUM_INSTANCES

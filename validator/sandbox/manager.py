@@ -1,3 +1,5 @@
+import os
+import json
 import shutil
 import time
 import asyncio
@@ -9,8 +11,8 @@ from docker import DockerClient
 from docker.models.containers import Container
 
 from validator.config import RIDGES_API_URL
-from validator.db.schema import EvaluationRun
 from validator.sandbox.sandbox import Sandbox
+from validator.sandbox.schema import EvaluationRun
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
@@ -57,7 +59,7 @@ PROXY_CONTAINER_NAME = "sandbox-proxy"
 # Repositories will be stored at validator/repos/<org>/<repo>
 REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
 AGENTS_BASE_DIR = Path(__file__).parent.parent / "agents"
-
+    
 class SandboxManager:
     websocket_app: "WebsocketApp"
     proxy_container: Optional["Container"] = None

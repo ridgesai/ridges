@@ -1,8 +1,7 @@
+import ast
 from typing import Optional
-from validator.db.schema import EvaluationRun
 from validator.sandbox.clone_repo import clone_repo
 from validator.sandbox.manager import MAIN_FILE, PROXY_CONTAINER_NAME, REPOS_BASE_DIR, SANDBOX_DIR, SANDBOX_DOCKER_IMAGE, SANDBOX_INPUT_FILE, SANDBOX_MAIN_FILE, SANDBOX_NETWORK_NAME, SANDBOX_OUTPUT_FILE, SANDBOX_REPO_DIR, SANDBOX_SOURCE_DIR, SandboxManager, logger
-from validator.sandbox.validator import validate_sandbox_dir
 
 
 from docker.models.containers import Container
@@ -18,6 +17,8 @@ import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
+
+from validator.sandbox.schema import EvaluationRun
 
 
 class Sandbox:
@@ -273,3 +274,37 @@ class Sandbox:
             subprocess.run(["git", "checkout", "-"], cwd=self.repo_dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(["git", "branch", "-D", branch], cwd=self.repo_dir_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             patch_path.unlink(missing_ok=True)
+
+def validate_sandbox_dir(dir_path: str) -> None:
+    """
+    Checks if the given directory is in the appropriate format for a sandbox.
+    Returns None if the directory is valid, otherwise raises a ValueError.
+    """
+
+    # First, check if the directory exists.
+    if not os.path.isdir(dir_path):
+        raise ValueError(f'Failed to find {dir_path}')
+
+    # Then, check if the agent.py file exists
+    agent_main_path = os.path.join(dir_path, 'agent.py')
+    if not os.path.isfile(agent_main_path):
+        raise ValueError(f'Failed to find agent.py')
+
+    # Then, parse the agent.py file
+    try:
+        with open(agent_main_path, 'r') as f:
+            tree = ast.parse(f.read())
+    except Exception as e:
+        raise ValueError(f'Failed to parse agent.py: {str(e)}')
+
+    # Finally, look for top-level agent_main function
+    found_agent_main = False
+    for node in ast.iter_child_nodes(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == 'agent_main':
+            args = node.args
+            if len(args.posonlyargs) + len(args.args) + len(args.kwonlyargs) == 1 and not args.vararg and not args.kwarg:
+                found_agent_main = True
+                break
+
+    if not found_agent_main:
+        raise ValueError('Failed to find agent_main()')
