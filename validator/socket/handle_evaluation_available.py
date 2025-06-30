@@ -1,6 +1,6 @@
 """Handler for new agent version events."""
 
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 from validator.config import validator_hotkey
 
 logger = get_logger(__name__)

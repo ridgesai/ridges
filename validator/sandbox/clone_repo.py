@@ -6,7 +6,7 @@ import time
 from git import Repo
 from git.exc import GitCommandError, InvalidGitRepositoryError
 
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

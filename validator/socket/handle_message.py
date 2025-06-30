@@ -1,6 +1,6 @@
 import json
 
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
 from validator.socket.handle_evaluation_available import handle_evaluation_available
 

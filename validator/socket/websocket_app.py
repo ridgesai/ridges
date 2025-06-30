@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 import websockets
 
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 from validator.config import RIDGES_WS_URL
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_version_info

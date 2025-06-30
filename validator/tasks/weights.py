@@ -3,7 +3,7 @@
 import asyncio
 from validator.tasks.set_weights import set_weights
 from validator.config import WEIGHTS_INTERVAL
-from shared.logging_utils import get_logger, logging_update_active_coroutines
+from validator.utils.logging import get_logger, logging_update_active_coroutines
 
 logger = get_logger(__name__)
 
