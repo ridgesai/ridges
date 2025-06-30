@@ -27,6 +27,7 @@ logs_mineshaft/
 # Validator generated files
 .cache/
 repos/
+agents/
 validator/repos/
 results/
 logs/
