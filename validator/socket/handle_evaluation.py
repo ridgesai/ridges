@@ -25,8 +25,8 @@ async def handle_evaluation(websocket_app, json_message):
         logger.info("No agent versions left to evaluate")
         return
 
-
     logger.info(f"Received evaluation: {json_message}")
+
     try:
         # Extract agent version data from the response
         evaluation_id = json_message.get("evaluation_id")
@@ -36,6 +36,9 @@ async def handle_evaluation(websocket_app, json_message):
         version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
         version_id = agent_data.get("version_id")
+
+        if agent_id is None:
+            raise Exception("Incomplete agent data")
 
         # Create AgentVersion object
         agent_version = AgentVersion(

@@ -1,10 +1,8 @@
 """Handler for new agent version events."""
 
 from validator.utils.logging import get_logger
-from validator.config import validator_hotkey
 
 logger = get_logger(__name__)
-
 
 async def handle_evaluation_available(websocket_app):
     """Handle evaluation available events.

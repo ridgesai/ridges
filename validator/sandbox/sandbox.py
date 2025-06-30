@@ -34,9 +34,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-
-
-
 class Sandbox:
     evaluation_run: "EvaluationRun"
     agent_dir: Path
@@ -81,6 +78,7 @@ class Sandbox:
 
         async def _async_main():
             logger.info(f"Running sandbox for run {self.evaluation_run.run_id}")
+
             self.evaluation_run.status = "sandbox_created"
             self.evaluation_run.sandbox_created_at = datetime.now()
             await self.manager.websocket_app.send(
