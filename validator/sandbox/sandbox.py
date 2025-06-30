@@ -178,8 +178,6 @@ class Sandbox:
             self.evaluation_run.result_scored_at = datetime.now()
             self.evaluation_run.error = str(e)
         finally:
-            os.remove(input_file)
-            os.remove(output_file)
             self.running = False
 
     def _run_evaluation(self):
