@@ -75,6 +75,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                     await websocket_app.send({"event": "upsert-evaluation-run", "evaluation_run": evaluation_run.to_dict()})
 
                     agent_dir = AGENTS_BASE_DIR / evaluation_run.run_id
+                    agent_dir.mkdir(parents=True, exist_ok=True)
                     agent_file_path = agent_dir / "agent.py"
 
                     with open(agent_file_path, "w") as f:
