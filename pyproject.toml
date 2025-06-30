@@ -22,7 +22,6 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "setuptools>=80.8.0",
-    "sqlalchemy>=2.0.41",
     "swebench>=4.0.3",
     "tiktoken>=0.9.0",
     "trueskill>=0.4.5",

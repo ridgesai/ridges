@@ -7,8 +7,6 @@ from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
 from shared.logging_utils import get_logger
 
-from validator.dependencies import get_session_factory
-from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.utils.weight_utils import process_weights_for_netuid
 
 from validator.config import (
@@ -22,14 +20,12 @@ from validator.config import (
     NO_RESPONSE_MIN_SCORE
 )
 
-
 def normalize(x: np.ndarray, p: int = 2, dim: int = 0) -> np.ndarray:
     """Normalize array using L-p norm"""
     norm = np.linalg.norm(x, ord=p, axis=dim, keepdims=True)
     return x / np.clip(norm, 1e-12, None)
 
 logger = get_logger(__name__)
-
 
 async def _set_weights_with_timeout(
     substrate,
@@ -80,50 +76,6 @@ def query_version_key(substrate: SubstrateInterface) -> int | None:
         return
     return version_key_query.value
 
-def get_latest_scores_by_hotkey() -> dict[str, float]:
-    """Get the most recent score for each miner hotkey using SQLAlchemy directly."""
-    SessionFactory = get_session_factory()
-    session = SessionFactory()
-    try:
-        # Get the latest evaluation run for each agent version
-        latest_runs = session.query(
-            EvaluationRun.evaluation_id,
-            EvaluationRun.solved,
-            EvaluationRun.result_scored_at
-        ).order_by(
-            EvaluationRun.result_scored_at.desc()
-        ).all()
-        
-        # Group by version_id to get the most recent run for each version
-        latest_by_version = {}
-        for run in latest_runs:
-            if run.version_id not in latest_by_version:
-                latest_by_version[run.version_id] = run
-        
-        # Get agent versions to map version_id to hotkey
-        agent_versions = session.query(
-            AgentVersion.version_id,
-            AgentVersion.miner_hotkey
-        ).filter(
-            AgentVersion.version_id.in_([run.version_id for run in latest_by_version.values()])
-        ).all()
-        
-        # Create mapping from version_id to hotkey
-        version_to_hotkey = {av.version_id: av.miner_hotkey for av in agent_versions}
-        
-        # Create mapping from hotkey to latest score
-        latest_scores = {}
-        for version_id, run in latest_by_version.items():
-            if version_id in version_to_hotkey:
-                hotkey = version_to_hotkey[version_id]
-                # Use solved status as score (1.0 if solved, 0.0 if not)
-                score = 1.0 if run.solved else 0.0
-                latest_scores[hotkey] = score
-                logger.debug(f"Latest score for {hotkey}: {score} (solved: {run.solved})")
-        
-        return latest_scores
-    finally:
-        session.close()
 
 async def set_weights():
     """
@@ -142,9 +94,8 @@ async def set_weights():
 
         nodes = get_nodes_for_netuid(substrate, NETUID)
 
-        # Get latest scores directly using SQLAlchemy
-        latest_scores_by_hotkey = get_latest_scores_by_hotkey()
-        scores = np.array([latest_scores_by_hotkey.get(node.hotkey, NO_RESPONSE_MIN_SCORE) for node in nodes])
+        # TODO: weight by querying platform
+        scores = np.array([NO_RESPONSE_MIN_SCORE for node in nodes])
         
         # Calculate the weights using L1 normalization
         raw_weights = normalize(scores, p=1, dim=0)

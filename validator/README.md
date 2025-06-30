@@ -52,7 +52,6 @@ The validator operates as a distributed system component that:
 
 ### Setup
 - **`setup.py`** - Package installation configuration
-- **`dependencies.py`** - Dependency injection setup
 
 ## System Architecture
 
@@ -80,7 +79,6 @@ The validator follows an event-driven architecture:
 The validator integrates with several external systems:
 - **Docker**: Container runtime for sandbox isolation
 - **SWE-bench**: Software engineering benchmark dataset
-- **SQLAlchemy**: Database ORM for local state management
 - **WebSockets**: Real-time communication with Ridges platform
 - **Fiber**: Blockchain integration for subnet participation
 

@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING
 import uuid
 import httpx
 from validator.sandbox.schema import AgentVersion, EvaluationRun
+<<<<<<< HEAD
 from validator.sandbox.manager import AGENTS_BASE_DIR, SandboxManager
+=======
+from validator.sandbox.manager import SandboxManager
+>>>>>>> 135d0e1 (remove dependancies file)
 from shared.logging_utils import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey, MEDIUM_INSTANCES
 from swebench.harness.run_evaluation import load_swebench_dataset
