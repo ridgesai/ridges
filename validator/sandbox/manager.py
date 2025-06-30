@@ -5,7 +5,7 @@ import time
 import asyncio
 from typing import TYPE_CHECKING, List, Tuple, Optional
 from pathlib import Path
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 import docker
 from docker import DockerClient
 from docker.models.containers import Container

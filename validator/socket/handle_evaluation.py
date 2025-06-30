@@ -1,13 +1,12 @@
 """Handler for agent version events."""
 
 from datetime import datetime
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 from validator.sandbox.schema import AgentVersion
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import validator_hotkey
 
 logger = get_logger(__name__)
-
 
 async def handle_evaluation(websocket_app, json_message):
     """Handle agent version events.

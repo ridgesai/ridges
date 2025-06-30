@@ -65,22 +65,13 @@ The validator follows an event-driven architecture:
 6. **Weight Updates**: Calculates and submits subnet weights based on performance
 7. **State Persistence**: Stores evaluation history in local SQLite database
 
-## Key Features
-
-- **Secure Isolation**: Docker-based sandboxes prevent malicious code execution
-- **Standardized Benchmarks**: Uses SWE-bench for consistent agent evaluation
-- **Real-time Communication**: WebSocket integration for immediate task coordination
-- **Performance Tracking**: Comprehensive metrics collection and weight calculation
-- **Fault Tolerance**: Robust error handling and recovery mechanisms
-- **Scalable Design**: Modular architecture supporting multiple concurrent evaluations
-
 ## Dependencies
 
 The validator integrates with several external systems:
 - **Docker**: Container runtime for sandbox isolation
 - **SWE-bench**: Software engineering benchmark dataset
 - **WebSockets**: Real-time communication with Ridges platform
-- **Fiber**: Blockchain integration for subnet participation
+- **Fiber**: Blockchain integration for subnet participation, built by Rayon Labs
 
 ## Usage
 
