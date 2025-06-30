@@ -1,6 +1,8 @@
 import os
 from typing import Optional, List
 import psycopg2
+from psycopg2 import pool
+import threading
 from dotenv import load_dotenv
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo
 from api.src.utils.logging_utils import get_logger
@@ -10,28 +12,74 @@ load_dotenv()
 logger = get_logger(__name__)
 
 class DatabaseManager:
+    _instance = None
+    _lock = threading.Lock()
+    _pool = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.conn = psycopg2.connect(
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME'),
-            sslmode='require',
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5
-            # Keepalive stuff is for a bug fix, look into it later
-        )
-        self.conn.autocommit = True
-        self.init_tables()
+        if not self._initialized:
+            with self._lock:
+                if not self._initialized:
+                    self._initialize_pool()
+                    self.init_tables()
+                    self._initialized = True
+    
+    def _initialize_pool(self):
+        try:
+            self._pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=5,
+                maxconn=50,
+                host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
+                user=os.getenv('AWS_MASTER_USERNAME'),
+                password=os.getenv('AWS_MASTER_PASSWORD'),
+                database=os.getenv('AWS_RDS_PLATFORM_DB_NAME'),
+                sslmode='require',
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
+            )
+            logger.info("Database connection pool initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database connection pool: {str(e)}")
+            raise
+    
+    def get_connection(self):
+        """Get a connection from the pool"""
+        if self._pool is None:
+            raise Exception("Database pool not initialized")
+        return self._pool.getconn()
+    
+    def return_connection(self, conn):
+        """Return a connection to the pool"""
+        if self._pool is None:
+            raise Exception("Database pool not initialized")
+        self._pool.putconn(conn)
+    
+    def close_pool(self):
+        """Close all connections in the pool"""
+        if self._pool is not None:
+            self._pool.closeall()
+            self._pool = None
+            logger.info("Database connection pool closed")
 
     def init_tables(self):
         """
         Check if required tables exist and create them if they don't.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT table_name 
                     FROM information_schema.tables 
@@ -42,17 +90,20 @@ class DatabaseManager:
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            if len(existing_tables) == 5:
+            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history']
+            missing_tables = [table for table in required_tables if table not in existing_tables]
+            
+            if not missing_tables:
                 logger.info("All required tables already exist")
                 return
             
-            logger.info("Not all tables exist, initializing them")
+            logger.info(f"Creating missing tables: {missing_tables}")
 
             schema_path = os.path.join(os.path.dirname(__file__), 'postgres_schema.sql')
             with open(schema_path, 'r') as f:
                 schema_sql = f.read()
             
-            with self.conn.cursor() as cursor:
+            with conn.cursor() as cursor:
                 cursor.execute(schema_sql)
             
             logger.info("Database tables initialized successfully")
@@ -60,20 +111,25 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to initialize database tables: {str(e)}")
             raise
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def close(self):
         """
-        Close the database connection.
+        Close the database connection pool.
         """
-        if self.conn:
-            self.conn.close()
+        self.close_pool()
         
     def store_agent(self, agent: Agent) -> int:
         """
         Store an agent in the database. If the agent already exists, update latest_version and last_updated. Return 1 if successful, 0 if not.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO agents (agent_id, miner_hotkey, name, latest_version, created_at, last_updated)
                     VALUES (%s, %s, %s, %s, %s, %s)
@@ -86,13 +142,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error storing agent {agent.agent_id}: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def store_agent_version(self, agent_version: AgentVersion) -> int:
         """
         Store an agent version in the database. Return 1 if successful, 0 if not. If the agent version already exists, update the score.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO agent_versions (version_id, agent_id, version_num, created_at, score)
                     VALUES (%s, %s, %s, %s, %s)
@@ -104,13 +166,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error storing agent version {agent_version.version_id}: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
     
     def store_evaluation(self, evaluation: Evaluation) -> int:
         """
         Store an evaluation in the database. Return 1 if successful, 0 if not. If the evaluation already exists, update the status, started_at, and finished_at.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -126,13 +194,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error storing evaluation {evaluation.evaluation_id}: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def update_agent_version_score(self, version_id: str) -> int:
         """
         Update the score for an agent version. Return 1 if successful, 0 if not.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
 
                 cursor.execute("""
                     SELECT AVG(score) as avg_score
@@ -159,13 +233,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating agent version score for {version_id}: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
         """
         Store an evaluation run in the database. Return 1 if successful, 0 if not.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO evaluation_runs (
                         run_id,
@@ -235,46 +315,284 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_next_evaluation(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
         Get the next evaluation for a validator. Return None if not found.
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
                 SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
                 FROM evaluations WHERE validator_hotkey = %s AND status = 'waiting' ORDER BY created_at ASC LIMIT 1;
             """, (validator_hotkey,))
-            row = cursor.fetchone()
-            if row:
-                logger.info(f"Next evaluation {row[0]} found for validator with hotkey {validator_hotkey}")
-                return Evaluation(
-                    evaluation_id=row[0],
-                    version_id=row[1],
-                    validator_hotkey=row[2],
-                    status=row[3],
-                    terminated_reason=row[4],
-                    created_at=row[5],
-                    started_at=row[6],
-                    finished_at=row[7],
-                    score=row[8]
-                )
-            logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey}")
-            return None
+                row = cursor.fetchone()
+                if row:
+                    logger.info(f"Next evaluation {row[0]} found for validator with hotkey {validator_hotkey}")
+                    return Evaluation(
+                        evaluation_id=row[0],
+                        version_id=row[1],
+                        validator_hotkey=row[2],
+                        status=row[3],
+                        terminated_reason=row[4],
+                        created_at=row[5],
+                        started_at=row[6],
+                        finished_at=row[7],
+                        score=row[8]
+                    )
+                logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey}")
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_evaluation(self, evaluation_id: str) -> Optional[Evaluation]:
         """
         Get an evaluation from the database. Return None if not found.
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
-                FROM evaluations WHERE evaluation_id = %s
-            """, (evaluation_id,))
-            row = cursor.fetchone()
-            if row:
-                logger.info(f"Evaluation {row[0]} retrieved from the database")
-                return Evaluation(
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+                    FROM evaluations WHERE evaluation_id = %s
+                """, (evaluation_id,))
+                row = cursor.fetchone()
+                if row:
+                    logger.info(f"Evaluation {row[0]} retrieved from the database")
+                    return Evaluation(
+                        evaluation_id=row[0],
+                        version_id=row[1],
+                        validator_hotkey=row[2],
+                        status=row[3],
+                        terminated_reason=row[4],
+                        created_at=row[5],
+                        started_at=row[6],
+                        finished_at=row[7],
+                        score=row[8]
+                    )
+                logger.info(f"Evaluation {evaluation_id} not found in the database")
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_evaluation_run(self, run_id: str) -> Optional[EvaluationRun]:
+        """
+        Get an evaluation run from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT run_id, evaluation_id, swebench_instance_id, status, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, sandbox_created_at, patch_generated_at, eval_started_at, result_scored_at 
+                    FROM evaluation_runs WHERE run_id = %s
+                """, (run_id,))
+                row = cursor.fetchone()
+                if row:
+                    return EvaluationRun(
+                        run_id=row[0],
+                        evaluation_id=row[1],
+                        swebench_instance_id=row[2],
+                        status=row[3],
+                        response=row[4],
+                        error=row[5],
+                        pass_to_fail_success=row[6],
+                        fail_to_pass_success=row[7],
+                        pass_to_pass_success=row[8],
+                        fail_to_fail_success=row[9],
+                        solved=row[10],
+                        started_at=row[11],
+                        sandbox_created_at=row[12],
+                        patch_generated_at=row[13],
+                        eval_started_at=row[14],
+                        result_scored_at=row[15]
+                    )
+                logger.info(f"Evaluation run {run_id} not found in the database")
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+                
+    def get_agent_by_hotkey(self, miner_hotkey: str) -> Agent:
+        """
+        Get an agent from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                    FROM agents WHERE miner_hotkey = %s
+                """, (miner_hotkey,))
+                row = cursor.fetchone()
+                if row:
+                    return Agent(
+                        agent_id=row[0],
+                        miner_hotkey=row[1],
+                        name=row[2],
+                        latest_version=row[3],
+                        created_at=row[4],
+                        last_updated=row[5]
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
+    def get_agent(self, agent_id: str) -> Agent:
+        """
+        Get an agent from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
+                    FROM agents WHERE agent_id = %s
+                """, (agent_id,))
+                row = cursor.fetchone()
+                if row:
+                    return Agent(
+                        agent_id=row[0],
+                        miner_hotkey=row[1],
+                        name=row[2],
+                        latest_version=row[3],
+                        created_at=row[4],
+                        last_updated=row[5]
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
+    def get_random_agent(self) -> Optional[AgentSummary]:
+        """
+        Get a random agent from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT agent_id, miner_hotkey, name, latest_version
+                    FROM agents
+                    ORDER BY RANDOM()
+                    LIMIT 1
+                """)
+                agent_row = cursor.fetchone()
+                
+                if not agent_row:
+                    return None
+                
+                agent_id, miner_hotkey, name, latest_version_num = agent_row
+                
+                cursor.execute("""
+                    SELECT version_id, agent_id, version_num, created_at, score
+                    FROM agent_versions
+                    WHERE agent_id = %s
+                    ORDER BY version_num DESC
+                    LIMIT 1
+                """, (agent_id,))
+                
+                version_row = cursor.fetchone()
+                if version_row:
+                    agent_version = AgentVersion(
+                        version_id=version_row[0],
+                        agent_id=version_row[1],
+                        version_num=version_row[2],
+                        created_at=version_row[3],
+                        score=version_row[4]
+                    )
+                    return AgentSummary(
+                        miner_hotkey=miner_hotkey,
+                        name=name,
+                        latest_version=agent_version,
+                        code=None
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
+    def get_agent_by_version_id(self, version_id: str) -> Optional[Agent]:
+        """
+        Get an agent from the database by version_id. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT a.agent_id, a.miner_hotkey, a.name, a.latest_version, a.created_at, a.last_updated 
+                    FROM agents a
+                    JOIN agent_versions av ON a.agent_id = av.agent_id
+                    WHERE av.version_id = %s
+                """, (version_id,))
+                row = cursor.fetchone()
+                if row:
+                    return Agent(
+                        agent_id=row[0],
+                        miner_hotkey=row[1],
+                        name=row[2],
+                        latest_version=row[3],
+                        created_at=row[4],
+                        last_updated=row[5]
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
+    def get_agent_version(self, version_id: str) -> Optional[AgentVersion]:
+        """
+        Get an agent version from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT version_id, agent_id, version_num, created_at, score 
+                    FROM agent_versions WHERE version_id = %s
+                """, (version_id,))
+                row = cursor.fetchone()
+                if row:
+                    return AgentVersion(
+                        version_id=row[0],
+                        agent_id=row[1],
+                        version_num=row[2],
+                        created_at=row[3],
+                        score=row[4]
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
+    def get_evaluations_by_version_id(self, version_id: str) -> List[Evaluation]:
+        """
+        Get all evaluations for a version from the database. Return None if not found.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+                    FROM evaluations WHERE version_id = %s
+                """, (version_id,))
+                rows = cursor.fetchall()
+                return [Evaluation(
                     evaluation_id=row[0],
                     version_id=row[1],
                     validator_hotkey=row[2],
@@ -284,238 +602,69 @@ class DatabaseManager:
                     started_at=row[6],
                     finished_at=row[7],
                     score=row[8]
-                )
-            logger.info(f"Evaluation {evaluation_id} not found in the database")
-            return None
-
-    def get_evaluation_run(self, run_id: str) -> Optional[EvaluationRun]:
-        """
-        Get an evaluation run from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT run_id, evaluation_id, swebench_instance_id, status, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, sandbox_created_at, patch_generated_at, eval_started_at, result_scored_at 
-                FROM evaluation_runs WHERE run_id = %s
-            """, (run_id,))
-            row = cursor.fetchone()
-            if row:
-                return EvaluationRun(
-                    run_id=row[0],
-                    evaluation_id=row[1],
-                    swebench_instance_id=row[2],
-                    status=row[3],
-                    response=row[4],
-                    error=row[5],
-                    pass_to_fail_success=row[6],
-                    fail_to_pass_success=row[7],
-                    pass_to_pass_success=row[8],
-                    fail_to_fail_success=row[9],
-                    solved=row[10],
-                    started_at=row[11],
-                    sandbox_created_at=row[12],
-                    patch_generated_at=row[13],
-                    eval_started_at=row[14],
-                    result_scored_at=row[15]
-                )
-            logger.info(f"Evaluation run {run_id} not found in the database")
-            return None
-                
-    def get_agent_by_hotkey(self, miner_hotkey: str) -> Agent:
-        """
-        Get an agent from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
-                FROM agents WHERE miner_hotkey = %s
-            """, (miner_hotkey,))
-            row = cursor.fetchone()
-            if row:
-                return Agent(
-                    agent_id=row[0],
-                    miner_hotkey=row[1],
-                    name=row[2],
-                    latest_version=row[3],
-                    created_at=row[4],
-                    last_updated=row[5]
-                )
-            return None
-        
-    def get_agent(self, agent_id: str) -> Agent:
-        """
-        Get an agent from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT agent_id, miner_hotkey, name, latest_version, created_at, last_updated 
-                FROM agents WHERE agent_id = %s
-            """, (agent_id,))
-            row = cursor.fetchone()
-            if row:
-                return Agent(
-                    agent_id=row[0],
-                    miner_hotkey=row[1],
-                    name=row[2],
-                    latest_version=row[3],
-                    created_at=row[4],
-                    last_updated=row[5]
-                )
-            return None
-        
-    def get_random_agent(self) -> Optional[AgentSummary]:
-        """
-        Get a random agent from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT agent_id, miner_hotkey, name, latest_version
-                FROM agents
-                ORDER BY RANDOM()
-                LIMIT 1
-            """)
-            agent_row = cursor.fetchone()
-            
-            if not agent_row:
-                return None
-            
-            agent_id, miner_hotkey, name, latest_version_num = agent_row
-            
-            cursor.execute("""
-                SELECT version_id, agent_id, version_num, created_at, score
-                FROM agent_versions
-                WHERE agent_id = %s
-                ORDER BY version_num DESC
-                LIMIT 1
-            """, (agent_id,))
-            
-            version_row = cursor.fetchone()
-            if version_row:
-                agent_version = AgentVersion(
-                    version_id=version_row[0],
-                    agent_id=version_row[1],
-                    version_num=version_row[2],
-                    created_at=version_row[3],
-                    score=version_row[4]
-                )
-                return AgentSummary(
-                    miner_hotkey=miner_hotkey,
-                    name=name,
-                    latest_version=agent_version,
-                    code=None
-                )
-            return None
-    
-    def get_agent_by_version_id(self, version_id: str) -> Optional[Agent]:
-        """
-        Get an agent from the database by version_id. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT a.agent_id, a.miner_hotkey, a.name, a.latest_version, a.created_at, a.last_updated 
-                FROM agents a
-                JOIN agent_versions av ON a.agent_id = av.agent_id
-                WHERE av.version_id = %s
-            """, (version_id,))
-            row = cursor.fetchone()
-            if row:
-                return Agent(
-                    agent_id=row[0],
-                    miner_hotkey=row[1],
-                    name=row[2],
-                    latest_version=row[3],
-                    created_at=row[4],
-                    last_updated=row[5]
-                )
-            return None
-        
-    def get_agent_version(self, version_id: str) -> Optional[AgentVersion]:
-        """
-        Get an agent version from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT version_id, agent_id, version_num, created_at, score 
-                FROM agent_versions WHERE version_id = %s
-            """, (version_id,))
-            row = cursor.fetchone()
-            if row:
-                return AgentVersion(
-                    version_id=row[0],
-                    agent_id=row[1],
-                    version_num=row[2],
-                    created_at=row[3],
-                    score=row[4]
-                )
-            return None
-        
-    def get_evaluations_by_version_id(self, version_id: str) -> List[Evaluation]:
-        """
-        Get all evaluations for a version from the database. Return None if not found.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
-                FROM evaluations WHERE version_id = %s
-            """, (version_id,))
-            rows = cursor.fetchall()
-            return [Evaluation(
-                evaluation_id=row[0],
-                version_id=row[1],
-                validator_hotkey=row[2],
-                status=row[3],
-                terminated_reason=row[4],
-                created_at=row[5],
-                started_at=row[6],
-                finished_at=row[7],
-                score=row[8]
-            ) for row in rows]
+                ) for row in rows]
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     
     def get_latest_agent_version(self, agent_id: str) -> Optional[AgentVersion]:
         """
         Get the latest agent version from the database. Return None if not found.
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT version_id, agent_id, version_num, created_at, score 
-                FROM agent_versions WHERE agent_id = %s
-                ORDER BY created_at DESC
-                LIMIT 1
-            """, (agent_id,))
-            row = cursor.fetchone()
-            if row:
-                return AgentVersion(
-                    version_id=row[0],
-                    agent_id=row[1],
-                    version_num=row[2],
-                    created_at=row[3],
-                    score=row[4]
-                )
-            return None
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT version_id, agent_id, version_num, created_at, score 
+                    FROM agent_versions WHERE agent_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                """, (agent_id,))
+                row = cursor.fetchone()
+                if row:
+                    return AgentVersion(
+                        version_id=row[0],
+                        agent_id=row[1],
+                        version_num=row[2],
+                        created_at=row[3],
+                        score=row[4]
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_running_evaluation_by_validator_hotkey(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
         Get the running evaluation for a validator. Return None if not found.
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
-                FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
-            """, (validator_hotkey,))
-            row = cursor.fetchone()
-            if row:
-                return Evaluation(
-                evaluation_id=row[0],
-                version_id=row[1],
-                validator_hotkey=row[2],
-                status=row[3],
-                terminated_reason=row[4],
-                created_at=row[5],
-                started_at=row[6],
-                finished_at=row[7],
-                score=row[8]
-            )
-            return None
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+                    FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
+                """, (validator_hotkey,))
+                row = cursor.fetchone()
+                if row:
+                    return Evaluation(
+                    evaluation_id=row[0],
+                    version_id=row[1],
+                    validator_hotkey=row[2],
+                    status=row[3],
+                    terminated_reason=row[4],
+                    created_at=row[5],
+                    started_at=row[6],
+                    finished_at=row[7],
+                    score=row[8]
+                )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_top_agents(self, num_agents: int) -> List[AgentSummary]:
         """
@@ -523,253 +672,456 @@ class DatabaseManager:
         Returns agents ordered by their latest version's score in descending order first,
         followed by all unscored agents.
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT * FROM (
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        COALESCE(latest_scored.version_id, latest_ver.version_id) as version_id,
-                        COALESCE(latest_scored.version_num, latest_ver.version_num) as version_num,
-                        COALESCE(latest_scored.created_at, latest_ver.created_at) as version_created_at,
-                        latest_scored.score,
-                        CASE WHEN latest_scored.score IS NOT NULL THEN 1 ELSE 2 END as sort_order
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        WHERE score IS NOT NULL
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_scored ON a.agent_id = latest_scored.agent_id
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_ver ON a.agent_id = latest_ver.agent_id
-                ) combined_results
-                ORDER BY sort_order, score DESC NULLS LAST
-                LIMIT %s
-            """, (num_agents,))
-            rows = cursor.fetchall()
-            return [AgentSummary(
-                miner_hotkey=row[1],
-                name=row[2],
-                latest_version=AgentVersion(
-                    version_id=row[6],
-                    agent_id=row[0],
-                    version_num=row[7],
-                    created_at=row[8],
-                    score=row[9]
-                ),
-                code=None
-            ) for row in rows]
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT * FROM (
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            COALESCE(latest_scored.version_id, latest_ver.version_id) as version_id,
+                            COALESCE(latest_scored.version_num, latest_ver.version_num) as version_num,
+                            COALESCE(latest_scored.created_at, latest_ver.created_at) as version_created_at,
+                            latest_scored.score,
+                            CASE WHEN latest_scored.score IS NOT NULL THEN 1 ELSE 2 END as sort_order
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            WHERE score IS NOT NULL
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_scored ON a.agent_id = latest_scored.agent_id
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_ver ON a.agent_id = latest_ver.agent_id
+                    ) combined_results
+                    ORDER BY sort_order, score DESC NULLS LAST
+                    LIMIT %s
+                """, (num_agents,))
+                rows = cursor.fetchall()
+                return [AgentSummary(
+                    miner_hotkey=row[1],
+                    name=row[2],
+                    latest_version=AgentVersion(
+                        version_id=row[6],
+                        agent_id=row[0],
+                        version_num=row[7],
+                        created_at=row[8],
+                        score=row[9]
+                    ),
+                    code=None
+                ) for row in rows]
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_latest_agent(self, agent_id: str, scored: bool) -> Optional[AgentSummary]:
         """
         Get the latest agent from the database. Return None if not found.
         If scored=True, only returns agents that have a scored version.
         """
-        with self.conn.cursor() as cursor:
-            if scored:
-                cursor.execute("""
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_scored.version_id,
-                        latest_scored.version_num,
-                        latest_scored.created_at as version_created_at,
-                        latest_scored.score
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        WHERE score IS NOT NULL
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_scored ON a.agent_id = latest_scored.agent_id
-                    WHERE a.agent_id = %s
-                    AND latest_scored.score IS NOT NULL
-                """, (agent_id,))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_ver.version_id,
-                        latest_ver.version_num,
-                        latest_ver.created_at as version_created_at,
-                        latest_ver.score
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_ver ON a.agent_id = latest_ver.agent_id
-                    WHERE a.agent_id = %s
-                """, (agent_id,))
-            
-            row = cursor.fetchone()
-            if row:
-                return AgentSummary(
-                    miner_hotkey=row[1],
-                    name=row[2],
-                    latest_version=AgentVersion(
-                        version_id=row[6],
-                        agent_id=row[0],
-                        version_num=row[7],
-                        created_at=row[8],
-                        score=row[9]
-                    ),
-                    code=None
-                )
-            return None
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                if scored:
+                    cursor.execute("""
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_scored.version_id,
+                            latest_scored.version_num,
+                            latest_scored.created_at as version_created_at,
+                            latest_scored.score
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            WHERE score IS NOT NULL
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_scored ON a.agent_id = latest_scored.agent_id
+                        WHERE a.agent_id = %s
+                        AND latest_scored.score IS NOT NULL
+                    """, (agent_id,))
+                else:
+                    cursor.execute("""
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_ver.version_id,
+                            latest_ver.version_num,
+                            latest_ver.created_at as version_created_at,
+                            latest_ver.score
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_ver ON a.agent_id = latest_ver.agent_id
+                        WHERE a.agent_id = %s
+                    """, (agent_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return AgentSummary(
+                        miner_hotkey=row[1],
+                        name=row[2],
+                        latest_version=AgentVersion(
+                            version_id=row[6],
+                            agent_id=row[0],
+                            version_num=row[7],
+                            created_at=row[8],
+                            score=row[9]
+                        ),
+                        code=None
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_latest_agent_by_miner_hotkey(self, miner_hotkey: str, scored: bool) -> Optional[AgentSummary]:
         """
         Get the latest agent from the database by miner_hotkey. Return None if not found.
         If scored=True, only returns agents that have a scored version.
         """
-        with self.conn.cursor() as cursor:
-            if scored:
-                cursor.execute("""
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_scored.version_id,
-                        latest_scored.version_num,
-                        latest_scored.created_at as version_created_at,
-                        latest_scored.score
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        WHERE score IS NOT NULL
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_scored ON a.agent_id = latest_scored.agent_id
-                    WHERE a.miner_hotkey = %s
-                    AND latest_scored.score IS NOT NULL
-                """, (miner_hotkey,))
-            else:
-                cursor.execute("""
-                    SELECT 
-                        a.agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at,
-                        a.last_updated,
-                        latest_ver.version_id,
-                        latest_ver.version_num,
-                        latest_ver.created_at as version_created_at,
-                        latest_ver.score
-                    FROM agents a
-                    LEFT JOIN (
-                        SELECT DISTINCT ON (agent_id) 
-                            agent_id,
-                            version_id,
-                            version_num,
-                            created_at,
-                            score
-                        FROM agent_versions 
-                        ORDER BY agent_id, created_at DESC
-                    ) latest_ver ON a.agent_id = latest_ver.agent_id
-                    WHERE a.miner_hotkey = %s
-                """, (miner_hotkey,))
-            
-            row = cursor.fetchone()
-            if row:
-                return AgentSummary(
-                    miner_hotkey=row[1],
-                    name=row[2],
-                    latest_version=AgentVersion(
-                        version_id=row[6],
-                        agent_id=row[0],
-                        version_num=row[7],
-                        created_at=row[8],
-                        score=row[9]
-                    ),
-                    code=None
-                )
-            return None
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                if scored:
+                    cursor.execute("""
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_scored.version_id,
+                            latest_scored.version_num,
+                            latest_scored.created_at as version_created_at,
+                            latest_scored.score
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            WHERE score IS NOT NULL
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_scored ON a.agent_id = latest_scored.agent_id
+                        WHERE a.miner_hotkey = %s
+                        AND latest_scored.score IS NOT NULL
+                    """, (miner_hotkey,))
+                else:
+                    cursor.execute("""
+                        SELECT 
+                            a.agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at,
+                            a.last_updated,
+                            latest_ver.version_id,
+                            latest_ver.version_num,
+                            latest_ver.created_at as version_created_at,
+                            latest_ver.score
+                        FROM agents a
+                        LEFT JOIN (
+                            SELECT DISTINCT ON (agent_id) 
+                                agent_id,
+                                version_id,
+                                version_num,
+                                created_at,
+                                score
+                            FROM agent_versions 
+                            ORDER BY agent_id, created_at DESC
+                        ) latest_ver ON a.agent_id = latest_ver.agent_id
+                        WHERE a.miner_hotkey = %s
+                    """, (miner_hotkey,))
+                
+                row = cursor.fetchone()
+                if row:
+                    return AgentSummary(
+                        miner_hotkey=row[1],
+                        name=row[2],
+                        latest_version=AgentVersion(
+                            version_id=row[6],
+                            agent_id=row[0],
+                            version_num=row[7],
+                            created_at=row[8],
+                            score=row[9]
+                        ),
+                        code=None
+                    )
+                return None
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_recent_executions(self, num_executions: int) -> List[Execution]:
         """
         Gets the X most recently created evaluations, and returns a list of objects with the AgentVersion, Agent, Evaluation, and Runs
         """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT 
-                    e.evaluation_id,
-                    e.version_id,
-                    e.validator_hotkey,
-                    e.status,
-                    e.terminated_reason,
-                    e.created_at,
-                    e.started_at,
-                    e.finished_at,
-                    e.score,
-                    av.version_id as agent_version_id,
-                    av.agent_id,
-                    av.version_num,
-                    av.created_at as agent_version_created_at,
-                    av.score,
-                    a.agent_id as agent_agent_id,
-                    a.miner_hotkey,
-                    a.name,
-                    a.latest_version,
-                    a.created_at as agent_created_at,
-                    a.last_updated
-                FROM evaluations e
-                JOIN agent_versions av ON e.version_id = av.version_id
-                JOIN agents a ON av.agent_id = a.agent_id
-                ORDER BY e.created_at DESC
-                LIMIT %s
-            """, (num_executions,))
-            
-            rows = cursor.fetchall()
-            executions = []
-            
-            for row in rows:
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT 
+                        e.evaluation_id,
+                        e.version_id,
+                        e.validator_hotkey,
+                        e.status,
+                        e.terminated_reason,
+                        e.created_at,
+                        e.started_at,
+                        e.finished_at,
+                        e.score,
+                        av.version_id as agent_version_id,
+                        av.agent_id,
+                        av.version_num,
+                        av.created_at as agent_version_created_at,
+                        av.score,
+                        a.agent_id as agent_agent_id,
+                        a.miner_hotkey,
+                        a.name,
+                        a.latest_version,
+                        a.created_at as agent_created_at,
+                        a.last_updated
+                    FROM evaluations e
+                    JOIN agent_versions av ON e.version_id = av.version_id
+                    JOIN agents a ON av.agent_id = a.agent_id
+                    ORDER BY e.created_at DESC
+                    LIMIT %s
+                """, (num_executions,))
+                
+                rows = cursor.fetchall()
+                executions = []
+                
+                for row in rows:
+                    evaluation_id = row[0]
+                    
+                    # Get evaluation runs for this evaluation
+                    cursor.execute("""
+                        SELECT 
+                            run_id,
+                            evaluation_id,
+                            swebench_instance_id,
+                            status,
+                            response,
+                            error,
+                            pass_to_fail_success,
+                            fail_to_pass_success,
+                            pass_to_pass_success,
+                            fail_to_fail_success,
+                            solved,
+                            started_at,
+                            sandbox_created_at,
+                            patch_generated_at,
+                            eval_started_at,
+                            result_scored_at
+                        FROM evaluation_runs 
+                        WHERE evaluation_id = %s
+                    """, (evaluation_id,))
+                    
+                    run_rows = cursor.fetchall()
+                    evaluation_runs = [
+                        EvaluationRun(
+                            run_id=run_row[0],
+                            evaluation_id=run_row[1],
+                            swebench_instance_id=run_row[2],
+                            status=run_row[3],
+                            response=run_row[4],
+                            error=run_row[5],
+                            pass_to_fail_success=run_row[6],
+                            fail_to_pass_success=run_row[7],
+                            pass_to_pass_success=run_row[8],
+                            fail_to_fail_success=run_row[9],
+                            solved=run_row[10],
+                            started_at=run_row[11],
+                            sandbox_created_at=run_row[12],
+                            patch_generated_at=run_row[13],
+                            eval_started_at=run_row[14],
+                            result_scored_at=run_row[15]
+                        ) for run_row in run_rows
+                    ]
+                    
+                    # Create Execution object
+                    execution = Execution(
+                        evaluation=Evaluation(
+                            evaluation_id=row[0],
+                            version_id=row[1],
+                            validator_hotkey=row[2],
+                            status=row[3],
+                            terminated_reason=row[4],
+                            created_at=row[5],
+                            started_at=row[6],
+                            finished_at=row[7],
+                            score=row[8]
+                        ),
+                        evaluation_runs=evaluation_runs,
+                        agent=Agent(
+                            agent_id=row[14],
+                            miner_hotkey=row[15],
+                            name=row[16],
+                            latest_version=row[17],
+                            created_at=row[18],
+                            last_updated=row[19]
+                        ),
+                        agent_version=AgentVersion(
+                            version_id=row[9],
+                            agent_id=row[10],
+                            version_num=row[11],
+                            created_at=row[12],
+                            score=row[13]
+                        )
+                    )
+                    executions.append(execution)
+                
+                return executions
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
+    def get_num_agents(self) -> int:
+        """
+        Get the number of agents in the database.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT COUNT(*) FROM agents
+                """)
+                return cursor.fetchone()[0]
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_latest_execution_by_agent(self, agent_id: str) -> Optional[Execution]:
+        """
+        Get the current execution for an agent with priority:
+        1. Most recent running evaluation
+        2. Most recent scored evaluation  
+        3. None if neither exists
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                # First, try to get the most recent running evaluation
+                cursor.execute("""
+                    SELECT 
+                        e.evaluation_id,
+                        e.version_id,
+                        e.validator_hotkey,
+                        e.status,
+                        e.terminated_reason,
+                        e.created_at,
+                        e.started_at,
+                        e.finished_at,
+                        e.score,
+                        av.version_id as av_version_id,
+                        av.agent_id,
+                        av.version_num,
+                        av.created_at as agent_version_created_at,
+                        av.score,
+                        a.agent_id as agent_agent_id,
+                        a.miner_hotkey,
+                        a.name,
+                        a.latest_version,
+                        a.created_at as agent_created_at,
+                        a.last_updated
+                    FROM evaluations e
+                    JOIN agent_versions av ON e.version_id = av.version_id
+                    JOIN agents a ON av.agent_id = a.agent_id
+                    WHERE a.agent_id = %s AND e.status = 'running'
+                    ORDER BY e.created_at DESC 
+                    LIMIT 1
+                """, (agent_id,))
+                
+                row = cursor.fetchone()
+                
+                # If no running evaluation, get the most recent scored evaluation
+                if not row:
+                    cursor.execute("""
+                        SELECT 
+                            e.evaluation_id,
+                            e.version_id,
+                            e.validator_hotkey,
+                            e.status,
+                            e.terminated_reason,
+                            e.created_at,
+                            e.started_at,
+                            e.finished_at,
+                            e.score,
+                            av.version_id as av_version_id,
+                            av.agent_id,
+                            av.version_num,
+                            av.created_at as agent_version_created_at,
+                            av.score,
+                            a.agent_id as agent_agent_id,
+                            a.miner_hotkey,
+                            a.name,
+                            a.latest_version,
+                            a.created_at as agent_created_at,
+                            a.last_updated
+                        FROM evaluations e
+                        JOIN agent_versions av ON e.version_id = av.version_id
+                        JOIN agents a ON av.agent_id = a.agent_id
+                        WHERE a.agent_id = %s AND av.score IS NOT NULL
+                        ORDER BY e.created_at DESC 
+                        LIMIT 1
+                    """, (agent_id,))
+                    
+                    row = cursor.fetchone()
+                
+                # If still no row found, return None
+                if not row:
+                    return None
+                
                 evaluation_id = row[0]
                 
                 # Get evaluation runs for this evaluation
@@ -847,186 +1199,21 @@ class DatabaseManager:
                         score=row[13]
                     )
                 )
-                executions.append(execution)
-            
-            return executions
-        
-    def get_num_agents(self) -> int:
-        """
-        Get the number of agents in the database.
-        """
-        with self.conn.cursor() as cursor:
-            cursor.execute("""
-                SELECT COUNT(*) FROM agents
-            """)
-            return cursor.fetchone()[0]
-
-    def get_latest_execution_by_agent(self, agent_id: str) -> Optional[Execution]:
-        """
-        Get the current execution for an agent with priority:
-        1. Most recent running evaluation
-        2. Most recent scored evaluation  
-        3. None if neither exists
-        """
-        with self.conn.cursor() as cursor:
-            # First, try to get the most recent running evaluation
-            cursor.execute("""
-                SELECT 
-                    e.evaluation_id,
-                    e.version_id,
-                    e.validator_hotkey,
-                    e.status,
-                    e.terminated_reason,
-                    e.created_at,
-                    e.started_at,
-                    e.finished_at,
-                    e.score,
-                    av.version_id as av_version_id,
-                    av.agent_id,
-                    av.version_num,
-                    av.created_at as agent_version_created_at,
-                    av.score,
-                    a.agent_id as agent_agent_id,
-                    a.miner_hotkey,
-                    a.name,
-                    a.latest_version,
-                    a.created_at as agent_created_at,
-                    a.last_updated
-                FROM evaluations e
-                JOIN agent_versions av ON e.version_id = av.version_id
-                JOIN agents a ON av.agent_id = a.agent_id
-                WHERE a.agent_id = %s AND e.status = 'running'
-                ORDER BY e.created_at DESC 
-                LIMIT 1
-            """, (agent_id,))
-            
-            row = cursor.fetchone()
-            
-            # If no running evaluation, get the most recent scored evaluation
-            if not row:
-                cursor.execute("""
-                    SELECT 
-                        e.evaluation_id,
-                        e.version_id,
-                        e.validator_hotkey,
-                        e.status,
-                        e.terminated_reason,
-                        e.created_at,
-                        e.started_at,
-                        e.finished_at,
-                        e.score,
-                        av.version_id as av_version_id,
-                        av.agent_id,
-                        av.version_num,
-                        av.created_at as agent_version_created_at,
-                        av.score,
-                        a.agent_id as agent_agent_id,
-                        a.miner_hotkey,
-                        a.name,
-                        a.latest_version,
-                        a.created_at as agent_created_at,
-                        a.last_updated
-                    FROM evaluations e
-                    JOIN agent_versions av ON e.version_id = av.version_id
-                    JOIN agents a ON av.agent_id = a.agent_id
-                    WHERE a.agent_id = %s AND av.score IS NOT NULL
-                    ORDER BY e.created_at DESC 
-                    LIMIT 1
-                """, (agent_id,))
                 
-                row = cursor.fetchone()
-            
-            # If still no row found, return None
-            if not row:
-                return None
-            
-            evaluation_id = row[0]
-            
-            # Get evaluation runs for this evaluation
-            cursor.execute("""
-                SELECT 
-                    run_id,
-                    evaluation_id,
-                    swebench_instance_id,
-                    status,
-                    response,
-                    error,
-                    pass_to_fail_success,
-                    fail_to_pass_success,
-                    pass_to_pass_success,
-                    fail_to_fail_success,
-                    solved,
-                    started_at,
-                    sandbox_created_at,
-                    patch_generated_at,
-                    eval_started_at,
-                    result_scored_at
-                FROM evaluation_runs 
-                WHERE evaluation_id = %s
-            """, (evaluation_id,))
-            
-            run_rows = cursor.fetchall()
-            evaluation_runs = [
-                EvaluationRun(
-                    run_id=run_row[0],
-                    evaluation_id=run_row[1],
-                    swebench_instance_id=run_row[2],
-                    status=run_row[3],
-                    response=run_row[4],
-                    error=run_row[5],
-                    pass_to_fail_success=run_row[6],
-                    fail_to_pass_success=run_row[7],
-                    pass_to_pass_success=run_row[8],
-                    fail_to_fail_success=run_row[9],
-                    solved=run_row[10],
-                    started_at=run_row[11],
-                    sandbox_created_at=run_row[12],
-                    patch_generated_at=run_row[13],
-                    eval_started_at=run_row[14],
-                    result_scored_at=run_row[15]
-                ) for run_row in run_rows
-            ]
-            
-            # Create Execution object
-            execution = Execution(
-                evaluation=Evaluation(
-                    evaluation_id=row[0],
-                    version_id=row[1],
-                    validator_hotkey=row[2],
-                    status=row[3],
-                    terminated_reason=row[4],
-                    created_at=row[5],
-                    started_at=row[6],
-                    finished_at=row[7],
-                    score=row[8]
-                ),
-                evaluation_runs=evaluation_runs,
-                agent=Agent(
-                    agent_id=row[14],
-                    miner_hotkey=row[15],
-                    name=row[16],
-                    latest_version=row[17],
-                    created_at=row[18],
-                    last_updated=row[19]
-                ),
-                agent_version=AgentVersion(
-                    version_id=row[9],
-                    agent_id=row[10],
-                    version_num=row[11],
-                    created_at=row[12],
-                    score=row[13]
-                )
-            )
-            
-            return execution
+                return execution
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_agent_summary(self, agent_id: str = None, miner_hotkey: str = None) -> AgentSummaryResponse:
         """
         Get a summary of an agent including its details, latest version, and all versions.
         Returns AgentSummaryResponse with agent_details, latest_version, and all_versions.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 # Use agent_id if provided, otherwise use miner_hotkey
                 if agent_id:
                     cursor.execute("""
@@ -1074,7 +1261,7 @@ class DatabaseManager:
                     ) for row in version_rows
                 ]
                 
-                latest_version = all_versions[0].copy() if all_versions else None
+                latest_version = all_versions[0].model_copy() if all_versions else None
                 
                 return AgentSummaryResponse(
                     agent_details=agent_details,
@@ -1085,14 +1272,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting agent summary for {search_param}: {str(e)}")
             return None
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_agent_version_new(self, version_id: str) -> AgentVersionDetails:
         """
         Get detailed information about an agent version including its execution data.
         Returns AgentVersionDetails with agent_version and execution.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT version_id, version_num, created_at, score
                     FROM agent_versions 
@@ -1200,14 +1392,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting agent version details for {version_id}: {str(e)}")
             return None
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_evaluations(self, version_id: str) -> List[ExecutionNew]:
         """
         Get all evaluations for a specific agent version, including their evaluation runs.
         Returns a list of ExecutionNew objects.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
 
                 cursor.execute("""
                     SELECT 
@@ -1297,16 +1494,22 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting evaluations for version {version_id}: {str(e)}")
             return []
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def store_weights(self, miner_weights: dict, time_since_last_update=None) -> int:
         """
         Store miner weights in the weights_history table. Return 1 if successful, 0 if not.
         """
+        conn = None
         try:
             import json
             from datetime import datetime
             
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO weights_history (timestamp, time_since_last_update, miner_weights)
                     VALUES (%s, %s, %s)
@@ -1316,13 +1519,18 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error storing weights: {str(e)}")
             return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_latest_weights(self) -> Optional[dict]:
         """
         Get the most recent weights from the weights_history table. Return None if not found.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT miner_weights, timestamp, time_since_last_update
                     FROM weights_history 
@@ -1341,6 +1549,9 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting latest weights: {str(e)}")
             return None
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def weights_are_different(self, current_weights: dict, stored_weights: dict) -> bool:
         """
@@ -1386,8 +1597,10 @@ class DatabaseManager:
         Calculate the fraction of the last 24 hours that a miner held the top weight position.
         Returns a value between 0.0 and 1.0 representing the fraction of time they were the top miner.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     WITH weight_periods AS (
                         -- Get all weight snapshots from the last 24 hours
@@ -1440,14 +1653,19 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error calculating top miner fraction for {miner_hotkey}: {str(e)}")
             return 0.0
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_current_top_miner(self) -> Optional[str]:
         """
         Get the miner hotkey with the highest weight from the most recent weights snapshot.
         Returns the miner hotkey if found, None if no weights are available.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT miner_weights
                     FROM weights_history 
@@ -1476,6 +1694,9 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting current top miner: {str(e)}")
             return None
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_weights_history_last_24h_with_prior(self) -> List[WeightsData]:
         """
@@ -1483,8 +1704,10 @@ class DatabaseManager:
         plus one row immediately before that window (if it exists), ordered by timestamp ascending.
         Returns a list of WeightsData models.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     (
                         SELECT id, timestamp, time_since_last_update, miner_weights
@@ -1512,6 +1735,9 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error fetching weights_history for last 24h with prior: {str(e)}")
             return []
+        finally:
+            if conn:
+                self.return_connection(conn)
         
     def get_queue_info(self, version_id: str) -> List[QueueInfo]:
         """
@@ -1522,8 +1748,10 @@ class DatabaseManager:
         - If replaced, place_in_queue=None
         Returns a list of QueueInfo(validator_hotkey, place_in_queue) for each evaluation for the version.
         """
+        conn = None
         try:
-            with self.conn.cursor() as cursor:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
                 cursor.execute("""
                     SELECT validator_hotkey, created_at, status
                     FROM evaluations
@@ -1560,3 +1788,6 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting queue info for version {version_id}: {str(e)}")
             return []
+        finally:
+            if conn:
+                self.return_connection(conn)
