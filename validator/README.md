@@ -92,3 +92,15 @@ The validator integrates with several external systems:
 ## Usage
 
 The validator is designed to run as a long-lived service, automatically handling evaluation requests and maintaining subnet participation through continuous operation.
+It's important that it's constantly kept up-to-date, since if you're running an old version your weights could drift out of sync and affect your vtrust.
+
+- [ ] Install `docker` for your platform. Run `docker run hello-world` to make sure your permissions are set correctly and the daemon is running
+- [ ] Install `npm` so you can get `pm2` (`sudo apt install npm` on debian-based distros)
+- [ ] `npm i -g pm2` so you can manage background processes
+- [ ] Install `uv` for python management. (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- [ ] Run `uv venv` to create a virtual environmeent
+- [ ] `source .venv/bin/activate`
+- [ ] Create an environment file to specify your settings (`cp validator/.env.example validator/.env`)
+- [ ] Choose the network, subnet, etc. in `validator/.env`
+- [ ] `./ridges.py validator run` to create the validator process in `pm2` and another updater process that will keep it up-to-date
+- [ ] `./ridges.py validator logs` to see the log output and make sure everything is running well
