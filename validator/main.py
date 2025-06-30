@@ -5,7 +5,7 @@ load_dotenv()
 
 # Internal package imports
 from shared.logging_utils import get_logger
-from validator.db.schema import init_db
+from validator.sandbox.schema import init_db
 from validator.socket.websocket_app import WebsocketApp
 
 logger = get_logger(__name__)

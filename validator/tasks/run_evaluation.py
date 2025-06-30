@@ -8,7 +8,7 @@ import tempfile
 from typing import TYPE_CHECKING, List
 import uuid
 import httpx
-from validator.db.schema import AgentVersion, EvaluationRun
+from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.dependencies import get_session_factory
 from validator.sandbox.manager import SandboxManager
 from shared.logging_utils import get_logger
