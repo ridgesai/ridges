@@ -145,11 +145,11 @@ class Sandbox:
         try:
             # Create an input and output file on the host filesystem
             input_file = self.agent_dir / "input.json"
-            output_file = self.agent_dir / "output.json"
-
-            # Write the input to the input file
             with open(input_file, "w") as f:
                 json.dump(challenge, f)
+
+            output_file = self.agent_dir / "output.json"
+            open(output_file, "x").close()
 
             repo_name = challenge.get("repo")
             base_commit = challenge.get("base_commit")
