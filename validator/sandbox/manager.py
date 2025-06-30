@@ -12,6 +12,13 @@ from docker.models.containers import Container
 
 from validator.config import RIDGES_API_URL
 from validator.sandbox.schema import EvaluationRun
+from validator.sandbox.constants import (
+    MAIN_FILE, PROXY_CONTAINER_NAME, REPOS_BASE_DIR, SANDBOX_DIR, 
+    SANDBOX_DOCKER_IMAGE, SANDBOX_INPUT_FILE, SANDBOX_MAIN_FILE, 
+    SANDBOX_NETWORK_NAME, SANDBOX_OUTPUT_FILE, SANDBOX_REPO_DIR, 
+    SANDBOX_SOURCE_DIR, SANDBOX_SOURCE_AGENT_MAIN_FILE, SANDBOX_MAX_RAM_USAGE,
+    SANDBOX_MAX_RUNTIME, PROXY_DOCKER_IMAGE, AGENTS_BASE_DIR
+)
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
@@ -19,22 +26,6 @@ if TYPE_CHECKING:
 
 # Set up logger
 logger = get_logger(__name__)
-
-# The maximum resource usage that is allowed for a sandbox
-SANDBOX_MAX_RAM_USAGE = 512 * 4 # MiB 
-SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
-
-# The name of the network that the sandbox will be connected to
-SANDBOX_NETWORK_NAME = "sandbox-network"
-
-# Nginx proxy image & container details
-PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
-PROXY_CONTAINER_NAME = "sandbox-proxy"
-
-# Directory to cache cloned repositories for reuse across validations
-# Repositories will be stored at validator/repos/<org>/<repo>
-REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
-AGENTS_BASE_DIR = Path(__file__).parent.parent / "agents"
     
 class SandboxManager:
     websocket_app: "WebsocketApp"
@@ -88,19 +79,20 @@ class SandboxManager:
         current_time = time.time()
         runtime = current_time - sandbox.start_time
 
-        # logger.debug(f'sandbox {sandbox.id}: cpu: {sandbox.cpu_usage:.1f}, ram: {sandbox.ram_usage:.1f} MiB, runtime: {runtime:.1f} seconds') 
+        # logger.debug(f'sandbox {sandbox.evaluation_run.run_id}: cpu: {sandbox.cpu_usage:.1f}, ram: {sandbox.ram_usage:.1f} MiB, runtime: {runtime:.1f} seconds') 
         
         # Check if the sandbox is using too many resources, if so, kill it and set the error
         if sandbox.ram_usage > SANDBOX_MAX_RAM_USAGE:
             sandbox.evaluation_run.error = 'RAM limit exceeded'
             sandbox.container.kill()
-            logger.warning(f'Killed sandbox {sandbox.id} because RAM limit exceeded')
+            logger.warning(f'Killed sandbox {sandbox.evaluation_run.run_id} because RAM limit exceeded')
         elif runtime > SANDBOX_MAX_RUNTIME:
             sandbox.evaluation_run.error = 'Runtime limit exceeded'
             sandbox.container.kill()
-            logger.warning(f'Killed sandbox {sandbox.id} because runtime limit exceeded')
+            logger.warning(f'Killed sandbox {sandbox.evaluation_run.run_id} because runtime limit exceeded')
         
     def add_sandbox(self, evaluation_run: "EvaluationRun", agent_dir: Path):
+        from validator.sandbox.sandbox import Sandbox
         sandbox = Sandbox(evaluation_run=evaluation_run, agent_dir=agent_dir, manager=self)
         self.sandboxes.append(sandbox)
         return sandbox
