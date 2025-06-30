@@ -37,4 +37,4 @@ RUN pip install pickle-mixin
 RUN pip install requests
 RUN pip install urllib3
 
-CMD ["python", "/sandbox/Main.py"]
+CMD ["python", "/sandbox/agent_runner.py"]

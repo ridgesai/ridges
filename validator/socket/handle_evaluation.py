@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from shared.logging_utils import get_logger
-from validator.db.schema import AgentVersion
+from validator.sandbox.schema import AgentVersion
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import validator_hotkey
 
@@ -46,16 +46,6 @@ async def handle_evaluation(websocket_app, json_message):
             version_num=version_num,
             created_at=datetime.fromisoformat(created_at),
         )
-
-        # # Save to database
-        # SessionFactory = get_session_factory()
-        # session = SessionFactory()
-        # try:
-        #     session.add(agent_version)
-        #     session.commit()
-        #     logger.info(f"Saved agent version to database: {agent_version.version_id}")
-        # finally:
-        #     session.close()
 
         await run_evaluation(websocket_app, evaluation_id, agent_version)
 

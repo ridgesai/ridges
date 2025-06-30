@@ -20,18 +20,13 @@ The validator operates as a distributed system component that:
 - **`config.py`** - Central configuration file containing:
   - Network settings (NETUID, subtensor configuration)
   - Validator credentials (hotkey, wallet)
-  - Evaluation parameters (timeouts, intervals)
-  - SWE-bench problem instance lists (easy/medium difficulty)
+  - SWE-bench problems to test miner code on (easy/medium difficulty)
   - API endpoints and logging configuration
-
-### Database Layer (`db/`)
-- **`schema.py`** - SQLAlchemy models for tracking evaluations, agent versions, and results
 
 ### Sandbox System (`sandbox/`)
 - **`manager.py`** - Core sandbox management system using Docker containers
-- **`validator.py`** - Validation logic for sandbox environments
 - **`clone_repo.py`** - Git repository cloning utilities for test environments
-- **`Main.py`** - Main execution script for sandbox operations
+- **`agent_runner.py`** - Main execution script for sandbox operations
 - **`Dockerfile`** - Container definition for sandbox environments
 - **`proxy/`** - HTTP proxy configuration for sandbox networking
   - **`Dockerfile`** - Proxy container definition
