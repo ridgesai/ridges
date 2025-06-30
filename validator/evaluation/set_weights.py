@@ -90,6 +90,9 @@ async def set_weights(db_manager: DatabaseManager):
     Sets the validator weights to the metagraph hotkeys based on the scores it has received from the miners.
     """
     try:
+
+        db_manager.cleanup_old_data(days=3)
+
         keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
         substrate = interface.get_substrate(SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS)
 
@@ -166,6 +169,9 @@ async def set_weights_bayesian(
 ) -> None:
     """Set weights for miners based on their performance scores from the last 24 hours."""
     try:
+        # Consistent with set_weights: purge DB rows older than 72 hours first
+        db_manager.cleanup_old_data(days=3)
+
         # Get substrate and keypair
         substrate = interface.get_substrate(
             subtensor_network=SUBTENSOR_NETWORK,
