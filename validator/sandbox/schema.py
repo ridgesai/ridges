@@ -1,52 +1,38 @@
 from datetime import datetime
+from typing import Optional
 
-from sqlalchemy import Integer, String, DateTime, Boolean, Float
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from pydantic import BaseModel, Field
 
-from validator.config import DB_PATH
 from shared.logging_utils import get_logger
-from validator.dependencies import get_database_engine
 
 logger = get_logger(__name__)
 
-class Base(DeclarativeBase):
-    pass
-
-def init_db() -> None:
-    logger.info(f"Initializing database manager with path: {DB_PATH}")
-    engine = get_database_engine()
-    Base.metadata.create_all(engine)
-
-class AgentVersion(Base):
-    __tablename__ = "agent_versions"
-
-    version_id: Mapped[str] = mapped_column(String, primary_key=True)
-    agent_id: Mapped[str] = mapped_column(String, nullable=False)
-    miner_hotkey: Mapped[str] = mapped_column(String, nullable=False)
-    version_num: Mapped[int] = mapped_column(Integer, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
-    score: Mapped[float] = mapped_column(Float, nullable=True)
+class AgentVersion(BaseModel):
+    version_id: str
+    agent_id: str
+    miner_hotkey: str
+    version_num: int
+    created_at: datetime = Field(default_factory=datetime.now)
+    score: Optional[float] = None
     
-class EvaluationRun(Base):
-    __tablename__ = "evaluation_runs"
-
-    run_id: Mapped[str] = mapped_column(String, primary_key=True)
-    evaluation_id: Mapped[str] = mapped_column(String, nullable=False)
-    validator_hotkey: Mapped[str] = mapped_column(String, nullable=False)
-    swebench_instance_id: Mapped[str] = mapped_column(String, nullable=False)
-    response: Mapped[str] = mapped_column(String, nullable=True)
-    error: Mapped[str] = mapped_column(String, nullable=True)
-    fail_to_pass_success: Mapped[str] = mapped_column(String, nullable=True)
-    pass_to_pass_success: Mapped[str] = mapped_column(String, nullable=True)
-    fail_to_fail_success: Mapped[str] = mapped_column(String, nullable=True)
-    pass_to_fail_success: Mapped[str] = mapped_column(String, nullable=True)
-    solved: Mapped[bool] = mapped_column(Boolean, nullable=True)
-    status: Mapped[str] = mapped_column(String, nullable=False)
-    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    sandbox_created_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    patch_generated_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    eval_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
-    result_scored_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+class EvaluationRun(BaseModel):
+    run_id: str
+    evaluation_id: str
+    validator_hotkey: str
+    swebench_instance_id: str
+    response: Optional[str] = None
+    error: Optional[str] = None
+    fail_to_pass_success: Optional[str] = None
+    pass_to_pass_success: Optional[str] = None
+    fail_to_fail_success: Optional[str] = None
+    pass_to_fail_success: Optional[str] = None
+    solved: Optional[bool] = None
+    status: str
+    started_at: datetime
+    sandbox_created_at: Optional[datetime] = None
+    patch_generated_at: Optional[datetime] = None
+    eval_started_at: Optional[datetime] = None
+    result_scored_at: Optional[datetime] = None
 
     def to_dict(self):
         return {
