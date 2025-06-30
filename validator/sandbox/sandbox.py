@@ -350,7 +350,7 @@ class Sandbox:
             )
             return result.stdout.strip() if result.returncode else None
         except subprocess.CalledProcessError as e:
-            return e.stderr.strip() or str(e)
+            return "Git patch apply error: " + (e.stderr.strip() or str(e))
         finally:
             subprocess.run(
                 ["git", "checkout", "-"],
