@@ -291,7 +291,7 @@ def run(no_auto_update: bool):
             border_style="yellow"
         ))
         
-        if not Prompt.ask("Would you like to build the missing containers?", choices=["Y", "n"], default="y") == "y":
+        if not Prompt.ask("Would you like to build the missing containers?", choices=["y", "n"], default="y") == "y":
             console.print("❌ Aborting - containers required", style="red")
             sys.exit(1)
         
