@@ -1,6 +1,6 @@
 # NOTE: This Python script is not really part of the code that runs on the
 #       validator. This file is actually mounted onto each sandbox Docker
-#       container at /sandbox/Main.py and is used to run the agent code submitted
+#       container at /sandbox/agent_runner.py and is used to run the agent code submitted
 #       by the agent developer.
 
 import sys

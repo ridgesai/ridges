@@ -4,7 +4,7 @@ from typing import Tuple, List
 from fiber import SubstrateInterface
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

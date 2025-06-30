@@ -1,8 +1,31 @@
 import ast
 from typing import Optional
 from validator.sandbox.clone_repo import clone_repo
-from validator.sandbox.manager import MAIN_FILE, PROXY_CONTAINER_NAME, REPOS_BASE_DIR, SANDBOX_DIR, SANDBOX_DOCKER_IMAGE, SANDBOX_INPUT_FILE, SANDBOX_MAIN_FILE, SANDBOX_NETWORK_NAME, SANDBOX_OUTPUT_FILE, SANDBOX_REPO_DIR, SANDBOX_SOURCE_DIR, SandboxManager, logger
+from validator.sandbox.manager import PROXY_CONTAINER_NAME, REPOS_BASE_DIR, SANDBOX_NETWORK_NAME, SandboxManager, logger
 
+# Get the current directory where this file is located
+CURRENT_DIR = Path(__file__).parent.absolute()
+
+# The path (on the host filesystem) to the main script that will run in the sandbox
+MAIN_FILE = str(CURRENT_DIR / "agent_runner.py")
+
+# The Docker image to use for the sandbox
+# docker build -t sandbox-runner .
+SANDBOX_DOCKER_IMAGE = "sandbox-runner"
+
+# The mounted directories/files (these paths exist only in the sandbox)
+# The real paths are stored in the Sandbox object but the mounted paths are constant
+SANDBOX_DIR = "/sandbox"
+SANDBOX_MAIN_FILE = SANDBOX_DIR + "/agent_runner.py"
+SANDBOX_INPUT_FILE = SANDBOX_DIR + "/input.json"
+SANDBOX_OUTPUT_FILE = SANDBOX_DIR + "/output.json"
+
+# The mounted directory that contains the repository that the agent is solving a problem for
+SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
+
+# The mounted directories/files that come from the agent's submitted code
+SANDBOX_SOURCE_DIR = SANDBOX_DIR + "/src"
+SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don't actually mount this, we just expect that it exists
 
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images

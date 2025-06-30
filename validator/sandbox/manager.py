@@ -5,44 +5,20 @@ import time
 import asyncio
 from typing import TYPE_CHECKING, List, Tuple, Optional
 from pathlib import Path
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 import docker
 from docker import DockerClient
 from docker.models.containers import Container
 
 from validator.config import RIDGES_API_URL
-from validator.sandbox.sandbox import Sandbox
 from validator.sandbox.schema import EvaluationRun
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
+    from validator.sandbox.sandbox import Sandbox
 
 # Set up logger
 logger = get_logger(__name__)
-
-# Get the current directory where this file is located
-CURRENT_DIR = Path(__file__).parent.absolute()
-
-# The path (on the host filesystem) to the main script that will run in the sandbox
-MAIN_FILE = str(CURRENT_DIR / "Main.py")
-
-# The Docker image to use for the sandbox
-# docker build -t sandbox-runner .
-SANDBOX_DOCKER_IMAGE = "sandbox-runner"
-
-# The mounted directories/files (these paths exist only in the sandbox)
-# The real paths are stored in the Sandbox object but the mounted paths are constant
-SANDBOX_DIR = "/sandbox"
-SANDBOX_MAIN_FILE = SANDBOX_DIR + "/Main.py"
-SANDBOX_INPUT_FILE = SANDBOX_DIR + "/input.json"
-SANDBOX_OUTPUT_FILE = SANDBOX_DIR + "/output.json"
-
-# The mounted directories/files that come from the agent's submitted code
-SANDBOX_SOURCE_DIR = SANDBOX_DIR + "/src"
-SANDBOX_SOURCE_AGENT_MAIN_FILE = SANDBOX_SOURCE_DIR + "/agent.py" # NOTE: We don't actually mount this, we just expect that it exists
-
-# The mounted directory that contains the repository that the agent is solving a problem for
-SANDBOX_REPO_DIR = SANDBOX_DIR + "/repo"
 
 # The maximum resource usage that is allowed for a sandbox
 SANDBOX_MAX_RAM_USAGE = 512 * 4 # MiB 
@@ -64,7 +40,7 @@ class SandboxManager:
     websocket_app: "WebsocketApp"
     proxy_container: Optional["Container"] = None
     docker: DockerClient
-    sandboxes: List[Sandbox]
+    sandboxes: List["Sandbox"]
     _monitor_task: asyncio.Task
 
     def __init__(self, websocket_app: "WebsocketApp"):
@@ -99,7 +75,7 @@ class SandboxManager:
             
             await asyncio.sleep(1)
 
-    def _monitor_sandbox(self, sandbox: Sandbox):
+    def _monitor_sandbox(self, sandbox: "Sandbox"):
         # Get the stats
         stats = sandbox.container.stats(stream=False)
         

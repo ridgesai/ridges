@@ -7,7 +7,7 @@ import uuid
 import httpx
 from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.sandbox.manager import AGENTS_BASE_DIR, SandboxManager
-from shared.logging_utils import get_logger
+from validator.utils.logging import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey, MEDIUM_INSTANCES
 from swebench.harness.run_evaluation import load_swebench_dataset
 
