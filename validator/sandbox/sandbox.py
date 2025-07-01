@@ -160,6 +160,7 @@ class Sandbox:
             logger.info(f"Cloning repository {repo_name} into {self.repo_dir_path}")
             clone_repo(self.repo_dir_path, repo_name, base_commit)
 
+            logger.info(f"Running sandbox for run {self.evaluation_run.run_id}")
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
