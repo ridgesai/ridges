@@ -40,8 +40,21 @@ def build_docker(path: str, tag: str) -> bool:
 
 def check_pm2(process: str = "ridges-validator") -> tuple[bool, str]:
     """Check if PM2 process is running"""
-    code, output, _ = run_cmd(f"pm2 list | grep {process}")
-    return code == 0 and process in output, "running" if code == 0 else ""
+    code, output, _ = run_cmd("pm2 list")
+    if code != 0:
+        return False, ""
+    
+    # Parse PM2 list output to find exact process name
+    lines = output.strip().split('\n')
+    for line in lines:
+        if '│' in line and process in line:
+            # Split by │ and get the name column (index 2, after id and │)
+            parts = line.split('│')
+            if len(parts) >= 3:
+                process_name = parts[2].strip()
+                if process_name == process:
+                    return True, "running"
+    return False, ""
 
 def get_logs(process: str = "ridges-validator", lines: int = 15) -> str:
     """Get PM2 logs"""
