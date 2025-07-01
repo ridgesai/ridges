@@ -427,9 +427,6 @@ def restart():
             console.print(f"⚠️  {process} was not running or could not be stopped", style="yellow")
     
     if stopped_processes:
-        console.print("⏳ Waiting 2 seconds before restarting...", style="cyan")
-        time.sleep(2)
-        
         # Restart the auto-updater
         console.print("🚀 Restarting auto-updater...", style="yellow")
         returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
@@ -548,9 +545,6 @@ def restart():
         console.print("✅ Stopped API platform", style="green")
     else:
         console.print("⚠️  API platform was not running or could not be stopped", style="yellow")
-    
-    console.print("⏳ Waiting 2 seconds before restarting...", style="cyan")
-    time.sleep(2)
     
     # Restart the platform with default settings
     console.print("🚀 Restarting API platform...", style="yellow")
