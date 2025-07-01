@@ -467,8 +467,8 @@ def run(host: str, port: int):
         ))
         return
     
-    # Start the platform with PM2
-    returncode, stdout, stderr = run_command(f"pm2 start 'uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform", capture_output=False)
+    # Start the platform with PM2 using uv Python environment
+    returncode, stdout, stderr = run_command(f"pm2 start 'uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform --interpreter $(uv run which python)", capture_output=False)
     
     if returncode != 0:
         console.print(f"💥 Failed to start API platform", style="red")
@@ -527,32 +527,32 @@ def logs():
         sys.exit(1)
 
 @platform.command()
-def restart():
-    """Restart the Ridges API platform."""
-    console.print("🔄 Restarting Ridges API platform...", style="yellow")
-    
-    # Stop the platform
-    returncode, stdout, stderr = run_command("pm2 delete ridges-api-platform")
-    if returncode == 0:
-        console.print("✅ Stopped API platform", style="green")
-    else:
-        console.print("⚠️  API platform was not running or could not be stopped", style="yellow")
-    
-    # Restart the platform with default settings
-    console.print("🚀 Restarting API platform...", style="yellow")
-    returncode, stdout, stderr = run_command("pm2 start 'uvicorn api.src.main:app --host 0.0.0.0 --port 8000' --name ridges-api-platform", capture_output=False)
-    
-    if returncode == 0:
-        console.print(Panel(
-            "[bold green]🎉 API platform restarted successfully![/bold green]\n"
-            "[cyan]Platform is running on 0.0.0.0:8000[/cyan]\n"
-            "[cyan]Use 'ridges.py platform logs' to view real-time logs[/cyan]",
-            title="✨ Restart Complete",
-            border_style="green"
-        ))
-    else:
-        console.print("💥 Failed to restart API platform", style="red")
+def update():
+    """Update the platform code and restart if there are changes."""
+    # Get current commit and pull updates
+    returncode, current_commit, _ = run_command("git rev-parse HEAD")
+    if returncode != 0:
+        console.print("💥 Failed to get current commit hash", style="red")
         sys.exit(1)
+    
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("📥 Pulling latest changes...", total=None)
+        returncode, _, stderr = run_command("git pull")
+        if returncode != 0:
+            console.print(f"💥 Git pull failed: {stderr}", style="red")
+            sys.exit(1)
+    
+    # Check if updates were applied
+    returncode, new_commit, _ = run_command("git rev-parse HEAD")
+    if returncode != 0 or current_commit.strip() == new_commit.strip():
+        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]\n[cyan]Already running latest version.[/cyan]", title="📋 Update Status", border_style="yellow"))
+        return
+    
+    # Update dependencies and restart platform
+    console.print(Panel("[bold green]✨ Updates found![/bold green]\n[cyan]Updating dependencies and restarting platform...[/cyan]", title="🔄 Update Available", border_style="green"))
+    run_command("uv pip install -e .")
+    run_command("pm2 restart ridges-api-platform")
+    console.print(Panel("[bold green]🎉 Platform updated and restarted![/bold green]", title="✨ Update Complete", border_style="green"))
 
 if __name__ == "__main__":
     cli() 
