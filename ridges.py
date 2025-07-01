@@ -259,18 +259,24 @@ def update():
     code, current_commit, _ = run_cmd("git rev-parse HEAD")
     if code != 0:
         console.print("💥 Failed to get commit hash", style="red")
+        console.print("Sleeping for 5 minutes...")
+        time.sleep(300)
         return
     
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
         progress.add_task("📥 Pulling changes...", total=None)
         if run_cmd("git pull")[0] != 0:
             console.print("💥 Git pull failed", style="red")
+            console.print("Sleeping for 5 minutes...")
+            time.sleep(300)
             return
     
     # Check if updates applied
     code, new_commit, _ = run_cmd("git rev-parse HEAD")
     if code != 0 or current_commit.strip() == new_commit.strip():
         console.print("No updates available")
+        console.print("Sleeping for 5 minutes...")
+        time.sleep(300)
         return
     
     # Update deps and restart/start validator
