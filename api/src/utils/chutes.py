@@ -127,7 +127,7 @@ class ChutesManager:
                         "content": message.content
                     })
 
-        logger.info(f"Body: {body}")
+        logger.debug(f"Body: {body}")
 
         response_chunks = []
         total_tokens = 0
@@ -148,7 +148,7 @@ class ChutesManager:
                     
                     # Read the entire response as text first
                     response_text = await response.text()
-                    logger.info(f"Raw response: {response_text}")
+                    logger.debug(f"Raw response: {response_text}")
                     
                     # Check if response contains an error message despite 200 status
                     if response_text and ("Internal Server Error" in response_text or "exhausted all available targets" in response_text):
@@ -203,10 +203,10 @@ class ChutesManager:
                 "spend": self.costs_data_inference.get(key, {}).get("spend", 0) + total_cost,
                 "started_at": self.costs_data_inference.get(key, {}).get("started_at", datetime.now())
             }
-            logger.info(f"Updated inference spend for run {run_id}: {total_cost} (total: {self.costs_data_inference[key]['spend']})")
+            logger.debug(f"Updated inference spend for run {run_id}: {total_cost} (total: {self.costs_data_inference[key]['spend']})")
         
         response_text = "".join(response_chunks)
-        logger.info(f"Final response length: {len(response_text)}")
+        logger.debug(f"Final response length: {len(response_text)}")
         
         # If we got no response chunks but the API call succeeded, return a fallback message
         if not response_chunks:
