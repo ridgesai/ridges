@@ -5,6 +5,7 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 """
 
 import hashlib
+import time
 import click
 from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
@@ -284,6 +285,8 @@ def update():
         run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator")
     
     console.print("Validator updated!")
+    console.print("Sleeping for 5 minutes...")
+    time.sleep(300)
 
 @cli.group()
 def platform():
