@@ -205,7 +205,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
 
             file_info = f"{keypair.ss58_address}:{content_hash}:{version_num}"
             signature = keypair.sign(file_info).hex()
-            payload = {'miner_hotkey': keypair.ss58_address, 'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
+            payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
                 progress.add_task("🔐 Signing and preparing upload...", total=None)
@@ -249,9 +249,11 @@ def get_name_and_version_number(url: str, miner_hotkey: str) -> Optional[tuple[s
                 latest_version = latest_agent.get("latest_version")
                 return latest_agent.get("name"), latest_version.get("version_num")
             else:
-                return None
+                console.print(f"💥 Failed to get name and version number: {response.text}", style="bold red")
+                sys.exit(1)
     except Exception as e:
-        return None
+        console.print(f"💥 Unexpected error: {e}", style="bold red")
+        sys.exit(1)
 
 @cli.command()
 def version():

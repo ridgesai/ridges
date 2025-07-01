@@ -23,7 +23,6 @@ db = DatabaseManager()
 server = WebSocketServer()
 
 class AgentUploadRequest(BaseModel):
-    miner_hotkey: str
     public_key: str
     file_info: str
     signature: str
@@ -31,19 +30,18 @@ class AgentUploadRequest(BaseModel):
 
 async def post_agent (
     agent_file: UploadFile = File(...),
-    miner_hotkey: str = Form(...),
     public_key: str = Form(...),
     file_info: str = Form(...),
     signature: str = Form(...),
     name: str = Form(...),
 ):
+    miner_hotkey = file_info.split(":")[0]
     # Check if miner_hotkey is provided
     if not miner_hotkey:
         raise HTTPException(
             status_code=400,
             detail="miner_hotkey is required"
         )
-
     
     existing_agent = db.get_agent_by_hotkey(miner_hotkey)
     if existing_agent:
