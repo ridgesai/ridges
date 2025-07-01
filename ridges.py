@@ -1,7 +1,7 @@
 #!.venv/bin/python3
 
 """
-Ridges CLI - Command-line interface for managing Ridges miners
+Ridges CLI - Elegant command-line interface for managing Ridges miners and validators
 """
 
 import hashlib
@@ -9,8 +9,6 @@ import click
 from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
-import sys
-import time
 import subprocess
 from typing import Optional
 from dotenv import load_dotenv
@@ -25,135 +23,82 @@ CONFIG_FILE = "miner/.env"
 
 load_dotenv(CONFIG_FILE)
 
-def run_command(cmd: str, capture_output: bool = True) -> tuple[int, str, str]:
-    """Run a shell command and return (return_code, stdout, stderr)"""
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=capture_output, text=True)
-        return result.returncode, result.stdout, result.stderr
-    except Exception as e:
-        return 1, "", str(e)
+def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
+    """Run command and return (code, stdout, stderr)"""
+    result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
+    return result.returncode, result.stdout, result.stderr
 
-def check_docker_image(image_name: str) -> bool:
-    """Check if a Docker image exists"""
-    returncode, stdout, _ = run_command(f"docker images -q {image_name}")
-    return returncode == 0 and stdout.strip() != ""
+def check_docker(image: str) -> bool:
+    """Check if Docker image exists"""
+    code, output, _ = run_cmd(f"docker images -q {image}")
+    return code == 0 and output.strip() != ""
 
-def build_docker_image(path: str, tag: str) -> bool:
-    """Build a Docker image"""
-    console.print(f"🔨 Building {tag} from {path}...", style="yellow")
-    returncode, stdout, stderr = run_command(f"docker build -t {tag} {path}", capture_output=False)
-    if returncode == 0:
-        console.print(f"✅ {tag} built successfully", style="green")
-        return True
-    else:
-        console.print(f"💥 Failed to build {tag}", style="red")
-        return False
+def build_docker(path: str, tag: str) -> bool:
+    """Build Docker image"""
+    console.print(f"🔨 Building {tag}...", style="yellow")
+    return run_cmd(f"docker build -t {tag} {path}", capture=False)[0] == 0
 
-def check_pm2_process(process_name: str = "ridges-validator") -> tuple[bool, str]:
-    """Check if PM2 process is running and return (is_running, last_check_time)"""
-    returncode, stdout, _ = run_command(f"pm2 list | grep {process_name}")
-    if returncode == 0 and process_name in stdout:
-        # Try to get last check time from PM2 logs
-        if process_name == "ridges-validator-updater":
-            # For updater, look for "Checking for updates" lines
-            log_returncode, log_output, _ = run_command(f"pm2 logs {process_name} --lines 20 --nostream")
-            if log_returncode == 0 and log_output:
-                # Look for the most recent "Checking for updates" line
-                import re
-                from datetime import datetime
-                for line in log_output.strip().split('\n'):
-                    if "Checking for updates" in line:
-                        timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line)
-                        if timestamp_match:
-                            timestamp_str = timestamp_match.group(1)
-                            try:
-                                timestamp_dt = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S')
-                                diff = datetime.now() - timestamp_dt
-                                relative = f"{diff.seconds // 60}m {diff.seconds % 60}s ago"
-                                return True, f"{timestamp_str} ({relative})"
-                            except ValueError:
-                                return True, timestamp_str
-        else:
-            # For other processes, use the original logic
-            log_returncode, log_output, _ = run_command(f"pm2 logs {process_name} --lines 2 --nostream")
-            if log_returncode == 0 and log_output:
-                # Extract timestamp from log line
-                lines = log_output.strip().split('\n')
-                if lines:
-                    first_line = lines[0]
-                    # Look for timestamp pattern
-                    import re
-                    timestamp_match = re.search(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', first_line)
-                    if timestamp_match:
-                        return True, timestamp_match.group(1)
-        return True, "unknown"
-    return False, ""
+def check_pm2(process: str = "ridges-validator") -> tuple[bool, str]:
+    """Check if PM2 process is running"""
+    code, output, _ = run_cmd(f"pm2 list | grep {process}")
+    return code == 0 and process in output, "running" if code == 0 else ""
 
-def get_pm2_logs(process_name: str = "ridges-validator", lines: int = 15) -> str:
-    """Get the last N lines of PM2 logs"""
-    returncode, stdout, _ = run_command(f"pm2 logs {process_name} --lines {lines} --nostream")
-    return stdout if returncode == 0 else "No logs available"
+def get_logs(process: str = "ridges-validator", lines: int = 15) -> str:
+    """Get PM2 logs"""
+    return run_cmd(f"pm2 logs {process} --lines {lines} --nostream")[1]
 
-class RidgesConfig:
+class Config:
     def __init__(self):
-        self.config_file = CONFIG_FILE
-        if os.path.exists(self.config_file):
-            load_dotenv(self.config_file)
+        self.file = CONFIG_FILE
+        if os.path.exists(self.file):
+            load_dotenv(self.file)
     
-    def save_config(self, key: str, value: str):
-        config_lines = []
-        if os.path.exists(self.config_file):
-            with open(self.config_file, 'r') as f:
-                config_lines = f.readlines()
+    def save(self, key: str, value: str):
+        lines = []
+        if os.path.exists(self.file):
+            with open(self.file, 'r') as f:
+                lines = f.readlines()
         
-        key_found = False
-        for i, line in enumerate(config_lines):
+        found = False
+        for i, line in enumerate(lines):
             if line.strip().startswith(f"{key}="):
-                config_lines[i] = f"{key}={value}\n"
-                key_found = True
+                lines[i] = f"{key}={value}\n"
+                found = True
                 break
         
-        if not key_found:
-            config_lines.append(f"{key}={value}\n")
+        if not found:
+            lines.append(f"{key}={value}\n")
         
-        with open(self.config_file, 'w') as f:
-            f.writelines(config_lines)
-        
+        with open(self.file, 'w') as f:
+            f.writelines(lines)
         os.environ[key] = value
     
-    def get_or_prompt(self, key: str, prompt_text: str, default: Optional[str] = None) -> str:
+    def get_or_prompt(self, key: str, prompt: str, default: Optional[str] = None) -> str:
         value = os.getenv(key)
-        
         if not value:
-            value = Prompt.ask(f"🎯 {prompt_text}", default=default) if default else Prompt.ask(f"🎯 {prompt_text}")
-            self.save_config(key, value)
-            console.print(f"✨ Configuration saved: {key} → {self.config_file}", style="bold green")
-        
+            value = Prompt.ask(f"🎯 {prompt}", default=default) if default else Prompt.ask(f"🎯 {prompt}")
+            self.save(key, value)
         return value
 
 class RidgesCLI:
     def __init__(self, api_url: Optional[str] = None):
         self.api_url = api_url or DEFAULT_API_BASE_URL
-        self.config = RidgesConfig()
-        
-    def get_coldkey_name(self) -> str:
-        return self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", default="miner")
-    
-    def get_hotkey_name(self) -> str:
-        return self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", default="default")
+        self.config = Config()
     
     def get_keypair(self):
-        return load_hotkey_keypair(self.get_coldkey_name(), self.get_hotkey_name())
+        coldkey = self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+        hotkey = self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+        return load_hotkey_keypair(coldkey, hotkey)
     
-    def get_agent_file_path(self) -> str:
-        return self.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", default="miner/agent.py")
+    def get_agent_path(self) -> str:
+        return self.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "miner/agent.py")
 
 @click.group()
 @click.version_option(version="1.0.0")
 @click.option("--url", help=f"Custom API URL (default: {DEFAULT_API_BASE_URL})")
 @click.pass_context
 def cli(ctx, url):
-    """Ridges CLI - Manage your Ridges miners"""
+    """Ridges CLI - Manage your Ridges miners and validators"""
     ctx.ensure_object(dict)
     ctx.obj['url'] = url
 
@@ -164,31 +109,14 @@ def cli(ctx, url):
 @click.pass_context
 def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str]):
     """Upload a miner agent to the Ridges API."""
-    api_url = ctx.obj.get('url')
-    ridges = RidgesCLI(api_url)
+    ridges = RidgesCLI(ctx.obj.get('url'))
     
-    file = file or ridges.get_agent_file_path()
-    coldkey_name = coldkey_name or ridges.get_coldkey_name()
-    hotkey_name = hotkey_name or ridges.get_hotkey_name()
+    file = file or ridges.get_agent_path()
+    if not os.path.exists(file) or os.path.basename(file) != "agent.py":
+        console.print("💥 File must be named 'agent.py' and exist", style="bold red")
+        return
     
-    if not os.path.exists(file):
-        console.print(f"💥 File not found: {file}", style="bold red")
-        sys.exit(1)
-    
-    if os.path.basename(file) != "agent.py":
-        console.print("💥 File must be named 'agent.py'", style="bold red")
-        sys.exit(1)
-    
-    console.print(Panel(
-        f"[bold cyan]📤 Uploading Agent[/bold cyan]\n"
-        f"[yellow]File:[/yellow] {file}\n"
-        f"[yellow]Coldkey:[/yellow] {coldkey_name}\n"
-        f"[yellow]Hotkey:[/yellow] {hotkey_name}\n"
-        f"[yellow]API URL:[/yellow] {ridges.api_url}",
-        title="🚀 Upload Configuration",
-        border_style="cyan"
-    ))
-
+    console.print(Panel(f"[bold cyan]📤 Uploading Agent[/bold cyan]\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="🚀 Upload", border_style="cyan"))
     
     try:
         with open(file, 'rb') as f:
@@ -196,7 +124,9 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             content_hash = hashlib.sha256(f.read()).hexdigest()
             keypair = ridges.get_keypair()
             public_key = keypair.public_key.hex()
-            name_and_version = get_name_and_version_number(ridges.api_url, keypair.ss58_address)
+            
+            # Get name and version
+            name_and_version = get_name_and_version(ridges.api_url, keypair.ss58_address)
             if name_and_version is None:
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = -1
@@ -208,65 +138,34 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-                progress.add_task("🔐 Signing and preparing upload...", total=None)
-                time.sleep(1)
-            
-            with httpx.Client() as client:
-                with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-                    progress.add_task(f"📡 Uploading {name} to the Ridges API at {ridges.api_url}...", total=None)
+                progress.add_task("🔐 Signing and uploading...", total=None)
+                
+                with httpx.Client() as client:
                     response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
                 
                 if response.status_code == 200:
-                    result = response.json()
-                    console.print(f"✨ {result.get('message', 'Upload successful')}", style="bold green")
-                    console.print(Panel(
-                        f"[bold green]🎉 Upload Complete[/bold green]\n"
-                        f"[cyan]Your miner '{name}' has been uploaded to {ridges.api_url}[/cyan]\n"
-                        f"[cyan]It has been queued for evaluation.[/cyan]",
-                        title="✨ Success",
-                        border_style="green"
-                    ))
+                    console.print(Panel(f"[bold green]🎉 Upload Complete[/bold green]\n[cyan]Miner '{name}' uploaded successfully![/cyan]", title="✨ Success", border_style="green"))
                 else:
-                    error_detail = response.json().get('detail', 'Unknown error') if response.headers.get('content-type', '').startswith('application/json') else response.text
-                    console.print(f"💥 Upload failed: {error_detail}", style="bold red")
-                    sys.exit(1)
+                    error = response.json().get('detail', 'Unknown error') if response.headers.get('content-type', '').startswith('application/json') else response.text
+                    console.print(f"💥 Upload failed: {error}", style="bold red")
                     
-    except httpx.RequestError as e:
-        console.print(f"💥 Network error: {e}", style="bold red")
-        sys.exit(1)
     except Exception as e:
-        console.print(f"💥 Unexpected error: {e}", style="bold red")
-        sys.exit(1)
+        console.print(f"💥 Error: {e}", style="bold red")
 
-def get_name_and_version_number(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
+def get_name_and_version(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
     try:
         with httpx.Client() as client:
             response = client.get(f"{url}/retrieval/agent?miner_hotkey={miner_hotkey}&include_code=false")
             if response.status_code == 200:
                 latest_agent = response.json().get("latest_agent")
-                if not latest_agent:
-                    return None
-                latest_version = latest_agent.get("latest_version")
-                return latest_agent.get("name"), latest_version.get("version_num")
-            else:
-                console.print(f"💥 Failed to get name and version number: {response.text}", style="bold red")
-                sys.exit(1)
-    except Exception as e:
-        console.print(f"💥 Unexpected error: {e}", style="bold red")
-        sys.exit(1)
+                if latest_agent:
+                    latest_version = latest_agent.get("latest_version")
+                    return latest_agent.get("name"), latest_version.get("version_num")
+    except Exception:
+        pass
+    return None
 
-@cli.command()
-def version():
-    """Show version information."""
-    console.print(Panel(
-        "[bold yellow]🌟 Ridges CLI v1.0.0[/bold yellow]\n"
-        "[cyan]Command-line interface for managing Ridges miners and validators[/cyan]\n\n"
-        "[green]Features:[/green]\n"
-        "• 🚀 Upload miners to the network\n"
-        "• ⚙️ Manage configuration settings\n",
-        title="📋 Version Information",
-        border_style="yellow"
-    ))
+
 
 @cli.group()
 def validator():
@@ -274,167 +173,104 @@ def validator():
     pass
 
 @validator.command()
-@click.option("--no-auto-update", is_flag=True, help="Run validator directly in foreground without auto-updater")
-def run(no_auto_update: bool):
-    """Run the Ridges validator with auto-updater."""
+@click.option("--no-auto-update", is_flag=True, help="Run validator directly in foreground")
+@click.option("--rebuild-containers", is_flag=True, help="Rebuild Docker containers")
+def run(no_auto_update: bool, rebuild_containers: bool):
+    """Run the Ridges validator."""
+
+    if rebuild_containers:
+        console.print("🔨 Rebuilding Docker containers...", style="yellow")
+        if not build_docker("validator/sandbox", "sandbox-runner"):
+            return
+        if not build_docker("validator/sandbox/proxy", "sandbox-nginx-proxy"):
+            return
     
     # Check Docker containers
-    console.print("🔍 Checking Docker containers...", style="cyan")
-    
-    sandbox_missing = not check_docker_image("sandbox-runner")
-    proxy_missing = not check_docker_image("sandbox-nginx-proxy")
-    
-    if sandbox_missing or proxy_missing:
-        console.print(Panel(
-            "[bold yellow]🐳 Docker containers missing![/bold yellow]\n"
-            f"[red]sandbox-runner:[/red] {'❌ Missing' if sandbox_missing else '✅ Found'}\n"
-            f"[red]sandbox-nginx-proxy:[/red] {'❌ Missing' if proxy_missing else '✅ Found'}",
-            title="Docker Status",
-            border_style="yellow"
-        ))
-        
-        if not Prompt.ask("Would you like to build the missing containers?", choices=["y", "n"], default="y") == "y":
-            console.print("❌ Aborting - containers required", style="red")
-            sys.exit(1)
-        
-        if sandbox_missing and not build_docker_image("validator/sandbox", "sandbox-runner"):
-            sys.exit(1)
-        if proxy_missing and not build_docker_image("validator/sandbox/proxy/", "sandbox-nginx-proxy"):
-            sys.exit(1)
+    missing = [img for img in ["sandbox-runner", "sandbox-nginx-proxy"] if not check_docker(img)]
+    if missing:
+        console.print(Panel(f"[bold yellow]🐳 Missing containers:[/bold yellow]\n[red]{', '.join(missing)}[/red]", title="Docker Status", border_style="yellow"))
+        if Prompt.ask("Build missing containers?", choices=["y", "n"], default="y") == "y":
+            for img in missing:
+                path = "validator/sandbox" if img == "sandbox-runner" else "validator/sandbox/proxy/"
+                if not build_docker(path, img):
+                    return
+        else:
+            return
     
     if no_auto_update:
-        # Run validator directly in foreground
         console.print("🚀 Starting validator...", style="yellow")
-        console.print("Press Ctrl+C to stop", style="cyan")
-        
-        # Run the validator directly using uv
-        returncode, stdout, stderr = run_command("uv run validator/main.py", capture_output=False)
-        
-        if returncode != 0:
-            console.print(f"💥 Validator exited with error code {returncode}", style="red")
-            sys.exit(1)
+        run_cmd("uv run validator/main.py", capture=False)
         return
     
-    # Check if auto-updater is running
-    console.print("🔍 Checking auto-updater status...", style="cyan")
-    is_running, last_check = check_pm2_process("ridges-validator-updater")
-    
+    # Check if already running
+    is_running, _ = check_pm2("ridges-validator-updater")
     if is_running:
-        console.print(Panel(
-            f"[bold green]✅ Auto-updater is already running![/bold green]\n"
-            f"[cyan]Last checked:[/cyan] {last_check}\n"
-            f"[cyan]Status:[/cyan] Monitoring for updates every 5 minutes",
-            title="🚀 Validator Status",
-            border_style="green"
-        ))
+        console.print("✅ Auto-updater already running!", style="green")
+        console.print("📋 Showing validator logs...", style="cyan")
+        run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
         return
     
+    # Start validator
     console.print("🚀 Starting validator...", style="yellow")
+    run_cmd("uv pip install -e .", capture=False)
+    run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator", capture=False)
     
-    # Run the auto-updater script under PM2 using the specified process name
-    returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
-    
-    if returncode != 0:
-        console.print(f"💥 Failed to start auto-updater", style="red")
-        sys.exit(1)
-    
-    # Verify it started and show logs
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True
-    ) as progress:
-        task = progress.add_task("Starting auto-updater...", total=None)
-        time.sleep(3)  # Show loading indicator for 3 seconds
-    is_running, _ = check_pm2_process("ridges-validator-updater")
-    
-    if is_running:
-        console.print(Panel(
-            "[bold green]🎉 Auto-updater started successfully![/bold green]\n"
-            "[cyan]The validator is now running and will auto-update every 5 minutes.[/cyan]",
-            title="✨ Success",
-            border_style="green"
-        ))
-        
-        # Show last 15 lines of logs
-        logs = get_pm2_logs()
-        if logs:
-            console.print(Panel(
-                f"[bold cyan]📋 Recent Logs:[/bold cyan]\n{logs}",
-                title="📄 Log Output",
-                border_style="cyan"
-            ))
+    # Start auto-updater
+    if run_cmd("pm2 start './ridges.py validator update' --name ridges-validator-updater --cron '*/1 * * * *'", capture=False)[0] == 0:
+        console.print(Panel("[bold green]🎉 Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every 5 minutes.[/cyan]", title="✨ Success", border_style="green"))
+        console.print("📋 Showing validator logs...", style="cyan")
+        run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
     else:
-        console.print("💥 Auto-updater failed to start properly", style="red")
-        sys.exit(1)
+        console.print("💥 Failed to start validator", style="red")
 
 @validator.command()
 def stop():
-    """Stop the Ridges validator and auto-updater."""
-    console.print("🛑 Stopping Ridges validator processes...", style="yellow")
-    
-    # Stop both processes
-    processes_to_stop = ["ridges-validator", "ridges-validator-updater"]
-    stopped_processes = []
-    
-    for process in processes_to_stop:
-        returncode, stdout, stderr = run_command(f"pm2 delete {process}")
-        if returncode == 0:
-            stopped_processes.append(process)
-            console.print(f"✅ Stopped {process}", style="green")
-        else:
-            console.print(f"⚠️  {process} was not running or could not be stopped", style="yellow")
-    
-    if stopped_processes:
-        console.print(Panel(
-            f"[bold green]🎉 Successfully stopped:[/bold green]\n"
-            f"[cyan]{', '.join(stopped_processes)}[/cyan]",
-            title="✨ Stop Complete",
-            border_style="green"
-        ))
+    """Stop the Ridges validator."""
+    stopped = [p for p in ["ridges-validator", "ridges-validator-updater"] if run_cmd(f"pm2 delete {p}")[0] == 0]
+    if stopped:
+        console.print(Panel(f"[bold green]🎉 Stopped:[/bold green]\n[cyan]{', '.join(stopped)}[/cyan]", title="✨ Stop Complete", border_style="green"))
     else:
-        console.print("ℹ️  No validator processes were running", style="cyan")
+        console.print("ℹ️  No validator processes running", style="cyan")
 
 @validator.command()
 def logs():
-    """Show real-time logs from the Ridges validator and auto-updater."""
-    console.print("📋 Showing real-time logs from validator processes...", style="cyan")
-    console.print("Press Ctrl+C to stop", style="yellow")
-    
-    # Show logs from both processes
-    returncode, stdout, stderr = run_command("pm2 logs ridges-validator ridges-validator-updater", capture_output=False)
-    
-    if returncode != 0:
-        console.print("💥 Failed to show logs", style="red")
-        sys.exit(1)
+    """Show validator logs."""
+    console.print("📋 Showing validator logs...", style="cyan")
+    run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
 
 @validator.command()
 def update():
-    """Update the validator code and restart if there are changes."""
+    """Update validator code and restart."""
     # Get current commit and pull updates
-    returncode, current_commit, _ = run_command("git rev-parse HEAD")
-    if returncode != 0:
-        console.print("💥 Failed to get current commit hash", style="red")
-        sys.exit(1)
-    
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-        progress.add_task("📥 Pulling latest changes...", total=None)
-        returncode, _, stderr = run_command("git pull")
-        if returncode != 0:
-            console.print(f"💥 Git pull failed: {stderr}", style="red")
-            sys.exit(1)
-    
-    # Check if updates were applied
-    returncode, new_commit, _ = run_command("git rev-parse HEAD")
-    if returncode != 0 or current_commit.strip() == new_commit.strip():
-        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]\n[cyan]Already running latest version.[/cyan]", title="📋 Update Status", border_style="yellow"))
+    code, current_commit, _ = run_cmd("git rev-parse HEAD")
+    if code != 0:
+        console.print("💥 Failed to get commit hash", style="red")
         return
     
-    # Restart validator
-    console.print(Panel("[bold green]✨ Updates found![/bold green]\n[cyan]Restarting validator...[/cyan]", title="🔄 Update Available", border_style="green"))
-    run_command("pm2 restart ridges-validator")
-    console.print(Panel("[bold green]🎉 Validator updated and restarted![/bold green]", title="✨ Update Complete", border_style="green"))
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("📥 Pulling changes...", total=None)
+        if run_cmd("git pull")[0] != 0:
+            console.print("💥 Git pull failed", style="red")
+            return
+    
+    # Check if updates applied
+    code, new_commit, _ = run_cmd("git rev-parse HEAD")
+    if code != 0 or current_commit.strip() == new_commit.strip():
+        console.print("No updates available")
+        return
+    
+    # Update deps and restart/start validator
+    console.print("✨ Updates found!\nUpdating deps and restarting validator...", style="green")
+    run_cmd("uv pip install -e .")
+    
+    # Check if validator is running and restart/start accordingly
+    is_running, _ = check_pm2("ridges-validator")
+    if is_running:
+        run_cmd("pm2 restart ridges-validator")
+    else:
+        run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator")
+    
+    console.print("Validator updated!")
 
 @cli.group()
 def platform():
@@ -442,117 +278,66 @@ def platform():
     pass
 
 @platform.command()
-@click.option("--host", default="0.0.0.0", help="Host to bind to (default: 0.0.0.0)")
-@click.option("--port", default=8000, help="Port to bind to (default: 8000)")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
+@click.option("--port", default=8000, help="Port to bind to")
 def run(host: str, port: int):
-    """Run the Ridges API platform using PM2."""
-    console.print(Panel(
-        f"[bold cyan]🚀 Starting Ridges API Platform[/bold cyan]\n"
-        f"[yellow]Host:[/yellow] {host}\n"
-        f"[yellow]Port:[/yellow] {port}\n"
-        f"[yellow]Process:[/yellow] ridges-api-platform",
-        title="🌐 Platform Configuration",
-        border_style="cyan"
-    ))
+    """Run the Ridges API platform."""
+    console.print(Panel(f"[bold cyan]🚀 Starting Platform[/bold cyan]\n[yellow]Host:[/yellow] {host}\n[yellow]Port:[/yellow] {port}", title="🌐 Platform", border_style="cyan"))
     
-    # Check if platform is already running
-    is_running, _ = check_pm2_process("ridges-api-platform")
+    # Check if running
+    is_running, _ = check_pm2("ridges-api-platform")
     if is_running:
-        console.print(Panel(
-            "[bold yellow]⚠️  API platform is already running![/bold yellow]\n"
-            "[cyan]Use 'ridges.py platform logs' to view logs[/cyan]\n"
-            "[cyan]Use 'ridges.py platform stop' to stop the platform[/cyan]",
-            title="🔄 Platform Status",
-            border_style="yellow"
-        ))
+        console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
         return
     
-    # Start the platform with PM2 using uv Python environment
-    returncode, stdout, stderr = run_command(f"pm2 start 'uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform --interpreter $(uv run which python)", capture_output=False)
-    
-    if returncode != 0:
-        console.print(f"💥 Failed to start API platform", style="red")
-        sys.exit(1)
-    
-    # Verify it started
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-        transient=True
-    ) as progress:
-        task = progress.add_task("Starting API platform...", total=None)
-        time.sleep(3)  # Show loading indicator for 3 seconds
-    
-    is_running, _ = check_pm2_process("ridges-api-platform")
-    
-    if is_running:
-        console.print(Panel(
-            "[bold green]🎉 API platform started successfully![/bold green]\n"
-            f"[cyan]Platform is running on {host}:{port}[/cyan]\n"
-            "[cyan]Use 'ridges.py platform logs' to view real-time logs[/cyan]",
-            title="✨ Success",
-            border_style="green"
-        ))
+    # Start platform
+    if run_cmd(f"pm2 start 'uv run uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform", capture=False)[0] == 0:
+        console.print(Panel(f"[bold green]🎉 Platform started![/bold green]\n[cyan]Running on {host}:{port}[/cyan]", title="✨ Success", border_style="green"))
+        console.print("📋 Showing platform logs...", style="cyan")
+        run_cmd("pm2 logs ridges-api-platform", capture=False)
     else:
-        console.print("💥 API platform failed to start properly", style="red")
-        sys.exit(1)
+        console.print("💥 Failed to start platform", style="red")
 
 @platform.command()
 def stop():
     """Stop the Ridges API platform."""
-    console.print("🛑 Stopping Ridges API platform...", style="yellow")
-    
-    returncode, stdout, stderr = run_command("pm2 delete ridges-api-platform")
-    if returncode == 0:
-        console.print(Panel(
-            "[bold green]🎉 API platform stopped successfully![/bold green]",
-            title="✨ Stop Complete",
-            border_style="green"
-        ))
+    if run_cmd("pm2 delete ridges-api-platform")[0] == 0:
+        console.print(Panel("[bold green]🎉 Platform stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
     else:
-        console.print("⚠️  API platform was not running or could not be stopped", style="yellow")
+        console.print("⚠️  Platform not running", style="yellow")
 
 @platform.command()
 def logs():
-    """Show real-time logs from the Ridges API platform."""
-    console.print("📋 Showing real-time logs from API platform...", style="cyan")
-    console.print("Press Ctrl+C to stop", style="yellow")
-    
-    # Show logs from the API platform
-    returncode, stdout, stderr = run_command("pm2 logs ridges-api-platform", capture_output=False)
-    
-    if returncode != 0:
-        console.print("💥 Failed to show logs", style="red")
-        sys.exit(1)
+    """Show platform logs."""
+    console.print("📋 Showing platform logs...", style="cyan")
+    run_cmd("pm2 logs ridges-api-platform", capture=False)
 
 @platform.command()
 def update():
-    """Update the platform code and restart if there are changes."""
+    """Update platform code and restart."""
     # Get current commit and pull updates
-    returncode, current_commit, _ = run_command("git rev-parse HEAD")
-    if returncode != 0:
-        console.print("💥 Failed to get current commit hash", style="red")
-        sys.exit(1)
-    
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-        progress.add_task("📥 Pulling latest changes...", total=None)
-        returncode, _, stderr = run_command("git pull")
-        if returncode != 0:
-            console.print(f"💥 Git pull failed: {stderr}", style="red")
-            sys.exit(1)
-    
-    # Check if updates were applied
-    returncode, new_commit, _ = run_command("git rev-parse HEAD")
-    if returncode != 0 or current_commit.strip() == new_commit.strip():
-        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]\n[cyan]Already running latest version.[/cyan]", title="📋 Update Status", border_style="yellow"))
+    code, current_commit, _ = run_cmd("git rev-parse HEAD")
+    if code != 0:
+        console.print("💥 Failed to get commit hash", style="red")
         return
     
-    # Update dependencies and restart platform
-    console.print(Panel("[bold green]✨ Updates found![/bold green]\n[cyan]Updating dependencies and restarting platform...[/cyan]", title="🔄 Update Available", border_style="green"))
-    run_command("uv pip install -e .")
-    run_command("pm2 restart ridges-api-platform")
-    console.print(Panel("[bold green]🎉 Platform updated and restarted![/bold green]", title="✨ Update Complete", border_style="green"))
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("📥 Pulling changes...", total=None)
+        if run_cmd("git pull")[0] != 0:
+            console.print("💥 Git pull failed", style="red")
+            return
+    
+    # Check if updates applied
+    code, new_commit, _ = run_cmd("git rev-parse HEAD")
+    if code != 0 or current_commit.strip() == new_commit.strip():
+        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]", title="📋 Status", border_style="yellow"))
+        return 0
+    
+    # Update deps and restart
+    console.print(Panel("[bold green]✨ Updates found![/bold green]\n[cyan]Updating deps and restarting...[/cyan]", title="🔄 Update", border_style="green"))
+    run_cmd("uv pip install -e .")
+    run_cmd("pm2 restart ridges-api-platform")
+    console.print(Panel("[bold green]🎉 Platform updated![/bold green]", title="✨ Complete", border_style="green"))
 
 if __name__ == "__main__":
     cli() 
