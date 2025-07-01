@@ -229,7 +229,7 @@ def run(no_auto_update: bool, rebuild_containers: bool):
     run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator", capture=False)
     
     # Start auto-updater
-    if run_cmd("pm2 start './ridges.py validator update' --name ridges-validator-updater --cron '*/1 * * * *'", capture=False)[0] == 0:
+    if run_cmd("pm2 start './ridges.py validator update' --name ridges-validator-updater --cron '*/5 * * * *'", capture=False)[0] == 0:
         console.print(Panel("[bold green]🎉 Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every 5 minutes.[/cyan]", title="✨ Success", border_style="green"))
         console.print("📋 Showing validator logs...", style="cyan")
         run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
