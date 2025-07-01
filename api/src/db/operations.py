@@ -466,6 +466,28 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
+    
+    def delete_evaluation_runs(self, evaluation_id: str) -> int:
+        """
+        Delete all evaluation runs for a specific evaluation. Return the number of deleted runs.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    DELETE FROM evaluation_runs WHERE evaluation_id = %s
+                """, (evaluation_id,))
+                deleted_count = cursor.rowcount
+                logger.info(f"Deleted {deleted_count} evaluation runs for evaluation {evaluation_id}")
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting evaluation runs for evaluation {evaluation_id}: {str(e)}")
+            return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
                 
     def get_agent_by_hotkey(self, miner_hotkey: str) -> Agent:
         """
