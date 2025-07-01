@@ -410,39 +410,31 @@ def logs():
         sys.exit(1)
 
 @validator.command()
-def restart():
-    """Restart the Ridges validator and auto-updater."""
-    console.print("🔄 Restarting Ridges validator processes...", style="yellow")
+def update():
+    """Update the validator code and restart if there are changes."""
+    # Get current commit and pull updates
+    returncode, current_commit, _ = run_command("git rev-parse HEAD")
+    if returncode != 0:
+        console.print("💥 Failed to get current commit hash", style="red")
+        sys.exit(1)
     
-    # Stop both processes
-    processes_to_restart = ["ridges-validator", "ridges-validator-updater"]
-    stopped_processes = []
-    
-    for process in processes_to_restart:
-        returncode, stdout, stderr = run_command(f"pm2 delete {process}")
-        if returncode == 0:
-            stopped_processes.append(process)
-            console.print(f"✅ Stopped {process}", style="green")
-        else:
-            console.print(f"⚠️  {process} was not running or could not be stopped", style="yellow")
-    
-    if stopped_processes:
-        # Restart the auto-updater
-        console.print("🚀 Restarting auto-updater...", style="yellow")
-        returncode, stdout, stderr = run_command("pm2 start ./validator_auto_update.sh --name ridges-validator-updater", capture_output=False)
-        
-        if returncode == 0:
-            console.print(Panel(
-                "[bold green]🎉 Validator restarted successfully![/bold green]\n"
-                "[cyan]The validator is now running and will auto-update every 5 minutes.[/cyan]",
-                title="✨ Restart Complete",
-                border_style="green"
-            ))
-        else:
-            console.print("💥 Failed to restart validator", style="red")
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
+        progress.add_task("📥 Pulling latest changes...", total=None)
+        returncode, _, stderr = run_command("git pull")
+        if returncode != 0:
+            console.print(f"💥 Git pull failed: {stderr}", style="red")
             sys.exit(1)
-    else:
-        console.print("ℹ️  No validator processes were running to restart", style="cyan")
+    
+    # Check if updates were applied
+    returncode, new_commit, _ = run_command("git rev-parse HEAD")
+    if returncode != 0 or current_commit.strip() == new_commit.strip():
+        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]\n[cyan]Already running latest version.[/cyan]", title="📋 Update Status", border_style="yellow"))
+        return
+    
+    # Restart validator
+    console.print(Panel("[bold green]✨ Updates found![/bold green]\n[cyan]Restarting validator...[/cyan]", title="🔄 Update Available", border_style="green"))
+    run_command("pm2 restart ridges-validator")
+    console.print(Panel("[bold green]🎉 Validator updated and restarted![/bold green]", title="✨ Update Complete", border_style="green"))
 
 @cli.group()
 def platform():
