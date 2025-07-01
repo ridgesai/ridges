@@ -12,7 +12,7 @@ from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
 from api.src.utils.models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
-from api.src.socket.server import WebSocketServer
+from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.nodes import get_subnet_hotkeys
 
@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
 db = DatabaseManager()
-server = WebSocketServer()
 
 class AgentUploadRequest(BaseModel):
     public_key: str
@@ -201,7 +200,7 @@ async def post_agent (
             detail=f"Failed to store agent version in our database. Please try again later."
         )
     
-    await server.create_new_evaluations(version_id)
+    await WebSocketManager.get_instance().create_new_evaluations(version_id)
 
     return {
         "status": "success",

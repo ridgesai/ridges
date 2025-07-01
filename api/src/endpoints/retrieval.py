@@ -10,7 +10,7 @@ from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
 from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse
 from api.src.db.s3 import S3Manager
-from api.src.socket.server import WebSocketServer
+from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.subtensor import get_daily_earnings_by_hotkey
 
 load_dotenv()
@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 db = DatabaseManager()
 s3_manager = S3Manager()
-server = WebSocketServer()
 
 def get_agent_version_file(version_id: str):
     agent_version = db.get_agent_version(version_id)
@@ -194,7 +193,7 @@ def get_latest_execution_by_agent(agent_id: str):
 
 def get_connected_validators():
     try:
-        validators = server.get_connected_validators()
+        validators = WebSocketManager.get_instance().get_connected_validators()
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
         raise HTTPException(
