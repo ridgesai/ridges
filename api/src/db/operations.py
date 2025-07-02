@@ -6,7 +6,7 @@ import json
 import threading
 from dotenv import load_dotenv
 from datetime import datetime
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo, TopAgentHotkey
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_manager import SQLAlchemyDatabaseManager
 
@@ -792,6 +792,68 @@ class DatabaseManager:
                     ),
                     code=None
                 ) for row in rows]
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_top_agent(self) -> TopAgentHotkey:
+        """
+        Gets the top agents miner hotkey and version id from the database,
+        where its been scored by at least 2 validators
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    WITH version_scores AS (                         -- 1.  score + validator count
+                        SELECT
+                            e.version_id,
+                            AVG(e.score)                       AS avg_score,      -- use MAX() if preferred
+                            COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
+                        FROM evaluations e
+                        WHERE e.status = 'completed'
+                        AND e.score  IS NOT NULL
+                        GROUP BY e.version_id
+                        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2
+                    ),
+
+                    top_score AS (                                  -- 2.  the absolute best score
+                        SELECT MAX(avg_score) AS max_score
+                        FROM version_scores
+                    ),
+
+                    close_enough AS (                               -- 3.  scores ≥ 98 % of the best
+                        SELECT
+                            vs.version_id,
+                            vs.avg_score,
+                            av.created_at,
+                            ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
+                        FROM version_scores vs
+                        JOIN agent_versions av ON av.version_id = vs.version_id
+                        CROSS JOIN top_score ts
+                        WHERE vs.avg_score >= ts.max_score * 0.98    -- within 2 %
+                    )
+
+                    SELECT
+                        a.miner_hotkey,
+                        ce.version_id,
+                        ce.avg_score
+                    FROM close_enough   ce
+                    JOIN agent_versions av ON av.version_id = ce.version_id
+                    JOIN agents         a  ON a.agent_id    = av.agent_id
+                    WHERE ce.rn = 1;
+                    """
+                )
+
+                row = cursor.fetchone()
+
+                return TopAgentHotkey(
+                    miner_hotkey=row[0],
+                    version_id=row[1],
+                    avg_score=row[2]
+                )
         finally:
             if conn:
                 self.return_connection(conn)

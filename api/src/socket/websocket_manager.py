@@ -58,7 +58,7 @@ class WebSocketManager:
                     logger.info(f"Validator has sent their validator version and version commit hash to the platform socket. Validator hotkey: {self.clients[websocket]['val_hotkey']}, Version commit hash: {self.clients[websocket]['version_commit_hash']}")
 
                     relative_version_num = get_relative_version_num(self.clients[websocket]["version_commit_hash"])
-                    await self.notify_all_clients("validator-connected", {
+                    await self.send_to_all_non_validators("validator-connected", {
                         "validator_hotkey": self.clients[websocket]["val_hotkey"],
                         "relative_version_num": relative_version_num,
                         "version_commit_hash": self.clients[websocket]["version_commit_hash"]
@@ -82,14 +82,14 @@ class WebSocketManager:
                     eval = start_evaluation(response_json["evaluation_id"])
 
                     eval_dict = eval.model_dump(mode='json')
-                    await self.notify_all_clients("evaluation-started", eval_dict)
+                    await self.send_to_all_non_validators("evaluation-started", eval_dict)
 
                 if response_json["event"] == "finish-evaluation":
                     logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} has finished an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
                     eval = finish_evaluation(response_json["evaluation_id"], response_json["errored"])
 
                     evaluation_dict = eval.model_dump(mode='json')
-                    await self.notify_all_clients("evaluation-finished", evaluation_dict)
+                    await self.send_to_all_non_validators("evaluation-finished", evaluation_dict)
 
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
@@ -97,13 +97,13 @@ class WebSocketManager:
 
                     eval_run_dict = eval_run.model_dump(mode='json')
                     eval_run_dict["validator_hotkey"] = self.clients[websocket]["val_hotkey"]
-                    await self.notify_all_clients("evaluation-run-updated", eval_run_dict)
+                    await self.send_to_all_non_validators("evaluation-run-updated", eval_run_dict)
 
         except WebSocketDisconnect:
             logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
 
             relative_version_num = get_relative_version_num(self.clients[websocket]["version_commit_hash"])
-            await self.notify_all_clients("validator-disconnected", {
+            await self.send_to_all_non_validators("validator-disconnected", {
                 "validator_hotkey": self.clients[websocket]["val_hotkey"],
                 "relative_version_num": relative_version_num,
                 "version_commit_hash": self.clients[websocket]["version_commit_hash"]
@@ -116,8 +116,7 @@ class WebSocketManager:
             if websocket in self.clients:
                 del self.clients[websocket]
 
-    async def notify_all_clients(self, event: str, data: dict):
-        """Notify all non-validator clients about an event"""
+    async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
         disconnected_clients = []
         
@@ -136,6 +135,15 @@ class WebSocketManager:
                 del self.clients[websocket]
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
+
+    async def send_to_all_validators(self, event: str, data: dict):
+        validators = 0
+        for websocket in self.clients.keys():
+            if self.clients[websocket]["val_hotkey"] is not None:
+                await websocket.send(json.dumps({"event": event, "data": data}))
+                validators += 1
+        logger.info(f"Platform socket broadcasted {event} to {validators} validators")
+
 
     async def create_new_evaluations(self, version_id: str):
         """Create new evaluations for all connected validators"""

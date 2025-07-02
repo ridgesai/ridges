@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS agent_versions (
     score FLOAT
 );
 
--- Add critical performance indexes
+-- Add performance indexes on common read paths
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey ON agents(miner_hotkey);
 CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id ON agent_versions(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id_version_num ON agent_versions(agent_id, version_num DESC);
