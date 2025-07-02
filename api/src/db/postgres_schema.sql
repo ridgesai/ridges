@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS agent_versions (
     score FLOAT
 );
 
+-- Add critical performance indexes
+CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey ON agents(miner_hotkey);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id ON agent_versions(agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id_version_num ON agent_versions(agent_id, version_num DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id_created_at ON agent_versions(agent_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES agent_versions(version_id),
