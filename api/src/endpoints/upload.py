@@ -3,8 +3,6 @@ from pydantic import BaseModel
 import logging
 import uuid
 from datetime import datetime, timedelta
-import ast
-import sys
 
 from fiber import Keypair
 
@@ -15,6 +13,7 @@ from api.src.db.operations import DatabaseManager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.nodes import get_subnet_hotkeys
+from api.src.utils.code_checks import AgentCodeChecker, CheckError
 
 logger = logging.getLogger(__name__)
 
@@ -115,55 +114,11 @@ async def post_agent(
     if miner_hotkey not in await get_subnet_hotkeys():
         raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
-    # Check if file is a valid python file
+    # Static code safety checks ---------------------------------------------------
     try:
-        # Parse the file content
-        tree = ast.parse(content.decode('utf-8'))
-
-        # Check for a function called agent_main
-        has_agent_main = False
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                if node.name == "agent_main":
-                    has_agent_main = True
-                    break
-        
-        if not has_agent_main:
-            raise HTTPException(
-                status_code=400,
-                detail='File must contain a function called "agent_main"'
-            )
-        
-        # Check imports
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    # Allow standard library packages (those that don't need pip install) and approved packages
-                    if name.name in sys.stdlib_module_names or name.name in PERMISSABLE_PACKAGES:
-                        continue
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Import '{name.name}' is not allowed. Only standard library and approved packages are permitted."
-                    )
-            elif isinstance(node, ast.ImportFrom):
-                # Allow standard library packages (those that don't need pip install) and approved packages
-                if node.module in sys.stdlib_module_names or node.module in PERMISSABLE_PACKAGES:
-                    continue
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Import from '{node.module}' is not allowed. Only standard library and approved packages are permitted."
-                )
-
-    except SyntaxError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid Python syntax: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Error validating the agent file: {str(e)}"
-        )
+        AgentCodeChecker(content).run()
+    except CheckError as e:
+        raise HTTPException(status_code=400, detail=str(e))
         
     agent_id = str(uuid.uuid4()) if not existing_agent else existing_agent.agent_id
     version_id = str(uuid.uuid4())
