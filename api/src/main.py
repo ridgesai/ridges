@@ -2,7 +2,6 @@ import asyncio
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
-from api.src.socket.server import WebSocketServer
 
 from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
@@ -15,7 +14,7 @@ from api.src.socket.websocket_manager import WebSocketManager
 logger = get_logger(__name__)
 
 app = FastAPI()
-server = WebSocketServer()
+server = WebSocketManager()
 
 # Configure CORS
 app.add_middleware(
@@ -53,9 +52,8 @@ async def startup_event():
 
 @app.on_event("startup")
 @repeat_every(seconds=72 * 60)
-def tell_validators_to_set_weights():
+async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
-    weights = None # Call Shakeel's Function
-    weights_dict = weights.model_dump(mode='json')
-    server.send_to_all_validators("set_weights", weights_dict)
-    logger.log(f"Told validators to set their weights for miner f{weights_dict['miner_hotkey']}")
+    weights = {"miner_hotkey": "0x1234567890abcdef", "version_id": "1234567890abcdef", "avg_score": 0.5} # Call Shakeel's Function
+    weights_dict = weights # weights.model_dump(mode='json')
+    await server.send_to_all_validators("set_weights", weights_dict)
