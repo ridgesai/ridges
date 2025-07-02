@@ -2,6 +2,7 @@ import ast
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -22,7 +23,7 @@ from validator.sandbox.clone_repo import clone_repo
 from validator.utils.logging import get_logger
 from validator.sandbox.schema import EvaluationRun
 from validator.sandbox.constants import (
-    MAIN_FILE, PROXY_CONTAINER_NAME, REPOS_BASE_DIR, SANDBOX_DIR, 
+    MAIN_FILE, PROXY_CONTAINER_NAME, REPOS_BASE_DIR, REPO_CACHE_DIR, SANDBOX_DIR, 
     SANDBOX_DOCKER_IMAGE, SANDBOX_INPUT_FILE, SANDBOX_MAIN_FILE, 
     SANDBOX_NETWORK_NAME, SANDBOX_OUTPUT_FILE, SANDBOX_REPO_DIR, 
     SANDBOX_SOURCE_DIR
@@ -71,6 +72,29 @@ class Sandbox:
                     "evaluation_run": self.evaluation_run.to_dict(),
                 }
             )
+
+    def _get_cached_repo(self, repo_name: str, base_commit: str) -> Path:
+        """Get repo from cache or create cache entry, then copy to working directory."""
+        # Create cache key from repo and commit
+        cache_key = f"{repo_name.replace('/', '_')}_{base_commit}" if base_commit else repo_name.replace('/', '_')
+        cache_path = REPO_CACHE_DIR / cache_key
+        
+        # Ensure cache directory exists
+        REPO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Clone to cache if not already cached
+        if not cache_path.exists():
+            logger.info(f"Caching repository {repo_name} at {base_commit}")
+            clone_repo(cache_path, repo_name, base_commit)
+        else:
+            logger.info(f"Using cached repository for {repo_name} at {base_commit}")
+        
+        # Copy from cache to working directory
+        if self.repo_dir_path.exists():
+            shutil.rmtree(self.repo_dir_path)
+        shutil.copytree(cache_path, self.repo_dir_path)
+        
+        return self.repo_dir_path
 
     async def run(self, challenge: dict):
         self.running = True
@@ -157,8 +181,8 @@ class Sandbox:
             self.repo_dir_path = REPOS_BASE_DIR / self.evaluation_run.run_id
             self.repo_dir_path.parent.mkdir(parents=True, exist_ok=True)
 
-            logger.info(f"Cloning repository {repo_name} into {self.repo_dir_path}")
-            clone_repo(self.repo_dir_path, repo_name, base_commit)
+            logger.info(f"Setting up repository {repo_name} at {self.repo_dir_path}")
+            self._get_cached_repo(repo_name, base_commit)
 
             logger.info(f"Running sandbox for run {self.evaluation_run.run_id}")
             self.container = self.manager.docker.containers.run(

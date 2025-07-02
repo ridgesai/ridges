@@ -38,4 +38,5 @@ PROXY_CONTAINER_NAME = "sandbox-proxy"
 # Directory to cache cloned repositories for reuse across validations
 # Repositories will be stored at validator/repos/<org>/<repo>
 REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
+REPO_CACHE_DIR = Path(__file__).parent.parent / "repo_cache"
 AGENTS_BASE_DIR = Path(__file__).parent.parent / "agents" 
