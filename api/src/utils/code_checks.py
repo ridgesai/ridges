@@ -125,20 +125,52 @@ class AgentCodeChecker:
                         f"Import from '{mod}' is not allowed."
                     )
 
-    def check_no_base64_decode(self) -> None:
-        """Block common obfuscation technique using base64.b64decode()."""
+    def check_no_decoders(self) -> None:
+        """Disallow any built-in decode / decompress helpers that are typically
+        abused to unpack hidden payloads (base-64, hex, gzip, zlib, …)."""
 
-        # AST-based detection when parsing succeeded
+        forbidden_calls = {
+            # base-N
+            "base64.b64decode",
+            "base64.b32decode",
+            "base64.b16decode",
+            "b64decode",   # sometimes imported as `from base64 import b64decode`
+            # hex / binary <--> text helpers
+            "binascii.unhexlify",
+            "bytes.fromhex",
+            "unhexlify",
+            "fromhex",
+            # compression wrappers
+            # "gzip.decompress",
+            # "zlib.decompress",
+            # "bz2.decompress",
+            # "lzma.decompress",
+            # "decompress",  # catch `from zlib import decompress`-style
+        }
+
+        violations: set[str] = set()
+
+        # 1. AST-based search
         if self.tree is not None:
             for node in ast.walk(self.tree):
                 if not isinstance(node, ast.Call):
                     continue
                 full_name = self._resolve_call_name(node.func)
-                if full_name.endswith("base64.b64decode") or full_name.endswith("b64decode"):
-                    self._raise("Usage of base64.b64decode is prohibited.")
-        # Fallback: simple string scan (covers syntax errors / unusual code)
-        if b"b64decode" in self.raw_code or b"base64.b64decode" in self.raw_code:
-            self._raise("Usage of base64.b64decode is prohibited.")
+                if any(full_name.endswith(name) for name in forbidden_calls):
+                    violations.add(full_name)
+
+        # 2. Raw-source heuristic (covers unparsable code / dynamic getattr)
+        lower_src = self.raw_code.lower()
+        for name in (b"b64decode", b"b32decode", b"b16decode", b"unhexlify", b"fromhex", b"decompress"):
+            if name in lower_src:
+                violations.add(name.decode())
+
+        if violations:
+            pretty = ", ".join(sorted(violations))
+            self._raise(
+                "Usage of decoder / decompressor functions is prohibited: "
+                f"{pretty}."
+            )
 
     # def check_no_binary_execution(self) -> None:
     #     """Disallow launching external binaries (os.system, subprocess, exec…)."""
