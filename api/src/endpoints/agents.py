@@ -24,7 +24,7 @@ def embedding(request: EmbeddingRequest):
         raise HTTPException(status_code=400, detail="Evaluation run is not in the sandbox_created state")
 
     try:
-        embedding = chutes.embed(request.input, request.run_id)
+        embedding = chutes.embed(request.run_id, request.input)
     except Exception as e:
         logger.error(f"Error getting embedding for {request.input}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get embedding due to internal server error. Please try again later.")
