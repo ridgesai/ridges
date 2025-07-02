@@ -77,9 +77,11 @@ def query_version_key(substrate: SubstrateInterface) -> int | None:
     return version_key_query.value
 
 
-async def set_weights():
-    """
-    Sets the validator weights to the metagraph hotkeys based on the most recent scores from the miners.
+async def set_weights(best_miner_hotkey: str | None = None):
+    """Set all validator weight to the miner identified by ``best_miner_hotkey``.
+
+    The function **must** receive a hotkey.  If none is provided the call is
+    aborted (no on-chain transaction is submitted).
     """
     try:
         keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
@@ -94,9 +96,23 @@ async def set_weights():
 
         nodes = get_nodes_for_netuid(substrate, NETUID)
 
-        # TODO: weight by querying platform
-        scores = np.array([NO_RESPONSE_MIN_SCORE for node in nodes])
-        
+        if best_miner_hotkey is None:
+            logger.error("best_miner_hotkey must be provided for set_weights – aborting")
+            return
+
+        scores = np.zeros(len(nodes), dtype=np.float32)
+
+        # Locate the node matching the provided hotkey (case-sensitive).
+        hotkey_to_idx = {node.hotkey: idx for idx, node in enumerate(nodes)}
+
+        target_idx = hotkey_to_idx.get(best_miner_hotkey)
+
+        if target_idx is None:
+            logger.error(f"Hotkey {best_miner_hotkey} not found among active nodes – aborting weight update")
+            return
+
+        scores[target_idx] = 1.0
+
         # Calculate the weights using L1 normalization
         raw_weights = normalize(scores, p=1, dim=0)
 
@@ -117,7 +133,9 @@ async def set_weights():
             logger.error(f"Failed to process weights with exception: {e}")
             return
 
-        logger.info(f"weights: {node_weights}")
+        logger.info(
+            f"Setting weights exclusively for hotkey {best_miner_hotkey} (uid={node_ids[0] if node_ids else 'N/A'})"
+        )
 
         success = await _set_weights_with_timeout(
             substrate=substrate,
