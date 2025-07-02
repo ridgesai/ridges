@@ -24,16 +24,8 @@ async def handle_set_weights(websocket_app, json_message):
 
     # Preferred: payload under "data".
     payload = json_message.get("data", {}) if isinstance(json_message.get("data", {}), dict) else {}
+    hotkey = payload.get("miner_hotkey")
 
-    hotkey = (
-        payload.get("miner_hotkey")
-        or payload.get("hotkey")
-        or payload.get("best_miner_hotkey")
-        # fallbacks for older message shape (back-compat)
-        or json_message.get("miner_hotkey")
-        or json_message.get("hotkey")
-        or json_message.get("best_miner_hotkey")
-    )
     if hotkey is None:
         logger.error("Received set-weights event without a 'hotkey' field – ignoring")
         return
