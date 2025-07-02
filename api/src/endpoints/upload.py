@@ -27,6 +27,9 @@ class AgentUploadRequest(BaseModel):
     signature: str
     name: str
 
+# For now, this is a manual process, but will be updated shortly to be automatic
+banned_hotkeys = ["5GKN9VrcGBqKBvoSETLUrBdhHx8YocGBGcpxWzBdKRSHwCUh"]
+
 async def post_agent(
     agent_file: UploadFile = File(...),
     public_key: str = Form(...),
@@ -40,6 +43,12 @@ async def post_agent(
         raise HTTPException(
             status_code=400,
             detail="miner_hotkey is required"
+        )
+    
+    if miner_hotkey in banned_hotkeys:
+        raise HTTPException(
+            status_code=400,
+            detail="Your miner has been banned for attempting to obfuscate code. If this is in error, please contact us on Discord"
         )
     
     existing_agent = db.get_agent_by_hotkey(miner_hotkey)

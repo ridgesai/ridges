@@ -90,13 +90,13 @@ class DatabaseManager:
                     SELECT table_name 
                     FROM information_schema.tables 
                     WHERE table_schema = 'public' 
-                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history')
+                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history', 'banned_hotkeys')
                 """)
                 existing_tables = [row[0] for row in cursor.fetchall()]
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history']
+            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys']
             missing_tables = [table for table in required_tables if table not in existing_tables]
             
             if not missing_tables:
@@ -730,6 +730,36 @@ class DatabaseManager:
             if conn:
                 self.return_connection(conn)
 
+    # def get_banned_hotkeys(self) -> List[str]:
+    #     """
+    #     Gets the list of miner hotkeys that are banned
+    #     """
+    #     conn = None
+    #     try:
+    #         conn = self.get_connection()
+    #         with conn.cursor() as cursor:
+    #             cursor.execute("""
+    #                 SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+    #                 FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
+    #             """, (validator_hotkey,))
+    #             row = cursor.fetchone()
+    #             if row:
+    #                 return Evaluation(
+    #                 evaluation_id=row[0],
+    #                 version_id=row[1],
+    #                 validator_hotkey=row[2],
+    #                 status=row[3],
+    #                 terminated_reason=row[4],
+    #                 created_at=row[5],
+    #                 started_at=row[6],
+    #                 finished_at=row[7],
+    #                 score=row[8]
+    #             )
+    #             return None
+    #     finally:
+    #         if conn:
+    #             self.return_connection(conn)
+    
     def get_top_agents(self, num_agents: int) -> List[AgentSummary]:
         """
         Get the top agents from the database based on their latest scored version's score.
@@ -1150,10 +1180,10 @@ class DatabaseManager:
             if conn:
                 self.return_connection(conn)
         
+    
     def get_num_agents(self) -> int:
         """
         Get the number of agents in the database.
-        Uses SQLAlchemy for better maintainability.
         """
         try:
             return self.sqlalchemy_manager.get_num_agents()

@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS agent_versions (
     score FLOAT
 );
 
+CREATE TABLE IF NOT EXISTS banned_hotkeys (
+    miner_hotkey TEXT NOT NULL,
+    banned_reason TEXT,
+    banned_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- Add performance indexes on common read paths
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey ON agents(miner_hotkey);
 CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id ON agent_versions(agent_id);

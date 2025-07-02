@@ -80,3 +80,10 @@ class WeightsHistoryModel(Base):
     timestamp = Column(DateTime, nullable=False, default=datetime.now)
     time_since_last_update = Column(Interval)
     miner_weights = Column(JSON, nullable=False)
+
+class BannedHotkeyModel(Base):
+    __tablename__ = 'banned_hotkeys'
+    
+    miner_hotkey = Column(Text, primary_key=True, nullable=False)
+    banned_reason = Column(Text)
+    banned_at = Column(DateTime, nullable=False, default=datetime.now)
