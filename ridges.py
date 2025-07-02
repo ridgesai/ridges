@@ -305,7 +305,7 @@ def run(host: str, port: int):
         return
     
     # Start platform
-    if run_cmd(f"pm2 start 'uv run uvicorn api.src.main:app --host {host} --port {port}' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'uv run uvicorn api.src.main:app --host {host} --port {port} --ws-ping-timeout=-1' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Platform started![/bold green]\n[cyan]Running on {host}:{port}[/cyan]", title="✨ Success", border_style="green"))
         console.print("📋 Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
