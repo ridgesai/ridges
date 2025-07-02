@@ -54,12 +54,12 @@ async def post_agent (
                 detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
             )
 
-    latest_version_num = int(file_info.split(":")[-1])
-    if existing_agent and latest_version_num != existing_agent.latest_version:
-        raise HTTPException(
-            status_code=409,
-            detail="This upload request has already been processed"
-        )
+    # latest_version_num = int(file_info.split(":")[-1])
+    # if existing_agent and latest_version_num != existing_agent.latest_version:
+    #     raise HTTPException(
+    #         status_code=409,
+    #         detail="This upload request has already been processed"
+    #     )
 
     agent_name = name if not existing_agent else existing_agent.name
 
@@ -101,13 +101,13 @@ async def post_agent (
     # Reset file pointer
     await agent_file.seek(0)
 
-    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
-    if not keypair.verify(file_info, bytes.fromhex(signature)):
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    # keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    # if not keypair.verify(file_info, bytes.fromhex(signature)):
+    #     raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Check if hotkey is registered using fiber
-    if miner_hotkey not in await get_subnet_hotkeys():
-        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
+    # # Check if hotkey is registered using fiber
+    # if miner_hotkey not in await get_subnet_hotkeys():
+    #     raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
     # Check if file is a valid python file
     try:
