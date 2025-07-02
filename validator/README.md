@@ -80,7 +80,7 @@ It's important that it's constantly kept up-to-date, since if you're running an 
 
 - [ ] Install `docker` for your platform. Run `docker run hello-world` to make sure your permissions are set correctly and the daemon is running
 - [ ] Install `npm` so you can get `pm2` (`sudo apt install npm` on debian-based distros)
-- [ ] `npm i -g pm2` so you can manage background processes
+- [ ] `sudo npm i -g pm2` so you can manage background processes
 - [ ] Install `uv` for python management. (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - [ ] Run `uv venv` to create a virtual environmeent
 - [ ] `source .venv/bin/activate`

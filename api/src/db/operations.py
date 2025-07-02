@@ -1,40 +1,11 @@
-"""
-Database Operations Module
-
-This module has been partially refactored to use SQLAlchemy for better maintainability.
-
-REFACTORED METHODS (using SQLAlchemy with psycopg2 fallback):
-- store_agent: Store agent with conflict resolution
-- store_agent_version: Store agent version with conflict resolution  
-- get_agent_by_hotkey: Retrieve agent by miner hotkey
-- get_agent: Retrieve agent by ID
-- get_agent_version: Retrieve agent version by version ID
-- get_latest_agent_version: Get latest version for an agent
-- get_num_agents: Count total agents
-- store_weights: Store miner weights history
-- get_latest_weights: Get most recent weights
-- get_current_top_miner: Get miner with highest current weight
-
-COMPLEX QUERIES (still using raw SQL):
-- get_top_agents: Complex ranking query with DISTINCT ON and CASE statements
-- get_recent_executions: Multi-table joins with nested loops for evaluation runs
-- get_latest_execution_by_agent: Complex priority-based selection logic
-- get_agent_summary: Multi-step query with various aggregations
-- get_evaluations: Complex filtering and ordering
-- get_top_miner_fraction_last_24h: Complex time-window analysis with CTEs
-- get_weights_history_last_24h_with_prior: Complex UNION query with time intervals
-- get_queue_info: Complex queue position calculation logic
-
-The module maintains backwards compatibility while gradually introducing SQLAlchemy.
-Each refactored method includes fallback to the original raw SQL implementation.
-"""
-
 import os
 from typing import Optional, List
 import psycopg2
 from psycopg2 import pool
+import json
 import threading
 from dotenv import load_dotenv
+from datetime import datetime
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_manager import SQLAlchemyDatabaseManager
@@ -463,6 +434,28 @@ class DatabaseManager:
                     )
                 logger.info(f"Evaluation run {run_id} not found in the database")
                 return None
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
+    def delete_evaluation_runs(self, evaluation_id: str) -> int:
+        """
+        Delete all evaluation runs for a specific evaluation. Return the number of deleted runs.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    DELETE FROM evaluation_runs WHERE evaluation_id = %s
+                """, (evaluation_id,))
+                deleted_count = cursor.rowcount
+                logger.info(f"Deleted {deleted_count} evaluation runs for evaluation {evaluation_id}")
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting evaluation runs for evaluation {evaluation_id}: {str(e)}")
+            return 0
         finally:
             if conn:
                 self.return_connection(conn)
@@ -1285,6 +1278,7 @@ class DatabaseManager:
         """
         Get a summary of an agent including its details, latest version, and all versions.
         Returns AgentSummaryResponse with agent_details, latest_version, and all_versions.
+        Uses optimized single-query approach with JSON aggregation.
         """
         conn = None
         try:
@@ -1292,52 +1286,90 @@ class DatabaseManager:
             with conn.cursor() as cursor:
                 # Use agent_id if provided, otherwise use miner_hotkey
                 if agent_id:
-                    cursor.execute("""
-                        SELECT agent_id, miner_hotkey, name, created_at
-                        FROM agents 
-                        WHERE agent_id = %s
-                    """, (agent_id,))
                     search_param = agent_id
                     search_type = "ID"
+                    where_clause = "agent_id = %s"
                 else:
-                    cursor.execute("""
-                        SELECT agent_id, miner_hotkey, name, created_at
-                        FROM agents 
-                        WHERE miner_hotkey = %s
-                    """, (miner_hotkey,))
                     search_param = miner_hotkey
                     search_type = "miner hotkey"
+                    where_clause = "miner_hotkey = %s"
                 
-                agent_row = cursor.fetchone()
-                if not agent_row:
+                # Optimized single round-trip query with JSON aggregation
+                cursor.execute(f"""
+                    WITH a AS (
+                        SELECT agent_id, miner_hotkey, name, created_at
+                        FROM   agents
+                        WHERE  {where_clause}
+                    )
+                    SELECT
+                        a.*,
+
+                        /* latest_version – 1 row, picked with LIMIT 1 */
+                        (
+                          SELECT jsonb_build_object(
+                                     'version_id',  av.version_id,
+                                     'version_num', av.version_num,
+                                     'created_at',  av.created_at,
+                                     'score',       av.score
+                                 )
+                          FROM   agent_versions av
+                          WHERE  av.agent_id = a.agent_id
+                          ORDER  BY av.version_num DESC
+                          LIMIT  1
+                        )                                                AS latest_version,
+
+                        /* all_versions as an ordered JSON array */
+                        (
+                          SELECT jsonb_agg(jsonb_build_object(
+                                     'version_id',  av.version_id,
+                                     'version_num', av.version_num,
+                                     'created_at',  av.created_at,
+                                     'score',       av.score
+                                 ) ORDER BY av.version_num DESC)
+                          FROM   agent_versions av
+                          WHERE  av.agent_id = a.agent_id
+                        )                                                AS all_versions
+                    FROM a;
+                """, (search_param,))
+                
+                row = cursor.fetchone()
+                if not row:
                     raise ValueError(f"Agent with {search_type} {search_param} not found")
                 
+                # Parse the result
+                agent_id, miner_hotkey, name, created_at, latest_version_json, all_versions_json = row
+                
+                # Create agent details
                 agent_details = AgentDetailsNew(
-                    agent_id=agent_row[0],
-                    miner_hotkey=agent_row[1],
-                    name=agent_row[2],
-                    created_at=agent_row[3]
+                    agent_id=agent_id,
+                    miner_hotkey=miner_hotkey,
+                    name=name,
+                    created_at=created_at
                 )
                 
-                cursor.execute("""
-                    SELECT version_id, version_num, created_at, score
-                    FROM agent_versions 
-                    WHERE agent_id = %s
-                    ORDER BY version_num DESC
-                """, (agent_row[0],))  # Use agent_id from the query result
-                
-                version_rows = cursor.fetchall()
-                all_versions = [
-                    AgentVersionNew(
-                        version_id=row[0],
-                        version_num=row[1],
-                        created_at=row[2],
-                        score=row[3],
+                # Parse latest version from JSON
+                latest_version = None
+                if latest_version_json:
+                    latest_version = AgentVersionNew(
+                        version_id=latest_version_json['version_id'],
+                        version_num=latest_version_json['version_num'],
+                        created_at=latest_version_json['created_at'],
+                        score=latest_version_json['score'],
                         code=None
-                    ) for row in version_rows
-                ]
+                    )
                 
-                latest_version = all_versions[0].model_copy() if all_versions else None
+                # Parse all versions from JSON array
+                all_versions = []
+                if all_versions_json:
+                    for version_data in all_versions_json:
+                        version = AgentVersionNew(
+                            version_id=version_data['version_id'],
+                            version_num=version_data['version_num'],
+                            created_at=version_data['created_at'],
+                            score=version_data['score'],
+                            code=None
+                        )
+                        all_versions.append(version)
                 
                 return AgentSummaryResponse(
                     agent_details=agent_details,
@@ -1586,9 +1618,6 @@ class DatabaseManager:
             # Fallback to original method
             conn = None
             try:
-                import json
-                from datetime import datetime
-                
                 conn = self.get_connection()
                 conn.autocommit = True
                 with conn.cursor() as cursor:

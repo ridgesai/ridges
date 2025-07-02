@@ -142,13 +142,26 @@ def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
 
     return evaluation
 
+def delete_evaluation_runs(evaluation_id: str) -> int:
+    """
+    Delete all evaluation runs for a specific evaluation. Returns the number of deleted runs.
+    """
+    deleted_count = db.delete_evaluation_runs(evaluation_id)
+    return deleted_count
+
 def reset_running_evaluations(validator_hotkey: str):
     """
     Reset all running evaluations for a validator. Essentially, add them back to the waiting queue.
+    Before resetting, delete all associated evaluation runs since they will need to be remade.
     """
 
     evaluation = db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
     if evaluation:
+        # Delete all associated evaluation runs first
+        deleted_count = delete_evaluation_runs(evaluation.evaluation_id)
+        logger.info(f"Deleted {deleted_count} evaluation runs for evaluation {evaluation.evaluation_id}")
+        
+        # Reset the evaluation to waiting status
         evaluation.status = "waiting"
         evaluation.started_at = None
         db.store_evaluation(evaluation)

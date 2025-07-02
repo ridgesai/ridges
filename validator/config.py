@@ -34,9 +34,8 @@ PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 RIDGES_API_URL = os.getenv("RIDGES_API_URL", None) 
-RIDGES_WS_URL = os.getenv("RIDGES_WS_URL", None)
-if RIDGES_API_URL is None or RIDGES_WS_URL is None:
-    print("RIDGES_API_URL and RIDGES_WS_URL must be set. Set them in validator/.env")
+if RIDGES_API_URL is None:
+    print("RIDGES_API_URL must be set in validator/.env")
     exit(1)
 if RIDGES_API_URL == "http://<YOUR_LOCAL_IP>:8000":
     print("Set your local IP address in validator/.env")
