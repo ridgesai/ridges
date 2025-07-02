@@ -1414,9 +1414,15 @@ class DatabaseManager:
                                      'version_id',  av.version_id,
                                      'version_num', av.version_num,
                                      'created_at',  av.created_at,
-                                     'score',       av.score
+                                     'score',       COALESCE(avg_score.avg_evaluation_score, av.score)
                                  )
                           FROM   agent_versions av
+                          LEFT JOIN (
+                              SELECT version_id, AVG(score) as avg_evaluation_score
+                              FROM evaluations 
+                              WHERE status = 'completed' AND score IS NOT NULL
+                              GROUP BY version_id
+                          ) avg_score ON av.version_id = avg_score.version_id
                           WHERE  av.agent_id = a.agent_id
                           ORDER  BY av.version_num DESC
                           LIMIT  1
@@ -1428,9 +1434,15 @@ class DatabaseManager:
                                      'version_id',  av.version_id,
                                      'version_num', av.version_num,
                                      'created_at',  av.created_at,
-                                     'score',       av.score
+                                     'score',       COALESCE(avg_score.avg_evaluation_score, av.score)
                                  ) ORDER BY av.version_num DESC)
                           FROM   agent_versions av
+                          LEFT JOIN (
+                              SELECT version_id, AVG(score) as avg_evaluation_score
+                              FROM evaluations 
+                              WHERE status = 'completed' AND score IS NOT NULL
+                              GROUP BY version_id
+                          ) avg_score ON av.version_id = avg_score.version_id
                           WHERE  av.agent_id = a.agent_id
                         )                                                AS all_versions
                     FROM a;
