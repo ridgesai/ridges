@@ -2084,4 +2084,64 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
+
+    def ban_agent(self, agent_id: str) -> int:
+        """
+        Ban an agent by deleting it and all related data from the database.
+        Deletes in order: evaluation_runs -> evaluations -> agent_versions -> agents
+        to respect foreign key constraints.
+        Returns the number of rows deleted (1 if successful, 0 if agent not found).
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                # First, check if the agent exists
+                cursor.execute("SELECT agent_id FROM agents WHERE agent_id = %s", (agent_id,))
+                if not cursor.fetchone():
+                    logger.warning(f"Agent {agent_id} not found for deletion")
+                    return 0
+                
+                # Delete in order to respect foreign key constraints:
+                # 1. Delete evaluation_runs for evaluations of this agent's versions
+                cursor.execute("""
+                    DELETE FROM evaluation_runs 
+                    WHERE evaluation_id IN (
+                        SELECT e.evaluation_id 
+                        FROM evaluations e
+                        JOIN agent_versions av ON e.version_id = av.version_id
+                        WHERE av.agent_id = %s
+                    )
+                """, (agent_id,))
+                runs_deleted = cursor.rowcount
+                
+                # 2. Delete evaluations for this agent's versions
+                cursor.execute("""
+                    DELETE FROM evaluations 
+                    WHERE version_id IN (
+                        SELECT version_id 
+                        FROM agent_versions 
+                        WHERE agent_id = %s
+                    )
+                """, (agent_id,))
+                evaluations_deleted = cursor.rowcount
+                
+                # 3. Delete agent_versions for this agent
+                cursor.execute("DELETE FROM agent_versions WHERE agent_id = %s", (agent_id,))
+                versions_deleted = cursor.rowcount
+                
+                # 4. Finally delete the agent
+                cursor.execute("DELETE FROM agents WHERE agent_id = %s", (agent_id,))
+                agent_deleted = cursor.rowcount
+                
+                logger.info(f"Banned agent {agent_id}: deleted {runs_deleted} evaluation runs, {evaluations_deleted} evaluations, {versions_deleted} versions, {agent_deleted} agent")
+                return agent_deleted
+                
+        except Exception as e:
+            logger.error(f"Error banning agent {agent_id}: {str(e)}")
+            return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
     
