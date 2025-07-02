@@ -1,4 +1,5 @@
 import json
+import time
 
 from validator.utils.logging import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
@@ -25,5 +26,8 @@ async def handle_message(websocket_app, message: str):
         case "set-weights":
             from validator.socket.handle_set_weights import handle_set_weights  # Local import to avoid circular deps
             await handle_set_weights(websocket_app, json_message)
+        case "pong":
+            websocket_app.last_pong_time = time.time()
+            logger.debug(f"Received pong response: {json_message.get('timestamp')}")
         case _:
             logger.info(f"Received unrecognized message: {message}")

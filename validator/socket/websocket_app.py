@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from typing import Any, Dict, Optional
 
 import websockets
@@ -20,9 +21,13 @@ logger = get_logger(__name__)
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection] = None
     evaluation_running: asyncio.Event
+    heartbeat_task: Optional[asyncio.Task] = None
+    last_pong_time: Optional[float] = None
     
     def __init__(self):
         self.evaluation_running = asyncio.Event()
+        self.heartbeat_task = None
+        self.last_pong_time = None
 
     async def send(self, message: Dict[str, Any]):
         if self.ws is None:
@@ -36,6 +41,27 @@ class WebsocketApp:
         except Exception as e:
             logger.exception(f"Error while sending message – {e}")
 
+            if self.ws:
+                await self.ws.close()
+                self.ws = None
+
+    async def _heartbeat_loop(self):
+        while self.ws is not None:
+            try:
+                await self.send({"event": "ping", "timestamp": time.time()})
+                await asyncio.sleep(15)
+                
+                if self.last_pong_time and (time.time() - self.last_pong_time) > 60:
+                    logger.warning("No pong response received for 60 seconds, forcing reconnection")
+                    if self.ws:
+                        await self.ws.close()
+                        self.ws = None
+                    break
+                    
+            except Exception as e:
+                logger.error(f"Heartbeat failed: {e}")
+                break
+
     async def start(self):
         while True:
             try:
@@ -43,6 +69,7 @@ class WebsocketApp:
                     self.ws = ws
                     logger.info(f"Connected to websocket: {websocket_url}")
                     await self.send(get_validator_version_info())
+                    self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     while True:
                         try:
                             message = await ws.recv()

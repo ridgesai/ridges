@@ -103,6 +103,10 @@ class WebSocketManager:
                     eval_run_dict["validator_hotkey"] = self.clients[websocket]["val_hotkey"]
                     await self.send_to_all_non_validators("evaluation-run-updated", eval_run_dict)
 
+                if response_json["event"] == "ping":
+                    await websocket.send_text(json.dumps({"event": "pong", "timestamp": response_json.get("timestamp")}))
+                    logger.debug(f"Responded to ping from validator {self.clients[websocket]['val_hotkey']}")
+
         except WebSocketDisconnect:
             logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
 
