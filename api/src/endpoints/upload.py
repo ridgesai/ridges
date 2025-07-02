@@ -28,7 +28,7 @@ class AgentUploadRequest(BaseModel):
     name: str
 
 # For now, this is a manual process, but will be updated shortly to be automatic
-banned_hotkeys = ["5GKN9VrcGBqKBvoSETLUrBdhHx8YocGBGcpxWzBdKRSHwCUh"]
+banned_hotkeys = ["5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9"]
 
 async def post_agent(
     agent_file: UploadFile = File(...),

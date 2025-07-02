@@ -343,7 +343,7 @@ class DatabaseManager:
         Excludes evaluations for banned miner hotkeys.
         """
         # For now, this is a manual process, but will be updated shortly to be automatic
-        banned_hotkeys = ["5GKN9VrcGBqKBvoSETLUrBdhHx8YocGBGcpxWzBdKRSHwCUh"]
+        banned_hotkeys = ["5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9"]
         
         conn = None
         try:
