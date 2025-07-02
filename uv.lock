@@ -603,6 +603,21 @@ wheels = [
 ]
 
 [[package]]
+name = "datadog-api-client"
+version = "2.39.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/d8/f29791914ccc1541e2fae513958a29690a5a9b43462b0228eb4540063915/datadog_api_client-2.39.0.tar.gz", hash = "sha256:011633adff7441b76d2f0a69f580760e0c0c0348e2ce74fe7efb5094aab68cf8", size = 3110096, upload-time = "2025-06-30T15:47:36.323Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/84/52/08eaf83aa4297900c2ad0d7ff19865ab14ae2a185f44c241566d52c8ce29/datadog_api_client-2.39.0-py3-none-any.whl", hash = "sha256:581da02d426c001e915a13d317481c819aa9ed61e08132e34376e7b549a15e02", size = 3690281, upload-time = "2025-06-30T15:47:33.646Z" },
+]
+
+[[package]]
 name = "datasets"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2470,6 +2485,7 @@ dependencies = [
     { name = "asyncio" },
     { name = "boto3" },
     { name = "click" },
+    { name = "datadog-api-client" },
     { name = "dotenv" },
     { name = "fastapi-utils" },
     { name = "fiber", extra = ["full"] },
@@ -2499,6 +2515,7 @@ requires-dist = [
     { name = "asyncio", specifier = ">=3.4.3" },
     { name = "boto3", specifier = ">=1.38.40" },
     { name = "click", specifier = ">=8.1.0" },
+    { name = "datadog-api-client", specifier = ">=2.39.0" },
     { name = "dotenv", specifier = ">=0.9.9" },
     { name = "fastapi-utils", specifier = ">=0.8.0" },
     { name = "fiber", extras = ["full"], git = "https://github.com/rayonlabs/fiber.git" },

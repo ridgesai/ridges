@@ -1191,7 +1191,6 @@ class DatabaseManager:
             if conn:
                 self.return_connection(conn)
         
-    
     def get_num_agents(self) -> int:
         """
         Get the number of agents in the database.
@@ -1212,6 +1211,111 @@ class DatabaseManager:
             finally:
                 if conn:
                     self.return_connection(conn)
+
+    def get_num_agent_versions(self) -> int:
+        """
+        Get the number of agent versions in the database.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM agent_versions")
+                return cursor.fetchone()[0]
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_num_evaluations(self) -> int:
+        """
+        Get the number of evaluations in the database.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM evaluations")
+                return cursor.fetchone()[0]
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_num_evaluation_runs(self) -> int:
+        """
+        Get the number of evaluation runs in the database.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM evaluation_runs")
+                return cursor.fetchone()[0]
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_evaluation_status_counts(self) -> dict:
+        """
+        Get counts of evaluations grouped by status.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT status, COUNT(*) 
+                    FROM evaluations 
+                    GROUP BY status
+                """)
+                return dict(cursor.fetchall())
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_evaluation_run_status_counts(self) -> dict:
+        """
+        Get counts of evaluation runs grouped by status.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT status, COUNT(*) 
+                    FROM evaluation_runs 
+                    GROUP BY status
+                """)
+                return dict(cursor.fetchall())
+        finally:
+            if conn:
+                self.return_connection(conn)
+
+    def get_database_summary(self) -> dict:
+        """
+        Get a summary of row counts for all tables.
+        """
+        return {
+            'agents': self.get_num_agents(),
+            'agent_versions': self.get_num_agent_versions(),
+            'evaluations': self.get_num_evaluations(),
+            'evaluation_runs': self.get_num_evaluation_runs(),
+            'banned_hotkeys': self._count_table_rows('banned_hotkeys'),
+            'weights_history': self._count_table_rows('weights_history')
+        }
+
+    def _count_table_rows(self, table_name: str) -> int:
+        """
+        Helper method to count rows in any table.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            with conn.cursor() as cursor:
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                return cursor.fetchone()[0]
+        finally:
+            if conn:
+                self.return_connection(conn)
 
     def get_latest_execution_by_agent(self, agent_id: str) -> Optional[Execution]:
         """
