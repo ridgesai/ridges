@@ -27,7 +27,7 @@ class AgentUploadRequest(BaseModel):
     signature: str
     name: str
 
-async def post_agent (
+async def post_agent(
     agent_file: UploadFile = File(...),
     public_key: str = Form(...),
     file_info: str = Form(...),

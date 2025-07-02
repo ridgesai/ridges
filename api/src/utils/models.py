@@ -26,6 +26,11 @@ class AgentSummary(BaseModel):
     latest_version: AgentVersion
     code: Optional[str]
 
+class TopAgentHotkey(BaseModel):
+    miner_hotkey: str
+    version_id: str
+    avg_score: float
+
 class AgentQueryResponse(BaseModel):
     agent_id: str
     latest_agent: AgentSummary

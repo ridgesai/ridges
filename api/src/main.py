@@ -7,6 +7,7 @@ from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
+from api.src.endpoints.scoring import router as scoring_router
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
@@ -19,7 +20,7 @@ server = WebSocketManager()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://localhost:3000", 'https://www.ridges.ai'],
+    allow_origins=["http://localhost:3000", 'https://www.ridges.ai'],
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
@@ -38,6 +39,11 @@ app.include_router(
 app.include_router(
     agents_router,
     prefix="/agents",
+)
+
+app.include_router(
+    scoring_router,
+    prefix="/scoring",
 )
 
 # WebSocket endpoint
