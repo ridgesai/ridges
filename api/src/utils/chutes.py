@@ -23,18 +23,31 @@ class ChutesManager:
         self.costs_data_inference = {}
         self.costs_data_embedding = {}
         self.cleanup_task = None
-        self.start_cleanup_task()
+        self._cleanup_started = False
 
     def start_cleanup_task(self):
         """Start the periodic cleanup task to remove cost data that is older than 20 minutes. This is run every 5 minutes."""
-        async def cleanup_loop():
-            while True:
-                logger.info("Started cleaning up old entries from Chutes")
-                await self.cleanup_old_entries()
-                logger.info("Finished cleaning up old entries from Chutes. Running again in 5 minutes.")
-                await asyncio.sleep(300)
+        if self._cleanup_started:
+            return
         
-        self.cleanup_task = asyncio.create_task(cleanup_loop())
+        try:
+            async def cleanup_loop():
+                while True:
+                    logger.info("Started cleaning up old entries from Chutes")
+                    await self.cleanup_old_entries()
+                    logger.info("Finished cleaning up old entries from Chutes. Running again in 5 minutes.")
+                    await asyncio.sleep(300)
+            
+            self.cleanup_task = asyncio.create_task(cleanup_loop())
+            self._cleanup_started = True
+        except RuntimeError:
+            # No event loop running, will try again later
+            pass
+
+    def _ensure_cleanup_task(self):
+        """Ensure cleanup task is started if event loop is available."""
+        if not self._cleanup_started:
+            self.start_cleanup_task()
 
     async def cleanup_old_entries(self) -> None:
         """Remove cost data that is older than 20 minutes"""
@@ -61,6 +74,8 @@ class ChutesManager:
             logger.error(f"Error cleaning up old entries from Chutes pricing data: {e}")
 
     def embed(self, run_id: str, prompt: str) -> dict:
+        self._ensure_cleanup_task()
+        
         if self.costs_data_embedding.get(run_id, {}).get("spend", 0) >= 2:
             logger.info(f"Agent version from run {run_id} has reached the maximum cost from their evaluation run.")
             return f"Your agent version has reached the maximum cost for this evaluation run. Please do not request more embeddings or inference from this agent version."
@@ -94,6 +109,8 @@ class ChutesManager:
         return response.json()
     
     async def inference(self, run_id: str, messages: List[GPTMessage], temperature: float = 0.7, model: str = "deepseek-ai/DeepSeek-V3-0324"):
+        self._ensure_cleanup_task()
+        
         if not model:
             model = "deepseek-ai/DeepSeek-V3-0324"
 

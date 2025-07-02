@@ -2,6 +2,7 @@ import asyncio
 from fastapi import Depends, FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
+import uvicorn
 
 from api.src.utils.auth import verify_request
 from api.src.utils.logging_utils import get_logger
@@ -12,6 +13,7 @@ from api.src.endpoints.scoring import router as scoring_router, weight_receiving
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
+from api.src.utils.chutes import ChutesManager
 
 logger = get_logger(__name__)
 
@@ -58,6 +60,10 @@ async def websocket_endpoint(websocket: WebSocket):
 async def startup_event():
     """Start the weight monitor as a background task when the app starts."""
     asyncio.create_task(run_weight_monitor())
+    
+    # Start the ChutesManager cleanup task
+    chutes_manager = ChutesManager()
+    chutes_manager.start_cleanup_task()
 
 @app.on_event("startup")
 @repeat_every(seconds=72 * 60)
@@ -66,3 +72,6 @@ async def tell_validators_to_set_weights():
     weights = await weight_receiving_agent()
     weights_dict = weights.model_dump(mode='json')
     await server.send_to_all_validators("set_weights", weights_dict)
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)
