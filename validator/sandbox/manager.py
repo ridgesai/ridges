@@ -67,7 +67,8 @@ class SandboxManager:
             for sandbox in self.sandboxes:
                 if sandbox.running and sandbox.evaluation_run.error is None:
                     try:
-                        await asyncio.to_thread(self._monitor_sandbox, sandbox)
+                        # Allow cancellation
+                        self._monitor_sandbox(sandbox)
                     except Exception:
                         continue
 
@@ -125,16 +126,38 @@ class SandboxManager:
         return [sandbox.evaluation_run for sandbox in self.sandboxes]
 
     def cleanup(self):
+        # Cancel the monitor task
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+
+        # Cancel all sandbox tasks and stop containers
+        for sandbox in self.sandboxes:
+            # Cancel the sandbox task if it's running
+            if sandbox._task and not sandbox._task.done():
+                sandbox._task.cancel()
+            
+            # Stop and remove the container if it exists
+            if sandbox.container:
+                try:
+                    sandbox.container.stop()
+                    sandbox.container.remove()
+                except Exception as e:
+                    logger.warning(f"Error stopping container for sandbox {sandbox.evaluation_run.run_id}: {e}")
+            
+            sandbox.running = False
+
+        # Remove proxy container
         try:
             self.proxy_container.remove(force=True)
         except Exception:
             pass
 
+        # Clean up filesystem
         shutil.rmtree(AGENTS_BASE_DIR, ignore_errors=True)
         shutil.rmtree(REPOS_BASE_DIR, ignore_errors=True)
 
-        for sandbox in self.sandboxes:
-            self.sandboxes.remove(sandbox)
+        # Clear sandbox list
+        self.sandboxes.clear()
 
     def _start_proxy_container(self):
         """Start the nginx proxy container."""
