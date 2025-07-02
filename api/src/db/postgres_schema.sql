@@ -63,26 +63,3 @@ CREATE TABLE IF NOT EXISTS weights_history (
     time_since_last_update INTERVAL,
     miner_weights JSONB NOT NULL -- Stores {miner_hotkey: weight} pairs dynamically
 );
-
--- Validator Logs table
-CREATE TABLE IF NOT EXISTS validator_logs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    original_log_id TEXT NOT NULL, -- The original ID from validator's logging.db
-    validator_hotkey TEXT NOT NULL, -- Added validator hotkey
-    timestamp TIMESTAMP NOT NULL,
-    levelname TEXT NOT NULL,
-    name TEXT NOT NULL,
-    pathname TEXT NOT NULL,
-    funcName TEXT NOT NULL,
-    lineno INTEGER NOT NULL,
-    message TEXT NOT NULL,
-    active_coroutines TEXT NOT NULL, -- JSON string of active coroutines
-    eval_loop_num INTEGER NOT NULL,
-    received_at TIMESTAMP NOT NULL DEFAULT NOW() -- When platform received the log
-);
-
--- Add indexes for validator logs performance
-CREATE INDEX IF NOT EXISTS idx_validator_logs_validator_hotkey ON validator_logs(validator_hotkey);
-CREATE INDEX IF NOT EXISTS idx_validator_logs_timestamp ON validator_logs(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_validator_logs_levelname ON validator_logs(levelname);
-CREATE INDEX IF NOT EXISTS idx_validator_logs_received_at ON validator_logs(received_at DESC);

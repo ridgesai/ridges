@@ -7,7 +7,7 @@ import threading
 import uuid
 from dotenv import load_dotenv
 from datetime import datetime
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, ValidatorLog, WeightsData, QueueInfo, TopAgentHotkey
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo, TopAgentHotkey
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_manager import SQLAlchemyDatabaseManager
 
@@ -1974,42 +1974,6 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error getting queue info for version {version_id}: {str(e)}")
             return []
-        finally:
-            if conn:
-                self.return_connection(conn)
-                
-    def store_validator_log(self, validator_log: 'ValidatorLog') -> int:
-        """
-        Store a validator log in the database. Return 1 if successful, 0 if not.
-        """
-        conn = None
-        try:
-            conn = self.get_connection()
-            conn.autocommit = True
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO validator_logs (
-                        original_log_id, validator_hotkey, timestamp, levelname, name, 
-                        pathname, funcName, lineno, message, active_coroutines, eval_loop_num
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (
-                    validator_log.original_log_id,
-                    validator_log.validator_hotkey,
-                    validator_log.timestamp,
-                    validator_log.levelname,
-                    validator_log.name,
-                    validator_log.pathname,
-                    validator_log.funcName,
-                    validator_log.lineno,
-                    validator_log.message,
-                    validator_log.active_coroutines,
-                    validator_log.eval_loop_num
-                ))
-                logger.info(f"Validator log {validator_log.original_log_id} from {validator_log.validator_hotkey} stored successfully")
-                return 1
-        except Exception as e:
-            logger.error(f"Error storing validator log {validator_log.original_log_id}: {str(e)}")
-            return 0
         finally:
             if conn:
                 self.return_connection(conn)

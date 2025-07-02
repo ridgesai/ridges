@@ -9,7 +9,6 @@ from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.scoring import router as scoring_router, weight_receiving_agent
-from api.src.endpoints.logs import post_log_drain, router as log_drain_router
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
@@ -48,18 +47,7 @@ app.include_router(
     prefix="/scoring",
 )
 
-app.include_router(
-    log_drain_router,
-    prefix="/log_drain",
-)
 
-app.add_api_route(
-    "/logs",
-    post_log_drain,
-    tags=["logs"],
-    dependencies=[Depends(verify_request)],
-    methods=["POST"]
-)
 
 # WebSocket endpoint
 @app.websocket("/ws")
