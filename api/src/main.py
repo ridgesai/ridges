@@ -8,7 +8,7 @@ from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
-from api.src.endpoints.scoring import router as scoring_router
+from api.src.endpoints.scoring import router as scoring_router, weight_receiving_agent
 from api.src.endpoints.logs import post_log_drain, router as log_drain_router
 
 from api.src.utils.weights import run_weight_monitor
@@ -75,6 +75,6 @@ async def startup_event():
 @repeat_every(seconds=72 * 60)
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
-    weights = {"miner_hotkey": "0x1234567890abcdef", "version_id": "1234567890abcdef", "avg_score": 0.5} # Call Shakeel's Function
-    weights_dict = weights # weights.model_dump(mode='json')
+    weights = await weight_receiving_agent()
+    weights_dict = weights.model_dump(mode='json')
     await server.send_to_all_validators("set_weights", weights_dict)

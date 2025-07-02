@@ -168,3 +168,17 @@ def reset_running_evaluations(validator_hotkey: str):
         logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
     else:
         logger.info(f"Validator {validator_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
+
+def create_evaluations_for_validator(validator_hotkey: str) -> int:
+    """
+    Create evaluations for a validator. Returns the number of evaluations created.
+    """
+
+    try:
+        num_evaluations_created = db.create_evaluations_for_validator(validator_hotkey)
+        logger.info(f"Created {num_evaluations_created} evaluations for validator {validator_hotkey}")
+    except Exception as e:
+        logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
+        return -1
+
+    return num_evaluations_created

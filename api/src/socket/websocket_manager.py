@@ -11,7 +11,8 @@ from api.src.socket.server_helpers import (
     start_evaluation, 
     finish_evaluation, 
     reset_running_evaluations, 
-    get_relative_version_num
+    get_relative_version_num,
+    create_evaluations_for_validator
 )
 
 logger = get_logger(__name__)
@@ -63,6 +64,9 @@ class WebSocketManager:
                         "relative_version_num": relative_version_num,
                         "version_commit_hash": self.clients[websocket]["version_commit_hash"]
                     })
+
+                    num_evaluations_created = create_evaluations_for_validator(self.clients[websocket]["val_hotkey"])
+                    logger.info(f"Created {num_evaluations_created} evaluations for newly connected validator {self.clients[websocket]['val_hotkey']}")
 
                     next_evaluation = get_next_evaluation(self.clients[websocket]["val_hotkey"])
                     if next_evaluation:
@@ -143,7 +147,6 @@ class WebSocketManager:
                 await websocket.send(json.dumps({"event": event, "data": data}))
                 validators += 1
         logger.info(f"Platform socket broadcasted {event} to {validators} validators")
-
 
     async def create_new_evaluations(self, version_id: str):
         """Create new evaluations for all connected validators"""

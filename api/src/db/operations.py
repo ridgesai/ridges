@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2 import pool
 import json
 import threading
+import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, ValidatorLog, WeightsData, QueueInfo, TopAgentHotkey
@@ -95,7 +96,7 @@ class DatabaseManager:
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'validator_logs']
+            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history']
             missing_tables = [table for table in required_tables if table not in existing_tables]
             
             if not missing_tables:
@@ -1976,7 +1977,7 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
-
+                
     def store_validator_log(self, validator_log: 'ValidatorLog') -> int:
         """
         Store a validator log in the database. Return 1 if successful, 0 if not.
@@ -2012,3 +2013,58 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
+
+    def create_evaluations_for_validator(self, validator_hotkey: str) -> int:
+        """
+        Create evaluations for a validator for all agent versions created in the last 24 hours
+        that are the latest version for their agent and don't already have an evaluation
+        for this validator. Returns the number of evaluations created.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    WITH latest_versions_last_24h AS (
+                        SELECT av.version_id, av.agent_id, av.version_num, av.created_at
+                        FROM agent_versions av
+                        INNER JOIN agents a ON av.agent_id = a.agent_id
+                        WHERE av.created_at >= NOW() - INTERVAL '24 hours'
+                        AND av.version_num = a.latest_version
+                    ),
+                    missing_evaluations AS (
+                        SELECT lv.version_id
+                        FROM latest_versions_last_24h lv
+                        WHERE NOT EXISTS (
+                            SELECT 1 
+                            FROM evaluations e 
+                            WHERE e.version_id = lv.version_id 
+                            AND e.validator_hotkey = %s
+                        )
+                    )
+                    SELECT version_id FROM missing_evaluations
+                """, (validator_hotkey,))
+                
+                missing_version_ids = [row[0] for row in cursor.fetchall()]
+                
+                evaluations_created = 0
+                for version_id in missing_version_ids:
+                    evaluation_id = str(uuid.uuid4())
+                    cursor.execute("""
+                        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING
+                    """, (evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(), None, None, None, None))
+                    evaluations_created += cursor.rowcount
+                
+                logger.info(f"Created {evaluations_created} evaluations for validator {validator_hotkey}")
+                return evaluations_created
+                
+        except Exception as e:
+            logger.error(f"Error creating evaluations for validator {validator_hotkey}: {str(e)}")
+            return 0
+        finally:
+            if conn:
+                self.return_connection(conn)
+    
