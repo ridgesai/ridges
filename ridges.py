@@ -229,9 +229,9 @@ def run(no_auto_update: bool, rebuild_containers: bool):
     run_cmd("uv pip install -e .", capture=False)
     run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator", capture=False)
     
-    # Start auto-updater
-    if run_cmd("pm2 start './ridges.py validator update' --name ridges-validator-updater --cron '*/5 * * * *'", capture=False)[0] == 0:
-        console.print(Panel("[bold green]🎉 Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every 5 minutes.[/cyan]", title="✨ Success", border_style="green"))
+    # Start auto-updater in background
+    if run_cmd(f"pm2 start './ridges.py validator update --every 5' --name ridges-validator-updater", capture=False)[0] == 0:
+        console.print(Panel(f"[bold green]🎉 Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every {every} minutes.[/cyan]", title="✨ Success", border_style="green"))
         console.print("📋 Showing validator logs...", style="cyan")
         run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
     else:
@@ -253,46 +253,38 @@ def logs():
     run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
 
 @validator.command()
-def update():
+@click.option("--every", default=None, type=int, help="Run in loop every N minutes (default: update once and exit)")
+def update(every: Optional[int]):
     """Update validator code and restart."""
-    # Get current commit and pull updates
-    code, current_commit, _ = run_cmd("git rev-parse HEAD")
-    if code != 0:
-        console.print("💥 Failed to get commit hash", style="red")
-        console.print("Sleeping for 5 minutes...")
-        time.sleep(300)
-        return
-    
-    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-        progress.add_task("📥 Pulling changes...", total=None)
-        if run_cmd("git pull")[0] != 0:
-            console.print("💥 Git pull failed", style="red")
-            console.print("Sleeping for 5 minutes...")
-            time.sleep(300)
-            return
-    
-    # Check if updates applied
-    code, new_commit, _ = run_cmd("git rev-parse HEAD")
-    if code != 0 or current_commit.strip() == new_commit.strip():
-        console.print("No updates available")
-        console.print("Sleeping for 5 minutes...")
-        time.sleep(300)
-        return
-    
-    # Update deps and restart/start validator
-    console.print("✨ Updates found!\nUpdating deps and restarting validator...", style="green")
-    run_cmd("uv pip install -e .")
-    
-    # Check if validator is running and restart/start accordingly
-    is_running, _ = check_pm2("ridges-validator")
-    if is_running:
-        run_cmd("pm2 restart ridges-validator")
-    else:
-        run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator")
-    
-    console.print("Validator updated!")
-    console.print("Sleeping for 5 minutes...")
-    time.sleep(300)
+    while True:
+        # Get current commit and pull updates
+        code, current_commit, _ = run_cmd("git rev-parse HEAD")
+        if code != 0 or run_cmd("git pull")[0] != 0:
+            console.print("💥 Git operation failed", style="red")
+            break
+        
+        # Check if updates applied
+        code, new_commit, _ = run_cmd("git rev-parse HEAD")
+        if code != 0 or current_commit.strip() == new_commit.strip():
+            console.print("No updates available")
+            if not every:
+                break
+            console.print(f"Sleeping for {every} minutes...")
+            time.sleep(every * 60)
+            continue
+        
+        # Update deps and restart validator
+        console.print("✨ Updates found! Restarting validator...", style="green")
+        run_cmd("uv pip install -e .")
+        is_running, _ = check_pm2("ridges-validator")
+        run_cmd("pm2 restart ridges-validator" if is_running else "pm2 start 'uv run validator/main.py' --name ridges-validator")
+        console.print("Validator updated!")
+        
+        if not every:
+            break
+            
+        console.print(f"Sleeping for {every} minutes...")
+        time.sleep(every * 60)
 
 @cli.group()
 def platform():
