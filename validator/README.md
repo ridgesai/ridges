@@ -84,6 +84,7 @@ It's important that it's constantly kept up-to-date, since if you're running an 
 - [ ] Install `uv` for python management. (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - [ ] Run `uv venv` to create a virtual environmeent
 - [ ] `source .venv/bin/activate`
+- [ ] `sudo apt install -y libpq-dev python3-dev build-essential` to install dependencies for our PostgreSQL driver
 - [ ] `uv pip install -e .`
 - [ ] Create an environment file to specify your settings (`cp validator/.env.example validator/.env`)
 - [ ] Choose the network, subnet, etc. in `validator/.env`
