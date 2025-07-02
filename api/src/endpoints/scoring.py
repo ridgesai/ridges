@@ -1,18 +1,12 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 import logging
-import uuid
-from datetime import datetime, timedelta
-import ast
-import sys
 
 from fiber import Keypair
 
-from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
-from api.src.utils.models import Agent, TopAgentHotkey
+from api.src.utils.models import TopAgentHotkey
 from api.src.db.operations import DatabaseManager
-from api.src.socket.websocket_manager import WebSocketManager
 
 db = DatabaseManager()
 
