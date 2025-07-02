@@ -95,6 +95,35 @@ class WebSocketManager:
                     evaluation_dict = eval.model_dump(mode='json')
                     await self.send_to_all_non_validators("evaluation-finished", evaluation_dict)
 
+                    # -------------------------------------------------
+                    # After finishing an evaluation, determine the current
+                    # subnet leader (top miner) and instruct validators to
+                    # set their weights accordingly.
+                    # -------------------------------------------------
+
+                    try:
+                        from api.src.db.operations import DatabaseManager
+
+                        db = DatabaseManager()
+                        top_agent = db.get_top_agent()  # returns TopAgentHotkey
+
+                        if top_agent and top_agent.miner_hotkey:
+                            await self.send_to_all_validators(
+                                "set-weights",
+                                {
+                                    "miner_hotkey": top_agent.miner_hotkey,
+                                    "version_id": top_agent.version_id,
+                                    "avg_score": top_agent.avg_score,
+                                },
+                            )
+                            logger.info(
+                                f"Platform socket broadcasted set-weights for hotkey {top_agent.miner_hotkey} to validators"
+                            )
+                        else:
+                            logger.warning("Could not determine top miner – skipping set-weights broadcast")
+                    except Exception as e:
+                        logger.error(f"Failed to broadcast set-weights: {e}")
+
                 if response_json["event"] == "upsert-evaluation-run":
                     logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
                     eval_run = upsert_evaluation_run(response_json["evaluation_run"]) 
@@ -145,11 +174,34 @@ class WebSocketManager:
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
     async def send_to_all_validators(self, event: str, data: dict):
+        """Broadcast an event to every connected validator.
+
+        Entries in ``self.clients`` should map websocket → metadata dict, but we
+        defensively skip any rows that are not dicts (e.g. a stray string) so a
+        malformed client cannot break the entire broadcast.
+        """
+
         validators = 0
-        for websocket in self.clients.keys():
-            if self.clients[websocket]["val_hotkey"] is not None:
-                await websocket.send(json.dumps({"event": event, "data": data}))
-                validators += 1
+        disconnected_clients = []
+
+        for websocket, meta in self.clients.items():
+            # Skip malformed or placeholder entries
+            if not isinstance(meta, dict):
+                continue
+
+            try:
+                if meta.get("val_hotkey") is not None:
+                    await websocket.send_text(json.dumps({"event": event, "data": data}))
+                    validators += 1
+            except Exception:
+                # Client disconnected or send failed; mark for removal
+                disconnected_clients.append(websocket)
+
+        # Clean up any disconnected sockets
+        for websocket in disconnected_clients:
+            if websocket in self.clients:
+                del self.clients[websocket]
+
         logger.info(f"Platform socket broadcasted {event} to {validators} validators")
 
     async def create_new_evaluations(self, version_id: str):

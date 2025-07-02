@@ -89,9 +89,14 @@ async def set_weights(best_miner_hotkey: str | None = None):
 
         validator_node_id = query_node_id(substrate)
         version_key = query_version_key(substrate)
+        if version_key is None:
+            # Fallback to static config value if on-chain query fails
+            version_key = VERSION_KEY
+
         logger.info(f"Validator node ID: {validator_node_id}, Version key: {version_key}")
-        if validator_node_id is None or version_key is None:
-            logger.error("Failed to get validator node ID or version key")
+
+        if validator_node_id is None:
+            logger.error("Failed to get validator node ID – aborting weight update")
             return
 
         nodes = get_nodes_for_netuid(substrate, NETUID)
@@ -136,6 +141,9 @@ async def set_weights(best_miner_hotkey: str | None = None):
         logger.info(
             f"Setting weights exclusively for hotkey {best_miner_hotkey} (uid={node_ids[0] if node_ids else 'N/A'})"
         )
+
+        # Log the exact vector that will be submitted to the chain
+        logger.info(f"Submitting weight vector: {list(zip(node_ids, node_weights))}")
 
         success = await _set_weights_with_timeout(
             substrate=substrate,
