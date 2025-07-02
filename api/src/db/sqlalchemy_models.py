@@ -80,3 +80,20 @@ class WeightsHistoryModel(Base):
     timestamp = Column(DateTime, nullable=False, default=datetime.now)
     time_since_last_update = Column(Interval)
     miner_weights = Column(JSON, nullable=False)
+
+class ValidatorLogModel(Base):
+    __tablename__ = 'validator_logs'
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    original_log_id = Column(Text, nullable=False)  # The original ID from validator's logging.db
+    validator_hotkey = Column(Text, nullable=False)  # Added validator hotkey
+    timestamp = Column(DateTime, nullable=False)
+    levelname = Column(Text, nullable=False)
+    name = Column(Text, nullable=False)
+    pathname = Column(Text, nullable=False)
+    funcName = Column(Text, nullable=False)
+    lineno = Column(Integer, nullable=False)
+    message = Column(Text, nullable=False)
+    active_coroutines = Column(Text, nullable=False)  # JSON string of active coroutines
+    eval_loop_num = Column(Integer, nullable=False)
+    received_at = Column(DateTime, nullable=False, default=datetime.now)  # When platform received the log

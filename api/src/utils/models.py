@@ -131,3 +131,16 @@ class WeightsData(BaseModel):
 class QueueInfo(BaseModel):
     validator_hotkey: str
     place_in_queue: int
+
+class ValidatorLog(BaseModel):
+    original_log_id: str
+    validator_hotkey: str
+    timestamp: datetime
+    levelname: str
+    name: str
+    pathname: str
+    funcName: str
+    lineno: int
+    message: str
+    active_coroutines: str  # JSON string of active coroutines
+    eval_loop_num: int

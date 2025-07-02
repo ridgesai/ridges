@@ -1,13 +1,15 @@
 import asyncio
-from fastapi import FastAPI, WebSocket
+from fastapi import Depends, FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
 
+from api.src.utils.auth import verify_request
 from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.scoring import router as scoring_router
+from api.src.endpoints.logs import post_log_drain, router as log_drain_router
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
@@ -44,6 +46,19 @@ app.include_router(
 app.include_router(
     scoring_router,
     prefix="/scoring",
+)
+
+app.include_router(
+    log_drain_router,
+    prefix="/log_drain",
+)
+
+app.add_api_route(
+    "/logs",
+    post_log_drain,
+    tags=["logs"],
+    dependencies=[Depends(verify_request)],
+    methods=["POST"]
 )
 
 # WebSocket endpoint
