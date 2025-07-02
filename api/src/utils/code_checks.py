@@ -120,7 +120,7 @@ class AgentCodeChecker:
                         )
             elif isinstance(node, ast.ImportFrom):
                 mod = node.module or ""
-                if mod not in stdlib and mod.split(".")[0] not in PERMISSABLE_PACKAGES:
+                if mod not in stdlib and mod not in PERMISSABLE_PACKAGES and mod.split(".")[0] not in PERMISSABLE_PACKAGES:
                     self._raise(
                         f"Import from '{mod}' is not allowed."
                     )
