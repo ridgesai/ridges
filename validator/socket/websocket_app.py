@@ -21,11 +21,13 @@ logger = get_logger(__name__)
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection] = None
     evaluation_running: asyncio.Event
+    evaluation_task: Optional[asyncio.Task] = None
     heartbeat_task: Optional[asyncio.Task] = None
     last_pong_time: Optional[float] = None
     
     def __init__(self):
         self.evaluation_running = asyncio.Event()
+        self.evaluation_task = None
         self.heartbeat_task = None
         self.last_pong_time = None
 
@@ -44,6 +46,27 @@ class WebsocketApp:
             if self.ws:
                 await self.ws.close()
                 self.ws = None
+
+    async def cancel_evaluation(self):
+        """Cancel the currently running evaluation if any."""
+        if self.evaluation_task and not self.evaluation_task.done():
+            logger.info("Cancelling running evaluation due to websocket disconnect")
+            self.evaluation_task.cancel()
+            try:
+                await self.evaluation_task
+            except asyncio.CancelledError:
+                logger.info("Evaluation cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error while cancelling evaluation: {e}")
+        
+        # Clear the evaluation running flag
+        if self.evaluation_running.is_set():
+            self.evaluation_running.clear()
+            logger.info("Cleared evaluation_running flag")
+
+    async def _handle_disconnect(self):
+        """Handle websocket disconnection by cancelling running evaluation."""
+        await self.cancel_evaluation()
 
     async def _heartbeat_loop(self):
         while self.ws is not None:
@@ -76,10 +99,12 @@ class WebsocketApp:
                             await handle_message(self, message)
                         except websockets.ConnectionClosed:
                             self.ws = None
-                            logger.info(f"Connection closed – reconnecting in 5 seconds")
+                            logger.info(f"Connection closed – cancelling evaluation and reconnecting in 5 seconds")
+                            await self._handle_disconnect()
                             await asyncio.sleep(5)
                             break
             except Exception as e:
                 self.ws = None
                 logger.exception(f"Error while connecting to websocket – {e}")
+                await self._handle_disconnect()
                 await asyncio.sleep(5)

@@ -1,5 +1,6 @@
 """Handler for agent version events."""
 
+import asyncio
 from datetime import datetime
 from validator.utils.logging import get_logger
 from validator.sandbox.schema import AgentVersion
@@ -49,7 +50,18 @@ async def handle_evaluation(websocket_app, json_message):
             created_at=datetime.fromisoformat(created_at),
         )
 
-        await run_evaluation(websocket_app, evaluation_id, agent_version)
+        # Create and track the evaluation task
+        websocket_app.evaluation_task = asyncio.create_task(
+            run_evaluation(websocket_app, evaluation_id, agent_version)
+        )
+
+        try:
+            await websocket_app.evaluation_task
+        except asyncio.CancelledError:
+            logger.info("Evaluation was cancelled")
+            return
+        finally:
+            websocket_app.evaluation_task = None
 
         try:
             await websocket_app.send({"event": "get-next-evaluation"})

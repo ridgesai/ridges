@@ -112,7 +112,8 @@ class Sandbox:
                 }
             )
 
-            await asyncio.to_thread(self._run, challenge)
+            # Run patch generation - check for cancellation periodically
+            await self._run(challenge)
 
             # Send update after patch generation (or error)
             await self.manager.websocket_app.send(
@@ -141,7 +142,7 @@ class Sandbox:
                 )
 
                 # ---------------- Evaluation ----------------
-                await asyncio.to_thread(self._run_evaluation)
+                await self._run_evaluation()
 
                 # Send update after evaluation completes
                 await self.manager.websocket_app.send(
@@ -161,7 +162,8 @@ class Sandbox:
         if self.running and hasattr(self, "_task") and self._task:
             await self._task
 
-    def _run(self, challenge: dict):
+    async def _run(self, challenge: dict):
+        """Run sandbox that can be cancelled."""
         if self.evaluation_run.error is not None:
             self.running = False
             return
@@ -184,19 +186,20 @@ class Sandbox:
             logger.info(f"Setting up repository {repo_name} at {self.repo_dir_path}")
             self._get_cached_repo(repo_name, base_commit)
 
+            # Allow cancellation before starting container
+            await asyncio.sleep(0)
+
             logger.info(f"Running sandbox for run {self.evaluation_run.run_id}")
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
                 volumes={
-                    # Mount the appropriate files
                     os.path.abspath(MAIN_FILE): {
                         "bind": SANDBOX_MAIN_FILE,
                         "mode": "ro",
                     },
                     input_file: {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
                     output_file: {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
-                    # Mount the source directory
                     os.path.abspath(self.agent_dir): {
                         "bind": SANDBOX_SOURCE_DIR,
                         "mode": "ro",
@@ -204,15 +207,18 @@ class Sandbox:
                     os.path.abspath(self.repo_dir_path): {
                         "bind": SANDBOX_REPO_DIR,
                         "mode": "rw",
-                    },  # Since tool calls can modify the repo
+                    },
                 },
                 working_dir=SANDBOX_DIR,
                 environment={"AI_PROXY_URL": f"http://{PROXY_CONTAINER_NAME}"},
                 detach=True,
             )
 
-            # Wait for the container to finish running, then kill it
-            self.container.wait()
+            # Wait for container with cancellation support
+            while self.container.status != "exited":
+                await asyncio.sleep(1)  # Allow cancellation
+                self.container.reload()
+            
             self.container.remove()
 
             self.evaluation_run.status = "patch_generated"
@@ -224,16 +230,12 @@ class Sandbox:
                         output = json.load(f)
                         logger.info(f"Output: {output}")
                         if output.get("success"):
-                            self.evaluation_run.response = output.get("output").get(
-                                "patch"
-                            )
+                            self.evaluation_run.response = output.get("output").get("patch")
                             if self.evaluation_run.response == "":
                                 self.evaluation_run.status = "result_scored"
                                 self.evaluation_run.solved = False
                                 self.evaluation_run.result_scored_at = datetime.now()
-                                self.evaluation_run.error = (
-                                    "Empty patch returned from agent.py"
-                                )
+                                self.evaluation_run.error = "Empty patch returned from agent.py"
                         else:
                             self.evaluation_run.status = "result_scored"
                             self.evaluation_run.solved = False
@@ -245,6 +247,15 @@ class Sandbox:
                         self.evaluation_run.result_scored_at = datetime.now()
                         self.evaluation_run.error = "JSON parsing error: " + str(e)
 
+        except asyncio.CancelledError:
+            # Handle cancellation by stopping container if it exists
+            if self.container:
+                try:
+                    self.container.stop()
+                    self.container.remove()
+                except Exception:
+                    pass
+            raise
         except Exception as e:
             self.evaluation_run.status = "result_scored"
             self.evaluation_run.solved = False
@@ -253,17 +264,22 @@ class Sandbox:
         finally:
             self.running = False
 
-    def _run_evaluation(self):
-        """Blocking helper that runs evaluation for this sandbox's run."""
+    async def _run_evaluation(self):
+        """Run evaluation that can be cancelled."""
         try:
-            # Perform evaluation within the sandbox itself
+            # Allow cancellation before starting
+            await asyncio.sleep(0)
+            
+            # Run evaluation synchronously but with cancellation points
             self._evaluate_run()
-        except Exception as e:
-            # Capture evaluation errors so they don't crash the event-loop thread
+            
+        except asyncio.CancelledError:
+            logger.info("Evaluation cancelled")
             self.evaluation_run.solved = False
             self.evaluation_run.status = "result_scored"
             self.evaluation_run.result_scored_at = datetime.now()
-            self.evaluation_run.error = str(e)
+            self.evaluation_run.error = "Evaluation cancelled"
+            raise
 
     def _evaluate_run(self):
         try:

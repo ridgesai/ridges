@@ -11,6 +11,7 @@ from validator.sandbox.manager import SandboxManager
 from validator.utils.logging import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey
 from swebench.harness.run_evaluation import load_swebench_dataset
+import asyncio
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
@@ -104,6 +105,10 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         logger.info("Waiting on sandboxes (patch generation + evaluation)...")
         await sandbox_manager.wait_for_all_sandboxes()
 
+    except asyncio.CancelledError:
+        logger.info("Evaluation cancelled - cleaning up resources")
+        errored = True
+        raise  # Re-raise to let the caller handle it
     except Exception as e:
         logger.error(f"Error evaluating agent version: {e}", exc_info=True, stack_info=True)
         errored = True
