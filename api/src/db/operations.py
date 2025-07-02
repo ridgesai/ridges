@@ -858,7 +858,7 @@ class DatabaseManager:
                         WHERE e.status = 'completed'
                         AND e.score  IS NOT NULL
                         GROUP BY e.version_id
-                        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2
+                        HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
                     ),
 
                     top_score AS (                                  -- 2.  the absolute best score
@@ -891,6 +891,9 @@ class DatabaseManager:
 
                 row = cursor.fetchone()
 
+                if row is None:
+                    return None
+
                 return TopAgentHotkey(
                     miner_hotkey=row[0],
                     version_id=row[1],
@@ -899,7 +902,7 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
-        
+
     def get_latest_agent(self, agent_id: str, scored: bool) -> Optional[AgentSummary]:
         """
         Get the latest agent from the database. Return None if not found.
