@@ -191,9 +191,9 @@ def get_latest_execution_by_agent(agent_id: str):
     
     return execution
 
-def get_connected_validators():
+async def get_connected_validators():
     try:
-        validators = WebSocketManager.get_instance().get_connected_validators()
+        validators = await WebSocketManager.get_instance().get_connected_validators()
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
         raise HTTPException(
