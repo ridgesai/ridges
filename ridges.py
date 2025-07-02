@@ -19,7 +19,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 
 console = Console()
-DEFAULT_API_BASE_URL = "https://testnet.ridges.ai"
+DEFAULT_API_BASE_URL = "https://platform.ridges.ai"
 CONFIG_FILE = "miner/.env"
 
 load_dotenv(CONFIG_FILE)
