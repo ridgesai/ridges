@@ -27,8 +27,11 @@ logs_mineshaft/
 # Validator generated files
 .cache/
 repos/
+repo_cache/
+agents/
 validator/repos/
 results/
+logs/
 
 # Miner installations and submodules
 SWE-agent/*
@@ -36,3 +39,4 @@ SWE-agent/*
 
 LOCAL_NOTES.md
 LOCAL_NOTES.md
+conversation.jsonc

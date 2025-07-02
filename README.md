@@ -1,116 +1,145 @@
-# Ridges AI
+# Ridges AI - Development Setup Guide
 
-Many thanks to SN44 Score Vision, we've used their repo as inspiration for how to organize ours. Also thanks to the Rayon Labs team as our substrate interfaces are now built on Fiber
+## Prerequisites
 
-## Setting up locally
+### Local Subtensor Network Setup
+Before proceeding with the Ridges AI setup, ensure you have a local Subtensor network running on your machine. Follow the official setup instructions:
+- [Subtensor Local Network Setup Guide](https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md)
 
-If you prefer, there are also full docs on this available on our docs site for [validators](https://docs.ridges.ai/guides/validator) and [miners](https://docs.ridges.ai/guides/miner)
+**Critical Requirements:**
+- Create separate wallets for miner and validator operations
+- Ensure both wallets are properly configured and secured
 
-1. Get the subtensor running, and then register your validator and miner wallets to it as usual: 
+### Network Registration and Funding
+Complete the following steps to register and fund your wallets on the local subnet:
 
-- `btcli wallet faucet --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945`
-- `btcli subnet register --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945`
-- Add some stake to your validator: `btcli stake add --wallet.name validator --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
-- `btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
-- `btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945`
-
-2. Install Docker based on your system requirements.
-
-3. Setup a venv and install the required packages locally:
 ```bash
+# Fund validator wallet
+btcli wallet faucet --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Register validator on subnet
+btcli subnet register --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Add stake to validator (required for validation operations)
+btcli stake add --wallet.name validator --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Fund miner wallet
+btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Register miner on subnet
+btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+```
+
+## Development Environment Setup
+
+### Repository Initialization
+```bash
+# Clone the repository
+git clone https://github.com/ridgesai/ridges.git
+cd ridges
+
+# Initialize Python virtual environment
 uv venv --python 3.11
+source .venv/bin/activate
+
+# Install project dependencies
 uv pip install -e .
 ```
 
-4. Install SWE-agent (optional, but this is how we run our base miner):
-```bash
-git clone https://github.com/princeton-nlp/SWE-agent.git
-cd SWE-agent
-uv pip install --editable .
-cd ..
-```
-
-5. Add API key to .env - default right now is using Anthropic
-
-6. If you're running the subtensor locally you need to run this command
+### Local Network Configuration
+If running against a local Subtensor instance, set the following environment variable:
 ```bash
 export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945
 ```
 
+## Network Connectivity Setup
 
-7. Post your miners IP to chain using fiber so that your validator knows where to find it. 
-- **Important**: Make sure you've registered on subtensor before running this command
-- The port you choose here will be the same port you use when running the miner
-- For multiple miners, use different ports for each instance
+### Miner IP Registration
+Register your miner's IP address on the blockchain using Fiber to enable validator discovery:
+
+**Important:** Ensure your miner is registered on the Subtensor network before executing this command.
+
 ```bash
-fiber-post-ip --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945 --external_ip 0.0.0.1 --external_port 7999 --wallet.name miner --wallet.hotkey default
+fiber-post-ip \
+  --netuid 1 \
+  --subtensor.chain_endpoint ws://127.0.0.1:9945 \
+  --external_ip 0.0.0.1 \
+  --external_port 7999 \
+  --wallet.name miner \
+  --wallet.hotkey default
 ```
-- Note that for external IP, if you use 0.0.0.1 and the validator can't find the miner, use `ipconfig getifaddr en0` on Mac to get your local address and replace external_ip with that. Restart the subtensor, reregister miner and validator, and run it using your local IP
 
-8. Set up your .env's in both the miner and validator dir. Use .env.example to see what you have to set
+**Configuration Notes:**
+- The specified port will be used for miner communication
+- For multiple miner instances, use unique ports for each
+- If connectivity issues occur with `0.0.0.1`, use your local IP address:
+  ```bash
+  # macOS: Get local IP address
+  ipconfig getifaddr en0
+  ```
+  Then restart the Subtensor network, re-register both miner and validator, and use the local IP address.
 
-9. Run the validator and the miner, and you'll be able to see from both logs that they connect and the validator generates a problem
-- `uvicorn miner.main:app --host 0.0.0.0 --port 7999` to start the miner
-- `uv run validator/main.py`
+## Platform Infrastructure Setup
 
-## Running Multiple Miners
+### AWS Configuration
+The platform requires the following AWS resources:
 
-To run multiple miners in parallel:
-1. Use different ports for each miner instance
-2. Run the fiber-post-ip command for each miner with a unique port
-3. Start each miner with its corresponding port:
+1. **AWS Account & CLI Authentication**
+   - Valid AWS account with appropriate permissions
+   - AWS CLI configured and authenticated (with `aws configure`)
+
+2. **Database Setup**
+   - Create PostgreSQL RDS instance
+   - Apply schema from `api/src/db/postgres_schema.sql`
+
+3. **Storage Setup**
+   - Create S3 bucket for file storage
+
+4. **API Integration**
+   - Obtain API key from [Chutes AI Platform](https://chutes.ai/app/api)
+
+### Platform Deployment
 ```bash
-# First miner
-uvicorn miner.main:app --host 0.0.0.0 --port 7999
+# Navigate to API directory
+cd api
 
-# Second miner (in a different terminal)
-uvicorn miner.main:app --host 0.0.0.0 --port 7998
+# Configure environment variables
+cp api/.env.example api/.env
+# Edit api/.env with your configuration values
 
-# Third miner (in a different terminal)
-uvicorn miner.main:app --host 0.0.0.0 --port 7997
+# Start the platform services
+uvicorn api.src.main:app
 ```
 
-## Tuning Miner Concurrency / Queue Limits
+## Validator Environment Setup
 
-The miner runs its AI tasks through a `WorkerManager` that controls **how many SWE-agent processes can run in parallel** (`num_workers`) and **how many extra challenges can wait in line** (`max_queue_size`).
+### Docker Configuration
+Build sandbox execution environment and proxy
 
-You can change these limits in **`miner/utils/shared.py`**:
-
-```python
-# miner/utils/shared.py
-from miner.core.worker_manager import WorkerManager
-
-# Example: allow 3 concurrent jobs and up to 10 waiting
-worker_manager = WorkerManager(num_workers=3, max_queue_size=10)
+```bash
+docker build -t sandbox-runner validator/sandbox
+docker build -t sandbox-nginx-proxy validator/sandbox/proxy/
 ```
 
-After editing the file just restart the miner (`uvicorn miner.main:app …`).  No other code changes are needed.
+### Running the validator
+```bash
+uv run validator/main.py
+```
 
-## (Optional) Set up Cave
+## Miner Agent Development
 
-We've built Cave, a dashboard that lets you view locally running miner and validators when you are running both. You can view it at [https://github.com/ridgesai/cave](https://github.com/ridgesai/cave), we recommend setting up during testing as you can easily inspect problems created by the validator, solutions generated by miner AI agents, and more.
+### Agent Upload Process
+1. Access the platform API documentation: http://localhost:8000/docs
+2. Use the `/upload/agent` endpoint to deploy your agent
 
-## Helpful commands
+### Agent Requirements
+Your agent file must meet the following criteria for successful deployment:
 
-- See the registered actors on a subnet locally: `btcli subnets show --netuid 1 --subtensor.chain_endpoint ws://127.0.0.1:9945`
-- Check if subtensor is running: Look for "Using chain address: ws://127.0.0.1:9945" in the logs
-- Get your local IP address (Mac): `ipconfig getifaddr en0`
-- Get your local IP address (Linux): `ip addr show` or `hostname -I`
-- Change subtensor connection address: `export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945` (use `ws://127.0.0.1:9945` for local)
+- **File Structure**: Single Python file named `agent.py`
+- **Code Quality**: Valid Python syntax and logic
+- **Entry Point**: Contains `if __name__ == '__main__'` block
+- **Dependencies**: Only imports from:
+  - Python standard library
+  - Approved libraries specified in `api/src/utils/config.py`
 
-- **Code changes only:** Just restart the miner container.
-- **Dependency or Dockerfile changes:** Rebuild the image, then restart the miner.
-
-## For Validators running in production
-
-1. Make sure you have these dependencies installed:
-  - `uv` (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
-  - `pm2` (`npm install pm2@latest -g`)
-  - `docker`
-2. Fill out `validator/.env` using the template found in `validator/.env.example`
-3. For your first setup, run `./validator_auto_update.sh` to run your validator for the first time—it will confirm your environment is set. You can either leave it running or
-4. Run `pm2 start ./validator_auto_update.sh --name ridges-auto-update-validator --env PYTHONPATH=. -- --skip-confirm-env` to keep it up-to-date in the background
-5. You can verify it's running with `pm2 logs ridges-auto-update-validator`
-
-This will allow your validator to run smoothly as we continue to improve the incentive mechanism over time.
-
+**Note**: Files that do not meet these requirements will be rejected during the upload process.

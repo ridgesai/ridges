@@ -6,7 +6,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "asyncio>=3.4.3",
+    "boto3>=1.38.40",
+    "click>=8.1.0",
     "dotenv>=0.9.9",
+    "fastapi-utils>=0.8.0",
     "fiber[full]",
     "gitpython>=3.1.44",
     "httpx>=0.27.0",
@@ -14,11 +17,19 @@ dependencies = [
     "loguru>=0.7.3",
     "numpy>=2.2.6",
     "openai>=1.82.0",
+    "pandas>=2.2.0",
+    "psycopg2>=2.9.10",
+    "psycopg2-binary>=2.9.10",
+    "python-dotenv>=1.0.0",
+    "python-multipart>=0.0.20",
     "setuptools>=80.8.0",
     "sqlalchemy>=2.0.41",
     "swebench>=4.0.3",
     "tiktoken>=0.9.0",
     "trueskill>=0.4.5",
+    "typing-inspect>=0.9.0",
+    "uvicorn>=0.30.5",
+    "websockets>=15.0.1",
 ]
 
 [tool.uv.sources]
