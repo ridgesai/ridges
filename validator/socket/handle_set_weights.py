@@ -10,9 +10,11 @@ async def handle_set_weights(websocket_app, json_message):
 
         {
             "event": "set-weights",
-            "miner_hotkey": "<MINER_HOTKEY>",
-            "version_id": "<VERSION_UUID>",          # for logging
-            "avg_score": 0.32                        # for logging
+            "data": {
+                "miner_hotkey": "<MINER_HOTKEY>",
+                "version_id": "<VERSION_UUID>",  # for logging
+                "avg_score": 0.32                  # for logging
+            }
         }
 
     Only the ``miner_hotkey`` field is mandatory.  The function resolves the miner's UID
@@ -20,17 +22,24 @@ async def handle_set_weights(websocket_app, json_message):
     subject to chain constraints).
     """
 
+    # Preferred: payload under "data".
+    payload = json_message.get("data", {}) if isinstance(json_message.get("data", {}), dict) else {}
+
     hotkey = (
-        json_message.get("hotkey")
+        payload.get("miner_hotkey")
+        or payload.get("hotkey")
+        or payload.get("best_miner_hotkey")
+        # fallbacks for older message shape (back-compat)
         or json_message.get("miner_hotkey")
+        or json_message.get("hotkey")
         or json_message.get("best_miner_hotkey")
     )
     if hotkey is None:
         logger.error("Received set-weights event without a 'hotkey' field – ignoring")
         return
 
-    version_id = json_message.get("version_id")
-    avg_score = json_message.get("avg_score")
+    version_id = payload.get("version_id") or json_message.get("version_id")
+    avg_score = payload.get("avg_score") or json_message.get("avg_score")
 
     logger.info(
         f"Received set-weights event – hotkey={hotkey}, version_id={version_id}, avg_score={avg_score}"
