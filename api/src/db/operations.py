@@ -340,15 +340,26 @@ class DatabaseManager:
     def get_next_evaluation(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
         Get the next evaluation for a validator. Return None if not found.
+        Excludes evaluations for banned miner hotkeys.
         """
+        # For now, this is a manual process, but will be updated shortly to be automatic
+        banned_hotkeys = ["5GKN9VrcGBqKBvoSETLUrBdhHx8YocGBGcpxWzBdKRSHwCUh"]
+        
         conn = None
         try:
             conn = self.get_connection()
             with conn.cursor() as cursor:
                 cursor.execute("""
-                SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
-                FROM evaluations WHERE validator_hotkey = %s AND status = 'waiting' ORDER BY created_at ASC LIMIT 1;
-            """, (validator_hotkey,))
+                SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+                FROM evaluations e
+                JOIN agent_versions av ON e.version_id = av.version_id
+                JOIN agents a ON av.agent_id = a.agent_id
+                WHERE e.validator_hotkey = %s 
+                AND e.status = 'waiting' 
+                AND a.miner_hotkey != ALL(%s)
+                ORDER BY e.created_at ASC 
+                LIMIT 1;
+            """, (validator_hotkey, banned_hotkeys))
                 row = cursor.fetchone()
                 if row:
                     logger.info(f"Next evaluation {row[0]} found for validator with hotkey {validator_hotkey}")
@@ -363,7 +374,7 @@ class DatabaseManager:
                         finished_at=row[7],
                         score=row[8]
                     )
-                logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey}")
+                logger.info(f"No pending evaluations found for validator with hotkey {validator_hotkey} (excluding banned miners)")
                 return None
         finally:
             if conn:
