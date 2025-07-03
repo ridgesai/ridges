@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_utils.tasks import repeat_every
 import uvicorn
 
+from api.src.db.operations import DatabaseManager
 from api.src.utils.auth import verify_request
 from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
@@ -69,9 +70,10 @@ async def startup_event():
 @repeat_every(seconds=72 * 60)
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
+    await DatabaseManager().init()
     weights = await weight_receiving_agent()
     weights_dict = weights.model_dump(mode='json')
-    await server.send_to_all_validators("set_weights", weights_dict)
+    await server.send_to_all_validators("set-weights", weights_dict)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

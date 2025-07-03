@@ -12,34 +12,34 @@ logger = get_logger(__name__)
 
 chutes = ChutesManager()
 
-def embedding(request: EmbeddingRequest):
+async def embedding(request: EmbeddingRequest):
     # Check if this run_id is valid
-    evaluation_run = db.get_evaluation_run(request.run_id)
+    evaluation_run = await db.get_evaluation_run(request.run_id)
     if not evaluation_run:
-        logger.info(f"Embedding for {request.input} was requested but no such evaluation run was found in our database")
+        logger.info(f"Embedding for {request.run_id} was requested but no such evaluation run was found in our database")
         raise HTTPException(status_code=404, detail="Evaluation run not found")
     
     if evaluation_run.status != "sandbox_created":
-        logger.info(f"Embedding for {request.input} was requested but the evaluation run is not in the sandbox_created state")
+        logger.info(f"Embedding for {request.run_id} was requested but the evaluation run is not in the sandbox_created state")
         raise HTTPException(status_code=400, detail="Evaluation run is not in the sandbox_created state")
 
     try:
-        embedding = chutes.embed(request.run_id, request.input)
+        embedding = await chutes.embed(request.run_id, request.input)
     except Exception as e:
-        logger.error(f"Error getting embedding for {request.input}: {e}")
+        logger.error(f"Error getting embedding for {request.run_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get embedding due to internal server error. Please try again later.")
-    logger.info(f"Embedding for {request.input} was requested and returned")
+    logger.debug(f"Embedding for {request.run_id} was requested and returned")
     return embedding
 
 async def inference(request: InferenceRequest):
-    evaluation_run = db.get_evaluation_run(request.run_id)
-    if not evaluation_run:
-        logger.info(f"Inference for {request.run_id} was requested but no such evaluation run was found in our database")
-        raise HTTPException(status_code=404, detail="Evaluation run not found")
+    # evaluation_run = await db.get_evaluation_run(request.run_id)
+    # if not evaluation_run:
+    #     logger.info(f"Inference for {request.run_id} was requested but no such evaluation run was found in our database")
+    #     raise HTTPException(status_code=404, detail="Evaluation run not found")
     
-    if evaluation_run.status != "sandbox_created":
-        logger.info(f"Inference for {request.run_id} was requested but the evaluation run is not in the sandbox_created state")
-        raise HTTPException(status_code=400, detail="Evaluation run is not in the sandbox_created state")
+    # if evaluation_run.status != "sandbox_created":
+    #     logger.info(f"Inference for {request.run_id} was requested but the evaluation run is not in the sandbox_created state")
+    #     raise HTTPException(status_code=400, detail="Evaluation run is not in the sandbox_created state")
 
     try:
         response = await chutes.inference(
@@ -48,7 +48,7 @@ async def inference(request: InferenceRequest):
             request.temperature,
             request.model
         )
-        logger.info(f"Inference for {request.run_id} was requested and returned \"{response}\"")
+        logger.debug(f"Inference for {request.run_id} was requested and returned \"{response}\"")
         return response
     except Exception as e:
         logger.error(f"Error getting inference for {request.run_id}: {e}")

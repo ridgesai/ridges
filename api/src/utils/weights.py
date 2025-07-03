@@ -41,7 +41,7 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
     while True:
         try:
             weights = get_miner_weights(netuid=netuid)
-            latest_stored = db.get_latest_weights()
+            latest_stored = await db.get_latest_weights()
             
             if latest_stored:
                 stored_weights = latest_stored['weights']
@@ -54,12 +54,12 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
                 if weights_changed:
                     logger.info(f"Weights have been updated. Storing new weights. Time since last update: {time_since_last}")
                     
-                    db.store_weights(weights, time_since_last)
+                    await db.store_weights(weights, time_since_last)
                 else:
                     logger.info(f"Weights unchanged, skipping storage. Last update: {stored_timestamp}. Time since last update: {time_since_last}")
             else:
                 logger.info(f"No previous weights found, storing initial weights...")
-                db.store_weights(weights)
+                await db.store_weights(weights)
             
             logger.info(f"Next weight check in {interval_seconds} seconds...")
             await asyncio.sleep(interval_seconds)

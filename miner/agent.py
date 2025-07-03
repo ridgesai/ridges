@@ -60,7 +60,7 @@ DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
 DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
 DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
 DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
-DEFAULT_MODEL = os.getenv("AGENT_MODEL", "deepseek-ai/DeepSeek-V3")
+DEFAULT_MODEL = os.getenv("AGENT_MODEL", "moonshotai/Kimi-Dev-72B")
 
 # Other constants
 MAX_STEPS = 100
@@ -71,7 +71,7 @@ MAX_EMBED_CHARS = MAX_EMBED_TOKENS * 4  # reserve but we'll split by tokens
 
 # New env flag – set EMBED_WHOLE_FILES=1 to revert to legacy behaviour.
 # USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
-USE_FUNCTION_CHUNKS = 0
+USE_FUNCTION_CHUNKS = 1
 
 # ---------------------------------------------------------------------------
 # Prompt templates (adapted from SWE-agent/config/default.yaml) --------------
@@ -426,8 +426,8 @@ def _finish() -> str:
 #   In this mode you can additionally set READ_ONLY=1 to hide WRITE_FILE and
 #   APPLY_PATCH so the model can only inspect the repository.
 
-# MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
-MODE = os.getenv("AGENT_MODE", "ONESHOT").upper()
+MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
+# MODE = os.getenv("AGENT_MODE", "ONESHOT").upper()
 READ_ONLY = False  # read-only mode disabled – allow WRITE_FILE and APPLY_PATCH
 
 ALL_TOOLS = {
@@ -624,7 +624,7 @@ def run_oneshot(
 
     sorted_idx = sorted(range(len(sims)), key=lambda i: -sims[i])
 
-    TARGET_TOKENS = 256_000
+    TARGET_TOKENS = 128_000
     token_budget = int(TARGET_TOKENS * 0.85)
     token_total = 0
     top_idx: list[int] = []

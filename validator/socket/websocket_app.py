@@ -74,12 +74,12 @@ class WebsocketApp:
                 await self.send({"event": "ping", "timestamp": time.time()})
                 await asyncio.sleep(15)
                 
-                if self.last_pong_time and (time.time() - self.last_pong_time) > 60:
-                    logger.warning("No pong response received for 60 seconds, forcing reconnection")
-                    if self.ws:
-                        await self.ws.close()
-                        self.ws = None
-                    break
+                # if self.last_pong_time and (time.time() - self.last_pong_time) > 60:
+                #     logger.warning("No pong response received for 60 seconds, forcing reconnection")
+                #     if self.ws:
+                #         await self.ws.close()
+                #         self.ws = None
+                #     break
                     
             except Exception as e:
                 logger.error(f"Heartbeat failed: {e}")

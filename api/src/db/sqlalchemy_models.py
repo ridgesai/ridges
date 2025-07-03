@@ -7,7 +7,7 @@ import uuid
 
 Base = declarative_base()
 
-class AgentModel(Base):
+class Agent(Base):
     __tablename__ = 'agents'
     
     agent_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -18,9 +18,9 @@ class AgentModel(Base):
     last_updated = Column(DateTime, nullable=False)
     
     # Relationships
-    versions = relationship("AgentVersionModel", back_populates="agent")
+    versions = relationship("AgentVersion", back_populates="agent")
 
-class AgentVersionModel(Base):
+class AgentVersion(Base):
     __tablename__ = 'agent_versions'
     
     version_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -30,10 +30,10 @@ class AgentVersionModel(Base):
     score = Column(Float)
     
     # Relationships
-    agent = relationship("AgentModel", back_populates="versions")
-    evaluations = relationship("EvaluationModel", back_populates="agent_version")
+    agent = relationship("Agent", back_populates="versions")
+    evaluations = relationship("Evaluation", back_populates="agent_version")
 
-class EvaluationModel(Base):
+class Evaluation(Base):
     __tablename__ = 'evaluations'
     
     evaluation_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -47,10 +47,10 @@ class EvaluationModel(Base):
     score = Column(Float)
     
     # Relationships
-    agent_version = relationship("AgentVersionModel", back_populates="evaluations")
-    evaluation_runs = relationship("EvaluationRunModel", back_populates="evaluation")
+    agent_version = relationship("AgentVersion", back_populates="evaluations")
+    evaluation_runs = relationship("EvaluationRun", back_populates="evaluation")
 
-class EvaluationRunModel(Base):
+class EvaluationRun(Base):
     __tablename__ = 'evaluation_runs'
     
     run_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -71,9 +71,9 @@ class EvaluationRunModel(Base):
     result_scored_at = Column(DateTime)
     
     # Relationships
-    evaluation = relationship("EvaluationModel", back_populates="evaluation_runs")
+    evaluation = relationship("Evaluation", back_populates="evaluation_runs")
 
-class WeightsHistoryModel(Base):
+class WeightsHistory(Base):
     __tablename__ = 'weights_history'
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -81,7 +81,7 @@ class WeightsHistoryModel(Base):
     time_since_last_update = Column(Interval)
     miner_weights = Column(JSON, nullable=False)
 
-class BannedHotkeyModel(Base):
+class BannedHotkey(Base):
     __tablename__ = 'banned_hotkeys'
     
     miner_hotkey = Column(Text, primary_key=True, nullable=False)
