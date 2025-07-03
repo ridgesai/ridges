@@ -1985,3 +1985,57 @@ class DatabaseManager:
                 logger.error(f"Error banning agent: {str(e)}")
                 return 0
         
+    async def clean_handing_evaluations(self) -> int:
+        """
+        Clean up evaluations that are stuck in 'running' status.
+        For each running evaluation:
+        1. Set status to 'waiting'
+        2. Set nullable fields to null (started_at, finished_at, score, terminated_reason)
+        3. Delete all associated evaluation runs
+        Returns the number of evaluations cleaned up.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT evaluation_id 
+                    FROM evaluations 
+                    WHERE status = 'running'
+                """))
+                
+                running_evaluations = result.fetchall()
+                if not running_evaluations:
+                    logger.info("Tried to clean up running evaluations, but no running evaluations found")
+                    return 0
+                
+                cleaned_count = 0
+                
+                for (evaluation_id,) in running_evaluations:
+                    result = await session.execute(text("""
+                        DELETE FROM evaluation_runs 
+                        WHERE evaluation_id = :evaluation_id
+                    """), {'evaluation_id': evaluation_id})
+                    
+                    runs_deleted = result.rowcount
+                    
+                    result = await session.execute(text("""
+                        UPDATE evaluations 
+                        SET status = 'waiting',
+                            started_at = NULL,
+                            finished_at = NULL,
+                            score = NULL,
+                            terminated_reason = NULL
+                        WHERE evaluation_id = :evaluation_id
+                    """), {'evaluation_id': evaluation_id})
+                    
+                    if result.rowcount > 0:
+                        cleaned_count += 1
+                        logger.info(f"Cleaned up evaluation {evaluation_id}: deleted {runs_deleted} associated runs, reset to waiting")
+                
+                await session.commit()
+                logger.info(f"Successfully cleaned up {cleaned_count} running evaluations")
+                return cleaned_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error cleaning up running evaluations: {str(e)}")
+                return 0

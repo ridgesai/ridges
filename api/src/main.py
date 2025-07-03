@@ -1,25 +1,24 @@
 import asyncio
-from fastapi import Depends, FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi_utils.tasks import repeat_every
 import uvicorn
 
-from api.src.db.operations import DatabaseManager
-from api.src.utils.auth import verify_request
 from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
-from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop, weight_receiving_agent
+from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
+from api.src.db.operations import DatabaseManager   
 
 logger = get_logger(__name__)
 
 app = FastAPI()
 server = WebSocketManager()
+db = DatabaseManager()
 
 # Configure CORS
 app.add_middleware(
@@ -60,6 +59,7 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.on_event("startup")
 async def startup_event():
     await DatabaseManager().init()
+    await db.clean_handing_evaluations()
 
     # Start the ChutesManager cleanup task
     chutes_manager = ChutesManager()
