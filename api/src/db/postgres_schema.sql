@@ -38,8 +38,15 @@ CREATE TABLE IF NOT EXISTS evaluations (
     created_at TIMESTAMP NOT NULL,
     started_at TIMESTAMP,
     finished_at TIMESTAMP,
-    score FLOAT
+    score FLOAT,
+    UNIQUE(version_id, validator_hotkey) -- Prevent duplicate evaluations for same version/validator pair
 );
+
+-- Add performance indexes for evaluations table
+CREATE INDEX IF NOT EXISTS idx_evaluations_version_validator ON evaluations(version_id, validator_hotkey);
+CREATE INDEX IF NOT EXISTS idx_evaluations_validator_status ON evaluations(validator_hotkey, status);
+CREATE INDEX IF NOT EXISTS idx_evaluations_created_at ON evaluations(created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_created_at ON agent_versions(created_at);
 
 -- Evaluation Runs table
 CREATE TABLE IF NOT EXISTS evaluation_runs (

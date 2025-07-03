@@ -70,6 +70,7 @@ class DatabaseManager:
     async def _init_tables(self):
         """
         Check if required tables exist and create them if they don't.
+        Also ensures necessary constraints and indexes are in place.
         """
         try:
             async with self.AsyncSessionLocal() as session:
@@ -87,11 +88,8 @@ class DatabaseManager:
             required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys']
             missing_tables = [table for table in required_tables if table not in existing_tables]
             
-            if not missing_tables:
-                logger.info("All required tables already exist")
-                return
-            
-            logger.info(f"Creating missing tables: {missing_tables}")
+            if missing_tables:
+                logger.info(f"Creating missing tables: {missing_tables}")
 
             # Create tables using SQLAlchemy
             async with self.engine.begin() as conn:
@@ -1877,16 +1875,20 @@ class DatabaseManager:
         """
         Create evaluations for a validator for all agent versions created in the last 24 hours
         for this validator. Returns the number of evaluations created.
+        
+        This function uses proper transaction management and batch operations to ensure
+        data consistency and performance.
         """
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
                     WITH latest_versions_last_24h AS (
-                        SELECT av.version_id, av.agent_id, av.version_num, av.created_at
+                        -- Get the latest version for each agent created in the last 24 hours
+                        SELECT DISTINCT ON (av.agent_id) 
+                            av.version_id, av.agent_id, av.version_num, av.created_at
                         FROM agent_versions av
-                        INNER JOIN agents a ON av.agent_id = a.agent_id
                         WHERE av.created_at >= NOW() - INTERVAL '24 hours'
-                        AND av.version_num = a.latest_version
+                        ORDER BY av.agent_id, av.version_num DESC
                     ),
                     missing_evaluations AS (
                         SELECT lv.version_id
