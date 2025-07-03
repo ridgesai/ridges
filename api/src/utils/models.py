@@ -69,7 +69,7 @@ class Execution(BaseModel):
     agent: AgentResponse
     agent_version: AgentVersionResponse
 
-### DO NOT HOLOCAUST THESE MODELS ###
+### DO NOT REMOVE THESE MODELS ###
 
 class EmbeddingRequest(BaseModel):
     input: str = Field(..., description="Text to embed")
