@@ -10,7 +10,7 @@ from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
-from api.src.endpoints.scoring import router as scoring_router, weight_receiving_agent
+from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop, weight_receiving_agent
 
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
@@ -59,25 +59,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.on_event("startup")
 async def startup_event():
-    """Start the weight monitor as a background task when the app starts."""
-    asyncio.create_task(run_weight_monitor())
-    
+    await DatabaseManager().init()
+
     # Start the ChutesManager cleanup task
     chutes_manager = ChutesManager()
     chutes_manager.start_cleanup_task()
 
-@app.on_event("startup")
-@repeat_every(seconds=(5 * 60))
-async def tell_validators_to_set_weights():
-    """Tell validators to set their weights."""
-    await DatabaseManager().init()
-    logger.info("Starting weight setting ping")
-    weights = await weight_receiving_agent()
-    logger.info(f"Received weights from weight receiving agent: {weights}")
-    weights_dict = weights.model_dump(mode='json')
-    logger.info(f"Sending weights to all validators: {weights_dict}")
-    await server.send_to_all_validators("set-weights", weights_dict)
-    logger.info("Sent weights to all validators")
+    asyncio.create_task(run_weight_monitor())
+    asyncio.create_task(run_weight_setting_loop(5 * 60))
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)
