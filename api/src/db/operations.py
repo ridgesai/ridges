@@ -1466,9 +1466,9 @@ class DatabaseManager:
                 
                 run_rows = result.fetchall()
                 evaluation_runs = [
-                    EvaluationRun(
-                        run_id=run_row[0],
-                        evaluation_id=run_row[1],
+                    EvaluationRunResponse(
+                        run_id=str(run_row[0]),
+                        evaluation_id=str(run_row[1]),
                         swebench_instance_id=run_row[2],
                         status=run_row[3],
                         response=run_row[4],
@@ -1562,9 +1562,9 @@ class DatabaseManager:
                     
                     run_rows = result.fetchall()
                     evaluation_runs = [
-                        EvaluationRun(
-                            run_id=run_row[0],
-                            evaluation_id=run_row[1],
+                        EvaluationRunResponse(
+                            run_id=str(run_row[0]),
+                            evaluation_id=str(run_row[1]),
                             swebench_instance_id=run_row[2],
                             status=run_row[3],
                             response=run_row[4],
