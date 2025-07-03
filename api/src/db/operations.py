@@ -7,7 +7,7 @@ import threading
 import uuid
 from dotenv import load_dotenv
 from datetime import datetime
-from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo, TopAgentHotkey
+from api.src.utils.models import Agent, AgentVersion, EvaluationRun, Evaluation, AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo, TopAgentHotkey, RunningAgentEval
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_manager import SQLAlchemyDatabaseManager
 
@@ -740,36 +740,6 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
-
-    # def get_banned_hotkeys(self) -> List[str]:
-    #     """
-    #     Gets the list of miner hotkeys that are banned
-    #     """
-    #     conn = None
-    #     try:
-    #         conn = self.get_connection()
-    #         with conn.cursor() as cursor:
-    #             cursor.execute("""
-    #                 SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
-    #                 FROM evaluations WHERE validator_hotkey = %s AND status = 'running'
-    #             """, (validator_hotkey,))
-    #             row = cursor.fetchone()
-    #             if row:
-    #                 return Evaluation(
-    #                 evaluation_id=row[0],
-    #                 version_id=row[1],
-    #                 validator_hotkey=row[2],
-    #                 status=row[3],
-    #                 terminated_reason=row[4],
-    #                 created_at=row[5],
-    #                 started_at=row[6],
-    #                 finished_at=row[7],
-    #                 score=row[8]
-    #             )
-    #             return None
-    #     finally:
-    #         if conn:
-    #             self.return_connection(conn)
     
     def get_top_agents(self, num_agents: int) -> List[AgentSummary]:
         """
@@ -837,7 +807,41 @@ class DatabaseManager:
         finally:
             if conn:
                 self.return_connection(conn)
+        
+    def get_current_evaluations(self):
+        conn = None
+        try:
+            conn = self.get_connection()
 
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    select
+                        e.version_id, e.validator_hotkey, e.started_at,
+                        v.agent_id, v.version_num,
+                        a.miner_hotkey, a.name
+                        from evaluations e
+                    left join agent_versions v on v.version_id = e.version_id
+                    left join agents a on a.agent_id = v.agent_id
+                    where status = 'running';
+                    """
+                )
+
+                rows = cursor.fetchall()
+
+                return [RunningAgentEval(
+                    version_id=row[0],
+                    validator_hotkey=row[1],
+                    started_at=row[2],
+                    agent_id=row[3],
+                    version_num=row[4],
+                    miner_hotkey=row[5],
+                    name=row[6]
+                ) for row in rows]
+        finally:
+            if conn:
+                self.return_connection(conn)
+        
     def get_top_agent(self) -> TopAgentHotkey:
         """
         Gets the top agents miner hotkey and version id from the database,
