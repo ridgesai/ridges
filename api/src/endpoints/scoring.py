@@ -15,16 +15,6 @@ db = DatabaseManager()
 
 logger = get_logger(__name__)
 
-async def weight_receiving_agent():
-    '''
-    This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
-    The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
-    This will be deprecated shortly in favor of validators posting weight themselves
-    ''' 
-    top_agent: TopAgentHotkey = await db.get_top_agent()
-
-    return top_agent
-
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
     logger.info("Starting weight setting ping")
@@ -39,6 +29,18 @@ async def run_weight_setting_loop(minutes: int):
     while True:
         await tell_validators_to_set_weights()
         await asyncio.sleep(minutes * 60)
+
+## Actual endpoints ##
+
+async def weight_receiving_agent():
+    '''
+    This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
+    The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
+    This will be deprecated shortly in favor of validators posting weight themselves
+    ''' 
+    top_agent: TopAgentHotkey = await db.get_top_agent()
+
+    return top_agent
 
 async def ban_agent(agent_id: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -59,7 +61,6 @@ router = APIRouter()
 
 routes = [
     ("/weights", weight_receiving_agent, ["GET"]),
-    ("/set-weights", tell_validators_to_set_weights, ["POST"]),
     ("/ban-agent", ban_agent, ["POST"])
 ]
 

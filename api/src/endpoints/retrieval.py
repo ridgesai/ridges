@@ -129,30 +129,6 @@ async def get_running_evaluations() -> list[RunningAgentEval]:
             detail="Internal server error while retrieving currently running evaluations. Please try again later."
         )
 
-async def get_recent_executions(num_executions: int = 3):
-    executions = await db.get_recent_executions(num_executions)
-
-    if not executions:
-        logger.warning(f"Recent executions endpoint was requested but no executions were found in the database")
-        raise HTTPException(
-            status_code=404,
-            detail="No executions found"
-        )
-
-    return executions
-
-async def get_num_agents():
-    try:
-        num_agents = await db.get_num_agents()
-    except Exception as e:
-        logger.error(f"Error retrieving number of agents: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving number of agents. Please try again later."
-        )
-    
-    return num_agents
-
 def get_total_rewards_per_day():
 
     url = "https://api.taostats.io/api/dtao/pool/latest/v1?page=1"
@@ -190,18 +166,6 @@ def get_total_rewards_per_day():
 
     return usd_per_day
 
-async def get_latest_execution_by_agent(agent_id: str):
-    try:
-        execution = await db.get_latest_execution_by_agent(agent_id)
-    except Exception as e:
-        logger.error(f"Error retrieving latest execution by agent {agent_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving latest execution by agent. Please try again later."
-        )
-    
-    return execution
-
 async def get_connected_validators():
     try:
         validators = await WebSocketManager.get_instance().get_connected_validators()
@@ -213,21 +177,6 @@ async def get_connected_validators():
         )
     
     return validators
-
-async def get_random_agent(include_code: bool = False):
-    try:
-        agent = await db.get_random_agent()
-    except Exception as e:
-        logger.error(f"Error retrieving random agent: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving random agent. Please try again later."
-        )
-    
-    if include_code:
-        agent.code = s3_manager.get_file_text(f"{agent.latest_version.version_id}/agent.py")
-    
-    return agent
 
 async def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, include_code: bool = False) -> AgentSummaryResponse:
     if not agent_id and not miner_hotkey:
@@ -250,39 +199,6 @@ async def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, incl
         agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
     
     return agent_summary
-
-async def get_evaluations(version_id: str):
-    try:
-        evaluations = await db.get_evaluations(version_id)
-    except Exception as e:
-        logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving evaluations. Please try again later."
-        )
-    
-    return evaluations
-
-async def get_agent_version(version_id: str, include_code: bool = True) -> AgentVersionDetails:
-    try:
-        agent_version = await db.get_agent_version_new(version_id)
-    except Exception as e:
-        logger.error(f"Error retrieving agent version {version_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving agent version. Please try again later."
-        )
-    
-    if not agent_version:
-        raise HTTPException(
-            status_code=404,
-            detail="Agent version not found"
-        )
-    
-    if include_code:
-        agent_version.agent_version.code = s3_manager.get_file_text(f"{agent_version.agent_version.version_id}/agent.py")
-    
-    return agent_version
 
 async def get_queue_info(version_id: str):
     try:
@@ -338,24 +254,18 @@ async def get_pool_status():
 router = APIRouter()
 
 routes = [
-    ("/agent-version-file", get_agent_version_file),
-    ("/top-agents", get_top_agents),
-    ("/agent", get_agent),
-    ("/agent-version-code", get_agent_version_code),
-    ("/recent-executions", get_recent_executions),
-    ("/num-agents", get_num_agents),
-    ("/total-rewards-per-day", get_total_rewards_per_day),
-    ("/latest-execution-by-agent", get_latest_execution_by_agent),
-    ("/connected-validators", get_connected_validators),
-    ("/random-agent", get_random_agent),
-    ("/agent-summary", get_agent_summary),
+    ("/agent-version-file", get_agent_version_file), 
+    ("/top-agents", get_top_agents), 
+    ("/agent", get_agent), 
+    ("/agent-version-code", get_agent_version_code), 
+    ("/total-rewards-per-day", get_total_rewards_per_day), 
+    ("/connected-validators", get_connected_validators), 
+    ("/agent-summary", get_agent_summary), 
     ("/get-running-evaluations", get_running_evaluations),
-    ("/evaluations", get_evaluations),
-    ("/agent-version", get_agent_version),
-    ("/queue-info", get_queue_info),
-    ("/runs-for-evaluation", get_runs_for_evaluation),
+    ("/queue-info", get_queue_info), 
+    ("/runs-for-evaluation", get_runs_for_evaluation), 
     ("/subnet-stats", get_statistics),
-    ("/pool-status", get_pool_status)
+    ("/pool-status", get_pool_status) 
 ]
 
 for path, endpoint in routes:

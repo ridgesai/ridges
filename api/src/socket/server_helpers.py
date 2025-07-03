@@ -163,7 +163,6 @@ async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
     await db.store_evaluation(evaluation)
-    await db.update_agent_version_score(version_id=evaluation.version_id)
 
     return evaluation
 

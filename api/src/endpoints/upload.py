@@ -78,7 +78,6 @@ async def post_agent(
     if existing_agent:
         existing_agent_version = await db.get_latest_agent_version(existing_agent.agent_id)
         evaluations = await db.get_evaluations_by_version_id(existing_agent_version.version_id)
-        print(evaluations)
         for evaluation in evaluations:
             if evaluation.status == "running":
                 raise HTTPException(

@@ -13,7 +13,6 @@ logger = get_logger(__name__)
 chutes = ChutesManager()
 
 async def embedding(request: EmbeddingRequest):
-    # Check if this run_id is valid
     evaluation_run = await db.get_evaluation_run(request.run_id)
     if not evaluation_run:
         logger.info(f"Embedding for {request.run_id} was requested but no such evaluation run was found in our database")
@@ -32,15 +31,6 @@ async def embedding(request: EmbeddingRequest):
     return embedding
 
 async def inference(request: InferenceRequest):
-    # evaluation_run = await db.get_evaluation_run(request.run_id)
-    # if not evaluation_run:
-    #     logger.info(f"Inference for {request.run_id} was requested but no such evaluation run was found in our database")
-    #     raise HTTPException(status_code=404, detail="Evaluation run not found")
-    
-    # if evaluation_run.status != "sandbox_created":
-    #     logger.info(f"Inference for {request.run_id} was requested but the evaluation run is not in the sandbox_created state")
-    #     raise HTTPException(status_code=400, detail="Evaluation run is not in the sandbox_created state")
-
     try:
         response = await chutes.inference(
             request.run_id, 
