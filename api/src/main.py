@@ -71,9 +71,13 @@ async def startup_event():
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
     await DatabaseManager().init()
+    logger.info("Starting weight setting ping")
     weights = await weight_receiving_agent()
+    logger.info(f"Received weights from weight receiving agent: {weights}")
     weights_dict = weights.model_dump(mode='json')
+    logger.info(f"Sending weights to all validators: {weights_dict}")
     await server.send_to_all_validators("set-weights", weights_dict)
+    logger.info("Sent weights to all validators")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)
