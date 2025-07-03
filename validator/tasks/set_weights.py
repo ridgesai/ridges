@@ -88,10 +88,10 @@ async def set_weights(best_miner_hotkey: str | None = None):
         substrate = interface.get_substrate(SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS)
 
         validator_node_id = query_node_id(substrate)
-        version_key = query_version_key(substrate)
-        if version_key is None:
-            # Fallback to static config value if on-chain query fails
-            version_key = VERSION_KEY
+        # version_key = query_version_key(substrate)
+        # if version_key is None:
+        #     # Fallback to static config value if on-chain query fails
+        version_key = VERSION_KEY
 
         logger.info(f"Validator node ID: {validator_node_id}, Version key: {version_key}")
 
