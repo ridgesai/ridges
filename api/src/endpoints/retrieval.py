@@ -8,7 +8,11 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
+<<<<<<< HEAD
 from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, EvaluationRunResponse
+=======
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, DashboardStats
+>>>>>>> 29fd579 (add stats endpoint)
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.subtensor import get_daily_earnings_by_hotkey
@@ -308,6 +312,21 @@ async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRunRespo
     
     return runs
 
+async def get_statistics() -> DashboardStats:
+    """
+    Retrieves stats on the health of the network, primarily for the dashboard
+    """
+    try:
+        statistics = await db.get_dashboard_statistics()
+    except Exception as e:
+        logger.error(f"Error retrieving dashboard statistics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving dashboard stats. Please try again later."
+        )
+    
+    return statistics
+
 router = APIRouter()
 
 routes = [
@@ -326,7 +345,11 @@ routes = [
     ("/evaluations", get_evaluations),
     ("/agent-version", get_agent_version),
     ("/queue-info", get_queue_info),
+<<<<<<< HEAD
     ("/runs-for-evaluation", get_runs_for_evaluation),
+=======
+    ("/subnet-stats", get_statistics)
+>>>>>>> 29fd579 (add stats endpoint)
 ]
 
 for path, endpoint in routes:

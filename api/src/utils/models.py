@@ -138,3 +138,9 @@ class RunningAgentEval(BaseModel):
     version_num: int
     miner_hotkey: str
     name: str
+
+class DashboardStats(BaseModel):
+    number_of_agents: int
+    agent_iterations_last_24_hours: int
+    top_agent_score: float
+    daily_score_improvement: float

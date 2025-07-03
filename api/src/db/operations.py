@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import select, func, and_, or_, text, Integer
 from sqlalchemy.dialects.postgresql import insert
 
-from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData
+from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData, DashboardStats
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_models import Base, Agent, AgentVersion, Evaluation, EvaluationRun, WeightsHistory, BannedHotkey
 
@@ -2133,3 +2133,30 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error retrieving runs for evaluation {evaluation_id}: {e}")
                 return []
+
+    async def get_dashboard_statistics(self) -> DashboardStats:
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT
+                        COUNT(*) as number_of_agents,
+                        COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as agent_iterations_last_24_hours,
+                        MAX(score) as top_agent_score,
+                        MAX(score) - COALESCE(MAX(CASE WHEN created_at <= NOW() - INTERVAL '24 hours' THEN score END), 0) as daily_score_improvement
+                    FROM agent_versions;
+                    """))
+                
+                statistics = result.fetchone()
+
+                return DashboardStats(
+                    number_of_agents=statistics[0],
+                    agent_iterations_last_24_hours=statistics[1],
+                    top_agent_score=statistics[2],
+                    daily_score_improvement=statistics[3]
+                )
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error fetching daily dashboard stats: {str(e)}")
+                return 0
+    
