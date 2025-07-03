@@ -67,7 +67,7 @@ async def startup_event():
     chutes_manager.start_cleanup_task()
 
 @app.on_event("startup")
-@repeat_every(seconds=72 * 60)
+@repeat_every(seconds=(5 * 60))
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
     await DatabaseManager().init()
