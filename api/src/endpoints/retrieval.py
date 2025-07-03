@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, EvaluationRunResponse
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.subtensor import get_daily_earnings_by_hotkey
@@ -296,6 +296,18 @@ async def get_queue_info(version_id: str):
     
     return queue_info
 
+async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRunResponse]:
+    try:
+        runs = await db.get_runs_for_evaluation(evaluation_id)
+    except Exception as e:
+        logger.error(f"Error retrieving runs for evaluation {evaluation_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving runs for evaluation. Please try again later."
+        )
+    
+    return runs
+
 router = APIRouter()
 
 routes = [
@@ -314,6 +326,7 @@ routes = [
     ("/evaluations", get_evaluations),
     ("/agent-version", get_agent_version),
     ("/queue-info", get_queue_info),
+    ("/runs-for-evaluation", get_runs_for_evaluation),
 ]
 
 for path, endpoint in routes:

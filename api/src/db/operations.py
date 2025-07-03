@@ -2095,3 +2095,38 @@ class DatabaseManager:
                 await session.rollback()
                 logger.error(f"Error cleaning up timed out evaluations: {str(e)}")
                 return 0
+
+    async def get_runs_for_evaluation(self, evaluation_id: str) -> list[EvaluationRunResponse]:
+        """
+        Get all runs for a given evaluation.
+        Returns a list of EvaluationRunResponse objects.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT run_id, evaluation_id, swebench_instance_id, status, response, error, pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, fail_to_fail_success, solved, started_at, sandbox_created_at, patch_generated_at, eval_started_at, result_scored_at
+                    FROM evaluation_runs
+                    WHERE evaluation_id = :evaluation_id
+                """), {'evaluation_id': evaluation_id})
+                runs = result.fetchall()
+                return [EvaluationRunResponse(
+                    run_id=str(row[0]),
+                    evaluation_id=str(row[1]),
+                    swebench_instance_id=str(row[2]),
+                    status=row[3],
+                    response=row[4],
+                    error=row[5],
+                    pass_to_fail_success=row[6],
+                    fail_to_pass_success=row[7],
+                    pass_to_pass_success=row[8],
+                    fail_to_fail_success=row[9],
+                    solved=row[10],
+                    started_at=row[11],
+                    sandbox_created_at=row[12],
+                    patch_generated_at=row[13],
+                    eval_started_at=row[14],
+                    result_scored_at=row[15]
+                ) for row in runs]
+            except Exception as e:
+                logger.error(f"Error retrieving runs for evaluation {evaluation_id}: {e}")
+                return []
