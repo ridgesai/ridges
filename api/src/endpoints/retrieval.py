@@ -212,6 +212,18 @@ async def get_queue_info(version_id: str):
     
     return queue_info
 
+async def get_evaluations(version_id: str):
+    try:
+        evaluations = await db.get_evaluations(version_id)
+    except Exception as e:
+        logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving evaluations. Please try again later."
+        )
+    
+    return evaluations
+
 async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRunResponse]:
     try:
         runs = await db.get_runs_for_evaluation(evaluation_id)
@@ -263,6 +275,7 @@ routes = [
     ("/agent-summary", get_agent_summary), 
     ("/get-running-evaluations", get_running_evaluations),
     ("/queue-info", get_queue_info), 
+    ("/evaluations", get_evaluations),
     ("/runs-for-evaluation", get_runs_for_evaluation), 
     ("/subnet-stats", get_statistics),
     ("/pool-status", get_pool_status) 
