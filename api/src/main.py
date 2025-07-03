@@ -93,7 +93,7 @@ async def startup_event():
     chutes_manager = ChutesManager()
     chutes_manager.start_cleanup_task()
 
-    asyncio.create_task(run_weight_monitor())
+    # asyncio.create_task(run_weight_monitor())
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(run_evaluation_cleanup_loop())
     asyncio.create_task(run_connection_pool_monitor())
