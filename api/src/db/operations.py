@@ -1351,4 +1351,3 @@ class DatabaseManager:
                 await session.rollback()
                 logger.error(f"Error fetching daily dashboard stats: {str(e)}")
                 return 0
-    

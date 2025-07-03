@@ -193,7 +193,7 @@ async def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, incl
             detail="Agent not found"
         )
     
-    agent_summary.daily_earnings = await get_daily_earnings_by_hotkey(agent_summary.agent_details.miner_hotkey)
+    agent_summary.daily_earnings = 0 # await get_daily_earnings_by_hotkey(agent_summary.agent_details.miner_hotkey)
 
     if include_code:
         agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
@@ -258,7 +258,7 @@ routes = [
     ("/top-agents", get_top_agents), 
     ("/agent", get_agent), 
     ("/agent-version-code", get_agent_version_code), 
-    ("/total-rewards-per-day", get_total_rewards_per_day), 
+    # ("/total-rewards-per-day", get_total_rewards_per_day), 
     ("/connected-validators", get_connected_validators), 
     ("/agent-summary", get_agent_summary), 
     ("/get-running-evaluations", get_running_evaluations),
