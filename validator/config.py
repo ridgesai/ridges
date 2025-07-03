@@ -24,7 +24,7 @@ NO_RESPONSE_MIN_SCORE = float(os.getenv("NO_RESPONSE_MIN_SCORE", "0.005"))
 
 DB_PATH = Path("validator.db")
 
-VERSION_KEY = 3
+VERSION_KEY = 6
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
 # OpenAI Configuration
@@ -73,30 +73,30 @@ EASY_INSTANCES = [
     "django__django-13297",
     "django__django-15499",
     "scikit-learn__scikit-learn-13439",
-    "astropy__astropy-7166",
-    "sphinx-doc__sphinx-9230",
-    "pytest-dev__pytest-10081",
-    "django__django-10999",
-    "django__django-14534",
-    "django__django-11964",
-    "sympy__sympy-15345",
-    "django__django-14580",
-    "django__django-11179",
-    "sympy__sympy-15875",
-    "django__django-12193",
-    "django__django-15277",
-    "sympy__sympy-19954",
-    "psf__requests-1724",
-    "sphinx-doc__sphinx-9367",
-    "django__django-14493",
-    "django__django-14376",
-    "matplotlib__matplotlib-25479",
-    "django__django-14752",
-    "django__django-13112",
-    "django__django-13406",
-    "sympy__sympy-23534",
-    "sympy__sympy-18189",
-    "matplotlib__matplotlib-24149",
+    # "astropy__astropy-7166",
+    # "sphinx-doc__sphinx-9230",
+    # "pytest-dev__pytest-10081",
+    # "django__django-10999",
+    # "django__django-14534",
+    # "django__django-11964",
+    # "sympy__sympy-15345",
+    # "django__django-14580",
+    # "django__django-11179",
+    # "sympy__sympy-15875",
+    # "django__django-12193",
+    # "django__django-15277",
+    # "sympy__sympy-19954",
+    # "psf__requests-1724",
+    # "sphinx-doc__sphinx-9367",
+    # "django__django-14493",
+    # "django__django-14376",
+    # "matplotlib__matplotlib-25479",
+    # "django__django-14752",
+    # "django__django-13112",
+    # "django__django-13406",
+    # "sympy__sympy-23534",
+    # "sympy__sympy-18189",
+    # "matplotlib__matplotlib-24149",
 ]
 
 MEDIUM_INSTANCES = [
