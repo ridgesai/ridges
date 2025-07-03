@@ -113,14 +113,24 @@ class DatabaseManager:
             return {"error": "Engine not initialized"}
         
         pool = self.engine.pool
-        return {
-            "pool_size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-            "invalid": pool.invalid(),
-            "total_connections": pool.checkedin() + pool.checkedout()
-        }
+        try:
+            return {
+                "pool_size": pool.size(),
+                "checked_in": pool.checkedin(),
+                "checked_out": pool.checkedout(),
+                "overflow": pool.overflow(),
+                "total_connections": pool.checkedin() + pool.checkedout(),
+                "pool_type": type(pool).__name__
+            }
+        except AttributeError as e:
+            # Fallback for async pools that don't have all methods
+            return {
+                "pool_size": getattr(pool, '_pool_size', 'unknown'),
+                "checked_out": getattr(pool, '_checked_out', 'unknown'),
+                "overflow": getattr(pool, '_overflow', 'unknown'),
+                "pool_type": type(pool).__name__,
+                "error": f"Some pool methods not available: {e}"
+            }
         
     async def store_agent(self, agent: Agent) -> int:
         """Store an agent using async SQLAlchemy ORM"""
