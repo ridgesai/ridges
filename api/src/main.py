@@ -77,7 +77,7 @@ async def startup_event():
     chutes_manager.start_cleanup_task()
 
     asyncio.create_task(run_weight_monitor())
-    asyncio.create_task(run_weight_setting_loop(5 * 60))
+    asyncio.create_task(run_weight_setting_loop(72))
     asyncio.create_task(run_evaluation_cleanup_loop())
 
 if __name__ == "__main__":

@@ -34,11 +34,10 @@ async def tell_validators_to_set_weights():
     await WebSocketManager.get_instance().send_to_all_validators("set-weights", weights_dict)
     logger.info("Sent weights to all validators")
 
-async def run_weight_setting_loop(seconds: int):
+async def run_weight_setting_loop(minutes: int):
     while True:
         await tell_validators_to_set_weights()
-        await asyncio.sleep(5 * 60)
-
+        await asyncio.sleep(minutes * 60)
 
 router = APIRouter()
 
