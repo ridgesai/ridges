@@ -8,11 +8,7 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-<<<<<<< HEAD
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, EvaluationRunResponse
-=======
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, DashboardStats
->>>>>>> 29fd579 (add stats endpoint)
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, DashboardStats, EvaluationRunResponse
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.subtensor import get_daily_earnings_by_hotkey
@@ -345,11 +341,8 @@ routes = [
     ("/evaluations", get_evaluations),
     ("/agent-version", get_agent_version),
     ("/queue-info", get_queue_info),
-<<<<<<< HEAD
     ("/runs-for-evaluation", get_runs_for_evaluation),
-=======
     ("/subnet-stats", get_statistics)
->>>>>>> 29fd579 (add stats endpoint)
 ]
 
 for path, endpoint in routes:
