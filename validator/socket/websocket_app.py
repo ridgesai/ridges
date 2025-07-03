@@ -93,18 +93,28 @@ class WebsocketApp:
                     logger.info(f"Connected to websocket: {websocket_url}")
                     await self.send(get_validator_version_info())
                     self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-                    while True:
-                        try:
+                    
+                    try:
+                        while True:
                             message = await ws.recv()
                             await handle_message(self, message)
-                        except websockets.ConnectionClosed:
-                            self.ws = None
-                            logger.info(f"Connection closed – cancelling evaluation and reconnecting in 5 seconds")
-                            await self._handle_disconnect()
-                            await asyncio.sleep(5)
-                            break
+                    except websockets.ConnectionClosed:
+                        logger.info("Connection closed - handling disconnect")
+                        await self._handle_disconnect()
+                    except Exception as e:
+                        logger.error(f"Error in message handling: {e}")
+                        await self._handle_disconnect()
+                    finally:
+                        self.ws = None
+                        if self.heartbeat_task:
+                            self.heartbeat_task.cancel()
+                            try:
+                                await self.heartbeat_task
+                            except asyncio.CancelledError:
+                                pass
+                        
             except Exception as e:
-                self.ws = None
-                logger.exception(f"Error while connecting to websocket – {e}")
+                logger.exception(f"Error connecting to websocket: {e}")
                 await self._handle_disconnect()
-                await asyncio.sleep(5)
+                
+            await asyncio.sleep(5)  # Wait before reconnecting

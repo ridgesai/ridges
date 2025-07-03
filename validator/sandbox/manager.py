@@ -126,38 +126,79 @@ class SandboxManager:
         return [sandbox.evaluation_run for sandbox in self.sandboxes]
 
     def cleanup(self):
+        logger.info("Starting SandboxManager cleanup")
+        
         # Cancel the monitor task
-        if self._monitor_task and not self._monitor_task.done():
+        if hasattr(self, '_monitor_task') and self._monitor_task and not self._monitor_task.done():
             self._monitor_task.cancel()
+            try:
+                # Don't await here since we're in a sync method, just cancel
+                pass
+            except Exception as e:
+                logger.warning(f"Error cancelling monitor task: {e}")
 
         # Cancel all sandbox tasks and stop containers
         for sandbox in self.sandboxes:
-            # Cancel the sandbox task if it's running
-            if sandbox._task and not sandbox._task.done():
-                sandbox._task.cancel()
-            
-            # Stop and remove the container if it exists
-            if sandbox.container:
-                try:
-                    sandbox.container.stop()
-                    sandbox.container.remove()
-                except Exception as e:
-                    logger.warning(f"Error stopping container for sandbox {sandbox.evaluation_run.run_id}: {e}")
-            
-            sandbox.running = False
+            try:
+                # Cancel the sandbox task if it's running
+                if hasattr(sandbox, '_task') and sandbox._task and not sandbox._task.done():
+                    sandbox._task.cancel()
+                
+                # Stop and remove the container if it exists
+                if hasattr(sandbox, 'container') and sandbox.container:
+                    try:
+                        sandbox.container.stop(timeout=5)
+                        sandbox.container.remove()
+                    except Exception as e:
+                        logger.warning(f"Error stopping container for sandbox {sandbox.evaluation_run.run_id}: {e}")
+                
+                sandbox.running = False
+            except Exception as e:
+                logger.warning(f"Error cleaning up sandbox {getattr(sandbox, 'evaluation_run', {}).get('run_id', 'unknown')}: {e}")
+
+        # Clean up ALL sandbox containers (including orphaned ones)
+        self._cleanup_all_sandbox_containers()
 
         # Remove proxy container
-        try:
-            self.proxy_container.remove(force=True)
-        except Exception:
-            pass
+        if self.proxy_container:
+            try:
+                self.proxy_container.remove(force=True)
+            except Exception as e:
+                logger.warning(f"Error removing proxy container: {e}")
 
         # Clean up filesystem
-        shutil.rmtree(AGENTS_BASE_DIR, ignore_errors=True)
-        shutil.rmtree(REPOS_BASE_DIR, ignore_errors=True)
+        try:
+            shutil.rmtree(AGENTS_BASE_DIR, ignore_errors=True)
+            shutil.rmtree(REPOS_BASE_DIR, ignore_errors=True)
+        except Exception as e:
+            logger.warning(f"Error cleaning up directories: {e}")
 
         # Clear sandbox list
         self.sandboxes.clear()
+        logger.info("SandboxManager cleanup completed")
+
+    def _cleanup_all_sandbox_containers(self):
+        """Clean up ALL sandbox containers, including orphaned ones from previous runs."""
+        try:
+            # Find all containers with sandbox-runner image
+            all_containers = self.docker.containers.list(all=True)
+            sandbox_containers = [
+                container for container in all_containers 
+                if any(tag.startswith('sandbox-runner') for tag in container.image.tags)
+            ]
+            
+            logger.info(f"Found {len(sandbox_containers)} sandbox containers to clean up")
+            
+            for container in sandbox_containers:
+                try:
+                    logger.info(f"Cleaning up sandbox container: {container.name} ({container.id[:12]})")
+                    container.stop(timeout=5)
+                    container.remove()
+                except Exception as e:
+                    logger.warning(f"Error cleaning up container {container.name}: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error during comprehensive sandbox cleanup: {e}")
 
     def _start_proxy_container(self):
         """Start the nginx proxy container."""

@@ -108,6 +108,9 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     except asyncio.CancelledError:
         logger.info("Evaluation cancelled - cleaning up resources")
         errored = True
+        # Ensure sandbox cleanup happens on cancellation
+        if sandbox_manager:
+            sandbox_manager.cleanup()
         raise  # Re-raise to let the caller handle it
     except Exception as e:
         logger.error(f"Error evaluating agent version: {e}", exc_info=True, stack_info=True)
@@ -115,9 +118,18 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     finally:
         if sandbox_manager:
             sandbox_manager.cleanup()
-        await websocket_app.send({
-            "event": "finish-evaluation",
-            "evaluation_id": evaluation_id,
-            "errored": errored,
-        })
+        
+        # Only send finish message if websocket is still connected
+        if websocket_app.ws is not None:
+            try:
+                await websocket_app.send({
+                    "event": "finish-evaluation",
+                    "evaluation_id": evaluation_id,
+                    "errored": errored,
+                })
+            except Exception as e:
+                logger.error(f"Failed to send finish-evaluation message: {e}")
+        else:
+            logger.info("Websocket disconnected - skipping finish-evaluation message")
+        
         websocket_app.evaluation_running.clear()
