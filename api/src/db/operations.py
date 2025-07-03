@@ -1873,40 +1873,41 @@ class DatabaseManager:
         
     async def create_evaluations_for_validator(self, validator_hotkey: str) -> int:
         """
-        Create evaluations for a validator for all agent versions created in the last 24 hours
-        for this validator. Returns the number of evaluations created.
-        
-        This function uses proper transaction management and batch operations to ensure
-        data consistency and performance.
+        Create evaluations for agent versions created in the last 24 hours that are the latest version for their agent.
+        Only creates evaluations for versions that don't already have an evaluation for this validator.
+        Returns the number of evaluations created.
         """
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
-                    WITH latest_versions_last_24h AS (
-                        -- Get the latest version for each agent created in the last 24 hours
-                        SELECT DISTINCT ON (av.agent_id) 
-                            av.version_id, av.agent_id, av.version_num, av.created_at
-                        FROM agent_versions av
-                        WHERE av.created_at >= NOW() - INTERVAL '24 hours'
-                        ORDER BY av.agent_id, av.version_num DESC
-                    ),
-                    missing_evaluations AS (
-                        SELECT lv.version_id
-                        FROM latest_versions_last_24h lv
-                        WHERE NOT EXISTS (
-                            SELECT 1 
-                            FROM evaluations e 
-                            WHERE e.version_id = lv.version_id 
-                            AND e.validator_hotkey = :validator_hotkey
-                        )
-                    )
-                    SELECT version_id FROM missing_evaluations
-                """), {'validator_hotkey': validator_hotkey})
+                    SELECT av.version_id, av.agent_id, av.version_num, av.created_at
+                    FROM agent_versions av
+                    JOIN agents a ON av.agent_id = a.agent_id
+                    WHERE av.created_at >= NOW() - INTERVAL '24 hours'
+                    AND av.version_num = a.latest_version
+                    ORDER BY av.created_at DESC
+                """))
                 
-                missing_version_ids = [row[0] for row in result.fetchall()]
+                agent_versions = result.fetchall()
+                if not agent_versions:
+                    logger.info(f"No recent agent versions found for validator {validator_hotkey}")
+                    return 0
                 
                 evaluations_created = 0
-                for version_id in missing_version_ids:
+                
+                for version_row in agent_versions:
+                    version_id, agent_id, version_num, created_at = version_row
+                    
+                    existing_result = await session.execute(text("""
+                        SELECT evaluation_id 
+                        FROM evaluations 
+                        WHERE version_id = :version_id AND validator_hotkey = :validator_hotkey
+                    """), {'version_id': version_id, 'validator_hotkey': validator_hotkey})
+                    
+                    if existing_result.fetchone():
+                        logger.debug(f"Evaluation already exists for version {version_id} and validator {validator_hotkey}")
+                        continue
+                    
                     evaluation_id = str(uuid.uuid4())
                     stmt = insert(Evaluation).values(
                         evaluation_id=evaluation_id,
@@ -1916,18 +1917,18 @@ class DatabaseManager:
                         created_at=datetime.now(),
                         started_at=None,
                         finished_at=None,
-                        terminated_reason=None,
-                        score=None
+                        score=None,
+                        terminated_reason=None
                     )
-                    stmt = stmt.on_conflict_do_nothing()
-                    result = await session.execute(stmt)
-                    evaluations_created += result.rowcount
+                    await session.execute(stmt)
+                    evaluations_created += 1
                 
-                logger.info(f"Created {evaluations_created} evaluations for validator {validator_hotkey}")
+                await session.commit()
                 return evaluations_created
                 
             except Exception as e:
-                logger.error(f"Error creating evaluations: {str(e)}")
+                await session.rollback()
+                logger.error(f"Error creating evaluations for validator {validator_hotkey}: {str(e)}")
                 return 0
         
     async def ban_agent(self, agent_id: str) -> int:

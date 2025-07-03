@@ -178,7 +178,7 @@ class WebSocketManager:
             val_hotkey = client_data.get("val_hotkey")
             version_commit_hash = client_data.get("version_commit_hash")
             
-            logger.info(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
+            logger.warning(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
 
             if val_hotkey and version_commit_hash:
                 relative_version_num = await get_relative_version_num(version_commit_hash)
