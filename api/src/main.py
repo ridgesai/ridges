@@ -49,17 +49,28 @@ app.include_router(
     prefix="/scoring",
 )
 
-
-
 # WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await WebSocketManager.get_instance().handle_connection(websocket)
 
+async def run_evaluation_cleanup_loop():
+    """Run the evaluation cleanup loop every 10 minutes."""
+    logger.info("Starting evaluation cleanup loop - running every 10 minutes")
+    
+    while True:
+        try:
+            await db.clean_timed_out_evaluations()
+            logger.info("Evaluation cleanup completed. Running again in 10 minutes.")
+            await asyncio.sleep(10 * 60) 
+        except Exception as e:
+            logger.error(f"Error in evaluation cleanup loop: {e}")
+            await asyncio.sleep(10 * 60) 
+
 @app.on_event("startup")
 async def startup_event():
     await DatabaseManager().init()
-    await db.clean_handing_evaluations()
+    await db.clean_hanging_evaluations()
 
     # Start the ChutesManager cleanup task
     chutes_manager = ChutesManager()
@@ -67,6 +78,7 @@ async def startup_event():
 
     asyncio.create_task(run_weight_monitor())
     asyncio.create_task(run_weight_setting_loop(5 * 60))
+    asyncio.create_task(run_evaluation_cleanup_loop())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

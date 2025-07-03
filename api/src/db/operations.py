@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import select, func, and_, or_, text, Integer
 from sqlalchemy.dialects.postgresql import insert
 
-from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, WeightsData, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval
+from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_models import Base, Agent, AgentVersion, Evaluation, EvaluationRun, WeightsHistory, BannedHotkey
 
@@ -1985,7 +1985,7 @@ class DatabaseManager:
                 logger.error(f"Error banning agent: {str(e)}")
                 return 0
         
-    async def clean_handing_evaluations(self) -> int:
+    async def clean_hanging_evaluations(self) -> int:
         """
         Clean up evaluations that are stuck in 'running' status.
         For each running evaluation:
@@ -2038,4 +2038,60 @@ class DatabaseManager:
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error cleaning up running evaluations: {str(e)}")
+                return 0
+
+    async def clean_timed_out_evaluations(self) -> int:
+        """
+        Clean up evaluations that have been running for more than 150 minutes.
+        For each timed out evaluation:
+        1. Set status to 'waiting'
+        2. Set nullable fields to null (started_at, finished_at, score, terminated_reason)
+        3. Delete all associated evaluation runs
+        Returns the number of evaluations cleaned up.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT evaluation_id 
+                    FROM evaluations 
+                    WHERE status = 'running' 
+                    AND started_at < NOW() - INTERVAL '150 minutes'
+                """))
+                
+                timed_out_evaluations = result.fetchall()
+                if not timed_out_evaluations:
+                    logger.info("Tried to clean up timed out evaluations, but no evaluations have been running for over 150 minutes")
+                    return 0
+                
+                cleaned_count = 0
+                
+                for (evaluation_id,) in timed_out_evaluations:
+                    result = await session.execute(text("""
+                        DELETE FROM evaluation_runs 
+                        WHERE evaluation_id = :evaluation_id
+                    """), {'evaluation_id': evaluation_id})
+                    
+                    runs_deleted = result.rowcount
+                    
+                    result = await session.execute(text("""
+                        UPDATE evaluations 
+                        SET status = 'waiting',
+                            started_at = NULL,
+                            finished_at = NULL,
+                            score = NULL,
+                            terminated_reason = NULL
+                        WHERE evaluation_id = :evaluation_id
+                    """), {'evaluation_id': evaluation_id})
+                    
+                    if result.rowcount > 0:
+                        cleaned_count += 1
+                        logger.info(f"Cleaned up timed out evaluation {evaluation_id}: deleted {runs_deleted} associated runs, reset to waiting")
+                
+                await session.commit()
+                logger.info(f"Successfully cleaned up {cleaned_count} timed out evaluations")
+                return cleaned_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error cleaning up timed out evaluations: {str(e)}")
                 return 0
