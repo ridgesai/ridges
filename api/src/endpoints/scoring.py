@@ -1,18 +1,19 @@
 import asyncio
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
-import logging
-
-from fiber import Keypair
+import os
+from dotenv import load_dotenv
+from fastapi import APIRouter, Depends, HTTPException
 
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from api.src.db.operations import DatabaseManager
+from api.src.utils.logging_utils import get_logger
+
+load_dotenv()
 
 db = DatabaseManager()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 async def weight_receiving_agent():
     '''
@@ -39,11 +40,27 @@ async def run_weight_setting_loop(minutes: int):
         await tell_validators_to_set_weights()
         await asyncio.sleep(minutes * 60)
 
+async def ban_agent(agent_id: str, ban_password: str):
+    if ban_password != os.getenv("BAN_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid ban password. Fuck you.")
+
+    try:
+        result = await db.ban_agent(agent_id)
+    except Exception as e:
+        logger.error(f"Error banning agent {agent_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
+    
+    if result == 0:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    return {"message": "Agent banned successfully"}
+    
 router = APIRouter()
 
 routes = [
     ("/weights", weight_receiving_agent, ["GET"]),
-    ("/set-weights", tell_validators_to_set_weights, ["POST"])
+    ("/set-weights", tell_validators_to_set_weights, ["POST"]),
+    ("/ban-agent", ban_agent, ["POST"])
 ]
 
 for path, endpoint, methods in routes:

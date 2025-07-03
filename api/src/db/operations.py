@@ -1979,9 +1979,12 @@ class DatabaseManager:
                 agent_deleted = result.rowcount
                 
                 logger.info(f"Banned agent {agent_id}: deleted {runs_deleted} evaluation runs, {evaluations_deleted} evaluations, {versions_deleted} versions, {agent_deleted} agent")
+                
+                await session.commit()
                 return agent_deleted
                 
             except Exception as e:
+                await session.rollback()
                 logger.error(f"Error banning agent: {str(e)}")
                 return 0
         
