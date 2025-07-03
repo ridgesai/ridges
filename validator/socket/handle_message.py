@@ -23,9 +23,9 @@ async def handle_message(websocket_app, message: str):
             await handle_evaluation_available(websocket_app)
         case "evaluation":
             await handle_evaluation(websocket_app, json_message)
-        # case "set-weights":
-        #     from validator.socket.handle_set_weights import handle_set_weights  # Local import to avoid circular deps
-        #     await handle_set_weights(websocket_app, json_message)
+        case "set-weights":
+            from validator.socket.handle_set_weights import handle_set_weights  # Local import to avoid circular deps
+            await handle_set_weights(websocket_app, json_message)
         case "pong":
             websocket_app.last_pong_time = time.time()
             logger.debug(f"Received pong response: {json_message.get('timestamp')}")
