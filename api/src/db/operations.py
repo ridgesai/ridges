@@ -1288,18 +1288,18 @@ class DatabaseManager:
                 if agent_id:
                     search_param = agent_id
                     search_type = "ID"
-                    where_clause = "agent_id = :search_param"
+                    where_condition = "agent_id = :search_param"
                 else:
                     search_param = miner_hotkey
                     search_type = "miner hotkey"
-                    where_clause = "miner_hotkey = :search_param"
+                    where_condition = "miner_hotkey = :search_param"
                 
-                # Optimized single round-trip query with JSON aggregation
-                result = await session.execute(text("""
+                # Build the SQL query dynamically with the appropriate WHERE condition
+                sql_query = f"""
                     WITH a AS (
                         SELECT agent_id, miner_hotkey, name, created_at
                         FROM   agents
-                        WHERE  :where_clause
+                        WHERE  {where_condition}
                     )
                     SELECT
                         a.*,
@@ -1342,7 +1342,9 @@ class DatabaseManager:
                           WHERE  av.agent_id = a.agent_id
                         )                                                AS all_versions
                     FROM a;
-                """), {'search_param': search_param, 'where_clause': where_clause})
+                """
+                
+                result = await session.execute(text(sql_query), {'search_param': search_param})
                 
                 row = result.fetchone()
                 if not row:
