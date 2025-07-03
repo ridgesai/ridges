@@ -8,21 +8,21 @@ and modern SQLAlchemy approaches.
 from .operations import DatabaseManager
 from .sqlalchemy_models import (
     Base,
-    AgentModel,
-    AgentVersionModel,
-    EvaluationModel,
-    EvaluationRunModel,
-    WeightsHistoryModel
+    Agent,
+    AgentVersion,
+    Evaluation,
+    EvaluationRun,
+    WeightsHistory,
+    BannedHotkey
 )
-from .sqlalchemy_manager import SQLAlchemyDatabaseManager
 
 __all__ = [
     'DatabaseManager',
-    'SQLAlchemyDatabaseManager',
     'Base',
-    'AgentModel',
-    'AgentVersionModel',
-    'EvaluationModel',
-    'EvaluationRunModel',
-    'WeightsHistoryModel'
+    'Agent',
+    'AgentVersion',
+    'Evaluation',
+    'EvaluationRun',
+    'WeightsHistory',
+    'BannedHotkey'
 ]

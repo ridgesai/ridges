@@ -125,7 +125,7 @@ def get_tao_usd_price():
         print(f"Error getting TAO USD price: {e}")
         return None
 
-def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
+async def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
     """
     Get the daily earnings for a hotkey on a subnet. Returns None if there is an error.
     """
@@ -142,7 +142,7 @@ def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
         
         top_miner_daily_rewards = subnet_token_price_in_usd * 7200 * 0.41
 
-        weights_data = db_manager.get_weights_history_last_24h_with_prior()
+        weights_data = await db_manager.get_weights_history_last_24h_with_prior()
         
         total_seconds = 0
         uid_top_seconds = 0

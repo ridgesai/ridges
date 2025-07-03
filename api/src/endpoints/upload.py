@@ -8,7 +8,7 @@ from fiber import Keypair
 
 from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
-from api.src.utils.models import Agent, AgentVersion
+from api.src.db.sqlalchemy_models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
@@ -50,7 +50,7 @@ async def post_agent(
             detail="Your miner has been banned for attempting to obfuscate code. If this is in error, please contact us on Discord"
         )
     
-    existing_agent = db.get_agent_by_hotkey(miner_hotkey)
+    existing_agent = await db.get_agent_by_hotkey(miner_hotkey)
     if existing_agent:
         earliest_allowed_time = existing_agent.last_updated + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
         if datetime.now() < earliest_allowed_time:
@@ -76,8 +76,8 @@ async def post_agent(
         )
     
     if existing_agent:
-        existing_agent_version = db.get_latest_agent_version(existing_agent.agent_id)
-        evaluations = db.get_evaluations_by_version_id(existing_agent_version.version_id)
+        existing_agent_version = await db.get_latest_agent_version(existing_agent.agent_id)
+        evaluations = await db.get_evaluations_by_version_id(existing_agent_version.version_id)
         print(evaluations)
         for evaluation in evaluations:
             if evaluation.status == "running":
@@ -89,7 +89,7 @@ async def post_agent(
             if evaluation.status == "waiting":
                 evaluation.status = "replaced"
                 evaluation.finished_at = datetime.now()
-                db.store_evaluation(evaluation)
+                await db.store_evaluation(evaluation)
     
     # Check file size
     MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB in bytes
@@ -143,7 +143,7 @@ async def post_agent(
         created_at=existing_agent.created_at if existing_agent else datetime.now(),
         last_updated=datetime.now(),
     )
-    result = db.store_agent(agent_object)
+    result = await db.store_agent(agent_object)
     if result == 0:
         raise HTTPException(
             status_code=500,
@@ -157,7 +157,7 @@ async def post_agent(
         created_at=datetime.now(),
         score=None
     )
-    result = db.store_agent_version(agent_version_object)
+    result = await db.store_agent_version(agent_version_object)
     if result == 0:
         raise HTTPException(
             status_code=500,

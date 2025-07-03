@@ -1,7 +1,6 @@
 import os
 import dotenv
-import requests
-import aiohttp
+import httpx
 import json 
 from typing import List
 from datetime import datetime, timedelta
@@ -73,7 +72,7 @@ class ChutesManager:
         except Exception as e:
             logger.error(f"Error cleaning up old entries from Chutes pricing data: {e}")
 
-    def embed(self, run_id: str, prompt: str) -> dict:
+    async def embed(self, run_id: str, prompt: str) -> dict:
         self._ensure_cleanup_task()
         
         if self.costs_data_embedding.get(run_id, {}).get("spend", 0) >= 2:
@@ -90,23 +89,34 @@ class ChutesManager:
         }
 
         start = time.time()
-        response = requests.post(
-            "https://chutes-baai-bge-large-en-v1-5.chutes.ai/embed",
-            headers=headers,
-            json=body
-        )
-        total_time_seconds = time.time() - start
         
-        cost = total_time_seconds * EMBEDDING_PRICE_PER_SECOND
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://chutes-baai-bge-large-en-v1-5.chutes.ai/embed",
+                    headers=headers,
+                    json=body
+                )
+                response.raise_for_status()
+                
+                total_time_seconds = time.time() - start
+                cost = total_time_seconds * EMBEDDING_PRICE_PER_SECOND
 
-        self.costs_data_embedding[run_id] = {
-            "spend": self.costs_data_embedding.get(run_id, {}).get("spend", 0) + cost,
-            "started_at": self.costs_data_embedding.get(run_id, {}).get("started_at", datetime.now())
-        }
+                self.costs_data_embedding[run_id] = {
+                    "spend": self.costs_data_embedding.get(run_id, {}).get("spend", 0) + cost,
+                    "started_at": self.costs_data_embedding.get(run_id, {}).get("started_at", datetime.now())
+                }
 
-        logger.info(f"Updated embedding spend for run {run_id}: {cost} (total: {self.costs_data_embedding[run_id]['spend']})")
+                logger.debug(f"Updated embedding spend for run {run_id}: {cost} (total: {self.costs_data_embedding[run_id]['spend']})")
 
-        return response.json()
+                return response.json()
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error in embed request: {e.response.status_code} - {e.response.text}")
+            return f"HTTP error in embed request: {e.response.status_code} - {e.response.text}"
+        except Exception as e:
+            logger.error(f"Error in embed request: {e}")
+            return f"Error in embed request: {e}"
     
     async def inference(self, run_id: str, messages: List[GPTMessage], temperature: float = 0.7, model: str = "deepseek-ai/DeepSeek-V3-0324"):
         self._ensure_cleanup_task()
@@ -150,64 +160,64 @@ class ChutesManager:
         total_tokens = 0
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
                     "https://llm.chutes.ai/v1/chat/completions", 
                     headers=headers,
                     json=body
                 ) as response:
-                    logger.info(f"Response status: {response.status}")
+                    logger.info(f"Response status: {response.status_code}")
                     
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"API request failed with status {response.status}: {error_text}")
-                        return f"API request failed with status {response.status}: {error_text}"
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        # Handle both bytes and string responses
+                        if isinstance(error_text, bytes):
+                            error_message = error_text.decode()
+                        else:
+                            error_message = str(error_text)
+                        logger.error(f"API request failed with status {response.status_code}: {error_message}")
+                        return f"API request failed with status {response.status_code}: {error_message}"
                     
-                    # Read the entire response as text first
-                    response_text = await response.text()
-                    logger.debug(f"Raw response: {response_text}")
+                    # Process streaming response
+                    response_text = ""
+                    async for line_bytes in response.aiter_lines():
+                        line = line_bytes.strip()
+                        if not line:
+                            continue
+                            
+                        if line.startswith("data: "):
+                            data = line[6:]
+                            if data == "[DONE]":
+                                break
+                            
+                            try:
+                                chunk_json = json.loads(data)
+                                
+                                # Extract content from delta
+                                if chunk_json and 'choices' in chunk_json and chunk_json['choices']:
+                                    choice = chunk_json['choices'][0]
+                                    if choice and 'delta' in choice and 'content' in choice['delta']:
+                                        content = choice['delta']['content']
+                                        if content:
+                                            response_chunks.append(content)
+                                
+                                # Extract usage data
+                                if chunk_json and 'usage' in chunk_json and chunk_json['usage'] is not None and 'total_tokens' in chunk_json['usage']:
+                                    total_tokens = chunk_json['usage']['total_tokens']
+                                        
+                            except json.JSONDecodeError:
+                                pass
                     
                     # Check if response contains an error message despite 200 status
+                    response_text = "".join(response_chunks)
                     if response_text and ("Internal Server Error" in response_text or "exhausted all available targets" in response_text):
                         logger.error(f"API returned error in response body: {response_text}")
                         return f"API Error: {response_text}"
-                    
-                    # If it's a streaming response, parse the lines
-                    if response_text:
-                        lines = response_text.strip().split('\n')
-                        if lines:
-                            for line in lines:
-                                if line is not None:
-                                    line = line.strip()
-                                    if not line:
-                                        continue
-                                        
-                                    if line.startswith("data: "):
-                                        data = line[6:]
-                                        if data == "[DONE]":
-                                            break
-                                        
-                                        try:
-                                            chunk_json = json.loads(data)
-                                            
-                                            # Extract content from delta
-                                            if chunk_json and 'choices' in chunk_json and chunk_json['choices']:
-                                                choice = chunk_json['choices'][0]
-                                                if choice and 'delta' in choice and 'content' in choice['delta']:
-                                                    content = choice['delta']['content']
-                                                    if content:
-                                                        response_chunks.append(content)
-                                            
-                                            # Extract usage data
-                                            if chunk_json and 'usage' in chunk_json and chunk_json['usage'] is not None and 'total_tokens' in chunk_json['usage']:
-                                                total_tokens = chunk_json['usage']['total_tokens']
-                                                    
-                                        except json.JSONDecodeError:
-                                            pass
-                        else:
-                            logger.error(f"No lines found in response: {response_text}")
-                            return f"No lines found in response: {response_text}"
         
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error in inference request: {e.response.status_code} - {e.response.text}")
+            return f"HTTP error in inference request: {e.response.status_code} - {e.response.text}"
         except Exception as e:
             logger.error(f"Error in inference request: {e}", stack_info=True, exc_info=True)
             return f"Error in inference request: {e}"

@@ -2,7 +2,15 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from typing import Optional, Literal, List
 
-class Agent(BaseModel):
+
+class AgentVersionResponse(BaseModel):
+    version_id: str
+    agent_id: str
+    version_num: int
+    created_at: datetime
+    score: Optional[float]
+
+class AgentResponse(BaseModel):
     agent_id: str
     miner_hotkey: str
     name: str
@@ -10,42 +18,7 @@ class Agent(BaseModel):
     created_at: datetime
     last_updated: datetime
 
-class AgentVersion(BaseModel):
-    version_id: str
-    agent_id: str
-    version_num: int
-    created_at: datetime
-    score: Optional[float]
-
-class AgentVersionForValidator(AgentVersion):
-    miner_hotkey: str
-
-class AgentSummary(BaseModel):
-    miner_hotkey: str
-    name: str
-    latest_version: AgentVersion
-    code: Optional[str]
-
-class RunningAgentEval(BaseModel):
-    version_id: str
-    validator_hotkey: str
-    started_at: datetime
-    agent_id: str
-    version_num: int
-    miner_hotkey: str
-    name: str
-
-class TopAgentHotkey(BaseModel):
-    miner_hotkey: str
-    version_id: str
-    avg_score: float
-
-class AgentQueryResponse(BaseModel):
-    agent_id: str
-    latest_agent: AgentSummary
-    latest_scored_agent: Optional[AgentSummary]
-
-class EvaluationRun(BaseModel):
+class EvaluationRunResponse(BaseModel):
     run_id: str
     evaluation_id: str
     swebench_instance_id: str
@@ -63,7 +36,7 @@ class EvaluationRun(BaseModel):
     eval_started_at: Optional[datetime] = None
     result_scored_at: Optional[datetime] = None
 
-class Evaluation(BaseModel):
+class EvaluationResponse(BaseModel):
     evaluation_id: str
     version_id: str
     validator_hotkey: str
@@ -74,11 +47,27 @@ class Evaluation(BaseModel):
     finished_at: Optional[datetime]
     score: Optional[float]
 
+class AgentSummary(BaseModel):
+    miner_hotkey: str
+    name: str
+    latest_version: AgentVersionResponse
+    code: Optional[str]
+
+class TopAgentHotkey(BaseModel):
+    miner_hotkey: str
+    version_id: str
+    avg_score: float
+
+class AgentQueryResponse(BaseModel):
+    agent_id: str
+    latest_agent: AgentSummary
+    latest_scored_agent: Optional[AgentSummary]
+
 class Execution(BaseModel):
-    evaluation: Evaluation
-    evaluation_runs: List[EvaluationRun]
-    agent: Agent
-    agent_version: AgentVersion
+    evaluation: EvaluationResponse
+    evaluation_runs: List[EvaluationRunResponse]
+    agent: AgentResponse
+    agent_version: AgentVersionResponse
 
 ### DO NOT HOLOCAUST THESE MODELS ###
 
@@ -125,7 +114,7 @@ class ExecutionNew(BaseModel):
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
     score: Optional[float]
-    evaluation_runs: List[EvaluationRun]
+    evaluation_runs: List[EvaluationRunResponse]
 
 class AgentVersionDetails(BaseModel):
     agent_version: AgentVersionNew
@@ -140,3 +129,12 @@ class WeightsData(BaseModel):
 class QueueInfo(BaseModel):
     validator_hotkey: str
     place_in_queue: int
+
+class RunningAgentEval(BaseModel):
+    version_id: str
+    validator_hotkey: str
+    started_at: datetime
+    agent_id: str
+    version_num: int
+    miner_hotkey: str
+    name: str

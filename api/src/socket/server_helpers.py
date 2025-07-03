@@ -2,12 +2,13 @@ import os
 from typing import Optional
 import httpx
 import uuid
+import os
 from datetime import datetime
 import time
 
 from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentVersionForValidator, EvaluationRun, Evaluation
+from api.src.db.sqlalchemy_models import EvaluationRun, Evaluation
 
 logger = get_logger(__name__)
 
@@ -59,39 +60,47 @@ async def get_relative_version_num(commit_hash: str, history_length: int = 30) -
         logger.error(f"Failed to get determine relative version number for commit {commit_hash}: {e}")
         return -1
 
-def get_next_evaluation(validator_hotkey: str) -> Optional[Evaluation]:
+async def get_next_evaluation(validator_hotkey: str) -> Optional[Evaluation]:
     """
     Get the next evaluation for a validator. Returns None if no evaluation is found.
     """
 
-    evaluation = db.get_next_evaluation(validator_hotkey)
+    evaluation = await db.get_next_evaluation(validator_hotkey)
 
     return evaluation
 
-def get_agent_version_for_validator(version_id: str) -> AgentVersionForValidator:
+async def get_agent_version_for_validator(version_id: str) -> dict:
     """
     Get the agent version for a given version id.
+    Returns a dictionary to avoid Pydantic model UUID conversion issues.
     """
 
-    agent_version = db.get_agent_version(version_id)
-    agent = db.get_agent(agent_version.agent_id)
+    agent_version = await db.get_agent_version(version_id)
+    agent = await db.get_agent(agent_version.agent_id)
 
-    agent_version_for_validator = AgentVersionForValidator(
-        version_id=agent_version.version_id,
-        agent_id=agent_version.agent_id,
-        version_num=agent_version.version_num,
-        created_at=agent_version.created_at,
-        score=agent_version.score,
-        miner_hotkey=agent.miner_hotkey
-    )
-    return agent_version_for_validator
+    return {
+        "version_id": agent_version.version_id,
+        "agent_id": agent_version.agent_id,
+        "version_num": agent_version.version_num,
+        "created_at": agent_version.created_at,
+        "score": agent_version.score,
+        "miner_hotkey": agent.miner_hotkey
+    }
 
-def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
+async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
     """
     Upsert an evaluation run into the database.
     """
     
-    evaluation_run = EvaluationRun(
+    def parse_datetime(dt_str):
+        """Parse datetime string to datetime object, return None if None or empty"""
+        if not dt_str:
+            return None
+        if isinstance(dt_str, datetime):
+            return dt_str
+        return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+    
+    evaluation_run_obj = EvaluationRun(
         run_id=evaluation_run["run_id"],
         evaluation_id=evaluation_run["evaluation_id"],
         swebench_instance_id=evaluation_run["swebench_instance_id"],
@@ -103,17 +112,17 @@ def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         pass_to_pass_success=evaluation_run["pass_to_pass_success"],
         fail_to_fail_success=evaluation_run["fail_to_fail_success"],
         solved=evaluation_run["solved"],
-        started_at=evaluation_run["started_at"],
-        sandbox_created_at=evaluation_run["sandbox_created_at"],
-        patch_generated_at=evaluation_run["patch_generated_at"],
-        eval_started_at=evaluation_run["eval_started_at"],
-        result_scored_at=evaluation_run["result_scored_at"]
+        started_at=parse_datetime(evaluation_run["started_at"]),
+        sandbox_created_at=parse_datetime(evaluation_run["sandbox_created_at"]),
+        patch_generated_at=parse_datetime(evaluation_run["patch_generated_at"]),
+        eval_started_at=parse_datetime(evaluation_run["eval_started_at"]),
+        result_scored_at=parse_datetime(evaluation_run["result_scored_at"])
     )
-    db.store_evaluation_run(evaluation_run)
+    await db.store_evaluation_run(evaluation_run_obj)
 
-    return evaluation_run
+    return evaluation_run_obj
 
-def create_evaluation(version_id: str, validator_hotkey: str) -> str:
+async def create_evaluation(version_id: str, validator_hotkey: str) -> str:
     """
     Create a new evaluation in the database. Returns the evaluation id.
     """
@@ -129,69 +138,69 @@ def create_evaluation(version_id: str, validator_hotkey: str) -> str:
         finished_at=None,
         score=None
     )
-    db.store_evaluation(evaluation_object)
+    await db.store_evaluation(evaluation_object)
 
     return evaluation_object.evaluation_id
 
-def start_evaluation(evaluation_id: str) -> Evaluation:
+async def start_evaluation(evaluation_id: str) -> Evaluation:
     """
     Start an evaluation in the database.
     """
     
-    evaluation = db.get_evaluation(evaluation_id)
+    evaluation = await db.get_evaluation(evaluation_id)
     evaluation.status = "running"
     evaluation.started_at = datetime.now()
-    db.store_evaluation(evaluation)
+    await db.store_evaluation(evaluation)
 
     return evaluation
 
-def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
+async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     """
     Finish an evaluation in the database.
     """
     
-    evaluation = db.get_evaluation(evaluation_id)
+    evaluation = await db.get_evaluation(evaluation_id)
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
-    db.store_evaluation(evaluation)
-    db.update_agent_version_score(version_id=evaluation.version_id)
+    await db.store_evaluation(evaluation)
+    await db.update_agent_version_score(version_id=evaluation.version_id)
 
     return evaluation
 
-def delete_evaluation_runs(evaluation_id: str) -> int:
+async def delete_evaluation_runs(evaluation_id: str) -> int:
     """
     Delete all evaluation runs for a specific evaluation. Returns the number of deleted runs.
     """
-    deleted_count = db.delete_evaluation_runs(evaluation_id)
+    deleted_count = await db.delete_evaluation_runs(evaluation_id)
     return deleted_count
 
-def reset_running_evaluations(validator_hotkey: str):
+async def reset_running_evaluations(validator_hotkey: str):
     """
     Reset all running evaluations for a validator. Essentially, add them back to the waiting queue.
     Before resetting, delete all associated evaluation runs since they will need to be remade.
     """
 
-    evaluation = db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
+    evaluation = await db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
     if evaluation:
         # Delete all associated evaluation runs first
-        deleted_count = delete_evaluation_runs(evaluation.evaluation_id)
+        deleted_count = await delete_evaluation_runs(evaluation.evaluation_id)
         logger.info(f"Deleted {deleted_count} evaluation runs for evaluation {evaluation.evaluation_id}")
         
         # Reset the evaluation to waiting status
         evaluation.status = "waiting"
         evaluation.started_at = None
-        db.store_evaluation(evaluation)
+        await db.store_evaluation(evaluation)
         logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
     else:
         logger.info(f"Validator {validator_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
 
-def create_evaluations_for_validator(validator_hotkey: str) -> int:
+async def create_evaluations_for_validator(validator_hotkey: str) -> int:
     """
     Create evaluations for a validator. Returns the number of evaluations created.
     """
 
     try:
-        num_evaluations_created = db.create_evaluations_for_validator(validator_hotkey)
+        num_evaluations_created = await db.create_evaluations_for_validator(validator_hotkey)
         logger.info(f"Created {num_evaluations_created} evaluations for validator {validator_hotkey}")
     except Exception as e:
         logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")

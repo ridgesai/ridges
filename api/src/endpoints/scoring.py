@@ -18,7 +18,7 @@ async def weight_receiving_agent():
     The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
     This will be deprecated shortly in favor of validators posting weight themselves
     ''' 
-    top_agent: TopAgentHotkey = db.get_top_agent()
+    top_agent: TopAgentHotkey = await db.get_top_agent()
 
     return top_agent
 
