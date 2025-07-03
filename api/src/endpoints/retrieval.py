@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse
+from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.subtensor import get_daily_earnings_by_hotkey
@@ -117,6 +117,17 @@ def get_agent_version_code(version_id: str):
         )
     
     return text
+
+def get_running_evaluations() -> list[RunningAgentEval]:
+    try: 
+        current_evaluations = db.get_current_evaluations()
+        return current_evaluations
+    except Exception as e:
+        logger.error(f"Error retrieving currently running evals: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving currently running evaluations. Please try again later."
+        )
 
 def get_recent_executions(num_executions: int = 3):
     executions = db.get_recent_executions(num_executions)
@@ -299,6 +310,7 @@ routes = [
     ("/connected-validators", get_connected_validators),
     ("/random-agent", get_random_agent),
     ("/agent-summary", get_agent_summary),
+    ("/get-running-evaluations", get_running_evaluations),
     ("/evaluations", get_evaluations),
     ("/agent-version", get_agent_version),
     ("/queue-info", get_queue_info),

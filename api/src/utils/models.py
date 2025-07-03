@@ -26,6 +26,15 @@ class AgentSummary(BaseModel):
     latest_version: AgentVersion
     code: Optional[str]
 
+class RunningAgentEval(BaseModel):
+    version_id: str
+    validator_hotkey: str
+    started_at: datetime
+    agent_id: str
+    version_num: int
+    miner_hotkey: str
+    name: str
+
 class TopAgentHotkey(BaseModel):
     miner_hotkey: str
     version_id: str
