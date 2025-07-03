@@ -65,7 +65,24 @@ async def run_evaluation_cleanup_loop():
             await asyncio.sleep(10 * 60) 
         except Exception as e:
             logger.error(f"Error in evaluation cleanup loop: {e}")
-            await asyncio.sleep(10 * 60) 
+            await asyncio.sleep(10 * 60)
+
+async def run_connection_pool_monitor():
+    """Monitor connection pool status every 5 minutes."""
+    logger.info("Starting connection pool monitor - running every 5 minutes")
+    
+    while True:
+        try:
+            pool_status = db.get_pool_status()
+            if "error" not in pool_status:
+                logger.info(f"Connection pool status: {pool_status}")
+                # Log warning if pool usage is high
+                if pool_status["checked_out"] > (pool_status["pool_size"] * 0.8):
+                    logger.warning(f"High connection pool usage: {pool_status['checked_out']}/{pool_status['pool_size']} connections in use")
+            await asyncio.sleep(5 * 60)
+        except Exception as e:
+            logger.error(f"Error in connection pool monitor: {e}")
+            await asyncio.sleep(5 * 60) 
 
 @app.on_event("startup")
 async def startup_event():
@@ -79,6 +96,7 @@ async def startup_event():
     asyncio.create_task(run_weight_monitor())
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(run_evaluation_cleanup_loop())
+    asyncio.create_task(run_connection_pool_monitor())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

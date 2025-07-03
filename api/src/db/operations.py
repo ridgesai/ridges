@@ -3,7 +3,6 @@ from typing import Optional, List
 import json
 import threading
 import uuid
-import asyncio
 from dotenv import load_dotenv
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -49,10 +48,11 @@ class DatabaseManager:
             
             self.engine = create_async_engine(
                 database_url,
-                pool_size=10,
-                max_overflow=20,
+                pool_size=20,
+                max_overflow=40,
                 pool_pre_ping=True,
                 pool_recycle=3600,
+                pool_timeout=60,
                 echo=False
             )
             
@@ -106,6 +106,21 @@ class DatabaseManager:
         if self.engine:
             await self.engine.dispose()
             logger.info("Database engine closed")
+    
+    def get_pool_status(self) -> dict:
+        """Get connection pool status for monitoring."""
+        if not self.engine:
+            return {"error": "Engine not initialized"}
+        
+        pool = self.engine.pool
+        return {
+            "pool_size": pool.size(),
+            "checked_in": pool.checkedin(),
+            "checked_out": pool.checkedout(),
+            "overflow": pool.overflow(),
+            "invalid": pool.invalid(),
+            "total_connections": pool.checkedin() + pool.checkedout()
+        }
         
     async def store_agent(self, agent: Agent) -> int:
         """Store an agent using async SQLAlchemy ORM"""
@@ -885,6 +900,7 @@ class DatabaseManager:
         """
         Gets the X most recently created evaluations, and returns a list of objects with the AgentVersion, Agent, Evaluation, and Runs
         """
+        # First, get the basic evaluation data
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
@@ -917,12 +933,18 @@ class DatabaseManager:
                 """), {'num_executions': num_executions})
                 
                 rows = result.fetchall()
-                executions = []
-                
-                for row in rows:
-                    evaluation_id = row[0]
-                    
-                    # Get evaluation runs for this evaluation
+            except Exception as e:
+                logger.error(f"Error getting recent executions: {str(e)}")
+                return []
+        
+        # Now get evaluation runs for each evaluation in separate sessions
+        executions = []
+        for row in rows:
+            evaluation_id = row[0]
+            
+            # Get evaluation runs in a separate session
+            async with self.AsyncSessionLocal() as session:
+                try:
                     result = await session.execute(text("""
                         SELECT 
                             run_id,
@@ -998,11 +1020,11 @@ class DatabaseManager:
                         )
                     )
                     executions.append(execution)
-                
-                return executions
-            except Exception as e:
-                logger.error(f"Error getting recent executions: {str(e)}")
-                return []
+                except Exception as e:
+                    logger.error(f"Error getting evaluation runs for {evaluation_id}: {str(e)}")
+                    continue
+                    
+        return executions
         
     async def get_num_agents(self) -> int:
         """
@@ -1118,9 +1140,11 @@ class DatabaseManager:
         2. Most recent scored evaluation (if any)  
         3. None if neither exists
         """
+        row = None
+        
+        # First, try to get the most recent running evaluation
         async with self.AsyncSessionLocal() as session:
             try:
-                # First, try to get the most recent running evaluation
                 result = await session.execute(text("""
                     SELECT 
                         e.evaluation_id,
@@ -1152,9 +1176,14 @@ class DatabaseManager:
                 """), {'agent_id': agent_id})
                 
                 row = result.fetchone()
-                
-                # If no running evaluation, get the most recent scored evaluation
-                if not row:
+            except Exception as e:
+                logger.error(f"Error getting running evaluation: {str(e)}")
+                return None
+        
+        # If no running evaluation, get the most recent scored evaluation
+        if not row:
+            async with self.AsyncSessionLocal() as session:
+                try:
                     result = await session.execute(text("""
                         SELECT 
                             e.evaluation_id,
@@ -1186,14 +1215,19 @@ class DatabaseManager:
                     """), {'agent_id': agent_id})
                     
                     row = result.fetchone()
-                
-                # If still no row found, return None
-                if not row:
+                except Exception as e:
+                    logger.error(f"Error getting scored evaluation: {str(e)}")
                     return None
-                
-                evaluation_id = row[0]
-                
-                # Get evaluation runs for this evaluation
+        
+        # If still no row found, return None
+        if not row:
+            return None
+        
+        evaluation_id = row[0]
+        
+        # Get evaluation runs for this evaluation in a separate session
+        async with self.AsyncSessionLocal() as session:
+            try:
                 result = await session.execute(text("""
                     SELECT 
                         run_id,
@@ -1271,7 +1305,7 @@ class DatabaseManager:
                 
                 return execution
             except Exception as e:
-                logger.error(f"Error getting latest execution: {str(e)}")
+                logger.error(f"Error getting evaluation runs: {str(e)}")
                 return None
         
     async def get_agent_summary(self, agent_id: str = None, miner_hotkey: str = None) -> AgentSummaryResponse:

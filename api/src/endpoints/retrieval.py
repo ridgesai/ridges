@@ -323,6 +323,18 @@ async def get_statistics() -> DashboardStats:
     
     return statistics
 
+async def get_pool_status():
+    """Get connection pool status for debugging."""
+    try:
+        pool_status = db.get_pool_status()
+        return pool_status
+    except Exception as e:
+        logger.error(f"Error retrieving pool status: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving pool status. Please try again later."
+        )
+
 router = APIRouter()
 
 routes = [
@@ -342,7 +354,8 @@ routes = [
     ("/agent-version", get_agent_version),
     ("/queue-info", get_queue_info),
     ("/runs-for-evaluation", get_runs_for_evaluation),
-    ("/subnet-stats", get_statistics)
+    ("/subnet-stats", get_statistics),
+    ("/pool-status", get_pool_status)
 ]
 
 for path, endpoint in routes:
