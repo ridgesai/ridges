@@ -148,6 +148,12 @@ async def start_evaluation(evaluation_id: str) -> Evaluation:
     """
     
     evaluation = await db.get_evaluation(evaluation_id)
+    if evaluation is None:
+        return None
+    if evaluation.status == "running":
+        logger.info(f"Evaluation {evaluation_id} is already running. Ignoring request to start.")
+        return None
+
     evaluation.status = "running"
     evaluation.started_at = datetime.now()
     await db.store_evaluation(evaluation)
