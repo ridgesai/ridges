@@ -31,7 +31,7 @@ async def get_agent_version_file(version_id: str):
         )
     
     try:
-        agent_object = s3_manager.get_file_object(f"{version_id}/agent.py")
+        agent_object = await s3_manager.get_file_object(f"{version_id}/agent.py")
     except Exception as e:
         logger.error(f"Error retrieving agent version file from S3 for version {version_id}: {e}")
         raise HTTPException(
@@ -56,7 +56,7 @@ async def get_top_agents(num_agents: int = 3, include_code: bool = False) -> Lis
 
     if include_code:
         for agent_summary in agent_summaries:
-            agent_summary.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
+            agent_summary.code = await s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
 
     return agent_summaries
 
@@ -82,9 +82,9 @@ async def get_agent(agent_id: str= None, miner_hotkey: str= None, include_code: 
         )
     
     if include_code:
-        latest_agent.code = s3_manager.get_file_text(f"{latest_agent.latest_version.version_id}/agent.py")
+        latest_agent.code = await s3_manager.get_file_text(f"{latest_agent.latest_version.version_id}/agent.py")
         if latest_scored_agent:
-            latest_scored_agent.code = s3_manager.get_file_text(f"{latest_scored_agent.latest_version.version_id}/agent.py")
+            latest_scored_agent.code = await s3_manager.get_file_text(f"{latest_scored_agent.latest_version.version_id}/agent.py")
 
     if latest_scored_agent and latest_scored_agent.latest_version.version_id == latest_agent.latest_version.version_id:
         latest_scored_agent = None
@@ -108,7 +108,7 @@ async def get_agent_version_code(version_id: str):
         )
     
     try:
-        text = s3_manager.get_file_text(f"{version_id}/agent.py")
+        text = await s3_manager.get_file_text(f"{version_id}/agent.py")
     except Exception as e:
         logger.error(f"Error retrieving agent version code from S3 for version {version_id}: {e}")
         raise HTTPException(
@@ -196,7 +196,7 @@ async def get_agent_summary(agent_id: str = None, miner_hotkey: str = None, incl
     agent_summary.daily_earnings = 0 # await get_daily_earnings_by_hotkey(agent_summary.agent_details.miner_hotkey)
 
     if include_code:
-        agent_summary.latest_version.code = s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
+        agent_summary.latest_version.code = await s3_manager.get_file_text(f"{agent_summary.latest_version.version_id}/agent.py")
     
     return agent_summary
 
@@ -254,7 +254,7 @@ async def get_statistics() -> DashboardStats:
 async def get_pool_status():
     """Get connection pool status for debugging."""
     try:
-        pool_status = db.get_pool_status()
+        pool_status = await db.get_pool_status()
         return pool_status
     except Exception as e:
         logger.error(f"Error retrieving pool status: {e}")

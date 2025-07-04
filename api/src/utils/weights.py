@@ -41,7 +41,7 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
     while True:
         try:
             # Check connection pool status before proceeding
-            pool_status = db.get_pool_status()
+            pool_status = await db.get_pool_status()
             if "error" not in pool_status and pool_status["checked_out"] > (pool_status["pool_size"] * 0.9):
                 logger.warning(f"Connection pool nearly exhausted ({pool_status['checked_out']}/{pool_status['pool_size']}), skipping weight check")
                 await asyncio.sleep(interval_seconds)
