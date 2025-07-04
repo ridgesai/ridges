@@ -6,13 +6,12 @@ import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import select, func, and_, or_, text, Integer, case
+from sqlalchemy import select, func, and_, text, Integer
 from sqlalchemy.dialects.postgresql import insert
 
 from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData, DashboardStats
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_models import Base, Agent, AgentVersion, Evaluation, EvaluationRun, WeightsHistory, BannedHotkey
-from validator.config import TOTAL_EVALUATION_INSTANCES
 
 load_dotenv()
 
@@ -303,7 +302,7 @@ class DatabaseManager:
                     Evaluation.__table__.update()
                     .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
                     .values(score=(
-                        select(func.sum(func.cast(EvaluationRun.solved, Integer)) / TOTAL_EVALUATION_INSTANCES)
+                        select(func.sum(func.cast(EvaluationRun.solved, Integer)) / 20)
                         .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
                         .scalar_subquery()
                     ))
