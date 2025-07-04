@@ -5,9 +5,9 @@ description = "Decentralized AI software engineers, specializing in a specific t
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "aioboto3>=15.0.0",
     "asyncio>=3.4.3",
     "asyncpg>=0.30.0",
-    "boto3>=1.38.40",
     "click>=8.1.0",
     "datadog-api-client>=2.39.0",
     "dotenv>=0.9.9",
