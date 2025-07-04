@@ -104,6 +104,9 @@ MEDIUM_INSTANCES = [
     # "django__django-15957",
 ]
 
+# Calculate total number of evaluation instances
+TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES)
+
 # Log initial configuration
 import logging
 logger = logging.getLogger(__name__)
@@ -116,5 +119,6 @@ logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
 logger.info(f"Weights interval: {WEIGHTS_INTERVAL}")
 logger.info(f"DB path: {DB_PATH}")
 logger.info(f"Log level: {LOG_LEVEL}")
+logger.info(f"Total evaluation instances: {TOTAL_EVALUATION_INSTANCES}")
 
 validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)

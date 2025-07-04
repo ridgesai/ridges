@@ -7,12 +7,13 @@ import asyncio
 from dotenv import load_dotenv
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import select, func, and_, or_, text, Integer
+from sqlalchemy import select, func, and_, or_, text, Integer, case
 from sqlalchemy.dialects.postgresql import insert
 
 from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData, DashboardStats
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_models import Base, Agent, AgentVersion, Evaluation, EvaluationRun, WeightsHistory, BannedHotkey
+from validator.config import TOTAL_EVALUATION_INSTANCES
 
 load_dotenv()
 
@@ -272,11 +273,12 @@ class DatabaseManager:
                 logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
 
                 # Update the score for the associated evaluation
+                # Divide by total possible instances instead of just averaging completed runs
                 update_stmt = (
                     Evaluation.__table__.update()
                     .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
                     .values(score=(
-                        select(func.avg(func.cast(EvaluationRun.solved, Integer)))
+                        select(func.sum(func.cast(EvaluationRun.solved, Integer)) / TOTAL_EVALUATION_INSTANCES)
                         .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
                         .scalar_subquery()
                     ))
