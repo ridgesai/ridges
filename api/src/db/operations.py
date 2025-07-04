@@ -107,7 +107,7 @@ class DatabaseManager:
             await self.engine.dispose()
             logger.info("Database engine closed")
     
-    def get_pool_status(self) -> dict:
+    async def get_pool_status(self) -> dict:
         """Get connection pool status for monitoring."""
         if not self.engine:
             return {"error": "Engine not initialized"}
