@@ -3,6 +3,7 @@ Send deflate logs returns "Request accepted for processing (always 202 empty JSO
 """
 
 import logging
+import asyncio
 from datetime import datetime
 
 from datadog_api_client import ApiClient, Configuration
@@ -26,6 +27,9 @@ class DatadogLogHandler(logging.Handler):
         super().__init__()
 
     def emit(self, record):
+        asyncio.create_task(self._async_emit(record))
+
+    async def _async_emit(self, record):
         body = HTTPLog(
             [
                 HTTPLogItem(
@@ -41,15 +45,18 @@ class DatadogLogHandler(logging.Handler):
             ]
         )
 
-        with ApiClient(configuration) as api_client:
-            api_instance = LogsApi(api_client)
-            try:
-                api_instance.submit_log(content_encoding=ContentEncoding.DEFLATE, body=body)
-            except Exception as e:
-                print(f"Failed to send log to Datadog: {e}")
-                print(f"Original log: {body}")
+        def _send_log():
+            with ApiClient(configuration) as api_client:
+                api_instance = LogsApi(api_client)
+                try:
+                    api_instance.submit_log(content_encoding=ContentEncoding.DEFLATE, body=body)
+                except Exception as e:
+                    print(f"Failed to send log to Datadog: {e}")
+                    print(f"Original log: {body}")
 
-def dd_update_connected_validators(count: int, validator_hotkeys: list[str]):
+        await asyncio.to_thread(_send_log)
+
+async def dd_update_connected_validators(count: int, validator_hotkeys: list[str]):
     try:
         body = MetricPayload(
             series=[
@@ -64,12 +71,16 @@ def dd_update_connected_validators(count: int, validator_hotkeys: list[str]):
                 ),
             ],
         )
-        with ApiClient(configuration) as api_client:
+        
+        def _send_metric():
+            with ApiClient(configuration) as api_client:
                 api_instance = MetricsApi(api_client)
                 api_instance.submit_metrics(body=body)
+        
+        await asyncio.to_thread(_send_metric)
     except Exception as e:
         print(f"Failed to send metric to Datadog: {e}")
         print(f"Original metric: {body}")
 
 if __name__ == "__main__":
-    dd_update_connected_validators(2, ["0x1234567890"])
+    asyncio.run(dd_update_connected_validators(2, ["0x1234567890"]))
