@@ -1033,6 +1033,7 @@ class DatabaseManager:
                     ORDER BY created_at ASC
                 """), {'version_id': version_id})
                 evals = result.fetchall()
+                logger.info(f"Found {len(evals)} evaluations for version {version_id}")
                 if not evals:
                     return []
 
@@ -1191,43 +1192,34 @@ class DatabaseManager:
         """
         async with self.AsyncSessionLocal() as session:
             try:
+                # Single query to clean up hanging evaluations and get count
                 result = await session.execute(text("""
-                    SELECT evaluation_id 
-                    FROM evaluations 
-                    WHERE status = 'running'
-                """))
-                
-                running_evaluations = result.fetchall()
-                if not running_evaluations:
-                    logger.info("Tried to clean up running evaluations, but no running evaluations found")
-                    return 0
-                
-                cleaned_count = 0
-                
-                for (evaluation_id,) in running_evaluations:
-                    result = await session.execute(text("""
-                        DELETE FROM evaluation_runs 
-                        WHERE evaluation_id = :evaluation_id
-                    """), {'evaluation_id': evaluation_id})
-                    
-                    runs_deleted = result.rowcount
-                    
-                    result = await session.execute(text("""
+                    WITH cleaned_evaluations AS (
                         UPDATE evaluations 
                         SET status = 'waiting',
                             started_at = NULL,
                             finished_at = NULL,
                             score = NULL,
                             terminated_reason = NULL
-                        WHERE evaluation_id = :evaluation_id
-                    """), {'evaluation_id': evaluation_id})
-                    
-                    if result.rowcount > 0:
-                        cleaned_count += 1
-                        logger.info(f"Cleaned up evaluation {evaluation_id}: deleted {runs_deleted} associated runs, reset to waiting")
+                        WHERE status = 'running'
+                        RETURNING evaluation_id
+                    ),
+                    deleted_runs AS (
+                        DELETE FROM evaluation_runs 
+                        WHERE evaluation_id IN (SELECT evaluation_id FROM cleaned_evaluations)
+                    )
+                    SELECT COUNT(*) as cleaned_count
+                    FROM cleaned_evaluations
+                """))
+                
+                cleaned_count = result.fetchone()[0]
+                
+                if cleaned_count > 0:
+                    logger.info(f"Successfully cleaned up {cleaned_count} running evaluations")
+                else:
+                    logger.info("Tried to clean up running evaluations, but no running evaluations found")
                 
                 await session.commit()
-                logger.info(f"Successfully cleaned up {cleaned_count} running evaluations")
                 return cleaned_count
                 
             except Exception as e:
