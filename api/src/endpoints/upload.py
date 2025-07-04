@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from fiber import Keypair
 
-from api.src.utils.config import PERMISSABLE_PACKAGES, AGENT_RATE_LIMIT_SECONDS
+from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
 from api.src.db.sqlalchemy_models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
