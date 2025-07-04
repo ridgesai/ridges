@@ -6,12 +6,13 @@ import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
-from sqlalchemy import select, func, and_, or_, text, Integer
+from sqlalchemy import select, func, and_, or_, text, Integer, case
 from sqlalchemy.dialects.postgresql import insert
 
 from api.src.utils.models import AgentSummary, Execution, AgentSummaryResponse, AgentDetailsNew, AgentVersionNew, ExecutionNew, AgentVersionDetails, QueueInfo, TopAgentHotkey, AgentVersionResponse, AgentResponse, EvaluationResponse, EvaluationRunResponse, RunningAgentEval, WeightsData, DashboardStats
 from api.src.utils.logging_utils import get_logger
 from .sqlalchemy_models import Base, Agent, AgentVersion, Evaluation, EvaluationRun, WeightsHistory, BannedHotkey
+from validator.config import TOTAL_EVALUATION_INSTANCES
 
 load_dotenv()
 
@@ -217,6 +218,104 @@ class DatabaseManager:
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error storing evaluation {evaluation.evaluation_id}: {str(e)}")
+                return 0
+        
+    async def update_agent_version_score(self, version_id: str) -> int:
+        """Update the score for an agent version using async SQLAlchemy"""
+        async with self.AsyncSessionLocal() as session:
+            try:
+                # Get average score from evaluations
+                stmt = select(func.avg(Evaluation.score)).where(
+                    and_(Evaluation.version_id == version_id, Evaluation.score.isnot(None))
+                )
+                result = await session.execute(stmt)
+                avg_score = result.scalar()
+                
+                if avg_score is not None:
+                    # Update agent version with average score
+                    update_stmt = (
+                        AgentVersion.__table__.update()
+                        .where(AgentVersion.version_id == version_id)
+                        .values(score=float(avg_score))
+                    )
+                    await session.execute(update_stmt)
+                    await session.commit()
+                    
+                    logger.info(f"Updated agent version {version_id} with score {avg_score}")
+                    return 1
+                else:
+                    logger.info(f"Tried to update agent version {version_id} with a score, but no scored evaluations found")
+                    return 0
+                    
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating agent version score for {version_id}: {str(e)}")
+                return 0
+
+    async def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
+        """
+        Store an evaluation run in the database. Return 1 if successful, 0 if not.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                stmt = insert(EvaluationRun).values(
+                    run_id=evaluation_run.run_id,
+                    evaluation_id=evaluation_run.evaluation_id,
+                    swebench_instance_id=evaluation_run.swebench_instance_id,
+                    status=evaluation_run.status,
+                    response=evaluation_run.response,
+                    error=evaluation_run.error,
+                    pass_to_fail_success=evaluation_run.pass_to_fail_success,
+                    fail_to_pass_success=evaluation_run.fail_to_pass_success,
+                    pass_to_pass_success=evaluation_run.pass_to_pass_success,
+                    fail_to_fail_success=evaluation_run.fail_to_fail_success,
+                    solved=evaluation_run.solved,
+                    started_at=evaluation_run.started_at,
+                    sandbox_created_at=evaluation_run.sandbox_created_at,
+                    patch_generated_at=evaluation_run.patch_generated_at,
+                    eval_started_at=evaluation_run.eval_started_at,
+                    result_scored_at=evaluation_run.result_scored_at
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['run_id'],
+                    set_=dict(
+                        status=stmt.excluded.status,
+                        response=stmt.excluded.response,
+                        error=stmt.excluded.error,
+                        pass_to_fail_success=stmt.excluded.pass_to_fail_success,
+                        fail_to_pass_success=stmt.excluded.fail_to_pass_success,
+                        pass_to_pass_success=stmt.excluded.pass_to_pass_success,
+                        fail_to_fail_success=stmt.excluded.fail_to_fail_success,
+                        solved=stmt.excluded.solved,
+                        sandbox_created_at=stmt.excluded.sandbox_created_at,
+                        patch_generated_at=stmt.excluded.patch_generated_at,
+                        eval_started_at=stmt.excluded.eval_started_at,
+                        result_scored_at=stmt.excluded.result_scored_at
+                    )
+                )
+                await session.execute(stmt)
+                await session.commit()
+                logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
+
+                # Update the score for the associated evaluation
+                # Divide by total possible instances instead of just averaging completed runs
+                update_stmt = (
+                    Evaluation.__table__.update()
+                    .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
+                    .values(score=(
+                        select(func.sum(func.cast(EvaluationRun.solved, Integer)) / TOTAL_EVALUATION_INSTANCES)
+                        .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
+                        .scalar_subquery()
+                    ))
+                )
+                await session.execute(update_stmt)
+                await session.commit()
+                logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
+
+                return 1
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
                 return 0
         
     async def get_next_evaluation(self, validator_hotkey: str) -> Optional[Evaluation]:
