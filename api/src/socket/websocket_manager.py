@@ -197,7 +197,6 @@ class WebSocketManager:
 
     async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
-        disconnected_clients = []
         
         for websocket in self.clients.keys():
             if self.clients[websocket]["val_hotkey"] is None:
@@ -205,13 +204,7 @@ class WebSocketManager:
                 try:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
                 except Exception:
-                    # Client disconnected, mark for removal
-                    disconnected_clients.append(websocket)
-        
-        # Remove disconnected clients
-        for websocket in disconnected_clients:
-            if websocket in self.clients:
-                del self.clients[websocket]
+                    pass
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
@@ -224,7 +217,6 @@ class WebSocketManager:
         """
 
         validators = 0
-        disconnected_clients = []
 
         for websocket, meta in self.clients.items():
             # Skip malformed or placeholder entries
@@ -236,19 +228,12 @@ class WebSocketManager:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
                     validators += 1
             except Exception:
-                # Client disconnected or send failed; mark for removal
-                disconnected_clients.append(websocket)
-
-        # Clean up any disconnected sockets
-        for websocket in disconnected_clients:
-            if websocket in self.clients:
-                del self.clients[websocket]
+                pass
 
         logger.info(f"Platform socket broadcasted {event} to {validators} validators")
 
     async def create_new_evaluations(self, version_id: str):
         """Create new evaluations for all connected validators"""
-        disconnected_clients = []
         
         for websocket, client_data in self.clients.items():
             if client_data["val_hotkey"] is not None:
@@ -256,13 +241,7 @@ class WebSocketManager:
                     await create_evaluation(version_id, client_data["val_hotkey"])
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
                 except Exception:
-                    # Client disconnected, mark for removal
-                    disconnected_clients.append(websocket)
-        
-        # Remove disconnected clients
-        for websocket in disconnected_clients:
-            if websocket in self.clients:
-                del self.clients[websocket]
+                    pass
     
     async def get_next_evaluation(self, validator_hotkey: str):
         """Get the next evaluation for a validator"""

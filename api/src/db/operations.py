@@ -1447,3 +1447,68 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error getting evaluations: {str(e)}")
                 return []
+
+    async def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
+        """
+        Store an evaluation run in the database. Return 1 if successful, 0 if not.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                stmt = insert(EvaluationRun).values(
+                    run_id=evaluation_run.run_id,
+                    evaluation_id=evaluation_run.evaluation_id,
+                    swebench_instance_id=evaluation_run.swebench_instance_id,
+                    status=evaluation_run.status,
+                    response=evaluation_run.response,
+                    error=evaluation_run.error,
+                    pass_to_fail_success=evaluation_run.pass_to_fail_success,
+                    fail_to_pass_success=evaluation_run.fail_to_pass_success,
+                    pass_to_pass_success=evaluation_run.pass_to_pass_success,
+                    fail_to_fail_success=evaluation_run.fail_to_fail_success,
+                    solved=evaluation_run.solved,
+                    started_at=evaluation_run.started_at,
+                    sandbox_created_at=evaluation_run.sandbox_created_at,
+                    patch_generated_at=evaluation_run.patch_generated_at,
+                    eval_started_at=evaluation_run.eval_started_at,
+                    result_scored_at=evaluation_run.result_scored_at
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['run_id'],
+                    set_=dict(
+                        status=stmt.excluded.status,
+                        response=stmt.excluded.response,
+                        error=stmt.excluded.error,
+                        pass_to_fail_success=stmt.excluded.pass_to_fail_success,
+                        fail_to_pass_success=stmt.excluded.fail_to_pass_success,
+                        pass_to_pass_success=stmt.excluded.pass_to_pass_success,
+                        fail_to_fail_success=stmt.excluded.fail_to_fail_success,
+                        solved=stmt.excluded.solved,
+                        sandbox_created_at=stmt.excluded.sandbox_created_at,
+                        patch_generated_at=stmt.excluded.patch_generated_at,
+                        eval_started_at=stmt.excluded.eval_started_at,
+                        result_scored_at=stmt.excluded.result_scored_at
+                    )
+                )
+                await session.execute(stmt)
+                await session.commit()
+                logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
+
+                # Update the score for the associated evaluation
+                update_stmt = (
+                    Evaluation.__table__.update()
+                    .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
+                    .values(score=(
+                        select(func.avg(func.cast(EvaluationRun.solved, Integer)))
+                        .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
+                        .scalar_subquery()
+                    ))
+                )
+                await session.execute(update_stmt)
+                await session.commit()
+                logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
+
+                return 1
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
+                return 0
