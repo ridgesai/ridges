@@ -73,7 +73,7 @@ async def run_connection_pool_monitor():
     
     while True:
         try:
-            pool_status = db.get_pool_status()
+            pool_status = await db.get_pool_status()
             if "error" not in pool_status:
                 logger.info(f"Connection pool status: {pool_status}")
                 # Log warning if pool usage is high
