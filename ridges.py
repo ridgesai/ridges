@@ -17,12 +17,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
+from dotenv import load_dotenv
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform.ridges.ai"
 CONFIG_FILE = "miner/.env"
 
 load_dotenv(CONFIG_FILE)
+load_dotenv(".env")
 
 def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
@@ -303,7 +305,7 @@ def run():
         return
     
     # Start platform
-    if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
         console.print("📋 Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
