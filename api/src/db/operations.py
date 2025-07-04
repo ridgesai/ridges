@@ -323,7 +323,7 @@ class DatabaseManager:
         Excludes evaluations for banned miner hotkeys.
         """
         # For now, this is a manual process, but will be updated shortly to be automatic
-        banned_hotkeys = ["5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9"]
+        banned_hotkeys = ["5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9", "5Dyghsz26XyzWQ4mqrngfGeidM2FUp28Hpzp2Q4sAW21mFkx"]
         
         async with self.AsyncSessionLocal() as session:
             try:
