@@ -99,4 +99,4 @@ async def startup_event():
     asyncio.create_task(run_connection_pool_monitor())
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)
+    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None, workers=2)
