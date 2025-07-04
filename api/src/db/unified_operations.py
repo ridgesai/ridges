@@ -202,6 +202,8 @@ async def recent_events(device_id: str, limit: int = 100, conn=Depends(get_conn)
     return [dict(r) for r in rows]
 
 @app.get("/agents/{version}")
+async def get_agent(conn=Depends(get_conn)) -> DashboardStats:
+    return
 
 @app.get("/test/stats")
 async def get_statistics(conn=Depends(get_conn)) -> DashboardStats:
