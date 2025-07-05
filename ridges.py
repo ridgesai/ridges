@@ -305,7 +305,7 @@ def run():
         return
     
     # Start platform
-    if run_cmd(f"pm2 start 'ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
         console.print("📋 Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
