@@ -211,8 +211,8 @@ class Sandbox:
                 },
                 working_dir=SANDBOX_DIR,
                 environment={
-                    "AI_PROXY_URL": "http://34.207.162.142:8001",
-                    "AI_EMBEDDING_PROXY_URL": "http://54.234.247.121:8001"
+                    "AI_PROXY_URL": "http://sandbox-proxy",
+                    "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy"
                 },
                 detach=True,
             )

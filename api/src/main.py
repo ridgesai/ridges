@@ -39,10 +39,11 @@ app.include_router(
     prefix="/retrieval",
 )
 
-app.include_router(
-    agents_router,
-    prefix="/agents",
-)
+# Disabled agents router - using EC2 proxy instead
+# app.include_router(
+#     agents_router,
+#     prefix="/agents",
+# )
 
 app.include_router(
     scoring_router,

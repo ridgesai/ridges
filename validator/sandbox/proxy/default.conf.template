@@ -1,27 +1,42 @@
 server {
     listen 80;
     server_name _;
+    
+    # Standard error logging (not debug level)
+    error_log /var/log/nginx/error.log warn;
 
     # Add resolver directive to tell Nginx how to resolve domain names
     resolver 8.8.8.8 8.8.4.4 valid=30s;
 
-    # Only allow specific API endpoints to be proxied
-    location ~ ^/(agents/embedding|agents/inference)$ {
-        proxy_connect_timeout 600s;
-        proxy_read_timeout  600s;
-        proxy_pass ${RIDGES_API_URL}$request_uri;
-        
-        # For HTTPS backends, we need to handle SSL properly
-        proxy_ssl_verify off;  # Disable SSL certificate verification for now
-        proxy_ssl_server_name on;  # Enable SNI for HTTPS backends
-        
-        # Set the Host header to the backend host, not the proxy host
-        proxy_set_header Host $proxy_host;
+    # Proxy all agents requests
+    location /agents/inference {
+        proxy_pass http://34.207.162.142:8001;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 600s;
+        proxy_read_timeout 600s;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+    }
+    
+    location /agents/embedding {
+        proxy_pass http://34.207.162.142:8001;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 600s;
+        proxy_read_timeout 600s;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
     }
 
+    # Health check endpoint
+    location /health {
+        return 200 "nginx proxy is running\n";
+        add_header Content-Type text/plain;
+    }
+    
     # Deny all other paths
     location / {
         return 403;
