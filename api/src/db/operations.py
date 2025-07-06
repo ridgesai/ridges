@@ -336,7 +336,8 @@ class DatabaseManager:
             "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
             "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
             "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
-            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59"
+            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
+            "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm"
         ]
         
         async with self.AsyncSessionLocal() as session:
