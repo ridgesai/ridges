@@ -119,7 +119,7 @@ async def post_agent(
     if miner_hotkey in banned_hotkeys:
         raise HTTPException(
             status_code=400,
-            detail="Your miner has been banned for attempting to obfuscate code. If this is in error, please contact us on Discord"
+            detail="Your miner has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord"
         )
     
     existing_agent = await db.get_agent_by_hotkey(miner_hotkey)
@@ -205,7 +205,6 @@ async def post_agent(
         )
     
     # Only set name for new agents, not for updates
-    
     agent_object = Agent(
         agent_id=agent_id,
         miner_hotkey=existing_agent.miner_hotkey if existing_agent else miner_hotkey,
@@ -214,7 +213,9 @@ async def post_agent(
         created_at=existing_agent.created_at if existing_agent else datetime.now(),
         last_updated=datetime.now(),
     )
+
     result = await db.store_agent(agent_object)
+    
     if result == 0:
         raise HTTPException(
             status_code=500,
@@ -228,7 +229,9 @@ async def post_agent(
         created_at=datetime.now(),
         score=None
     )
+
     result = await db.store_agent_version(agent_version_object)
+    
     if result == 0:
         raise HTTPException(
             status_code=500,

@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, Request, WebSocket, WebSocketDisconnect, H
 
 from api.src.utils.logging_utils import get_logger
 from api.src.utils.models import DashboardStats
-
+from api.src.backend.queries import get_agent_by_id
 
 load_dotenv()  # Load variables from a local .env file, if present
 logger = get_logger(__name__)
@@ -235,6 +235,15 @@ async def get_statistics(conn=Depends(get_conn)) -> DashboardStats:
             detail="Internal server error while retrieving dashboard stats. Please try again later."
         )
 
+@app.get("/agenttest")
+async def something(agent_id: str, conn=Depends(get_conn)):
+    """
+    Retrieves stats on the health of the network, primarily for the dashboard
+    """
+    agent = await get_agent_by_id(conn, agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent
 # WS
 @app.websocket("/ws/{device_id}")
 async def device_ws(websocket: WebSocket, device_id: str):
