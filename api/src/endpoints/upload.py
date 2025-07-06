@@ -12,7 +12,7 @@ from api.src.db.sqlalchemy_models import Agent, AgentVersion
 from api.src.db.operations import DatabaseManager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
-from api.src.utils.nodes import get_subnet_hotkeys
+from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 
 logger = logging.getLogger(__name__)
