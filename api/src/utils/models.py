@@ -2,7 +2,6 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from typing import Optional, Literal, List
 
-
 class AgentVersionResponse(BaseModel):
     version_id: str
     agent_id: str
