@@ -35,9 +35,10 @@ banned_hotkeys = [
     "5E7s2xNMzXKnurpsifmWxojcFa44NkuLPn1U7s9zvVrFjYKb",
     "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
     "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
-    "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA"
+    "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
+    "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
+    "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN"
 ]
-
 async def post_agent(
     agent_file: UploadFile = File(...),
     public_key: str = Form(...),
