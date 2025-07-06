@@ -4,6 +4,9 @@ import os
 import dotenv
 import time
 
+from fiber.chain.interface import get_substrate
+from fiber.chain.fetch_nodes import get_nodes_for_netuid
+
 from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 
@@ -18,6 +21,17 @@ _cached_price = None
 _cached_time = 0
 _cached_tao_usd_price = None
 _cached_tao_usd_time = 0
+
+async def get_subnet_hotkeys():
+    substrate = get_substrate(
+        subtensor_network=os.getenv("SUBTENSOR_NETWORK"), subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
+    )
+
+    active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
+
+    hotkeys = [node.hotkey for node in active_nodes]
+
+    return hotkeys
 
 def get_current_weights(netuid: int = 62) -> dict:
     """
