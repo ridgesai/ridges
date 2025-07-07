@@ -61,7 +61,8 @@ banned_hotkeys = [
     "5GsKVvwQ4gk9QDk6bb8qSycPJoUcACGmfrQNjxRCE2Ue9wd3",
     "5DS6D4MEMoPC8VSpgDWq3rVqFkjNiQoj5toVCSLA1gak7GZL",
     "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-    "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh"
+    "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh",
+    "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq"
 ]
 
 async def post_agent(
