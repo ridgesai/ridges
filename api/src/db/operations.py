@@ -816,7 +816,6 @@ class DatabaseManager:
                 result = await session.execute(text("""
                     SELECT * FROM (
                         SELECT 
-                            a.agent_id,
                             a.miner_hotkey,
                             a.name,
                             a.latest_version,
@@ -829,16 +828,16 @@ class DatabaseManager:
                             CASE WHEN latest_scored.score IS NOT NULL THEN 1 ELSE 2 END as sort_order
                         FROM agents a
                         LEFT JOIN (
-                            SELECT DISTINCT ON (agent_id) 
-                                agent_id,
+                            SELECT DISTINCT ON (miner_hotkey) 
+                                miner_hotkey,
                                 version_id,
                                 version_num,
                                 created_at,
                                 score
                             FROM agent_versions 
                             WHERE score IS NOT NULL
-                            ORDER BY agent_id, created_at DESC
-                        ) latest_scored ON a.agent_id = latest_scored.agent_id
+                            ORDER BY created_at DESC
+                        ) latest_scored ON a.miner_hotkey = latest_scored.miner_hotkey
                         LEFT JOIN (
                             SELECT DISTINCT ON (agent_id) 
                                 agent_id,

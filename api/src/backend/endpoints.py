@@ -93,10 +93,6 @@ async def recent_events(device_id: str, limit: int = 100, conn=Depends(get_conn)
     # Convert asyncpg.Record → dict
     return [dict(r) for r in rows]
 
-@app.get("/agents/{version}")
-async def get_agent(conn=Depends(get_conn)) -> DashboardStats:
-    return
-
 @app.get("/test/stats")
 async def get_statistics(conn=Depends(get_conn)) -> DashboardStats:
     """
@@ -128,11 +124,11 @@ async def get_statistics(conn=Depends(get_conn)) -> DashboardStats:
         )
 
 @app.get("/agenttest")
-async def something(miner_hotkey: str, conn=Depends(get_conn)):
+async def something(miner_hotkey: str):
     """
     Retrieves stats on the health of the network, primarily for the dashboard
     """
-    agent = await get_agent_by_hotkey(conn, miner_hotkey)
+    agent = await get_agent_by_hotkey(miner_hotkey)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent
@@ -140,11 +136,11 @@ async def something(miner_hotkey: str, conn=Depends(get_conn)):
 from datetime import datetime
 
 @app.post("/create_agent")
-async def something(conn=Depends(get_conn)):
+async def something():
     """
     Retrieves stats on the health of the network, primarily for the dashboard
     """
-    agent = await create_agent(conn, Agent(
+    agent = await create_agent(Agent(
         miner_hotkey="testtest",
         name="bruh",
         latest_version=0,
