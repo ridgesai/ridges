@@ -6,7 +6,6 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 
 import hashlib
 import time
-import click
 from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
@@ -30,6 +29,8 @@ def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
     result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
     return result.returncode, result.stdout, result.stderr
+run_cmd("uv add click")
+import click
 
 def check_docker(image: str) -> bool:
     """Check if Docker image exists"""
@@ -304,8 +305,30 @@ def run():
         console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
         return
     
+    # Remove old venv, create new venv, activate new venv, download dependencies
+    if run_cmd("rm -rf .venv")[0] == 0:
+        console.print("🔄 Removed old venv", style="yellow")
+    else:
+        console.print("💥 Failed to remove old venv", style="red")
+        return
+    if run_cmd("uv venv .venv")[0] == 0:
+        console.print("🔄 Created new venv", style="yellow")
+    else:
+        console.print("💥 Failed to create new venv", style="red")
+        return
+    if run_cmd("source .venv/bin/activate")[0] == 0:
+        console.print("🔄 Activated new venv", style="yellow")
+    else:
+        console.print("💥 Failed to activate new venv", style="red")
+        return
+    if run_cmd("uv pip install -e .")[0] == 0:
+        console.print("🔄 Downloaded dependencies", style="yellow")
+    else:
+        console.print("💥 Failed to download dependencies", style="red")
+        return
+    
     # Start platform
-    if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
         console.print("📋 Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
