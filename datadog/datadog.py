@@ -22,6 +22,8 @@ load_dotenv()
 
 configuration = Configuration()
 
+hostname = os.getenv("DD_HOSTNAME")
+
 class DatadogLogHandler(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -35,7 +37,7 @@ class DatadogLogHandler(logging.Handler):
                 HTTPLogItem(
                     ddsource="ec2",
                     ddtags=f"pathname:{record.pathname}",
-                    hostname=os.getenv("DD_HOSTNAME"),
+                    hostname=hostname,
                     level=record.levelname,
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
