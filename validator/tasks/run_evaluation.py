@@ -132,4 +132,5 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         else:
             logger.info("Websocket disconnected - skipping finish-evaluation message")
         
-        websocket_app.evaluation_running.clear()
+        # websocket_app.evaluation_running.clear()
+        #handled in handle_evaluation.py now

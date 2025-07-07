@@ -28,6 +28,8 @@ async def handle_evaluation(websocket_app, json_message):
 
     logger.info(f"Received evaluation: {json_message}")
 
+    evaluation_completed_successfully = False
+
     try:
         # Extract agent version data from the response
         evaluation_id = json_message.get("evaluation_id")
@@ -57,19 +59,27 @@ async def handle_evaluation(websocket_app, json_message):
 
         try:
             await websocket_app.evaluation_task
+            evaluation_completed_successfully = True
         except asyncio.CancelledError:
             logger.info("Evaluation was cancelled")
             return
         finally:
             websocket_app.evaluation_task = None
 
-        try:
-            await websocket_app.send({"event": "get-next-evaluation"})
-            logger.info("Requested next agent version after evaluation completion")
-        except Exception as e:
-            logger.error(f"Failed to request next version: {e}")
-
-
     except Exception as e:
         logger.error(f"Error handling agent version: {e}")
-        logger.exception("Full error traceback:") 
+        logger.exception("Full error traceback:")
+    finally:
+        # Always clear the evaluation_running flag first
+        # This prevents race conditions with the next evaluation request
+        if websocket_app.evaluation_running.is_set():
+            websocket_app.evaluation_running.clear()
+            logger.info("Cleared evaluation_running flag")
+
+        # Only request next evaluation if we completed successfully (not cancelled/errored)
+        if evaluation_completed_successfully:
+            try:
+                await websocket_app.send({"event": "get-next-evaluation"})
+                logger.info("Requested next agent version after evaluation completion")
+            except Exception as e:
+                logger.error(f"Failed to request next version: {e}") 
