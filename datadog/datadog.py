@@ -5,6 +5,8 @@ Send deflate logs returns "Request accepted for processing (always 202 empty JSO
 import logging
 import asyncio
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 
 from datadog_api_client import ApiClient, Configuration
 from datadog_api_client.v2.api.logs_api import LogsApi
@@ -16,11 +18,11 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 
-from dotenv import load_dotenv
-
 load_dotenv()
 
 configuration = Configuration()
+
+hostname = os.getenv("DD_HOSTNAME")
 
 class DatadogLogHandler(logging.Handler):
     def __init__(self):
@@ -35,7 +37,7 @@ class DatadogLogHandler(logging.Handler):
                 HTTPLogItem(
                     ddsource="ec2",
                     ddtags=f"pathname:{record.pathname}",
-                    hostname="ridges.platform.ai",
+                    hostname=hostname,
                     level=record.levelname,
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
