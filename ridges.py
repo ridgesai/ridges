@@ -310,7 +310,7 @@ def run():
     else:
         console.print("💥 Failed to remove old venv", style="red")
         return
-    if run_cmd("uv venv")[0] == 0:
+    if run_cmd("uv .venv")[0] == 0:
         console.print("🔄 Created new venv", style="yellow")
     else:
         console.print("💥 Failed to create new venv", style="red")
