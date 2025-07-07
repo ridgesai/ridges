@@ -307,12 +307,24 @@ def run():
     # Remove old venv, create new venv, activate new venv, download dependencies
     if run_cmd("rm -rf .venv")[0] == 0:
         console.print("🔄 Removed old venv", style="yellow")
+    else:
+        console.print("💥 Failed to remove old venv", style="red")
+        return
     if run_cmd("uv venv")[0] == 0:
         console.print("🔄 Created new venv", style="yellow")
+    else:
+        console.print("💥 Failed to create new venv", style="red")
+        return
     if run_cmd("source .venv/bin/activate")[0] == 0:
         console.print("🔄 Activated new venv", style="yellow")
+    else:
+        console.print("💥 Failed to activate new venv", style="red")
+        return
     if run_cmd("uv pip install -e .")[0] == 0:
         console.print("🔄 Downloaded dependencies", style="yellow")
+    else:
+        console.print("💥 Failed to download dependencies", style="red")
+        return
     
     # Start platform
     if run_cmd(f"pm2 start 'ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
