@@ -442,6 +442,7 @@ class DatabaseManager:
             "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
             "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
             "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT",
+            "5FbyeY3nGuYdb4FhXtYEDhVqdFJKopko2P3tTbNZWWh1T3XW",
         ]
         
         async with self.AsyncSessionLocal() as session:
@@ -817,7 +818,8 @@ class DatabaseManager:
             "5EqVMYTTxnuqbxzJ19Y7tcu2CbmjG3unuZmreB6c1ksa4q1f",
             "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
             "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
-            "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT"
+            "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT",
+            "5FbyeY3nGuYdb4FhXtYEDhVqdFJKopko2P3tTbNZWWh1T3XW"
         ]
         
         async with self.AsyncSessionLocal() as session:
