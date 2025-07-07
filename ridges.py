@@ -304,8 +304,18 @@ def run():
         console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
         return
     
+    # Remove old venv, create new venv, activate new venv, download dependencies
+    if run_cmd("rm -rf .venv")[0] == 0:
+        console.print("🔄 Removed old venv", style="yellow")
+    if run_cmd("uv venv")[0] == 0:
+        console.print("🔄 Created new venv", style="yellow")
+    if run_cmd("source .venv/bin/activate")[0] == 0:
+        console.print("🔄 Activated new venv", style="yellow")
+    if run_cmd("uv pip install -e .")[0] == 0:
+        console.print("🔄 Downloaded dependencies", style="yellow")
+    
     # Start platform
-    if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
         console.print("📋 Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
