@@ -6,7 +6,6 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 
 import hashlib
 import time
-import click
 from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
@@ -30,6 +29,8 @@ def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
     result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
     return result.returncode, result.stdout, result.stderr
+run_cmd("uv add click")
+import click
 
 def check_docker(image: str) -> bool:
     """Check if Docker image exists"""
