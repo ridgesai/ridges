@@ -1,7 +1,6 @@
 -- Agents table
 CREATE TABLE IF NOT EXISTS agents (
-    agent_id UUID PRIMARY KEY NOT NULL,
-    miner_hotkey TEXT NOT NULL UNIQUE,
+    miner_hotkey TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     latest_version INT NOT NULL,
     created_at TIMESTAMP NOT NULL,
@@ -11,7 +10,7 @@ CREATE TABLE IF NOT EXISTS agents (
 -- Agent Versions table
 CREATE TABLE IF NOT EXISTS agent_versions (
     version_id UUID PRIMARY KEY NOT NULL,
-    agent_id UUID NOT NULL REFERENCES agents(agent_id),
+    miner_hotkey TEXT NOT NULL REFERENCES agents(miner_hotkey),
     version_num INT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     score FLOAT
@@ -25,9 +24,8 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
 
 -- Add performance indexes on common read paths
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey ON agents(miner_hotkey);
-CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id ON agent_versions(agent_id);
-CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id_version_num ON agent_versions(agent_id, version_num DESC);
-CREATE INDEX IF NOT EXISTS idx_agent_versions_agent_id_created_at ON agent_versions(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_miner_hotkey_version_num ON agent_versions(miner_hotkey, version_num DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_versions_miner_hotkey_created_at ON agent_versions(miner_hotkey, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
