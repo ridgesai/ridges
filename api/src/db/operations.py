@@ -317,16 +317,13 @@ class DatabaseManager:
                 return 0
 
     async def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
-        """
-        Store an evaluation run in the database. Return 1 if successful, 0 if not.
-        """
+        """Store an evaluation run and calculate scores"""
         async with self.AsyncSessionLocal() as session:
             try:
                 stmt = insert(EvaluationRun).values(
                     run_id=evaluation_run.run_id,
                     evaluation_id=evaluation_run.evaluation_id,
                     swebench_instance_id=evaluation_run.swebench_instance_id,
-                    status=evaluation_run.status,
                     response=evaluation_run.response,
                     error=evaluation_run.error,
                     pass_to_fail_success=evaluation_run.pass_to_fail_success,
@@ -334,6 +331,7 @@ class DatabaseManager:
                     pass_to_pass_success=evaluation_run.pass_to_pass_success,
                     fail_to_fail_success=evaluation_run.fail_to_fail_success,
                     solved=evaluation_run.solved,
+                    status=evaluation_run.status,
                     started_at=evaluation_run.started_at,
                     sandbox_created_at=evaluation_run.sandbox_created_at,
                     patch_generated_at=evaluation_run.patch_generated_at,
@@ -362,12 +360,11 @@ class DatabaseManager:
                 logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
 
                 # Update the score for the associated evaluation
-                # Divide by total possible instances instead of just averaging completed runs
                 update_stmt = (
                     Evaluation.__table__.update()
                     .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
                     .values(score=(
-                        select(func.sum(func.cast(EvaluationRun.solved, Integer)) / 20)
+                        select(func.avg(func.cast(EvaluationRun.solved, Integer)))
                         .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
                         .scalar_subquery()
                     ))
@@ -376,11 +373,79 @@ class DatabaseManager:
                 await session.commit()
                 logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
 
+                # Check for new high scores after score update
+                await self._check_for_new_high_score(evaluation_run.evaluation_id)
+
                 return 1
             except Exception as e:
                 await session.rollback()
-                logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
+                logger.error(f"Error storing evaluation run: {str(e)}")
                 return 0
+
+    async def _check_for_new_high_score(self, evaluation_id: str):
+        """Check if a new evaluation creates a high score that beats current approved leader"""
+        async with self.AsyncSessionLocal() as session:
+            try:
+                # Get the version_id and new score for this evaluation
+                result = await session.execute(text("""
+                    SELECT e.version_id, e.score, av.agent_id
+                    FROM evaluations e
+                    JOIN agent_versions av ON e.version_id = av.version_id  
+                    WHERE e.evaluation_id = :evaluation_id
+                    AND e.score IS NOT NULL
+                """), {'evaluation_id': evaluation_id})
+                
+                row = result.fetchone()
+                if not row:
+                    return  # No score available yet
+                
+                version_id, new_score, agent_id = row
+                
+                # Convert UUID objects to strings
+                version_id = str(version_id)
+                agent_id = str(agent_id)
+                
+                # Get current approved leader info
+                current_leader = await self.get_current_approved_leader()
+                current_leader_score = current_leader['score'] if current_leader else 0.0
+                
+                # Only proceed if this is a new high score
+                if new_score <= current_leader_score:
+                    return
+                
+                # Get agent details for notification
+                agent_result = await session.execute(text("""
+                    SELECT a.name, a.miner_hotkey, av.version_num
+                    FROM agents a
+                    JOIN agent_versions av ON a.agent_id = av.agent_id
+                    WHERE av.version_id = :version_id
+                """), {'version_id': version_id})
+                
+                agent_row = agent_result.fetchone()
+                if not agent_row:
+                    return
+                    
+                agent_name, miner_hotkey, version_num = agent_row
+                
+                # Send Slack notification about new high score
+                try:
+                    from api.src.utils.slack import send_high_score_notification
+                    
+                    await send_high_score_notification(
+                        agent_name=agent_name,
+                        miner_hotkey=miner_hotkey, 
+                        version_id=version_id,
+                        version_num=version_num,
+                        new_score=new_score,
+                        previous_score=current_leader_score
+                    )
+                    logger.info(f"Sent high score notification for version {version_id} with score {new_score}")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to send Slack notification for high score: {str(e)}")
+                    
+            except Exception as e:
+                logger.error(f"Error checking for new high score: {str(e)}")
         
     async def get_next_evaluation(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
@@ -1727,71 +1792,6 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error getting evaluations: {str(e)}")
                 return []
-
-    async def store_evaluation_run(self, evaluation_run: EvaluationRun) -> int:
-        """
-        Store an evaluation run in the database. Return 1 if successful, 0 if not.
-        """
-        async with self.AsyncSessionLocal() as session:
-            try:
-                stmt = insert(EvaluationRun).values(
-                    run_id=evaluation_run.run_id,
-                    evaluation_id=evaluation_run.evaluation_id,
-                    swebench_instance_id=evaluation_run.swebench_instance_id,
-                    status=evaluation_run.status,
-                    response=evaluation_run.response,
-                    error=evaluation_run.error,
-                    pass_to_fail_success=evaluation_run.pass_to_fail_success,
-                    fail_to_pass_success=evaluation_run.fail_to_pass_success,
-                    pass_to_pass_success=evaluation_run.pass_to_pass_success,
-                    fail_to_fail_success=evaluation_run.fail_to_fail_success,
-                    solved=evaluation_run.solved,
-                    started_at=evaluation_run.started_at,
-                    sandbox_created_at=evaluation_run.sandbox_created_at,
-                    patch_generated_at=evaluation_run.patch_generated_at,
-                    eval_started_at=evaluation_run.eval_started_at,
-                    result_scored_at=evaluation_run.result_scored_at
-                )
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['run_id'],
-                    set_=dict(
-                        status=stmt.excluded.status,
-                        response=stmt.excluded.response,
-                        error=stmt.excluded.error,
-                        pass_to_fail_success=stmt.excluded.pass_to_fail_success,
-                        fail_to_pass_success=stmt.excluded.fail_to_pass_success,
-                        pass_to_pass_success=stmt.excluded.pass_to_pass_success,
-                        fail_to_fail_success=stmt.excluded.fail_to_fail_success,
-                        solved=stmt.excluded.solved,
-                        sandbox_created_at=stmt.excluded.sandbox_created_at,
-                        patch_generated_at=stmt.excluded.patch_generated_at,
-                        eval_started_at=stmt.excluded.eval_started_at,
-                        result_scored_at=stmt.excluded.result_scored_at
-                    )
-                )
-                await session.execute(stmt)
-                await session.commit()
-                logger.info(f"Evaluation run {evaluation_run.run_id} stored successfully")
-
-                # Update the score for the associated evaluation
-                update_stmt = (
-                    Evaluation.__table__.update()
-                    .where(Evaluation.evaluation_id == evaluation_run.evaluation_id)
-                    .values(score=(
-                        select(func.avg(func.cast(EvaluationRun.solved, Integer)))
-                        .where(EvaluationRun.evaluation_id == evaluation_run.evaluation_id)
-                        .scalar_subquery()
-                    ))
-                )
-                await session.execute(update_stmt)
-                await session.commit()
-                logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
-
-                return 1
-            except Exception as e:
-                await session.rollback()
-                logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
-                return 0
 
     # ========================================
     # APPROVAL SYSTEM METHODS

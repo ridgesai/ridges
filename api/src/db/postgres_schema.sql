@@ -76,3 +76,21 @@ CREATE TABLE IF NOT EXISTS weights_history (
     time_since_last_update INTERVAL,
     miner_weights JSONB NOT NULL -- Stores {miner_hotkey: weight} pairs dynamically
 );
+
+-- Approved Version IDs table - tracks which versions are approved for weight consideration
+CREATE TABLE IF NOT EXISTS approved_version_ids (
+    version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+    approved_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Current Approved Leader table - tracks the current approved high score leader
+CREATE TABLE IF NOT EXISTS current_approved_leader (
+    id INT PRIMARY KEY DEFAULT 1,
+    version_id UUID REFERENCES agent_versions(version_id),
+    score FLOAT,
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    CONSTRAINT single_row CHECK (id = 1) -- Ensures only one row exists
+);
+
+-- Add performance indexes for approval tables
+CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at ON approved_version_ids(approved_at);
