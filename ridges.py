@@ -302,7 +302,6 @@ def run():
     is_running, _ = check_pm2("ridges-api-platform")
     if is_running:
         console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
-        return
     
     # Remove old venv, create new venv, activate new venv, download dependencies
     if run_cmd("rm -rf .venv")[0] == 0:
@@ -315,10 +314,13 @@ def run():
     else:
         console.print("💥 Failed to create new venv", style="red")
         return
-    if run_cmd("source .venv/bin/activate")[0] == 0:
+    result = run_cmd("source .venv/bin/activate", capture=True)
+    if result[0] == 0:
         console.print("🔄 Activated new venv", style="yellow")
     else:
         console.print("💥 Failed to activate new venv", style="red")
+        print(result[1])
+        print(result[2])
         return
     if run_cmd("uv pip install -e .")[0] == 0:
         console.print("🔄 Downloaded dependencies", style="yellow")
