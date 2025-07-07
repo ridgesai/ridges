@@ -2,24 +2,28 @@ from typing import Optional
 import asyncpg
 import logging
 from functools import wraps
-from api.src.backend.entities import Agent, AgentVersion, Evaluation, EvaluationRun, AgentWithHydratedLatestVersion
+from api.src.backend.entities import Agent, AgentVersion, Evaluation, EvaluationRun
 
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# We need to import this from where it's defined globally
 def db_operation(func):
     """Decorator to handle database operations with logging and transaction rollback"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        conn = args[0]  # First argument should be the connection
-        async with conn.transaction():
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                logger.error(f"Database operation failed in {func.__name__}: {e}")
-                # Context manager will roll back transaction, reversing any failed commits
-                raise
+        # Import here to avoid circular imports
+        from api.src.main import new_db
+
+        async with new_db.acquire() as conn:
+            async with conn.transaction():
+                try:
+                    return await func(conn, *args, **kwargs)
+                except Exception as e:
+                    logger.error(f"Database operation failed in {func.__name__}: {e}")
+                    # Context manager will roll back transaction, reversing any failed commits
+                    raise
 
     return wrapper
 
