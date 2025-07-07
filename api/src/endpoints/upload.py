@@ -14,6 +14,7 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
+from api.src.backend.queries import store_evaluation
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,7 @@ async def post_agent(
             if evaluation.status == "waiting":
                 evaluation.status = "replaced"
                 evaluation.finished_at = datetime.now()
-                await db.store_evaluation(evaluation)
+                await store_evaluation(evaluation)
     
     # Check file size
     MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB in bytes
