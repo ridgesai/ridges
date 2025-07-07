@@ -79,13 +79,13 @@ class DatabaseManager:
                     SELECT table_name 
                     FROM information_schema.tables 
                     WHERE table_schema = 'public' 
-                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history', 'banned_hotkeys')
+                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader')
                 """))
                 existing_tables = [row[0] for row in result.fetchall()]
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys']
+            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader']
             missing_tables = [table for table in required_tables if table not in existing_tables]
             
             if missing_tables:
@@ -94,6 +94,71 @@ class DatabaseManager:
             # Create tables using SQLAlchemy
             async with self.engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+            
+            # Execute the SQL schema file to create additional tables and indexes
+            schema_file_path = os.path.join(os.path.dirname(__file__), 'postgres_schema.sql')
+            if os.path.exists(schema_file_path):
+                logger.info("Executing postgres_schema.sql to ensure all tables and indexes exist")
+                with open(schema_file_path, 'r') as schema_file:
+                    schema_sql = schema_file.read()
+                
+                # Use the engine directly to ensure proper transaction handling
+                async with self.engine.begin() as conn:
+                    # Split on semicolons and execute each statement separately
+                    statements = [stmt.strip() for stmt in schema_sql.split(';') if stmt.strip()]
+                    for statement in statements:
+                        try:
+                            await conn.execute(text(statement))
+                        except Exception as e:
+                            # Log but don't fail - some statements might already exist
+                            logger.debug(f"SQL statement execution note (likely benign): {e}")
+                    # Transaction is automatically committed when the context exits
+                    logger.info("Successfully executed postgres_schema.sql")
+            else:
+                logger.warning(f"Schema file not found at {schema_file_path}")
+            
+            # Create our approval system tables directly (since schema parsing might have issues)
+            approval_tables_missing = any(table in missing_tables for table in ['approved_version_ids', 'current_approved_leader'])
+            if approval_tables_missing:
+                logger.info("Creating approval system tables directly")
+                async with self.engine.begin() as conn:
+                    # Create approved_version_ids table
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS approved_version_ids (
+                            version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+                            approved_at TIMESTAMP NOT NULL DEFAULT NOW()
+                        )
+                    """))
+                    
+                    # Create current_approved_leader table
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS current_approved_leader (
+                            id INT PRIMARY KEY DEFAULT 1,
+                            version_id UUID REFERENCES agent_versions(version_id),
+                            score FLOAT,
+                            updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                            CONSTRAINT single_row CHECK (id = 1)
+                        )
+                    """))
+                    
+                    # Create index
+                    await conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
+                        ON approved_version_ids(approved_at)
+                    """))
+                    
+                logger.info("Successfully created approval system tables directly")
+            
+            # Verify that the new tables were created by checking again
+            async with self.AsyncSessionLocal() as session:
+                result = await session.execute(text("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name IN ('approved_version_ids', 'current_approved_leader')
+                """))
+                new_tables = [row[0] for row in result.fetchall()]
+                logger.info(f"Verified new tables exist: {new_tables}")
             
             logger.info("Database tables initialized successfully")
             
@@ -692,50 +757,110 @@ class DatabaseManager:
         
     async def get_top_agent(self) -> TopAgentHotkey:
         """
-        Gets the top agents miner hotkey and version id from the database,
-        where its been scored by at least 2 validators
+        Gets the top approved agents miner hotkey and version id from the database,
+        where its been scored by at least 1 validator and is in the approved versions list.
+        Excludes banned miner hotkeys from consideration.
+        Returns None if no approved versions exist.
         """
+        # For now, this is a manual process, but will be updated shortly to be automatic
+        banned_hotkeys = [
+            "5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9", 
+            "5Dyghsz26XyzWQ4mqrngfGeidM2FUp28Hpzp2Q4sAW21mFkx", 
+            "5G6c6QvYnVS5nefgqoyq1rvKCzd3gzCQv2n6dmfLKetyVrwh", 
+            "5EXLAJe1tZhaQWtsqp2DKdKpZ2oQ3WBYapUSXFCe9zgvy8Uk", 
+            "5E7s2xNMzXKnurpsifmWxojcFa44NkuLPn1U7s9zvVrFjYKb",
+            "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
+            "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
+            "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
+            "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
+            "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
+            "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
+            "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
+            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
+            "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
+            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
+            "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
+            "5EtFbtr7wW4cAWCHcD1SLMBnExoAeKPg2eEDnzh8amjD8aPT",
+            "5DhUkZwxYygbLwHdzPnZT2QAhKE3E5fkeey6pcYRhmBPhs9G",
+            "5EcenAqMksipQZJ4x6xe9YbeXLCfMqba5z6URC1K4x1ZP9mT",
+            "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
+            "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
+            "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
+            "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
+            "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
+            "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
+            "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
+            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
+            "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
+            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
+            "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
+            "5GsKVvwQ4gk9QDk6bb8qSycPJoUcACGmfrQNjxRCE2Ue9wd3",
+            "5DS6D4MEMoPC8VSpgDWq3rVqFkjNiQoj5toVCSLA1gak7GZL",
+            "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
+            "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh",
+            "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
+            "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
+            "5GP2KhQHKbzcWaW61buSTHtQyEJvcNB9qx9WfiRbtPzs3WfG",
+            "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
+            "5E812wJwEpcd12FcYhdv21CoMPotpmXsmbQgepmFs5jDLCzv",
+            "5E4VUFyLbSgTGmy6Kd5eAb3UFabTX3VuT9M2CY2my8Dv2oRx",
+            "5H3frA14nyVf5J1YYvS3qcKc1fwg2kbz997nE9uNyYLcEXSA",
+            "5CDqtDptJ1JuAh1hX7pVoPMUXTVjdik2fb1RhybbxgjyUG9Y",
+            "5EWjt1HQWxYsFnygJWcZug29KXB9RNTDoCJyZHKThtQSvVvi",
+            "5H97WhmqAKj9vsE1K6PFLZTm48zAqTagrjuL59nZwqDu3cZK",
+            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
+            "5DHYBuwoHoVDwL8awnhhJg2oCX5xqLzsoU9ZMEg3g1gdtkXc",
+            "5FLQp1rxNiDiCA2Bwna5AUu1eScJf6hT1JtfEMfFeWio1MYz",
+            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
+            "5HKzmZ1h9CGmyBxAfESBgMPXJKThTMxCB4vwBn8CEVq7GvgG",
+            "5EqVMYTTxnuqbxzJ19Y7tcu2CbmjG3unuZmreB6c1ksa4q1f",
+            "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
+            "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux"
+        ]
+        
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
-                    WITH version_scores AS (                         -- 1.  score + validator count
+                    WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
                         SELECT
                             e.version_id,
-                            AVG(e.score)                       AS avg_score,      -- use MAX() if preferred
+                            AVG(e.score)                       AS avg_score,
                             COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
                         FROM evaluations e
+                        JOIN approved_version_ids av_approved ON e.version_id = av_approved.version_id  -- ONLY approved versions
                         WHERE e.status = 'completed'
                         AND e.score  IS NOT NULL
                         GROUP BY e.version_id
                         HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
                     ),
 
-                    top_score AS (                                  -- 2.  the absolute best score
+                    top_approved_score AS (                         -- 2.  the absolute best score among approved versions
                         SELECT MAX(avg_score) AS max_score
-                        FROM version_scores
+                        FROM approved_version_scores
                     ),
 
-                    close_enough AS (                               -- 3.  scores ≥ 98 % of the best
+                    close_enough_approved AS (                      -- 3.  approved scores ≥ 98% of the best approved
                         SELECT
-                            vs.version_id,
-                            vs.avg_score,
+                            avs.version_id,
+                            avs.avg_score,
                             av.created_at,
                             ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
-                        FROM version_scores vs
-                        JOIN agent_versions av ON av.version_id = vs.version_id
-                        CROSS JOIN top_score ts
-                        WHERE vs.avg_score >= ts.max_score * 0.98    -- within 2 %
+                        FROM approved_version_scores avs
+                        JOIN agent_versions av ON av.version_id = avs.version_id
+                        CROSS JOIN top_approved_score tas
+                        WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
                     )
 
                     SELECT
                         a.miner_hotkey,
-                        ce.version_id,
-                        ce.avg_score
-                    FROM close_enough   ce
-                    JOIN agent_versions av ON av.version_id = ce.version_id
+                        cea.version_id,
+                        cea.avg_score
+                    FROM close_enough_approved cea
+                    JOIN agent_versions av ON av.version_id = cea.version_id
                     JOIN agents         a  ON a.agent_id    = av.agent_id
-                    WHERE ce.rn = 1;
-                    """))
+                    WHERE cea.rn = 1
+                    AND a.miner_hotkey != ALL(:banned_hotkeys);
+                    """), {'banned_hotkeys': banned_hotkeys})
 
                 row = result.fetchone()
 
@@ -1654,4 +1779,202 @@ class DatabaseManager:
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error storing evaluation run {evaluation_run.run_id}: {str(e)}")
+                return 0
+
+    # ========================================
+    # APPROVAL SYSTEM METHODS
+    # ========================================
+
+    async def approve_version_id(self, version_id: str) -> int:
+        """
+        Approve a version ID for weight consideration.
+        Returns 1 if successful, 0 if failed.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                # Check if version exists
+                version_result = await session.execute(text("""
+                    SELECT version_id FROM agent_versions WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                if not version_result.fetchone():
+                    logger.error(f"Version {version_id} not found in agent_versions")
+                    return 0
+
+                # Insert into approved_version_ids (on conflict do nothing)
+                await session.execute(text("""
+                    INSERT INTO approved_version_ids (version_id)
+                    VALUES (:version_id)
+                    ON CONFLICT (version_id) DO NOTHING
+                """), {
+                    'version_id': version_id
+                })
+                
+                await session.commit()
+                logger.info(f"Version {version_id} approved for weight consideration")
+                return 1
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error approving version {version_id}: {str(e)}")
+                return 0
+
+    async def is_version_approved(self, version_id: str) -> bool:
+        """
+        Check if a version ID is approved for weight consideration.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT 1 FROM approved_version_ids WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                return result.fetchone() is not None
+                
+            except Exception as e:
+                logger.error(f"Error checking if version {version_id} is approved: {str(e)}")
+                return False
+
+    async def get_current_approved_leader(self) -> Optional[dict]:
+        """
+        Get the current approved leader information.
+        Returns dict with version_id and score, or None if no leader set.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT version_id, score, updated_at 
+                    FROM current_approved_leader 
+                    WHERE id = 1
+                """))
+                
+                row = result.fetchone()
+                if row and row[0]:  # Check if version_id is not None
+                    return {
+                        'version_id': str(row[0]),
+                        'score': row[1],
+                        'updated_at': row[2]
+                    }
+                return None
+                
+            except Exception as e:
+                logger.error(f"Error getting current approved leader: {str(e)}")
+                return None
+
+    async def update_approved_leader_if_better(self, version_id: str) -> bool:
+        """
+        Update the current approved leader if the given version has a better score.
+        Returns True if leader was updated, False otherwise.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                # Get the score for the given version
+                version_result = await session.execute(text("""
+                    SELECT score FROM agent_versions WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                version_row = version_result.fetchone()
+                if not version_row or version_row[0] is None:
+                    logger.warning(f"Version {version_id} not found or has no score")
+                    return False
+                
+                new_score = version_row[0]
+                
+                # Get current leader
+                current_leader = await self.get_current_approved_leader()
+                
+                # Update if no current leader or new score is better
+                should_update = (current_leader is None or 
+                               current_leader['score'] is None or 
+                               new_score > current_leader['score'])
+                
+                if should_update:
+                    # Upsert the new leader
+                    await session.execute(text("""
+                        INSERT INTO current_approved_leader (id, version_id, score, updated_at)
+                        VALUES (1, :version_id, :score, NOW())
+                        ON CONFLICT (id) DO UPDATE SET
+                            version_id = EXCLUDED.version_id,
+                            score = EXCLUDED.score,
+                            updated_at = EXCLUDED.updated_at
+                    """), {
+                        'version_id': version_id,
+                        'score': new_score
+                    })
+                    
+                    await session.commit()
+                    logger.info(f"Updated approved leader to version {version_id} with score {new_score}")
+                    return True
+                else:
+                    logger.info(f"Version {version_id} score {new_score} not better than current leader score {current_leader['score']}")
+                    return False
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating approved leader for version {version_id}: {str(e)}")
+                return False
+
+    async def get_approved_versions(self, limit: int = 100) -> List[dict]:
+        """
+        Get list of all approved versions for debugging/admin purposes.
+        Returns list of dicts with version_id, approved_at.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT 
+                        av.version_id,
+                        av.approved_at,
+                        agv.score,
+                        a.miner_hotkey,
+                        a.name
+                    FROM approved_version_ids av
+                    JOIN agent_versions agv ON av.version_id = agv.version_id
+                    JOIN agents a ON agv.agent_id = a.agent_id
+                    ORDER BY av.approved_at DESC
+                    LIMIT :limit
+                """), {'limit': limit})
+                
+                return [{
+                    'version_id': str(row[0]),
+                    'approved_at': row[1],
+                    'score': row[2],
+                    'miner_hotkey': row[3],
+                    'agent_name': row[4]
+                } for row in result.fetchall()]
+                
+            except Exception as e:
+                logger.error(f"Error getting approved versions: {str(e)}")
+                return []
+
+    async def remove_version_approval(self, version_id: str) -> int:
+        """
+        Remove approval for a version ID (admin function).
+        Returns 1 if successful, 0 if failed.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    DELETE FROM approved_version_ids WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                deleted_count = result.rowcount
+                
+                # If we removed the current leader, clear the leader
+                current_leader = await self.get_current_approved_leader()
+                if current_leader and current_leader['version_id'] == version_id:
+                    await session.execute(text("""
+                        UPDATE current_approved_leader 
+                        SET version_id = NULL, score = NULL, updated_at = NOW()
+                        WHERE id = 1
+                    """))
+                    logger.info(f"Cleared current approved leader since version {version_id} approval was removed")
+                
+                await session.commit()
+                logger.info(f"Removed approval for version {version_id}")
+                return deleted_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error removing approval for version {version_id}: {str(e)}")
                 return 0
