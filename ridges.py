@@ -314,7 +314,7 @@ def run():
     else:
         console.print("💥 Failed to create new venv", style="red")
         return
-    result = run_cmd("source .venv/bin/activate", capture=True)
+    result = run_cmd(". .venv/bin/activate", capture=True)
     if result[0] == 0:
         console.print("🔄 Activated new venv", style="yellow")
     else:
