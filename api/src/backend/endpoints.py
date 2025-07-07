@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 
 from api.src.utils.logging_utils import get_logger
 
-
-load_dotenv()  # Load variables from a local .env file, if present
+load_dotenv()
 logger = get_logger(__name__)
 
 app = FastAPI(title="High‑QPS WebSocket Ingest")

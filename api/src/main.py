@@ -13,12 +13,50 @@ from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
 from api.src.db.operations import DatabaseManager   
+from api.src.backend.unified_operations import DBManager, batch_writer
 
 logger = get_logger(__name__)
 
 app = FastAPI()
 server = WebSocketManager()
 db = DatabaseManager()
+
+# TODO: cleanup how we set this all up
+from dotenv import load_dotenv
+import os
+from typing import Tuple, Any
+load_dotenv()
+
+DB_USER = os.getenv("AWS_MASTER_USERNAME")
+DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
+DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
+DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
+DB_PORT = os.getenv("PGPORT", "5432")
+
+if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
+    raise RuntimeError(
+        "Missing one or more required environment variables: "
+        "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
+        "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
+    )
+
+# Batching Queue & Writer Task
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
+FLUSH_MS = int(os.getenv("FLUSH_MS", "500"))  # Flush every 500 ms if batch not full
+QUEUE_MAXSIZE = int(os.getenv("INGEST_QUEUE_MAXSIZE", "50000"))  # Back‑pressure guard
+
+# Global singletons
+queue: asyncio.Queue[Tuple[str, dict[str, Any]]]  # (device_id, payload)
+queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
+
+new_db = DBManager(
+    user=DB_USER,
+    password=DB_PASS,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME,
+)
+_batch_task: asyncio.Task | None = None
 
 # Configure CORS
 app.add_middleware(
@@ -97,6 +135,25 @@ async def startup_event():
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(run_evaluation_cleanup_loop())
     asyncio.create_task(run_connection_pool_monitor())
+
+
+## TODO: Handle endpts for new db manager
+@app.on_event("startup")
+async def _on_startup() -> None:
+    await new_db.open()
+    app.state.stop_event = asyncio.Event()
+    global _batch_task
+    _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
+
+
+@app.on_event("shutdown")
+async def _on_shutdown() -> None:
+    # Signal writer to stop, then await task.
+    app.state.stop_event.set()
+    if _batch_task:
+        await _batch_task
+    await new_db.close()
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

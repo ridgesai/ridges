@@ -14,6 +14,7 @@ def get_logger(name: str):
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     logger = logging.getLogger(name)
-    datadog_handler = DatadogLogHandler()
-    logger.addHandler(datadog_handler)
+    # TODO: readd datadog handler before moving to prod
+    # datadog_handler = DatadogLogHandler()
+    # logger.addHandler(datadog_handler)
     return logger
