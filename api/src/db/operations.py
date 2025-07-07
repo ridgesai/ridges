@@ -443,6 +443,8 @@ class DatabaseManager:
             "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
             "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT",
             "5FbyeY3nGuYdb4FhXtYEDhVqdFJKopko2P3tTbNZWWh1T3XW",
+            "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
+            "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
         ]
         
         async with self.AsyncSessionLocal() as session:
