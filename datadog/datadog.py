@@ -35,7 +35,7 @@ class DatadogLogHandler(logging.Handler):
                 HTTPLogItem(
                     ddsource="ec2",
                     ddtags=f"pathname:{record.pathname}",
-                    hostname="ridges.platform.ai",
+                    hostname="localhost",
                     level=record.levelname,
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
