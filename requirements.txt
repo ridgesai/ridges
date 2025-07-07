@@ -136,3 +136,7 @@ wheel==0.45.1
 xxhash==3.5.0
 yarl==1.20.0
 sqlalchemy[asyncio]==2.0.41
+
+# Slack integration for notifications
+slack-bolt==1.21.3
+slack-sdk==3.36.0

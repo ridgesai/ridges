@@ -56,12 +56,41 @@ async def ban_agent(agent_id: str, ban_password: str):
         raise HTTPException(status_code=404, detail="Agent not found")
     
     return {"message": "Agent banned successfully"}
+
+async def approve_version(version_id: str, approval_password: str):
+    """Approve a version ID for weight consideration"""
+    if approval_password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid approval password. fucker")
+
+    try:
+        result = await db.approve_version_id(version_id)
+    except Exception as e:
+        logger.error(f"Error approving version {version_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
+    
+    if result == 0:
+        raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Try to update the approved leader if this version has a better score
+    try:
+        leader_updated = await db.update_approved_leader_if_better(version_id)
+        if leader_updated:
+            logger.info(f"Version {version_id} approved and set as new approved leader")
+            return {"message": "Version approved successfully and set as new approved leader"}
+        else:
+            logger.info(f"Version {version_id} approved but not set as leader (score not high enough)")
+            return {"message": "Version approved successfully"}
+    except Exception as e:
+        logger.error(f"Error updating approved leader for version {version_id}: {e}")
+        # Don't fail the whole request - the approval was successful
+        return {"message": "Version approved successfully (leader update failed)"}
     
 router = APIRouter()
 
 routes = [
     ("/weights", weight_receiving_agent, ["GET"]),
-    ("/ban-agent", ban_agent, ["POST"])
+    ("/ban-agent", ban_agent, ["POST"]),
+    ("/approve-version", approve_version, ["POST"])
 ]
 
 for path, endpoint, methods in routes:
