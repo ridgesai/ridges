@@ -338,7 +338,10 @@ class DatabaseManager:
             "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
             "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
             "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
-            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw"
+            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
+            "5EtFbtr7wW4cAWCHcD1SLMBnExoAeKPg2eEDnzh8amjD8aPT",
+            "5DhUkZwxYygbLwHdzPnZT2QAhKE3E5fkeey6pcYRhmBPhs9G",
+            "5EcenAqMksipQZJ4x6xe9YbeXLCfMqba5z6URC1K4x1ZP9mT"
         ]
         
         async with self.AsyncSessionLocal() as session:
