@@ -15,7 +15,7 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.backend.queries.agents import get_agent_by_hotkey, store_agent
+from api.src.backend.queries.agents import get_latest_agent, store_agent
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
 
@@ -127,7 +127,7 @@ async def post_agent(
         )
 
     
-    latest_agent: MinerAgent = await get_agent_by_hotkey(miner_hotkey=miner_hotkey)
+    latest_agent: MinerAgent = await get_latest_agent(miner_hotkey=miner_hotkey)
     
     # Rate limit how often the miner can update the agent
     if latest_agent:
@@ -138,8 +138,9 @@ async def post_agent(
                 detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
             )
 
-    latest_version_num = int(file_info.split(":")[-1])
-    if latest_agent and latest_version_num != latest_agent.version_num:
+    version_num = int(file_info.split(":")[-1])
+
+    if latest_agent and version_num != latest_agent.version_num + 1:
         raise HTTPException(
             status_code=409,
             detail="This upload request has already been processed"

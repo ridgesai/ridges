@@ -35,8 +35,6 @@ class DBManager:
 
     @asynccontextmanager
     async def acquire(self):  # type: ignore[func-returns-value]
-        logger.info("Acquiring database connection")
-        logger.info(f"Pool: {self.pool}")
         if not self.pool:
             raise RuntimeError("Connection pool is not initialized yet.")
         async with self.pool.acquire() as con:

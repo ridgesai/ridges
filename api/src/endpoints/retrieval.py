@@ -7,7 +7,7 @@ from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.entities import EvaluationRun
 from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation
 
@@ -110,6 +110,24 @@ async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
     
     return runs
 
+async def get_latest_agent(miner_hotkey: str = None):
+    if not miner_hotkey:
+        raise HTTPException(
+            status_code=400,
+            detail="miner_hotkey must be provided"
+        )
+    
+    latest_agent = await db_get_latest_agent(miner_hotkey=miner_hotkey)
+
+    if not latest_agent:
+        logger.info(f"Agent {miner_hotkey} was requested but not found in our database")
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found"
+        )
+    
+    return latest_agent
+
 router = APIRouter()
 
 routes = [
@@ -118,6 +136,7 @@ routes = [
     ("/queue-info", get_queue_info), 
     ("/evaluations", get_evaluations),
     ("/runs-for-evaluation", get_runs_for_evaluation), 
+    ("/latest-agent", get_latest_agent),
 ]
 
 for path, endpoint in routes:

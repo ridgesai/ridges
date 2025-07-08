@@ -22,10 +22,10 @@ async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
         return False
     
 @db_operation
-async def get_agent_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
+async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
         "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score "
-        "FROM miner_agents WHERE miner_hotkey = $1",
+        "FROM miner_agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
         miner_hotkey
     )
 
