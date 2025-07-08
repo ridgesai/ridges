@@ -195,7 +195,7 @@ async def post_agent(
     version_id = str(uuid.uuid4())
     
     try:
-        s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
         logger.info(f"Successfully uploaded agent version {version_id} to S3")
     except Exception as e:
         logger.error(f"Failed to upload agent version to S3: {e}")
