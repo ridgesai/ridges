@@ -9,7 +9,6 @@ logger = get_logger(__name__)
 
 class AgentVersion(BaseModel):
     version_id: str
-    agent_id: str
     miner_hotkey: str
     version_num: int
     created_at: datetime = Field(default_factory=datetime.now)

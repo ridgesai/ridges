@@ -34,19 +34,14 @@ async def handle_evaluation(websocket_app, json_message):
         # Extract agent version data from the response
         evaluation_id = json_message.get("evaluation_id")
         agent_data = json_message.get("agent_version", {})
-        agent_id = agent_data.get("agent_id")
         miner_hotkey = agent_data.get("miner_hotkey")
         version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
         version_id = agent_data.get("version_id")
 
-        if agent_id is None:
-            raise Exception("Incomplete agent data")
-
         # Create AgentVersion object
         agent_version = AgentVersion(
             version_id=version_id,
-            agent_id=agent_id,
             miner_hotkey=miner_hotkey,
             version_num=version_num,
             created_at=datetime.fromisoformat(created_at),
