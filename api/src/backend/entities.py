@@ -27,7 +27,7 @@ class EvaluationStatus(Enum):
     error = "error"
 
 class Evaluation(BaseModel):
-    evaluation_id: str
+    evaluation_id: UUID
     version_id: UUID
     validator_hotkey: str
     status: EvaluationStatus
