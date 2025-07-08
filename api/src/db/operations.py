@@ -118,58 +118,78 @@ class DatabaseManager:
                 logger.warning(f"Schema file not found at {schema_file_path}")
             
             # Create our approval system tables directly (since schema parsing might have issues)
-            approval_tables_missing = any(table in missing_tables for table in ['approved_version_ids', 'current_approved_leader', 'pending_approvals'])
-            if approval_tables_missing:
-                logger.info("Creating approval system tables directly")
+            # Check each approval table individually and create only the missing ones
+            approval_tables_needed = {
+                'approved_version_ids': 'approved_version_ids' in missing_tables,
+                'current_approved_leader': 'current_approved_leader' in missing_tables,
+                'pending_approvals': 'pending_approvals' in missing_tables
+            }
+            
+            tables_to_create = [table for table, needed in approval_tables_needed.items() if needed]
+            if tables_to_create:
+                logger.info(f"Creating missing approval system tables: {tables_to_create}")
                 async with self.engine.begin() as conn:
-                    # Create approved_version_ids table
-                    await conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS approved_version_ids (
-                            version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
-                            approved_at TIMESTAMP NOT NULL DEFAULT NOW()
-                        )
-                    """))
+                    # Create approved_version_ids table if missing
+                    if 'approved_version_ids' in tables_to_create:
+                        await conn.execute(text("""
+                            CREATE TABLE IF NOT EXISTS approved_version_ids (
+                                version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+                                approved_at TIMESTAMP NOT NULL DEFAULT NOW()
+                            )
+                        """))
+                        logger.info("Created approved_version_ids table")
                     
-                    # Create current_approved_leader table
-                    await conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS current_approved_leader (
-                            id INT PRIMARY KEY DEFAULT 1,
-                            version_id UUID REFERENCES agent_versions(version_id),
-                            score FLOAT,
-                            updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                            CONSTRAINT single_row CHECK (id = 1)
-                        )
-                    """))
+                    # Create current_approved_leader table if missing
+                    if 'current_approved_leader' in tables_to_create:
+                        await conn.execute(text("""
+                            CREATE TABLE IF NOT EXISTS current_approved_leader (
+                                id INT PRIMARY KEY DEFAULT 1,
+                                version_id UUID REFERENCES agent_versions(version_id),
+                                score FLOAT,
+                                updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                                CONSTRAINT single_row CHECK (id = 1)
+                            )
+                        """))
+                        logger.info("Created current_approved_leader table")
                     
-                    # Create pending_approvals table
-                    await conn.execute(text("""
-                        CREATE TABLE IF NOT EXISTS pending_approvals (
-                            version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
-                            agent_name TEXT NOT NULL,
-                            miner_hotkey TEXT NOT NULL,
-                            version_num INT NOT NULL,
-                            score FLOAT NOT NULL,
-                            detected_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-                            reviewed_at TIMESTAMP
-                        )
-                    """))
+                    # Create pending_approvals table if missing
+                    if 'pending_approvals' in tables_to_create:
+                        await conn.execute(text("""
+                            CREATE TABLE IF NOT EXISTS pending_approvals (
+                                version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+                                agent_name TEXT NOT NULL,
+                                miner_hotkey TEXT NOT NULL,
+                                version_num INT NOT NULL,
+                                score FLOAT NOT NULL,
+                                detected_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                                status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+                                reviewed_at TIMESTAMP
+                            )
+                        """))
+                        logger.info("Created pending_approvals table")
                     
-                    # Create indexes
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
-                        ON approved_version_ids(approved_at)
-                    """))
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_status 
-                        ON pending_approvals(status)
-                    """))
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at 
-                        ON pending_approvals(detected_at DESC)
-                    """))
+                    # Create indexes for the tables that were created
+                    if 'approved_version_ids' in tables_to_create:
+                        await conn.execute(text("""
+                            CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
+                            ON approved_version_ids(approved_at)
+                        """))
                     
-                logger.info("Successfully created approval system tables directly")
+                    if 'pending_approvals' in tables_to_create:
+                        await conn.execute(text("""
+                            CREATE INDEX IF NOT EXISTS idx_pending_approvals_status 
+                            ON pending_approvals(status)
+                        """))
+                        await conn.execute(text("""
+                            CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at 
+                            ON pending_approvals(detected_at DESC)
+                        """))
+                        await conn.execute(text("""
+                            CREATE INDEX IF NOT EXISTS idx_pending_approvals_version_id 
+                            ON pending_approvals(version_id)
+                        """))
+                    
+                logger.info("Successfully created missing approval system tables")
             
             # Verify that the new tables were created by checking again
             async with self.AsyncSessionLocal() as session:
