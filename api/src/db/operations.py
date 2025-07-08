@@ -900,7 +900,12 @@ class DatabaseManager:
             "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
             "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
             "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
-            "5EUge63QjopJuTgupBspKev5kcw1QLZzyauF95osN86Exgv6"
+            "5EUge63QjopJuTgupBspKev5kcw1QLZzyauF95osN86Exgv6",
+            "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+            "5GgPbZb5yuWuHCxHocuG7URKkSUtM6uJSeDhRYm49FB6xWSj",
+            "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+            "5D9vn9FThXTq9mSwM3NQi9eMi8x7YXRcPpSLZQQCFt2FGNJf",
+            "5DybkqrhzCNNqmLWzukCfiFCVFrvxNMe7eDPBB5bGRgDgucB"
         ]
         
         async with self.AsyncSessionLocal() as session:
