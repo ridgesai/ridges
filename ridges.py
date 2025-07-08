@@ -306,6 +306,11 @@ def run(no_auto_update: bool):
         console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
         return
     
+    if no_auto_update:
+        console.print("🚀 Starting platform...", style="yellow")
+        run_cmd("uv run -m api.src.main", capture=False)
+        return
+
     # Remove old venv, create new venv, activate new venv, download dependencies
     if run_cmd("rm -rf .venv")[0] == 0:
         console.print("🔄 Removed old venv", style="yellow")
@@ -326,11 +331,6 @@ def run(no_auto_update: bool):
         console.print("🔄 Downloaded dependencies", style="yellow")
     else:
         console.print("💥 Failed to download dependencies", style="red")
-        return
-    
-    if no_auto_update:
-        console.print("🚀 Starting platform...", style="yellow")
-        run_cmd("uv run -m api.src.main", capture=False)
         return
     
     # Start platform
