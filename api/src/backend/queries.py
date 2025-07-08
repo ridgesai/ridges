@@ -215,7 +215,7 @@ async def get_current_evaluations():
     pass 
     # - Get all running evaluations
 
-async def get_latest_weights():
+
     pass 
     # - Get current network weights
 
