@@ -9,8 +9,6 @@ from fiber import Keypair
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
-from api.src.db.sqlalchemy_models import Agent, AgentVersion
-from api.src.db.operations import DatabaseManager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
@@ -22,7 +20,6 @@ from api.src.backend.entities import MinerAgent
 logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
-db = DatabaseManager()
 
 class AgentUploadRequest(BaseModel):
     public_key: str
