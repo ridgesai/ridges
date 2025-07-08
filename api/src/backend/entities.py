@@ -12,7 +12,7 @@ class MinerAgent(BaseModel):
     agent_name: str
     version_num: int
     created_at: datetime
-    score: float
+    score: Optional[float]
 
 class AgentWithHydratedCode(MinerAgent):
     code: str
