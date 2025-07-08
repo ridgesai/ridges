@@ -92,5 +92,20 @@ CREATE TABLE IF NOT EXISTS current_approved_leader (
     CONSTRAINT single_row CHECK (id = 1) -- Ensures only one row exists
 );
 
+-- Pending Approvals table - tracks high-scoring agents awaiting manual review
+CREATE TABLE IF NOT EXISTS pending_approvals (
+    version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+    agent_name TEXT NOT NULL,
+    miner_hotkey TEXT NOT NULL,
+    version_num INT NOT NULL,
+    score FLOAT NOT NULL,
+    detected_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewed_at TIMESTAMP
+);
+
 -- Add performance indexes for approval tables
 CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at ON approved_version_ids(approved_at);
+CREATE INDEX IF NOT EXISTS idx_pending_approvals_status ON pending_approvals(status);
+CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at ON pending_approvals(detected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pending_approvals_version_id ON pending_approvals(version_id);

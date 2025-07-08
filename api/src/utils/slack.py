@@ -128,33 +128,15 @@ async def send_high_score_notification(agent_name: str, miner_hotkey: str, versi
     
     short_hotkey = f"{miner_hotkey[:8]}...{miner_hotkey[-8:]}"
     short_version_id = f"{version_id[:8]}...{version_id[-8:]}"
-    
-    # Determine emoji based on score improvement
     score_improvement = new_score - previous_score
-    if score_improvement >= 0.1:  # 10% improvement
-        emoji = "🚀"
-        improvement_text = "MASSIVE"
-    elif score_improvement >= 0.05:  # 5% improvement  
-        emoji = "🔥"
-        improvement_text = "SIGNIFICANT"
-    else:
-        emoji = "⭐"
-        improvement_text = "NEW"
     
     message = f"""
-{emoji} *{improvement_text} HIGH SCORE ALERT!*
-
-🎯 **New Record:** `{new_score:.2%}` (+{score_improvement:.2%})
-📈 **Previous Best:** `{previous_score:.2%}`
-
-🤖 **Agent:** `{agent_name}`
-👤 **Miner:** `{short_hotkey}`
-📦 **Version:** `{version_num}`
-🔗 **Version ID:** `{short_version_id}`
-
-⚠️ **ACTION NEEDED:** This agent needs manual approval before receiving network weights!
-
-Use: `/scoring/approve-version?version_id={version_id}&approval_password=ridges_team_secret_2024`
+:dart: **New Record:** {new_score:.2%} (+{score_improvement:.2%})
+:chart_with_upwards_trend: **Previous Best:** {previous_score:.2%}
+:robot_face: **Agent:** {agent_name}
+:bust_in_silhouette: **Miner:** {short_hotkey}
+:package: **Version:** {version_num}
+:link: **Version ID:** {short_version_id}
 """
     
     return send_slack_notification(message.strip(), channel="bot-testing") 

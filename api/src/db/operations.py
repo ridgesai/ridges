@@ -118,7 +118,7 @@ class DatabaseManager:
                 logger.warning(f"Schema file not found at {schema_file_path}")
             
             # Create our approval system tables directly (since schema parsing might have issues)
-            approval_tables_missing = any(table in missing_tables for table in ['approved_version_ids', 'current_approved_leader'])
+            approval_tables_missing = any(table in missing_tables for table in ['approved_version_ids', 'current_approved_leader', 'pending_approvals'])
             if approval_tables_missing:
                 logger.info("Creating approval system tables directly")
                 async with self.engine.begin() as conn:
@@ -141,10 +141,32 @@ class DatabaseManager:
                         )
                     """))
                     
-                    # Create index
+                    # Create pending_approvals table
+                    await conn.execute(text("""
+                        CREATE TABLE IF NOT EXISTS pending_approvals (
+                            version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
+                            agent_name TEXT NOT NULL,
+                            miner_hotkey TEXT NOT NULL,
+                            version_num INT NOT NULL,
+                            score FLOAT NOT NULL,
+                            detected_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+                            reviewed_at TIMESTAMP
+                        )
+                    """))
+                    
+                    # Create indexes
                     await conn.execute(text("""
                         CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
                         ON approved_version_ids(approved_at)
+                    """))
+                    await conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_status 
+                        ON pending_approvals(status)
+                    """))
+                    await conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at 
+                        ON pending_approvals(detected_at DESC)
                     """))
                     
                 logger.info("Successfully created approval system tables directly")
@@ -155,7 +177,7 @@ class DatabaseManager:
                     SELECT table_name 
                     FROM information_schema.tables 
                     WHERE table_schema = 'public' 
-                    AND table_name IN ('approved_version_ids', 'current_approved_leader')
+                    AND table_name IN ('approved_version_ids', 'current_approved_leader', 'pending_approvals')
                 """))
                 new_tables = [row[0] for row in result.fetchall()]
                 logger.info(f"Verified new tables exist: {new_tables}")
@@ -373,9 +395,6 @@ class DatabaseManager:
                 await session.commit()
                 logger.info(f"Updated score for evaluation {evaluation_run.evaluation_id}")
 
-                # Check for new high scores after score update
-                await self._check_for_new_high_score(evaluation_run.evaluation_id)
-
                 return 1
             except Exception as e:
                 await session.rollback()
@@ -427,6 +446,24 @@ class DatabaseManager:
                     
                 agent_name, miner_hotkey, version_num = agent_row
                 
+                # Add to pending approvals queue for manual review
+                try:
+                    pending_result = await self.add_pending_approval(
+                        version_id=version_id,
+                        agent_name=agent_name,
+                        miner_hotkey=miner_hotkey,
+                        version_num=version_num,
+                        score=new_score
+                    )
+                    
+                    if pending_result == 1:
+                        logger.info(f"Added version {version_id} to pending approvals queue (score: {new_score})")
+                    else:
+                        logger.warning(f"Failed to add version {version_id} to pending approvals queue")
+                        
+                except Exception as e:
+                    logger.error(f"Error adding version {version_id} to pending approvals: {str(e)}")
+
                 # Send Slack notification about new high score
                 try:
                     from api.src.utils.slack import send_high_score_notification
@@ -1989,4 +2026,181 @@ class DatabaseManager:
             except Exception as e:
                 await session.rollback()
                 logger.error(f"Error removing approval for version {version_id}: {str(e)}")
+                return 0
+
+    # ========================================
+    # PENDING APPROVALS METHODS
+    # ========================================
+
+    async def add_pending_approval(self, version_id: str, agent_name: str, miner_hotkey: str, version_num: int, score: float) -> int:
+        """
+        Add a high-scoring agent version to the pending approvals queue.
+        Returns 1 if successful, 0 if failed (including if already exists).
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                # Check if version exists
+                version_result = await session.execute(text("""
+                    SELECT version_id FROM agent_versions WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                if not version_result.fetchone():
+                    logger.error(f"Version {version_id} not found in agent_versions")
+                    return 0
+
+                # Insert into pending_approvals (on conflict do nothing due to PRIMARY KEY constraint)
+                await session.execute(text("""
+                    INSERT INTO pending_approvals (version_id, agent_name, miner_hotkey, version_num, score)
+                    VALUES (:version_id, :agent_name, :miner_hotkey, :version_num, :score)
+                    ON CONFLICT (version_id) DO NOTHING
+                """), {
+                    'version_id': version_id,
+                    'agent_name': agent_name,
+                    'miner_hotkey': miner_hotkey,
+                    'version_num': version_num,
+                    'score': score
+                })
+                
+                await session.commit()
+                logger.info(f"Added pending approval for version {version_id} (agent: {agent_name}, score: {score})")
+                return 1
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error adding pending approval for version {version_id}: {str(e)}")
+                return 0
+
+    async def get_pending_approvals(self, status: str = 'pending', limit: int = 50) -> List[dict]:
+        """
+        Get list of pending approvals filtered by status.
+        Returns list of dicts with pending approval details.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT 
+                        version_id,
+                        agent_name,
+                        miner_hotkey,
+                        version_num,
+                        score,
+                        detected_at,
+                        status,
+                        reviewed_at
+                    FROM pending_approvals
+                    WHERE status = :status
+                    ORDER BY detected_at DESC
+                    LIMIT :limit
+                """), {'status': status, 'limit': limit})
+                
+                return [{
+                    'version_id': str(row[0]),
+                    'agent_name': row[1],
+                    'miner_hotkey': row[2],
+                    'version_num': row[3],
+                    'score': row[4],
+                    'detected_at': row[5],
+                    'status': row[6],
+                    'reviewed_at': row[7]
+                } for row in result.fetchall()]
+                
+            except Exception as e:
+                logger.error(f"Error getting pending approvals: {str(e)}")
+                return []
+
+    async def update_pending_approval_status(self, version_id: str, status: str) -> int:
+        """
+        Update the status of a pending approval.
+        Returns 1 if successful, 0 if failed.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    UPDATE pending_approvals 
+                    SET status = :status, reviewed_at = NOW()
+                    WHERE version_id = :version_id
+                """), {
+                    'version_id': version_id,
+                    'status': status
+                })
+                
+                updated_count = result.rowcount
+                await session.commit()
+                
+                if updated_count > 0:
+                    logger.info(f"Updated pending approval status for version {version_id} to {status}")
+                else:
+                    logger.warning(f"No pending approval found for version {version_id}")
+                
+                return updated_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating pending approval status for version {version_id}: {str(e)}")
+                return 0
+
+    async def get_pending_approval_by_version(self, version_id: str) -> Optional[dict]:
+        """
+        Get pending approval info for a specific version ID.
+        Returns dict with pending approval details, or None if not found.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    SELECT 
+                        version_id,
+                        agent_name,
+                        miner_hotkey,
+                        version_num,
+                        score,
+                        detected_at,
+                        status,
+                        reviewed_at
+                    FROM pending_approvals
+                    WHERE version_id = :version_id
+                """), {'version_id': version_id})
+                
+                row = result.fetchone()
+                if row:
+                    return {
+                        'version_id': str(row[0]),
+                        'agent_name': row[1],
+                        'miner_hotkey': row[2],
+                        'version_num': row[3],
+                        'score': row[4],
+                        'detected_at': row[5],
+                        'status': row[6],
+                        'reviewed_at': row[7]
+                    }
+                return None
+                
+            except Exception as e:
+                logger.error(f"Error getting pending approval for version {version_id}: {str(e)}")
+                return None
+
+    async def cleanup_old_pending_approvals(self, days: int = 7) -> int:
+        """
+        Clean up old pending approvals (older than specified days).
+        Returns number of records cleaned up.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    DELETE FROM pending_approvals 
+                    WHERE detected_at < NOW() - INTERVAL '%s days'
+                """ % days))
+                
+                deleted_count = result.rowcount
+                await session.commit()
+                
+                if deleted_count > 0:
+                    logger.info(f"Cleaned up {deleted_count} old pending approvals (older than {days} days)")
+                else:
+                    logger.info(f"No old pending approvals found to clean up (older than {days} days)")
+                
+                return deleted_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error cleaning up old pending approvals: {str(e)}")
                 return 0

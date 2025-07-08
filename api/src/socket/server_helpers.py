@@ -170,6 +170,10 @@ async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     evaluation.finished_at = datetime.now()
     await db.store_evaluation(evaluation)
 
+    # Check for new high scores only when evaluation completes successfully
+    if evaluation.status == "completed":
+        await db._check_for_new_high_score(evaluation_id)
+
     return evaluation
 
 async def delete_evaluation_runs(evaluation_id: str) -> int:

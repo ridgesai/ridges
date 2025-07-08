@@ -57,6 +57,18 @@ async def ban_agent(agent_id: str, ban_password: str):
     
     return {"message": "Agent banned successfully"}
 
+async def get_pending_approvals(status: str = "pending", limit: int = 50):
+    """Get pending approvals queue"""
+    try:
+        pending_approvals = await db.get_pending_approvals(status=status, limit=limit)
+        return {
+            "pending_approvals": pending_approvals,
+            "count": len(pending_approvals)
+        }
+    except Exception as e:
+        logger.error(f"Error getting pending approvals: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get pending approvals due to internal server error.")
+
 async def approve_version(version_id: str, approval_password: str):
     """Approve a version ID for weight consideration"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
@@ -70,6 +82,14 @@ async def approve_version(version_id: str, approval_password: str):
     
     if result == 0:
         raise HTTPException(status_code=404, detail="Version not found")
+    
+    # Update pending approval status to 'approved' if it exists
+    try:
+        await db.update_pending_approval_status(version_id, "approved")
+        logger.info(f"Updated pending approval status to 'approved' for version {version_id}")
+    except Exception as e:
+        logger.warning(f"Could not update pending approval status for version {version_id}: {e}")
+        # Don't fail the request - the approval was successful
     
     # Try to update the approved leader if this version has a better score
     try:
@@ -90,7 +110,8 @@ router = APIRouter()
 routes = [
     ("/weights", weight_receiving_agent, ["GET"]),
     ("/ban-agent", ban_agent, ["POST"]),
-    ("/approve-version", approve_version, ["POST"])
+    ("/approve-version", approve_version, ["POST"]),
+    ("/pending-approvals", get_pending_approvals, ["GET"])
 ]
 
 for path, endpoint, methods in routes:
