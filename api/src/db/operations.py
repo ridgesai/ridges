@@ -898,46 +898,44 @@ class DatabaseManager:
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
-                    WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
+                    WITH version_scores AS (                         -- 1.  score + validator count
                         SELECT
                             e.version_id,
-                            AVG(e.score)                       AS avg_score,
+                            AVG(e.score)                       AS avg_score,      -- use MAX() if preferred
                             COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
                         FROM evaluations e
-                        JOIN approved_version_ids av_approved ON e.version_id = av_approved.version_id  -- ONLY approved versions
                         WHERE e.status = 'completed'
                         AND e.score  IS NOT NULL
                         GROUP BY e.version_id
                         HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
                     ),
 
-                    top_approved_score AS (                         -- 2.  the absolute best score among approved versions
+                    top_score AS (                                  -- 2.  the absolute best score
                         SELECT MAX(avg_score) AS max_score
-                        FROM approved_version_scores
+                        FROM version_scores
                     ),
 
-                    close_enough_approved AS (                      -- 3.  approved scores ≥ 98% of the best approved
+                    close_enough AS (                               -- 3.  scores ≥ 98 % of the best
                         SELECT
-                            avs.version_id,
-                            avs.avg_score,
+                            vs.version_id,
+                            vs.avg_score,
                             av.created_at,
                             ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
-                        FROM approved_version_scores avs
-                        JOIN agent_versions av ON av.version_id = avs.version_id
-                        CROSS JOIN top_approved_score tas
-                        WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
+                        FROM version_scores vs
+                        JOIN agent_versions av ON av.version_id = vs.version_id
+                        CROSS JOIN top_score ts
+                        WHERE vs.avg_score >= ts.max_score * 0.98    -- within 2 %
                     )
 
                     SELECT
                         a.miner_hotkey,
-                        cea.version_id,
-                        cea.avg_score
-                    FROM close_enough_approved cea
-                    JOIN agent_versions av ON av.version_id = cea.version_id
+                        ce.version_id,
+                        ce.avg_score
+                    FROM close_enough   ce
+                    JOIN agent_versions av ON av.version_id = ce.version_id
                     JOIN agents         a  ON a.agent_id    = av.agent_id
-                    WHERE cea.rn = 1
-                    AND a.miner_hotkey != ALL(:banned_hotkeys);
-                    """), {'banned_hotkeys': banned_hotkeys})
+                    WHERE ce.rn = 1;
+                    """))
 
                 row = result.fetchone()
 
