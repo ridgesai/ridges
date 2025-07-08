@@ -1,15 +1,16 @@
-from typing import List, Optional
+from typing import List, Optional, Callable
 import asyncpg
 import logging
 from functools import wraps
 from api.src.backend.entities import MinerAgent, Evaluation, EvaluationRun
+
 
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 # We need to import this from where it's defined globally
-def db_operation(func):
+def db_operation(func: Callable) -> Callable:
     """Decorator to handle database operations with logging and transaction rollback"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
