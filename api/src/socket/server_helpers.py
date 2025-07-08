@@ -9,7 +9,7 @@ import time
 from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 from api.src.db.sqlalchemy_models import EvaluationRun, Evaluation
-from api.src.backend.queries_old import store_evaluation, store_evaluation_run, get_agent_version, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation
+from api.src.backend.queries.evaluations import store_evaluation, store_evaluation_run, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation_by_evaluation_id
 from api.src.backend.entities import Evaluation as NewEvaluation
 
 logger = get_logger(__name__)
@@ -152,7 +152,7 @@ async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     Finish an evaluation in the database.
     """
     
-    evaluation = await db.get_evaluation(evaluation_id)
+    evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
     await db.store_evaluation(evaluation)

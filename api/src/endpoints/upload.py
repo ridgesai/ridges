@@ -16,6 +16,7 @@ from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries.agents import get_agent_by_hotkey, store_agent
+from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
 
 logger = logging.getLogger(__name__)

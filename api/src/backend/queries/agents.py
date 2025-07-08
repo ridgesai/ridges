@@ -33,3 +33,16 @@ async def get_agent_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Op
         return None
 
     return MinerAgent(**dict(result))
+
+@db_operation
+async def get_agent_by_version_id(conn: asyncpg.Connection, version_id: str) -> Optional[MinerAgent]:
+    result = await conn.fetchrow(
+        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score "
+        "FROM miner_agents WHERE version_id = $1",
+        version_id
+    )
+
+    if not result:
+        return None
+
+    return MinerAgent(**dict(result))
