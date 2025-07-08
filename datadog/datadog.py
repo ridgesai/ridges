@@ -32,10 +32,15 @@ class DatadogLogHandler(logging.Handler):
         asyncio.create_task(self._async_emit(record))
 
     async def _async_emit(self, record):
+        provided_process_type = getattr(record, 'process_type', None)
+        provided_process_id = getattr(record, 'process_id', None)
+        
         body = HTTPLog(
             [
                 HTTPLogItem(
                     ddsource="ec2",
+                    process_type=provided_process_type if provided_process_type else (record.processName if record.processName else "unknown"),
+                    process_id=provided_process_id if provided_process_id else (record.processId if record.processId else "unknown"),
                     ddtags=f"pathname:{record.pathname}",
                     hostname=hostname,
                     level=record.levelname,
