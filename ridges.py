@@ -377,4 +377,5 @@ def update():
     console.print(Panel("[bold green]🎉 Platform updated![/bold green]", title="✨ Complete", border_style="green"))
 
 if __name__ == "__main__":
+    run_cmd(". .venv/bin/activate")
     cli() 
