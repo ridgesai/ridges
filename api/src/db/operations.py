@@ -79,13 +79,13 @@ class DatabaseManager:
                     SELECT table_name 
                     FROM information_schema.tables 
                     WHERE table_schema = 'public' 
-                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader')
+                    AND table_name IN ('agents', 'agent_versions', 'evaluations', 'evaluation_runs', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader', 'pending_approvals')
                 """))
                 existing_tables = [row[0] for row in result.fetchall()]
             
             logger.info(f"Existing database tables: {existing_tables}")
 
-            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader']
+            required_tables = ['agent_versions', 'agents', 'evaluation_runs', 'evaluations', 'weights_history', 'banned_hotkeys', 'approved_version_ids', 'current_approved_leader', 'pending_approvals']
             missing_tables = [table for table in required_tables if table not in existing_tables]
             
             if missing_tables:
