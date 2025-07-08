@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import List, Optional
 import asyncpg
 import logging
 from functools import wraps
-from api.src.backend.entities import AgentVersion, Evaluation, EvaluationRun
+from api.src.backend.entities import MinerAgent, Evaluation, EvaluationRun
 
 from datetime import datetime
 
@@ -193,21 +193,35 @@ async def get_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> Evalua
     
     return Evaluation(**dict(result))
 
-async def get_evaluations_by_version_id():
-    pass 
-    # - Get all evaluations for a version
+async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: str) -> List[Evaluation]:
+    result = await conn.fetch(
+        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "FROM evaluations WHERE version_id = $1",
+        version_id
+    )
 
-async def get_queue_info():
-    pass 
-    # - Get queue position per validator
+    return [Evaluation(**dict(row)) for row in result]
 
-async def get_current_evaluations():
-    pass 
-    # - Get all running evaluations
+async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length: int = 10) -> List[Evaluation]:
+    """Get a list of the queued evaluations for a given validator"""
+    result = await conn.fetch(
+        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "FROM evaluations WHERE status = 'waiting' AND validator_hotkey = $1 "
+        "ORDER BY created_at DESC "
+        "LIMIT $2",
+        validator_hotkey,
+        length
+    )
 
+    return [Evaluation(**dict(row)) for row in result]
 
-    pass 
-    # - Get current network weights
+async def get_current_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
+    result = await conn.fetch(
+        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "FROM evaluations WHERE status = 'running'",
+    )
+
+    return [Evaluation(**dict(row)) for row in result]
 
 '''
 Evaluation Creation/Upserts
@@ -273,9 +287,12 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
         WHERE evaluation_id = $1
     """, evaluation_run.evaluation_id)
 
-async def delete_evaluation_runs():
-    pass 
-    # - Clean up runs on disconnect
+@db_operation
+async def delete_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str):
+    await conn.execute(
+        "DELETE FROM evaluation_runs WHERE evaluation_id = $1",
+        evaluation_id
+    )
 
 
 '''
