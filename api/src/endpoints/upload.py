@@ -15,7 +15,7 @@ from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries_old import store_evaluation, get_evaluations_by_version_id
-from api.src.backend.queries.agents import get_agent_by_hotkey
+from api.src.backend.queries.agents import get_agent_by_hotkey, store_agent
 from api.src.backend.entities import MinerAgent
 
 logger = logging.getLogger(__name__)
@@ -196,59 +196,41 @@ async def post_agent(
     except CheckError as e:
         raise HTTPException(status_code=400, detail=str(e))
         
-    # agent_id = str(uuid.uuid4()) if not existing_agent else existing_agent.agent_id
-    # version_id = str(uuid.uuid4())
+    version_id = str(uuid.uuid4())
     
-    # try:
-    #     await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
-    #     logger.info(f"Successfully uploaded agent version {version_id} to S3")
-    # except Exception as e:
-    #     logger.error(f"Failed to upload agent version to S3: {e}")
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail=f"Failed to store agent version in our database. Please try again later."
-    #     )
+    try:
+        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+        logger.info(f"Successfully uploaded agent version {version_id} to S3")
+    except Exception as e:
+        logger.error(f"Failed to upload agent code to S3: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store agent in our database. Please try again later."
+        )
     
-    # # Only set name for new agents, not for updates
-    # agent_object = Agent(
-    #     agent_id=agent_id,
-    #     miner_hotkey=existing_agent.miner_hotkey if existing_agent else miner_hotkey,
-    #     name=agent_name,
-    #     latest_version=existing_agent.latest_version + 1 if existing_agent else 0,
-    #     created_at=existing_agent.created_at if existing_agent else datetime.now(),
-    #     last_updated=datetime.now(),
-    # )
+    agent_object = MinerAgent(
+        version_id=version_id,
+        miner_hotkey=miner_hotkey,
+        agent_name=agent_name,
+        version_num=latest_agent.version_num + 1 if latest_agent else 0,
+        created_at=datetime.now(),
+        score=None
+    )
 
-    # result = await db.store_agent(agent_object)
+    success = await store_agent(agent_object)
     
-    # if result == 0:
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail=f"Failed to store agent version in our database. Please try again later."
-    #     )
-    
-    # agent_version_object = AgentVersion(
-    #     version_id=version_id,
-    #     agent_id=agent_id,
-    #     version_num=agent_object.latest_version,
-    #     created_at=datetime.now(),
-    #     score=None
-    # )
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to store agent version in our database. Please try again later."
+        )
 
-    # result = await db.store_agent_version(agent_version_object)
-    
-    # if result == 0:
-    #     raise HTTPException(
-    #         status_code=500,
-    #         detail=f"Failed to store agent version in our database. Please try again later."
-    #     )
-    
-    # await WebSocketManager.get_instance().create_new_evaluations(version_id)
+    await WebSocketManager.get_instance().create_new_evaluations(version_id)
 
-    # return {
-    #     "status": "success",
-    #     "message": f"Successfully updated agent {agent_id} to version {agent_object.latest_version}" if existing_agent else f"Successfully created agent {agent_id}"
-    # } 
+    return {
+        "status": "success",
+        "message": f"Successfully updated agent {version_id} to version {agent_object.version_id}" if latest_agent else f"Successfully created agent {version_id}"
+    } 
 
 router = APIRouter()
 

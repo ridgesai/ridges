@@ -3,14 +3,14 @@ from typing import Optional
 import httpx
 import uuid
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 from api.src.db.sqlalchemy_models import EvaluationRun, Evaluation
-from api.src.backend.queries import store_evaluation, store_evaluation_run, get_agent_version, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation
-from api.src.backend.entities import AgentVersion
+from api.src.backend.queries_old import store_evaluation, store_evaluation_run, get_agent_version, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation
+from api.src.backend.entities import Evaluation as NewEvaluation
 
 logger = get_logger(__name__)
 
@@ -120,21 +120,21 @@ async def create_evaluation(version_id: str, validator_hotkey: str) -> str:
     """
     Create a new evaluation in the database. Returns the evaluation id.
     """
-    
-    evaluation_object = Evaluation(
+    evaluation = NewEvaluation(
         evaluation_id=str(uuid.uuid4()),
         version_id=version_id,
         validator_hotkey=validator_hotkey,
         status="waiting",
         terminated_reason=None,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         started_at=None,
         finished_at=None,
         score=None
     )
-    await store_evaluation(evaluation_object)
+    
+    await store_evaluation(evaluation=evaluation)
 
-    return evaluation_object.evaluation_id
+    return evaluation.evaluation_id
 
 async def start_evaluation(evaluation_id: str) -> Evaluation:
     """
