@@ -444,12 +444,35 @@ class DatabaseManager:
                 version_id = str(version_id)
                 agent_id = str(agent_id)
                 
+                # Calculate average score across ALL completed evaluations for this version
+                avg_result = await session.execute(text("""
+                    SELECT 
+                        AVG(e.score) as avg_score,
+                        COUNT(DISTINCT e.validator_hotkey) as validator_count
+                    FROM evaluations e
+                    WHERE e.version_id = :version_id
+                    AND e.status = 'completed'
+                    AND e.score IS NOT NULL
+                """), {'version_id': version_id})
+                
+                avg_row = avg_result.fetchone()
+                if not avg_row:
+                    return
+                
+                avg_score, validator_count = avg_row
+                
+                # Require at least 2 validators before triggering pending approval
+                if validator_count < 2:
+                    logger.info(f"Version {version_id} only has {validator_count} validator(s), need at least 2")
+                    return
+                
                 # Get current approved leader info
                 current_leader = await self.get_current_approved_leader()
                 current_leader_score = current_leader['score'] if current_leader else 0.0
                 
-                # Only proceed if this is a new high score
-                if new_score <= current_leader_score:
+                # Only proceed if this average score beats current leader
+                if avg_score <= current_leader_score:
+                    logger.info(f"Version {version_id} avg score {avg_score} not better than current leader {current_leader_score}")
                     return
                 
                 # Get agent details for notification
@@ -466,44 +489,84 @@ class DatabaseManager:
                     
                 agent_name, miner_hotkey, version_num = agent_row
                 
-                # Add to pending approvals queue for manual review
-                try:
-                    pending_result = await self.add_pending_approval(
-                        version_id=version_id,
-                        agent_name=agent_name,
-                        miner_hotkey=miner_hotkey,
-                        version_num=version_num,
-                        score=new_score
-                    )
-                    
-                    if pending_result == 1:
-                        logger.info(f"Added version {version_id} to pending approvals queue (score: {new_score})")
-                    else:
-                        logger.warning(f"Failed to add version {version_id} to pending approvals queue")
+                # Check if pending approval already exists for this version
+                existing_pending = await self.get_pending_approval_by_version(version_id)
+                
+                if existing_pending:
+                    # Update existing pending approval with new average score
+                    logger.info(f"Updating existing pending approval for version {version_id} with new average score {avg_score}")
+                    await self.update_pending_approval_score(version_id, avg_score)
+                else:
+                    # Add to pending approvals queue for manual review using AVERAGE score
+                    try:
+                        pending_result = await self.add_pending_approval(
+                            version_id=version_id,
+                            agent_name=agent_name,
+                            miner_hotkey=miner_hotkey,
+                            version_num=version_num,
+                            score=avg_score  # Use average score, not single evaluation score
+                        )
                         
-                except Exception as e:
-                    logger.error(f"Error adding version {version_id} to pending approvals: {str(e)}")
+                        if pending_result == 1:
+                            logger.info(f"Added version {version_id} to pending approvals queue (avg score: {avg_score}, {validator_count} validators)")
+                        else:
+                            logger.warning(f"Failed to add version {version_id} to pending approvals queue")
+                            
+                    except Exception as e:
+                        logger.error(f"Error adding version {version_id} to pending approvals: {str(e)}")
 
-                # Send Slack notification about new high score
-                try:
-                    from api.src.utils.slack import send_high_score_notification
-                    
-                    await send_high_score_notification(
-                        agent_name=agent_name,
-                        miner_hotkey=miner_hotkey, 
-                        version_id=version_id,
-                        version_num=version_num,
-                        new_score=new_score,
-                        previous_score=current_leader_score
-                    )
-                    logger.info(f"Sent high score notification for version {version_id} with score {new_score}")
-                    
-                except Exception as e:
-                    logger.error(f"Failed to send Slack notification for high score: {str(e)}")
+                    # Send Slack notification about new high score (only for new pending approvals)
+                    try:
+                        from api.src.utils.slack import send_high_score_notification
+                        
+                        await send_high_score_notification(
+                            agent_name=agent_name,
+                            miner_hotkey=miner_hotkey, 
+                            version_id=version_id,
+                            version_num=version_num,
+                            new_score=avg_score,  # Use average score
+                            previous_score=current_leader_score
+                        )
+                        logger.info(f"Sent high score notification for version {version_id} with avg score {avg_score}")
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to send Slack notification for high score: {str(e)}")
                     
             except Exception as e:
                 logger.error(f"Error checking for new high score: {str(e)}")
         
+    async def update_pending_approval_score(self, version_id: str, new_score: float) -> int:
+        """
+        Update the score for an existing pending approval.
+        Returns 1 if successful, 0 if failed.
+        """
+        async with self.AsyncSessionLocal() as session:
+            try:
+                result = await session.execute(text("""
+                    UPDATE pending_approvals 
+                    SET score = :score, updated_at = NOW()
+                    WHERE version_id = :version_id
+                    AND status = 'pending'
+                """), {
+                    'version_id': version_id,
+                    'score': new_score
+                })
+                
+                updated_count = result.rowcount
+                await session.commit()
+                
+                if updated_count > 0:
+                    logger.info(f"Updated pending approval score for version {version_id} to {new_score}")
+                else:
+                    logger.warning(f"No pending approval found to update for version {version_id}")
+                
+                return updated_count
+                
+            except Exception as e:
+                await session.rollback()
+                logger.error(f"Error updating pending approval score for version {version_id}: {str(e)}")
+                return 0
+
     async def get_next_evaluation(self, validator_hotkey: str) -> Optional[Evaluation]:
         """
         Get the next evaluation for a validator. Return None if not found.
@@ -895,130 +958,27 @@ class DatabaseManager:
         
     async def get_top_agent(self) -> TopAgentHotkey:
         """
-        Gets the top approved agents miner hotkey and version id from the database,
-        where its been scored by at least 1 validator and is in the approved versions list.
-        Excludes banned miner hotkeys from consideration.
-        Returns None if no approved versions exist.
+        Gets the current approved leader from the database.
+        Returns None if no approved leader is set.
         """
-        # For now, this is a manual process, but will be updated shortly to be automatic
-        banned_hotkeys = [
-            "5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9", 
-            "5Dyghsz26XyzWQ4mqrngfGeidM2FUp28Hpzp2Q4sAW21mFkx", 
-            "5G6c6QvYnVS5nefgqoyq1rvKCzd3gzCQv2n6dmfLKetyVrwh", 
-            "5EXLAJe1tZhaQWtsqp2DKdKpZ2oQ3WBYapUSXFCe9zgvy8Uk", 
-            "5E7s2xNMzXKnurpsifmWxojcFa44NkuLPn1U7s9zvVrFjYKb",
-            "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
-            "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
-            "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
-            "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
-            "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
-            "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
-            "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
-            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
-            "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
-            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
-            "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
-            "5EtFbtr7wW4cAWCHcD1SLMBnExoAeKPg2eEDnzh8amjD8aPT",
-            "5DhUkZwxYygbLwHdzPnZT2QAhKE3E5fkeey6pcYRhmBPhs9G",
-            "5EcenAqMksipQZJ4x6xe9YbeXLCfMqba5z6URC1K4x1ZP9mT",
-            "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
-            "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
-            "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
-            "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
-            "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
-            "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
-            "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
-            "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
-            "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
-            "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
-            "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
-            "5GsKVvwQ4gk9QDk6bb8qSycPJoUcACGmfrQNjxRCE2Ue9wd3",
-            "5DS6D4MEMoPC8VSpgDWq3rVqFkjNiQoj5toVCSLA1gak7GZL",
-            "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-            "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh",
-            "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-            "5GP2KhQHKbzcWaW61buSTHtQyEJvcNB9qx9WfiRbtPzs3WfG",
-            "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
-            "5E812wJwEpcd12FcYhdv21CoMPotpmXsmbQgepmFs5jDLCzv",
-            "5E4VUFyLbSgTGmy6Kd5eAb3UFabTX3VuT9M2CY2my8Dv2oRx",
-            "5H3frA14nyVf5J1YYvS3qcKc1fwg2kbz997nE9uNyYLcEXSA",
-            "5CDqtDptJ1JuAh1hX7pVoPMUXTVjdik2fb1RhybbxgjyUG9Y",
-            "5EWjt1HQWxYsFnygJWcZug29KXB9RNTDoCJyZHKThtQSvVvi",
-            "5H97WhmqAKj9vsE1K6PFLZTm48zAqTagrjuL59nZwqDu3cZK",
-            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
-            "5DHYBuwoHoVDwL8awnhhJg2oCX5xqLzsoU9ZMEg3g1gdtkXc",
-            "5FLQp1rxNiDiCA2Bwna5AUu1eScJf6hT1JtfEMfFeWio1MYz",
-            "5HKzmZ1h9CGmyBxAfESBgMPXJKThTMxCB4vwBn8CEVq7GvgG",
-            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
-            "5EqVMYTTxnuqbxzJ19Y7tcu2CbmjG3unuZmreB6c1ksa4q1f",
-            "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
-            "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
-            "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT",
-            "5FbyeY3nGuYdb4FhXtYEDhVqdFJKopko2P3tTbNZWWh1T3XW",
-            "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
-            "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
-            "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
-            "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
-            "5FeYEJXzEHwW9jW4igyse9W4PJBab2eWyCN86V2yV5VhYd8Q",
-            "5CAeKnKfcxD3CyY7st8yfk6a46DDvruLZECQofbUsFigsi7b",
-            "5GjjR4rCctSC14uFB5bZkEq6S4quQnexvGf1RoiLg4Zb2FXE",
-            "5EFXBbybeDQGqGLNuf4cizuqtE4DTzH8yUV6Nh6GhAdNicra",
-            "5CSa9KZUVUCkcWeWRMykK98V4TUTXBHAtuSqZoi2AHvB4w1P",
-            "5F1QRLR65LYGYiVHW43gVxmvBkuicXSJy9TiDXvxYXS8dZG9",
-            "5FQzhHZGhCgUGZSt9afRhbtXMX16WSvG6vFMHK1YwhnzrmrT",
-            "5Da6Yej8xxY7ehH5xpB34FDWZreFn9ktndGZg6FbmXvJzXAZ",
-            "5E5JhsZ4jocJy4awXbSEsm92RYBKRriirSXys7iaSBpkoHvC",
-            "5Hawvtm3Jnaps3CuTyc9gToh1DzyqPfbioDriNoDqwWBBNLV",
-            "5Hawvtm3Jnaps3CuTyc9gToh1DzyqPfbioDriNoDqwWBBNLV"
-        ]
-
         async with self.AsyncSessionLocal() as session:
             try:
+                # Get current approved leader
                 result = await session.execute(text("""
-                    WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
-                        SELECT
-                            e.version_id,
-                            AVG(e.score)                       AS avg_score,
-                            COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
-                        FROM evaluations e
-                        JOIN approved_version_ids av_approved ON e.version_id = av_approved.version_id  -- ONLY approved versions
-                        WHERE e.status = 'completed'
-                        AND e.score  IS NOT NULL
-                        GROUP BY e.version_id
-                        HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
-                    ),
-
-                    top_approved_score AS (                         -- 2.  the absolute best score among approved versions
-                        SELECT MAX(avg_score) AS max_score
-                        FROM approved_version_scores
-                    ),
-
-                    close_enough_approved AS (                      -- 3.  approved scores ≥ 98% of the best approved
-                        SELECT
-                            avs.version_id,
-                            avs.avg_score,
-                            av.created_at,
-                            ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
-                        FROM approved_version_scores avs
-                        JOIN agent_versions av ON av.version_id = avs.version_id
-                        CROSS JOIN top_approved_score tas
-                        WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
-                    )
-
-                    SELECT
+                    SELECT 
                         a.miner_hotkey,
-                        cea.version_id,
-                        cea.avg_score
-                    FROM close_enough_approved cea
-                    JOIN agent_versions av ON av.version_id = cea.version_id
-                    JOIN agents         a  ON a.agent_id    = av.agent_id
-                    WHERE cea.rn = 1
-                    AND a.miner_hotkey != ALL(:banned_hotkeys);
-                    """), {'banned_hotkeys': banned_hotkeys})
-
+                        cal.version_id,
+                        cal.score
+                    FROM current_approved_leader cal
+                    JOIN agent_versions av ON cal.version_id = av.version_id
+                    JOIN agents a ON av.agent_id = a.agent_id
+                    WHERE cal.id = 1 
+                    AND cal.version_id IS NOT NULL
+                """))
+                
                 row = result.fetchone()
-
                 if row is None:
+                    logger.warning("No current approved leader found")
                     return None
 
                 return TopAgentHotkey(
@@ -1026,8 +986,9 @@ class DatabaseManager:
                     version_id=str(row[1]),
                     avg_score=row[2]
                 )
+                
             except Exception as e:
-                logger.error(f"Error getting top agent: {str(e)}")
+                logger.error(f"Error getting current approved leader: {str(e)}")
                 return None
         
     async def get_latest_agent(self, agent_id: str, scored: bool) -> Optional[AgentSummary]:
@@ -1877,6 +1838,7 @@ class DatabaseManager:
     async def approve_version_id(self, version_id: str) -> int:
         """
         Approve a version ID for weight consideration.
+        Retrieves score from pending_approvals table and sets as current approved leader.
         Returns 1 if successful, 0 if failed.
         """
         async with self.AsyncSessionLocal() as session:
@@ -1890,6 +1852,36 @@ class DatabaseManager:
                     logger.error(f"Version {version_id} not found in agent_versions")
                     return 0
 
+                # Get pending approval details including score
+                pending_approval = await self.get_pending_approval_by_version(version_id)
+                
+                if not pending_approval:
+                    logger.warning(f"No pending approval found for version {version_id}, using calculated average score")
+                    
+                    # Calculate average score if no pending approval exists
+                    avg_result = await session.execute(text("""
+                        SELECT AVG(e.score) as avg_score
+                        FROM evaluations e
+                        WHERE e.version_id = :version_id
+                        AND e.status = 'completed'
+                        AND e.score IS NOT NULL
+                    """), {'version_id': version_id})
+                    
+                    avg_row = avg_result.fetchone()
+                    approval_score = avg_row[0] if avg_row and avg_row[0] is not None else 0.0
+                else:
+                    approval_score = pending_approval['score']
+                    
+                    # Update pending approval status to 'approved'
+                    await session.execute(text("""
+                        UPDATE pending_approvals 
+                        SET status = 'approved', updated_at = NOW()
+                        WHERE version_id = :version_id
+                        AND status = 'pending'
+                    """), {'version_id': version_id})
+                    
+                    logger.info(f"Updated pending approval status to 'approved' for version {version_id}")
+
                 # Insert into approved_version_ids (on conflict do nothing)
                 await session.execute(text("""
                     INSERT INTO approved_version_ids (version_id)
@@ -1899,8 +1891,21 @@ class DatabaseManager:
                     'version_id': version_id
                 })
                 
+                # Set as current approved leader with the score from pending approvals
+                await session.execute(text("""
+                    INSERT INTO current_approved_leader (id, version_id, score, updated_at)
+                    VALUES (1, :version_id, :score, NOW())
+                    ON CONFLICT (id) DO UPDATE SET
+                        version_id = EXCLUDED.version_id,
+                        score = EXCLUDED.score,
+                        updated_at = EXCLUDED.updated_at
+                """), {
+                    'version_id': version_id,
+                    'score': approval_score
+                })
+                
                 await session.commit()
-                logger.info(f"Version {version_id} approved for weight consideration")
+                logger.info(f"Version {version_id} approved and set as current leader with score {approval_score}")
                 return 1
                 
             except Exception as e:
