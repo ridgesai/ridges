@@ -71,15 +71,15 @@ async def get_next_evaluation(validator_hotkey: str) -> Optional[Evaluation]:
 
     return evaluation
 
-async def get_agent_version_for_validator(version_id: str) -> AgentVersion:
+async def get_agent_version_for_validator(version_id: str) -> dict:
     """
     Get the agent version for a given version id.
     Returns a dictionary to avoid Pydantic model UUID conversion issues.
     """
 
-    agent_version = await get_agent_version(version_id)
+    agent_version = await db.get_agent_version(version_id)
 
-    return agent_version.model_dump()
+    return agent_version
 
 async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
     """
@@ -112,7 +112,7 @@ async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         eval_started_at=parse_datetime(evaluation_run["eval_started_at"]),
         result_scored_at=parse_datetime(evaluation_run["result_scored_at"])
     )
-    await store_evaluation_run(evaluation_run_obj)
+    await db.store_evaluation_run(evaluation_run_obj)
 
     return evaluation_run_obj
 
@@ -140,7 +140,10 @@ async def start_evaluation(evaluation_id: str) -> Evaluation:
     """
     Start an evaluation in the database.
     """
-    evaluation = await start_evaluation(evaluation_id)
+    evaluation = await db.get_evaluation(evaluation_id)
+    evaluation.status = "running"
+    evaluation.started_at = datetime.now()
+    await db.store_evaluation(evaluation)
 
     return evaluation
 
@@ -149,10 +152,10 @@ async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     Finish an evaluation in the database.
     """
     
-    evaluation = await get_evaluation(evaluation_id)
+    evaluation = await db.get_evaluation(evaluation_id)
     evaluation.status = "completed" if not errored else "error"
     evaluation.finished_at = datetime.now()
-    await store_evaluation(evaluation)
+    await db.store_evaluation(evaluation)
 
     return evaluation
 
@@ -162,16 +165,16 @@ async def reset_running_evaluations(validator_hotkey: str):
     Before resetting, delete all associated evaluation runs since they will need to be remade.
     """
 
-    evaluation = await get_running_evaluation_by_validator_hotkey(validator_hotkey)
+    evaluation = await db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
     if evaluation:
         # Delete all associated evaluation runs first
-        await delete_evaluation_runs(evaluation.evaluation_id)
+        await db.delete_evaluation_runs(evaluation.evaluation_id)
         logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
         
         # Reset the evaluation to waiting status
         evaluation.status = "waiting"
         evaluation.started_at = None
-        await store_evaluation(evaluation)
+        await db.store_evaluation(evaluation)
         logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
     else:
         logger.info(f"Validator {validator_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")

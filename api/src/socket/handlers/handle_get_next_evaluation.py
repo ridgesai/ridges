@@ -1,0 +1,38 @@
+import json
+from typing import Dict, Any
+from fastapi import WebSocket
+
+from ...utils.logging_utils import get_logger
+from ...db.operations import DatabaseManager
+
+logger = get_logger(__name__)
+
+db = DatabaseManager()
+
+async def handle_get_next_evaluation(
+    websocket: WebSocket,
+    validator_hotkey: str,
+    response_json: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Handle get-next-evaluation message from a validator"""
+    
+    try:
+        evaluation = await db.get_next_evaluation(validator_hotkey)
+        if evaluation is None:
+            socket_message = {"event": "evaluation"}  # No evaluations available for this validator
+            logger.info(f"Informed validator with hotkey {validator_hotkey} that there are no more evaluations available for it.")
+        else:
+            agent_version = await db.get_agent_version(evaluation.version_id)
+            socket_message = {
+                "event": "evaluation",
+                "evaluation_id": str(evaluation.evaluation_id),
+                "agent_version": agent_version
+            }
+            logger.info(f"Platform socket sent requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}")
+        
+        await websocket.send_text(json.dumps(socket_message))
+        return socket_message
+        
+    except Exception as e:
+        logger.error(f"Error getting next evaluation: {str(e)}")
+        return {"event": "error", "message": "Failed to get next evaluation"} 
