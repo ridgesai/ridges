@@ -1,16 +1,8 @@
--- Agents table
-CREATE TABLE IF NOT EXISTS agents (
-    miner_hotkey TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    latest_version INT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    last_updated TIMESTAMP NOT NULL
-);
-
 -- Agent Versions table
 CREATE TABLE IF NOT EXISTS agent_versions (
     version_id UUID PRIMARY KEY NOT NULL,
-    miner_hotkey TEXT NOT NULL REFERENCES agents(miner_hotkey),
+    miner_hotkey TEXT NOT NULL,
+    miner_name TEXT NOT NULL,
     version_num INT NOT NULL,
     created_at TIMESTAMP NOT NULL,
     score FLOAT
