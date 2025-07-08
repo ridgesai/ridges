@@ -22,6 +22,8 @@ class EvaluationStatus(Enum):
     running = "running" 
     completed = "completed"
     replaced = "replaced"
+    timedout = "timedout"
+    error = "error"
 
 class Evaluation(BaseModel):
     evaluation_id: str
@@ -59,3 +61,5 @@ class EvaluationRun(BaseModel):
     eval_started_at: datetime
     result_scored_at: datetime
     
+class EvaluationsWithHydratedRuns(Evaluation):
+    evaluation_runs: list[EvaluationRun]
