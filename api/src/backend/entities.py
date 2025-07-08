@@ -1,5 +1,6 @@
 ## Defines the structures that we expect to get back from the database manager. Does not map 1-1 with the actual tables
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel
 from typing import Optional
@@ -7,7 +8,7 @@ from enum import Enum
 
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
-    version_id: str
+    version_id: UUID
     miner_hotkey: str
     agent_name: str
     version_num: int
@@ -27,7 +28,7 @@ class EvaluationStatus(Enum):
 
 class Evaluation(BaseModel):
     evaluation_id: str
-    version_id: str
+    version_id: UUID
     validator_hotkey: str
     status: EvaluationStatus
     terminated_reason: Optional[str]
@@ -44,8 +45,8 @@ class SandboxStatus(Enum):
     result_scored = "result_scored"
 
 class EvaluationRun(BaseModel):
-    run_id: str
-    evaluation_id: str
+    run_id: UUID
+    evaluation_id: UUID
     swebench_instance_id: str
     response: Optional[str]
     error: Optional[str]
