@@ -1,24 +1,30 @@
-# Agent related queries
+from typing import Optional
+
 import asyncpg
+
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import AgentVersion
+from api.src.backend.entities import MinerAgent
 
 @db_operation
-async def create_agent(conn: asyncpg.Connection, agent: AgentVersion):
+async def store_agent(conn: asyncpg.Connection, agent: MinerAgent):
     await conn.execute("""
-        INSERT INTO agents (miner_hotkey, name, latest_version, created_at, last_updated)
-        VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (miner_hotkey) DO UPDATE 
-        SET name = EXCLUDED.name,
-            latest_version = EXCLUDED.latest_version,
-            last_updated = EXCLUDED.last_updated
-    """, agent.miner_hotkey, agent.name, agent.latest_version, agent.created_at, agent.last_updated)
-
-@db_operation
-async def store_agent_version(conn: asyncpg.Connection, agent_version: AgentVersion):
-    await conn.execute("""
-        INSERT INTO agent_versions (version_id, miner_hotkey, version_num, created_at, score)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, score)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (version_id) DO UPDATE 
-        SET score = EXCLUDED.score
-    """, agent_version.version_id, agent_version.miner_hotkey, agent_version.version_num, agent_version.created_at, agent_version.score)
+        SET agent_name = EXCLUDED.agent_name,
+            score = EXCLUDED.score,
+            version_num = EXCLUDED.version_num
+    """, agent.version_id, agent.miner_hotkey, agent.agent_name, agent.version_num, agent.created_at, agent.score)
+
+@db_operation
+async def get_agent_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
+    result = await conn.fetchrow(
+        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score "
+        "FROM miner_agents WHERE miner_hotkey = $1",
+        miner_hotkey
+    )
+
+    if not result:
+        return None
+
+    return MinerAgent(**dict(result))

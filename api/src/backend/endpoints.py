@@ -4,7 +4,8 @@ from typing import Tuple, Any
 import os
 import asyncio
 from api.src.utils.models import DashboardStats
-from api.src.backend.queries import get_agent_by_hotkey, create_agent, Agent
+from api.src.backend.queries_old import get_agent_by_hotkey, create_agent
+from api.src.backend.entities import MinerAgent
 
 from api.src.backend.db_manager import DBManager, batch_writer
 import json
@@ -140,7 +141,7 @@ async def something():
     """
     Retrieves stats on the health of the network, primarily for the dashboard
     """
-    agent = await create_agent(Agent(
+    agent = await create_agent(MinerAgent(
         miner_hotkey="testtest",
         name="bruh",
         latest_version=0,

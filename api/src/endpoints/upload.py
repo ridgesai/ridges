@@ -14,7 +14,9 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.backend.queries import store_evaluation
+from api.src.backend.queries_old import store_evaluation
+from api.src.backend.queries.agents import get_agent_by_hotkey
+from api.src.backend.entities import MinerAgent
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +124,13 @@ async def post_agent(
             status_code=400,
             detail="Your miner has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord"
         )
+
     
-    existing_agent = await db.get_agent_by_hotkey(miner_hotkey)
-    if existing_agent:
-        earliest_allowed_time = existing_agent.last_updated + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
+    latest_agent: MinerAgent = await get_agent_by_hotkey(miner_hotkey=miner_hotkey)
+    
+    # Rate limit how often the miner can update the agent
+    if latest_agent:
+        earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
         if datetime.now() < earliest_allowed_time:
             raise HTTPException(
                 status_code=429,
@@ -133,13 +138,13 @@ async def post_agent(
             )
 
     latest_version_num = int(file_info.split(":")[-1])
-    if existing_agent and latest_version_num != existing_agent.latest_version:
+    if latest_agent and latest_version_num != latest_agent.version_num:
         raise HTTPException(
             status_code=409,
             detail="This upload request has already been processed"
         )
 
-    agent_name = name if not existing_agent else existing_agent.name
+    agent_name = name if not latest_agent else latest_agent.agent_name
 
     # Check filename
     if agent_file.filename != "agent.py":
@@ -148,9 +153,9 @@ async def post_agent(
             detail="File must be a python file named agent.py"
         )
     
-    if existing_agent:
-        existing_agent_version = await db.get_latest_agent_version(existing_agent.agent_id)
-        evaluations = await db.get_evaluations_by_version_id(existing_agent_version.version_id)
+    if latest_agent:
+        # TODO: update to aarons
+        evaluations = await db.get_evaluations_by_version_id(latest_agent.version_id)
         for evaluation in evaluations:
             if evaluation.status == "running":
                 raise HTTPException(

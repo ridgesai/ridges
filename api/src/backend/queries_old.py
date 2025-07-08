@@ -30,6 +30,16 @@ def db_operation(func):
 '''
 Agent upload related functions
 '''
+@db_operation
+async def create_agent(conn: asyncpg.Connection, agent: Agent):
+    await conn.execute("""
+        INSERT INTO agents (miner_hotkey, name, latest_version, created_at, last_updated)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (miner_hotkey) DO UPDATE 
+        SET name = EXCLUDED.name,
+            latest_version = EXCLUDED.latest_version,
+            last_updated = EXCLUDED.last_updated
+    """, agent.miner_hotkey, agent.name, agent.latest_version, agent.created_at, agent.last_updated)
 
 @db_operation
 async def store_agent_version(conn: asyncpg.Connection, agent_version: AgentVersion):
@@ -85,7 +95,7 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
 
 @db_operation
 async def get_agent_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Agent]:
-    """Get agent by hotkey. Auto-create evaluations for connected validators"""
+    """Get agent by hotkey."""
     result = await conn.fetch(
         "SELECT miner_hotkey, name, latest_version, created_at, last_updated "
         "FROM agents WHERE miner_hotkey = $1",
