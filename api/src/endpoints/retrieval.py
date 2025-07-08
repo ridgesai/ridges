@@ -1,17 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
-from typing import List
-import requests
-import os
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
 from api.src.db.operations import DatabaseManager
-from api.src.utils.models import AgentSummary, AgentQueryResponse, AgentVersionDetails, AgentSummaryResponse, RunningAgentEval, DashboardStats, EvaluationRunResponse
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.utils.subtensor import get_daily_earnings_by_hotkey
 from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.backend.entities import EvaluationRun
 from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation

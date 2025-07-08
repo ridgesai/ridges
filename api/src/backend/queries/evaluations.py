@@ -277,6 +277,57 @@ async def get_runs_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) 
     return evaluation_runs
 
 @db_operation
+async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[EvaluationRun]:
+    run_row = await conn.fetchrow(
+        """
+        SELECT 
+            run_id,
+            evaluation_id,
+            swebench_instance_id,
+            status,
+            response,
+            error,
+            pass_to_fail_success,
+            fail_to_pass_success,
+            pass_to_pass_success,
+            fail_to_fail_success,
+            solved,
+            started_at,
+            sandbox_created_at,
+            patch_generated_at,
+            eval_started_at,
+            result_scored_at
+        FROM evaluation_runs 
+        WHERE run_id = $1
+        """,
+        run_id
+    )
+
+    if not run_row:
+        return None
+    
+    run = EvaluationRun(
+        run_id=str(run_row[0]),
+        evaluation_id=str(run_row[1]),
+        swebench_instance_id=run_row[2],
+        status=run_row[3],
+        response=run_row[4],
+        error=run_row[5],
+        pass_to_fail_success=run_row[6],
+        fail_to_pass_success=run_row[7],
+        pass_to_pass_success=run_row[8],
+        fail_to_fail_success=run_row[9],
+        solved=run_row[10],
+        started_at=run_row[11],
+        sandbox_created_at=run_row[12],
+        patch_generated_at=run_row[13],
+        eval_started_at=run_row[14],
+        result_scored_at=run_row[15]
+    )
+
+    return run
+
+@db_operation
 async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id: str) -> list[EvaluationsWithHydratedRuns]:
     evaluations: list[EvaluationsWithHydratedRuns] = []
 
