@@ -126,11 +126,10 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
         """
             SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
             FROM evaluations e
-            JOIN agent_versions av ON e.version_id = av.version_id
-            JOIN agents a ON av.agent_id = a.agent_id
+            JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.validator_hotkey = $1
             AND e.status = 'waiting' 
-            -- AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
+            -- AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
             ORDER BY e.created_at ASC 
             LIMIT 1;
         """,
