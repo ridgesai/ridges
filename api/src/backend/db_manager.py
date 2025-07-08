@@ -2,6 +2,8 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from typing import Any, List, Tuple
+from functools import wraps
+import logging 
 
 import asyncpg
 
@@ -102,3 +104,23 @@ async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS
     # Final drain on shutdown
     if buf:
         await _flush_to_db(buf)
+
+logger = logging.getLogger(__name__)
+
+def db_operation(func):
+    """Decorator to handle database operations with logging and transaction rollback"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        # Import here to avoid circular imports
+        from api.src.main import new_db
+
+        async with new_db.acquire() as conn:
+            async with conn.transaction():
+                try:
+                    return await func(conn, *args, **kwargs)
+                except Exception as e:
+                    logger.error(f"Database operation failed in {func.__name__}: {e}")
+                    # Context manager will roll back transaction, reversing any failed commits
+                    raise
+
+    return wrapper
