@@ -1,5 +1,14 @@
+# TODO: cleanup how we set this all up
+from dotenv import load_dotenv
+load_dotenv()
+
+from api.src.backend.db_manager import new_db, batch_writer
+
+import os
+from typing import Tuple, Any
 import asyncio
 from fastapi import FastAPI, WebSocket
+from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
@@ -13,32 +22,37 @@ from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
 from api.src.db.operations import DatabaseManager   
-from api.src.backend.db_manager import DBManager, batch_writer
 
 logger = get_logger(__name__)
 
-app = FastAPI()
+_batch_task: asyncio.Task | None = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await new_db.open()
+    logger.info(f"New DB pool from lifespan: {new_db}")
+    logger.info("Database connection pool opened")
+    await DatabaseManager().init()
+    app.state.stop_event = asyncio.Event()
+    global _batch_task
+    _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
+
+    await db.clean_hanging_evaluations()
+    ChutesManager().start_cleanup_task()
+    asyncio.create_task(run_weight_setting_loop(30))
+    asyncio.create_task(run_evaluation_cleanup_loop())
+    asyncio.create_task(run_connection_pool_monitor())
+    yield
+
+    # TODO: Handle endpts for new db manager
+    app.state.stop_event.set()
+    if _batch_task:
+        await _batch_task
+    await new_db.close()
+
+app = FastAPI(lifespan=lifespan)
 server = WebSocketManager()
 db = DatabaseManager()
-
-# TODO: cleanup how we set this all up
-from dotenv import load_dotenv
-import os
-from typing import Tuple, Any
-load_dotenv()
-
-DB_USER = os.getenv("AWS_MASTER_USERNAME")
-DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
-DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
-DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
-DB_PORT = os.getenv("PGPORT", "5432")
-
-if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
-    raise RuntimeError(
-        "Missing one or more required environment variables: "
-        "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
-        "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
-    )
 
 # Batching Queue & Writer Task
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
@@ -49,14 +63,6 @@ QUEUE_MAXSIZE = int(os.getenv("INGEST_QUEUE_MAXSIZE", "50000"))  # Back‑pressu
 queue: asyncio.Queue[Tuple[str, dict[str, Any]]]  # (device_id, payload)
 queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
 
-new_db = DBManager(
-    user=DB_USER,
-    password=DB_PASS,
-    host=DB_HOST,
-    port=int(DB_PORT),
-    database=DB_NAME,
-)
-_batch_task: asyncio.Task | None = None
 
 # Configure CORS
 app.add_middleware(
@@ -122,39 +128,6 @@ async def run_connection_pool_monitor():
         except Exception as e:
             logger.error(f"Error in connection pool monitor: {e}")
             await asyncio.sleep(5 * 60) 
-
-@app.on_event("startup")
-async def startup_event():
-    await DatabaseManager().init()
-    await db.clean_hanging_evaluations()
-
-    # Start the ChutesManager cleanup task
-    chutes_manager = ChutesManager()
-    chutes_manager.start_cleanup_task()
-
-    # asyncio.create_task(run_weight_monitor())
-    asyncio.create_task(run_weight_setting_loop(30))
-    asyncio.create_task(run_evaluation_cleanup_loop())
-    asyncio.create_task(run_connection_pool_monitor())
-
-
-## TODO: Handle endpts for new db manager
-@app.on_event("startup")
-async def _on_startup() -> None:
-    await new_db.open()
-    app.state.stop_event = asyncio.Event()
-    global _batch_task
-    _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
-
-
-@app.on_event("shutdown")
-async def _on_shutdown() -> None:
-    # Signal writer to stop, then await task.
-    app.state.stop_event.set()
-    if _batch_task:
-        await _batch_task
-    await new_db.close()
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

@@ -1,6 +1,7 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+import os
 from typing import Any, List, Tuple
 from functools import wraps
 import logging 
@@ -34,6 +35,8 @@ class DBManager:
 
     @asynccontextmanager
     async def acquire(self):  # type: ignore[func-returns-value]
+        logger.info("Acquiring database connection")
+        logger.info(f"Pool: {self.pool}")
         if not self.pool:
             raise RuntimeError("Connection pool is not initialized yet.")
         async with self.pool.acquire() as con:
@@ -107,13 +110,32 @@ async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS
 
 logger = logging.getLogger(__name__)
 
+
+DB_USER = os.getenv("AWS_MASTER_USERNAME")
+DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
+DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
+DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
+DB_PORT = os.getenv("PGPORT", "5432")
+
+if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
+    raise RuntimeError(
+        "Missing one or more required environment variables: "
+        "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
+        "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
+    )
+
+new_db = DBManager(
+    user=DB_USER,
+    password=DB_PASS,
+    host=DB_HOST,
+    port=int(DB_PORT),
+    database=DB_NAME,
+)
+
 def db_operation(func):
     """Decorator to handle database operations with logging and transaction rollback"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        # Import here to avoid circular imports
-        from api.src.main import new_db
-
         async with new_db.acquire() as conn:
             async with conn.transaction():
                 try:
