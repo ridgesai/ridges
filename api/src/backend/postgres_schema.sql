@@ -47,3 +47,7 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     result_scored_at TIMESTAMP
     -- finished_at removed; last stage is result_scored_at
 );
+
+CREATE TABLE IF NOT EXISTS approved_version_ids (
+    version_id UUID PRIMARY KEY REFERENCES miner_agents(version_id)
+)

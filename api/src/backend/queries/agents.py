@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Any
 
 import asyncpg
 
@@ -46,3 +46,75 @@ async def get_agent_by_version_id(conn: asyncpg.Connection, version_id: str) -> 
         return None
 
     return MinerAgent(**dict(result))
+
+@db_operation
+async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
+    exists = await conn.fetchval("""
+    SELECT EXISTS(
+        SELECT 1 FROM banned_hotkeys
+        WHERE miner_hotkey = $1
+    );
+    """, miner_hotkey)
+
+    if exists:
+        return True
+    
+    return False
+
+@db_operation
+async def get_top_agent(conn: asyncpg.Connection) -> dict[str, Any]:
+    """
+    Gets the top approved agents miner hotkey and version id from the database,
+    where its been scored by at least 1 validator and is in the approved versions list.
+    Excludes banned miner hotkeys from consideration.
+    Returns None if no approved versions exist.
+    """
+    top_agent = conn.fetchrow("""
+        WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
+            SELECT
+                e.version_id,
+                AVG(e.score)                       AS avg_score,
+                COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
+            FROM evaluations e
+            JOIN approved_version_ids av_approved ON e.version_id = av_approved.version_id  -- ONLY approved versions
+            WHERE e.status = 'completed'
+            AND e.score  IS NOT NULL
+            GROUP BY e.version_id
+            HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
+        ),
+
+        top_approved_score AS (                         -- 2.  the absolute best score among approved versions
+            SELECT MAX(avg_score) AS max_score
+            FROM approved_version_scores
+        ),
+
+        close_enough_approved AS (                      -- 3.  approved scores ≥ 98% of the best approved
+            SELECT
+                avs.version_id,
+                avs.avg_score,
+                av.created_at,
+                ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
+            FROM approved_version_scores avs
+            JOIN agent_versions av ON av.version_id = avs.version_id
+            CROSS JOIN top_approved_score tas
+            WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
+        )
+
+        SELECT
+            a.miner_hotkey,
+            ce.version_id,
+            ce.avg_score
+        FROM close_enough_approved   ce
+        JOIN agent_versions av ON av.version_id = ce.version_id
+        JOIN agents         a  ON a.miner_hotkey    = av.miner_hotkey
+        WHERE ce.rn = 1;
+    """)
+
+    if top_agent is None:
+        return None
+
+    return {
+        "miner_hotkey": top_agent[0],
+        "version_id": top_agent[1],
+        "avg_score": top_agent[2]
+    }
