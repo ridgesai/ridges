@@ -295,7 +295,8 @@ def platform():
     pass
 
 @platform.command()
-def run():
+@click.option("--no-auto-update", is_flag=True, help="Run platform directly in foreground")
+def run(no_auto_update: bool):
     """Run the Ridges API platform."""
     console.print(Panel(f"[bold cyan]🚀 Starting Platform[/bold cyan]", title="🌐 Platform", border_style="cyan"))
     
@@ -325,6 +326,11 @@ def run():
         console.print("🔄 Downloaded dependencies", style="yellow")
     else:
         console.print("💥 Failed to download dependencies", style="red")
+        return
+    
+    if no_auto_update:
+        console.print("🚀 Starting platform...", style="yellow")
+        run_cmd("uv run -m api.src.main", capture=False)
         return
     
     # Start platform

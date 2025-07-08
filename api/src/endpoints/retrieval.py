@@ -39,10 +39,18 @@ async def get_agent_version_file(version_id: str):
             detail="Internal server error while retrieving agent version file. Please try again later."
         )
     
+    async def file_generator():
+        agent_object.seek(0)
+        while True:
+            chunk = agent_object.read(8192)  # Read in 8KB chunks
+            if not chunk:
+                break
+            yield chunk
+    
     headers = {
         "Content-Disposition": f'attachment; filename="agent.py"'
     }
-    return StreamingResponse(agent_object, media_type='application/octet-stream', headers=headers)
+    return StreamingResponse(file_generator(), media_type='application/octet-stream', headers=headers)
 
 async def get_top_agents(num_agents: int = 3, include_code: bool = False) -> List[AgentSummary]:
     agent_summaries = await db.get_top_agents(num_agents)

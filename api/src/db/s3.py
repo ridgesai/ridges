@@ -1,6 +1,7 @@
 import aioboto3
 import os
 from typing import BinaryIO
+from io import BytesIO
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -22,7 +23,8 @@ class S3Manager:
             body = await response['Body'].read()
             return body.decode('utf-8')
 
-    async def get_file_object(self, key: str) -> BinaryIO:
+    async def get_file_object(self, key: str) -> BytesIO:
         async with self.session.client('s3') as s3:
             response = await s3.get_object(Bucket=s3_bucket_name, Key=key)
-            return response['Body']
+            body = await response['Body'].read()
+            return BytesIO(body)
