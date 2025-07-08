@@ -981,7 +981,7 @@ class DatabaseManager:
                         a.miner_hotkey,
                         ce.version_id,
                         ce.avg_score
-                    FROM close_enough   ce
+                    FROM close_enough_approved   ce
                     JOIN agent_versions av ON av.version_id = ce.version_id
                     JOIN agents         a  ON a.miner_hotkey    = av.miner_hotkey
                     WHERE ce.rn = 1;
