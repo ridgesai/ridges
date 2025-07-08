@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel
 import logging
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fiber import Keypair
 
+from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
 from api.src.db.sqlalchemy_models import Agent, AgentVersion
@@ -14,7 +15,6 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.backend.queries_old import store_evaluation, get_evaluations_by_version_id
 from api.src.backend.queries.agents import get_agent_by_hotkey, store_agent
 from api.src.backend.entities import MinerAgent
 
@@ -164,7 +164,7 @@ async def post_agent(
         for evaluation in evaluations:
             if evaluation.status == "waiting":
                 evaluation.status = "replaced"
-                evaluation.finished_at = datetime.now()
+                evaluation.finished_at = datetime.now(timezone.utc)
                 await store_evaluation(evaluation)
     
     # Check file size
