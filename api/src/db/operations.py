@@ -979,14 +979,13 @@ class DatabaseManager:
 
                     SELECT
                         a.miner_hotkey,
-                        cea.version_id,
-                        cea.avg_score
-                    FROM close_enough_approved cea
-                    JOIN agent_versions av ON av.version_id = cea.version_id
-                    JOIN agents         a  ON a.agent_id    = av.agent_id
-                    WHERE cea.rn = 1
-                    AND a.miner_hotkey != ALL(:banned_hotkeys);
-                    """), {'banned_hotkeys': banned_hotkeys})
+                        ce.version_id,
+                        ce.avg_score
+                    FROM close_enough   ce
+                    JOIN agent_versions av ON av.version_id = ce.version_id
+                    JOIN agents         a  ON a.miner_hotkey    = av.miner_hotkey
+                    WHERE ce.rn = 1;
+                    """))
 
                 row = result.fetchone()
 
