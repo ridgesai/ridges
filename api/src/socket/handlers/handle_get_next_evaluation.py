@@ -29,7 +29,7 @@ async def handle_get_next_evaluation(
             socket_message = {
                 "event": "evaluation",
                 "evaluation_id": str(evaluation.evaluation_id),
-                "agent_version": agent_version
+                "agent_version": agent_version.model_dump(mode='json') if agent_version else None
             }
             logger.info(f"Platform socket sent requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}")
         
