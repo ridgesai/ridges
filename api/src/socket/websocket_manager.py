@@ -196,8 +196,8 @@ class WebSocketManager:
         
         for websocket, client_data in self.clients.items():
             if client_data["val_hotkey"] is not None:
-                                try:
-                    evaluation_object = Evaluation(
+                try:
+                    evaluation = Evaluation(
                         evaluation_id=str(uuid.uuid4()),
                         version_id=version_id,
                         validator_hotkey=client_data["val_hotkey"],
@@ -208,7 +208,7 @@ class WebSocketManager:
                         finished_at=None,
                         score=None
                     )
-                    await db.store_evaluation(evaluation_object)
+                    await db.store_evaluation(evaluation)
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
                 except Exception:
                     pass
