@@ -5,14 +5,8 @@ from pydantic import BaseModel
 from typing import Optional
 from enum import Enum
 
-class Agent(BaseModel):
-    miner_hotkey: str
-    name: str
-    latest_version: int
-    created_at: datetime
-    last_updated: datetime
-
-class AgentVersion(BaseModel): 
+class MinerAgent(BaseModel): 
+    """Maps to the agent_versions table"""
     version_id: str
     miner_hotkey: str
     agent_name: str
@@ -20,9 +14,8 @@ class AgentVersion(BaseModel):
     created_at: datetime
     score: float
 
-
-class AgentWithHydratedLatestVersion(Agent):
-    latest_version: AgentVersion
+class AgentWithHydratedCode(MinerAgent):
+    code: str
 
 class EvaluationStatus(Enum):
     waiting = "waiting"
