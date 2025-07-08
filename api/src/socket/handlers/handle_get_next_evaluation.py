@@ -2,6 +2,9 @@ import json
 from typing import Dict, Any
 from fastapi import WebSocket
 
+from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.evaluations import get_next_evaluation_for_validator
+
 from ...utils.logging_utils import get_logger
 from ...db.operations import DatabaseManager
 
@@ -17,12 +20,12 @@ async def handle_get_next_evaluation(
     """Handle get-next-evaluation message from a validator"""
     
     try:
-        evaluation = await db.get_next_evaluation(validator_hotkey)
+        evaluation = await get_next_evaluation_for_validator(validator_hotkey)
         if evaluation is None:
             socket_message = {"event": "evaluation"}  # No evaluations available for this validator
             logger.info(f"Informed validator with hotkey {validator_hotkey} that there are no more evaluations available for it.")
         else:
-            agent_version = await db.get_agent_version(evaluation.version_id)
+            agent_version = await get_agent_by_version_id(evaluation.version_id)
             socket_message = {
                 "event": "evaluation",
                 "evaluation_id": str(evaluation.evaluation_id),

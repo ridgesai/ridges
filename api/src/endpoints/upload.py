@@ -130,13 +130,13 @@ async def post_agent(
     latest_agent: MinerAgent = await get_latest_agent(miner_hotkey=miner_hotkey)
     
     # Rate limit how often the miner can update the agent
-    if latest_agent:
-        earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
-        if datetime.now() < earliest_allowed_time:
-            raise HTTPException(
-                status_code=429,
-                detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
-            )
+    # if latest_agent:
+    #     earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
+    #     if datetime.now() < earliest_allowed_time:
+    #         raise HTTPException(
+    #             status_code=429,
+    #             detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
+    #         )
 
     version_num = int(file_info.split(":")[-1])
 

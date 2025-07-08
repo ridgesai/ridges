@@ -50,17 +50,17 @@ class EvaluationRun(BaseModel):
     swebench_instance_id: str
     response: Optional[str]
     error: Optional[str]
-    pass_to_fail_success: str
-    fail_to_pass_success: str
-    pass_to_pass_success: str
-    fail_to_fail_success: str
-    solved: bool
+    pass_to_fail_success: Optional[str]
+    fail_to_pass_success: Optional[str]
+    pass_to_pass_success: Optional[str]
+    fail_to_fail_success: Optional[str]
+    solved: Optional[bool]
     status: SandboxStatus
     started_at: datetime
-    sandbox_created_at: datetime
-    patch_generated_at: datetime
-    eval_started_at: datetime
-    result_scored_at: datetime
+    sandbox_created_at: Optional[datetime]
+    patch_generated_at: Optional[datetime]
+    eval_started_at: Optional[datetime]
+    result_scored_at: Optional[datetime]
     
 class EvaluationsWithHydratedRuns(Evaluation):
     evaluation_runs: list[EvaluationRun]

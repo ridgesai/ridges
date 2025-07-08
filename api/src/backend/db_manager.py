@@ -54,6 +54,7 @@ class DBManager:
         async with self.acquire() as con:
             if schema_file.exists():
                 sql_text = schema_file.read_text()
+                print(sql_text)
                 await con.execute(sql_text)
                 return
             else:

@@ -128,9 +128,9 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
             FROM evaluations e
             JOIN agent_versions av ON e.version_id = av.version_id
             JOIN agents a ON av.agent_id = a.agent_id
-            WHERE e.validator_hotkey = :validator_hotkey 
+            WHERE e.validator_hotkey = $1
             AND e.status = 'waiting' 
-            AND a.miner_hotkey != ALL(:banned_hotkeys)
+            -- AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
             ORDER BY e.created_at ASC 
             LIMIT 1;
         """,
