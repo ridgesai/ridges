@@ -15,6 +15,7 @@ class Agent(BaseModel):
 class AgentVersion(BaseModel): 
     version_id: str
     miner_hotkey: str
+    agent_name: str
     version_num: int
     created_at: datetime
     score: float
