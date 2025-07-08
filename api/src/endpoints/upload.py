@@ -84,7 +84,21 @@ banned_hotkeys = [
     "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
     "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
     "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
-    "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM"
+    "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
+    "5FeYEJXzEHwW9jW4igyse9W4PJBab2eWyCN86V2yV5VhYd8Q",
+    "5CAeKnKfcxD3CyY7st8yfk6a46DDvruLZECQofbUsFigsi7b",
+    "5GjjR4rCctSC14uFB5bZkEq6S4quQnexvGf1RoiLg4Zb2FXE",
+    "5EFXBbybeDQGqGLNuf4cizuqtE4DTzH8yUV6Nh6GhAdNicra",
+    "5CSa9KZUVUCkcWeWRMykK98V4TUTXBHAtuSqZoi2AHvB4w1P",
+    "5F1QRLR65LYGYiVHW43gVxmvBkuicXSJy9TiDXvxYXS8dZG9",
+    "MjGKkCQzMyTx93JTRrhBexPSZQ5PLhCJnADGss5GRmU",
+    "5FQzhHZGhCgUGZSt9afRhbtXMX16WSvG6vFMHK1YwhnzrmrT",
+    "5EUge63QjopJuTgupBspKev5kcw1QLZzyauF95osN86Exgv6",
+    "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+    "5GgPbZb5yuWuHCxHocuG7URKkSUtM6uJSeDhRYm49FB6xWSj",
+    "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+    "5D9vn9FThXTq9mSwM3NQi9eMi8x7YXRcPpSLZQQCFt2FGNJf",
+    "5DybkqrhzCNNqmLWzukCfiFCVFrvxNMe7eDPBB5bGRgDgucB"
 ]
 
 async def post_agent(
@@ -181,7 +195,7 @@ async def post_agent(
     version_id = str(uuid.uuid4())
     
     try:
-        s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
         logger.info(f"Successfully uploaded agent version {version_id} to S3")
     except Exception as e:
         logger.error(f"Failed to upload agent version to S3: {e}")

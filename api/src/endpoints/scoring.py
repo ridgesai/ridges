@@ -69,6 +69,10 @@ async def get_pending_approvals(status: str = "pending", limit: int = 50):
         logger.error(f"Error getting pending approvals: {e}")
         raise HTTPException(status_code=500, detail="Failed to get pending approvals due to internal server error.")
 
+async def trigger_weight_set():
+    tell_validators_to_set_weights()
+    return {"message": "Successfully triggered weight update"}
+
 async def approve_version(version_id: str, approval_password: str):
     """Approve a version ID for weight consideration"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
@@ -111,6 +115,7 @@ routes = [
     ("/weights", weight_receiving_agent, ["GET"]),
     ("/ban-agent", ban_agent, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
+    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/pending-approvals", get_pending_approvals, ["GET"])
 ]
 

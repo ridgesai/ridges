@@ -526,7 +526,6 @@ class DatabaseManager:
             "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
             "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh",
             "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-            "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
             "5GP2KhQHKbzcWaW61buSTHtQyEJvcNB9qx9WfiRbtPzs3WfG",
             "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
             "5E812wJwEpcd12FcYhdv21CoMPotpmXsmbQgepmFs5jDLCzv",
@@ -538,8 +537,8 @@ class DatabaseManager:
             "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
             "5DHYBuwoHoVDwL8awnhhJg2oCX5xqLzsoU9ZMEg3g1gdtkXc",
             "5FLQp1rxNiDiCA2Bwna5AUu1eScJf6hT1JtfEMfFeWio1MYz",
-            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
             "5HKzmZ1h9CGmyBxAfESBgMPXJKThTMxCB4vwBn8CEVq7GvgG",
+            "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
             "5EqVMYTTxnuqbxzJ19Y7tcu2CbmjG3unuZmreB6c1ksa4q1f",
             "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
             "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
@@ -548,9 +547,17 @@ class DatabaseManager:
             "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
             "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
             "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
-            "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM"
+            "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
+            "5FeYEJXzEHwW9jW4igyse9W4PJBab2eWyCN86V2yV5VhYd8Q",
+            "5CAeKnKfcxD3CyY7st8yfk6a46DDvruLZECQofbUsFigsi7b",
+            "5GjjR4rCctSC14uFB5bZkEq6S4quQnexvGf1RoiLg4Zb2FXE",
+            "5EFXBbybeDQGqGLNuf4cizuqtE4DTzH8yUV6Nh6GhAdNicra",
+            "5CSa9KZUVUCkcWeWRMykK98V4TUTXBHAtuSqZoi2AHvB4w1P",
+            "5F1QRLR65LYGYiVHW43gVxmvBkuicXSJy9TiDXvxYXS8dZG9",
+            "MjGKkCQzMyTx93JTRrhBexPSZQ5PLhCJnADGss5GRmU",
+            "5FQzhHZGhCgUGZSt9afRhbtXMX16WSvG6vFMHK1YwhnzrmrT",
         ]
-        
+
         async with self.AsyncSessionLocal() as session:
             try:
                 result = await session.execute(text("""
@@ -929,7 +936,13 @@ class DatabaseManager:
             "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
             "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
             "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
-            "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM"
+            "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
+            "5EUge63QjopJuTgupBspKev5kcw1QLZzyauF95osN86Exgv6",
+            "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+            "5GgPbZb5yuWuHCxHocuG7URKkSUtM6uJSeDhRYm49FB6xWSj",
+            "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
+            "5D9vn9FThXTq9mSwM3NQi9eMi8x7YXRcPpSLZQQCFt2FGNJf",
+            "5DybkqrhzCNNqmLWzukCfiFCVFrvxNMe7eDPBB5bGRgDgucB"
         ]
         
         async with self.AsyncSessionLocal() as session:
