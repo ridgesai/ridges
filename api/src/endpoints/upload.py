@@ -9,101 +9,23 @@ from fiber import Keypair
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
-from api.src.db.sqlalchemy_models import Agent, AgentVersion
-from api.src.db.operations import DatabaseManager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.db.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.backend.queries.agents import get_latest_agent, store_agent
+from api.src.backend.queries.agents import get_latest_agent, store_agent, check_if_agent_banned
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
 
 logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
-db = DatabaseManager()
 
 class AgentUploadRequest(BaseModel):
     public_key: str
     file_info: str
     signature: str
     name: str
-
-# For now, this is a manual process, but will be updated shortly to be automatic
-banned_hotkeys = [
-    "5GWz1uK6jhmMbPK42dXvyepzq4gzorG1Km3NTMdyDGHaFDe9", 
-    "5Dyghsz26XyzWQ4mqrngfGeidM2FUp28Hpzp2Q4sAW21mFkx", 
-    "5G6c6QvYnVS5nefgqoyq1rvKCzd3gzCQv2n6dmfLKetyVrwh", 
-    "5EXLAJe1tZhaQWtsqp2DKdKpZ2oQ3WBYapUSXFCe9zgvy8Uk", 
-    "5E7s2xNMzXKnurpsifmWxojcFa44NkuLPn1U7s9zvVrFjYKb",
-    "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
-    "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
-    "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
-    "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
-    "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
-    "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
-    "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
-    "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
-    "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
-    "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
-    "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
-    "5EtFbtr7wW4cAWCHcD1SLMBnExoAeKPg2eEDnzh8amjD8aPT",
-    "5DhUkZwxYygbLwHdzPnZT2QAhKE3E5fkeey6pcYRhmBPhs9G",
-    "5EcenAqMksipQZJ4x6xe9YbeXLCfMqba5z6URC1K4x1ZP9mT",
-    "5F25Xcddj2w3ry5DW1CbguUfsHiPUuq2uHdrYLCueJUBFBfZ",
-    "5Gzpc9XTpDUtFkb4NcuJPxrb1C4nybu29RyjF5Mi7uSPPjgU",
-    "5GBsbxyQvs78dDJj8p1qMjUYTdQGpAeKksfbHMn5HenntzGA",
-    "5Dy33595c9dqwtyXm4CYHu4bfGNYgVGY34ARbktNNgLR4MBQ", 
-    "5EL5k31Wm9N74WbUG7SwTCHCbD31ERGH1yBmFsLRtvGjvtvN",
-    "5CwU1yR9SXiayopaHPNSU7ony5A1xteyd4S88cNZcys8Uzsu",
-    "5HCJjSzoraw8VKHpvpstGCExxNWzuG8hLW54rvFABZtnHjz2",
-    "5H3j2JfvX6BJdESAoH6iRUvKkBx83gxyqizwezJyYCuyuW59",
-    "5FKbTsEvmYrW9yWf65E2nRjo13Lb6zMxnaWWVzc41BbKrkYm",
-    "5F98ZSxBTBKUgvheKeUnS2KkmNVo74EUDNgAJHhSiy1sdjjw",
-    "5GbDzWhTz18xMocRpkEkmACznFtppPWkQRNXFhJyAd6p3XYe",
-    "5GsKVvwQ4gk9QDk6bb8qSycPJoUcACGmfrQNjxRCE2Ue9wd3",
-    "5DS6D4MEMoPC8VSpgDWq3rVqFkjNiQoj5toVCSLA1gak7GZL",
-    "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-    "5Df5ukRD5fnDQZcMMqBkDaQ7dPhQXsfFrkD3s477eFqgPYZh",
-    "5EFKREedPd7vjBWmieRotMpLcpEqR37UjWFAUX6FmvkaN7zq",
-    "5GP2KhQHKbzcWaW61buSTHtQyEJvcNB9qx9WfiRbtPzs3WfG",
-    "5CB7jfYUT2Z4tXFWUmKbGqj3gdTRxXFPg7cATxvCYYn7tBt9",
-    "5E812wJwEpcd12FcYhdv21CoMPotpmXsmbQgepmFs5jDLCzv",
-    "5E4VUFyLbSgTGmy6Kd5eAb3UFabTX3VuT9M2CY2my8Dv2oRx",
-    "5H3frA14nyVf5J1YYvS3qcKc1fwg2kbz997nE9uNyYLcEXSA",
-    "5CDqtDptJ1JuAh1hX7pVoPMUXTVjdik2fb1RhybbxgjyUG9Y",
-    "5EWjt1HQWxYsFnygJWcZug29KXB9RNTDoCJyZHKThtQSvVvi",
-    "5H97WhmqAKj9vsE1K6PFLZTm48zAqTagrjuL59nZwqDu3cZK",
-    "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
-    "5DHYBuwoHoVDwL8awnhhJg2oCX5xqLzsoU9ZMEg3g1gdtkXc",
-    "5FLQp1rxNiDiCA2Bwna5AUu1eScJf6hT1JtfEMfFeWio1MYz",
-    "5HKzmZ1h9CGmyBxAfESBgMPXJKThTMxCB4vwBn8CEVq7GvgG",
-    "5Ge7MjqKKND7g2aTydrdrR82NCZPgF6DEMz4UZoRwwFuUxf4",
-    "5EqVMYTTxnuqbxzJ19Y7tcu2CbmjG3unuZmreB6c1ksa4q1f",
-    "5FX1koxncfZpeDqB8fFQhae52wX4z8q8hEHceb46W6upscc4",
-    "5HmwgHVLSvmVxqA2BQ7z9xyedCTdqo5CXHGFjYAqGGEzyHux",
-    "5HBLnpw5yqPzcnpYo4NfMbutH3B3W1sqsegwtah2NBPPU2TT",
-    "5FbyeY3nGuYdb4FhXtYEDhVqdFJKopko2P3tTbNZWWh1T3XW",
-    "5GWoFBuh3cgaA2GDq1urNh6KsKEzu9mhoGvmhnaNikeS7YYs",
-    "5HBAY8VVBcdEuU7EWvtdTN9hrDKXcQneea3mL7YzqHjBgs8Q",
-    "5E4DVZUBpCWXmBTgZ6wqbqrSEHgUCQRsXSALW6NGFGMjYndv",
-    "5Epn64DZ3oPqdpZKroGa9ArFVCBHDWNdrD7aWcMJk4eA6kbM",
-    "5FeYEJXzEHwW9jW4igyse9W4PJBab2eWyCN86V2yV5VhYd8Q",
-    "5CAeKnKfcxD3CyY7st8yfk6a46DDvruLZECQofbUsFigsi7b",
-    "5GjjR4rCctSC14uFB5bZkEq6S4quQnexvGf1RoiLg4Zb2FXE",
-    "5EFXBbybeDQGqGLNuf4cizuqtE4DTzH8yUV6Nh6GhAdNicra",
-    "5CSa9KZUVUCkcWeWRMykK98V4TUTXBHAtuSqZoi2AHvB4w1P",
-    "5F1QRLR65LYGYiVHW43gVxmvBkuicXSJy9TiDXvxYXS8dZG9",
-    "MjGKkCQzMyTx93JTRrhBexPSZQ5PLhCJnADGss5GRmU",
-    "5FQzhHZGhCgUGZSt9afRhbtXMX16WSvG6vFMHK1YwhnzrmrT",
-    "5EUge63QjopJuTgupBspKev5kcw1QLZzyauF95osN86Exgv6",
-    "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
-    "5GgPbZb5yuWuHCxHocuG7URKkSUtM6uJSeDhRYm49FB6xWSj",
-    "5EwC7LTjE3TgBizWUuou7tkuuPuPRGRFyTxjnJNS8bBS39PG",
-    "5D9vn9FThXTq9mSwM3NQi9eMi8x7YXRcPpSLZQQCFt2FGNJf",
-    "5DybkqrhzCNNqmLWzukCfiFCVFrvxNMe7eDPBB5bGRgDgucB"
-]
 
 async def post_agent(
     agent_file: UploadFile = File(...),
@@ -120,13 +42,14 @@ async def post_agent(
             detail="miner_hotkey is required"
         )
     
-    if miner_hotkey in banned_hotkeys:
+    is_banned = await check_if_agent_banned(miner_hotkey=miner_hotkey)
+
+    if is_banned:
         raise HTTPException(
             status_code=400,
             detail="Your miner has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord"
         )
 
-    
     latest_agent: MinerAgent = await get_latest_agent(miner_hotkey=miner_hotkey)
     
     # Rate limit how often the miner can update the agent
