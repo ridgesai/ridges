@@ -154,7 +154,7 @@ async def send_high_score_notification(agent_name: str, miner_hotkey: str, versi
 
 ⚠️ **ACTION NEEDED:** This agent needs manual approval before receiving network weights!
 
-Use: `/scoring/approve-version?version_id={version_id}&approval_password=ridges_team_secret_2024`
+Use: `/scoring/approve-version?version_id={version_id}&approval_password=ridges_team_secret_2024-replace-with-real-pw`
 """
     
     return send_slack_notification(message.strip(), channel="bot-testing") 
