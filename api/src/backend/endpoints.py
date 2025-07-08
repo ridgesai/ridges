@@ -6,7 +6,7 @@ import asyncio
 from api.src.utils.models import DashboardStats
 from api.src.backend.queries import get_agent_by_hotkey, create_agent, Agent
 
-from api.src.backend.unified_operations import DBManager, batch_writer
+from api.src.backend.db_manager import DBManager, batch_writer
 import json
 from dotenv import load_dotenv
 

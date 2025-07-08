@@ -13,7 +13,7 @@ from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
 from api.src.db.operations import DatabaseManager   
-from api.src.backend.unified_operations import DBManager, batch_writer
+from api.src.backend.db_manager import DBManager, batch_writer
 
 logger = get_logger(__name__)
 
