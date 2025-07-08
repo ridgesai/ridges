@@ -829,7 +829,7 @@ class DatabaseManager:
                         FROM agents a
                         LEFT JOIN (
                             SELECT DISTINCT ON (miner_hotkey) 
-                                miner_hotkey,
+                                a.miner_hotkey,
                                 version_id,
                                 version_num,
                                 created_at,
