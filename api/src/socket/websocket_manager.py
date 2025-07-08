@@ -60,9 +60,8 @@ class WebSocketManager:
                     
                     # Use process context for the entire validator-version flow
                     with process_context("receive-validator-version") as process_id:
-                        logger.info(f"Validator has sent their validator version and version commit hash to the platform socket. Validator hotkey: {self.clients[websocket]['val_hotkey']}, Version commit hash: {self.clients[websocket]['version_commit_hash']}")
-                        logger.info(f"Platform WebSocket manager received 'validator-version' event from a client. The validator hotkey is {self.clients[websocket]['val_hotkey']} and the version commit hash is {self.clients[websocket]['version_commit_hash']}.")
-
+                        logger.info(f"Platform WebSocket manager received 'validator-version' event from a client. The validator hotkey is {self.clients[websocket]['val_hotkey']} and the version commit hash is {self.clients[websocket]['version_commit_hash']}. Process ID: {process_id}")
+                        logger.info(f"Calling get_relative_version_num with version commit hash {self.clients[websocket]['version_commit_hash']} for validator {self.clients[websocket]['val_hotkey']}...")
                         relative_version_num = await get_relative_version_num(self.clients[websocket]["version_commit_hash"])
                         await self.send_to_all_non_validators("validator-connected", {
                             "validator_hotkey": self.clients[websocket]["val_hotkey"],
