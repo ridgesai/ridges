@@ -3,7 +3,7 @@ import dotenv
 import httpx
 import json 
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 import asyncio
 import time
 
@@ -51,7 +51,7 @@ class ChutesManager:
     async def cleanup_old_entries(self) -> None:
         """Remove cost data that is older than 20 minutes"""
         try:
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
             keys_to_remove_inference = []
             keys_to_remove_embedding = []
 
@@ -104,7 +104,7 @@ class ChutesManager:
 
                 self.costs_data_embedding[run_id] = {
                     "spend": self.costs_data_embedding.get(run_id, {}).get("spend", 0) + cost,
-                    "started_at": self.costs_data_embedding.get(run_id, {}).get("started_at", datetime.now())
+                    "started_at": self.costs_data_embedding.get(run_id, {}).get("started_at", datetime.now(timezone.utc))
                 }
 
                 logger.debug(f"Updated embedding spend for run {run_id}: {cost} (total: {self.costs_data_embedding[run_id]['spend']})")
@@ -228,7 +228,7 @@ class ChutesManager:
             key = run_id
             self.costs_data_inference[key] = {
                 "spend": self.costs_data_inference.get(key, {}).get("spend", 0) + total_cost,
-                "started_at": self.costs_data_inference.get(key, {}).get("started_at", datetime.now())
+                "started_at": self.costs_data_inference.get(key, {}).get("started_at", datetime.now(timezone.utc))
             }
             logger.debug(f"Updated inference spend for run {run_id}: {total_cost} (total: {self.costs_data_inference[key]['spend']})")
         

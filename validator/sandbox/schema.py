@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -7,9 +8,18 @@ from validator.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+class SandboxState(Enum):
+    """Sandbox execution states in lifecycle order"""
+    CREATED = "created"
+    PATCH_GENERATING = "patch_generating"
+    PATCH_GENERATED = "patch_generated"
+    EVALUATING = "evaluating"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
 class AgentVersion(BaseModel):
     version_id: str
-    agent_id: str
     miner_hotkey: str
     version_num: int
     created_at: datetime = Field(default_factory=datetime.now)

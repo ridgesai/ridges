@@ -1,13 +1,14 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
-from api.src.db.operations import DatabaseManager
+from api.src.backend.queries.weights import (
+    store_weights, get_latest_weights, weights_are_different
+)
+from api.src.backend.db_manager import get_pool_status
 from api.src.utils.logging_utils import get_logger
 from api.src.utils.subtensor import get_current_weights
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 def get_miner_weights(netuid=62):
     """Get a dictionary mapping miner UIDs to their weights as decimals."""
@@ -41,32 +42,32 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
     while True:
         try:
             # Check connection pool status before proceeding
-            pool_status = await db.get_pool_status()
+            pool_status = await get_pool_status()
             if "error" not in pool_status and pool_status["checked_out"] > (pool_status["pool_size"] * 0.9):
                 logger.warning(f"Connection pool nearly exhausted ({pool_status['checked_out']}/{pool_status['pool_size']}), skipping weight check")
                 await asyncio.sleep(interval_seconds)
                 continue
             
             weights = get_miner_weights(netuid=netuid)
-            latest_stored = await db.get_latest_weights()
+            latest_stored = await get_latest_weights()
             
             if latest_stored:
                 stored_weights = latest_stored['weights']
                 stored_timestamp = latest_stored['timestamp']
                 
-                time_since_last = datetime.now() - stored_timestamp if stored_timestamp else None
+                time_since_last = datetime.now(timezone.utc) - stored_timestamp if stored_timestamp else None
                 
-                weights_changed = db.weights_are_different(weights, stored_weights)
+                weights_changed = weights_are_different(weights, stored_weights)
                 
                 if weights_changed:
                     logger.info(f"Weights have been updated. Storing new weights. Time since last update: {time_since_last}")
                     
-                    await db.store_weights(weights, time_since_last)
+                    await store_weights(weights, time_since_last)
                 else:
                     logger.info(f"Weights unchanged, skipping storage. Last update: {stored_timestamp}. Time since last update: {time_since_last}")
             else:
                 logger.info(f"No previous weights found, storing initial weights...")
-                await db.store_weights(weights)
+                await store_weights(weights)
             
             logger.info(f"Next weight check in {interval_seconds} seconds...")
             await asyncio.sleep(interval_seconds)

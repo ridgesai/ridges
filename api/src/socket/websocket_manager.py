@@ -1,22 +1,63 @@
 import json
+import os
+import time
+import uuid
+import httpx
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.utils.logging_utils import get_logger
-# from api.src.utils.process_tracking import process_context
-from api.src.socket.server_helpers import (
-    upsert_evaluation_run, 
-    get_next_evaluation, 
-    get_agent_version_for_validator, 
-    create_evaluation, 
-    start_evaluation, 
-    finish_evaluation, 
-    reset_running_evaluations, 
-    get_relative_version_num,
-    create_evaluations_for_validator
+from api.src.backend.db_manager import new_db
+from api.src.backend.queries.evaluations import (
+    get_running_evaluation_by_validator_hotkey,
+    delete_evaluation_runs,
+    store_evaluation
 )
+from api.src.backend.entities import Evaluation, EvaluationStatus
+from api.src.socket.handlers.message_router import route_message
+from api.src.socket.handlers.handle_set_weights import handle_set_weights_after_evaluation
 
 logger = get_logger(__name__)
+
+_commits_cache = None
+_cache_time = 0
+
+async def get_github_commits(history_length: int = 30) -> list[str]:
+    """Get the previous commits from ridgesai/ridges."""
+    global _commits_cache, _cache_time
+    
+    if _commits_cache and (time.time() - _cache_time) < 60:
+        return _commits_cache
+
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(f"https://api.github.com/repos/ridgesai/ridges/commits?per_page={history_length}", headers=headers)
+        response.raise_for_status()
+        commits = response.json()
+        _commits_cache = [commit["sha"] for commit in commits]
+        _cache_time = time.time()
+        return _commits_cache
+
+async def get_relative_version_num(commit_hash: str, history_length: int = 30) -> int:
+    """Get the relative version number for a commit hash."""
+    try:
+        headers = {"Accept": "application/vnd.github.v3+json"}
+        
+        # Add GitHub token if available for higher rate limits
+        if token := os.getenv("GITHUB_TOKEN"):
+            headers["Authorization"] = f"token {token}"
+        
+        commit_list = await get_github_commits(history_length)
+        if commit_hash not in commit_list:
+            logger.warning(f"Commit {commit_hash} not found in commit list")
+            return -1
+            
+        return commit_list.index(commit_hash)
+            
+    except Exception as e:
+        logger.error(f"Failed to get determine relative version number for commit {commit_hash}: {e}")
+        return -1
 
 class WebSocketManager:
     _instance: Optional['WebSocketManager'] = None
@@ -54,127 +95,33 @@ class WebSocketManager:
                 response = await websocket.receive_text()
                 response_json = json.loads(response)
 
-                if response_json["event"] == "validator-version":
-                    self.clients[websocket]["val_hotkey"] = response_json["validator_hotkey"]
-                    self.clients[websocket]["version_commit_hash"] = response_json["version_commit_hash"]
-                    
-
-                    logger.info(f"Platform WebSocket manager received 'validator-version' event from a client. The validator hotkey is {self.clients[websocket]['val_hotkey']} and the version commit hash is {self.clients[websocket]['version_commit_hash']}")
-                    logger.info(f"Calling get_relative_version_num with version commit hash {self.clients[websocket]['version_commit_hash']} for validator {self.clients[websocket]['val_hotkey']}...")
-                    relative_version_num = await get_relative_version_num(self.clients[websocket]["version_commit_hash"])
-                    await self.send_to_all_non_validators("validator-connected", {
-                        "validator_hotkey": self.clients[websocket]["val_hotkey"],
-                        "relative_version_num": relative_version_num,
-                        "version_commit_hash": self.clients[websocket]["version_commit_hash"]
-                    })
-
-                    num_evaluations_created = await create_evaluations_for_validator(self.clients[websocket]["val_hotkey"])
-                    logger.info(f"Created {num_evaluations_created} evaluations for newly connected validator {self.clients[websocket]['val_hotkey']}")
-
-                    next_evaluation = await get_next_evaluation(self.clients[websocket]["val_hotkey"])
-                    if next_evaluation:
-                        await websocket.send_text(json.dumps({"event": "evaluation-available"}))
-
-                if response_json["event"] == "get-next-evaluation":
-                    validator_hotkey = self.clients[websocket]["val_hotkey"]
-                    socket_message = await self.get_next_evaluation(validator_hotkey)
-                    await websocket.send_text(json.dumps(socket_message))
-                    if "evaluation_id" in socket_message:
-                        logger.info(f"Platform socket sent requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}")
-                    else:
-                        logger.info(f"Informed validator with hotkey {validator_hotkey} that there are no more evaluations available for it.")
+                # Route message to appropriate handler
+                validator_hotkey = self.clients[websocket].get("val_hotkey")
+                # Pass self.clients for validator-version, otherwise None
+                result = await route_message(
+                    websocket,
+                    validator_hotkey,
+                    response_json,
+                    self.clients if response_json["event"] == "validator-version" else None
+                )
                 
-                if response_json["event"] == "start-evaluation":
-                    logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} has started an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    eval = await start_evaluation(response_json["evaluation_id"])
-
-                    eval_dict = {
-                        "evaluation_id": str(eval.evaluation_id),
-                        "version_id": str(eval.version_id),
-                        "validator_hotkey": eval.validator_hotkey,
-                        "status": eval.status,
-                        "terminated_reason": eval.terminated_reason,
-                        "created_at": eval.created_at.isoformat() if eval.created_at else None,
-                        "started_at": eval.started_at.isoformat() if eval.started_at else None,
-                        "finished_at": eval.finished_at.isoformat() if eval.finished_at else None,
-                        "score": eval.score
-                    }
-                    await self.send_to_all_non_validators("evaluation-started", eval_dict)
-
-                if response_json["event"] == "finish-evaluation":
-                    logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} has finished an evaluation {response_json['evaluation_id']}. Attempting to update the evaluation in the database.")
-                    eval = await finish_evaluation(response_json["evaluation_id"], response_json["errored"])
-
-                    evaluation_dict = {
-                        "evaluation_id": str(eval.evaluation_id),
-                        "version_id": str(eval.version_id),
-                        "validator_hotkey": eval.validator_hotkey,
-                        "status": eval.status,
-                        "terminated_reason": eval.terminated_reason,
-                        "created_at": eval.created_at.isoformat() if eval.created_at else None,
-                        "started_at": eval.started_at.isoformat() if eval.started_at else None,
-                        "finished_at": eval.finished_at.isoformat() if eval.finished_at else None,
-                        "score": eval.score
-                    }
-                    await self.send_to_all_non_validators("evaluation-finished", evaluation_dict)
-
-                    # -------------------------------------------------
-                    # After finishing an evaluation, determine the current
-                    # subnet leader (top miner) and instruct validators to
-                    # set their weights accordingly.
-                    # -------------------------------------------------
-
-                    try:
-                        from api.src.db.operations import DatabaseManager
-
-                        db = DatabaseManager()
-                        top_agent = await db.get_top_agent()  # returns TopAgentHotkey
-
-                        if top_agent and top_agent.miner_hotkey:
-                            await self.send_to_all_validators(
-                                "set-weights",
-                                {
-                                    "miner_hotkey": top_agent.miner_hotkey,
-                                    "version_id": str(top_agent.version_id),
-                                    "avg_score": top_agent.avg_score,
-                                },
-                            )
-                            logger.info(
-                                f"Platform socket broadcasted set-weights for hotkey {top_agent.miner_hotkey} to validators"
-                            )
-                        else:
-                            logger.warning("Could not determine top miner – skipping set-weights broadcast")
-                    except Exception as e:
-                        logger.error(f"Failed to broadcast set-weights: {e}")
-
-                if response_json["event"] == "upsert-evaluation-run":
-                    logger.info(f"Validator with hotkey {self.clients[websocket]['val_hotkey']} sent an evaluation run. Upserting evaluation run.")
-                    eval_run = await upsert_evaluation_run(response_json["evaluation_run"])
-
-                    eval_run_dict = {
-                        "run_id": str(eval_run.run_id),
-                        "evaluation_id": str(eval_run.evaluation_id),
-                        "swebench_instance_id": eval_run.swebench_instance_id,
-                        "status": eval_run.status,
-                        "response": eval_run.response,
-                        "error": eval_run.error,
-                        "pass_to_fail_success": eval_run.pass_to_fail_success,
-                        "fail_to_pass_success": eval_run.fail_to_pass_success,
-                        "pass_to_pass_success": eval_run.pass_to_pass_success,
-                        "fail_to_fail_success": eval_run.fail_to_fail_success,
-                        "solved": eval_run.solved,
-                        "started_at": eval_run.started_at.isoformat() if eval_run.started_at else None,
-                        "sandbox_created_at": eval_run.sandbox_created_at.isoformat() if eval_run.sandbox_created_at else None,
-                        "patch_generated_at": eval_run.patch_generated_at.isoformat() if eval_run.patch_generated_at else None,
-                        "eval_started_at": eval_run.eval_started_at.isoformat() if eval_run.eval_started_at else None,
-                        "result_scored_at": eval_run.result_scored_at.isoformat() if eval_run.result_scored_at else None,
-                        "validator_hotkey": self.clients[websocket]["val_hotkey"]
-                    }
-                    await self.send_to_all_non_validators("evaluation-run-updated", eval_run_dict)
-
-                if response_json["event"] == "ping":
-                    await websocket.send_text(json.dumps({"event": "pong", "timestamp": response_json.get("timestamp")}))
-                    logger.debug(f"Responded to ping from validator {self.clients[websocket]['val_hotkey']}")
+                # Handle special cases for broadcasting
+                if result and response_json["event"] == "validator-version":
+                    await self.send_to_all_non_validators("validator-connected", result)
+                
+                elif result and response_json["event"] == "start-evaluation":
+                    await self.send_to_all_non_validators("evaluation-started", result)
+                
+                elif result and response_json["event"] == "finish-evaluation":
+                    await self.send_to_all_non_validators("evaluation-finished", result)
+                    
+                    # Handle set-weights after finishing evaluation
+                    weights_result = await handle_set_weights_after_evaluation()
+                    if weights_result and "error" not in weights_result:
+                        await self.send_to_all_validators("set-weights", weights_result)
+                
+                elif result and response_json["event"] == "upsert-evaluation-run":
+                    await self.send_to_all_non_validators("evaluation-run-updated", result)
 
         except WebSocketDisconnect:
             client_data = self.clients.get(websocket, {})
@@ -191,7 +138,19 @@ class WebSocketManager:
                     "version_commit_hash": version_commit_hash
                 })
 
-                await reset_running_evaluations(val_hotkey)
+                evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
+                if evaluation:
+                    # Delete all associated evaluation runs first
+                    await delete_evaluation_runs(evaluation.evaluation_id)
+                    logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
+                    
+                    # Reset the evaluation to waiting status
+                    evaluation.status = EvaluationStatus.waiting
+                    evaluation.started_at = None
+                    await store_evaluation(evaluation)
+                    logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
+                else:
+                    logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
         except Exception as e:
             logger.error(f"Error handling WebSocket connection: {str(e)}")
         finally:
@@ -241,35 +200,23 @@ class WebSocketManager:
         for websocket, client_data in self.clients.items():
             if client_data["val_hotkey"] is not None:
                 try:
-                    await create_evaluation(version_id, client_data["val_hotkey"])
+                    evaluation = Evaluation(
+                        evaluation_id=str(uuid.uuid4()),
+                        version_id=version_id,
+                        validator_hotkey=client_data["val_hotkey"],
+                        status=EvaluationStatus.waiting,
+                        terminated_reason=None,
+                        created_at=datetime.now(timezone.utc),
+                        started_at=None,
+                        finished_at=None,
+                        score=None
+                    )
+                    await store_evaluation(evaluation)
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
                 except Exception:
                     pass
     
-    async def get_next_evaluation(self, validator_hotkey: str):
-        """Get the next evaluation for a validator"""
-        try:
-            evaluation = await get_next_evaluation(validator_hotkey)
-            if evaluation is None:
-                return { "event": "evaluation" } # No evaluations available for this validator
 
-            agent_version = await get_agent_version_for_validator(evaluation.version_id)
-            socket_message = {
-                "event": "evaluation",
-                "evaluation_id": str(evaluation.evaluation_id),
-                "agent_version": {
-                    "version_id": str(agent_version["version_id"]),
-                    "agent_id": str(agent_version["agent_id"]),
-                    "version_num": agent_version["version_num"],
-                    "created_at": agent_version["created_at"].isoformat() if agent_version["created_at"] else None,
-                    "score": agent_version["score"],
-                    "miner_hotkey": agent_version["miner_hotkey"]
-                }
-            }
-            return socket_message
-        except Exception as e:
-            logger.error(f"Error getting next evaluation: {str(e)}")
-            return None
         
     async def get_connected_validators(self):
         """Get list of connected validators"""

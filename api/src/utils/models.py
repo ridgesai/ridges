@@ -1,7 +1,7 @@
+from uuid import UUID
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
 from typing import Optional, Literal, List
-
 
 class AgentVersionResponse(BaseModel):
     version_id: str
@@ -55,7 +55,7 @@ class AgentSummary(BaseModel):
 
 class TopAgentHotkey(BaseModel):
     miner_hotkey: str
-    version_id: str
+    version_id: UUID
     avg_score: float
 
 class AgentQueryResponse(BaseModel):
