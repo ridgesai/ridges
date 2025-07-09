@@ -68,7 +68,7 @@ app.add_middleware(
 app.include_router(upload_router, prefix="/upload")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
-app.include_router(healthcheck_router, prefix="/healthcheck")
+app.include_router(healthcheck_router)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
