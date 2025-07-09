@@ -142,13 +142,13 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
             keypair = ridges.get_keypair()
             public_key = keypair.public_key.hex()
             
-            # Get name and version
-            name_and_version = get_name_and_version(ridges.api_url, keypair.ss58_address)
-            if name_and_version is None:
+            name_and_prev_version = get_name_and_prev_version(ridges.api_url, keypair.ss58_address)
+            if name_and_prev_version is None:
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = -1
             else:
-                name, version_num = name_and_version
+                name, prev_version_num = name_and_prev_version
+                version_num = prev_version_num + 1
 
             file_info = f"{keypair.ss58_address}:{content_hash}:{version_num}"
             signature = keypair.sign(file_info).hex()
@@ -169,18 +169,19 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
     except Exception as e:
         console.print(f"💥 Error: {e}", style="bold red")
 
-def get_name_and_version(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
+def get_name_and_prev_version(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
     try:
         with httpx.Client() as client:
-            response = client.get(f"{url}/retrieval/agent?miner_hotkey={miner_hotkey}&include_code=false")
+            response = client.get(f"{url}/retrieval/latest-agent?miner_hotkey={miner_hotkey}")
+            if response.status_code == 404:
+                return None
             if response.status_code == 200:
-                latest_agent = response.json().get("latest_agent")
+                latest_agent = response.json()
                 if latest_agent:
-                    latest_version = latest_agent.get("latest_version")
-                    return latest_agent.get("name"), latest_version.get("version_num")
-    except Exception:
-        pass
-    return None
+                    return latest_agent.get("agent_name"), latest_agent.get("version_num")
+    except Exception as e:
+        console.print(f"💥 Error: {e}", style="bold red")
+        exit(1)
 
 
 
@@ -306,6 +307,11 @@ def run(no_auto_update: bool):
         console.print(Panel("[bold yellow]⚠️  Platform already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
         return
     
+    if no_auto_update:
+        console.print("🚀 Starting platform...", style="yellow")
+        run_cmd("uv run -m api.src.main", capture=False)
+        return
+
     # Remove old venv, create new venv, activate new venv, download dependencies
     if run_cmd("rm -rf .venv")[0] == 0:
         console.print("🔄 Removed old venv", style="yellow")
@@ -326,11 +332,6 @@ def run(no_auto_update: bool):
         console.print("🔄 Downloaded dependencies", style="yellow")
     else:
         console.print("💥 Failed to download dependencies", style="red")
-        return
-    
-    if no_auto_update:
-        console.print("🚀 Starting platform...", style="yellow")
-        run_cmd("uv run -m api.src.main", capture=False)
         return
     
     # Start platform

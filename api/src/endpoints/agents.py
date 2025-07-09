@@ -3,18 +3,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.src.utils.auth import verify_request
 from api.src.utils.chutes import ChutesManager
 from api.src.utils.logging_utils import get_logger
-from api.src.db.operations import DatabaseManager
 from api.src.utils.models import EmbeddingRequest, InferenceRequest
-
-db = DatabaseManager()
+from api.src.backend.queries.evaluations import get_run_by_id
 
 logger = get_logger(__name__)
 
 chutes = ChutesManager()
 
-
 async def embedding(request: EmbeddingRequest):
-    evaluation_run = await db.get_evaluation_run(request.run_id)
+    evaluation_run = await get_run_by_id(request.run_id)
+
     if not evaluation_run:
         logger.info(
             f"Embedding for {request.run_id} was requested but no such evaluation run was found in our database")

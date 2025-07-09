@@ -2,7 +2,10 @@
 Submit metrics returns "Payload accepted" response
 """
 
-from datetime import datetime
+import os
+import time
+import requests
+from datetime import datetime, timezone
 from datadog_api_client import ApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
@@ -10,7 +13,6 @@ from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.model.metric_resource import MetricResource
 from datadog_api_client.v2.model.metric_series import MetricSeries
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,7 +23,7 @@ body = MetricPayload(
             metric="connected_validators",
             points=[
                 MetricPoint(
-                    timestamp=int(datetime.now().timestamp()),
+                    timestamp=int(datetime.now(timezone.utc).timestamp()),
                     value=99,
                 ),
             ],

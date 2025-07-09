@@ -4,20 +4,31 @@ import os
 import dotenv
 import time
 
+from fiber.chain.interface import get_substrate
+from fiber.chain.fetch_nodes import get_nodes_for_netuid
+
 from api.src.utils.logging_utils import get_logger
-from api.src.db.operations import DatabaseManager
 
 dotenv.load_dotenv()
 
 logger = get_logger(__name__)
-
-db_manager = DatabaseManager()
 
 # Simple cache for single subnet price
 _cached_price = None
 _cached_time = 0
 _cached_tao_usd_price = None
 _cached_tao_usd_time = 0
+
+async def get_subnet_hotkeys():
+    substrate = get_substrate(
+        subtensor_network=os.getenv("SUBTENSOR_NETWORK"), subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
+    )
+
+    active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
+
+    hotkeys = [node.hotkey for node in active_nodes]
+
+    return hotkeys
 
 def get_current_weights(netuid: int = 62) -> dict:
     """
@@ -142,7 +153,8 @@ async def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
         
         top_miner_daily_rewards = subnet_token_price_in_usd * 7200 * 0.41
 
-        weights_data = await db_manager.get_weights_history_last_24h_with_prior()
+        from api.src.backend.queries.weights import get_weights_history_last_24h_with_prior
+        weights_data = await get_weights_history_last_24h_with_prior()
         
         total_seconds = 0
         uid_top_seconds = 0
