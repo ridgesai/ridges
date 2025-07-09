@@ -19,10 +19,16 @@ async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
             COUNT(*) as number_of_agents,
             COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as agent_iterations_last_24_hours,
             MAX(score) as top_agent_score,
-            MAX(score) - COALESCE(MAX(CASE WHEN created_at <= NOW() - INTERVAL '24 hours' THEN score END), 0) as daily_score_improvement
+            MAX(score) - COALESCE(
+                (SELECT MAX(ma.score)
+                FROM miner_agents ma
+                JOIN approved_version_ids av ON ma.version_id = av.version_id
+                WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                ), 0
+            ) as daily_score_improvement
         FROM miner_agents
         WHERE miner_hotkey NOT IN (
-            SELECT miner_hotkey 
+            SELECT miner_hotkey
             FROM banned_hotkeys
         );
     """)
