@@ -4,6 +4,7 @@ import asyncpg
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import MinerAgent
+from api.src.utils.models import TopAgentHotkey
 
 @db_operation
 async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
@@ -62,7 +63,7 @@ async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> 
     return False
 
 @db_operation
-async def get_top_agent(conn: asyncpg.Connection) -> Optional[dict[str, Any]]:
+async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     """
     Gets the top approved agents miner hotkey and version id from the database,
     where its been scored by at least 1 validator and is in the approved versions list.
@@ -112,11 +113,11 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[dict[str, Any]]:
     if top_agent is None:
         return None
 
-    return {
-        "miner_hotkey": top_agent[0],
-        "version_id": top_agent[1],
-        "avg_score": top_agent[2]
-    }
+    return TopAgentHotkey(
+        miner_hotkey=top_agent[0],
+        version_id=top_agent[1],
+        avg_score=top_agent[2]
+    )
 
 @db_operation
 async def ban_agent(conn: asyncpg.Connection, miner_hotkey: str):
