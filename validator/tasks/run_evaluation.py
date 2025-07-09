@@ -1,9 +1,12 @@
 """Task for running agents in sandboxes."""
 
-from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING
+import asyncio
+import json
+import os
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
 import httpx
 from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.sandbox.constants import AGENTS_BASE_DIR
@@ -11,7 +14,6 @@ from validator.sandbox.manager import SandboxManager
 from validator.utils.logging import get_logger
 from validator.config import EASY_INSTANCES, RIDGES_API_URL, validator_hotkey
 from swebench.harness.run_evaluation import load_swebench_dataset
-import asyncio
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
@@ -70,7 +72,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                         error=None,
                         solved=None,
                         status="started",
-                        started_at=datetime.now(),
+                        started_at=datetime.now(timezone.utc),
                         sandbox_created_at=None,
                         patch_generated_at=None,
                         eval_started_at=None,

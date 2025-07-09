@@ -3,13 +3,14 @@ import os
 import time
 import uuid
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 from api.src.db.sqlalchemy_models import Evaluation
+from api.src.backend.entities import EvaluationStatus
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.handlers.handle_set_weights import handle_set_weights_after_evaluation
 
@@ -142,7 +143,7 @@ class WebSocketManager:
                     logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
                     
                     # Reset the evaluation to waiting status
-                    evaluation.status = "waiting"
+                    evaluation.status = EvaluationStatus.waiting
                     evaluation.started_at = None
                     await db.store_evaluation(evaluation)
                     logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
@@ -201,9 +202,9 @@ class WebSocketManager:
                         evaluation_id=str(uuid.uuid4()),
                         version_id=version_id,
                         validator_hotkey=client_data["val_hotkey"],
-                        status="waiting",
+                        status=EvaluationStatus.waiting,
                         terminated_reason=None,
-                        created_at=datetime.now(),
+                        created_at=datetime.now(timezone.utc),
                         started_at=None,
                         finished_at=None,
                         score=None

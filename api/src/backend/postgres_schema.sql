@@ -4,14 +4,14 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     miner_hotkey TEXT NOT NULL,
     agent_name TEXT NOT NULL,
     version_num INT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
     score FLOAT
 );
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
     banned_reason TEXT,
-    banned_at TIMESTAMP NOT NULL DEFAULT NOW()
+    banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS evaluations (
@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS evaluations (
     validator_hotkey TEXT NOT NULL,
     status TEXT NOT NULL, -- AARON NAMED THIS 'STATUS'. IT MAY BE A RESERVED WORD. FIRE HIM IF IT BREAKS EVERYTHING. One of (waiting, running, completed, replaced)
     terminated_reason TEXT,
-    created_at TIMESTAMP NOT NULL,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
     score FLOAT,
     UNIQUE(version_id, validator_hotkey) -- Prevent duplicate evaluations for same version/validator pair
 );
@@ -40,11 +40,11 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     fail_to_fail_success TEXT,
     solved BOOLEAN,
     status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored
-    started_at TIMESTAMP NOT NULL,
-    sandbox_created_at TIMESTAMP,
-    patch_generated_at TIMESTAMP,
-    eval_started_at TIMESTAMP,
-    result_scored_at TIMESTAMP
+    started_at TIMESTAMPTZ NOT NULL,
+    sandbox_created_at TIMESTAMPTZ,
+    patch_generated_at TIMESTAMPTZ,
+    eval_started_at TIMESTAMPTZ,
+    result_scored_at TIMESTAMPTZ
     -- finished_at removed; last stage is result_scored_at
 );
 

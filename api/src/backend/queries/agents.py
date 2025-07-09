@@ -92,21 +92,20 @@ async def get_top_agent(conn: asyncpg.Connection) -> dict[str, Any]:
             SELECT
                 avs.version_id,
                 avs.avg_score,
-                av.created_at,
-                ROW_NUMBER() OVER (ORDER BY av.created_at ASC) AS rn  -- oldest first
+                ma.created_at,
+                ROW_NUMBER() OVER (ORDER BY ma.created_at ASC) AS rn  -- oldest first
             FROM approved_version_scores avs
-            JOIN agent_versions av ON av.version_id = avs.version_id
+            JOIN miner_agents ma ON ma.version_id = avs.version_id
             CROSS JOIN top_approved_score tas
             WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
         )
 
         SELECT
-            a.miner_hotkey,
+            ma.miner_hotkey,
             ce.version_id,
             ce.avg_score
         FROM close_enough_approved   ce
-        JOIN agent_versions av ON av.version_id = ce.version_id
-        JOIN agents         a  ON a.miner_hotkey    = av.miner_hotkey
+        JOIN miner_agents ma ON ma.version_id = ce.version_id
         WHERE ce.rn = 1;
     """)
 

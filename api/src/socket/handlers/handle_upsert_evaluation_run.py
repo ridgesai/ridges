@@ -4,7 +4,7 @@ from fastapi import WebSocket
 
 from api.src.utils.logging_utils import get_logger
 from api.src.backend.queries.evaluations import store_evaluation_run
-from api.src.backend.entities import EvaluationRun
+from api.src.backend.entities import EvaluationRun, SandboxStatus
 
 logger = get_logger(__name__)
 
@@ -31,7 +31,7 @@ async def handle_upsert_evaluation_run(
             run_id=evaluation_run_data["run_id"],
             evaluation_id=evaluation_run_data["evaluation_id"],
             swebench_instance_id=evaluation_run_data["swebench_instance_id"],
-            status=evaluation_run_data["status"],
+            status=SandboxStatus(evaluation_run_data["status"]),
             response=evaluation_run_data["response"],
             error=evaluation_run_data["error"],
             pass_to_fail_success=evaluation_run_data["pass_to_fail_success"],
@@ -47,9 +47,10 @@ async def handle_upsert_evaluation_run(
         )
         await store_evaluation_run(evaluation_run)
         
-        # Add validator_hotkey to the object for broadcasting
-        evaluation_run.validator_hotkey = validator_hotkey
-        return evaluation_run
+        # Create a dictionary for broadcasting that includes the validator_hotkey
+        broadcast_data = evaluation_run.model_dump()
+        broadcast_data["validator_hotkey"] = validator_hotkey
+        return broadcast_data
         
     except Exception as e:
         logger.error(f"Error upserting evaluation run: {str(e)}")

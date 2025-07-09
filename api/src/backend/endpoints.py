@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 
 from api.src.utils.logging_utils import get_logger
 
+from datetime import datetime, timezone
+
 load_dotenv()
 logger = get_logger(__name__)
 
@@ -145,8 +147,8 @@ async def something():
         miner_hotkey="testtest",
         name="bruh",
         latest_version=0,
-        last_updated=datetime.now(),
-        created_at=datetime.now(),
+        last_updated=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
     ))
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")

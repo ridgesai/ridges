@@ -10,7 +10,7 @@ from api.src.utils.logging_utils import get_logger
 from api.src.db.operations import DatabaseManager
 from api.src.db.sqlalchemy_models import EvaluationRun, Evaluation
 from api.src.backend.queries.evaluations import store_evaluation, store_evaluation_run, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation_by_evaluation_id
-from api.src.backend.entities import Evaluation as NewEvaluation
+from api.src.backend.entities import Evaluation as NewEvaluation, EvaluationStatus
 
 logger = get_logger(__name__)
 
@@ -124,7 +124,7 @@ async def create_evaluation(version_id: str, validator_hotkey: str) -> str:
         evaluation_id=str(uuid.uuid4()),
         version_id=version_id,
         validator_hotkey=validator_hotkey,
-        status="waiting",
+        status=EvaluationStatus.waiting,
         terminated_reason=None,
         created_at=datetime.now(timezone.utc),
         started_at=None,
@@ -141,8 +141,8 @@ async def start_evaluation(evaluation_id: str) -> Evaluation:
     Start an evaluation in the database.
     """
     evaluation = await db.get_evaluation(evaluation_id)
-    evaluation.status = "running"
-    evaluation.started_at = datetime.now()
+    evaluation.status = EvaluationStatus.running
+    evaluation.started_at = datetime.now(timezone.utc)
     await db.store_evaluation(evaluation)
 
     return evaluation
@@ -153,8 +153,8 @@ async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
     """
     
     evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-    evaluation.status = "completed" if not errored else "error"
-    evaluation.finished_at = datetime.now()
+    evaluation.status = EvaluationStatus.completed if not errored else EvaluationStatus.error
+    evaluation.finished_at = datetime.now(timezone.utc)
     await db.store_evaluation(evaluation)
 
     return evaluation
@@ -172,7 +172,7 @@ async def reset_running_evaluations(validator_hotkey: str):
         logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
         
         # Reset the evaluation to waiting status
-        evaluation.status = "waiting"
+        evaluation.status = EvaluationStatus.waiting
         evaluation.started_at = None
         await db.store_evaluation(evaluation)
         logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")

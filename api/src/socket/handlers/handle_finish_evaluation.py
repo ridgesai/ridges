@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from fastapi import WebSocket
 
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation
+from api.src.backend.entities import EvaluationStatus
 from api.src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -21,8 +22,8 @@ async def handle_finish_evaluation(
     
     try:
         evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-        evaluation.status = "completed" if not errored else "error"
-        evaluation.finished_at = datetime.now()
+        evaluation.status = EvaluationStatus.completed if not errored else EvaluationStatus.error
+        evaluation.finished_at = datetime.now(timezone.utc)
         await store_evaluation(evaluation)
         
         return evaluation

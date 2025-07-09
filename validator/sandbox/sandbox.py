@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 import time
@@ -64,7 +64,7 @@ class Sandbox:
             validate_sandbox_dir(agent_dir)
         except ValueError as e:
             self.evaluation_run.status = "result_scored"
-            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
             self.evaluation_run.error = str(e)
             manager.websocket_app.send(
                 {
@@ -104,7 +104,7 @@ class Sandbox:
             logger.info(f"Running sandbox for run {self.evaluation_run.run_id}")
 
             self.evaluation_run.status = "sandbox_created"
-            self.evaluation_run.sandbox_created_at = datetime.now()
+            self.evaluation_run.sandbox_created_at = datetime.now(timezone.utc)
             await self.manager.websocket_app.send(
                 {
                     "event": "upsert-evaluation-run",
@@ -133,7 +133,7 @@ class Sandbox:
                 )
 
                 self.evaluation_run.status = "eval_started"
-                self.evaluation_run.eval_started_at = datetime.now()
+                self.evaluation_run.eval_started_at = datetime.now(timezone.utc)
                 await self.manager.websocket_app.send(
                     {
                         "event": "upsert-evaluation-run",
@@ -225,7 +225,7 @@ class Sandbox:
             self.container.remove()
 
             self.evaluation_run.status = "patch_generated"
-            self.evaluation_run.patch_generated_at = datetime.now()
+            self.evaluation_run.patch_generated_at = datetime.now(timezone.utc)
 
             if not self.evaluation_run.error:
                 with open(output_file, "r") as f:
@@ -237,17 +237,17 @@ class Sandbox:
                             if self.evaluation_run.response == "":
                                 self.evaluation_run.status = "result_scored"
                                 self.evaluation_run.solved = False
-                                self.evaluation_run.result_scored_at = datetime.now()
+                                self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
                                 self.evaluation_run.error = "Empty patch returned from agent.py"
                         else:
                             self.evaluation_run.status = "result_scored"
                             self.evaluation_run.solved = False
-                            self.evaluation_run.result_scored_at = datetime.now()
+                            self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
                             self.evaluation_run.error = output.get("error")
                     except Exception as e:
                         self.evaluation_run.status = "result_scored"
                         self.evaluation_run.solved = False
-                        self.evaluation_run.result_scored_at = datetime.now()
+                        self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
                         self.evaluation_run.error = "JSON parsing error: " + str(e)
 
         except asyncio.CancelledError:
@@ -262,7 +262,7 @@ class Sandbox:
         except Exception as e:
             self.evaluation_run.status = "result_scored"
             self.evaluation_run.solved = False
-            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
             self.evaluation_run.error = str(e)
         finally:
             self.running = False
@@ -280,7 +280,7 @@ class Sandbox:
             logger.info("Evaluation cancelled")
             self.evaluation_run.solved = False
             self.evaluation_run.status = "result_scored"
-            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
             self.evaluation_run.error = "Evaluation cancelled"
             raise
 
@@ -288,7 +288,7 @@ class Sandbox:
         try:
             # Mark evaluation start
             self.evaluation_run.status = "eval_started"
-            self.evaluation_run.eval_started_at = datetime.now()
+            self.evaluation_run.eval_started_at = datetime.now(timezone.utc)
 
             # Fetch the corresponding SWE-bench instance
             instance_id = self.evaluation_run.swebench_instance_id
@@ -357,7 +357,7 @@ class Sandbox:
             self.evaluation_run.error = str(e)
         finally:
             self.evaluation_run.status = "result_scored"
-            self.evaluation_run.result_scored_at = datetime.now()
+            self.evaluation_run.result_scored_at = datetime.now(timezone.utc)
 
     def _get_patch_apply_error(self) -> str | None:
         patch_path = Path(tempfile.mkstemp(suffix=".patch")[1])

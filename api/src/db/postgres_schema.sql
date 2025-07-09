@@ -4,8 +4,8 @@ CREATE TABLE IF NOT EXISTS agents (
     miner_hotkey TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     latest_version INT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    last_updated TIMESTAMP NOT NULL
+    created_at TIMESTAMPTZ NOT NULL,
+    last_updated TIMESTAMPTZ NOT NULL
 );
 
 -- Agent Versions table
@@ -13,14 +13,14 @@ CREATE TABLE IF NOT EXISTS agent_versions (
     version_id UUID PRIMARY KEY NOT NULL,
     agent_id UUID NOT NULL REFERENCES agents(agent_id),
     version_num INT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
     score FLOAT
 );
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
     banned_reason TEXT,
-    banned_at TIMESTAMP NOT NULL DEFAULT NOW()
+    banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Add performance indexes on common read paths
@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS evaluations (
     validator_hotkey TEXT NOT NULL,
     status TEXT NOT NULL, -- AARON NAMED THIS 'STATUS'. IT MAY BE A RESERVED WORD. FIRE HIM IF IT BREAKS EVERYTHING. One of (waiting, running, completed, replaced)
     terminated_reason TEXT,
-    created_at TIMESTAMP NOT NULL,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
     score FLOAT,
     UNIQUE(version_id, validator_hotkey) -- Prevent duplicate evaluations for same version/validator pair
 );
@@ -61,18 +61,18 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     fail_to_fail_success TEXT,
     solved BOOLEAN,
     status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored
-    started_at TIMESTAMP NOT NULL,
-    sandbox_created_at TIMESTAMP,
-    patch_generated_at TIMESTAMP,
-    eval_started_at TIMESTAMP,
-    result_scored_at TIMESTAMP
+    started_at TIMESTAMPTZ NOT NULL,
+    sandbox_created_at TIMESTAMPTZ,
+    patch_generated_at TIMESTAMPTZ,
+    eval_started_at TIMESTAMPTZ,
+    result_scored_at TIMESTAMPTZ
     -- finished_at removed; last stage is result_scored_at
 );
 
 -- Weights History table
 CREATE TABLE IF NOT EXISTS weights_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
+    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     time_since_last_update INTERVAL,
     miner_weights JSONB NOT NULL -- Stores {miner_hotkey: weight} pairs dynamically
 );
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS weights_history (
 -- Approved Version IDs table - tracks which versions are approved for weight consideration
 CREATE TABLE IF NOT EXISTS approved_version_ids (
     version_id UUID PRIMARY KEY REFERENCES agent_versions(version_id),
-    approved_at TIMESTAMP NOT NULL DEFAULT NOW()
+    approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Current Approved Leader table - tracks the current approved high score leader
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS current_approved_leader (
     id INT PRIMARY KEY DEFAULT 1,
     version_id UUID REFERENCES agent_versions(version_id),
     score FLOAT,
-    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT single_row CHECK (id = 1) -- Ensures only one row exists
 );
 
@@ -99,9 +99,9 @@ CREATE TABLE IF NOT EXISTS pending_approvals (
     miner_hotkey TEXT NOT NULL,
     version_num INT NOT NULL,
     score FLOAT NOT NULL,
-    detected_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-    reviewed_at TIMESTAMP
+    reviewed_at TIMESTAMPTZ
 );
 
 -- Add performance indexes for approval tables

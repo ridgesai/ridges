@@ -5,7 +5,7 @@ import json
 from colorama import Back, Fore, Style
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logging_db_path = "logging.db"
@@ -89,7 +89,7 @@ class DatabaseHandler(logging.Handler):
                 # Ensure all values are of the correct type
                 values = (
                     str(uuid.uuid4()),
-                    datetime.now().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                     str(record.levelname),
                     str(record.name),
                     str(Path(record.pathname).relative_to(Path.cwd())),

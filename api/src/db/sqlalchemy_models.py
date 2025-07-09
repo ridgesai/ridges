@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, ForeignKey, JSON, Interval
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, String, Integer, Float, Boolean, Text, ForeignKey, JSON, Interval
+from sqlalchemy.dialects.postgresql import UUID, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -14,8 +14,8 @@ class Agent(Base):
     miner_hotkey = Column(Text, nullable=False)
     name = Column(Text, nullable=False)
     latest_version = Column(Integer, nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    last_updated = Column(DateTime, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    last_updated = Column(TIMESTAMP(timezone=True), nullable=False)
     
     # Relationships
     versions = relationship("AgentVersion", back_populates="agent")
@@ -26,7 +26,7 @@ class AgentVersion(Base):
     version_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     agent_id = Column(UUID(as_uuid=True), ForeignKey('agents.agent_id'), nullable=False)
     version_num = Column(Integer, nullable=False)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
     score = Column(Float)
     
     # Relationships
@@ -41,9 +41,9 @@ class Evaluation(Base):
     validator_hotkey = Column(Text, nullable=False)
     status = Column(Text, nullable=False)  # waiting, running, completed, replaced
     terminated_reason = Column(Text)
-    created_at = Column(DateTime, nullable=False)
-    started_at = Column(DateTime)
-    finished_at = Column(DateTime)
+    created_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    started_at = Column(TIMESTAMP(timezone=True))
+    finished_at = Column(TIMESTAMP(timezone=True))
     score = Column(Float)
     
     # Relationships
@@ -64,11 +64,11 @@ class EvaluationRun(Base):
     fail_to_fail_success = Column(Text)
     solved = Column(Boolean)
     status = Column(Text, nullable=False)  # started, sandbox_created, patch_generated, eval_started, result_scored
-    started_at = Column(DateTime, nullable=False)
-    sandbox_created_at = Column(DateTime)
-    patch_generated_at = Column(DateTime)
-    eval_started_at = Column(DateTime)
-    result_scored_at = Column(DateTime)
+    started_at = Column(TIMESTAMP(timezone=True), nullable=False)
+    sandbox_created_at = Column(TIMESTAMP(timezone=True))
+    patch_generated_at = Column(TIMESTAMP(timezone=True))
+    eval_started_at = Column(TIMESTAMP(timezone=True))
+    result_scored_at = Column(TIMESTAMP(timezone=True))
     
     # Relationships
     evaluation = relationship("Evaluation", back_populates="evaluation_runs")
@@ -77,7 +77,7 @@ class WeightsHistory(Base):
     __tablename__ = 'weights_history'
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    timestamp = Column(DateTime, nullable=False, default=datetime.now)
+    timestamp = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.now)
     time_since_last_update = Column(Interval)
     miner_weights = Column(JSON, nullable=False)
 
@@ -86,4 +86,4 @@ class BannedHotkey(Base):
     
     miner_hotkey = Column(Text, primary_key=True, nullable=False)
     banned_reason = Column(Text)
-    banned_at = Column(DateTime, nullable=False, default=datetime.now)
+    banned_at = Column(TIMESTAMP(timezone=True), nullable=False, default=datetime.now)

@@ -4,7 +4,7 @@ import json
 import threading
 import uuid
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select, func, and_, text, Integer
 from sqlalchemy.dialects.postgresql import insert
@@ -155,19 +155,19 @@ class DatabaseManager:
                         )
                     """))
                     
-                    # Create indexes
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
-                        ON approved_version_ids(approved_at)
-                    """))
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_status 
-                        ON pending_approvals(status)
-                    """))
-                    await conn.execute(text("""
-                        CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at 
-                        ON pending_approvals(detected_at DESC)
-                    """))
+                    # # Create indexes
+                    # await conn.execute(text("""
+                    #     CREATE INDEX IF NOT EXISTS idx_approved_version_ids_approved_at 
+                    #     ON approved_version_ids(approved_at)
+                    # """))
+                    # await conn.execute(text("""
+                    #     CREATE INDEX IF NOT EXISTS idx_pending_approvals_status 
+                    #     ON pending_approvals(status)
+                    # """))
+                    # await conn.execute(text("""
+                    #     CREATE INDEX IF NOT EXISTS idx_pending_approvals_detected_at 
+                    #     ON pending_approvals(detected_at DESC)
+                    # """))
                     
                 logger.info("Successfully created approval system tables directly")
             
@@ -1219,7 +1219,7 @@ class DatabaseManager:
         async with self.AsyncSessionLocal() as session:
             try:
                 stmt = insert(WeightsHistory).values(
-                    timestamp=datetime.now(),
+                    timestamp=datetime.now(timezone.utc),
                     time_since_last_update=time_since_last_update,
                     miner_weights=json.dumps(miner_weights)
                 )
@@ -1425,7 +1425,7 @@ class DatabaseManager:
                         version_id=version_id,
                         validator_hotkey=validator_hotkey,
                         status='waiting',
-                        created_at=datetime.now(),
+                        created_at=datetime.now(timezone.utc),
                         started_at=None,
                         finished_at=None,
                         score=None,

@@ -4,7 +4,7 @@ Send deflate logs returns "Request accepted for processing (always 202 empty JSO
 
 import logging
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
@@ -66,7 +66,7 @@ async def dd_update_connected_validators(count: int, validator_hotkeys: list[str
                     metric="connected_validators",
                     points=[
                         MetricPoint(
-                            timestamp=int(datetime.now().timestamp()),
+                            timestamp=int(datetime.now(timezone.utc).timestamp()),
                             value=count,
                         ),
                     ],

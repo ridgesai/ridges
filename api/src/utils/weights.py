@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.src.db.operations import DatabaseManager
 from api.src.utils.logging_utils import get_logger
@@ -54,7 +54,7 @@ async def run_weight_monitor(netuid=62, interval_seconds=60):
                 stored_weights = latest_stored['weights']
                 stored_timestamp = latest_stored['timestamp']
                 
-                time_since_last = datetime.now() - stored_timestamp if stored_timestamp else None
+                time_since_last = datetime.now(timezone.utc) - stored_timestamp if stored_timestamp else None
                 
                 weights_changed = db.weights_are_different(weights, stored_weights)
                 

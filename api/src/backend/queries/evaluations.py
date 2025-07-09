@@ -2,7 +2,7 @@ from typing import Optional, List
 import logging
 
 import asyncpg
-from datetime import datetime
+from datetime import datetime, timezone
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns
@@ -73,7 +73,7 @@ async def store_evaluation(conn: asyncpg.Connection, evaluation: Evaluation):
             finished_at = EXCLUDED.finished_at,
             terminated_reason = EXCLUDED.terminated_reason,
             score = EXCLUDED.score
-    """, evaluation.evaluation_id, evaluation.version_id, evaluation.validator_hotkey, evaluation.status, 
+    """, evaluation.evaluation_id, evaluation.version_id, evaluation.validator_hotkey, evaluation.status.value, 
         evaluation.created_at, evaluation.started_at, evaluation.finished_at, evaluation.terminated_reason, evaluation.score) 
 
 @db_operation
@@ -103,7 +103,7 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
             eval_started_at = EXCLUDED.eval_started_at,
             result_scored_at = EXCLUDED.result_scored_at
     """, evaluation_run.run_id, evaluation_run.evaluation_id, evaluation_run.swebench_instance_id,
-        evaluation_run.status, evaluation_run.response, evaluation_run.error,
+        evaluation_run.status.value, evaluation_run.response, evaluation_run.error,
         evaluation_run.pass_to_fail_success, evaluation_run.fail_to_pass_success,
         evaluation_run.pass_to_pass_success, evaluation_run.fail_to_fail_success,
         evaluation_run.solved, evaluation_run.started_at, evaluation_run.sandbox_created_at,
@@ -160,11 +160,11 @@ async def start_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> Eval
 async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
-            SELECT *
+            SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
             FROM evaluations
-            WHERE validator_hotkey = :validator_hotkey 
+            WHERE validator_hotkey = $1 
             AND status = 'running' 
-            ORDER BY e.created_at ASC 
+            ORDER BY created_at ASC 
             LIMIT 1;
         """,
         validator_hotkey
@@ -177,30 +177,30 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
 
 @db_operation
 async def delete_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str) -> int:
-    await conn.execute(
-        "DELETE FROM evaluation_runs WHERE evaluation_id = :evaluation_id ",
+    result = await conn.execute(
+        "DELETE FROM evaluation_runs WHERE evaluation_id = $1",
         evaluation_id
-    ) 
+    )
+    return result.split()[-1] if result else 0
 
 @db_operation
 async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> int:
-    agent_versions = await conn.fetch(
-        "SELECT av.version_id "
-        "FROM agent_versions av "
-        "JOIN agents a ON av.miner_hotkey = a.miner_hotkey "
-        "WHERE av.created_at >= NOW() - INTERVAL '24 hours' "
-        "AND av.version_num = a.latest_version "
-        "ORDER BY av.created_at DESC"
+    agents = await conn.fetch(
+        "SELECT ma.version_id "
+        "FROM miner_agents ma "
+        "WHERE ma.created_at >= NOW() - INTERVAL '24 hours' "
+        "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey) "
+        "ORDER BY ma.created_at DESC"
     )
 
-    if not agent_versions:
+    if not agents:
         raise Exception("No recent agent versions found")
     
     evaluations_created = 0 
     import uuid
 
-    for version_row in agent_versions:
-        version_id = version_row[0]
+    for agent_row in agents:
+        version_id = agent_row[0]
         
         # Check if evaluation already exists
         existing_evaluation = await conn.fetchrow(
@@ -218,7 +218,7 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         await conn.execute("""
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
             VALUES ($1, $2, $3, $4, $5)
-        """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now())
+        """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
         
         evaluations_created += 1
     

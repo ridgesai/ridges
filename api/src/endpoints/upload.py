@@ -138,7 +138,7 @@ async def post_agent(
         miner_hotkey=miner_hotkey,
         agent_name=agent_name,
         version_num=latest_agent.version_num + 1 if latest_agent else 0,
-        created_at=datetime.now(),
+        created_at=datetime.now(timezone.utc),
         score=None
     )
 
