@@ -83,7 +83,8 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
             version_num,
             created_at,
             score
-        from miner_agents where miner_hotkey = $1;
+        from miner_agents where miner_hotkey = $1 order by created_at desc;
     """, miner_hotkey)
 
+    
     return [MinerAgent(**dict(row)) for row in results]

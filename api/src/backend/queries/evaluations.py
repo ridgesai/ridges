@@ -26,7 +26,7 @@ async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_i
 async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: str) -> List[Evaluation]:
     result = await conn.fetch(
         "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
-        "FROM evaluations WHERE version_id = $1",
+        "FROM evaluations WHERE version_id = $1 ORDER BY created_at DESC",
         version_id
     )
 
