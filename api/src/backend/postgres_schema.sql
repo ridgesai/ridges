@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     validator_hotkey TEXT NOT NULL,
-    status TEXT NOT NULL, -- AARON NAMED THIS 'STATUS'. IT MAY BE A RESERVED WORD. FIRE HIM IF IT BREAKS EVERYTHING. One of (waiting, running, completed, replaced)
+    status TEXT NOT NULL,
     terminated_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
