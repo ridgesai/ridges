@@ -7,8 +7,9 @@ from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
-from api.src.backend.entities import EvaluationRun
+from api.src.backend.entities import EvaluationRun, MinerAgent
 from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation, get_queue_info as db_get_queue_info
+from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_top_agents as db_get_top_agents, get_agent_summary_by_hotkey
 
 load_dotenv()
 
@@ -126,6 +127,51 @@ async def get_latest_agent(miner_hotkey: str = None):
     
     return latest_agent
 
+async def get_network_stats():
+    """
+    Gets statistics on the number of agents, score changes, etc. Primarily ingested by the dashboard
+    """
+    statistics_24_hrs = await get_24_hour_statistics()
+
+    return statistics_24_hrs
+
+async def get_running_evaluations() -> list[RunningEvaluation]:
+    """
+    Gets a list of currently running evaluations to display on dashboard
+    """
+    evaluations = await get_currently_running_evaluations()
+
+    return evaluations
+
+async def get_top_agents(num_agents: int = 3) -> list[MinerAgent]:
+    """
+    Gets a list of current high score agents
+    """
+    if num_agents < 1:
+        raise HTTPException(
+            status_code=500,
+            detail="Must provide a fixed number of agents"
+        )
+    
+    top_agents = await db_get_top_agents(num_agents=num_agents)
+
+    return top_agents
+
+async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
+    """
+    Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
+    """
+    agent_versions = await get_agent_summary_by_hotkey(miner_hotkey=miner_hotkey)
+    
+    if agent_versions is None: 
+        raise HTTPException(
+            status_code=500,
+            detail="Error loading details for agent"
+        )
+
+    return agent_versions
+
+
 router = APIRouter()
 
 routes = [
@@ -135,6 +181,10 @@ routes = [
     ("/evaluations", get_evaluations),
     ("/runs-for-evaluation", get_runs_for_evaluation), 
     ("/latest-agent", get_latest_agent),
+    ("/network-stats", get_network_stats),
+    ("/running-evaluations", get_running_evaluations),
+    ("/top-agents", get_top_agents),
+    ("/agent-by-hotkey", agent_summary_by_hotkey),
 ]
 
 for path, endpoint in routes:
