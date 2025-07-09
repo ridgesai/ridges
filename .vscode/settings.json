@@ -1,0 +1,10 @@
+{
+    "files.exclude": {
+        "**/repo_cache": true,
+        "**/repos": true
+    },
+    "python.analysis.exclude": [
+        "**/repos",
+        "**/repo_cache"
+    ]
+}
