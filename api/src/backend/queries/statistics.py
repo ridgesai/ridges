@@ -60,15 +60,22 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
 @db_operation
 async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[MinerAgent]:
     results = await conn.fetch("""
-        select 
+        SELECT
             version_id,
             miner_hotkey,
             agent_name,
             version_num,
             created_at,
             score
-        from miner_agents where score is not null and score > 0 order by score desc
-        limit $1;
+        FROM miner_agents
+        WHERE score IS NOT NULL
+        AND miner_hotkey NOT IN (
+            SELECT miner_hotkey
+            FROM banned_hotkeys
+            )
+        AND score > 0
+        ORDER BY score DESC
+        LIMIT $1;
     """, num_agents)
 
     return [MinerAgent(**dict(row)) for row in results]
