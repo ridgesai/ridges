@@ -1,15 +1,13 @@
-import json
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 
-from ...utils.logging_utils import get_logger
-from .handle_validator_version import handle_validator_version
-from .handle_get_next_evaluation import handle_get_next_evaluation
-from .handle_start_evaluation import handle_start_evaluation
-from .handle_finish_evaluation import handle_finish_evaluation
-from .handle_upsert_evaluation_run import handle_upsert_evaluation_run
-from .handle_ping import handle_ping
-from .handle_set_weights import handle_set_weights_after_evaluation
+from api.src.utils.logging_utils import get_logger
+from api.src.socket.handlers.handle_validator_version import handle_validator_version
+from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
+from api.src.socket.handlers.handle_start_evaluation import handle_start_evaluation
+from api.src.socket.handlers.handle_finish_evaluation import handle_finish_evaluation
+from api.src.socket.handlers.handle_upsert_evaluation_run import handle_upsert_evaluation_run
+from api.src.socket.handlers.handle_ping import handle_ping
 
 logger = get_logger(__name__)
 

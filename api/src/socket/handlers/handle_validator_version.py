@@ -5,12 +5,10 @@ import httpx
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from ...utils.logging_utils import get_logger
-from ...db.operations import DatabaseManager
+from api.src.backend.queries.evaluations import create_evaluations_for_validator, get_next_evaluation_for_validator
+from api.src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 _commits_cache = None
 _cache_time = 0
@@ -73,14 +71,14 @@ async def handle_validator_version(
     
     # Create evaluations for the validator
     try:
-        num_evaluations_created = await db.create_evaluations_for_validator(validator_hotkey)
+        num_evaluations_created = await create_evaluations_for_validator(validator_hotkey)
         logger.info(f"Created {num_evaluations_created} evaluations for newly connected validator {validator_hotkey}")
     except Exception as e:
         logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
         num_evaluations_created = -1
 
     # Check if there's a next evaluation available
-    next_evaluation = await db.get_next_evaluation(validator_hotkey)
+    next_evaluation = await get_next_evaluation_for_validator(validator_hotkey)
     if next_evaluation:
         await websocket.send_text(json.dumps({"event": "evaluation-available"}))
     

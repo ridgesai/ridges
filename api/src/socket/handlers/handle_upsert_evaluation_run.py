@@ -1,15 +1,12 @@
-import json
 from datetime import datetime
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from ...utils.logging_utils import get_logger
-from ...db.operations import DatabaseManager
-from ...db.sqlalchemy_models import EvaluationRun
+from api.src.utils.logging_utils import get_logger
+from api.src.backend.queries.evaluations import store_evaluation_run
+from api.src.backend.entities import EvaluationRun
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 async def handle_upsert_evaluation_run(
     websocket: WebSocket,
@@ -30,7 +27,7 @@ async def handle_upsert_evaluation_run(
                 return dt_str
             return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
         
-        evaluation_run_obj = EvaluationRun(
+        evaluation_run = EvaluationRun(
             run_id=evaluation_run_data["run_id"],
             evaluation_id=evaluation_run_data["evaluation_id"],
             swebench_instance_id=evaluation_run_data["swebench_instance_id"],
@@ -48,11 +45,11 @@ async def handle_upsert_evaluation_run(
             eval_started_at=parse_datetime(evaluation_run_data["eval_started_at"]),
             result_scored_at=parse_datetime(evaluation_run_data["result_scored_at"])
         )
-        await db.store_evaluation_run(evaluation_run_obj)
+        await store_evaluation_run(evaluation_run)
         
         # Add validator_hotkey to the object for broadcasting
-        evaluation_run_obj.validator_hotkey = validator_hotkey
-        return evaluation_run_obj
+        evaluation_run.validator_hotkey = validator_hotkey
+        return evaluation_run
         
     except Exception as e:
         logger.error(f"Error upserting evaluation run: {str(e)}")

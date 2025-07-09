@@ -5,12 +5,10 @@ from fastapi import WebSocket
 from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.backend.queries.evaluations import get_next_evaluation_for_validator
 
-from ...utils.logging_utils import get_logger
-from ...db.operations import DatabaseManager
+from api.src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-db = DatabaseManager()
 
 async def handle_get_next_evaluation(
     websocket: WebSocket,

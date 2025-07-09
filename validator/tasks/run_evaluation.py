@@ -39,16 +39,16 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         async with httpx.AsyncClient(timeout=300) as client:
             try:
                 # Download the agent code from Ridges API
-                logger.info(f"Downloading agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
+                logger.info(f"Downloading agent code for agent {agent_version.miner_hotkey} version {agent_version.version_num}")
                 try:
                     response = await client.get(
                         f"{RIDGES_API_URL}/retrieval/agent-version-file",
                         params={"version_id": agent_version.version_id},
                     )
                     response.raise_for_status()
-                    logger.info(f"Downloaded agent code for agent {agent_version.agent_id} version {agent_version.version_num}")
+                    logger.info(f"Downloaded agent code for agent {agent_version.miner_hotkey} version {agent_version.version_num}")
                 except Exception as e:
-                    logger.error(f"Failed to download from {RIDGES_API_URL}/retrieval/agent-version-file for agent {agent_version.agent_id} (version {agent_version.version_id}): {e}")
+                    logger.error(f"Failed to download from {RIDGES_API_URL}/retrieval/agent-version-file for agent {agent_version.miner_hotkey} (version {agent_version.version_id}): {e}")
                     raise e
                 
                 agent_file_content = response.content
@@ -96,7 +96,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
 
             except Exception as e:
                 logger.error(
-                    f"Error configuring sandbox for agent {agent_version.agent_id} version {agent_version.version_num}: {e}",
+                    f"Error configuring sandbox for agent {agent_version.miner_hotkey} version {agent_version.version_num}: {e}",
                     exc_info=True,
                     stack_info=True
                 )

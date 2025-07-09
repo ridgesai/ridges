@@ -1,9 +1,9 @@
-import json
 from datetime import datetime
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from ...utils.logging_utils import get_logger
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation
+from api.src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
@@ -20,10 +20,10 @@ async def handle_finish_evaluation(
     logger.info(f"Validator with hotkey {validator_hotkey} has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
-        evaluation = await get_evaluation(evaluation_id)
+        evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
         evaluation.status = "completed" if not errored else "error"
         evaluation.finished_at = datetime.now()
-        await db.store_evaluation(evaluation)
+        await store_evaluation(evaluation)
         
         return evaluation
         

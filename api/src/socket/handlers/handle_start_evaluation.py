@@ -1,14 +1,11 @@
-import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from ...utils.logging_utils import get_logger
-from ...db.operations import DatabaseManager
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation
+from api.src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 async def handle_start_evaluation(
     websocket: WebSocket,
@@ -21,10 +18,10 @@ async def handle_start_evaluation(
     logger.info(f"Validator with hotkey {validator_hotkey} has started an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
-        evaluation = await db.get_evaluation(evaluation_id)
+        evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
         evaluation.status = "running"
-        evaluation.started_at = datetime.now()
-        await db.store_evaluation(evaluation)
+        evaluation.started_at = datetime.now(timezone.utc)
+        await store_evaluation(evaluation)
         
         return evaluation
         
