@@ -69,7 +69,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> dict[str, Any]:
     Excludes banned miner hotkeys from consideration.
     Returns None if no approved versions exist.
     """
-    top_agent = conn.fetchrow("""
+    top_agent = await conn.fetchrow("""
         WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
             SELECT
                 e.version_id,
