@@ -2,30 +2,27 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from api.src.backend.db_manager import new_db, batch_writer
-
 import os
-from typing import Tuple, Any
+from datetime import timedelta
+from typing import Optional, Tuple, Any
 import asyncio
 from fastapi import FastAPI, WebSocket
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from api.src.backend.db_manager import new_db, batch_writer
+from api.src.backend.queries.cleanup import clean_hanging_evaluations, evaluation_cleanup_loop
 from api.src.utils.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
-from api.src.backend.queries.cleanup import clean_timed_out_evaluations, clean_hanging_evaluations
-
-
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.utils.chutes import ChutesManager
 
 logger = get_logger(__name__)
 
-_batch_task: asyncio.Task | None = None
+_batch_task: Optional[asyncio.Task] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -35,9 +32,8 @@ async def lifespan(app: FastAPI):
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
 
     await clean_hanging_evaluations()
-    ChutesManager().start_cleanup_task()
     asyncio.create_task(run_weight_setting_loop(30))
-    asyncio.create_task(run_evaluation_cleanup_loop())
+    asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
     # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
     yield
 
@@ -69,38 +65,13 @@ app.add_middleware(
     allow_headers=["*"],  # Allows all headers
 )
 
-app.include_router(
-    upload_router,
-    prefix="/upload",
-)
+app.include_router(upload_router, prefix="/upload")
+app.include_router(retrieval_router, prefix="/retrieval")
+app.include_router(scoring_router, prefix="/scoring")
 
-app.include_router(
-    retrieval_router,
-    prefix="/retrieval",
-)
-
-app.include_router(
-    scoring_router,
-    prefix="/scoring",
-)
-
-# WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await WebSocketManager.get_instance().handle_connection(websocket)
-
-async def run_evaluation_cleanup_loop():
-    """Run the evaluation cleanup loop every 10 minutes."""
-    logger.info("Starting evaluation cleanup loop - running every 10 minutes")
-    
-    while True:
-        try:
-            await clean_timed_out_evaluations()
-            logger.info("Evaluation cleanup completed. Running again in 10 minutes.")
-            await asyncio.sleep(10 * 60) 
-        except Exception as e:
-            logger.error(f"Error in evaluation cleanup loop: {e}")
-            await asyncio.sleep(10 * 60)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)

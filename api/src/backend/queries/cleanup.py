@@ -1,9 +1,9 @@
-from typing import Optional
+import asyncio
+from datetime import timedelta
 
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import MinerAgent
 
 import logging
 
@@ -93,3 +93,15 @@ async def clean_timed_out_evaluations(conn: asyncpg.Connection) -> int:
     
     logger.info(f"Successfully cleaned up {cleaned_count} timed out evaluations")
     return cleaned_count
+
+async def evaluation_cleanup_loop(every: timedelta):
+    logger.info(f"Starting evaluation cleanup loop - running every {every}")
+    
+    while True:
+        try:
+            await clean_timed_out_evaluations()
+            logger.info(f"Evaluation cleanup completed. Running again in {every}.")
+            await asyncio.sleep(every.seconds) 
+        except Exception as e:
+            logger.error(f"Error in evaluation cleanup loop: {e}")
+            await asyncio.sleep(every.seconds)
