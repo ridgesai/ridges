@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.utils.logging_utils import get_logger
-from api.src.utils.process_tracking import process_context
+# from api.src.utils.process_tracking import process_context
 from api.src.socket.server_helpers import (
     upsert_evaluation_run, 
     get_next_evaluation, 
@@ -58,19 +58,18 @@ class WebSocketManager:
                     self.clients[websocket]["val_hotkey"] = response_json["validator_hotkey"]
                     self.clients[websocket]["version_commit_hash"] = response_json["version_commit_hash"]
                     
-                    # Use process context for the entire validator-version flow
-                    with process_context("receive-validator-version") as process_id:
-                        logger.info(f"Platform WebSocket manager received 'validator-version' event from a client. The validator hotkey is {self.clients[websocket]['val_hotkey']} and the version commit hash is {self.clients[websocket]['version_commit_hash']}. Process ID: {process_id}")
-                        logger.info(f"Calling get_relative_version_num with version commit hash {self.clients[websocket]['version_commit_hash']} for validator {self.clients[websocket]['val_hotkey']}...")
-                        relative_version_num = await get_relative_version_num(self.clients[websocket]["version_commit_hash"])
-                        await self.send_to_all_non_validators("validator-connected", {
-                            "validator_hotkey": self.clients[websocket]["val_hotkey"],
-                            "relative_version_num": relative_version_num,
-                            "version_commit_hash": self.clients[websocket]["version_commit_hash"]
-                        })
 
-                        num_evaluations_created = await create_evaluations_for_validator(self.clients[websocket]["val_hotkey"])
-                        logger.info(f"Created {num_evaluations_created} evaluations for newly connected validator {self.clients[websocket]['val_hotkey']}")
+                    logger.info(f"Platform WebSocket manager received 'validator-version' event from a client. The validator hotkey is {self.clients[websocket]['val_hotkey']} and the version commit hash is {self.clients[websocket]['version_commit_hash']}")
+                    logger.info(f"Calling get_relative_version_num with version commit hash {self.clients[websocket]['version_commit_hash']} for validator {self.clients[websocket]['val_hotkey']}...")
+                    relative_version_num = await get_relative_version_num(self.clients[websocket]["version_commit_hash"])
+                    await self.send_to_all_non_validators("validator-connected", {
+                        "validator_hotkey": self.clients[websocket]["val_hotkey"],
+                        "relative_version_num": relative_version_num,
+                        "version_commit_hash": self.clients[websocket]["version_commit_hash"]
+                    })
+
+                    num_evaluations_created = await create_evaluations_for_validator(self.clients[websocket]["val_hotkey"])
+                    logger.info(f"Created {num_evaluations_created} evaluations for newly connected validator {self.clients[websocket]['val_hotkey']}")
 
                     next_evaluation = await get_next_evaluation(self.clients[websocket]["val_hotkey"])
                     if next_evaluation:

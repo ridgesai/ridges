@@ -39,8 +39,8 @@ class DatadogLogHandler(logging.Handler):
             [
                 HTTPLogItem(
                     ddsource="ec2",
-                    process_type=provided_process_type if provided_process_type else (record.processName if record.processName else "unknown"),
-                    process_id=provided_process_id if provided_process_id else (record.processId if record.processId else "unknown"),
+                    # process_type=provided_process_type if provided_process_type else (record.processName if record.processName else "unknown"),
+                    # process_id=provided_process_id if provided_process_id else (record.processId if record.processId else "unknown"),
                     ddtags=f"pathname:{record.pathname}",
                     hostname=hostname,
                     level=record.levelname,
