@@ -145,3 +145,21 @@ def db_operation(func):
                     raise
 
     return wrapper
+
+async def get_pool_status() -> dict:
+    """
+    Get connection pool status information.
+    """
+    try:
+        if not new_db.pool:
+            return {"error": "Connection pool not initialized"}
+        
+        return {
+            "pool_size": new_db.pool.get_size(),
+            "checked_out": new_db.pool.get_size() - new_db.pool.get_idle_size(),
+            "idle": new_db.pool.get_idle_size(),
+            "checked_in": new_db.pool.get_idle_size()
+        }
+    except Exception as e:
+        logger.error(f"Error getting pool status: {str(e)}")
+        return {"error": str(e)}

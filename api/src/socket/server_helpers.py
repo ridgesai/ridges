@@ -1,20 +1,20 @@
 import os
-from typing import Optional
 import httpx
 import uuid
-import os
 from datetime import datetime, timezone
 import time
 
 from api.src.utils.logging_utils import get_logger
-from api.src.db.operations import DatabaseManager
-from api.src.db.sqlalchemy_models import EvaluationRun, Evaluation
-from api.src.backend.queries.evaluations import store_evaluation, store_evaluation_run, get_running_evaluation_by_validator_hotkey, delete_evaluation_runs, store_evaluation, get_evaluation_by_evaluation_id
-from api.src.backend.entities import Evaluation as NewEvaluation, EvaluationStatus
+from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationStatus, SandboxStatus
+from api.src.backend.queries.evaluations import (
+    store_evaluation, 
+    store_evaluation_run, 
+    get_running_evaluation_by_validator_hotkey, 
+    delete_evaluation_runs, 
+)
+
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 _commits_cache = None
 _cache_time = 0
@@ -62,25 +62,6 @@ async def get_relative_version_num(commit_hash: str, history_length: int = 30) -
         logger.error(f"Failed to get determine relative version number for commit {commit_hash}: {e}")
         return -1
 
-async def get_next_evaluation(validator_hotkey: str) -> Optional[Evaluation]:
-    """
-    Get the next evaluation for a validator. Returns None if no evaluation is found.
-    """
-
-    evaluation = await db.get_next_evaluation(validator_hotkey)
-
-    return evaluation
-
-async def get_agent_version_for_validator(version_id: str) -> dict:
-    """
-    Get the agent version for a given version id.
-    Returns a dictionary to avoid Pydantic model UUID conversion issues.
-    """
-
-    agent_version = await db.get_agent_version(version_id)
-
-    return agent_version
-
 async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
     """
     Upsert an evaluation run into the database.
@@ -98,7 +79,7 @@ async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         run_id=evaluation_run["run_id"],
         evaluation_id=evaluation_run["evaluation_id"],
         swebench_instance_id=evaluation_run["swebench_instance_id"],
-        status=evaluation_run["status"],
+        status=SandboxStatus(evaluation_run["status"]),
         response=evaluation_run["response"],
         error=evaluation_run["error"],
         pass_to_fail_success=evaluation_run["pass_to_fail_success"],
@@ -112,7 +93,7 @@ async def upsert_evaluation_run(evaluation_run: dict) -> EvaluationRun:
         eval_started_at=parse_datetime(evaluation_run["eval_started_at"]),
         result_scored_at=parse_datetime(evaluation_run["result_scored_at"])
     )
-    await db.store_evaluation_run(evaluation_run_obj)
+    await store_evaluation_run(evaluation_run_obj)
 
     return evaluation_run_obj
 
@@ -120,7 +101,7 @@ async def create_evaluation(version_id: str, validator_hotkey: str) -> str:
     """
     Create a new evaluation in the database. Returns the evaluation id.
     """
-    evaluation = NewEvaluation(
+    evaluation = Evaluation(
         evaluation_id=str(uuid.uuid4()),
         version_id=version_id,
         validator_hotkey=validator_hotkey,
@@ -136,59 +117,22 @@ async def create_evaluation(version_id: str, validator_hotkey: str) -> str:
 
     return evaluation.evaluation_id
 
-async def start_evaluation(evaluation_id: str) -> Evaluation:
-    """
-    Start an evaluation in the database.
-    """
-    evaluation = await db.get_evaluation(evaluation_id)
-    evaluation.status = EvaluationStatus.running
-    evaluation.started_at = datetime.now(timezone.utc)
-    await db.store_evaluation(evaluation)
-
-    return evaluation
-
-async def finish_evaluation(evaluation_id: str, errored: bool) -> Evaluation:
-    """
-    Finish an evaluation in the database.
-    """
-    
-    evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-    evaluation.status = EvaluationStatus.completed if not errored else EvaluationStatus.error
-    evaluation.finished_at = datetime.now(timezone.utc)
-    await db.store_evaluation(evaluation)
-
-    return evaluation
-
 async def reset_running_evaluations(validator_hotkey: str):
     """
     Reset all running evaluations for a validator. Essentially, add them back to the waiting queue.
     Before resetting, delete all associated evaluation runs since they will need to be remade.
     """
 
-    evaluation = await db.get_running_evaluation_by_validator_hotkey(validator_hotkey)
+    evaluation = await get_running_evaluation_by_validator_hotkey(validator_hotkey)
     if evaluation:
         # Delete all associated evaluation runs first
-        await db.delete_evaluation_runs(evaluation.evaluation_id)
+        await delete_evaluation_runs(evaluation.evaluation_id)
         logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
         
         # Reset the evaluation to waiting status
         evaluation.status = EvaluationStatus.waiting
         evaluation.started_at = None
-        await db.store_evaluation(evaluation)
+        await store_evaluation(evaluation)
         logger.info(f"Validator {validator_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
     else:
         logger.info(f"Validator {validator_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
-
-async def create_evaluations_for_validator(validator_hotkey: str) -> int:
-    """
-    Create evaluations for a validator. Returns the number of evaluations created.
-    """
-
-    try:
-        num_evaluations_created = await db.create_evaluations_for_validator(validator_hotkey)
-        logger.info(f"Created {num_evaluations_created} evaluations for validator {validator_hotkey}")
-    except Exception as e:
-        logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
-        return -1
-
-    return num_evaluations_created

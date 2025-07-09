@@ -22,7 +22,6 @@ from api.src.backend.queries.cleanup import clean_timed_out_evaluations, clean_h
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
-from api.src.db.operations import DatabaseManager   
 
 logger = get_logger(__name__)
 
@@ -33,7 +32,6 @@ async def lifespan(app: FastAPI):
     await new_db.open()
     logger.info(f"New DB pool from lifespan: {new_db}")
     logger.info("Database connection pool opened")
-    await DatabaseManager().init()
     app.state.stop_event = asyncio.Event()
     global _batch_task
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
@@ -42,6 +40,7 @@ async def lifespan(app: FastAPI):
     ChutesManager().start_cleanup_task()
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(run_evaluation_cleanup_loop())
+    # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
     yield
 
     # TODO: Handle endpts for new db manager
@@ -52,7 +51,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 server = WebSocketManager()
-db = DatabaseManager()
 
 # Batching Queue & Writer Task
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))

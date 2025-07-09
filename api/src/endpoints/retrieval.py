@@ -4,18 +4,16 @@ import logging
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.db.operations import DatabaseManager
 from api.src.db.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.entities import EvaluationRun
-from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation
+from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation, get_queue_info as db_get_queue_info
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-db = DatabaseManager()
 s3_manager = S3Manager()
 
 async def get_agent_code(version_id: str, return_as_text: bool = False):
@@ -76,7 +74,7 @@ async def get_connected_validators():
 
 async def get_queue_info(version_id: str):
     try:
-        queue_info = await db.get_queue_info(version_id)
+        queue_info = await db_get_queue_info(version_id)
     except Exception as e:
         logger.error(f"Error retrieving queue info for version {version_id}: {e}")
         raise HTTPException(

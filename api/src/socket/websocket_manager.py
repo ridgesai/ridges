@@ -8,15 +8,17 @@ from typing import Optional, Dict, Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.utils.logging_utils import get_logger
-from api.src.db.operations import DatabaseManager
-from api.src.db.sqlalchemy_models import Evaluation
-from api.src.backend.entities import EvaluationStatus
+from api.src.backend.db_manager import new_db
+from api.src.backend.queries.evaluations import (
+    get_running_evaluation_by_validator_hotkey,
+    delete_evaluation_runs,
+    store_evaluation
+)
+from api.src.backend.entities import Evaluation, EvaluationStatus
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.handlers.handle_set_weights import handle_set_weights_after_evaluation
 
 logger = get_logger(__name__)
-
-db = DatabaseManager()
 
 _commits_cache = None
 _cache_time = 0
@@ -136,16 +138,16 @@ class WebSocketManager:
                     "version_commit_hash": version_commit_hash
                 })
 
-                evaluation = await db.get_running_evaluation_by_validator_hotkey(val_hotkey)
+                evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
                 if evaluation:
                     # Delete all associated evaluation runs first
-                    await db.delete_evaluation_runs(evaluation.evaluation_id)
+                    await delete_evaluation_runs(evaluation.evaluation_id)
                     logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
                     
                     # Reset the evaluation to waiting status
                     evaluation.status = EvaluationStatus.waiting
                     evaluation.started_at = None
-                    await db.store_evaluation(evaluation)
+                    await store_evaluation(evaluation)
                     logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
                 else:
                     logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
@@ -209,7 +211,7 @@ class WebSocketManager:
                         finished_at=None,
                         score=None
                     )
-                    await db.store_evaluation(evaluation)
+                    await store_evaluation(evaluation)
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
                 except Exception:
                     pass

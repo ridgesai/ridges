@@ -62,7 +62,7 @@ async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> 
     return False
 
 @db_operation
-async def get_top_agent(conn: asyncpg.Connection) -> dict[str, Any]:
+async def get_top_agent(conn: asyncpg.Connection) -> Optional[dict[str, Any]]:
     """
     Gets the top approved agents miner hotkey and version id from the database,
     where its been scored by at least 1 validator and is in the approved versions list.

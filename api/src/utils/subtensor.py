@@ -8,13 +8,10 @@ from fiber.chain.interface import get_substrate
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 
 from api.src.utils.logging_utils import get_logger
-from api.src.db.operations import DatabaseManager
 
 dotenv.load_dotenv()
 
 logger = get_logger(__name__)
-
-db_manager = DatabaseManager()
 
 # Simple cache for single subnet price
 _cached_price = None
@@ -156,7 +153,8 @@ async def get_daily_earnings_by_hotkey(hotkey: str, netuid: int = 62) -> float:
         
         top_miner_daily_rewards = subnet_token_price_in_usd * 7200 * 0.41
 
-        weights_data = await db_manager.get_weights_history_last_24h_with_prior()
+        from api.src.backend.queries.weights import get_weights_history_last_24h_with_prior
+        weights_data = await get_weights_history_last_24h_with_prior()
         
         total_seconds = 0
         uid_top_seconds = 0

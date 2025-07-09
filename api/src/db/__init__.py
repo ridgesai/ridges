@@ -5,7 +5,6 @@ This module provides database operations with both traditional psycopg2
 and modern SQLAlchemy approaches.
 """
 
-from .operations import DatabaseManager
 from .sqlalchemy_models import (
     Base,
     Agent,
@@ -17,7 +16,6 @@ from .sqlalchemy_models import (
 )
 
 __all__ = [
-    'DatabaseManager',
     'Base',
     'Agent',
     'AgentVersion',
