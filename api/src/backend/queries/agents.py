@@ -118,3 +118,20 @@ async def get_top_agent(conn: asyncpg.Connection) -> dict[str, Any]:
         "version_id": top_agent[1],
         "avg_score": top_agent[2]
     }
+
+@db_operation
+async def ban_agent(conn: asyncpg.Connection, miner_hotkey: str):
+    await conn.execute("""
+        INSERT INTO banned_hotkeys (miner_hotkey)
+        VALUES ($1)
+    """, miner_hotkey)
+
+@db_operation
+async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
+    """
+    Approve an agent version as a valid, non decoding agent solution
+    """
+    await conn.execute("""
+        INSERT INTO approved_version_ids (version_id)
+        VALUES ($1)
+    """, version_id)
