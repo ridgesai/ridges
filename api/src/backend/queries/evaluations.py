@@ -218,7 +218,7 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
 
 @db_operation
 async def get_runs_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> list[EvaluationRun]:
-    run_rows = conn.fetch(
+    run_rows = await conn.fetch(
         """
             SELECT 
                 run_id,
@@ -343,7 +343,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     for evaluation_row in evaluation_rows:
         evaluation_id = evaluation_row[0]
 
-        evaluation_runs = get_runs_for_evaluation(evaluation_id=evaluation_id)
+        evaluation_runs = await get_runs_for_evaluation(evaluation_id=evaluation_id)
 
         hydrated_evaluation = EvaluationsWithHydratedRuns(
             evaluation_id=evaluation_id,

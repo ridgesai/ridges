@@ -86,7 +86,4 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
         from miner_agents where miner_hotkey = $1;
     """, miner_hotkey)
 
-    print(results)
-    print("yeeehaw")
-
     return [MinerAgent(**dict(row)) for row in results]
