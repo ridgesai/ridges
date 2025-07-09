@@ -62,7 +62,8 @@ Evaluation Creation/Upserts
 @db_operation
 async def store_evaluation(conn: asyncpg.Connection, evaluation: Evaluation):
     """
-    Stores or updates new evaluation
+    Stores or updates new evaluation. 
+    If score is None, the existing score is preserved (allowing triggers to calculate it).
     """
     await conn.execute("""
         INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at, started_at, finished_at, terminated_reason, score)
@@ -72,14 +73,14 @@ async def store_evaluation(conn: asyncpg.Connection, evaluation: Evaluation):
             started_at = EXCLUDED.started_at,
             finished_at = EXCLUDED.finished_at,
             terminated_reason = EXCLUDED.terminated_reason,
-            score = EXCLUDED.score
+            score = CASE WHEN EXCLUDED.score IS NOT NULL THEN EXCLUDED.score ELSE evaluations.score END
     """, evaluation.evaluation_id, evaluation.version_id, evaluation.validator_hotkey, evaluation.status.value, 
         evaluation.created_at, evaluation.started_at, evaluation.finished_at, evaluation.terminated_reason, evaluation.score) 
 
 @db_operation
 async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun):
     """
-    Store or update an evaluation run and update the associated evaluation's score
+    Store or update an evaluation run. The evaluation score is automatically updated by a database trigger.
     """
     await conn.execute("""
         INSERT INTO evaluation_runs (
@@ -109,16 +110,7 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
         evaluation_run.solved, evaluation_run.started_at, evaluation_run.sandbox_created_at,
         evaluation_run.patch_generated_at, evaluation_run.eval_started_at, evaluation_run.result_scored_at)
     
-    # Update the score for the associated evaluation based on average of solved runs
-    await conn.execute("""
-        UPDATE evaluations 
-        SET score = (
-            SELECT AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END)
-            FROM evaluation_runs 
-            WHERE evaluation_id = $1
-        )
-        WHERE evaluation_id = $1
-    """, evaluation_run.evaluation_id)
+    # Score is now automatically updated by database trigger when evaluation_runs.solved is updated
 
 @db_operation
 async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:

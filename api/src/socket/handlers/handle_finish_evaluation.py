@@ -24,6 +24,8 @@ async def handle_finish_evaluation(
         evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
         evaluation.status = EvaluationStatus.completed if not errored else EvaluationStatus.error
         evaluation.finished_at = datetime.now(timezone.utc)
+        # Set score to None to preserve the trigger-calculated score
+        evaluation.score = None
         await store_evaluation(evaluation)
         
         return evaluation
