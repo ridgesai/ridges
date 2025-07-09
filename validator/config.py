@@ -50,7 +50,6 @@ EASY_INSTANCES = [
     "django__django-11119",
     "django__django-12304",
     "django__django-11880",
-    "sympy__sympy-15017",
     "scikit-learn__scikit-learn-14141",
     "pytest-dev__pytest-6202",
     "django__django-14792",
