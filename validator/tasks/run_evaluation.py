@@ -130,6 +130,7 @@ async def _create_evaluation_tasks(sandbox_manager: SandboxManager, evaluation_i
                 status="started",
                 started_at=datetime.now(timezone.utc),
             )
+            evaluation_run.run_id = evaluation_run.run_id
             
             # Create sandbox
             sandbox = sandbox_manager.create_sandbox(evaluation_run, agent_dir)
