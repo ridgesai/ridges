@@ -40,7 +40,7 @@ class Evaluation(BaseModel):
 class SandboxStatus(Enum):
     started = "started"
     sandbox_created = "sandbox_created"
-    patch_generate = "patch_generate"
+    patch_generated = "patch_generated"
     eval_started = "eval_started"
     result_scored = "result_scored"
 
