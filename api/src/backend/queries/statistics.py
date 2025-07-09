@@ -20,7 +20,11 @@ async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
             COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as agent_iterations_last_24_hours,
             MAX(score) as top_agent_score,
             MAX(score) - COALESCE(MAX(CASE WHEN created_at <= NOW() - INTERVAL '24 hours' THEN score END), 0) as daily_score_improvement
-        FROM miner_agents;
+        FROM miner_agents
+        WHERE miner_hotkey NOT IN (
+            SELECT miner_hotkey 
+            FROM banned_hotkeys
+        );
     """)
     
     if result is None:
