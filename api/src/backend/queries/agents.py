@@ -65,58 +65,37 @@ async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> 
 @db_operation
 async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     """
-    Gets the top approved agents miner hotkey and version id from the database,
-    where its been scored by at least 1 validator and is in the approved versions list.
+    Gets the top approved agent's miner hotkey and version id from the database,
+    where it's been scored by at least 1 validator and is in the approved versions list.
     Excludes banned miner hotkeys from consideration.
-    Returns None if no approved versions exist.
+    Returns the agent with the highest score - ANY improvement makes you the leader.
     """
     top_agent = await conn.fetchrow("""
-        WITH approved_version_scores AS (               -- 1.  score + validator count for APPROVED versions only
-            SELECT
-                e.version_id,
-                AVG(e.score)                       AS avg_score,
-                COUNT(DISTINCT e.validator_hotkey) AS validator_cnt
-            FROM evaluations e
-            JOIN approved_version_ids av_approved ON e.version_id = av_approved.version_id  -- ONLY approved versions
-            WHERE e.status = 'completed'
-            AND e.score  IS NOT NULL
-            GROUP BY e.version_id
-            HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
-        ),
-
-        top_approved_score AS (                         -- 2.  the absolute best score among approved versions
-            SELECT MAX(avg_score) AS max_score
-            FROM approved_version_scores
-        ),
-
-        close_enough_approved AS (                      -- 3.  approved scores ≥ 98% of the best approved
-            SELECT
-                avs.version_id,
-                avs.avg_score,
-                ma.created_at,
-                ROW_NUMBER() OVER (ORDER BY ma.created_at ASC) AS rn  -- oldest first
-            FROM approved_version_scores avs
-            JOIN miner_agents ma ON ma.version_id = avs.version_id
-            CROSS JOIN top_approved_score tas
-            WHERE avs.avg_score >= tas.max_score * 0.98    -- within 2%
-        )
-
         SELECT
             ma.miner_hotkey,
-            ce.version_id,
-            ce.avg_score
-        FROM close_enough_approved   ce
-        JOIN miner_agents ma ON ma.version_id = ce.version_id
-        WHERE ce.rn = 1;
+            e.version_id,
+            AVG(e.score) AS avg_score
+        FROM evaluations e
+        JOIN approved_version_ids avi ON e.version_id = avi.version_id  -- Only approved versions
+        JOIN miner_agents ma ON ma.version_id = e.version_id
+        WHERE e.status = 'completed'
+        AND e.score IS NOT NULL
+        AND ma.miner_hotkey NOT IN (
+            SELECT miner_hotkey FROM banned_hotkeys
+        )
+        GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
+        HAVING COUNT(DISTINCT e.validator_hotkey) >= 1  -- At least 1 validator evaluation
+        ORDER BY AVG(e.score) DESC, ma.created_at ASC  -- Highest score wins, oldest breaks ties
+        LIMIT 1;
     """)
-
-    if top_agent is None:
+    
+    if not top_agent:
         return None
-
+    
     return TopAgentHotkey(
-        miner_hotkey=top_agent[0],
-        version_id=top_agent[1],
-        avg_score=top_agent[2]
+        miner_hotkey=top_agent['miner_hotkey'],
+        version_id=str(top_agent['version_id']),
+        avg_score=float(top_agent['avg_score'])
     )
 
 @db_operation
@@ -134,4 +113,5 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
     await conn.execute("""
         INSERT INTO approved_version_ids (version_id)
         VALUES ($1)
+        ON CONFLICT (version_id) DO NOTHING
     """, version_id)

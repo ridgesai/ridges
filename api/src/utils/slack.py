@@ -35,68 +35,50 @@ def handle_approval_buttons(ack, body, respond):
         # Handle approve action
         try:
             import asyncio
-            import os
-            from api.src.db.operations import DatabaseManager
+            from api.src.backend.queries.agents import approve_agent_version
             
             # Run the approval in a separate thread since this is a sync handler
             async def approve_version():
-                db = DatabaseManager()
-                await db.init()
-                return await db.approve_version_id(action_value)
-            
-            # Get approval password from environment
-            approval_password = os.getenv("APPROVAL_PASSWORD")
-            if not approval_password:
-                respond(
-                    text="❌ Error: APPROVAL_PASSWORD not configured",
-                    response_type="ephemeral",
-                    replace_original=False
-                )
-                return
+                return await approve_agent_version(action_value)
             
             # Execute the approval
             result = asyncio.run(approve_version())
             
-            if result == 1:
-                # Send ephemeral confirmation to user
-                respond(
-                    text=f"✅ **Version Approved Successfully!**\n\n🎯 Version `{action_value}` has been approved and set as the current leader.",
-                    response_type="ephemeral"
-                )
+            # The new approve_agent_version doesn't return a count, it just succeeds or throws
+            # So if we get here without exception, it was successful
+            # Send ephemeral confirmation to user
+            respond(
+                text=f"✅ **Version Approved Successfully!**\n\n🎯 Version `{action_value}` has been approved and set as the current leader.",
+                response_type="ephemeral"
+            )
+            
+            # Update original message to remove button and show approved status
+            from slack_sdk import WebClient
+            client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+            
+            # Get original message info from the interaction
+            original_message = body.get("message", {})
+            channel_id = body.get("channel", {}).get("id")
+            message_ts = original_message.get("ts")
+            
+            if channel_id and message_ts:
+                # Update the original message to show approved status
+                updated_attachment = original_message.get("attachments", [{}])[0].copy()
+                updated_attachment["color"] = "good"  # Green for approved
+                updated_attachment.pop("actions", None)  # Remove buttons
+                updated_attachment["footer"] = f"✅ APPROVED by <@{body['user']['id']}>"
                 
-                # Update original message to remove button and show approved status
-                from slack_sdk import WebClient
-                client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
-                
-                # Get original message info from the interaction
-                original_message = body.get("message", {})
-                channel_id = body.get("channel", {}).get("id")
-                message_ts = original_message.get("ts")
-                
-                if channel_id and message_ts:
-                    # Update the original message to show approved status
-                    updated_attachment = original_message.get("attachments", [{}])[0].copy()
-                    updated_attachment["color"] = "good"  # Green for approved
-                    updated_attachment.pop("actions", None)  # Remove buttons
-                    updated_attachment["footer"] = f"✅ APPROVED by <@{body['user']['id']}>"
-                    
-                    client.chat_update(
-                        channel=channel_id,
-                        ts=message_ts,
-                        text="New Record Approved",
-                        attachments=[updated_attachment]
-                    )
-            else:
-                respond(
-                    text=f"❌ **Approval Failed**\n\nVersion `{action_value}` could not be approved. Check logs for details.",
-                    response_type="ephemeral"
+                client.chat_update(
+                    channel=channel_id,
+                    ts=message_ts,
+                    text="New Record Approved",
+                    attachments=[updated_attachment]
                 )
                 
         except Exception as e:
             respond(
-                text=f"❌ **Error during approval**: {str(e)}",
-                response_type="ephemeral",
-                replace_original=False
+                text=f"❌ **Approval Failed**\n\nVersion `{action_value}` could not be approved. Error: {str(e)}",
+                response_type="ephemeral"
             )
             
 
