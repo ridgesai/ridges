@@ -461,9 +461,9 @@ class DatabaseManager:
                 
                 avg_score, validator_count = avg_row
                 
-                # Require at least 2 validators before triggering pending approval
-                if validator_count < 2:
-                    logger.info(f"Version {version_id} only has {validator_count} validator(s), need at least 2")
+                # Require at least 1 validator before triggering pending approval
+                if validator_count < 1:
+                    logger.info(f"Version {version_id} only has {validator_count} validator(s), need at least 1")
                     return
                 
                 # Get current approved leader info
