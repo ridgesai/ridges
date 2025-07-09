@@ -9,6 +9,7 @@ from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
 
+from api.src.utils.nodes import update_cache_loop
 from api.src.utils.weights import run_weight_monitor
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.chutes import ChutesManager
@@ -95,6 +96,7 @@ async def startup_event():
     chutes_manager.start_cleanup_task()
 
     # asyncio.create_task(run_weight_monitor())
+    asyncio.create_task(update_cache_loop())
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(run_evaluation_cleanup_loop())
     asyncio.create_task(run_connection_pool_monitor())

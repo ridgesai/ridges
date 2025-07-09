@@ -273,8 +273,10 @@ class Sandbox:
             # Allow cancellation before starting
             await asyncio.sleep(0)
             
-            # Run evaluation synchronously but with cancellation points
-            self._evaluate_run()
+            # Run evaluation in thread pool to avoid blocking the event loop
+            # This allows multiple SWE-bench evaluations to run concurrently
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._evaluate_run)
             
         except asyncio.CancelledError:
             logger.info("Evaluation cancelled")
