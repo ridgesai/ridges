@@ -21,35 +21,143 @@ def start_socket_mode():
     handler.start()
 
 
-@app.command("/versions")
-def handle_versions_command(ack, body, client):
-    """Handle the /versions slash command."""
+@app.action("approval_buttons")
+def handle_approval_buttons(ack, body, respond):
+    """Handle approval button clicks."""
     ack()
+    
+    # Get the action details
+    action = body["actions"][0]
+    action_name = action["name"]
+    action_value = action["value"]  # This will be the version_id
+    
+    if action_name == "approve_version":
+        # Handle approve action
+        try:
+            import asyncio
+            import os
+            from api.src.db.operations import DatabaseManager
+            
+            # Run the approval in a separate thread since this is a sync handler
+            async def approve_version():
+                db = DatabaseManager()
+                await db.init()
+                return await db.approve_version_id(action_value)
+            
+            # Get approval password from environment
+            approval_password = os.getenv("APPROVAL_PASSWORD")
+            if not approval_password:
+                respond(
+                    text="❌ Error: APPROVAL_PASSWORD not configured",
+                    response_type="ephemeral",
+                    replace_original=False
+                )
+                return
+            
+            # Execute the approval
+            result = asyncio.run(approve_version())
+            
+            if result == 1:
+                # Send ephemeral confirmation to user
+                respond(
+                    text=f"✅ **Version Approved Successfully!**\n\n🎯 Version `{action_value}` has been approved and set as the current leader.",
+                    response_type="ephemeral"
+                )
+                
+                # Update original message to remove button and show approved status
+                from slack_sdk import WebClient
+                client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                
+                # Get original message info from the interaction
+                original_message = body.get("message", {})
+                channel_id = body.get("channel", {}).get("id")
+                message_ts = original_message.get("ts")
+                
+                if channel_id and message_ts:
+                    # Update the original message to show approved status
+                    updated_attachment = original_message.get("attachments", [{}])[0].copy()
+                    updated_attachment["color"] = "good"  # Green for approved
+                    updated_attachment.pop("actions", None)  # Remove buttons
+                    updated_attachment["footer"] = f"✅ APPROVED by <@{body['user']['id']}>"
+                    
+                    client.chat_update(
+                        channel=channel_id,
+                        ts=message_ts,
+                        text="New Record Approved",
+                        attachments=[updated_attachment]
+                    )
+            else:
+                respond(
+                    text=f"❌ **Approval Failed**\n\nVersion `{action_value}` could not be approved. Check logs for details.",
+                    response_type="ephemeral"
+                )
+                
+        except Exception as e:
+            respond(
+                text=f"❌ **Error during approval**: {str(e)}",
+                response_type="ephemeral",
+                replace_original=False
+            )
+            
 
-    try:
-        from .versions import formatted_version_table
-        hours = int(body.get("text", "168"))  # 168 hours = 1 week
-    except ValueError:
-        hours = 168
-
-    response = formatted_version_table(hours)
-
-    client.chat_postMessage(
-        channel=body["channel_id"],
-        text=response["text"],
-        response_type=response["response_type"],
-    )
 
 
-def send_slack_notification(message: str, channel: str = "bot-testing"):
-    """Send a notification to Slack as a markdown string"""
+def send_slack_notification(message: str = None, channel: str = "bot-testing", blocks: list = None, color: str = None, approval_version_id: str = None):
+    """Send a notification to Slack as a markdown string or blocks with optional colored sidebar and approval buttons"""
     try:
         client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
-        response = client.chat_postMessage(
-            channel=channel,
-            text=message,
-            blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": message}}],
-        )
+        
+        if blocks and color:
+            # Use colored attachments for card-like appearance
+            response = client.chat_postMessage(
+                channel=channel,
+                text=message or "New notification",  # fallback text for notifications
+                attachments=[
+                    {
+                        "color": color,
+                        "blocks": blocks
+                    }
+                ]
+            )
+        elif color and message:
+            # Use colored attachment with text message and optional approval buttons
+            attachment = {
+                "color": color,
+                "text": message
+            }
+            
+            # Add approval button if version_id is provided (for pending approvals)
+            if approval_version_id:
+                attachment["callback_id"] = "approval_buttons"  # Required for legacy button actions
+                attachment["actions"] = [
+                    {
+                        "type": "button",
+                        "text": "✅ Approve",
+                        "name": "approve_version",
+                        "value": approval_version_id,
+                        "style": "primary"
+                    }
+                ]
+            
+            response = client.chat_postMessage(
+                channel=channel,
+                text="New Record Pending Approval",
+                attachments=[attachment]
+            )
+        elif blocks:
+            response = client.chat_postMessage(
+                channel=channel,
+                text=message or "New notification",  # fallback text for notifications
+                blocks=blocks,
+            )
+        else:
+            # Existing logic for text messages
+            response = client.chat_postMessage(
+                channel=channel,
+                text=message,
+                blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": message}}],
+            )
+        
         logger.info(f"Slack notification sent successfully: {response['ts']}")
         return True
     except SlackApiError as e:
@@ -72,18 +180,18 @@ def send_agent_upload_notification(agent_name: str, miner_hotkey: str, version_n
         action = "updated"
         title = "Agent Updated!"
     
-    message = f"""
-{emoji} *{title}*
+    message = f"""```
+{emoji} {title}
 
-🤖 **Agent:** `{agent_name}`
-👤 **Miner:** `{short_hotkey}`
-📦 **Version:** `{version_num}`
-⚡ **Action:** Agent {action}
+🤖 Agent: {agent_name}
+👤 Miner: {short_hotkey}
+📦 Version: {version_num}
+⚡ Action: Agent {action}
 
-_Ready for evaluation!_ ✨
-"""
+Ready for evaluation! ✨
+```"""
     
-    return send_slack_notification(message.strip())
+    return send_slack_notification(message.strip(), color="good")
 
 
 def send_evaluation_notification(agent_name: str, miner_hotkey: str, version_num: int, status: str, score: float = None):
@@ -91,52 +199,62 @@ def send_evaluation_notification(agent_name: str, miner_hotkey: str, version_num
     
     short_hotkey = f"{miner_hotkey[:8]}...{miner_hotkey[-8:]}"
     
+    # Determine color based on status/score
     if status == "completed" and score is not None:
         if score >= 0.8:
             emoji = "🎉"
-            status_text = f"Completed with excellent score: **{score:.2%}**"
+            status_text = f"Completed with excellent score: {score:.2%}"
+            color = "good"
         elif score >= 0.6:
             emoji = "✅"
-            status_text = f"Completed with good score: **{score:.2%}**"
+            status_text = f"Completed with good score: {score:.2%}"
+            color = "good"
         elif score >= 0.4:
             emoji = "⚠️"
-            status_text = f"Completed with fair score: **{score:.2%}**"
+            status_text = f"Completed with fair score: {score:.2%}"
+            color = "warning"
         else:
             emoji = "❌"
-            status_text = f"Completed with low score: **{score:.2%}**"
+            status_text = f"Completed with low score: {score:.2%}"
+            color = "danger"
     elif status == "failed":
         emoji = "💥"
         status_text = "Failed during evaluation"
+        color = "danger"
     else:
         emoji = "⏳"
         status_text = f"Status: {status}"
+        color = "#439FE0"  # Blue for in-progress
     
-    message = f"""
-{emoji} *Evaluation Update*
+    message = f"""```
+{emoji} Evaluation Update
 
-🤖 **Agent:** `{agent_name}`
-👤 **Miner:** `{short_hotkey}`
-📦 **Version:** `{version_num}`
-📊 **Result:** {status_text}
-"""
+🤖 Agent: {agent_name}
+👤 Miner: {short_hotkey}
+📦 Version: {version_num}
+📊 Result: {status_text}
+```"""
     
-    return send_slack_notification(message.strip())
+    return send_slack_notification(message.strip(), color=color)
 
 
 async def send_high_score_notification(agent_name: str, miner_hotkey: str, version_id: str, version_num: int, new_score: float, previous_score: float):
     """Send a notification when an agent achieves a new high score that beats the current approved leader."""
     
-    short_hotkey = f"{miner_hotkey[:8]}...{miner_hotkey[-8:]}"
-    short_version_id = f"{version_id[:8]}...{version_id[-8:]}"
     score_improvement = new_score - previous_score
     
-    message = f"""
-:dart: **New Record:** {new_score:.2%} (+{score_improvement:.2%})
-:chart_with_upwards_trend: **Previous Best:** {previous_score:.2%}
-:robot_face: **Agent:** {agent_name}
-:bust_in_silhouette: **Miner:** {short_hotkey}
-:package: **Version:** {version_num}
-:link: **Version ID:** {short_version_id}
-"""
+    # Create a compact formatted message
+    message = f"""```
+Score: {new_score:.2%} (+{score_improvement:.2%}) | Previous: {previous_score:.2%}
+Agent: {agent_name} | Version: {version_num}
+Miner: {miner_hotkey}
+Version ID: {version_id}
+```"""
     
-    return send_slack_notification(message.strip(), channel="bot-testing") 
+    # Use the hybrid approach: colored sidebar + code block content + approval buttons
+    return send_slack_notification(
+        message=message, 
+        color="warning",  # Use warning/yellow color to indicate pending approval
+        approval_version_id=version_id,  # For approval buttons
+        channel="bot-testing"
+    ) 
