@@ -4,7 +4,7 @@ import logging
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.db.s3 import S3Manager
+from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.entities import EvaluationRun

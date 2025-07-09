@@ -10,7 +10,7 @@ from api.src.backend.queries.evaluations import get_evaluations_by_version_id, s
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.db.s3 import S3Manager
+from api.src.utils.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries.agents import get_latest_agent, store_agent, check_if_agent_banned

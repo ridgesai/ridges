@@ -30,8 +30,6 @@ _batch_task: asyncio.Task | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
-    logger.info(f"New DB pool from lifespan: {new_db}")
-    logger.info("Database connection pool opened")
     app.state.stop_event = asyncio.Event()
     global _batch_task
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))

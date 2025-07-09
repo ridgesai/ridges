@@ -16,6 +16,9 @@ logger = get_logger(__name__)
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
     top_agent = await weight_receiving_agent()
+    if not top_agent:
+        logger.info("No top agent found, skipping weight update")
+        return
     
     await WebSocketManager.get_instance().send_to_all_validators("set-weights", top_agent.model_dump(mode='json'))
     
