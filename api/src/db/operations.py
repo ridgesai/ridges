@@ -544,7 +544,7 @@ class DatabaseManager:
             try:
                 result = await session.execute(text("""
                     UPDATE pending_approvals 
-                    SET score = :score, updated_at = NOW()
+                    SET score = :score
                     WHERE version_id = :version_id
                     AND status = 'pending'
                 """), {
@@ -1875,7 +1875,7 @@ class DatabaseManager:
                     # Update pending approval status to 'approved'
                     await session.execute(text("""
                         UPDATE pending_approvals 
-                        SET status = 'approved', updated_at = NOW()
+                        SET status = 'approved', reviewed_at = NOW()
                         WHERE version_id = :version_id
                         AND status = 'pending'
                     """), {'version_id': version_id})
