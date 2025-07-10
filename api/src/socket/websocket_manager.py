@@ -134,47 +134,60 @@ class WebSocketManager:
                     await self.send_to_all_non_validators("evaluation-run-updated", result)
 
         except WebSocketDisconnect:
-            validator_info = self.clients.get(websocket)
+            # CRITICAL: Remove from clients immediately to prevent memory leak
+            validator_info = self.clients.pop(websocket, None)
             if not validator_info:
                 return
                 
             val_hotkey = validator_info.validator_hotkey
             version_commit_hash = validator_info.version_commit_hash
-            relative_version_num = await get_relative_version_num(version_commit_hash) if version_commit_hash else None
             
-            logger.warning(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
+            logger.warning(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients)}. Resetting any running evaluations for this validator.")
 
-            if val_hotkey and version_commit_hash:
-                await self.send_to_all_non_validators("validator-disconnected", {
-                    "validator_hotkey": val_hotkey,
-                    "relative_version_num": relative_version_num,
-                    "version_commit_hash": version_commit_hash
-                })
+            # Handle disconnect cleanup in a separate try-catch to not affect memory cleanup
+            try:
+                if val_hotkey and version_commit_hash:
+                    relative_version_num = await get_relative_version_num(version_commit_hash)
+                    await self.send_to_all_non_validators("validator-disconnected", {
+                        "validator_hotkey": val_hotkey,
+                        "relative_version_num": relative_version_num,
+                        "version_commit_hash": version_commit_hash
+                    })
 
-                evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
-                if evaluation:
-                    # Delete all associated evaluation runs first
-                    await delete_evaluation_runs(evaluation.evaluation_id)
-                    logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
-                    
-                    # Reset the evaluation to waiting status
-                    evaluation.status = EvaluationStatus.waiting
-                    evaluation.started_at = None
-                    await store_evaluation(evaluation)
-                    logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
-                else:
-                    logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
+                    evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
+                    if evaluation:
+                        # Delete all associated evaluation runs first
+                        await delete_evaluation_runs(evaluation.evaluation_id)
+                        logger.info(f"Deleted evaluation runs for evaluation {evaluation.evaluation_id}")
+                        
+                        # Reset the evaluation to waiting status
+                        evaluation.status = EvaluationStatus.waiting
+                        evaluation.started_at = None
+                        await store_evaluation(evaluation)
+                        logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
+                    else:
+                        logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
+            except Exception as cleanup_error:
+                logger.error(f"Error during disconnect cleanup for {val_hotkey}: {cleanup_error}")
+                
         except Exception as e:
             logger.error(f"Error handling WebSocket connection: {str(e)}")
-        finally:
+            # CRITICAL: Ensure cleanup happens even if there's an unexpected error
             if websocket in self.clients:
                 del self.clients[websocket]
+        finally:
+            # Double-check cleanup in case of any edge cases
+            if websocket in self.clients:
+                del self.clients[websocket]
+                logger.warning(f"Had to clean up websocket in finally block - this should not happen")
 
     async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
         
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
+        dead_connections = []
+        
         for websocket, validator_info in clients_snapshot.items():
             # Check if client is not an authenticated validator (no validator_hotkey means not authenticated)
             if not validator_info.validator_hotkey:
@@ -182,7 +195,14 @@ class WebSocketManager:
                 try:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
                 except Exception:
-                    pass
+                    # Connection is dead - mark for cleanup
+                    dead_connections.append(websocket)
+        
+        # Clean up dead connections to prevent memory leaks
+        for dead_ws in dead_connections:
+            if dead_ws in self.clients:
+                logger.info(f"Removing dead connection from clients during broadcast")
+                del self.clients[dead_ws]
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
@@ -198,13 +218,22 @@ class WebSocketManager:
 
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
+        dead_connections = []
+        
         for websocket, validator_info in clients_snapshot.items():
             try:
                 if validator_info.validator_hotkey:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
                     validators += 1
             except Exception:
-                pass
+                # Connection is dead - mark for cleanup
+                dead_connections.append(websocket)
+        
+        # Clean up dead connections to prevent memory leaks
+        for dead_ws in dead_connections:
+            if dead_ws in self.clients:
+                logger.info(f"Removing dead validator connection from clients during broadcast")
+                del self.clients[dead_ws]
 
         logger.info(f"Platform socket broadcasted {event} to {validators} validators")
 
