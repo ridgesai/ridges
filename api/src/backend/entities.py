@@ -1,8 +1,8 @@
 ## Defines the structures that we expect to get back from the database manager. Does not map 1-1 with the actual tables
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from enum import Enum
 
@@ -64,3 +64,10 @@ class EvaluationRun(BaseModel):
     
 class EvaluationsWithHydratedRuns(Evaluation):
     evaluation_runs: list[EvaluationRun]
+
+class ValidatorInfo(BaseModel):
+    """Information about a connected validator"""
+    validator_hotkey: Optional[str] = None
+    version_commit_hash: Optional[str] = None
+    connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    ip_address: Optional[str] = None

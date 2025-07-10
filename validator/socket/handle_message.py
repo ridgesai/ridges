@@ -26,8 +26,10 @@ async def handle_message(websocket_app, message: str):
         case "set-weights":
             from validator.socket.handle_set_weights import handle_set_weights  # Local import to avoid circular deps
             await handle_set_weights(websocket_app, json_message)
-        case "pong":
-            websocket_app.last_pong_time = time.time()
-            logger.debug(f"Received pong response: {json_message.get('timestamp')}")
+        case "authentication-failed":
+            error_msg = json_message.get("error", "Authentication failed")
+            logger.error(f"Authentication failed: {error_msg}")
+            websocket_app.authentication_failed = True
+            raise SystemExit(f"FATAL: {error_msg}")
         case _:
             logger.info(f"Received unrecognized message: {message}")

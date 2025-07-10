@@ -9,6 +9,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.utils.logging_utils import get_logger
 from api.src.backend.db_manager import new_db
+from api.src.backend.entities import ValidatorInfo
 from api.src.backend.queries.evaluations import (
     get_running_evaluation_by_validator_hotkey,
     delete_evaluation_runs,
@@ -70,7 +71,7 @@ class WebSocketManager:
     
     def __init__(self):
         if not self._initialized:
-            self.clients: Dict[WebSocket, Dict[str, Any]] = {}
+            self.clients: Dict[WebSocket, ValidatorInfo] = {}
             self._initialized = True
     
     @classmethod
@@ -84,8 +85,11 @@ class WebSocketManager:
         """Handle a new WebSocket connection"""
         await websocket.accept()
         
-        # Add new client to the set
-        self.clients[websocket] = {"val_hotkey": None, "version_commit_hash": None}
+        # Get client IP address
+        client_ip = websocket.client.host if websocket.client else None
+        
+        # Add new client with empty ValidatorInfo - will be populated after authentication
+        self.clients[websocket] = ValidatorInfo(ip_address=client_ip)
         logger.info(f"Client connected to platform socket. Total clients connected: {len(self.clients)}")
         
         try:
@@ -96,18 +100,24 @@ class WebSocketManager:
                 response_json = json.loads(response)
 
                 # Route message to appropriate handler
-                validator_hotkey = self.clients[websocket].get("val_hotkey")
-                # Pass self.clients for validator-version, otherwise None
+                validator_info = self.clients[websocket]
+                validator_hotkey = validator_info.validator_hotkey
+                    
+                # Pass self.clients for validator-info, otherwise None
                 result = await route_message(
                     websocket,
                     validator_hotkey,
                     response_json,
-                    self.clients if response_json["event"] == "validator-version" else None
+                    self.clients if response_json["event"] == "validator-info" else None
                 )
                 
                 # Handle special cases for broadcasting
-                if result and response_json["event"] == "validator-version":
+                if result and response_json["event"] == "validator-info":
                     await self.send_to_all_non_validators("validator-connected", result)
+                elif result is None and response_json["event"] == "validator-info":
+                    # Validator authentication failed, connection will be closed
+                    logger.info("Validator authentication failed, connection rejected")
+                    break
                 
                 elif result and response_json["event"] == "start-evaluation":
                     await self.send_to_all_non_validators("evaluation-started", result)
@@ -124,14 +134,17 @@ class WebSocketManager:
                     await self.send_to_all_non_validators("evaluation-run-updated", result)
 
         except WebSocketDisconnect:
-            client_data = self.clients.get(websocket, {})
-            val_hotkey = client_data.get("val_hotkey")
-            version_commit_hash = client_data.get("version_commit_hash")
+            validator_info = self.clients.get(websocket)
+            if not validator_info:
+                return
+                
+            val_hotkey = validator_info.validator_hotkey
+            version_commit_hash = validator_info.version_commit_hash
+            relative_version_num = await get_relative_version_num(version_commit_hash) if version_commit_hash else None
             
             logger.warning(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients) - 1}. Resetting any running evaluations for this validator.")
 
             if val_hotkey and version_commit_hash:
-                relative_version_num = await get_relative_version_num(version_commit_hash)
                 await self.send_to_all_non_validators("validator-disconnected", {
                     "validator_hotkey": val_hotkey,
                     "relative_version_num": relative_version_num,
@@ -160,8 +173,9 @@ class WebSocketManager:
     async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
         
-        for websocket in self.clients.keys():
-            if self.clients[websocket]["val_hotkey"] is None:
+        for websocket, validator_info in self.clients.items():
+            # Check if client is not an authenticated validator (no validator_hotkey means not authenticated)
+            if not validator_info.validator_hotkey:
                 non_validators += 1
                 try:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
@@ -180,13 +194,9 @@ class WebSocketManager:
 
         validators = 0
 
-        for websocket, meta in self.clients.items():
-            # Skip malformed or placeholder entries
-            if not isinstance(meta, dict):
-                continue
-
+        for websocket, validator_info in self.clients.items():
             try:
-                if meta.get("val_hotkey") is not None:
+                if validator_info.validator_hotkey:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
                     validators += 1
             except Exception:
@@ -197,13 +207,13 @@ class WebSocketManager:
     async def create_new_evaluations(self, version_id: str):
         """Create new evaluations for all connected validators"""
         
-        for websocket, client_data in self.clients.items():
-            if client_data["val_hotkey"] is not None:
+        for websocket, validator_info in self.clients.items():
+            if validator_info.validator_hotkey:
                 try:
                     evaluation = Evaluation(
                         evaluation_id=str(uuid.uuid4()),
                         version_id=version_id,
-                        validator_hotkey=client_data["val_hotkey"],
+                        validator_hotkey=validator_info.validator_hotkey,
                         status=EvaluationStatus.waiting,
                         terminated_reason=None,
                         created_at=datetime.now(timezone.utc),
@@ -221,12 +231,14 @@ class WebSocketManager:
     async def get_connected_validators(self):
         """Get list of connected validators"""
         validators = []
-        for websocket, client_data in self.clients.items():
-            if client_data["val_hotkey"] and client_data["version_commit_hash"]:
-                relative_version_num = await get_relative_version_num(client_data["version_commit_hash"])
+        for websocket, validator_info in self.clients.items():
+            if validator_info.validator_hotkey:
+                relative_version_num = await get_relative_version_num(validator_info.version_commit_hash) if validator_info.version_commit_hash else None
                 validators.append({
-                    "validator_hotkey": client_data["val_hotkey"],
+                    "validator_hotkey": validator_info.validator_hotkey,
                     "relative_version_num": relative_version_num,
-                    "commit_hash": client_data["version_commit_hash"]
+                    "commit_hash": validator_info.version_commit_hash,
+                    "connected_at": validator_info.connected_at.isoformat(),
+                    "ip_address": validator_info.ip_address
                 })
         return validators 
