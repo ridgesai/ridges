@@ -66,60 +66,60 @@ async def handle_validator_info(
     version_commit_hash = response_json["version_commit_hash"]
     timestamp = response_json.get("timestamp", int(time.time()))
 
-    # Validate that the validator is registered in the metagraph
-    if not is_validator_registered(validator_hotkey):
-        logger.error(f"Validator {validator_hotkey} is not registered in the metagraph. Rejecting connection.")
+    # # Validate that the validator is registered in the metagraph
+    # if not is_validator_registered(validator_hotkey):
+    #     logger.error(f"Validator {validator_hotkey} is not registered in the metagraph. Rejecting connection.")
         
-        # Send error message to validator before closing connection
-        error_message = {
-            "event": "authentication-failed",
-            "error": "You must be a registered validator in the metagraph to connect"
-        }
-        await websocket.send_text(json.dumps(error_message))
+    #     # Send error message to validator before closing connection
+    #     error_message = {
+    #         "event": "authentication-failed",
+    #         "error": "You must be a registered validator in the metagraph to connect"
+    #     }
+    #     await websocket.send_text(json.dumps(error_message))
         
-        # Close the websocket connection
-        await websocket.close(code=4003, reason="Validator not registered in metagraph")
+    #     # Close the websocket connection
+    #     await websocket.close(code=4003, reason="Validator not registered in metagraph")
         
-        # Return None to indicate the connection was rejected
-        return None
+    #     # Return None to indicate the connection was rejected
+    #     return None
 
-    # Verify the cryptographic signature
-    try:
-        keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    # # Verify the cryptographic signature
+    # try:
+    #     keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
         
-        # Verify that the public key matches the validator hotkey
-        if keypair.ss58_address != validator_hotkey:
-            logger.error(f"Public key does not match validator hotkey {validator_hotkey}")
-            raise ValueError("Public key mismatch")
+    #     # Verify that the public key matches the validator hotkey
+    #     if keypair.ss58_address != validator_hotkey:
+    #         logger.error(f"Public key does not match validator hotkey {validator_hotkey}")
+    #         raise ValueError("Public key mismatch")
         
-        # Verify the signature
-        if not keypair.verify(message, bytes.fromhex(signature)):
-            logger.error(f"Invalid signature for validator {validator_hotkey}")
-            raise ValueError("Invalid signature")
+    #     # Verify the signature
+    #     if not keypair.verify(message, bytes.fromhex(signature)):
+    #         logger.error(f"Invalid signature for validator {validator_hotkey}")
+    #         raise ValueError("Invalid signature")
         
-        # Check timestamp freshness (within 5 minutes)
-        current_time = int(time.time())
-        if abs(current_time - timestamp) > 300:  # 5 minutes
-            logger.error(f"Timestamp too old for validator {validator_hotkey}")
-            raise ValueError("Timestamp too old")
+    #     # Check timestamp freshness (within 5 minutes)
+    #     current_time = int(time.time())
+    #     if abs(current_time - timestamp) > 300:  # 5 minutes
+    #         logger.error(f"Timestamp too old for validator {validator_hotkey}")
+    #         raise ValueError("Timestamp too old")
         
-        logger.info(f"Cryptographic signature verified for validator {validator_hotkey}")
+    #     logger.info(f"Cryptographic signature verified for validator {validator_hotkey}")
         
-    except Exception as e:
-        logger.error(f"Signature verification failed for validator {validator_hotkey}: {e}")
+    # except Exception as e:
+    #     logger.error(f"Signature verification failed for validator {validator_hotkey}: {e}")
         
-        # Send error message to validator before closing connection
-        error_message = {
-            "event": "authentication-failed",
-            "error": "Cryptographic signature verification failed"
-        }
-        await websocket.send_text(json.dumps(error_message))
+    #     # Send error message to validator before closing connection
+    #     error_message = {
+    #         "event": "authentication-failed",
+    #         "error": "Cryptographic signature verification failed"
+    #     }
+    #     await websocket.send_text(json.dumps(error_message))
         
-        # Close the websocket connection
-        await websocket.close(code=4004, reason="Signature verification failed")
+    #     # Close the websocket connection
+    #     await websocket.close(code=4004, reason="Signature verification failed")
         
-        # Return None to indicate the connection was rejected
-        return None
+    #     # Return None to indicate the connection was rejected
+    #     return None
 
     # Update the existing ValidatorInfo object with essential data only
     if clients is not None:

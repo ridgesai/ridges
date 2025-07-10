@@ -179,7 +179,7 @@ class WebSocketManager:
             # Double-check cleanup in case of any edge cases
             if websocket in self.clients:
                 del self.clients[websocket]
-                logger.warning(f"Had to clean up websocket in finally block - this should not happen")
+                logger.warning(f"Had to clean up websocket in finally block")
 
     async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
