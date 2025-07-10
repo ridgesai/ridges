@@ -5,6 +5,9 @@ import asyncpg
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
+from api.src.utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 @db_operation
 async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
@@ -167,3 +170,12 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
         VALUES ($1)
         ON CONFLICT (version_id) DO NOTHING
     """, version_id)
+    
+    # Update the top agents cache after approval
+    try:
+        from api.src.utils.top_agents_manager import update_top_agents_cache
+        await update_top_agents_cache()
+        logger.info(f"Top agents cache updated after approving {version_id}")
+    except Exception as e:
+        logger.error(f"Failed to update top agents cache after approval: {e}")
+        # Don't fail the approval if cache update fails

@@ -13,6 +13,7 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.s3 import S3Manager
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
+from api.src.utils.similarity_checker import SimilarityChecker
 from api.src.backend.queries.agents import get_latest_agent, store_agent, check_if_agent_banned
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
@@ -20,6 +21,7 @@ from api.src.backend.entities import MinerAgent
 logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
+similarity_checker = SimilarityChecker(similarity_threshold=0.98)
 
 class AgentUploadRequest(BaseModel):
     public_key: str
@@ -121,6 +123,30 @@ async def post_agent(
     except CheckError as e:
         raise HTTPException(status_code=400, detail=str(e))
         
+    # Similarity checks ---------------------------------------------------
+    try:
+        # Decode content to text for similarity checking
+        uploaded_code = content.decode('utf-8')
+        
+        # Run similarity validation
+        is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+        
+        if not is_valid:
+            logger.info(f"Upload rejected for {miner_hotkey}: {error_message}")
+            raise HTTPException(status_code=400, detail=error_message)
+            
+        logger.info(f"Similarity checks passed for {miner_hotkey}")
+        
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
+    except HTTPException:
+        # Re-raise HTTPException (similarity rejection)
+        raise
+    except Exception as e:
+        logger.error(f"Error during similarity checking for {miner_hotkey}: {e}")
+        # Don't block upload on similarity check errors - just log and continue
+        logger.warning(f"Similarity check failed with error, allowing upload to proceed: {e}")
+
     version_id = str(uuid.uuid4())
     
     try:
