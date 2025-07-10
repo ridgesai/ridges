@@ -31,8 +31,9 @@ logger = get_logger(__name__)
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
-    def __init__(self, evaluation_run: EvaluationRun, agent_dir: Path, manager: "SandboxManager"):
+    def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path, manager: "SandboxManager"):
         self.evaluation_run = evaluation_run
+        self.problem = problem
         self.agent_dir = agent_dir.absolute()
         self.manager = manager
         self.container: Optional[Container] = None
@@ -43,17 +44,12 @@ class Sandbox:
         if not (agent_dir / "agent.py").exists():
             raise FileNotFoundError("agent.py not found in agent directory")
     
-    async def run(self, problem: SwebenchProblem) -> None:
+    async def run(self) -> None:
         """Run the complete sandbox evaluation pipeline"""
         
         try:
-            # Update status
-            self.evaluation_run.status = "sandbox_created"
-            self.evaluation_run.sandbox_created_at = datetime.now(timezone.utc)
-            await self._send_update()
-            
             # Generate patch
-            await self._generate_patch(problem)
+            await self._generate_patch()
             
             # Evaluate patch if generated
             if self.evaluation_run.response:
@@ -85,11 +81,11 @@ class Sandbox:
         except Exception as e:
             logger.error(f"Failed to send update: {e}")
     
-    async def _generate_patch(self, problem: SwebenchProblem) -> None:
+    async def _generate_patch(self) -> None:
         """Generate patch using agent code"""
         # Setup repository
-        repo_name = problem.repo
-        base_commit = problem.base_commit
+        repo_name = self.problem.repo
+        base_commit = self.problem.base_commit
         self.repo_dir = await self._setup_repository(repo_name, base_commit)
         
         # Create input/output files
@@ -97,10 +93,10 @@ class Sandbox:
         output_file = self.agent_dir / "output.json"
 
         input = SandboxInput(
-            instance_id=problem.instance_id,
-            problem_statement=problem.problem_statement,
-            repo=problem.repo,
-            base_commit=problem.base_commit,
+            instance_id=self.problem.instance_id,
+            problem_statement=self.problem.problem_statement,
+            repo=self.problem.repo,
+            base_commit=self.problem.base_commit,
             run_id=self.evaluation_run.run_id,
         )
         
@@ -138,7 +134,8 @@ class Sandbox:
         
         # Process results
         try:
-            result = json.loads(output_file.read_text())
+            text = output_file.read_text()
+            result = json.loads(text)
             if result.get("success"):
                 patch = result.get("output", {}).get("patch", "")
                 if patch:
@@ -150,7 +147,7 @@ class Sandbox:
             else:
                 raise ValueError(result.get("error", "Unknown error"))
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse agent output: {e}")
+            raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
     
     async def _setup_repository(self, repo_name: str, base_commit: str) -> Path:
         """Setup repository from cache or clone"""

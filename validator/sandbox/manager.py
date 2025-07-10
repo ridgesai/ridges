@@ -2,6 +2,7 @@ import asyncio
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
+from datetime import datetime, timezone
 
 import docker
 from docker.models.containers import Container
@@ -72,23 +73,28 @@ class SandboxManager:
         network = self.docker.networks.get(SANDBOX_NETWORK_NAME)
         network.connect(self.proxy_container)
     
-    def create_sandbox(self, evaluation_run: EvaluationRun, agent_dir: Path) -> Sandbox:
+    async def create_sandbox(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path) -> Sandbox:
         """Create a new sandbox for evaluation"""
-        sandbox = Sandbox(evaluation_run, agent_dir, self)
+        sandbox = Sandbox(evaluation_run, problem, agent_dir, self)
         self.sandboxes.append(sandbox)
+        
+        # Update status to sandbox_created when created
+        sandbox.evaluation_run.status = "sandbox_created"
+        sandbox.evaluation_run.sandbox_created_at = datetime.now(timezone.utc)
+        await sandbox._send_update()
         return sandbox
     
-    async def run_sandbox(self, sandbox: Sandbox, problem: SwebenchProblem) -> None:
-        """Run a sandbox evaluation"""
-        try:
-            await sandbox.run(problem)
-        except Exception as e:
-            logger.error(f"Sandbox {sandbox.evaluation_run.run_id} failed: {e}")
-            # Update evaluation run with error
-            sandbox.evaluation_run.error = str(e)
-            sandbox.evaluation_run.status = "result_scored"
-            sandbox.evaluation_run.solved = False
-            await sandbox._send_update()
+    async def run_all_sandboxes(self) -> None:
+        """Run all sandboxes"""
+        for sandbox in self.sandboxes:
+            try:
+                await sandbox.run()
+            except Exception as e:
+                logger.error(f"Sandbox {sandbox.evaluation_run.run_id} failed: {e}")
+                sandbox.evaluation_run.error = str(e)
+                sandbox.evaluation_run.status = "result_scored"
+                sandbox.evaluation_run.solved = False
+                await sandbox._send_update()
     
     def cleanup(self, force_cancel: bool = True) -> None:
         """Clean up sandbox resources"""

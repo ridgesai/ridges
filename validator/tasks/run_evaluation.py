@@ -51,8 +51,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             response.raise_for_status()
             agent_file.write_bytes(response.content)
         
-        # Create and run all sandboxes
-        tasks = []
+        # Create evaluation runs and sandboxes
         for problem in problems:
             evaluation_run = EvaluationRun(
                 run_id=str(uuid.uuid4()),
@@ -63,12 +62,9 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
                 started_at=datetime.now(timezone.utc),
             )
             
-            sandbox = sandbox_manager.create_sandbox(evaluation_run, agent_dir)
-            task = asyncio.create_task(sandbox_manager.run_sandbox(sandbox, problem))
-            tasks.append(task)
+            await sandbox_manager.create_sandbox(evaluation_run, problem, agent_dir)
         
-        logger.info(f"Created {len(tasks)} evaluation tasks")
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await sandbox_manager.run_all_sandboxes()
         logger.info(f"Evaluation {evaluation_id} completed successfully")
         
     except Exception as e:
