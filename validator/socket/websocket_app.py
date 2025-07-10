@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from typing import Any, Dict, Optional
 
 import websockets
@@ -12,7 +11,7 @@ import websockets
 from validator.utils.logging import get_logger
 from validator.config import RIDGES_API_URL
 from validator.socket.handle_message import handle_message
-from validator.utils.get_validator_version_info import get_validator_version_info
+from validator.utils.get_validator_version_info import get_validator_info
 
 websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws"
 
@@ -22,14 +21,12 @@ class WebsocketApp:
     ws: Optional[websockets.ClientConnection] = None
     evaluation_running: asyncio.Event
     evaluation_task: Optional[asyncio.Task] = None
-    heartbeat_task: Optional[asyncio.Task] = None
-    last_pong_time: Optional[float] = None
+    authentication_failed: bool = False
     
     def __init__(self):
         self.evaluation_running = asyncio.Event()
         self.evaluation_task = None
-        self.heartbeat_task = None
-        self.last_pong_time = None
+        self.authentication_failed = False
 
     async def send(self, message: Dict[str, Any]):
         if self.ws is None:
@@ -69,31 +66,13 @@ class WebsocketApp:
         """Handle websocket disconnection by cancelling running evaluation."""
         await self.cancel_evaluation()
 
-    async def _heartbeat_loop(self):
-        while self.ws is not None:
-            try:
-                await self.send({"event": "ping", "timestamp": time.time()})
-                await asyncio.sleep(15)
-                
-                # if self.last_pong_time and (time.time() - self.last_pong_time) > 60:
-                #     logger.warning("No pong response received for 60 seconds, forcing reconnection")
-                #     if self.ws:
-                #         await self.ws.close()
-                #         self.ws = None
-                #     break
-                    
-            except Exception as e:
-                logger.error(f"Heartbeat failed: {e}")
-                break
-
     async def start(self):
         while True:
             try:
                 async with websockets.connect(websocket_url, ping_timeout=None) as ws:
                     self.ws = ws
                     logger.info(f"Connected to websocket: {websocket_url}")
-                    await self.send(get_validator_version_info())
-                    self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+                    await self.send(get_validator_info())
                     
                     try:
                         while True:
@@ -102,20 +81,26 @@ class WebsocketApp:
                     except websockets.ConnectionClosed:
                         logger.info("Connection closed - handling disconnect")
                         await self._handle_disconnect()
+                    except SystemExit as e:
+                        # Authentication failed, don't reconnect
+                        logger.error(f"Authentication failed: {e}")
+                        raise
                     except Exception as e:
                         logger.error(f"Error in message handling: {e}")
                         await self._handle_disconnect()
                     finally:
                         self.ws = None
-                        if self.heartbeat_task:
-                            self.heartbeat_task.cancel()
-                            try:
-                                await self.heartbeat_task
-                            except asyncio.CancelledError:
-                                pass
                         
+            except SystemExit:
+                # Authentication failed, don't reconnect
+                raise
             except Exception as e:
                 logger.exception(f"Error connecting to websocket: {e}")
                 await self._handle_disconnect()
+                
+            # Check if authentication failed before reconnecting
+            if self.authentication_failed:
+                logger.error("Authentication failed. Validator must be registered in the metagraph.")
+                raise SystemExit("FATAL: You must be a registered validator in the metagraph to connect")
                 
             await asyncio.sleep(5)  # Wait before reconnecting
