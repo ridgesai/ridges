@@ -68,34 +68,86 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     Gets the top approved agent's miner hotkey and version id from the database,
     where it's been scored by at least 1 validator and is in the approved versions list.
     Excludes banned miner hotkeys from consideration.
-    Returns the agent with the highest score - ANY improvement makes you the leader.
+    
+    NEW RULE: Agents must beat the current leader by 1.5% to take over leadership.
+    This prevents constant switching due to tiny improvements.
     """
-    top_agent = await conn.fetchrow("""
+    
+    # First, get the current leader (highest scoring approved agent)
+    current_leader = await conn.fetchrow("""
         SELECT
             ma.miner_hotkey,
             e.version_id,
             AVG(e.score) AS avg_score
         FROM evaluations e
         JOIN approved_version_ids avi ON e.version_id = avi.version_id  -- Only approved versions
-        JOIN miner_agents ma ON ma.version_id = e.version_id
-        WHERE e.status = 'completed'
-        AND e.score IS NOT NULL
-        AND ma.miner_hotkey NOT IN (
-            SELECT miner_hotkey FROM banned_hotkeys
-        )
+        JOIN miner_agents ma ON e.version_id = ma.version_id
+        WHERE e.status = 'completed' 
+          AND e.score IS NOT NULL
+          AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
         GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 1  -- At least 1 validator evaluation
-        ORDER BY AVG(e.score) DESC, ma.created_at ASC  -- Highest score wins, oldest breaks ties
-        LIMIT 1;
+        ORDER BY AVG(e.score) DESC, ma.created_at ASC
+        LIMIT 1
     """)
     
-    if not top_agent:
-        return None
+    if not current_leader:
+        # No current leader - return highest scoring agent
+        fallback_agent = await conn.fetchrow("""
+            SELECT
+                ma.miner_hotkey,
+                e.version_id,
+                AVG(e.score) AS avg_score
+            FROM evaluations e
+            JOIN approved_version_ids avi ON e.version_id = avi.version_id
+            JOIN miner_agents ma ON e.version_id = ma.version_id
+            WHERE e.status = 'completed' 
+              AND e.score IS NOT NULL
+              AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
+            GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
+            HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
+            ORDER BY AVG(e.score) DESC, ma.created_at ASC
+            LIMIT 1
+        """)
+        
+        if not fallback_agent:
+            return None
+            
+        return TopAgentHotkey(
+            miner_hotkey=fallback_agent['miner_hotkey'],
+            version_id=str(fallback_agent['version_id']),
+            avg_score=float(fallback_agent['avg_score'])
+        )
+    
+    current_leader_score = current_leader['avg_score']
+    required_score = current_leader_score * 1.015  # Must beat by 1.5%
+    
+    # Find agents that beat the current leader by 1.5%
+    challenger = await conn.fetchrow("""
+        SELECT
+            ma.miner_hotkey,
+            e.version_id,
+            AVG(e.score) AS avg_score
+        FROM evaluations e
+        JOIN approved_version_ids avi ON e.version_id = avi.version_id
+        JOIN miner_agents ma ON e.version_id = ma.version_id
+        WHERE e.status = 'completed' 
+          AND e.score IS NOT NULL
+          AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
+        GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
+        HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
+          AND AVG(e.score) >= $1  -- Must beat current leader by 1.5%
+        ORDER BY AVG(e.score) DESC, ma.created_at ASC
+        LIMIT 1
+    """, required_score)
+    
+    # Return challenger if found, otherwise keep current leader
+    winner = challenger if challenger else current_leader
     
     return TopAgentHotkey(
-        miner_hotkey=top_agent['miner_hotkey'],
-        version_id=str(top_agent['version_id']),
-        avg_score=float(top_agent['avg_score'])
+        miner_hotkey=winner['miner_hotkey'],
+        version_id=str(winner['version_id']),
+        avg_score=float(winner['avg_score'])
     )
 
 @db_operation
