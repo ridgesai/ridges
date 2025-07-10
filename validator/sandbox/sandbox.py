@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Dict, Any
 
+import docker
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
 from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, run_instance
@@ -107,23 +108,30 @@ class Sandbox:
         output_file.touch()
         
         # Run container
-        self.container = self.manager.docker.containers.run(
-            image=SANDBOX_DOCKER_IMAGE,
-            network=SANDBOX_NETWORK_NAME,
-            volumes={
-                str(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
-                str(input_file): {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
-                str(output_file): {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
-                str(self.agent_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
-                str(self.repo_dir): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
-            },
-            working_dir=SANDBOX_DIR,
-            environment={
-                "AI_PROXY_URL": "http://sandbox-proxy",
-                "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy"
-            },
-            detach=True,
-        )
+        try:
+            self.container = self.manager.docker.containers.run(
+                image=SANDBOX_DOCKER_IMAGE,
+                network=SANDBOX_NETWORK_NAME,
+                volumes={
+                    str(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
+                    str(input_file): {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
+                    str(output_file): {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
+                    str(self.agent_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
+                    str(self.repo_dir): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
+                },
+                working_dir=SANDBOX_DIR,
+                environment={
+                    "AI_PROXY_URL": "http://sandbox-proxy",
+                    "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy"
+                },
+                detach=True,
+            )
+        except docker.errors.ImageNotFound:
+            raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+        except docker.errors.APIError as e:
+            if "No such image" in str(e):
+                raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+            raise
         
         # Monitor container
         await self._monitor_container()
@@ -197,7 +205,7 @@ class Sandbox:
                     pass  # Continue monitoring even if stats fail
                 
                 # Check runtime limit
-                runtime = time.time() - self.evaluation_run.started_at
+                runtime = (datetime.now(timezone.utc) - self.evaluation_run.started_at).total_seconds()
                 if runtime > SANDBOX_MAX_RUNTIME:
                     self.container.kill()
                     raise TimeoutError(f"Runtime limit exceeded: {runtime:.1f}s")

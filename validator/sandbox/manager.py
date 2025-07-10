@@ -54,12 +54,19 @@ class SandboxManager:
     def _setup_proxy(self) -> None:
         """Setup proxy container"""
         # Start proxy container
-        self.proxy_container = self.docker.containers.run(
-            image=PROXY_DOCKER_IMAGE,
-            name=PROXY_CONTAINER_NAME,
-            detach=True,
-            environment={"RIDGES_API_URL": RIDGES_API_URL},
-        )
+        try:
+            self.proxy_container = self.docker.containers.run(
+                image=PROXY_DOCKER_IMAGE,
+                name=PROXY_CONTAINER_NAME,
+                detach=True,
+                environment={"RIDGES_API_URL": RIDGES_API_URL},
+            )
+        except docker.errors.ImageNotFound:
+            raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+        except docker.errors.APIError as e:
+            if "No such image" in str(e):
+                raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+            raise
         
         # Connect to network
         network = self.docker.networks.get(SANDBOX_NETWORK_NAME)
