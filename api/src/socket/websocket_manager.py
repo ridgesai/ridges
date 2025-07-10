@@ -173,7 +173,9 @@ class WebSocketManager:
     async def send_to_all_non_validators(self, event: str, data: dict):
         non_validators = 0
         
-        for websocket, validator_info in self.clients.items():
+        # Create a snapshot to avoid "dictionary changed size during iteration" error
+        clients_snapshot = dict(self.clients)
+        for websocket, validator_info in clients_snapshot.items():
             # Check if client is not an authenticated validator (no validator_hotkey means not authenticated)
             if not validator_info.validator_hotkey:
                 non_validators += 1
@@ -194,7 +196,9 @@ class WebSocketManager:
 
         validators = 0
 
-        for websocket, validator_info in self.clients.items():
+        # Create a snapshot to avoid "dictionary changed size during iteration" error
+        clients_snapshot = dict(self.clients)
+        for websocket, validator_info in clients_snapshot.items():
             try:
                 if validator_info.validator_hotkey:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
@@ -207,7 +211,9 @@ class WebSocketManager:
     async def create_new_evaluations(self, version_id: str):
         """Create new evaluations for all connected validators"""
         
-        for websocket, validator_info in self.clients.items():
+        # Create a snapshot to avoid "dictionary changed size during iteration" error
+        clients_snapshot = dict(self.clients)
+        for websocket, validator_info in clients_snapshot.items():
             if validator_info.validator_hotkey:
                 try:
                     evaluation = Evaluation(
@@ -231,7 +237,9 @@ class WebSocketManager:
     async def get_connected_validators(self):
         """Get list of connected validators"""
         validators = []
-        for websocket, validator_info in self.clients.items():
+        # Create a snapshot to avoid "dictionary changed size during iteration" error
+        clients_snapshot = dict(self.clients)
+        for websocket, validator_info in clients_snapshot.items():
             if validator_info.validator_hotkey:
                 relative_version_num = await get_relative_version_num(validator_info.version_commit_hash) if validator_info.version_commit_hash else None
                 validators.append({
