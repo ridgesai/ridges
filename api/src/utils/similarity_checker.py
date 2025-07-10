@@ -117,7 +117,7 @@ class SimilarityChecker:
             version_id, similarity = previous_similarity
             error_msg = (
                 f"Upload rejected: {similarity:.1%} similarity to your previous version "
-                f"({version_id[:8]}...). Minimum required change: {(1-self.similarity_threshold)*100:.1f}%"
+                f"({str(version_id)[:8]}...). Minimum required change: {(1-self.similarity_threshold)*100:.1f}%"
             )
             return False, error_msg
         
