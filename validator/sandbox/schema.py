@@ -18,6 +18,15 @@ class SandboxState(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+class SwebenchProblem(BaseModel):
+    instance_id: str
+    problem_statement: str
+    repo: str
+    base_commit: str
+
+class SandboxInput(SwebenchProblem):
+    run_id: str
+
 class AgentVersion(BaseModel):
     version_id: str
     miner_hotkey: str
