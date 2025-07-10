@@ -1,6 +1,6 @@
 import logging
 from datadog.datadog import DatadogLogHandler
-# from api.src.utils.process_tracking import setup_process_logging
+from api.src.utils.process_tracking import setup_process_logging
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,7 +16,7 @@ def get_logger(name: str):
     )
     logger = logging.getLogger(name)
 
-    # setup_process_logging(logger)
+    setup_process_logging(logger)
 
     datadog_handler = DatadogLogHandler()
     logger.addHandler(datadog_handler)

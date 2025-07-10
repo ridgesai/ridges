@@ -58,8 +58,6 @@ def get_current_process_id() -> Optional[str]:
     """Get the current process ID from context"""
     return process_id_var.get()
 
-
-
 def get_current_process_type() -> Optional[str]:
     """Get the current process type from context"""
     return process_type_var.get()
