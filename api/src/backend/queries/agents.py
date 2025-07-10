@@ -84,7 +84,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
         JOIN miner_agents ma ON e.version_id = ma.version_id
         WHERE e.status = 'completed' 
           AND e.score IS NOT NULL
-          AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
+          AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 1  -- At least 1 validator evaluation
         ORDER BY AVG(e.score) DESC, ma.created_at ASC
@@ -103,7 +103,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
             JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.status = 'completed' 
               AND e.score IS NOT NULL
-              AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
+              AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
             HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
             ORDER BY AVG(e.score) DESC, ma.created_at ASC
@@ -133,7 +133,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
         JOIN miner_agents ma ON e.version_id = ma.version_id
         WHERE e.status = 'completed' 
           AND e.score IS NOT NULL
-          AND ma.miner_hotkey NOT IN (SELECT hotkey FROM banned_hotkeys)
+          AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 1
           AND AVG(e.score) >= $1  -- Must beat current leader by 1.5%
