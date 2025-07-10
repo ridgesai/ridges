@@ -11,83 +11,102 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# Initialize the Slack app with your bot token
-app = App(token=os.environ.get("SLACK_BOT_TOKEN"))
+# Initialize the Slack app with your bot token (only if token is available)
+slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")
+app = App(token=slack_bot_token) if slack_bot_token else None
 
 
 def start_socket_mode():
     """Start the Slack Socket Mode handler."""
-    handler = SocketModeHandler(app, os.environ.get("SLACK_APP_TOKEN"))
+    if not app:
+        logger.info("SLACK_BOT_TOKEN not configured - skipping Socket Mode (this is normal for local development)")
+        return
+    
+    slack_app_token = os.environ.get("SLACK_APP_TOKEN")
+    if not slack_app_token:
+        logger.info("SLACK_APP_TOKEN not configured - skipping Socket Mode (this is normal for local development)")
+        return
+    
+    handler = SocketModeHandler(app, slack_app_token)
     handler.start()
 
 
-@app.action("approval_buttons")
-def handle_approval_buttons(ack, body, respond):
-    """Handle approval button clicks."""
-    ack()
-    
-    # Get the action details
-    action = body["actions"][0]
-    action_name = action["name"]
-    action_value = action["value"]  # This will be the version_id
-    
-    if action_name == "approve_version":
-        # Handle approve action
-        try:
-            import asyncio
-            from api.src.backend.queries.agents import approve_agent_version
-            
-            # Run the approval in a separate thread since this is a sync handler
-            async def approve_version():
-                return await approve_agent_version(action_value)
-            
-            # Execute the approval
-            result = asyncio.run(approve_version())
-            
-            # The new approve_agent_version doesn't return a count, it just succeeds or throws
-            # So if we get here without exception, it was successful
-            # Send ephemeral confirmation to user
-            respond(
-                text=f"✅ **Version Approved Successfully!**\n\n🎯 Version `{action_value}` has been approved and set as the current leader.",
-                response_type="ephemeral"
-            )
-            
-            # Update original message to remove button and show approved status
-            from slack_sdk import WebClient
-            client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
-            
-            # Get original message info from the interaction
-            original_message = body.get("message", {})
-            channel_id = body.get("channel", {}).get("id")
-            message_ts = original_message.get("ts")
-            
-            if channel_id and message_ts:
-                # Update the original message to show approved status
-                updated_attachment = original_message.get("attachments", [{}])[0].copy()
-                updated_attachment["color"] = "good"  # Green for approved
-                updated_attachment.pop("actions", None)  # Remove buttons
-                updated_attachment["footer"] = f"✅ APPROVED by <@{body['user']['id']}>"
+# Only register the action handler if the app is initialized
+if app:
+    @app.action("approval_buttons")
+    def handle_approval_buttons(ack, body, respond):
+        """Handle approval button clicks."""
+        ack()
+        
+        # Get the action details
+        action = body["actions"][0]
+        action_name = action["name"]
+        action_value = action["value"]  # This will be the version_id
+        
+        if action_name == "approve_version":
+            # Handle approve action
+            try:
+                import asyncio
+                from api.src.backend.queries.agents import approve_agent_version
                 
-                client.chat_update(
-                    channel=channel_id,
-                    ts=message_ts,
-                    text="New Record Approved",
-                    attachments=[updated_attachment]
+                # Run the approval in a separate thread since this is a sync handler
+                async def approve_version():
+                    return await approve_agent_version(action_value)
+                
+                # Execute the approval
+                result = asyncio.run(approve_version())
+                
+                # The new approve_agent_version doesn't return a count, it just succeeds or throws
+                # So if we get here without exception, it was successful
+                # Send ephemeral confirmation to user
+                respond(
+                    text=f"✅ **Version Approved Successfully!**\n\n🎯 Version `{action_value}` has been approved and set as the current leader.",
+                    response_type="ephemeral"
                 )
                 
-        except Exception as e:
-            respond(
-                text=f"❌ **Approval Failed**\n\nVersion `{action_value}` could not be approved. Error: {str(e)}",
-                response_type="ephemeral"
-            )
+                # Update original message to remove button and show approved status
+                from slack_sdk import WebClient
+                client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+                
+                # Get original message info from the interaction
+                original_message = body.get("message", {})
+                channel_id = body.get("channel", {}).get("id")
+                message_ts = original_message.get("ts")
+                
+                if channel_id and message_ts:
+                    # Update the original message to show approved status
+                    updated_attachment = original_message.get("attachments", [{}])[0].copy()
+                    updated_attachment["color"] = "good"  # Green for approved
+                    updated_attachment.pop("actions", None)  # Remove buttons
+                    updated_attachment["footer"] = f"✅ APPROVED by <@{body['user']['id']}>"
+                    
+                    client.chat_update(
+                        channel=channel_id,
+                        ts=message_ts,
+                        text="New Record Approved",
+                        attachments=[updated_attachment]
+                    )
+                    
+            except Exception as e:
+                respond(
+                    text=f"❌ **Approval Failed**\n\nVersion `{action_value}` could not be approved. Error: {str(e)}",
+                    response_type="ephemeral"
+                )
             
 
 
 
 def send_slack_notification(message: str = None, channel: str = "bot-testing", blocks: list = None, color: str = None, approval_version_id: str = None):
     """Send a notification to Slack as a markdown string or blocks with optional colored sidebar and approval buttons"""
+    
+    # Check if Slack is configured - if not, log and return success (for local development)
+    slack_token = os.getenv("SLACK_BOT_TOKEN")
+    if not slack_token:
+        logger.info("SLACK_BOT_TOKEN not configured - skipping Slack notification (this is normal for local development)")
+        return True
+    
     try:
-        client = WebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+        client = WebClient(token=slack_token)
         
         if blocks and color:
             # Use colored attachments for card-like appearance
