@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 
+from api.src.utils.process_tracking import process_context
 from api.src.utils.logging_utils import get_logger
 from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
@@ -22,7 +23,11 @@ async def route_message(
     
     if event == "validator-info":
         # Pass clients and websocket so handler can update state
-        return await handle_validator_info(websocket, clients, response_json)
+        with process_context("handle-validator-info") as process_id:
+            logger.debug(f"Platform received validator-info from a client with validator hotkey {validator_hotkey}. Beginning process handle-validator-info with process ID: {process_id}.")
+            result = await handle_validator_info(websocket, clients, response_json)
+            logger.debug(f"Completed handle-validator-info with process ID {process_id}.")
+            return result
     
     elif event == "get-next-evaluation":
         return await handle_get_next_evaluation(websocket, validator_hotkey, response_json)
