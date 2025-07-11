@@ -407,7 +407,7 @@ def run(no_auto_update: bool):
 
     # Start proxy with PM2
     if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
-        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8000", title="✨ Success", border_style="green"))
+        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8001", title="✨ Success", border_style="green"))
         console.print("📋 Showing proxy logs...", style="cyan")
         run_cmd("pm2 logs ridges-proxy", capture=False)
     else:
