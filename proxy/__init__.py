@@ -57,9 +57,6 @@ from .config import (
     LOG_LEVEL,
 )
 
-# FastAPI app
-from .main import app
-
 __all__ = [
     # Models
     "SandboxStatus",
@@ -93,7 +90,4 @@ __all__ = [
     "SERVER_HOST",
     "SERVER_PORT",
     "LOG_LEVEL",
-    
-    # App
-    "app",
 ] 
