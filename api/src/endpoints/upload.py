@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Optional
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -23,19 +24,34 @@ logger = logging.getLogger(__name__)
 s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)
 
-class AgentUploadRequest(BaseModel):
-    public_key: str
-    file_info: str
-    signature: str
-    name: str
+class AgentUploadResponse(BaseModel):
+    """Response model for successful agent upload"""
+    status: str = Field(..., description="Status of the upload operation")
+    message: str = Field(..., description="Detailed message about the upload result")
+
+class ErrorResponse(BaseModel):
+    """Error response model"""
+    detail: str = Field(..., description="Error message describing what went wrong")
 
 async def post_agent(
-    agent_file: UploadFile = File(...),
-    public_key: str = Form(...),
-    file_info: str = Form(...),
-    signature: str = Form(...),
-    name: str = Form(...),
-):
+    agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
+    public_key: str = Form(..., description="Public key of the miner in hex format"),
+    file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
+    signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
+    name: str = Form(..., description="Name of the agent"),
+) -> AgentUploadResponse:
+    """
+    Upload a new agent version for evaluation
+    
+    This endpoint allows miners to upload their agent code for evaluation. The agent must:
+    - Be a Python file named 'agent.py'
+    - Be under 1MB in size
+    - Pass static code safety checks
+    - Pass similarity validation to prevent copying
+    - Be properly signed with the miner's keypair
+    
+    Rate limiting may apply based on configuration.
+    """
     miner_hotkey = file_info.split(":")[0]
     # Check if miner_hotkey is provided
     if not miner_hotkey:
@@ -52,16 +68,16 @@ async def post_agent(
             detail="Your miner has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord"
         )
 
-    latest_agent: MinerAgent = await get_latest_agent(miner_hotkey=miner_hotkey)
+    latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
     
     # Rate limit how often the miner can update the agent
-    # if latest_agent:
-    #     earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
-    #     if datetime.now() < earliest_allowed_time:
-    #         raise HTTPException(
-    #             status_code=429,
-    #             detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
-    #         )
+    if latest_agent:
+        earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
+        if datetime.now() < earliest_allowed_time:
+            raise HTTPException(
+                status_code=429,
+                detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
+            )
 
     version_num = int(file_info.split(":")[-1])
 
@@ -180,10 +196,10 @@ async def post_agent(
 
     await WebSocketManager.get_instance().create_new_evaluations(version_id)
 
-    return {
-        "status": "success",
-        "message": f"Successfully updated agent {version_id} to version {agent_object.version_id}" if latest_agent else f"Successfully created agent {version_id}"
-    } 
+    return AgentUploadResponse(
+        status="success",
+        message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
+    )
 
 router = APIRouter()
 
@@ -197,5 +213,12 @@ for path, endpoint in routes:
         endpoint,
         tags=["upload"],
         dependencies=[Depends(verify_request)],
-        methods=["POST"]
+        methods=["POST"],
+        response_model=AgentUploadResponse,
+        responses={
+            400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
+            409: {"model": ErrorResponse, "description": "Conflict - Upload request already processed"},
+            429: {"model": ErrorResponse, "description": "Too Many Requests - Rate limit exceeded"},
+            500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"}
+        }
     )
