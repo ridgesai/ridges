@@ -53,9 +53,9 @@ async def generate_embeddings():
                         text = f.read()
                     if not text.strip():
                         continue
-                    if len(text) > 1600:
+                    if len(text) > 1200:
                         lines = text.splitlines()
-                        chunk_size = 40
+                        chunk_size = 30
                         sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
                     else:
                         sub_texts = [text]
