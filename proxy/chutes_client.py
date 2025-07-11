@@ -187,12 +187,7 @@ class ChutesClient:
 
             logger.debug(f"Inference request for run {run_id} completed, tokens: {total_tokens}, cost: ${cost:.6f}")
 
-            return {
-                "content": response_text,
-                "tokens": total_tokens,
-                "cost": cost,
-                "model": model,
-            }
+            return response_text
 
         except httpx.HTTPStatusError as e:
             logger.error(
