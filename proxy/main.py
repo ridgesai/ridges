@@ -6,10 +6,11 @@ import logging
 import sys
 import uvicorn
 from contextlib import asynccontextmanager
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
-from proxy.config import SERVER_HOST, SERVER_PORT, LOG_LEVEL
-from proxy.database import db_manager, get_evaluation_run_by_id
+from proxy.config import SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE
+from proxy.database import db_manager, get_evaluation_run_by_id, get_total_inference_cost, get_total_embedding_cost
 from proxy.chutes_client import ChutesClient
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
 
@@ -69,8 +70,18 @@ async def embedding_endpoint(request: EmbeddingRequest):
                 detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
             )
         
+        # Check cost limits at FastAPI level
+        run_uuid = UUID(request.run_id)
+        current_cost = await get_total_embedding_cost(run_uuid)
+        if current_cost > MAX_COST_PER_RUN:
+            logger.warning(f"Embedding request for run_id {request.run_id} exceeded cost limit: ${current_cost:.6f}")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Agent version has reached the maximum cost ({MAX_COST_PER_RUN}) for this evaluation run. Please do not request more embeddings."
+            )
+        
         # Get embedding from chutes
-        embedding_result = await chutes_client.embed(request.run_id, request.input)
+        embedding_result = await chutes_client.embed(run_uuid, request.input)
         
         logger.info(f"Embedding request for run_id {request.run_id} completed successfully")
         return embedding_result
@@ -103,12 +114,24 @@ async def inference_endpoint(request: InferenceRequest):
                 detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
             )
         
-        # Get inference from chutes
+        # Check cost limits at FastAPI level
+        run_uuid = UUID(request.run_id)
+        current_cost = await get_total_inference_cost(run_uuid)
+        if current_cost > MAX_COST_PER_RUN:
+            logger.warning(f"Inference request for run_id {request.run_id} exceeded cost limit: ${current_cost:.6f}")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Agent version has reached the maximum cost ({MAX_COST_PER_RUN}) for this evaluation run. Please do not request more inference."
+            )
+        
+        # Get inference from chutes (use defaults if None)
+        temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
+        model = request.model if request.model is not None else DEFAULT_MODEL
         inference_result = await chutes_client.inference(
-            request.run_id,
+            run_uuid,
             request.messages,
-            request.temperature,
-            request.model
+            temperature,
+            model
         )
         
         logger.info(f"Inference request for run_id {request.run_id} completed successfully")

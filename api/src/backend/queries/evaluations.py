@@ -169,10 +169,21 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
 
 @db_operation
 async def delete_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str) -> int:
-    result = await conn.execute(
-        "DELETE FROM evaluation_runs WHERE evaluation_id = $1",
-        evaluation_id
-    )
+    result = await conn.execute("""
+        WITH deleted_inferences AS (
+            DELETE FROM inferences 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+            )
+        ),
+        deleted_embeddings AS (
+            DELETE FROM embeddings 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+            )
+        )
+        DELETE FROM evaluation_runs WHERE evaluation_id = $1
+    """, evaluation_id)
     return result.split()[-1] if result else 0
 
 @db_operation

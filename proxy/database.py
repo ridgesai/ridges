@@ -1,12 +1,15 @@
 import logging
 import os
+import json
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from functools import wraps
+from datetime import datetime
+from uuid import UUID
 
 import asyncpg
 
-from proxy.models import EvaluationRun, SandboxStatus
+from proxy.models import EvaluationRun, SandboxStatus, Embedding, Inference
 
 logger = logging.getLogger(__name__)
 
@@ -101,4 +104,103 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, run_id: str) -> Opt
         logger.error(f"Error fetching evaluation run {run_id}: {e}")
         raise
 
- 
+@db_operation
+async def create_embedding(conn: asyncpg.Connection, run_id: UUID, input_text: str) -> UUID:
+    """Create a new embedding record and return its ID"""
+    try:
+        row = await conn.fetchrow("""
+            INSERT INTO embeddings (run_id, input_text, created_at)
+            VALUES ($1, $2, NOW())
+            RETURNING id
+        """, run_id, input_text)
+        
+        return row['id']
+        
+    except Exception as e:
+        logger.error(f"Error creating embedding for run {run_id}: {e}")
+        raise
+
+@db_operation
+async def update_embedding(conn: asyncpg.Connection, embedding_id: UUID, cost: float, 
+                          response: Dict[str, Any]) -> None:
+    """Update an embedding record with cost and response"""
+    try:
+        # Convert response dict to JSON string for JSONB storage
+        response_json = json.dumps(response)
+        
+        await conn.execute("""
+            UPDATE embeddings 
+            SET cost = $1, response = $2, finished_at = NOW()
+            WHERE id = $3
+        """, cost, response_json, embedding_id)
+        
+    except Exception as e:
+        logger.error(f"Error updating embedding {embedding_id}: {e}")
+        raise
+
+@db_operation
+async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: List[Dict[str, str]], 
+                          temperature: float, model: str) -> UUID:
+    """Create a new inference record and return its ID"""
+    try:
+        # Convert messages list to JSON string for JSONB storage
+        messages_json = json.dumps(messages)
+        
+        row = await conn.fetchrow("""
+            INSERT INTO inferences (run_id, messages, temperature, model, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            RETURNING id
+        """, run_id, messages_json, temperature, model)
+        
+        return row['id']
+        
+    except Exception as e:
+        logger.error(f"Error creating inference for run {run_id}: {e}")
+        raise
+
+@db_operation
+async def update_inference(conn: asyncpg.Connection, inference_id: UUID, cost: float, 
+                          response: str, total_tokens: int) -> None:
+    """Update an inference record with cost, response, and tokens"""
+    try:
+        await conn.execute("""
+            UPDATE inferences 
+            SET cost = $1, response = $2, total_tokens = $3, finished_at = NOW()
+            WHERE id = $4
+        """, cost, response, total_tokens, inference_id)
+        
+    except Exception as e:
+        logger.error(f"Error updating inference {inference_id}: {e}")
+        raise
+
+@db_operation
+async def get_total_inference_cost(conn: asyncpg.Connection, run_id: UUID) -> float:
+    """Get total cost of inferences for a run"""
+    try:
+        row = await conn.fetchrow("""
+            SELECT COALESCE(SUM(cost), 0) as total_cost
+            FROM inferences
+            WHERE run_id = $1
+        """, run_id)
+        
+        return row['total_cost'] if row['total_cost'] is not None else 0.0
+        
+    except Exception as e:
+        logger.error(f"Error getting total cost for run {run_id}: {e}")
+        raise
+
+@db_operation
+async def get_total_embedding_cost(conn: asyncpg.Connection, run_id: UUID) -> float:
+    """Get total cost of embeddings for a run"""
+    try:
+        row = await conn.fetchrow("""
+            SELECT COALESCE(SUM(cost), 0) as total_cost
+            FROM embeddings
+            WHERE run_id = $1
+        """, run_id)
+        
+        return row['total_cost'] if row['total_cost'] is not None else 0.0
+        
+    except Exception as e:
+        logger.error(f"Error getting total cost for run {run_id}: {e}")
+        raise

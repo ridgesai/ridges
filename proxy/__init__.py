@@ -24,12 +24,20 @@ from .models import (
     GPTMessage,
     EmbeddingRequest,
     InferenceRequest,
+    Embedding,
+    Inference,
 )
 
 # Database
 from .database import (
     db_manager,
     get_evaluation_run_by_id,
+    create_embedding,
+    update_embedding,
+    create_inference,
+    update_inference,
+    get_total_embedding_cost,
+    get_total_inference_cost,
     DBManager,
 )
 
@@ -59,10 +67,17 @@ __all__ = [
     "GPTMessage",
     "EmbeddingRequest",
     "InferenceRequest",
+    "Embedding",
+    "Inference",
     
     # Database
     "db_manager",
     "get_evaluation_run_by_id",
+    "create_embedding",
+    "update_embedding",
+    "create_inference",
+    "update_inference",
+    "get_total_cost_for_run",
     "DBManager",
     
     # Client
