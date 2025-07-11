@@ -26,6 +26,9 @@ s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)
 ws = WebSocketManager.get_instance()
 
+
+lock = asyncio.Lock()
+
 class AgentUploadResponse(BaseModel):
     """Response model for successful agent upload"""
     status: str = Field(..., description="Status of the upload operation")
@@ -169,54 +172,52 @@ async def post_agent(
 
     version_id = str(uuid.uuid4())
 
-        # 1. Get list of available screeners
-        # 2. IF none, HTTP 429
-        # 3. Otherwise, store the miner agent
-        # 4. Then create the pre-evaluation
-
-    lock = asyncio.Lock()
-
-    async with lock:
-        available_screener = await ws.get_available_screener()
-        if available_screener is None:
-            raise HTTPException(
-                status_code=429,
-                detail="All our screeners are currently busy. Please try again later."
-            )
+    try:
+        async with lock:
+            available_screener = await ws.get_available_screener()
+            logger.info(f"Available screener: {available_screener}")
+            if available_screener is None:
+                raise HTTPException(
+                    status_code=429,
+                    detail="All our screeners are currently busy. Please try again later."
+                )
+            
+            try:
+                await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+                logger.info(f"Successfully uploaded agent version {version_id} to S3")
+            except Exception as e:
+                logger.error(f"Failed to upload agent code to S3: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to store agent in our database. Please try again later."
+                )
         
-        try:
-            await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
-            logger.info(f"Successfully uploaded agent version {version_id} to S3")
-        except Exception as e:
-            logger.error(f"Failed to upload agent code to S3: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to store agent in our database. Please try again later."
+            agent_object = MinerAgent(
+                version_id=version_id,
+                miner_hotkey=miner_hotkey,
+                agent_name=agent_name,
+                version_num=latest_agent.version_num + 1 if latest_agent else 0,
+                created_at=datetime.now(timezone.utc),
+                score=None,
+                status="screening"
             )
-    
-        agent_object = MinerAgent(
-            version_id=version_id,
-            miner_hotkey=miner_hotkey,
-            agent_name=agent_name,
-            version_num=latest_agent.version_num + 1 if latest_agent else 0,
-            created_at=datetime.now(timezone.utc),
-            score=None,
-            status="screening"
-        )
 
-        success = await store_agent(agent_object)
-        
-        if not success:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to store agent version in our database. Please try again later."
+            success = await store_agent(agent_object)
+            
+            if not success:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to store agent version in our database. Please try again later."
+                )
+            await ws.create_pre_evaluation(available_screener, version_id)
+
+            return AgentUploadResponse(
+                status="success",
+                message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
             )
-        await ws.create_pre_evaluation(available_screener, version_id)
-
-        return AgentUploadResponse(
-            status="success",
-            message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
-        )
+    except Exception as e:
+        logger.error(f"Error uploading agent: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload agent. Please try again later.")
 
 router = APIRouter()
 
