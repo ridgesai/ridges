@@ -29,7 +29,7 @@ class DatadogLogHandler(logging.Handler):
         super().__init__()
 
     def emit(self, record):
-        self._sync_emit(record)
+        asyncio.create_task(self._async_emit(record))
 
     def _sync_emit(self, record):
         provided_process_type = getattr(record, 'process_type', None)
