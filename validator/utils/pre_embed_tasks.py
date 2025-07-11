@@ -18,6 +18,9 @@ logger = get_logger(__name__)
 
 REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
 
+def average_vectors(vectors):
+    return [sum(v[i] for v in vectors) / len(vectors) for i in range(len(vectors[0]))]
+
 async def generate_embeddings():
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     if not client:
@@ -52,19 +55,31 @@ async def generate_embeddings():
                         text = f.read()
                     if not text.strip():
                         continue
+                    if len(text) > 30000:
+                        lines = text.splitlines()
+                        chunk_size = 1000
+                        sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+                    else:
+                        sub_texts = [text]
                     chunks.append({
                         'file': str(file_path.relative_to(repo_dir)),
-                        'text': text
+                        'text': text  # Store original full text
                     })
         # Batch embed
         batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
         for batch in batches:
-            texts = [c['text'] for c in batch]
-            if not texts:
-                continue
-            response = client.embeddings.create(model='text-embedding-3-small', input=texts)
-            for i, emb in enumerate(response.data):
-                batch[i]['vector'] = emb.embedding
+            # For each chunk, embed its sub_texts if split
+            sub_responses = []
+            for chunk in batch:
+                texts = chunk.get('sub_texts', [chunk['text']])  # Use sub_texts if present
+                if not texts:
+                    continue
+                response = client.embeddings.create(model='text-embedding-3-large', input=texts)
+                sub_vectors = [emb.embedding for emb in response.data]
+                chunk['vector'] = average_vectors(sub_vectors) if len(sub_vectors) > 1 else sub_vectors[0]
+        # Remove sub_texts if not needed
+        for chunk in chunks:
+            chunk.pop('sub_texts', None)
         # Store
         with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
             json.dump({'chunks': chunks}, f)
