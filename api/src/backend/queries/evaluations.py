@@ -1,5 +1,6 @@
 from typing import Optional, List
 import logging
+from uuid import UUID
 
 import asyncpg
 from datetime import datetime, timezone
@@ -394,7 +395,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     return evaluations
 
 @db_operation
-async def check_for_new_high_score(conn: asyncpg.Connection, version_id: str) -> dict:
+async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -> dict:
     """
     Check if version_id scored higher than all approved agents.
     Uses LEFT JOIN to compare against approved_version_ids scores.
@@ -436,7 +437,7 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: str) ->
             "high_score_detected": True,
             "agent_name": agent_result['agent_name'],
             "miner_hotkey": agent_result['miner_hotkey'], 
-            "version_id": version_id,
+            "version_id": str(version_id),
             "version_num": agent_result['version_num'],
             "new_score": current_score,
             "previous_max_score": max_approved_score or 0.0
