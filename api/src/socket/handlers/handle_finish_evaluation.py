@@ -4,6 +4,7 @@ from fastapi import WebSocket
 
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation, check_for_new_high_score
 from api.src.backend.entities import EvaluationStatus
+from api.src.backend.queries.agents import set_agent_status
 from api.src.utils.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
 
@@ -29,6 +30,24 @@ async def handle_finish_evaluation(
         evaluation.score = None
         logger.debug(f"Attempting to update evaluation {evaluation_id} in the database with the following new details, status: {evaluation.status}, finished_at: {evaluation.finished_at}, score: {evaluation.score}.")
         await store_evaluation(evaluation)
+
+        if evaluation.validator_hotkey.startswith("i-0"):
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws = WebSocketManager.get_instance()
+
+            logger.debug(f"Evaluation {evaluation_id} is from a screener. Attempting to update the agent status.")
+            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+            if evaluation.score is not None and evaluation.score >= 3/5:
+                logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}, meaning they passed the screener. Attempting to create new evaluations.")
+                await ws.create_new_evaluations(evaluation.version_id)
+                logger.debug(f"Successfully created new evaluations.")
+
+                logger.debug(f"Attempting to update the agent status to waiting.")
+                await set_agent_status(evaluation.version_id, "waiting")
+                logger.debug(f"Successfully updated the agent status to waiting.")
+            else:
+                logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
+                await set_agent_status(evaluation.version_id, "scored")
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
         if not errored:  # Only check if evaluation completed successfully

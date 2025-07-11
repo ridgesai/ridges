@@ -1,6 +1,7 @@
 """Task for running agents in sandboxes."""
 
 import asyncio
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from validator.config import RIDGES_API_URL, validator_hotkey
+from validator.config import RIDGES_API_URL, SCREENER_MODE, validator_hotkey
 from validator.sandbox.manager import SandboxManager
 from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.utils.logging import get_logger
@@ -56,7 +57,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             evaluation_run = EvaluationRun(
                 run_id=str(uuid.uuid4()),
                 evaluation_id=evaluation_id,
-                validator_hotkey=validator_hotkey.ss58_address,
+                validator_hotkey=validator_hotkey.ss58_address if not SCREENER_MODE else os.getenv("AWS_INSTANCE_ID"),
                 swebench_instance_id=problem.instance_id,
                 status="started",
                 started_at=datetime.now(timezone.utc),

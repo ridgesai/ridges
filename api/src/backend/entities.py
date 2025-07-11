@@ -14,6 +14,7 @@ class MinerAgent(BaseModel):
     version_num: int
     created_at: datetime
     score: Optional[float]
+    status: str
 
 class AgentWithHydratedCode(MinerAgent):
     code: str
@@ -71,3 +72,5 @@ class ValidatorInfo(BaseModel):
     version_commit_hash: Optional[str] = None
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: Optional[str] = None
+    is_screener: Optional[bool] = False
+    status: Optional[str] = None

@@ -76,7 +76,8 @@ async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[
             agent_name,
             version_num,
             created_at,
-            score
+            score,
+            status
         FROM miner_agents
         WHERE score IS NOT NULL
         AND miner_hotkey NOT IN (
@@ -99,7 +100,8 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
             agent_name,
             version_num,
             created_at,
-            score
+            score,
+            status
         from miner_agents where miner_hotkey = $1 order by created_at desc;
     """, miner_hotkey)
 

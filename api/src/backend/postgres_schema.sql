@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     agent_name TEXT NOT NULL,
     version_num INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    score FLOAT
+    score FLOAT,
+    status TEXT
 );
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
