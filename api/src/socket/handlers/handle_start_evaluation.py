@@ -19,10 +19,14 @@ async def handle_start_evaluation(
     logger.info(f"Validator with hotkey {validator_hotkey} has started an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
+        logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
         evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+        logger.debug(f"Evaluation {evaluation_id} found in the database.")
         evaluation.status = EvaluationStatus.running
         evaluation.started_at = datetime.now(timezone.utc)
+        logger.debug(f"Attempting to update the evaluation {evaluation_id} in the database with the following new details, status: {evaluation.status}, started_at: {evaluation.started_at}.")
         await store_evaluation(evaluation)
+        logger.debug(f"Successfully updated the evaluation {evaluation_id} in the database.")
         
         return evaluation
         

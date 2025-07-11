@@ -2,7 +2,12 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/hid-113-move-proxy-into-monorepo ]
+    paths:
+      - 'validator/sandbox/Dockerfile'
+      - 'validator/sandbox/proxy/Dockerfile'
+      - 'validator/sandbox/proxy/default.conf.template'
+      - '.github/workflows/build-and-push-docker.yml'
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +24,16 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+
+    - name: Check for changed files
+      id: changed-files
+      run: |
+        SANDBOX_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -E '^validator/sandbox/' | grep -v '^validator/sandbox/proxy/' | wc -l)
+        PROXY_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -E '^validator/sandbox/proxy/' | wc -l)
+        echo "sandbox_changed=$SANDBOX_CHANGED" >> $GITHUB_OUTPUT
+        echo "proxy_changed=$PROXY_CHANGED" >> $GITHUB_OUTPUT
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -32,6 +47,7 @@ jobs:
 
     - name: Extract metadata for sandbox image
       id: meta-sandbox
+      if: steps.changed-files.outputs.sandbox_changed != '0'
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_SANDBOX }}
@@ -43,6 +59,7 @@ jobs:
 
     - name: Extract metadata for proxy image
       id: meta-proxy
+      if: steps.changed-files.outputs.proxy_changed != '0'
       uses: docker/metadata-action@v5
       with:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_PROXY }}
@@ -53,10 +70,12 @@ jobs:
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Build and push sandbox image
+      if: steps.changed-files.outputs.sandbox_changed != '0'
       uses: docker/build-push-action@v5
       with:
         context: ./validator/sandbox
         file: ./validator/sandbox/Dockerfile
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: ${{ steps.meta-sandbox.outputs.tags }}
         labels: ${{ steps.meta-sandbox.outputs.labels }}
@@ -64,10 +83,12 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Build and push proxy image
+      if: steps.changed-files.outputs.proxy_changed != '0'
       uses: docker/build-push-action@v5
       with:
         context: ./validator/sandbox/proxy
         file: ./validator/sandbox/proxy/Dockerfile
+        platforms: linux/amd64,linux/arm64
         push: true
         tags: ${{ steps.meta-proxy.outputs.tags }}
         labels: ${{ steps.meta-proxy.outputs.labels }}

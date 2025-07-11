@@ -19,7 +19,7 @@ async def handle_finish_evaluation(
     evaluation_id = response_json["evaluation_id"]
     errored = response_json["errored"]
     
-    logger.info(f"Validator with hotkey {validator_hotkey} has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
+    logger.info(f"Validator with hotkey {validator_hotkey} has informed the platform that it has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
         evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
@@ -27,14 +27,17 @@ async def handle_finish_evaluation(
         evaluation.finished_at = datetime.now(timezone.utc)
         # Set score to None to preserve the trigger-calculated score
         evaluation.score = None
+        logger.debug(f"Attempting to update evaluation {evaluation_id} in the database with the following new details, status: {evaluation.status}, finished_at: {evaluation.finished_at}, score: {evaluation.score}.")
         await store_evaluation(evaluation)
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
         if not errored:  # Only check if evaluation completed successfully
+            logger.debug(f"Evaluation {evaluation_id} completed successfully. Attempting to check for high score.")
             try:
                 high_score_result = await check_for_new_high_score(evaluation.version_id)
                 if high_score_result["high_score_detected"]:
                     # Send Slack notification for manual approval
+                    logger.debug(f"High score detected for {evaluation.version_id}. Attempting to send Slack notification.")
                     await send_high_score_notification(
                         agent_name=high_score_result["agent_name"],
                         miner_hotkey=high_score_result["miner_hotkey"],

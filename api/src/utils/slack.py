@@ -106,10 +106,13 @@ def send_slack_notification(message: str = None, channel: str = "bot-testing", b
         return True
     
     try:
+        logger.debug(f"Activating Slack client.")
         client = WebClient(token=slack_token)
+        logger.debug(f"Slack client successfully activated.")
         
         if blocks and color:
             # Use colored attachments for card-like appearance
+            logger.debug(f"Attempting to send Slack notification with colored attachments.")
             response = client.chat_postMessage(
                 channel=channel,
                 text=message or "New notification",  # fallback text for notifications
@@ -122,6 +125,7 @@ def send_slack_notification(message: str = None, channel: str = "bot-testing", b
             )
         elif color and message:
             # Use colored attachment with text message and optional approval buttons
+            logger.debug(f"Attempting to configure Slack notification with colored attachment and text message.")
             attachment = {
                 "color": color,
                 "text": message
@@ -129,6 +133,7 @@ def send_slack_notification(message: str = None, channel: str = "bot-testing", b
             
             # Add approval button if version_id is provided (for pending approvals)
             if approval_version_id:
+                logger.debug(f"Adding approval button to Slack notification.")
                 attachment["callback_id"] = "approval_buttons"  # Required for legacy button actions
                 attachment["actions"] = [
                     {
@@ -139,13 +144,16 @@ def send_slack_notification(message: str = None, channel: str = "bot-testing", b
                         "style": "primary"
                     }
                 ]
+                logger.debug(f"Approval button added to Slack notification.")
             
+            logger.debug(f"Attempting to send Slack notification with attachment and text message.")
             response = client.chat_postMessage(
                 channel=channel,
                 text="New Record Pending Approval",
                 attachments=[attachment]
             )
         elif blocks:
+            logger.debug(f"Attempting to send Slack notification with blocks.")
             response = client.chat_postMessage(
                 channel=channel,
                 text=message or "New notification",  # fallback text for notifications
@@ -153,6 +161,7 @@ def send_slack_notification(message: str = None, channel: str = "bot-testing", b
             )
         else:
             # Existing logic for text messages
+            logger.debug(f"Attempting to send Slack notification with text message.")
             response = client.chat_postMessage(
                 channel=channel,
                 text=message,
@@ -251,6 +260,8 @@ Agent: {agent_name} | Version: {version_num}
 Miner: {miner_hotkey}
 Version ID: {version_id}
 ```"""
+    
+    logger.debug(f"Slack message formatted. Attempting to send Slack notification.")
     
     # Use the hybrid approach: colored sidebar + code block content + approval buttons
     return send_slack_notification(

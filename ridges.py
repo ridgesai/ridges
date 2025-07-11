@@ -27,8 +27,29 @@ load_dotenv(".env")
 
 def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
-    result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
-    return result.returncode, result.stdout, result.stderr
+    try:
+        if capture:
+            result = subprocess.run(cmd, shell=True, capture_output=capture, text=True)
+            return result.returncode, result.stdout, result.stderr
+        else:
+            # For non-captured commands, use Popen for better KeyboardInterrupt handling
+            process = subprocess.Popen(cmd, shell=True)
+            try:
+                return_code = process.wait()
+                return return_code, "", ""
+            except KeyboardInterrupt:
+                # Properly terminate the subprocess
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise
+    except KeyboardInterrupt:
+        # Forward KeyboardInterrupt to subprocess by killing it
+        # This ensures proper cleanup when user presses Ctrl+C
+        raise
 run_cmd("uv add click")
 import click
 
@@ -192,32 +213,12 @@ def validator():
 
 @validator.command()
 @click.option("--no-auto-update", is_flag=True, help="Run validator directly in foreground")
-@click.option("--rebuild-containers", is_flag=True, help="Rebuild Docker containers")
-def run(no_auto_update: bool, rebuild_containers: bool):
+def run(no_auto_update: bool):
     """Run the Ridges validator."""
 
-    if rebuild_containers:
-        console.print("🔨 Rebuilding Docker containers...", style="yellow")
-        if not build_docker("validator/sandbox", "sandbox-runner"):
-            return
-        if not build_docker("validator/sandbox/proxy", "sandbox-nginx-proxy"):
-            return
-    
-    # Check Docker containers
-    missing = [img for img in ["sandbox-runner", "sandbox-nginx-proxy"] if not check_docker(img)]
-    if missing:
-        console.print(Panel(f"[bold yellow]🐳 Missing containers:[/bold yellow]\n[red]{', '.join(missing)}[/red]", title="Docker Status", border_style="yellow"))
-        if Prompt.ask("Build missing containers?", choices=["y", "n"], default="y") == "y":
-            for img in missing:
-                path = "validator/sandbox" if img == "sandbox-runner" else "validator/sandbox/proxy/"
-                if not build_docker(path, img):
-                    return
-        else:
-            return
-    
     if no_auto_update:
         console.print("🚀 Starting validator...", style="yellow")
-        run_cmd("uv run validator/main.py", capture=False)
+        run_cmd("uv run -m validator.main", capture=False)
         return
     
     # Check if already running
@@ -231,7 +232,7 @@ def run(no_auto_update: bool, rebuild_containers: bool):
     # Start validator
     console.print("🚀 Starting validator...", style="yellow")
     run_cmd("uv pip install -e .", capture=False)
-    run_cmd("pm2 start 'uv run validator/main.py' --name ridges-validator", capture=False)
+    run_cmd("pm2 start 'uv run -m validator.main' --name ridges-validator", capture=False)
     
     # Start auto-updater in background
     if run_cmd(f"pm2 start './ridges.py validator update --every 5' --name ridges-validator-updater", capture=False)[0] == 0:
@@ -281,7 +282,7 @@ def update(every: Optional[int]):
         console.print("✨ Updates found! Restarting validator...", style="green")
         run_cmd("uv pip install -e .")
         is_running, _ = check_pm2("ridges-validator")
-        run_cmd("pm2 restart ridges-validator" if is_running else "pm2 start 'uv run validator/main.py' --name ridges-validator")
+        run_cmd("pm2 restart ridges-validator" if is_running else "pm2 start 'uv run -m validator.main' --name ridges-validator")
         console.print("Validator updated!")
         
         if not every:
@@ -382,6 +383,163 @@ def update():
     run_cmd("uv pip install -e .")
     run_cmd("pm2 restart ridges-api-platform")
     console.print(Panel("[bold green]🎉 Platform updated![/bold green]", title="✨ Complete", border_style="green"))
+
+@cli.group()
+def proxy():
+    """Manage Ridges proxy server"""
+    pass
+
+@proxy.command()
+@click.option("--no-auto-update", is_flag=True, help="Run proxy directly in foreground")
+def run(no_auto_update: bool):
+    """Run the Ridges proxy server."""
+    
+    # Check if running
+    is_running, _ = check_pm2("ridges-proxy")
+    if is_running:
+        console.print(Panel("[bold yellow]⚠️  Proxy already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
+        return
+    
+    if no_auto_update:
+        console.print("🚀 Starting proxy server...", style="yellow")
+        run_cmd("uv run -m proxy.main", capture=False)
+        return
+
+    # Start proxy with PM2
+    if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
+        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8001", title="✨ Success", border_style="green"))
+        console.print("📋 Showing proxy logs...", style="cyan")
+        run_cmd("pm2 logs ridges-proxy", capture=False)
+    else:
+        console.print("💥 Failed to start proxy", style="red")
+
+@proxy.command()
+def stop():
+    """Stop the Ridges proxy server."""
+    if run_cmd("pm2 delete ridges-proxy")[0] == 0:
+        console.print(Panel("[bold green]🎉 Proxy stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
+    else:
+        console.print("⚠️  Proxy not running", style="yellow")
+
+@proxy.command()
+def logs():
+    """Show proxy logs."""
+    console.print("📋 Showing proxy logs...", style="cyan")
+    run_cmd("pm2 logs ridges-proxy", capture=False)
+
+@cli.group()
+def local():
+    """Manage all Ridges services locally"""
+    pass
+
+@local.command()
+def run():
+    """Run all Ridges services (platform, proxy, validator) in the background with PM2."""
+    console.print(Panel(f"[bold cyan]🚀 Starting All Services[/bold cyan]", title="🌐 Local Environment", border_style="cyan"))
+    
+    services_started = []
+    services_already_running = []
+    services_failed = []
+    
+    # Start Platform
+    console.print("🌐 Starting platform...", style="yellow")
+    is_running, _ = check_pm2("ridges-api-platform")
+    if is_running:
+        services_already_running.append("Platform")
+        console.print("✅ Platform already running!", style="green")
+    else:
+        # Install dependencies and start platform
+        run_cmd("uv pip install -e .", capture=False)
+        if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+            services_started.append("Platform")
+            console.print("✅ Platform started!", style="green")
+        else:
+            services_failed.append("Platform")
+            console.print("💥 Failed to start platform", style="red")
+    
+    # Start Proxy
+    console.print("🔗 Starting proxy...", style="yellow")
+    is_running, _ = check_pm2("ridges-proxy")
+    if is_running:
+        services_already_running.append("Proxy")
+        console.print("✅ Proxy already running!", style="green")
+    else:
+        if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
+            services_started.append("Proxy")
+            console.print("✅ Proxy started!", style="green")
+        else:
+            services_failed.append("Proxy")
+            console.print("💥 Failed to start proxy", style="red")
+    
+    # Start Validator
+    console.print("🔍 Starting validator...", style="yellow")
+    is_running, _ = check_pm2("ridges-validator")
+    if is_running:
+        services_already_running.append("Validator")
+        console.print("✅ Validator already running!", style="green")
+    else:
+        if run_cmd("pm2 start 'uv run -m validator.main' --name ridges-validator", capture=False)[0] == 0:
+            services_started.append("Validator")
+            console.print("✅ Validator started!", style="green")
+        else:
+            services_failed.append("Validator")
+            console.print("💥 Failed to start validator", style="red")
+    
+    # Summary
+    console.print("\n" + "="*50)
+    if services_started:
+        console.print(f"[bold green]🎉 Started:[/bold green] {', '.join(services_started)}")
+    if services_already_running:
+        console.print(f"[bold yellow]⚠️  Already Running:[/bold yellow] {', '.join(services_already_running)}")
+    if services_failed:
+        console.print(f"[bold red]💥 Failed:[/bold red] {', '.join(services_failed)}")
+    
+    # Show final status
+    total_services = len(services_started) + len(services_already_running)
+    if total_services == 3:
+        console.print(Panel(f"[bold green]🎉 All services are running![/bold green]\n[cyan]Platform, Proxy, and Validator are active[/cyan]", title="✨ Success", border_style="green"))
+        console.print("📋 Use 'pm2 logs' to view all logs or './ridges.py local logs' for combined logs", style="cyan")
+    else:
+        console.print(Panel(f"[bold yellow]⚠️  {total_services}/3 services running[/bold yellow]", title="🔄 Status", border_style="yellow"))
+
+@local.command()
+def stop():
+    """Stop all Ridges services."""
+    services = ["ridges-api-platform", "ridges-proxy", "ridges-validator"]
+    stopped = []
+    
+    for service in services:
+        if run_cmd(f"pm2 delete {service}")[0] == 0:
+            stopped.append(service.replace("ridges-", "").replace("-", " ").title())
+    
+    if stopped:
+        console.print(Panel(f"[bold green]🎉 Stopped:[/bold green]\n[cyan]{', '.join(stopped)}[/cyan]", title="✨ Stop Complete", border_style="green"))
+    else:
+        console.print("ℹ️  No services running", style="cyan")
+
+@local.command()
+def logs():
+    """Show logs for all services."""
+    console.print("📋 Showing logs for all services...", style="cyan")
+    run_cmd("pm2 logs ridges-api-platform ridges-proxy ridges-validator", capture=False)
+
+@local.command()
+def status():
+    """Show status of all services."""
+    console.print(Panel(f"[bold cyan]📊 Service Status[/bold cyan]", title="🔍 Status Check", border_style="cyan"))
+    
+    services = [
+        ("ridges-api-platform", "Platform"),
+        ("ridges-proxy", "Proxy"),
+        ("ridges-validator", "Validator")
+    ]
+    
+    for pm2_name, display_name in services:
+        is_running, status = check_pm2(pm2_name)
+        if is_running:
+            console.print(f"✅ {display_name}: [bold green]Running[/bold green]")
+        else:
+            console.print(f"❌ {display_name}: [bold red]Stopped[/bold red]")
 
 if __name__ == "__main__":
     run_cmd(". .venv/bin/activate")
