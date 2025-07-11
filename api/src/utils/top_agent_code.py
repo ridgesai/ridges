@@ -16,7 +16,7 @@ async def update_top_agent_code():
     logger.info(f"Updating top agent code with version id {top_agent.version_id}.")
 
     # Get code text from s3
-    code_text = await s3.get_file_text(f"53d2937f-f851-4fe4-b620-7e4199b1f184/agent.py")
+    code_text = await s3.get_file_text(f"{top_agent.version_id}/agent.py")
     logger.info(f"Got code text from s3 for version id {top_agent.version_id}.")
 
     # Append warning on the top
