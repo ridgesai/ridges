@@ -29,6 +29,38 @@ class DatadogLogHandler(logging.Handler):
         super().__init__()
 
     def emit(self, record):
+        self._sync_emit(record)
+
+    def _sync_emit(self, record):
+        provided_process_type = getattr(record, 'process_type', None)
+        provided_process_id = getattr(record, 'process_id', None)
+        
+        body = HTTPLog(
+            [
+                HTTPLogItem(
+                    ddsource="ec2",
+                    process_type=provided_process_type,
+                    process_id=provided_process_id,
+                    ddtags=f"pathname:{record.pathname}",
+                    hostname=hostname,
+                    level=record.levelname,
+                    location=f"{record.pathname}:{record.lineno}",
+                    function=f"{record.funcName}()",
+                    message=record.msg,
+                    service="ridges-platform"
+                ),
+            ]
+        )
+
+        with ApiClient(configuration) as api_client:
+            api_instance = LogsApi(api_client)
+            try:
+                api_instance.submit_log(content_encoding=ContentEncoding.DEFLATE, body=body)
+            except Exception as e:
+                print(f"Failed to send log to Datadog: {e}")
+                print(f"Original log: {body}")
+
+    def emit_async(self, record):
         asyncio.create_task(self._async_emit(record))
 
     async def _async_emit(self, record):
@@ -39,8 +71,8 @@ class DatadogLogHandler(logging.Handler):
             [
                 HTTPLogItem(
                     ddsource="ec2",
-                    # process_type=provided_process_type if provided_process_type else (record.processName if record.processName else "unknown"),
-                    # process_id=provided_process_id if provided_process_id else (record.processId if record.processId else "unknown"),
+                    process_type=provided_process_type,
+                    process_id=provided_process_id,
                     ddtags=f"pathname:{record.pathname}",
                     hostname=hostname,
                     level=record.levelname,

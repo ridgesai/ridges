@@ -69,27 +69,27 @@ class WebSocketManager:
                     self.clients if response_json["event"] == "validator-info" else None
                 )
                 
-                # Handle special cases for broadcasting
-                if result and response_json["event"] == "validator-info":
-                    await self.send_to_all_non_validators("validator-connected", result)
-                elif result is None and response_json["event"] == "validator-info":
-                    # Validator authentication failed, connection will be closed
-                    logger.info("Validator authentication failed, connection rejected")
-                    break
+                # # Handle special cases for broadcasting
+                # if result and response_json["event"] == "validator-info":
+                #     await self.send_to_all_non_validators("validator-connected", result)
+                # elif result is None and response_json["event"] == "validator-info":
+                #     # Validator authentication failed, connection will be closed
+                #     logger.info("Validator authentication failed, connection rejected")
+                #     break
                 
-                elif result and response_json["event"] == "start-evaluation":
-                    await self.send_to_all_non_validators("evaluation-started", result)
+                # elif result and response_json["event"] == "start-evaluation":
+                #     await self.send_to_all_non_validators("evaluation-started", result)
                 
-                elif result and response_json["event"] == "finish-evaluation":
-                    await self.send_to_all_non_validators("evaluation-finished", result)
+                # elif result and response_json["event"] == "finish-evaluation":
+                #     await self.send_to_all_non_validators("evaluation-finished", result)
                     
-                    # Handle set-weights after finishing evaluation
-                    weights_result = await handle_set_weights_after_evaluation()
-                    if weights_result and "error" not in weights_result:
-                        await self.send_to_all_validators("set-weights", weights_result)
+                #     # Handle set-weights after finishing evaluation
+                #     weights_result = await handle_set_weights_after_evaluation()
+                #     if weights_result and "error" not in weights_result:
+                #         await self.send_to_all_validators("set-weights", weights_result)
                 
-                elif result and response_json["event"] == "upsert-evaluation-run":
-                    await self.send_to_all_non_validators("evaluation-run-updated", result)
+                # elif result and response_json["event"] == "upsert-evaluation-run":
+                #     await self.send_to_all_non_validators("evaluation-run-updated", result)
 
         except WebSocketDisconnect:
             # CRITICAL: Remove from clients immediately to prevent memory leak
