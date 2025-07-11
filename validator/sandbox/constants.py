@@ -35,6 +35,9 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
 PROXY_CONTAINER_NAME = "sandbox-proxy"
 
+#PROXY_DOCKER_IMAGE = "ghcr.io/ridgesai/ridges/sandbox:latest"
+#PROXY_CONTAINER_NAME = "ghcr.io/ridgesai/ridges/proxy:latest"
+
 # Directory to cache cloned repositories for reuse across validations
 # Repositories will be stored at validator/repos/<org>/<repo>
 REPOS_BASE_DIR = Path(__file__).parent.parent / "repos"
