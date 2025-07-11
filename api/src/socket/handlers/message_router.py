@@ -44,7 +44,11 @@ async def route_message(
             return result
     
     elif event == "finish-evaluation":
-        return await handle_finish_evaluation(websocket, validator_hotkey, response_json)
+        with process_context("handle-finish-evaluation") as process_id:
+            logger.debug(f"Platform received finish-evaluation from a client with validator hotkey {validator_hotkey}. Beginning process handle-finish-evaluation with process ID: {process_id}.")
+            result = await handle_finish_evaluation(websocket, validator_hotkey, response_json)
+            logger.debug(f"Completed handle-finish-evaluation with process ID {process_id}.")
+            return result
     
     elif event == "upsert-evaluation-run":
         return await handle_upsert_evaluation_run(websocket, validator_hotkey, response_json)
