@@ -19,6 +19,7 @@ from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.endpoints.healthcheck import router as healthcheck_router
+from api.src.utils.top_agent_code import update_top_agent_code
 
 logger = get_logger(__name__)
 
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
 
     await clean_hanging_evaluations()
+    await update_top_agent_code()
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
     # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
