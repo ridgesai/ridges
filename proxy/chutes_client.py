@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import time
 from typing import Dict, List, Any
 from uuid import UUID
@@ -45,7 +46,7 @@ class ChutesClient:
             "Content-Type": "application/json",
         }
 
-        body = {"inputs": input_text}
+        body = {"inputs": input_text, "seed": random.randint(0, 2**32 - 1)}
 
         start_time = time.time()
 
@@ -127,6 +128,7 @@ class ChutesClient:
             "stream": True,
             "max_tokens": 1024,
             "temperature": temperature,
+            "seed": random.randint(0, 2**32 - 1),
         }
 
         logger.debug(f"Inference request for run {run_id} with model {model}")
