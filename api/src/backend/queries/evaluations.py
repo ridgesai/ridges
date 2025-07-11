@@ -114,8 +114,6 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
 
 @db_operation
 async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
-    logger.debug(f"Fetching next evaluation from database for validator {validator_hotkey}.")
-
     result = await conn.fetchrow(
         """
             SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
@@ -131,10 +129,7 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
     )
 
     if not result:
-        logger.debug(f"No next evaluation found for validator {validator_hotkey}.")
         return None
-
-    logger.debug(f"Found next evaluation for validator {validator_hotkey}: {dict(result)['evaluation_id']}.")
 
     return Evaluation(**dict(result)) 
 
@@ -182,9 +177,6 @@ async def delete_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str) -
 
 @db_operation
 async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> int:
-    logger.debug(f"Beginning to create evaluations for validator {validator_hotkey}.")
-
-    logger.debug(f"Fetching recent agent versions from database for validator {validator_hotkey}.")
     agents = await conn.fetch(
         "SELECT ma.version_id "
         "FROM miner_agents ma "
@@ -192,47 +184,35 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey) "
         "ORDER BY ma.created_at DESC"
     )
-    logger.debug(f"Fetched {len(agents)} recent agent versions from database for validator {validator_hotkey}.")
 
     if not agents:
-        logger.warning(f"Tried to create evaluations for validator {validator_hotkey} but no recent agent versions found.")
         raise Exception("No recent agent versions found")
     
     evaluations_created = 0 
     import uuid
 
-    logger.debug(f"Beginning to create evaluations for validator {validator_hotkey}.")
     for agent_row in agents:
         version_id = agent_row[0]
         
         # Check if evaluation already exists
-        logger.debug(f"Checking database for existing evaluation for version {version_id} and validator {validator_hotkey}.")
         existing_evaluation = await conn.fetchrow(
             "SELECT evaluation_id FROM evaluations "
             "WHERE version_id = $1 AND validator_hotkey = $2",
             version_id, validator_hotkey
         )
-        logger.debug(f"Completed check for existing evaluation for version {version_id} and validator {validator_hotkey}.")
         
         if existing_evaluation:
-            logger.debug(f"Evaluation already exists for version {version_id} and validator {validator_hotkey}. Skipping creation of evaluation.")
+            logger.debug(f"Evaluation already exists for version {version_id} and validator {validator_hotkey}")
             continue
-        logger.debug(f"No existing evaluation found for version {version_id} and validator {validator_hotkey}. Creating new evaluation.")
         
         # Create new evaluation
         evaluation_id = str(uuid.uuid4())
-        logger.debug(f"Created UUID for new evaluation: {evaluation_id}. Inserting new evaluation into database.")
-        
         await conn.execute("""
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
             VALUES ($1, $2, $3, $4, $5)
         """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
         
-        logger.debug(f"Successfully inserted new evaluation {evaluation_id} into database.")
-        
         evaluations_created += 1
-    
-    logger.debug(f"Completed creation of evaluations for validator {validator_hotkey}. Created {evaluations_created} evaluations.")
     
     return evaluations_created
 
