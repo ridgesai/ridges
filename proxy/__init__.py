@@ -1,0 +1,84 @@
+"""
+Proxy package for Chutes API integration with database validation.
+
+This package provides:
+- FastAPI app for proxying requests to Chutes API
+- Database models and connection management
+- ChutesClient for API interactions
+- Configuration constants
+"""
+
+# Load environment variables first, before any other imports
+import os
+from dotenv import load_dotenv
+
+# Get the directory of this file and resolve the .env path correctly
+current_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(current_dir, ".env")
+load_dotenv(env_path)
+
+# Models
+from .models import (
+    SandboxStatus,
+    EvaluationRun,
+    GPTMessage,
+    EmbeddingRequest,
+    InferenceRequest,
+)
+
+# Database
+from .database import (
+    db_manager,
+    get_evaluation_run_by_id,
+    DBManager,
+)
+
+# Chutes client
+from .chutes_client import ChutesClient
+
+# Configuration
+from .config import (
+    CHUTES_API_KEY,
+    CHUTES_EMBEDDING_URL,
+    CHUTES_INFERENCE_URL,
+    MODEL_PRICING,
+    MAX_COST_PER_RUN,
+    DEFAULT_MODEL,
+    SERVER_HOST,
+    SERVER_PORT,
+    LOG_LEVEL,
+)
+
+# FastAPI app
+from .main import app
+
+__all__ = [
+    # Models
+    "SandboxStatus",
+    "EvaluationRun", 
+    "GPTMessage",
+    "EmbeddingRequest",
+    "InferenceRequest",
+    
+    # Database
+    "db_manager",
+    "get_evaluation_run_by_id",
+    "DBManager",
+    
+    # Client
+    "ChutesClient",
+    
+    # Config
+    "CHUTES_API_KEY",
+    "CHUTES_EMBEDDING_URL", 
+    "CHUTES_INFERENCE_URL",
+    "MODEL_PRICING",
+    "MAX_COST_PER_RUN",
+    "DEFAULT_MODEL",
+    "SERVER_HOST",
+    "SERVER_PORT",
+    "LOG_LEVEL",
+    
+    # App
+    "app",
+] 

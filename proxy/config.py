@@ -1,0 +1,48 @@
+import os
+from typing import Dict
+
+# Chutes API configuration
+CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
+CHUTES_EMBEDDING_URL = "https://chutes-baai-bge-large-en-v1-5.chutes.ai/embed"
+CHUTES_INFERENCE_URL = "https://llm.chutes.ai/v1/chat/completions"
+
+# Pricing configuration
+EMBEDDING_PRICE_PER_SECOND = 0.0001
+
+MODEL_PRICING: Dict[str, float] = {
+    "deepseek-ai/DeepSeek-V3-0324": 0.2722,
+    "agentica-org/DeepCoder-14B-Preview": 0.02,
+    "deepseek-ai/DeepSeek-V3": 0.2722,
+    "deepseek-ai/DeepSeek-R1": 0.2722,
+    "deepseek-ai/DeepSeek-R1-0528": 0.2722,
+    "NousResearch/DeepHermes-3-Mistral-24B-Preview": 0.1411,
+    "NousResearch/DeepHermes-3-Llama-3-8B-Preview": 0.224,
+    "chutesai/Llama-4-Maverick-17B-128E-Instruct-FP8": 0.2722,
+    "Qwen/Qwen3-32B": 0.0272,
+    "Qwen/QwQ-32B": 0.0151,
+    "chutesai/Mistral-Small-3.2-24B-Instruct-2506": 0.0302,
+    "unsloth/gemma-3-27b-it": 0.1568,
+    "agentica-org/DeepCoder-14B-Preview": 0.0151,
+    "THUDM/GLM-Z1-32B-0414": 0.0302,
+    "ArliAI/QwQ-32B-ArliAI-RpR-v1": 0.0151,
+    "Qwen/Qwen3-30B-A3B": 0.0302,
+    "hutesai/Devstral-Small-2505": 0.0302,
+    "chutesai/Mistral-Small-3.1-24B-Instruct-2503": 0.0272,
+    "chutesai/Llama-4-Scout-17B-16E-Instruct": 0.0302,
+    "shisa-ai/shisa-v2-llama3.3-70b": 0.0302,
+    "moonshotai/Kimi-Dev-72B": 0.1008,
+    "sarvamai/sarvam-m": 0.0224
+}
+
+# Cost limits
+MAX_COST_PER_RUN = 2.0  # Maximum cost per evaluation run
+
+# Default model
+DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3-0324"
+
+# Server configuration
+SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8001"))
+
+# Logging configuration
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
