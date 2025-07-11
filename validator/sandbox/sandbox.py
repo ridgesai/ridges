@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
+
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
@@ -105,16 +107,22 @@ class Sandbox:
         
         # Run container
         try:
+            volumes = {
+                str(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
+                str(input_file): {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
+                str(output_file): {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
+                str(self.agent_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
+                str(self.repo_dir): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
+            }
+            # Mount pre-embedded file if exists
+            embed_file = Path(__file__).parent.parent / 'repo_embeds' / f'{self.evaluation_run.swebench_instance_id}.json.gz'
+            if embed_file.exists():
+                volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
+
             self.container = self.manager.docker.containers.run(
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
-                volumes={
-                    str(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
-                    str(input_file): {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
-                    str(output_file): {"bind": SANDBOX_OUTPUT_FILE, "mode": "rw"},
-                    str(self.agent_dir): {"bind": SANDBOX_SOURCE_DIR, "mode": "ro"},
-                    str(self.repo_dir): {"bind": SANDBOX_REPO_DIR, "mode": "rw"},
-                },
+                volumes=volumes,
                 working_dir=SANDBOX_DIR,
                 environment={
                     "AI_PROXY_URL": "http://sandbox-proxy",
