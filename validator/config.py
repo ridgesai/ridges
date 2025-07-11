@@ -94,6 +94,14 @@ MEDIUM_INSTANCES = [
     # "django__django-15957",
 ]
 
+SCREENER_INSTANCES = [
+    "astropy__astropy-14309",
+    "django__django-11119",
+    "matplotlib__matplotlib-24570",
+    "django__django-11099",
+    "pytest-dev__pytest-6202",
+]
+
 # Calculate total number of evaluation instances
 TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES)
 

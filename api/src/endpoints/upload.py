@@ -127,45 +127,45 @@ async def post_agent(
     # Reset file pointer
     await agent_file.seek(0)
 
-    # keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
-    # if not keypair.verify(file_info, bytes.fromhex(signature)):
-    #     raise HTTPException(status_code=400, detail="Invalid signature")
+    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    if not keypair.verify(file_info, bytes.fromhex(signature)):
+        raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # # Check if hotkey is registered using fiber
-    # if miner_hotkey not in await get_subnet_hotkeys():
-    #     raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
+    # Check if hotkey is registered using fiber
+    if miner_hotkey not in await get_subnet_hotkeys():
+        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
-    # # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
-    # try:
-    #     # Decode content to text for similarity checking
-    #     uploaded_code = content.decode('utf-8')
+    # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
+    try:
+        # Decode content to text for similarity checking
+        uploaded_code = content.decode('utf-8')
         
-    #     logger.info(f"Starting similarity validation for {miner_hotkey}")
+        logger.info(f"Starting similarity validation for {miner_hotkey}")
         
-    #     # Run similarity validation
-    #     is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+        # Run similarity validation
+        is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
         
-    #     if not is_valid:
-    #         logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
-    #         raise HTTPException(status_code=400, detail=error_message)
+        if not is_valid:
+            logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
+            raise HTTPException(status_code=400, detail=error_message)
             
-    #     logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
+        logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
         
-    # except UnicodeDecodeError:
-    #     raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
-    # except HTTPException:
-    #     # Re-raise HTTPException (similarity rejection)
-    #     raise
-    # except Exception as e:
-    #     logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
-    #     # BLOCK upload on similarity check errors - don't allow potential copying
-    #     raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
+    except HTTPException:
+        # Re-raise HTTPException (similarity rejection)
+        raise
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
+        # BLOCK upload on similarity check errors - don't allow potential copying
+        raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
 
-    # # Static code safety checks ---------------------------------------------------
-    # try:
-    #     AgentCodeChecker(content).run()
-    # except CheckError as e:
-    #     raise HTTPException(status_code=400, detail=str(e))
+    # Static code safety checks ---------------------------------------------------
+    try:
+        AgentCodeChecker(content).run()
+    except CheckError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     version_id = str(uuid.uuid4())
 

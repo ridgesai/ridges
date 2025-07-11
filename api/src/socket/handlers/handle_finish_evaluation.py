@@ -37,7 +37,7 @@ async def handle_finish_evaluation(
 
             logger.debug(f"Evaluation {evaluation_id} is from a screener. Attempting to update the agent status.")
             evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-            if evaluation.score is not None and evaluation.score >= 0.8:
+            if evaluation.score is not None and evaluation.score >= 3/5:
                 logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}, meaning they passed the screener. Attempting to create new evaluations.")
                 await ws.create_new_evaluations(evaluation.version_id)
                 logger.debug(f"Successfully created new evaluations.")

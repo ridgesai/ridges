@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.utils.logging_utils import get_logger
 from api.src.backend.entities import ValidatorInfo
 from api.src.backend.queries.evaluations import (
@@ -200,7 +201,7 @@ class WebSocketManager:
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for websocket, validator_info in clients_snapshot.items():
-            if validator_info.validator_hotkey:
+            if validator_info.validator_hotkey and not validator_info.is_screener:
                 try:
                     evaluation = Evaluation(
                         evaluation_id=str(uuid.uuid4()),
@@ -256,6 +257,8 @@ class WebSocketManager:
         if not websocket:
             logger.error(f"Tried to create pre-evaluation for screener {screener_hotkey} but screener not found in connected clients")
             return None
+
+        miner_agent = await get_agent_by_version_id(version_id)
         
         try:
             evaluation_id = str(uuid.uuid4())
@@ -279,7 +282,7 @@ class WebSocketManager:
             await websocket.send_text(json.dumps({
                 "event": "screen-agent",
                 "evaluation_id": evaluation_id,
-                "agent_version": pre_evaluation.model_dump(mode='json')
+                "agent_version": miner_agent.model_dump(mode='json')
             }))
             logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
 

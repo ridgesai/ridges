@@ -3,7 +3,7 @@
 from typing import List, Dict, Any
 from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.schema import AgentVersion, SwebenchProblem
-from validator.config import EASY_INSTANCES
+from validator.config import EASY_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
 from validator.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -11,8 +11,10 @@ logger = get_logger(__name__)
 def get_swebench_problems(agent_version: AgentVersion) -> List[SwebenchProblem]:
     """Get evaluation runs for an agent version"""
     try:
-        # Load SWE-bench instances (using easy instances for now)
-        instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES)
+        if SCREENER_MODE:
+            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", SCREENER_INSTANCES)
+        else:
+            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES)
         
         problems: List[SwebenchProblem] = []
         for instance in instances:
