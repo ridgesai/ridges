@@ -73,7 +73,7 @@ async def post_agent(
     # Rate limit how often the miner can update the agent
     if latest_agent:
         earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
-        if datetime.now() < earliest_allowed_time:
+        if datetime.now(timezone.utc) < earliest_allowed_time:
             raise HTTPException(
                 status_code=429,
                 detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
