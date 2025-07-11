@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import docker
 from docker.models.containers import Container
 
-from validator.config import RIDGES_API_URL
+from validator.config import RIDGES_PROXY_URL
 from validator.sandbox.constants import (
     AGENTS_BASE_DIR,
     PROXY_CONTAINER_NAME,
@@ -66,7 +66,7 @@ class SandboxManager:
                 image=PROXY_DOCKER_IMAGE,
                 name=PROXY_CONTAINER_NAME,
                 detach=True,
-                environment={"RIDGES_API_URL": RIDGES_API_URL},
+                environment={"RIDGES_PROXY_URL": RIDGES_PROXY_URL},
             )
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}")
