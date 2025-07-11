@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.utils.logging_utils import get_logger
 from api.src.backend.entities import ValidatorInfo
 from api.src.backend.queries.evaluations import (
@@ -13,7 +14,6 @@ from api.src.backend.queries.evaluations import (
 )
 from api.src.backend.entities import Evaluation, EvaluationStatus
 from api.src.socket.handlers.message_router import route_message
-from api.src.socket.handlers.handle_set_weights import handle_set_weights_after_evaluation
 from api.src.socket.server_helpers import get_relative_version_num
 
 logger = get_logger(__name__)
@@ -201,7 +201,7 @@ class WebSocketManager:
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for websocket, validator_info in clients_snapshot.items():
-            if validator_info.validator_hotkey:
+            if validator_info.validator_hotkey and not validator_info.is_screener:
                 try:
                     evaluation = Evaluation(
                         evaluation_id=str(uuid.uuid4()),
@@ -237,3 +237,56 @@ class WebSocketManager:
                     "ip_address": validator_info.ip_address
                 })
         return validators 
+    
+    async def get_available_screener(self) -> str:
+        """Get the first available screener from the connected clients"""
+        for websocket, validator_info in self.clients.items():
+            if validator_info.validator_hotkey and validator_info.is_screener and validator_info.status == "available":
+                return validator_info.validator_hotkey
+        return None
+    
+    async def create_pre_evaluation(self, screener_hotkey: str, version_id: str) -> str:
+        """Create a pre-evaluation for a specific screener hotkey"""
+        # Find the websocket for the specified screener
+        websocket = None
+        for ws, validator_info in self.clients.items():
+            if validator_info.validator_hotkey == screener_hotkey:
+                websocket = ws
+                break
+        
+        if not websocket:
+            logger.error(f"Tried to create pre-evaluation for screener {screener_hotkey} but screener not found in connected clients")
+            return None
+
+        miner_agent = await get_agent_by_version_id(version_id)
+        
+        try:
+            evaluation_id = str(uuid.uuid4())
+            pre_evaluation = Evaluation(
+                evaluation_id=evaluation_id,
+                version_id=version_id,
+                validator_hotkey=screener_hotkey,
+                status="running",
+                terminated_reason=None,
+                created_at=datetime.now(timezone.utc),
+                started_at=datetime.now(timezone.utc),
+                finished_at=None,
+                score=None
+            )
+
+            logger.debug(f"Creating pre-evaluation for screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+
+            await store_evaluation(pre_evaluation)
+
+            logger.debug(f"Attempting to send screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+            await websocket.send_text(json.dumps({
+                "event": "screen-agent",
+                "evaluation_id": evaluation_id,
+                "agent_version": miner_agent.model_dump(mode='json')
+            }))
+            logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+
+            return evaluation_id
+        except Exception as e:
+            logger.error(f"Error creating pre-evaluation for screener {screener_hotkey}: {e}")
+            return None

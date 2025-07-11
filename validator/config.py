@@ -3,7 +3,10 @@ import os
 import subprocess
 
 # External package imports
+from fiber import Keypair
 from fiber.chain.chain_utils import load_hotkey_keypair
+
+SCREENER_MODE = os.getenv("SCREENER_MODE", "false")
 
 # Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))
@@ -91,6 +94,14 @@ MEDIUM_INSTANCES = [
     # "django__django-15957",
 ]
 
+SCREENER_INSTANCES = [
+    "astropy__astropy-14309",
+    "django__django-11119",
+    "matplotlib__matplotlib-24570",
+    "django__django-11099",
+    "pytest-dev__pytest-6202",
+]
+
 # Calculate total number of evaluation instances
 TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES)
 
@@ -106,4 +117,9 @@ logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
 logger.info(f"Log level: {LOG_LEVEL}")
 logger.info(f"Total evaluation instances: {TOTAL_EVALUATION_INSTANCES}")
 
-validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
+validator_hotkey = None
+aws_instance_id = None
+if SCREENER_MODE:
+    aws_instance_id = os.getenv("AWS_INSTANCE_ID")
+else:
+    validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)

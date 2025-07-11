@@ -5,7 +5,7 @@ from datetime import datetime
 from validator.utils.logging import get_logger
 from validator.sandbox.schema import AgentVersion
 from validator.tasks.run_evaluation import run_evaluation
-from validator.config import validator_hotkey
+from validator.config import SCREENER_MODE, validator_hotkey
 
 logger = get_logger(__name__)
 
@@ -76,7 +76,7 @@ async def handle_evaluation(websocket_app, json_message):
             logger.info("Cleared evaluation_running flag")
 
         # Only request next evaluation if we completed successfully (not cancelled/errored)
-        if evaluation_completed_successfully:
+        if evaluation_completed_successfully and not SCREENER_MODE:
             try:
                 await websocket_app.send({"event": "get-next-evaluation"})
                 logger.info("Requested next agent version after evaluation completion")

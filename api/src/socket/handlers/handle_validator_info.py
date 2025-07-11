@@ -64,15 +64,22 @@ async def handle_validator_info(
     """Handle validator-info message from a validator with cryptographic authentication"""
 
     validator_hotkey = response_json["validator_hotkey"]
+
+    is_screener = True if validator_hotkey.startswith("i-0") else False
+    logger.debug(f"Validator {validator_hotkey} is a screener: {is_screener}")
     
     logger.debug(f"Beginning to extract information from the validator-info json for validator {validator_hotkey}")
-    public_key = response_json["public_key"]
-    signature = response_json["signature"]
-    message = response_json["message"]
+ 
     version_commit_hash = response_json["version_commit_hash"]
     timestamp = response_json.get("timestamp", int(time.time()))
-
-    logger.debug(f"Extracted the following information from the validator-info json: validator_hotkey: {validator_hotkey}, public_key: {public_key}, signature: {signature}, message: {message}, version_commit_hash: {version_commit_hash}, timestamp: {timestamp}")
+    
+    if not is_screener:
+        public_key= response_json["public_key"]
+        signature = response_json["signature"]
+        message = response_json["message"]
+        logger.debug(f"Extracted the following information from the validator-info json: validator_hotkey: {validator_hotkey}, public_key: {public_key}, signature: {signature}, message: {message}, version_commit_hash: {version_commit_hash}, timestamp: {timestamp}")
+    else:
+        logger.debug(f"Extracted the following information from the validator-info json: validator_hotkey: {validator_hotkey}, version_commit_hash: {version_commit_hash}, timestamp: {timestamp}")
 
     # # Validate that the validator is registered in the metagraph
     # if not is_validator_registered(validator_hotkey):
@@ -137,25 +144,27 @@ async def handle_validator_info(
         validator_info = clients[websocket]
         validator_info.validator_hotkey = validator_hotkey
         validator_info.version_commit_hash = version_commit_hash
+        validator_info.is_screener = is_screener
+        validator_info.status = "available"
         logger.debug(f"Populated the WebSocket's client dictionary with the following information: validator_hotkey: {validator_hotkey}, version_commit_hash: {version_commit_hash}")
     
     logger.info(f"Validator {validator_hotkey} has been authenticated and connected. Version commit hash: {version_commit_hash}")
 
     # Create evaluations for the validator
-    try:
-        num_evaluations_created = await create_evaluations_for_validator(validator_hotkey)
-    except Exception as e:
-        logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
-        num_evaluations_created = -1
+    if not is_screener:
+        try:
+            await create_evaluations_for_validator(validator_hotkey)
+        except Exception as e:
+            logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
 
-    # Check if there's a next evaluation available
-    next_evaluation = await get_next_evaluation_for_validator(validator_hotkey)
-    if next_evaluation:
-        logger.debug(f"Sending evaluation {next_evaluation.evaluation_id} to validator {validator_hotkey}")
-        await websocket.send_text(json.dumps({"event": "evaluation-available"}))
-        logger.info(f"Successfully sent evaluation {next_evaluation.evaluation_id} to validator {validator_hotkey}")
+        # Check if there's a next evaluation available
+        next_evaluation = await get_next_evaluation_for_validator(validator_hotkey)
+        if next_evaluation:
+            logger.debug(f"Sending evaluation {next_evaluation.evaluation_id} to validator {validator_hotkey}")
+            await websocket.send_text(json.dumps({"event": "evaluation-available"}))
+            logger.info(f"Successfully sent evaluation {next_evaluation.evaluation_id} to validator {validator_hotkey}")
 
-    logger.debug(f"Calculating relative version number for commit {version_commit_hash}")
+    logger.debug(f"Calculating relative version number for validator {validator_hotkey}")
     relative_version_num = await get_relative_version_num(version_commit_hash)
     logger.debug(f"Successfully calculated relative version number for commit {version_commit_hash}: {relative_version_num}")
     
