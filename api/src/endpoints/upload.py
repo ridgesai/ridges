@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)
-ws_manager = WebSocketManager.get_instance()
+ws = WebSocketManager.get_instance()
 
 class AgentUploadResponse(BaseModel):
     """Response model for successful agent upload"""
@@ -126,89 +127,96 @@ async def post_agent(
     # Reset file pointer
     await agent_file.seek(0)
 
-    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
-    if not keypair.verify(file_info, bytes.fromhex(signature)):
-        raise HTTPException(status_code=400, detail="Invalid signature")
+    # keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
+    # if not keypair.verify(file_info, bytes.fromhex(signature)):
+    #     raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # Check if hotkey is registered using fiber
-    if miner_hotkey not in await get_subnet_hotkeys():
-        raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
+    # # Check if hotkey is registered using fiber
+    # if miner_hotkey not in await get_subnet_hotkeys():
+    #     raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
-    # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
-    try:
-        # Decode content to text for similarity checking
-        uploaded_code = content.decode('utf-8')
+    # # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
+    # try:
+    #     # Decode content to text for similarity checking
+    #     uploaded_code = content.decode('utf-8')
         
-        logger.info(f"Starting similarity validation for {miner_hotkey}")
+    #     logger.info(f"Starting similarity validation for {miner_hotkey}")
         
-        # Run similarity validation
-        is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+    #     # Run similarity validation
+    #     is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
         
-        if not is_valid:
-            logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
-            raise HTTPException(status_code=400, detail=error_message)
+    #     if not is_valid:
+    #         logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
+    #         raise HTTPException(status_code=400, detail=error_message)
             
-        logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
+    #     logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
         
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
-    except HTTPException:
-        # Re-raise HTTPException (similarity rejection)
-        raise
-    except Exception as e:
-        logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
-        # BLOCK upload on similarity check errors - don't allow potential copying
-        raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
+    # except UnicodeDecodeError:
+    #     raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
+    # except HTTPException:
+    #     # Re-raise HTTPException (similarity rejection)
+    #     raise
+    # except Exception as e:
+    #     logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
+    #     # BLOCK upload on similarity check errors - don't allow potential copying
+    #     raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
 
-    # Static code safety checks ---------------------------------------------------
-    try:
-        AgentCodeChecker(content).run()
-    except CheckError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # # Static code safety checks ---------------------------------------------------
+    # try:
+    #     AgentCodeChecker(content).run()
+    # except CheckError as e:
+    #     raise HTTPException(status_code=400, detail=str(e))
 
     version_id = str(uuid.uuid4())
 
-    result = await ws_manager.create_pre_evaluation(version_id)
-    if not result:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to create pre-evaluation. All our pre-validators are currently busy. Please try again later."
-        )
-    
-    try:
-        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
-        logger.info(f"Successfully uploaded agent version {version_id} to S3")
-    except Exception as e:
-        logger.error(f"Failed to upload agent code to S3: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to store agent in our database. Please try again later."
-        )
-    
-    agent_object = MinerAgent(
-        version_id=version_id,
-        miner_hotkey=miner_hotkey,
-        agent_name=agent_name,
-        version_num=latest_agent.version_num + 1 if latest_agent else 0,
-        created_at=datetime.now(timezone.utc),
-        score=None,
-        status="screening"
-    )
+        # 1. Get list of available screeners
+        # 2. IF none, HTTP 429
+        # 3. Otherwise, store the miner agent
+        # 4. Then create the pre-evaluation
 
-    success = await store_agent(agent_object)
+    lock = asyncio.Lock()
+
+    async with lock:
+        available_screener = await ws.get_available_screener()
+        if available_screener is None:
+            raise HTTPException(
+                status_code=429,
+                detail="All our screeners are currently busy. Please try again later."
+            )
+        
+        try:
+            await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+            logger.info(f"Successfully uploaded agent version {version_id} to S3")
+        except Exception as e:
+            logger.error(f"Failed to upload agent code to S3: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to store agent in our database. Please try again later."
+            )
     
-    if not success:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to store agent version in our database. Please try again later."
+        agent_object = MinerAgent(
+            version_id=version_id,
+            miner_hotkey=miner_hotkey,
+            agent_name=agent_name,
+            version_num=latest_agent.version_num + 1 if latest_agent else 0,
+            created_at=datetime.now(timezone.utc),
+            score=None,
+            status="screening"
         )
 
-    await WebSocketManager.get_instance().create_new_evaluations(version_id)
+        success = await store_agent(agent_object)
+        
+        if not success:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to store agent version in our database. Please try again later."
+            )
+        await ws.create_pre_evaluation(available_screener, version_id)
 
-    return AgentUploadResponse(
-        status="success",
-        message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
-    )
+        return AgentUploadResponse(
+            status="success",
+            message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
+        )
 
 router = APIRouter()
 

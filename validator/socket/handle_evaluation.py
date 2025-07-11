@@ -5,7 +5,7 @@ from datetime import datetime
 from validator.utils.logging import get_logger
 from validator.sandbox.schema import AgentVersion
 from validator.tasks.run_evaluation import run_evaluation
-from validator.config import validator_hotkey
+from validator.config import SCREENER_MODE, validator_hotkey
 
 logger = get_logger(__name__)
 

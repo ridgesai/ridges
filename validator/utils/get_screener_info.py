@@ -4,7 +4,7 @@ import os
 import subprocess
 from validator.utils.logging import get_logger
 
-from validator.config import validator_hotkey
+from validator.config import aws_instance_id
 
 logger = get_logger(__name__)
 
@@ -12,10 +12,8 @@ VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).deco
 
 def get_screener_info():
     """Generate screener info"""
-    aws_id = os.getenv("AWS_INSTANCE_ID")
     return {
         "event": "validator-info",
-        "validator_hotkey": aws_id,
-        "public_key": validator_hotkey.public_key.hex(),
+        "validator_hotkey": aws_instance_id,
         "version_commit_hash": VERSION_COMMIT_HASH,
     }

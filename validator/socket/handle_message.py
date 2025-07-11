@@ -1,6 +1,7 @@
 import json
 import time
 
+from validator.config import SCREENER_MODE
 from validator.utils.logging import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
 from validator.socket.handle_evaluation_available import handle_evaluation_available
@@ -20,7 +21,7 @@ async def handle_message(websocket_app, message: str):
 
     if SCREENER_MODE:
         if event == "screen-agent":
-            await handle_screen_agent(websocket_app, json_message)
+            await handle_evaluation(websocket_app, json_message)
         else:
             logger.info(f"Screener received unrecognized message: {message}")
         return

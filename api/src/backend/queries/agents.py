@@ -28,7 +28,7 @@ async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
 @db_operation
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
-        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score "
+        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score, status "
         "FROM miner_agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
         miner_hotkey
     )
@@ -41,7 +41,7 @@ async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optio
 @db_operation
 async def get_agent_by_version_id(conn: asyncpg.Connection, version_id: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
-        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score "
+        "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score, status "
         "FROM miner_agents WHERE version_id = $1",
         version_id
     )

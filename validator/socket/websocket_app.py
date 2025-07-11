@@ -8,10 +8,13 @@ from typing import Any, Dict, Optional
 
 import websockets
 
+from validator.utils.get_screener_info import get_screener_info
 from validator.utils.logging import get_logger
-from validator.config import RIDGES_API_URL
+from validator.config import RIDGES_API_URL, SCREENER_MODE
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info
+
+print("SCREENER_MODE", SCREENER_MODE)
 
 websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws"
 
@@ -86,7 +89,10 @@ class WebsocketApp:
                 async with websockets.connect(websocket_url, ping_timeout=None) as ws:
                     self.ws = ws
                     logger.info(f"Connected to websocket: {websocket_url}")
-                    await self.send(get_validator_info())
+                    if SCREENER_MODE:
+                        await self.send(get_screener_info())
+                    else:
+                        await self.send(get_validator_info())
                     
                     try:
                         while True:

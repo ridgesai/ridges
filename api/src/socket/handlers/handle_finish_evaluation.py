@@ -7,10 +7,8 @@ from api.src.backend.entities import EvaluationStatus
 from api.src.backend.queries.agents import set_agent_status
 from api.src.utils.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
-from api.src.socket.websocket_manager import WebSocketManager
 
 logger = get_logger(__name__)
-ws = WebSocketManager.get_instance()
 
 async def handle_finish_evaluation(
     websocket: WebSocket,
@@ -34,6 +32,9 @@ async def handle_finish_evaluation(
         await store_evaluation(evaluation)
 
         if evaluation.validator_hotkey.startswith("i-0"):
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws = WebSocketManager.get_instance()
+
             logger.debug(f"Evaluation {evaluation_id} is from a screener. Attempting to update the agent status.")
             evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
             if evaluation.score is not None and evaluation.score >= 0.8:

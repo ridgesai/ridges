@@ -237,36 +237,53 @@ class WebSocketManager:
                 })
         return validators 
     
-    async def create_pre_evaluation(self, version_id: str) -> str:
-        """Create a pre-evaluation for a version"""
+    async def get_available_screener(self) -> str:
+        """Get the first available screener from the connected clients"""
         for websocket, validator_info in self.clients.items():
-            if not validator_info.is_screener or validator_info.status != 'available':
-                continue
-            try:
-                evaluation_id = str(uuid.uuid4())
-                pre_evaluation = Evaluation(
-                    evaluation_id=evaluation_id,
-                    version_id=version_id,
-                    validator_hotkey=validator_info.validator_hotkey,
-                    status="running",
-                    terminated_reason=None,
-                    created_at=datetime.now(timezone.utc),
-                    started_at=datetime.now(timezone.utc),
-                    finished_at=None,
-                    score=None
-                )
-
-                logger.debug(f"Creating pre-evaluation for screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
-
-                await store_evaluation(pre_evaluation)
-
-                logger.debug(f"Attempting to send screen-agent event to screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
-                await websocket.send_text(json.dumps({"event": "screen-agent", "data": pre_evaluation.model_dump(mode='json')}))
-                logger.debug(f"Successfully sent screen-agent event to screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
-
-                return evaluation_id
-            except Exception as e:
-                logger.error(f"Error creating pre-evaluation for screener {validator_info.validator_hotkey}: {e}")
-                return None
-        
+            if validator_info.validator_hotkey and validator_info.is_screener and validator_info.status == "available":
+                return validator_info.validator_hotkey
         return None
+    
+    async def create_pre_evaluation(self, screener_hotkey: str, version_id: str) -> str:
+        """Create a pre-evaluation for a specific screener hotkey"""
+        # Find the websocket for the specified screener
+        websocket = None
+        for ws, validator_info in self.clients.items():
+            if validator_info.validator_hotkey == screener_hotkey:
+                websocket = ws
+                break
+        
+        if not websocket:
+            logger.error(f"Tried to create pre-evaluation for screener {screener_hotkey} but screener not found in connected clients")
+            return None
+        
+        try:
+            evaluation_id = str(uuid.uuid4())
+            pre_evaluation = Evaluation(
+                evaluation_id=evaluation_id,
+                version_id=version_id,
+                validator_hotkey=screener_hotkey,
+                status="running",
+                terminated_reason=None,
+                created_at=datetime.now(timezone.utc),
+                started_at=datetime.now(timezone.utc),
+                finished_at=None,
+                score=None
+            )
+
+            logger.debug(f"Creating pre-evaluation for screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+
+            await store_evaluation(pre_evaluation)
+
+            logger.debug(f"Attempting to send screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+            await websocket.send_text(json.dumps({
+                "event": "screen-agent",
+                "evaluation_id": evaluation_id,
+                "agent_version": pre_evaluation.model_dump(mode='json')
+            }))
+            logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
+
+            return evaluation_id
+        except Exception as e:
+            logger.error(f"Error creating pre-evaluation for screener {screener_hotkey}: {e}")
+            return None
