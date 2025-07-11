@@ -50,6 +50,8 @@ async def generate_embeddings():
                     file_path = Path(root) / file
                     with open(file_path) as f:
                         text = f.read()
+                    if not text.strip():
+                        continue
                     chunks.append({
                         'file': str(file_path.relative_to(repo_dir)),
                         'text': text
@@ -58,6 +60,8 @@ async def generate_embeddings():
         batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
         for batch in batches:
             texts = [c['text'] for c in batch]
+            if not texts:
+                continue
             response = client.embeddings.create(model='text-embedding-3-small', input=texts)
             for i, emb in enumerate(response.data):
                 batch[i]['vector'] = emb.embedding
