@@ -210,6 +210,7 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         "FROM miner_agents ma "
         "WHERE ma.created_at >= NOW() - INTERVAL '24 hours' "
         "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey) "
+        "AND ma.status = 'evaluating' "
         "ORDER BY ma.created_at DESC"
     )
     logger.debug(f"Fetched {len(agents)} recent agent versions from database for validator {validator_hotkey}.")

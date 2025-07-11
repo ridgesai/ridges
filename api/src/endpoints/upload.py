@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)
+ws_manager = WebSocketManager.get_instance()
 
 class AgentUploadResponse(BaseModel):
     """Response model for successful agent upload"""
@@ -166,6 +167,13 @@ async def post_agent(
         raise HTTPException(status_code=400, detail=str(e))
 
     version_id = str(uuid.uuid4())
+
+    result = await ws_manager.create_pre_evaluation(version_id)
+    if not result:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create pre-evaluation. All our pre-validators are currently busy. Please try again later."
+        )
     
     try:
         await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
@@ -183,7 +191,8 @@ async def post_agent(
         agent_name=agent_name,
         version_num=latest_agent.version_num + 1 if latest_agent else 0,
         created_at=datetime.now(timezone.utc),
-        score=None
+        score=None,
+        status="screening"
     )
 
     success = await store_agent(agent_object)

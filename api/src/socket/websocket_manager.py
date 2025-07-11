@@ -13,7 +13,6 @@ from api.src.backend.queries.evaluations import (
 )
 from api.src.backend.entities import Evaluation, EvaluationStatus
 from api.src.socket.handlers.message_router import route_message
-from api.src.socket.handlers.handle_set_weights import handle_set_weights_after_evaluation
 from api.src.socket.server_helpers import get_relative_version_num
 
 logger = get_logger(__name__)
@@ -237,3 +236,37 @@ class WebSocketManager:
                     "ip_address": validator_info.ip_address
                 })
         return validators 
+    
+    async def create_pre_evaluation(self, version_id: str) -> str:
+        """Create a pre-evaluation for a version"""
+        for websocket, validator_info in self.clients.items():
+            if not validator_info.is_screener or validator_info.status != 'available':
+                continue
+            try:
+                evaluation_id = str(uuid.uuid4())
+                pre_evaluation = Evaluation(
+                    evaluation_id=evaluation_id,
+                    version_id=version_id,
+                    validator_hotkey=validator_info.validator_hotkey,
+                    status="running",
+                    terminated_reason=None,
+                    created_at=datetime.now(timezone.utc),
+                    started_at=datetime.now(timezone.utc),
+                    finished_at=None,
+                    score=None
+                )
+
+                logger.debug(f"Creating pre-evaluation for screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
+
+                await store_evaluation(pre_evaluation)
+
+                logger.debug(f"Attempting to send screen-agent event to screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
+                await websocket.send_text(json.dumps({"event": "screen-agent", "data": pre_evaluation.model_dump(mode='json')}))
+                logger.debug(f"Successfully sent screen-agent event to screener {validator_info.validator_hotkey} with evaluation ID: {evaluation_id}")
+
+                return evaluation_id
+            except Exception as e:
+                logger.error(f"Error creating pre-evaluation for screener {validator_info.validator_hotkey}: {e}")
+                return None
+        
+        return None
