@@ -39,6 +39,7 @@ MAX_COST_PER_RUN = 2.0  # Maximum cost per evaluation run
 
 # Default model
 DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3-0324"
+DEFAULT_TEMPERATURE = 0.7
 
 # Server configuration
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")

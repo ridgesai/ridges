@@ -45,7 +45,31 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     patch_generated_at TIMESTAMPTZ,
     eval_started_at TIMESTAMPTZ,
     result_scored_at TIMESTAMPTZ
-    -- finished_at removed; last stage is result_scored_at
+);
+
+-- Embeddings table
+CREATE TABLE IF NOT EXISTS embeddings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    input_text TEXT NOT NULL,
+    cost FLOAT,
+    response JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ
+);
+
+-- Inference table
+CREATE TABLE IF NOT EXISTS inferences (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    messages JSONB NOT NULL,
+    temperature FLOAT NOT NULL,
+    model TEXT NOT NULL,
+    cost FLOAT,
+    response TEXT,
+    total_tokens INT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS approved_version_ids (
