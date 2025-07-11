@@ -44,6 +44,10 @@ async def handle_evaluation(websocket_app, json_message):
         version_id = agent_data.get("version_id")
 
         # Create AgentVersion object
+        # Handle 'Z' suffix in ISO format datetime string
+        if created_at.endswith('Z'):
+            created_at = created_at[:-1] + '+00:00'
+        
         agent_version = AgentVersion(
             version_id=version_id,
             miner_hotkey=miner_hotkey,
