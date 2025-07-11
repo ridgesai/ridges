@@ -8,7 +8,7 @@ from openai import OpenAI
 import asyncio
 
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
-from validator.utils.get_swebench_problems import get_swebench_problems
+from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.clone_repo import clone_repo
 from validator.utils.logging import get_logger
 from validator.sandbox.schema import AgentVersion
@@ -36,15 +36,13 @@ async def generate_embeddings():
         if manifest.get('config_hash') == config_hash:
             logger.info('Embeddings up to date')
             return
-    for task_id in tasks:
-        dummy_version = AgentVersion(version_id='dummy', miner_hotkey='dummy', version_num=0, created_at=datetime.now())
-        # Get problem details
-        problems = get_swebench_problems(dummy_version)
-        problem = next((p for p in problems if p.instance_id == task_id), None)
-        if not problem:
-            continue
+    instances = load_swebench_dataset('SWE-bench/SWE-bench_Verified', 'test', tasks)
+    for instance in instances:
+        task_id = instance['instance_id']
+        repo = instance['repo']
+        base_commit = instance['base_commit']
         # Clone repo
-        repo_dir = clone_repo(REPO_EMBEDS_DIR / task_id, problem.repo, problem.base_commit)
+        repo_dir = clone_repo(REPO_EMBEDS_DIR / task_id, repo, base_commit)
         # Collect .py chunks
         chunks = []
         for root, _, files in os.walk(repo_dir):
