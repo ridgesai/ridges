@@ -47,7 +47,8 @@ class DatadogLogHandler(logging.Handler):
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service="ridges-platform"
+                    service="ridges-platform",
+                    date=record.timestamp
                 ),
             ]
         )
@@ -79,7 +80,8 @@ class DatadogLogHandler(logging.Handler):
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service="ridges-platform"
+                    service="ridges-platform",
+                    date=record.timestamp
                 ),
             ]
         )
