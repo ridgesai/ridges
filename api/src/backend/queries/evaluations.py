@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 @db_operation
 async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
+    logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
     result = await conn.fetchrow(
         "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score  "
         "FROM evaluations WHERE evaluation_id = $1",
@@ -19,8 +20,11 @@ async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_i
     )
 
     if not result:
+        logger.warning(f"Attempted to get evaluation {evaluation_id} from the database but it was not found.")
         raise Exception(f"No evaluation with id {evaluation_id}")
     
+    logger.debug(f"Successfully retrieved evaluation {evaluation_id} from the database.")
+
     return Evaluation(**dict(result))
     
 @db_operation
