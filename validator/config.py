@@ -1,12 +1,9 @@
 from datetime import timedelta
-from pathlib import Path
 import os
 import subprocess
 
 # External package imports
 from fiber.chain.chain_utils import load_hotkey_keypair
-
-# Network configuration
 
 # Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))
@@ -18,18 +15,8 @@ HOTKEY_NAME = os.getenv("HOTKEY_NAME", "default")
 WALLET_NAME = os.getenv("WALLET_NAME", "validator")
 MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
 
-WEIGHTS_INTERVAL = timedelta(minutes=30)
-ALPHA_SCORING_MULTIPLICATOR = 3
-NO_RESPONSE_MIN_SCORE = float(os.getenv("NO_RESPONSE_MIN_SCORE", "0.005"))
-
-DB_PATH = Path("validator.db")
-
 VERSION_KEY = 6
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
-
-# OpenAI Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PREFERRED_OPENAI_MODEL = "gpt-4.1-mini"
 
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
@@ -115,8 +102,6 @@ logger.info("Validator Configuration:")
 logger.info(f"Network: {SUBTENSOR_NETWORK}")
 logger.info(f"Netuid: {NETUID}")
 logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
-logger.info(f"Weights interval: {WEIGHTS_INTERVAL}")
-logger.info(f"DB path: {DB_PATH}")
 logger.info(f"Log level: {LOG_LEVEL}")
 logger.info(f"Total evaluation instances: {TOTAL_EVALUATION_INSTANCES}")
 
