@@ -11,6 +11,8 @@ from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
 from validator.utils.get_swebench_problems import get_swebench_problems
 from validator.sandbox.clone_repo import clone_repo
 from validator.utils.logging import get_logger
+from validator.sandbox.schema import AgentVersion
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -32,8 +34,9 @@ async def generate_embeddings():
             logger.info('Embeddings up to date')
             return
     for task_id in tasks:
+        dummy_version = AgentVersion(version_id='dummy', miner_hotkey='dummy', version_num=0, created_at=datetime.now())
         # Get problem details
-        problems = get_swebench_problems(None)  # Pass None or appropriate arg
+        problems = get_swebench_problems(dummy_version)
         problem = next((p for p in problems if p.instance_id == task_id), None)
         if not problem:
             continue
