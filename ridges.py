@@ -383,6 +383,49 @@ def update():
     run_cmd("pm2 restart ridges-api-platform")
     console.print(Panel("[bold green]🎉 Platform updated![/bold green]", title="✨ Complete", border_style="green"))
 
+@cli.group()
+def proxy():
+    """Manage Ridges proxy server"""
+    pass
+
+@proxy.command()
+@click.option("--no-auto-update", is_flag=True, help="Run proxy directly in foreground")
+def run(no_auto_update: bool):
+    """Run the Ridges proxy server."""
+    
+    # Check if running
+    is_running, _ = check_pm2("ridges-proxy")
+    if is_running:
+        console.print(Panel("[bold yellow]⚠️  Proxy already running![/bold yellow]", title="🔄 Status", border_style="yellow"))
+        return
+    
+    if no_auto_update:
+        console.print("🚀 Starting proxy server...", style="yellow")
+        run_cmd("uv run -m proxy.main", capture=False)
+        return
+
+    # Start proxy with PM2
+    if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
+        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8000", title="✨ Success", border_style="green"))
+        console.print("📋 Showing proxy logs...", style="cyan")
+        run_cmd("pm2 logs ridges-proxy", capture=False)
+    else:
+        console.print("💥 Failed to start proxy", style="red")
+
+@proxy.command()
+def stop():
+    """Stop the Ridges proxy server."""
+    if run_cmd("pm2 delete ridges-proxy")[0] == 0:
+        console.print(Panel("[bold green]🎉 Proxy stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
+    else:
+        console.print("⚠️  Proxy not running", style="yellow")
+
+@proxy.command()
+def logs():
+    """Show proxy logs."""
+    console.print("📋 Showing proxy logs...", style="cyan")
+    run_cmd("pm2 logs ridges-proxy", capture=False)
+
 if __name__ == "__main__":
     run_cmd(". .venv/bin/activate")
     cli() 
