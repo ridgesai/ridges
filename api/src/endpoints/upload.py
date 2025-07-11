@@ -209,7 +209,14 @@ async def post_agent(
                     status_code=500,
                     detail=f"Failed to store agent version in our database. Please try again later."
                 )
-            await ws.create_pre_evaluation(available_screener, version_id)
+            try:
+                await ws.create_pre_evaluation(available_screener, version_id)
+            except Exception as e:
+                logger.error(f"Error creating pre-evaluation: {e}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to create pre-evaluation. Please try again later."
+                )
 
             return AgentUploadResponse(
                 status="success",
