@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import docker
 from docker.models.containers import Container
 
-from validator.config import RIDGES_API_URL
+from validator.config import RIDGES_PROXY_URL
 from validator.sandbox.constants import (
     AGENTS_BASE_DIR,
     PROXY_CONTAINER_NAME,
@@ -29,7 +29,13 @@ class SandboxManager:
     
     def __init__(self, websocket_app: "WebsocketApp"):
         self.websocket_app = websocket_app
-        self.docker = docker.from_env(max_pool_size=100)
+        
+        try:
+            self.docker = docker.from_env(max_pool_size=100)
+            self.docker.ping()
+        except Exception:
+            raise SystemExit("Docker isn't running. Please start Docker and try again.")
+        
         self.sandboxes: List[Sandbox] = []
         self.proxy_container: Optional[Container] = None
         
@@ -60,13 +66,13 @@ class SandboxManager:
                 image=PROXY_DOCKER_IMAGE,
                 name=PROXY_CONTAINER_NAME,
                 detach=True,
-                environment={"RIDGES_API_URL": RIDGES_API_URL},
+                environment={"RIDGES_PROXY_URL": RIDGES_PROXY_URL},
             )
         except docker.errors.ImageNotFound:
-            raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+            raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}")
         except docker.errors.APIError as e:
             if "No such image" in str(e):
-                raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
+                raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}")
             raise
         
         # Connect to network

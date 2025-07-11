@@ -4,7 +4,9 @@
 
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends git patch && rm -rf /var/lib/apt/lists/*
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends git patch
+RUN rm -rf /var/lib/apt/lists/*
 
 RUN pip install numpy
 RUN pip install pandas

@@ -66,6 +66,20 @@ class WebsocketApp:
         """Handle websocket disconnection by cancelling running evaluation."""
         await self.cancel_evaluation()
 
+    async def shutdown(self):
+        """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
+        logger.info("Shutting down WebsocketApp...")
+        
+        # Cancel any running evaluation
+        await self.cancel_evaluation()
+        
+        # Close websocket connection
+        if self.ws:
+            await self.ws.close()
+            self.ws = None
+            
+        logger.info("WebsocketApp shutdown complete")
+
     async def start(self):
         while True:
             try:

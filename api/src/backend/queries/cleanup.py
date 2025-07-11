@@ -30,6 +30,20 @@ async def clean_hanging_evaluations(conn: asyncpg.Connection) -> int:
             WHERE status = 'running'
             RETURNING evaluation_id
         ),
+        deleted_inferences AS (
+            DELETE FROM inferences 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs 
+                WHERE evaluation_id IN (SELECT evaluation_id FROM cleaned_evaluations)
+            )
+        ),
+        deleted_embeddings AS (
+            DELETE FROM embeddings 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs 
+                WHERE evaluation_id IN (SELECT evaluation_id FROM cleaned_evaluations)
+            )
+        ),
         deleted_runs AS (
             DELETE FROM evaluation_runs 
             WHERE evaluation_id IN (SELECT evaluation_id FROM cleaned_evaluations)
@@ -66,10 +80,21 @@ async def clean_timed_out_evaluations(conn: asyncpg.Connection) -> int:
         for row in timed_out_evaluations:
             evaluation_id = row['evaluation_id']
             
-            # Delete associated runs
+            # Delete associated runs and related records
             runs_deleted = await conn.execute("""
-                DELETE FROM evaluation_runs 
-                WHERE evaluation_id = $1
+                WITH deleted_inferences AS (
+                    DELETE FROM inferences 
+                    WHERE run_id IN (
+                        SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+                    )
+                ),
+                deleted_embeddings AS (
+                    DELETE FROM embeddings 
+                    WHERE run_id IN (
+                        SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+                    )
+                )
+                DELETE FROM evaluation_runs WHERE evaluation_id = $1
             """, evaluation_id)
             
             # Reset evaluation status

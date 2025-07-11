@@ -1,5 +1,6 @@
 from typing import Optional, List
 import logging
+from uuid import UUID
 
 import asyncpg
 from datetime import datetime, timezone
@@ -174,10 +175,21 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
 
 @db_operation
 async def delete_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str) -> int:
-    result = await conn.execute(
-        "DELETE FROM evaluation_runs WHERE evaluation_id = $1",
-        evaluation_id
-    )
+    result = await conn.execute("""
+        WITH deleted_inferences AS (
+            DELETE FROM inferences 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+            )
+        ),
+        deleted_embeddings AS (
+            DELETE FROM embeddings 
+            WHERE run_id IN (
+                SELECT run_id FROM evaluation_runs WHERE evaluation_id = $1
+            )
+        )
+        DELETE FROM evaluation_runs WHERE evaluation_id = $1
+    """, evaluation_id)
     return result.split()[-1] if result else 0
 
 @db_operation
@@ -383,7 +395,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     return evaluations
 
 @db_operation
-async def check_for_new_high_score(conn: asyncpg.Connection, version_id: str) -> dict:
+async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -> dict:
     """
     Check if version_id scored higher than all approved agents.
     Uses LEFT JOIN to compare against approved_version_ids scores.
@@ -425,7 +437,7 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: str) ->
             "high_score_detected": True,
             "agent_name": agent_result['agent_name'],
             "miner_hotkey": agent_result['miner_hotkey'], 
-            "version_id": version_id,
+            "version_id": str(version_id),
             "version_num": agent_result['version_num'],
             "new_score": current_score,
             "previous_max_score": max_approved_score or 0.0
