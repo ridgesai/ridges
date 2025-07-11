@@ -5,6 +5,8 @@ import subprocess
 # External package imports
 from fiber.chain.chain_utils import load_hotkey_keypair
 
+SCREENER_MODE = os.getenv("SCREENER_MODE", "false")
+
 # Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
@@ -106,4 +108,7 @@ logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
 logger.info(f"Log level: {LOG_LEVEL}")
 logger.info(f"Total evaluation instances: {TOTAL_EVALUATION_INSTANCES}")
 
-validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
+if SCREENER_MODE:
+    validator_hotkey = os.getenv("AWS_INSTANCE_ID")
+else:
+    validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
