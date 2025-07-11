@@ -23,9 +23,9 @@ async def route_message(
     
     if event == "validator-info":
         # Pass clients and websocket so handler can update state
-        logger.debug(f"Platform received validator-info from a client with validator hotkey {validator_hotkey}. Beginning process handle-validator-info with process ID: {process_id}.")
+        logger.debug(f"Platform received validator-info from a client with validator hotkey {validator_hotkey}. Beginning process handle-validator-info.")
         result = await handle_validator_info(websocket, clients, response_json)
-        logger.debug(f"Completed handle-validator-info with process ID {process_id}.")
+        logger.debug(f"Completed handle-validator-info.")
         return result
     
     elif event == "get-next-evaluation":
