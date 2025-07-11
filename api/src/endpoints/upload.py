@@ -173,6 +173,7 @@ async def post_agent(
     version_id = str(uuid.uuid4())
 
     try:
+        logger.info(f"Attempting to lock before sending to screener")
         async with lock:
             available_screener = await ws.get_available_screener()
             logger.info(f"Available screener: {available_screener}")
