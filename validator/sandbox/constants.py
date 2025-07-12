@@ -8,7 +8,7 @@ MAIN_FILE = str(CURRENT_DIR / "agent_runner.py")
 
 # The Docker image to use for the sandbox
 # docker build -t sandbox-runner .
-SANDBOX_DOCKER_IMAGE = "sandbox-runner"
+SANDBOX_DOCKER_IMAGE = "ghcr.io/ridgesai/ridges/sandbox:latest"
 
 # The mounted directories/files (these paths exist only in the sandbox)
 # The real paths are stored in the Sandbox object but the mounted paths are constant
@@ -32,11 +32,9 @@ SANDBOX_MAX_RUNTIME = 20 * 60 # seconds
 SANDBOX_NETWORK_NAME = "sandbox-network"
 
 # Nginx proxy image & container details
-PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
+# PROXY_DOCKER_IMAGE = "sandbox-nginx-proxy"
 PROXY_CONTAINER_NAME = "sandbox-proxy"
-
-#PROXY_DOCKER_IMAGE = "ghcr.io/ridgesai/ridges/sandbox:latest"
-#PROXY_CONTAINER_NAME = "ghcr.io/ridgesai/ridges/proxy:latest"
+PROXY_DOCKER_IMAGE = "ghcr.io/ridgesai/ridges/proxy:latest"
 
 # Directory to cache cloned repositories for reuse across validations
 # Repositories will be stored at validator/repos/<org>/<repo>
