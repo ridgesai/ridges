@@ -6,7 +6,8 @@ from typing import Dict, Any
 from fastapi import WebSocket
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import create_evaluations_for_validator, get_next_evaluation_for_validator
+from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.evaluations import create_evaluations_for_validator, get_next_evaluation_for_validator, get_queue_info
 from api.src.utils.logging_utils import get_logger
 from api.src.utils.validator_auth import is_validator_registered
 from api.src.backend.entities import ValidatorInfo
@@ -151,6 +152,20 @@ async def handle_validator_info(
     logger.info(f"Validator {validator_hotkey} has been authenticated and connected. Version commit hash: {version_commit_hash}")
 
     # Create evaluations for the validator
+    if is_screener:
+        logger.info(f"Screener {validator_hotkey} has connected. Checking if it has any waiting evaluations.")
+        waiting_evaluations = await get_queue_info(validator_hotkey, 1)
+        if waiting_evaluations:
+            evaluation = waiting_evaluations[0]
+            logger.info(f"Sending screener {validator_hotkey} evaluation {evaluation.evaluation_id} to screener {validator_hotkey}")
+            miner_agent = await get_agent_by_version_id(evaluation.version_id)
+            await websocket.send_text(json.dumps({
+                "event": "screen-agent",
+                "evaluation_id": evaluation.evaluation_id,
+                "agent_version": miner_agent.model_dump(mode='json')
+            }))
+            logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
+        
     if not is_screener:
         try:
             await create_evaluations_for_validator(validator_hotkey)
