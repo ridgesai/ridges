@@ -23,13 +23,13 @@ async def check_and_generate_embeddings():
     config_hash = hashlib.sha256(str(tasks).encode()).hexdigest()
     manifest_path = REPO_EMBEDS_DIR / 'manifest.json'
     if not manifest_path.exists():
-        asyncio.create_task(generate_embeddings())
+        asyncio.create_task(asyncio.to_thread(generate_embeddings))
         logger.info('Starting background embedding generation')
         return
     with open(manifest_path) as f:
         manifest = json.load(f)
     if manifest.get('config_hash') != config_hash:
-        asyncio.create_task(generate_embeddings())
+        asyncio.create_task(asyncio.to_thread(generate_embeddings))
         logger.info('Config changed - regenerating embeddings in background')
 
 async def main():
