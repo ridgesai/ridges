@@ -21,6 +21,9 @@ REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
 # Initialize logger
 logger = get_logger(__name__)
 
+def average_vectors(vectors):
+    return [sum(v[i] for v in vectors) / len(vectors) for i in range(len(vectors[0]))]
+
 def _collect_code_chunks(repo_dir: Path) -> List[dict]:
     chunks = []
     for root, _, files in os.walk(repo_dir):
