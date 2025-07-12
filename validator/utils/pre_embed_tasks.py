@@ -20,6 +20,9 @@ from swebench.harness.run_evaluation import load_swebench_dataset
 # Define REPO_EMBEDS_DIR
 REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
 
+# Add EMBED_VERSION to match main.py
+EMBED_VERSION = "1.0"
+
 # Initialize logger
 logger = get_logger(__name__)
 
@@ -66,7 +69,7 @@ def generate_embeddings():
         return
     tasks = EASY_INSTANCES + MEDIUM_INSTANCES
     REPO_EMBEDS_DIR.mkdir(exist_ok=True)
-    config_hash = hashlib.sha256(str(tasks).encode()).hexdigest()
+    config_hash = hashlib.sha256((str(tasks) + EMBED_VERSION).encode()).hexdigest()
     manifest_path = REPO_EMBEDS_DIR / 'manifest.json'
     if manifest_path.exists():
         with open(manifest_path) as f:
