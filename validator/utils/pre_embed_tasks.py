@@ -36,10 +36,22 @@ def _collect_code_chunks(repo_dir: Path) -> List[dict]:
                             start = node.lineno
                             end = max((getattr(n, 'end_lineno', node.lineno) for n in ast.walk(node)), default=node.lineno)
                             text = ast.unparse(node)
-                            chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': start, 'end_line': end, 'text': text})
+                            if len(text) > 2000:
+                                lines = text.splitlines()
+                                chunk_size = 50
+                                sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+                            else:
+                                sub_texts = [text]
+                            chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': start, 'end_line': end, 'text': text, 'sub_texts': sub_texts})
                 except Exception:
-                    # Fallback to whole file if AST fails
                     chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': 1, 'end_line': code.count('\n') + 1, 'text': code})
+                    if len(code) > 2000:
+                        lines = code.splitlines()
+                        chunk_size = 50
+                        sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
+                    else:
+                        sub_texts = [code]
+                    chunks[-1]['sub_texts'] = sub_texts
     return chunks
 
 async def generate_embeddings():
@@ -69,12 +81,15 @@ async def generate_embeddings():
         # Batch embed
         batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
         for batch in batches:
-            texts = [c['text'] for c in batch]
-            if not texts:
-                continue
-            response = client.embeddings.create(model='text-embedding-3-large', input=texts)
-            for i, emb in enumerate(response.data):
-                batch[i]['vector'] = emb.embedding  # Add to Chunk (assume extend Chunk with vector attr or store separately)
+            for chunk in batch:
+                texts = chunk.get('sub_texts', [chunk['text']])
+                if not texts:
+                    continue
+                response = client.embeddings.create(model='text-embedding-3-large', input=texts)
+                sub_vectors = [emb.embedding for emb in response.data]
+                chunk['vector'] = average_vectors(sub_vectors) if len(sub_vectors) > 1 else sub_vectors[0]
+            for chunk in batch:
+                chunk.pop('sub_texts', None)
         # Store
         with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
             json.dump({'chunks': chunks}, f)  # If using NamedTuple
