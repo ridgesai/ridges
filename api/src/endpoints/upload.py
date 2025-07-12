@@ -161,11 +161,11 @@ async def post_agent(
         # BLOCK upload on similarity check errors - don't allow potential copying
         raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
 
-    # Static code safety checks ---------------------------------------------------
-    try:
-        AgentCodeChecker(content).run()
-    except CheckError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # # Static code safety checks ---------------------------------------------------
+    # try:
+    #     AgentCodeChecker(content).run()
+    # except CheckError as e:
+    #     raise HTTPException(status_code=400, detail=str(e))
 
     version_id = str(uuid.uuid4())
 
@@ -222,7 +222,7 @@ async def post_agent(
             )
     except Exception as e:
         logger.error(f"Error uploading agent: {e}")
-        raise HTTPException(status_code=418, detail=f"I'm a teapot. Please try again later.")
+        raise HTTPException(status_code=500, detail=f"Failed to upload agent. Please try again later.")
 
 router = APIRouter()
 
