@@ -16,8 +16,6 @@ from validator.config import (
     WALLET_NAME,
     HOTKEY_NAME,
     VERSION_KEY,
-    ALPHA_SCORING_MULTIPLICATOR,
-    NO_RESPONSE_MIN_SCORE
 )
 
 def normalize(x: np.ndarray, p: int = 2, dim: int = 0) -> np.ndarray:
