@@ -88,6 +88,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
         WHERE e.status = 'completed' 
           AND e.score IS NOT NULL
           AND e.score > 0  -- Exclude 0 scores
+          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
           AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
@@ -108,6 +109,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
             WHERE e.status = 'completed' 
               AND e.score IS NOT NULL
               AND e.score > 0  -- Exclude 0 scores
+              AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
               AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
             HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
@@ -139,6 +141,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
         WHERE e.status = 'completed' 
           AND e.score IS NOT NULL
           AND e.score > 0  -- Exclude 0 scores
+          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
           AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         GROUP BY ma.miner_hotkey, e.version_id, ma.created_at
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
