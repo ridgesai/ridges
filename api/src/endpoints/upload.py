@@ -166,6 +166,9 @@ async def post_agent(
         AgentCodeChecker(content).run()
     except CheckError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error running static code safety checks: {e}")
+        raise HTTPException(status_code=500, detail="Static code safety checks failed. Please try again later.")
 
     version_id = str(uuid.uuid4())
 
@@ -222,7 +225,7 @@ async def post_agent(
             )
     except Exception as e:
         logger.error(f"Error uploading agent: {e}")
-        raise HTTPException(status_code=418, detail=f"I'm a teapot. Please try again later.")
+        raise HTTPException(status_code=500, detail=f"Failed to upload agent. Please try again later.")
 
 router = APIRouter()
 
