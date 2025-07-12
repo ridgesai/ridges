@@ -9,23 +9,7 @@ import asyncio
 import ast
 from typing import List, NamedTuple
 
-Chunk = NamedTuple('Chunk', [('file', str), ('start_line', int), ('end_line', int), ('text', str)])
-
-from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
-from swebench.harness.run_evaluation import load_swebench_dataset
-from validator.sandbox.clone_repo import clone_repo
-from validator.utils.logging import get_logger
-from validator.sandbox.schema import AgentVersion
-from datetime import datetime
-
-logger = get_logger(__name__)
-
-REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
-
-def average_vectors(vectors):
-    return [sum(v[i] for v in vectors) / len(vectors) for i in range(len(vectors[0]))]
-
-def _collect_code_chunks(repo_dir: Path) -> List[Chunk]:
+def _collect_code_chunks(repo_dir: Path) -> List[dict]:
     chunks = []
     for root, _, files in os.walk(repo_dir):
         for file in files:
@@ -40,10 +24,10 @@ def _collect_code_chunks(repo_dir: Path) -> List[Chunk]:
                             start = node.lineno
                             end = max((getattr(n, 'end_lineno', node.lineno) for n in ast.walk(node)), default=node.lineno)
                             text = ast.unparse(node)
-                            chunks.append(Chunk(str(file_path.relative_to(repo_dir)), start, end, text))
+                            chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': start, 'end_line': end, 'text': text})
                 except Exception:
                     # Fallback to whole file if AST fails
-                    chunks.append(Chunk(str(file_path.relative_to(repo_dir)), 1, code.count('\n') + 1, code))
+                    chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': 1, 'end_line': code.count('\n') + 1, 'text': code})
     return chunks
 
 async def generate_embeddings():
@@ -73,15 +57,15 @@ async def generate_embeddings():
         # Batch embed
         batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
         for batch in batches:
-            texts = [c.text for c in batch]
+            texts = [c['text'] for c in batch]
             if not texts:
                 continue
             response = client.embeddings.create(model='text-embedding-3-large', input=texts)
             for i, emb in enumerate(response.data):
-                batch[i].vector = emb.embedding  # Add to Chunk (assume extend Chunk with vector attr or store separately)
+                batch[i]['vector'] = emb.embedding  # Add to Chunk (assume extend Chunk with vector attr or store separately)
         # Store
         with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
-            json.dump({'chunks': [c._asdict() for c in chunks]}, f)  # If using NamedTuple
+            json.dump({'chunks': chunks}, f)  # If using NamedTuple
     # Update manifest
     with open(manifest_path, 'w') as f:
         json.dump({'config_hash': config_hash, 'timestamp': time.time()}, f)
