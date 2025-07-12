@@ -156,9 +156,6 @@ async def post_agent(
         
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
-    except HTTPException:
-        # Re-raise HTTPException (similarity rejection)
-        raise
     except Exception as e:
         logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
         # BLOCK upload on similarity check errors - don't allow potential copying
