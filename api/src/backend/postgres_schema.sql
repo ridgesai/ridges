@@ -120,7 +120,7 @@ CREATE OR REPLACE FUNCTION update_miner_agent_score()
 RETURNS TRIGGER AS $$
 BEGIN
     -- Update the miner agent's score as the average of all completed evaluation scores
-    -- Exclude 0 scores and require at least 2 validators
+    -- Exclude 0 scores, screener scores, and require at least 2 validators
     UPDATE miner_agents
     SET score = (
         SELECT AVG(e.score)
@@ -129,6 +129,7 @@ BEGIN
         AND e.status = 'completed'
         AND e.score IS NOT NULL
         AND e.score > 0  -- Exclude 0 scores
+        AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
         HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- Require at least 2 validators
     )
     WHERE version_id = NEW.version_id;
