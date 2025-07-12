@@ -161,7 +161,7 @@ async def handle_validator_info(
             miner_agent = await get_agent_by_version_id(evaluation.version_id)
             await websocket.send_text(json.dumps({
                 "event": "screen-agent",
-                "evaluation_id": evaluation.evaluation_id,
+                "evaluation_id": str(evaluation.evaluation_id),
                 "agent_version": miner_agent.model_dump(mode='json')
             }))
             logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
