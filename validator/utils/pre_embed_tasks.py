@@ -21,7 +21,7 @@ from swebench.harness.run_evaluation import load_swebench_dataset
 REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
 
 # Add EMBED_VERSION to match main.py
-EMBED_VERSION = "1.0"
+EMBED_VERSION = "1.1"
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -44,18 +44,18 @@ def _collect_code_chunks(repo_dir: Path) -> List[dict]:
                             start = node.lineno
                             end = max((getattr(n, 'end_lineno', node.lineno) for n in ast.walk(node)), default=node.lineno)
                             text = ast.unparse(node)
-                            if len(text) > 2000:
+                            if len(text) > 1000:  # Reduced from 2000 to 1000
                                 lines = text.splitlines()
-                                chunk_size = 50
+                                chunk_size = 20  # Reduced from 50 to 20
                                 sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
                             else:
                                 sub_texts = [text]
                             chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': start, 'end_line': end, 'text': text, 'sub_texts': sub_texts})
                 except Exception:
                     chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': 1, 'end_line': code.count('\n') + 1, 'text': code})
-                    if len(code) > 2000:
+                    if len(code) > 1000:  # Reduced from 2000 to 1000
                         lines = code.splitlines()
-                        chunk_size = 50
+                        chunk_size = 20  # Reduced from 50 to 20
                         sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
                     else:
                         sub_texts = [code]
