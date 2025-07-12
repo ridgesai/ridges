@@ -200,11 +200,14 @@ class WebSocketManager:
         
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
+        logger.debug(f"Looping through {len(clients_snapshot)} clients to create new evaluations for non-screener validators")
         for websocket, validator_info in clients_snapshot.items():
             if validator_info.validator_hotkey and not validator_info.is_screener:
+                logger.debug(f"Creating new evaluation for validator {validator_info.validator_hotkey} with version ID {version_id}")
                 try:
+                    id = str(uuid.uuid4())
                     evaluation = Evaluation(
-                        evaluation_id=str(uuid.uuid4()),
+                        evaluation_id=id,
                         version_id=version_id,
                         validator_hotkey=validator_info.validator_hotkey,
                         status=EvaluationStatus.waiting,
@@ -214,8 +217,13 @@ class WebSocketManager:
                         finished_at=None,
                         score=None
                     )
+
                     await store_evaluation(evaluation)
+                    logger.debug(f"Successfully created new evaluation {id} for validator {validator_info.validator_hotkey} with version ID {version_id}")
+                    
+                    logger.debug(f"Attempting to send evaluation-available event to validator {validator_info.validator_hotkey}")
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
+                    logger.debug(f"Successfully sent evaluation-available event to validator {validator_info.validator_hotkey}")
                 except Exception:
                     pass
     
