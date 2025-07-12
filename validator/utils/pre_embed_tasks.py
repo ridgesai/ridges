@@ -8,6 +8,8 @@ from openai import OpenAI
 import asyncio
 import ast
 from typing import List, NamedTuple
+import tempfile
+import shutil
 
 # Add missing imports
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
@@ -77,25 +79,26 @@ async def generate_embeddings():
         task_id = instance['instance_id']
         repo = instance['repo']
         base_commit = instance['base_commit']
-        # Clone repo
-        repo_dir = clone_repo(REPO_EMBEDS_DIR / task_id, repo, base_commit)
-        # Collect function chunks
-        chunks = _collect_code_chunks(repo_dir)
-        # Batch embed
-        batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
-        for batch in batches:
-            for chunk in batch:
-                texts = chunk.get('sub_texts', [chunk['text']])
-                if not texts:
-                    continue
-                response = client.embeddings.create(model='text-embedding-3-large', input=texts)
-                sub_vectors = [emb.embedding for emb in response.data]
-                chunk['vector'] = average_vectors(sub_vectors) if len(sub_vectors) > 1 else sub_vectors[0]
-            for chunk in batch:
-                chunk.pop('sub_texts', None)
-        # Store
-        with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
-            json.dump({'chunks': chunks}, f)  # If using NamedTuple
+        # Clone to temp dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_dir = clone_repo(Path(temp_dir) / task_id, repo, base_commit)
+            # Collect function chunks
+            chunks = _collect_code_chunks(repo_dir)
+            # Batch embed
+            batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
+            for batch in batches:
+                for chunk in batch:
+                    texts = chunk.get('sub_texts', [chunk['text']])
+                    if not texts:
+                        continue
+                    response = client.embeddings.create(model='text-embedding-3-large', input=texts)
+                    sub_vectors = [emb.embedding for emb in response.data]
+                    chunk['vector'] = average_vectors(sub_vectors) if len(sub_vectors) > 1 else sub_vectors[0]
+                for chunk in batch:
+                    chunk.pop('sub_texts', None)
+            # Store
+            with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
+                json.dump({'chunks': chunks}, f)  # If using NamedTuple
     # Update manifest
     with open(manifest_path, 'w') as f:
         json.dump({'config_hash': config_hash, 'timestamp': time.time()}, f)
