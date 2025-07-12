@@ -6,7 +6,7 @@ import subprocess
 from fiber import Keypair
 from fiber.chain.chain_utils import load_hotkey_keypair
 
-SCREENER_MODE = os.getenv("SCREENER_MODE", "false")
+SCREENER_MODE = os.getenv("SCREENER_MODE", "false") == "true"
 
 # Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))
