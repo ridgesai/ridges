@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 
-EMBED_VERSION = "1.1"  # Bump this to force regeneration across all validators
+EMBED_VERSION = "1.2"  # Bump this to force regeneration across all validators
 
 logger = get_logger(__name__)
 
