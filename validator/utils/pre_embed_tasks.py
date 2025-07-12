@@ -9,6 +9,18 @@ import asyncio
 import ast
 from typing import List, NamedTuple
 
+# Add missing imports
+from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
+from validator.utils.logging import get_logger
+from validator.sandbox.clone_repo import clone_repo
+from swebench.harness.run_evaluation import load_swebench_dataset
+
+# Define REPO_EMBEDS_DIR
+REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
+
+# Initialize logger
+logger = get_logger(__name__)
+
 def _collect_code_chunks(repo_dir: Path) -> List[dict]:
     chunks = []
     for root, _, files in os.walk(repo_dir):
