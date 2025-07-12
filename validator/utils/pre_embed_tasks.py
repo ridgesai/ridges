@@ -6,20 +6,29 @@ import hashlib
 from pathlib import Path
 from openai import OpenAI
 import asyncio
+import ast
+from typing import List, NamedTuple
 
-from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
-from swebench.harness.run_evaluation import load_swebench_dataset
-from validator.sandbox.clone_repo import clone_repo
-from validator.utils.logging import get_logger
-from validator.sandbox.schema import AgentVersion
-from datetime import datetime
-
-logger = get_logger(__name__)
-
-REPO_EMBEDS_DIR = Path(__file__).parent.parent / 'repo_embeds'
-
-def average_vectors(vectors):
-    return [sum(v[i] for v in vectors) / len(vectors) for i in range(len(vectors[0]))]
+def _collect_code_chunks(repo_dir: Path) -> List[dict]:
+    chunks = []
+    for root, _, files in os.walk(repo_dir):
+        for file in files:
+            if file.endswith('.py'):
+                file_path = Path(root) / file
+                with open(file_path, 'r') as f:
+                    code = f.read()
+                try:
+                    tree = ast.parse(code)
+                    for node in ast.walk(tree):
+                        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                            start = node.lineno
+                            end = max((getattr(n, 'end_lineno', node.lineno) for n in ast.walk(node)), default=node.lineno)
+                            text = ast.unparse(node)
+                            chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': start, 'end_line': end, 'text': text})
+                except Exception:
+                    # Fallback to whole file if AST fails
+                    chunks.append({'file': str(file_path.relative_to(repo_dir)), 'start_line': 1, 'end_line': code.count('\n') + 1, 'text': code})
+    return chunks
 
 async def generate_embeddings():
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -43,44 +52,20 @@ async def generate_embeddings():
         base_commit = instance['base_commit']
         # Clone repo
         repo_dir = clone_repo(REPO_EMBEDS_DIR / task_id, repo, base_commit)
-        # Collect .py chunks
-        chunks = []
-        for root, _, files in os.walk(repo_dir):
-            for file in files:
-                if file.endswith('.py'):
-                    file_path = Path(root) / file
-                    with open(file_path) as f:
-                        text = f.read()
-                    if not text.strip():
-                        continue
-                    if len(text) > 400:
-                        lines = text.splitlines()
-                        chunk_size = 20
-                        sub_texts = ['\n'.join(lines[i:i+chunk_size]) for i in range(0, len(lines), chunk_size)]
-                    else:
-                        sub_texts = [text]
-                    chunks.append({
-                        'file': str(file_path.relative_to(repo_dir)),
-                        'text': text  # Store original full text
-                    })
+        # Collect function chunks
+        chunks = _collect_code_chunks(repo_dir)
         # Batch embed
         batches = [chunks[i:i+50] for i in range(0, len(chunks), 50)]
         for batch in batches:
-            # For each chunk, embed its sub_texts if split
-            sub_responses = []
-            for chunk in batch:
-                texts = chunk.get('sub_texts', [chunk['text']])  # Use sub_texts if present
-                if not texts:
-                    continue
-                response = client.embeddings.create(model='text-embedding-3-large', input=texts)
-                sub_vectors = [emb.embedding for emb in response.data]
-                chunk['vector'] = average_vectors(sub_vectors) if len(sub_vectors) > 1 else sub_vectors[0]
-        # Remove sub_texts if not needed
-        for chunk in chunks:
-            chunk.pop('sub_texts', None)
+            texts = [c['text'] for c in batch]
+            if not texts:
+                continue
+            response = client.embeddings.create(model='text-embedding-3-large', input=texts)
+            for i, emb in enumerate(response.data):
+                batch[i]['vector'] = emb.embedding  # Add to Chunk (assume extend Chunk with vector attr or store separately)
         # Store
         with gzip.open(REPO_EMBEDS_DIR / f'{task_id}.json.gz', 'wt') as f:
-            json.dump({'chunks': chunks}, f)
+            json.dump({'chunks': chunks}, f)  # If using NamedTuple
     # Update manifest
     with open(manifest_path, 'w') as f:
         json.dump({'config_hash': config_hash, 'timestamp': time.time()}, f)
