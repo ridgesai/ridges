@@ -59,7 +59,7 @@ def _collect_code_chunks(repo_dir: Path) -> List[dict]:
                     chunks[-1]['sub_texts'] = sub_texts
     return chunks
 
-async def generate_embeddings():
+def generate_embeddings():
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     if not client:
         logger.error('OpenAI API key not set')
