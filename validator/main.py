@@ -2,6 +2,7 @@ import asyncio
 import sys
 import hashlib
 import json
+import shutil
 
 from dotenv import load_dotenv
 
@@ -16,21 +17,26 @@ from pathlib import Path
 
 REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 
+EMBED_VERSION = "1.0"  # Bump this to force regeneration across all validators
+
 logger = get_logger(__name__)
 
 async def check_and_generate_embeddings():
     tasks = EASY_INSTANCES + MEDIUM_INSTANCES
-    config_hash = hashlib.sha256(str(tasks).encode()).hexdigest()
+    config_hash = hashlib.sha256((str(tasks) + EMBED_VERSION).encode()).hexdigest()
     manifest_path = REPO_EMBEDS_DIR / 'manifest.json'
-    if not manifest_path.exists():
+    needs_regen = True
+    if manifest_path.exists():
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+        if manifest.get('config_hash') == config_hash:
+            needs_regen = False
+    if needs_regen:
+        if REPO_EMBEDS_DIR.exists():
+            logger.info('Deleting existing repo_embeds directory for clean regeneration')
+            shutil.rmtree(REPO_EMBEDS_DIR)
         asyncio.create_task(asyncio.to_thread(generate_embeddings))
         logger.info('Starting background embedding generation')
-        return
-    with open(manifest_path) as f:
-        manifest = json.load(f)
-    if manifest.get('config_hash') != config_hash:
-        asyncio.create_task(asyncio.to_thread(generate_embeddings))
-        logger.info('Config changed - regenerating embeddings in background')
 
 async def main():
     """
