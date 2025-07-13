@@ -223,6 +223,8 @@ async def post_agent(
                 status="success",
                 message=f"Successfully updated agent {version_id} to version {agent_object.version_num}" if latest_agent else f"Successfully created agent {version_id}"
             )
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logger.error(f"Error uploading agent: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to upload agent. Please try again later.")

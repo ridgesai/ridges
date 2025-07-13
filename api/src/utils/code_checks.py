@@ -36,15 +36,23 @@ class AgentCodeChecker:
     # ---------------------------------------------------------------------
     def __init__(self, raw_code: bytes):
         self.raw_code: bytes = raw_code
-        # Parsing may fail if the file isn't valid Python. That validity
-        # is checked elsewhere, so we silently ignore SyntaxError here and
-        # fall back to text-based heuristics.
+        # Try to parse the code and provide detailed error messages if it fails
         try:
-            self.tree: ast.AST | None = ast.parse(raw_code.decode("utf-8"))
-        except SyntaxError:
-            self.tree = None
-        except Exception:
-            self.tree = None
+            self.tree: ast.AST = ast.parse(raw_code.decode("utf-8"))
+        except SyntaxError as e:
+            # Provide detailed syntax error information
+            error_msg = f"Syntax error in uploaded code at line {e.lineno}"
+            if e.offset:
+                error_msg += f", column {e.offset}"
+            if e.text:
+                error_msg += f": {e.text.strip()}"
+            if e.msg:
+                error_msg += f" ({e.msg})"
+            raise CheckError(error_msg)
+        except UnicodeDecodeError as e:
+            raise CheckError(f"Invalid file encoding: {e}. File must be UTF-8 encoded.")
+        except Exception as e:
+            raise CheckError(f"Failed to parse Python code: {e}")
 
         # Collect bound checks (methods with a *check_* prefix)
         self._checks: List[Callable[[AgentCodeChecker], None]] = [
@@ -151,13 +159,12 @@ class AgentCodeChecker:
         violations: set[str] = set()
 
         # 1. AST-based search
-        if self.tree is not None:
-            for node in ast.walk(self.tree):
-                if not isinstance(node, ast.Call):
-                    continue
-                full_name = self._resolve_call_name(node.func)
-                if any(full_name.endswith(name) for name in forbidden_calls):
-                    violations.add(full_name)
+        for node in ast.walk(self.tree):
+            if not isinstance(node, ast.Call):
+                continue
+            full_name = self._resolve_call_name(node.func)
+            if any(full_name.endswith(name) for name in forbidden_calls):
+                violations.add(full_name)
 
         # 2. Raw-source heuristic (covers unparsable code / dynamic getattr)
         lower_src = self.raw_code.lower()
