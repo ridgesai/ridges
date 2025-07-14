@@ -226,9 +226,7 @@ class WebSocketManager:
                     logger.debug(f"Successfully sent evaluation-available event to validator {validator_info.validator_hotkey}")
                 except Exception:
                     pass
-    
 
-        
     async def get_connected_validators(self):
         """Get list of connected validators"""
         validators = []
@@ -248,27 +246,38 @@ class WebSocketManager:
     
     async def get_available_screener(self) -> str:
         """Get the first available screener from the connected clients"""
+        logger.debug(f"Looping through {len(self.clients)} clients to find an available screener...")
         for websocket, validator_info in self.clients.items():
             if validator_info.validator_hotkey and validator_info.is_screener and validator_info.status == "available":
+                logger.debug(f"Found an available screener: {validator_info.validator_hotkey}.")
                 return validator_info.validator_hotkey
-        return None
+            else:
+                logger.debug(f"Client {validator_info.validator_hotkey} is not a screener or is not available.")
+        logger.warning(f"A screener was requested but all screeners are currently busy.")
+        return None 
     
     async def create_pre_evaluation(self, screener_hotkey: str, version_id: str) -> str:
         """Create a pre-evaluation for a specific screener hotkey"""
+        logger.debug(f"Attempting to create pre-evaluation for screener {screener_hotkey} with version ID {version_id}...")
+        
         # Find the websocket for the specified screener
         websocket = None
         for ws, validator_info in self.clients.items():
             if validator_info.validator_hotkey == screener_hotkey:
                 websocket = ws
+                logger.debug(f"Found websocket for screener {screener_hotkey}.")
                 break
         
         if not websocket:
             logger.error(f"Tried to create pre-evaluation for screener {screener_hotkey} but screener not found in connected clients")
             return None
 
+        logger.debug(f"Attempting to get miner agent with version ID {version_id}.")
         miner_agent = await get_agent_by_version_id(version_id)
-        
+        logger.debug(f"Successfully got miner agent with version ID {version_id}.")
+
         try:
+            logger.debug(f"Creating evaluation ID...")
             evaluation_id = str(uuid.uuid4())
             pre_evaluation = Evaluation(
                 evaluation_id=evaluation_id,
