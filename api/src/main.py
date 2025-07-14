@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from api.src.backend.db_manager import new_db, batch_writer
-from api.src.backend.queries.cleanup import clean_hanging_evaluations, evaluation_cleanup_loop
+from api.src.backend.queries.cleanup import clean_running_evaluations, evaluation_timeout_cleanup_loop
 from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
@@ -32,10 +32,10 @@ async def lifespan(app: FastAPI):
     global _batch_task
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
 
-    await clean_hanging_evaluations()
+    await clean_running_evaluations()
     # await update_top_agent_code()
     asyncio.create_task(run_weight_setting_loop(30))
-    asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
+    # asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
     # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
     yield
 

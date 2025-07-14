@@ -44,6 +44,7 @@ class SandboxStatus(Enum):
     patch_generated = "patch_generated"
     eval_started = "eval_started"
     result_scored = "result_scored"
+    cancelled = "cancelled"
 
 class EvaluationRun(BaseModel):
     run_id: UUID
@@ -62,6 +63,7 @@ class EvaluationRun(BaseModel):
     patch_generated_at: Optional[datetime]
     eval_started_at: Optional[datetime]
     result_scored_at: Optional[datetime]
+    cancelled_at: Optional[datetime]
     
 class EvaluationsWithHydratedRuns(Evaluation):
     evaluation_runs: list[EvaluationRun]

@@ -3,7 +3,7 @@ from typing import Dict, Any
 from fastapi import WebSocket
 
 from loggers.logging_utils import get_logger
-from api.src.backend.queries.evaluations import store_evaluation_run
+from api.src.backend.queries.evaluation_runs import store_evaluation_run
 from api.src.backend.entities import EvaluationRun, SandboxStatus
 
 logger = get_logger(__name__)

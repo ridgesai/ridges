@@ -2,13 +2,12 @@ import asyncio
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel, Field
 from typing import Optional
-from loggers.logging_utils import get_logger
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.auth import verify_request
 from api.src.socket.websocket_manager import WebSocketManager
@@ -17,10 +16,9 @@ from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.utils.similarity_checker import SimilarityChecker
 from api.src.backend.queries.agents import get_latest_agent, store_agent, check_if_agent_banned
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)
@@ -101,20 +99,6 @@ async def post_agent(
             detail="File must be a python file named agent.py"
         )
     
-    if latest_agent:
-        evaluations = await get_evaluations_by_version_id(latest_agent.version_id)
-        for evaluation in evaluations:
-            if evaluation.status == "running":
-                raise HTTPException(
-                    status_code=400,
-                    detail="An exisiting version of this agent is currently being evaluated. Please wait for it to finish before uploading a new version."
-                )
-        for evaluation in evaluations:
-            if evaluation.status == "waiting":
-                evaluation.status = "replaced"
-                evaluation.finished_at = datetime.now(timezone.utc)
-                await store_evaluation(evaluation)
-    
     # Check file size
     MAX_FILE_SIZE = 1 * 1024 * 1024  # 1MB in bytes
     file_size = 0
@@ -138,28 +122,28 @@ async def post_agent(
     if miner_hotkey not in await get_subnet_hotkeys():
         raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
 
-    # # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
-    # try:
-    #     # Decode content to text for similarity checking
-    #     uploaded_code = content.decode('utf-8')
+    # Similarity checks (MOVED EARLIER - fail fast!) ---------------------------------------------------
+    try:
+        # Decode content to text for similarity checking
+        uploaded_code = content.decode('utf-8')
         
-    #     logger.info(f"Starting similarity validation for {miner_hotkey}")
+        logger.info(f"Starting similarity validation for {miner_hotkey}")
         
-    #     # Run similarity validation
-    #     is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+        # Run similarity validation
+        is_valid, error_message = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
         
-    #     if not is_valid:
-    #         logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
-    #         raise HTTPException(status_code=400, detail=error_message)
+        if not is_valid:
+            logger.info(f"🚨 UPLOAD REJECTED for {miner_hotkey}: {error_message}")
+            raise HTTPException(status_code=400, detail=error_message)
             
-    #     logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
+        logger.info(f"✅ Similarity checks passed for {miner_hotkey}")
         
-    # except UnicodeDecodeError:
-    #     raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
-    # except Exception as e:
-    #     logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
-    #     # BLOCK upload on similarity check errors - don't allow potential copying
-    #     raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid file encoding - must be UTF-8")
+    except Exception as e:
+        logger.error(f"❌ CRITICAL: Similarity checking failed for {miner_hotkey}: {e}")
+        # BLOCK upload on similarity check errors - don't allow potential copying
+        raise HTTPException(status_code=500, detail="Anti-copying system unavailable. Please try again later.")
 
     # Static code safety checks ---------------------------------------------------
     try:
