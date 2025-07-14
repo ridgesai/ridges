@@ -12,6 +12,8 @@ class DBManager:
     """Thin wrapper around an asyncpg connection‑pool."""
     def __init__(self, *, user: str, password: str, host: str, port: int, database: str,
                  min_con: int = 4, max_con: int = 32):
+        
+        
         self.conn_args = dict(user=user, password=password, host=host, port=port, database=database)
         self.min_con = min_con
         self.max_con = max_con
@@ -19,6 +21,7 @@ class DBManager:
 
     async def open(self) -> None:
         """Initialize the connection‑pool and make sure the schema exists."""
+        logger.info(f"Initializing database connection to {self.conn_args['database']} on {self.conn_args['host']}:{self.conn_args['port']}.")
         self.pool = await asyncpg.create_pool(
             **self.conn_args,
             min_size=self.min_con,
