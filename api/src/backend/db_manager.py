@@ -111,9 +111,6 @@ async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS
     if buf:
         await _flush_to_db(buf)
 
-logger = logging.getLogger(__name__)
-
-
 DB_USER = os.getenv("AWS_MASTER_USERNAME")
 DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
 DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
