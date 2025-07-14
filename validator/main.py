@@ -6,7 +6,8 @@ import shutil
 
 from dotenv import load_dotenv
 
-load_dotenv()
+from validator.utils.logging import get_logger
+load_dotenv("validator/.env")
 
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
@@ -19,7 +20,7 @@ logger = get_logger(__name__)
 
 REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 
-EMBED_VERSION = "1.2"  # Bump this to force regeneration across all validators
+EMBED_VERSION = "1.3"  # Bump this to force regeneration across all validators
 
 async def check_and_generate_embeddings():
     tasks = EASY_INSTANCES + MEDIUM_INSTANCES
