@@ -62,7 +62,7 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
         select e.version_id, e.validator_hotkey, e.started_at, a.agent_name, a.miner_hotkey, a.version_num
         from evaluations e
         left join miner_agents a on a.version_id = e.version_id
-        where status = 'running';
+        where e.status = 'running';
     """)
 
     return [RunningEvaluation(**dict(row)) for row in results]
