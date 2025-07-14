@@ -13,7 +13,7 @@ import shutil
 
 # Add missing imports
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 from validator.sandbox.clone_repo import clone_repo
 from swebench.harness.run_evaluation import load_swebench_dataset
 

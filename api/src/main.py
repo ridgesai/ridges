@@ -13,7 +13,7 @@ import uvicorn
 
 from api.src.backend.db_manager import new_db, batch_writer
 from api.src.backend.queries.cleanup import clean_hanging_evaluations, evaluation_cleanup_loop
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop

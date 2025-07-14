@@ -4,9 +4,11 @@ from contextlib import asynccontextmanager
 import os
 from typing import Any, List, Tuple
 from functools import wraps
-import logging 
+from loggers.logging_utils import get_logger
 
 import asyncpg
+
+logger = get_logger(__name__)
 
 class DBManager:
     """Thin wrapper around an asyncpg connection‑pool."""
@@ -108,9 +110,6 @@ async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS
     # Final drain on shutdown
     if buf:
         await _flush_to_db(buf)
-
-logger = logging.getLogger(__name__)
-
 
 DB_USER = os.getenv("AWS_MASTER_USERNAME")
 DB_PASS = os.getenv("AWS_MASTER_PASSWORD")

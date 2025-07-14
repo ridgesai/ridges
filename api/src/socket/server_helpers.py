@@ -2,7 +2,7 @@ import os
 import httpx
 import time
 
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

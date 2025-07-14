@@ -2,7 +2,7 @@ import asyncio
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from pydantic import BaseModel, Field
 from typing import Optional
-import logging
+from loggers.logging_utils import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -20,7 +20,7 @@ from api.src.backend.queries.agents import get_latest_agent, store_agent, check_
 from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
 from api.src.backend.entities import MinerAgent
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 s3_manager = S3Manager()
 similarity_checker = SimilarityChecker(similarity_threshold=0.98)

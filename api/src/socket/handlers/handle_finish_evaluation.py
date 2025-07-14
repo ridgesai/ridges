@@ -5,7 +5,7 @@ from fastapi import WebSocket
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation, check_for_new_high_score
 from api.src.backend.entities import EvaluationStatus
 from api.src.backend.queries.agents import set_agent_status
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
 
 logger = get_logger(__name__)

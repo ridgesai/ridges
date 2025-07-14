@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-import logging
+from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
@@ -13,7 +13,7 @@ from api.src.backend.queries.statistics import get_24_hour_statistics, get_curre
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 s3_manager = S3Manager()
 

@@ -5,7 +5,7 @@ from typing import Optional, Dict
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.backend.queries.agents import get_agent_by_version_id
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.backend.entities import ValidatorInfo
 from api.src.backend.queries.evaluations import (
     get_running_evaluation_by_validator_hotkey,
@@ -220,7 +220,7 @@ class WebSocketManager:
 
                     await store_evaluation(evaluation)
                     logger.debug(f"Successfully created new evaluation {id} for validator {validator_info.validator_hotkey} with version ID {version_id}")
-                    
+
                     logger.debug(f"Attempting to send evaluation-available event to validator {validator_info.validator_hotkey}")
                     await websocket.send_text(json.dumps({"event": "evaluation-available"}))
                     logger.debug(f"Successfully sent evaluation-available event to validator {validator_info.validator_hotkey}")

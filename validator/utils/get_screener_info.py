@@ -2,7 +2,7 @@
 
 import os
 import subprocess
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 from validator.config import aws_instance_id
 

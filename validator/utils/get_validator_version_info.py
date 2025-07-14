@@ -2,7 +2,7 @@
 
 import subprocess
 import time
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 from validator.config import validator_hotkey
 

@@ -106,9 +106,8 @@ SCREENER_INSTANCES = [
 TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES)
 
 # Log initial configuration
-import logging
-logger = logging.getLogger(__name__)
-logger.setLevel(LOG_LEVEL)
+from loggers.logging_utils import get_logger
+logger = get_logger(__name__)
 
 logger.info("Validator Configuration:")
 logger.info(f"Network: {SUBTENSOR_NETWORK}")

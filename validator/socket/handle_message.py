@@ -2,7 +2,7 @@ import json
 import time
 
 from validator.config import SCREENER_MODE
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
 from validator.socket.handle_evaluation_available import handle_evaluation_available
 

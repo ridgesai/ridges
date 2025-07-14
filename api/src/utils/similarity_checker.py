@@ -4,7 +4,7 @@ from pathlib import Path
 
 from api.src.utils.s3 import S3Manager
 from api.src.utils.top_agents_manager import get_cached_top_agent_code, update_top_agents_cache
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_latest_agent
 
 logger = get_logger(__name__)

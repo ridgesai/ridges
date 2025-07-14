@@ -4,7 +4,6 @@ Send deflate logs returns "Request accepted for processing (always 202 empty JSO
 
 import logging
 import asyncio
-from datetime import datetime, timezone
 import os
 from dotenv import load_dotenv
 
@@ -13,27 +12,37 @@ from datadog_api_client.v2.api.logs_api import LogsApi
 from datadog_api_client.v2.model.content_encoding import ContentEncoding
 from datadog_api_client.v2.model.http_log import HTTPLog
 from datadog_api_client.v2.model.http_log_item import HTTPLogItem
-from datadog_api_client.v2.model.metric_payload import MetricPayload
-from datadog_api_client.v2.model.metric_series import MetricSeries
-from datadog_api_client.v2.model.metric_point import MetricPoint
-from datadog_api_client.v2.api.metrics_api import MetricsApi
 
 load_dotenv()
 
 configuration = Configuration()
 
 hostname = os.getenv("DD_HOSTNAME")
+service = os.getenv("DD_SERVICE")
 
 class DatadogLogHandler(logging.Handler):
     def __init__(self):
         super().__init__()
 
     def emit(self, record):
-        asyncio.create_task(self._async_emit(record))
+        try:
+            # Check if there's a running event loop
+            loop = asyncio.get_running_loop()
+            # If we get here, there's a running loop, so we can create a task
+            asyncio.create_task(self._async_emit(record))
+        except RuntimeError:
+            # No running event loop, use synchronous version
+            self._sync_emit(record)
 
     def _sync_emit(self, record):
         provided_process_type = getattr(record, 'process_type', None)
         provided_process_id = getattr(record, 'process_id', None)
+        
+        # Extract the top-level folder from pathname
+        try:
+            top_folder = record.pathname.split('ridges/')[1].split('/')[0]
+        except:
+            top_folder = "unknown"
         
         body = HTTPLog(
             [
@@ -47,7 +56,7 @@ class DatadogLogHandler(logging.Handler):
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service="ridges-platform",
+                    service=top_folder,
                     date=record.timestamp
                 ),
             ]
@@ -68,6 +77,12 @@ class DatadogLogHandler(logging.Handler):
         provided_process_type = getattr(record, 'process_type', None)
         provided_process_id = getattr(record, 'process_id', None)
         
+        # Extract the top-level folder from pathname
+        try:
+            top_folder = record.pathname.split('ridges/')[1].split('/')[0]
+        except:
+            top_folder = "unknown"
+        
         body = HTTPLog(
             [
                 HTTPLogItem(
@@ -80,7 +95,7 @@ class DatadogLogHandler(logging.Handler):
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service="ridges-platform",
+                    service=top_folder,
                     date=record.timestamp
                 ),
             ]
@@ -96,32 +111,3 @@ class DatadogLogHandler(logging.Handler):
                     print(f"Original log: {body}")
 
         await asyncio.to_thread(_send_log)
-
-async def dd_update_connected_validators(count: int, validator_hotkeys: list[str]):
-    try:
-        body = MetricPayload(
-            series=[
-                MetricSeries(
-                    metric="connected_validators",
-                    points=[
-                        MetricPoint(
-                            timestamp=int(datetime.now(timezone.utc).timestamp()),
-                            value=count,
-                        ),
-                    ],
-                ),
-            ],
-        )
-        
-        def _send_metric():
-            with ApiClient(configuration) as api_client:
-                api_instance = MetricsApi(api_client)
-                api_instance.submit_metrics(body=body)
-        
-        await asyncio.to_thread(_send_metric)
-    except Exception as e:
-        print(f"Failed to send metric to Datadog: {e}")
-        print(f"Original metric: {body}")
-
-if __name__ == "__main__":
-    asyncio.run(dd_update_connected_validators(2, ["0x1234567890"]))
