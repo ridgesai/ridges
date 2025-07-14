@@ -7,7 +7,7 @@ import shutil
 from dotenv import load_dotenv
 
 from validator.utils.logging import get_logger
-load_dotenv()
+load_dotenv("validator/.env")
 
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 
-EMBED_VERSION = "1.2"  # Bump this to force regeneration across all validators
+EMBED_VERSION = "1.3"  # Bump this to force regeneration across all validators
 
 logger = get_logger(__name__)
 

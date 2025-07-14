@@ -1,6 +1,6 @@
 # TODO: cleanup how we set this all up
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv("api/.env")
 
 import os
 from datetime import timedelta
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
 
     await clean_hanging_evaluations()
-    await update_top_agent_code()
+    # await update_top_agent_code()
     asyncio.create_task(run_weight_setting_loop(30))
     asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
     # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
