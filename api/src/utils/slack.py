@@ -1,4 +1,4 @@
-import logging
+from loggers.logging_utils import get_logger
 import os
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Initialize the Slack app with your bot token (only if token is available)
 slack_bot_token = os.environ.get("SLACK_BOT_TOKEN")

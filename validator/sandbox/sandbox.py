@@ -210,7 +210,7 @@ class Sandbox:
                     pass  # Continue monitoring even if stats fail
                 
                 # Check runtime limit
-                runtime = (datetime.now(timezone.utc) - self.evaluation_run.started_at).total_seconds()
+                runtime = (datetime.now(timezone.utc) - self.evaluation_run.sandbox_created_at).total_seconds()
                 if runtime > SANDBOX_MAX_RUNTIME:
                     self.container.kill()
                     raise TimeoutError(f"Runtime limit exceeded: {runtime:.1f}s")
