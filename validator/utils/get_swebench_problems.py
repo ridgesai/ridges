@@ -4,7 +4,7 @@ from typing import List, Dict, Any
 from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.schema import AgentVersion, SwebenchProblem
 from validator.config import EASY_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

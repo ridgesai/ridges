@@ -8,7 +8,7 @@ from fiber import Keypair
 
 from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.backend.queries.evaluations import create_evaluations_for_validator, get_next_evaluation_for_validator, get_queue_info
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.utils.validator_auth import is_validator_registered
 from api.src.backend.entities import ValidatorInfo
 

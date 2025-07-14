@@ -17,7 +17,7 @@ from validator.sandbox.constants import (
 )
 from validator.sandbox.schema import EvaluationRun, SwebenchProblem
 from validator.sandbox.sandbox import Sandbox
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp

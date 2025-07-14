@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.backend.queries.evaluations import store_evaluation_run
 from api.src.backend.entities import EvaluationRun, SandboxStatus
 

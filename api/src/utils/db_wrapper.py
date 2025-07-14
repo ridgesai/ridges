@@ -6,7 +6,7 @@ import functools
 import asyncio
 from typing import Any, Callable, Optional
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError, DisconnectionError
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

@@ -1,6 +1,6 @@
 from api.src.backend.queries.statistics import get_top_agents
 from api.src.utils.s3 import S3Manager
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 
 s3 = S3Manager()
 

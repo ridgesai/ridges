@@ -2,5 +2,5 @@ from setuptools import setup
 
 setup(
     name="sn62",
-    packages=["validator"]
+    packages=["validator", "loggers"]
 ) 

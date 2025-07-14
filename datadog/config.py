@@ -1,1 +1,0 @@
-PROCESS_TYPES = ["receive-validator-version"]
