@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import MinerAgent, Inference
 
 async def get_24_hour_statistics() -> dict[str, Any]: ...
 
@@ -19,8 +19,9 @@ async def get_currently_running_evaluations() -> list[RunningEvaluation]: ...
 async def get_top_agents(num_agents: int = 3) -> list[MinerAgent]: ...
 async def get_agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgent]: ...
 
-class QueuePositionPerValidator: 
+class QueuePositionPerValidator(BaseModel): 
     validator_hotkey: str
     queue_position: int
 
 async def get_queue_position_by_hotkey(miner_hotkey: str) -> list[QueuePositionPerValidator]: ...
+async def get_inference_details_for_run(run_id: str) -> list[Inference]: ...

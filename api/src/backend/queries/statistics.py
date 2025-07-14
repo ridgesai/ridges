@@ -6,7 +6,7 @@ from uuid import UUID
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import MinerAgent, Inference
 
 @db_operation
 async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
@@ -148,3 +148,14 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
     """, miner_hotkey)
 
     return [QueuePositionPerValidator(**dict(row)) for row in results]
+
+@db_operation
+async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -> list[Inference]:
+    runs = await conn.fetch("""
+        select 
+            id, run_id, messages->0->>'content' as message, temperature, model,cost, response, total_tokens, created_at, finished_at 
+        from inferences 
+        where run_id = $1;
+    """, run_id)
+
+    return [Inference(**dict(run)) for run in runs]
