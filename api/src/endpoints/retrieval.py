@@ -9,7 +9,7 @@ from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns
 from api.src.backend.queries.evaluations import get_evaluations_for_agent_version, get_runs_for_evaluation as db_get_runs_for_evaluation, get_queue_info as db_get_queue_info
-from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_top_agents as db_get_top_agents, get_agent_summary_by_hotkey
+from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_top_agents as db_get_top_agents, get_agent_summary_by_hotkey, get_queue_position_by_hotkey, QueuePositionPerValidator
 
 load_dotenv()
 
@@ -157,6 +157,14 @@ async def get_top_agents(num_agents: int = 3) -> list[MinerAgent]:
 
     return top_agents
 
+async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidator]:
+    """
+    Gives a list of where an agent is in queue for every validator
+    """
+    positions = await get_queue_position_by_hotkey(miner_hotkey=miner_hotkey)
+
+    return positions
+
 async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
     """
     Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
@@ -184,6 +192,7 @@ routes = [
     ("/running-evaluations", get_running_evaluations),
     ("/top-agents", get_top_agents),
     ("/agent-by-hotkey", agent_summary_by_hotkey),
+    ("/queue-position-by-hotkey", get_queue_position)
 ]
 
 for path, endpoint in routes:
