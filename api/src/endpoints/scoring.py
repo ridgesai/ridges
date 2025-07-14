@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version
 
 load_dotenv()

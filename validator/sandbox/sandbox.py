@@ -21,7 +21,7 @@ from validator.sandbox.constants import (
     SANDBOX_REPO_DIR, SANDBOX_SOURCE_DIR, SANDBOX_MAX_RAM_USAGE, SANDBOX_MAX_RUNTIME
 )
 from validator.sandbox.schema import EvaluationRun, SandboxInput, SwebenchProblem
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from validator.sandbox.manager import SandboxManager

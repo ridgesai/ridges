@@ -5,7 +5,7 @@ from api.src.backend.queries.weights import (
     store_weights, get_latest_weights, weights_are_different
 )
 from api.src.backend.db_manager import get_pool_status
-from api.src.utils.logging_utils import get_logger
+from loggers.logging_utils import get_logger
 from api.src.utils.subtensor import get_current_weights
 
 logger = get_logger(__name__)

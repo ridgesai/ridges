@@ -12,7 +12,7 @@ import httpx
 from validator.config import RIDGES_API_URL, SCREENER_MODE, validator_hotkey
 from validator.sandbox.manager import SandboxManager
 from validator.sandbox.schema import AgentVersion, EvaluationRun
-from validator.utils.logging import get_logger
+from loggers.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp

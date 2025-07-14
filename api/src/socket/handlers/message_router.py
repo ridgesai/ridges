@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 
-from api.src.utils.process_tracking import process_context
-from api.src.utils.logging_utils import get_logger
+from loggers.process_tracking import process_context
+from loggers.logging_utils import get_logger
 from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
 from api.src.socket.handlers.handle_start_evaluation import handle_start_evaluation
