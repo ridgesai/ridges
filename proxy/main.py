@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 load_dotenv("proxy/.env")
 
 import os
-import logging
+from loggers.logging_utils import get_logger
 import sys
 import uvicorn
 from contextlib import asynccontextmanager
@@ -14,17 +14,9 @@ from proxy.database import db_manager, get_evaluation_run_by_id, get_total_infer
 from proxy.chutes_client import ChutesClient
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
 
-# Setup logging
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL.upper()),
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("asyncpg").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 # Global chutes client instance
 chutes_client = ChutesClient()
