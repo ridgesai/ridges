@@ -13,7 +13,7 @@ from api.src.backend.queries.statistics import get_24_hour_statistics, get_curre
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 s3_manager = S3Manager()
 
