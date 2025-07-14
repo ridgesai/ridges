@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-import logging
+from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
