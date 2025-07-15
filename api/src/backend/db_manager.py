@@ -24,13 +24,16 @@ class DBManager:
     async def open(self) -> None:
         """Initialize the connection‑pool and make sure the schema exists."""
         logger.info(f"Initializing database connection to {self.conn_args['database']} on {self.conn_args['host']}:{self.conn_args['port']}.")
+        logger.info("Creating connection pool...")
         self.pool = await asyncpg.create_pool(
             **self.conn_args,
             min_size=self.min_con,
             max_size=self.max_con,
             max_inactive_connection_lifetime=300,
             statement_cache_size=1_000,
+            command_timeout=30,
         )
+        logger.info("Ensuring schema...")
         await self._ensure_schema()
 
     async def close(self) -> None:
@@ -164,3 +167,4 @@ async def get_pool_status() -> dict:
     except Exception as e:
         logger.error(f"Error getting pool status: {str(e)}")
         return {"error": str(e)}
+
