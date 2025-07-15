@@ -32,7 +32,6 @@ class DBManager:
             max_inactive_connection_lifetime=300,
             statement_cache_size=1_000,
             command_timeout=30,
-            server_settings={'connect_timeout': '10'}
         )
         logger.info("Ensuring schema...")
         await self._ensure_schema()
@@ -63,10 +62,7 @@ class DBManager:
         async with self.acquire() as con:
             if schema_file.exists():
                 sql_text = schema_file.read_text()
-                logger.info(f"Applying schema {sql_text}...")
-                # TODO: Add schema back
-                # await con.execute(sql_text)
-                logger.info("Schema applied successfully.")
+                await con.execute(sql_text)
                 return
             else:
                 raise Exception("Schema file is missing")
