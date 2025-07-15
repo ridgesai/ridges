@@ -24,8 +24,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
-    score FLOAT,
-    UNIQUE(version_id, validator_hotkey) -- Prevent duplicate evaluations for same version/validator pair
+    score FLOAT
 );
 
 -- Evaluation Runs table
@@ -40,12 +39,13 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     pass_to_pass_success TEXT,
     fail_to_fail_success TEXT,
     solved BOOLEAN,
-    status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored
+    status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored, cancelled
     started_at TIMESTAMPTZ NOT NULL,
     sandbox_created_at TIMESTAMPTZ,
     patch_generated_at TIMESTAMPTZ,
     eval_started_at TIMESTAMPTZ,
-    result_scored_at TIMESTAMPTZ
+    result_scored_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ
 );
 
 -- Embeddings table
@@ -97,6 +97,7 @@ BEGIN
         SELECT AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END)
         FROM evaluation_runs 
         WHERE evaluation_id = NEW.evaluation_id
+        AND status != 'cancelled'
     )
     WHERE evaluation_id = NEW.evaluation_id;
     

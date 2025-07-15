@@ -52,6 +52,7 @@ class EvaluationRun(BaseModel):
     patch_generated_at: Optional[datetime] = None
     eval_started_at: Optional[datetime] = None
     result_scored_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
 
     def to_dict(self):
         return {
@@ -72,4 +73,5 @@ class EvaluationRun(BaseModel):
             "patch_generated_at": self.patch_generated_at.isoformat() if self.patch_generated_at else None,
             "eval_started_at": self.eval_started_at.isoformat() if self.eval_started_at else None,
             "result_scored_at": self.result_scored_at.isoformat() if self.result_scored_at else None,
+            "cancelled_at": self.cancelled_at.isoformat() if self.cancelled_at else None,
         }

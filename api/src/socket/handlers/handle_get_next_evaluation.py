@@ -34,9 +34,10 @@ async def handle_get_next_evaluation(
             }
             logger.info(f"Platform socket will send requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}")
         
-        logger.debug(f"Attempting to send requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}.")
+        evaluation_id = socket_message.get('evaluation_id', 'none')
+        logger.debug(f"Attempting to send requested evaluation {evaluation_id} to validator with hotkey {validator_hotkey}.")
         await websocket.send_text(json.dumps(socket_message))
-        logger.debug(f"Successfully sent requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}.")
+        logger.debug(f"Successfully sent requested evaluation {evaluation_id} to validator with hotkey {validator_hotkey}.")
 
         return socket_message
         
