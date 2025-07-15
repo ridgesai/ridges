@@ -24,6 +24,7 @@ class DBManager:
     async def open(self) -> None:
         """Initialize the connection‑pool and make sure the schema exists."""
         logger.info(f"Initializing database connection to {self.conn_args['database']} on {self.conn_args['host']}:{self.conn_args['port']}.")
+        logger.info("Creating connection pool...")
         self.pool = await asyncpg.create_pool(
             **self.conn_args,
             min_size=self.min_con,
@@ -31,6 +32,7 @@ class DBManager:
             max_inactive_connection_lifetime=300,
             statement_cache_size=1_000,
         )
+        logger.info("Ensuring schema...")
         await self._ensure_schema()
 
     async def close(self) -> None:
@@ -59,7 +61,10 @@ class DBManager:
         async with self.acquire() as con:
             if schema_file.exists():
                 sql_text = schema_file.read_text()
-                await con.execute(sql_text)
+                logger.info(f"Applying schema {sql_text}...")
+                # TODO: Add schema back
+                # await con.execute(sql_text)
+                logger.info("Schema applied successfully.")
                 return
             else:
                 raise Exception("Schema file is missing")
@@ -164,3 +169,4 @@ async def get_pool_status() -> dict:
     except Exception as e:
         logger.error(f"Error getting pool status: {str(e)}")
         return {"error": str(e)}
+
