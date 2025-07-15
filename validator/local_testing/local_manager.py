@@ -51,7 +51,7 @@ class LocalSandboxManager:
             self.docker.ping()
         except Exception as e:
             raise RuntimeError(f"Docker is not running or accessible: {e}")
-        # Create network
+        # Create network for container communication
         self.network_name = f"local-test-{uuid.uuid4().hex[:8]}"
         try:
             self.network = self.docker.networks.create(
@@ -67,7 +67,7 @@ class LocalSandboxManager:
             else:
                 raise
         # Start proxy container
-        self.proxy_container_name = f"local-proxy-{uuid.uuid4().hex[:8]}"
+        self.proxy_container_name = "sandbox-proxy"
         try:
             # Check if proxy container already exists
             existing = self.docker.containers.get(self.proxy_container_name)
@@ -80,17 +80,26 @@ class LocalSandboxManager:
         except self.docker_module.errors.ImageNotFound:
             print(f"Pulling proxy image: {PROXY_DOCKER_IMAGE}")
             self.docker.images.pull(PROXY_DOCKER_IMAGE)
-        # Start proxy container
+        # Start proxy container on the custom network, but configure it to reach the host's proxy service
+        host_proxy_url = os.getenv('RIDGES_PROXY_URL', 'http://localhost:8001')
+        # Parse the URL and replace the hostname with host.docker.internal for Docker containers
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(host_proxy_url)
+        # Replace any hostname/IP with host.docker.internal so containers can reach the host
+        host_proxy_url = urlunparse(parsed._replace(netloc=f'host.docker.internal:{parsed.port or 8001}'))
+        
         self.proxy_container = self.docker.containers.run(
             PROXY_DOCKER_IMAGE,
             name=self.proxy_container_name,
             network=self.network_name,
             detach=True,
             remove=False,
-            ports={'8001/tcp': ('127.0.0.1', 8001)},
+            extra_hosts={
+                'host.docker.internal': 'host-gateway'
+            },
             environment={
                 'RIDGES_API_URL': os.getenv('RIDGES_API_URL', 'http://localhost:8000'),
-                'RIDGES_PROXY_URL': os.getenv('RIDGES_PROXY_URL', 'http://localhost:8001'),
+                'RIDGES_PROXY_URL': host_proxy_url,
             }
         )
         if self.verbose:
@@ -98,8 +107,9 @@ class LocalSandboxManager:
         # Wait for proxy to be ready
         import time
         time.sleep(2)
-        # Use configured proxy URL
-        self.proxy_url = os.getenv('RIDGES_PROXY_URL', 'http://localhost:8001')
+        # Use proxy container name for internal Docker network communication
+        # The proxy listens on port 80 (default for nginx)
+        self.proxy_url = f"http://{self.proxy_container_name}"
         if self.verbose:
             print(f"Using proxy URL: {self.proxy_url}")
     async def create_sandbox(self, problem: SwebenchProblem, agent_file: Path) -> 'LocalSandbox':
@@ -236,6 +246,7 @@ class LocalSandbox:
                 remove=False,
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
                 environment={
+                    'AI_PROXY_URL': self.local_manager.proxy_url,
                     'RIDGES_PROXY_URL': self.local_manager.proxy_url,
                     'RIDGES_API_URL': os.getenv('RIDGES_API_URL', 'http://localhost:8000'),
                 }
@@ -251,7 +262,11 @@ class LocalSandbox:
             if output_file.exists():
                 with open(output_file, 'r') as f:
                     output_data = json.load(f)
-                patch = output_data.get('patch', '')
+                # Check if agent_runner.py wrapped the output
+                if output_data.get('success') and 'output' in output_data:
+                    patch = output_data['output'].get('patch', '')
+                else:
+                    patch = output_data.get('patch', '')
                 if patch:
                     self.evaluation_run.response = patch
                     self.evaluation_run.status = "patch_generated"
@@ -301,25 +316,26 @@ class LocalSandbox:
     async def _run_swe_bench_evaluation(self) -> None:
         """Run SWE-bench evaluation on the generated patch"""
         try:
-            from swebench.harness.run_evaluation import run_instances
-            # Create prediction dict
+            from swebench.harness.run_evaluation import load_swebench_dataset, run_instance, make_test_spec, build_env_images
+            
+            # Load instance and create prediction
             instance_id = self.problem.instance_id
+            instance = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", [instance_id])[0]
             prediction = {
-                instance_id: {
-                    "model_patch": self.evaluation_run.response,
-                    "model_name_or_path": "local-agent"
-                }
+                "instance_id": instance_id,
+                "model_name_or_path": self.evaluation_run.run_id,
+                "model_patch": self.evaluation_run.response,
             }
-            # Run evaluation
-            result = run_instances(
-                instances=[self.problem.to_dict()],
+            test_spec = make_test_spec(instance)
+            
+            # Build environment and run evaluation
+            build_env_images(self.local_manager.docker, [test_spec], max_workers=4)
+            result = run_instance(
+                test_spec=test_spec,
                 pred=prediction,
                 rm_image=False,
                 force_rebuild=False,
                 client=self.local_manager.docker,
-                instance_id=self.problem.instance_id,
-                repo=self.problem.repo,
-                base_commit=self.problem.base_commit,
                 run_id=self.evaluation_run.run_id,
                 timeout=1800,
                 rewrite_reports=False,

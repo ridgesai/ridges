@@ -1,5 +1,7 @@
 import os
-from typing import Dict
+from typing import Dict, Literal
+
+ENV: Literal["prod", "staging", "dev"] = os.getenv("ENV", "prod")
 
 # Chutes API configuration
 CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
