@@ -1,12 +1,13 @@
 from fastapi import UploadFile, HTTPException
 from typing import Optional
+from api.src.socket.websocket_manager import WebSocketManager
 from loggers.logging_utils import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id, store_evaluation
+from api.src.backend.queries.evaluations import get_evaluations_by_version_id
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
@@ -16,6 +17,7 @@ from api.src.utils.s3 import S3Manager
 
 logger = get_logger(__name__)
 s3_manager = S3Manager()
+ws = WebSocketManager.get_instance()
 
 def _get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Getting miner hotkey from file info: {file_info}.")
@@ -179,19 +181,6 @@ async def _get_available_screener() -> str:
     
     logger.debug(f"Available screener found: {available_screener}.")
     return available_screener
-
-async def _update_waiting_evals(waiting_evals: list[Evaluation]) -> None:
-    logger.debug(f"Updating {len(waiting_evals)} 'waiting' evaluations...")
-
-    if waiting_evals:
-        for evaluation in waiting_evals:
-            evaluation.status = "replaced"
-            evaluation.finished_at = datetime.now(timezone.utc)
-            logger.debug(f"Attemping to update evaluation {evaluation.evaluation_id} to 'replaced'.")
-            await store_evaluation(evaluation)
-            logger.debug(f"Successfully updated evaluation {evaluation.evaluation_id} to 'replaced'.")
-
-    logger.debug(f"Updated {len(waiting_evals)} 'waiting' evaluations to 'replaced' for version {waiting_evals[0].version_id if waiting_evals else None}.")
 
 async def _upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
     logger.debug(f"Uploading agent code for version {version_id} to S3...")

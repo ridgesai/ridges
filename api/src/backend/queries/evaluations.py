@@ -1,6 +1,5 @@
 from typing import Optional, List
 import logging
-from uuid import UUID
 import uuid
 
 import asyncpg
@@ -16,7 +15,7 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
     logger.debug(f"Attempting to create evaluation for version {version_id} and validator {validator_hotkey}.")
 
     # Check if running evaluation exists for this validator
-    running_evaluation = await get_running_evaluation_by_validator_hotkey(conn, validator_hotkey)
+    running_evaluation = await get_running_evaluation_by_validator_hotkey(validator_hotkey)
     if running_evaluation:
         logger.debug(f"Running evaluation already exists for validator {validator_hotkey}. Skipping creation of evaluation.")
         return None
@@ -37,15 +36,44 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
             )
         )
     """, validator_hotkey, version_id)
+
+    # Set waiting miner_agents for this miner_hotkey to replaced
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'replaced' 
+        WHERE miner_hotkey = (
+            SELECT miner_hotkey 
+            FROM miner_agents 
+            WHERE version_id = $1
+        )
+        AND status = 'waiting'
+    """, version_id)
     
-    evaluation = await conn.execute("""
+    evaluation = await conn.fetchrow("""
         INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-        VALUES ($1, $2, $3, $4, $5)
-    """, uuid.uuid4(), version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING *
+    """, str(uuid.uuid4()), version_id, validator_hotkey, 'waiting')
 
     logger.debug(f"Successfully created evaluation for version {version_id} and validator {validator_hotkey}.")
 
     return Evaluation(**dict(evaluation))
+
+@db_operation
+async def create_next_evaluation_for_screener(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
+    agents_awaiting_screening = await conn.fetch(
+        "SELECT version_id FROM miner_agents WHERE status = 'awaiting_screening' "
+        "ORDER BY created_at ASC LIMIT 1"
+    )
+
+    if not agents_awaiting_screening:
+        return None
+    
+    evaluation = await create_evaluation(agents_awaiting_screening[0][0], validator_hotkey)
+    if not evaluation:
+        return None
+    
+    return evaluation
 
 @db_operation
 async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> int:
@@ -67,7 +95,6 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         raise Exception("No recent agent versions found")
     
     evaluations_created = 0 
-    import uuid
 
     logger.debug(f"Beginning to create evaluations for validator {validator_hotkey}.")
     for agent_row in agents:
@@ -105,12 +132,18 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
     return evaluations_created
 
 @db_operation
-async def start_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
+async def start_evaluation(conn: asyncpg.Connection, evaluation_id: str, screener: bool) -> Evaluation:
     logger.debug(f"Attempting to start evaluation {evaluation_id}.")
     result = await conn.fetchrow(
         "UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1 RETURNING *",
         evaluation_id
     )
+
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = $1
+        WHERE version_id = (SELECT version_id FROM evaluations WHERE evaluation_id = $2)
+    """, 'screening' if screener else 'evaluating', evaluation_id)
 
     if not result:
         logger.warning(f"Attempted to start evaluation {evaluation_id} but it was not found.")
@@ -121,13 +154,82 @@ async def start_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> Eval
     return Evaluation(**dict(result))
 
 @db_operation
+async def reset_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> None:
+    """
+    Reset an evaluation to waiting, and cancel any evaluation runs.
+    """
+
+    await conn.execute("""
+        WITH cancelled_runs AS (
+            UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE evaluation_id = $1
+        )
+        UPDATE evaluations SET status = 'waiting', started_at = NULL, finished_at = NULL, score = NULL, terminated_reason = NULL WHERE evaluation_id = $1
+    """, evaluation_id)
+
+    # If there are no more running evaluations for the version id, set the miner agent to waiting
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'waiting' 
+        WHERE version_id = (SELECT version_id FROM evaluations WHERE evaluation_id = $1)
+        AND NOT EXISTS (
+            SELECT 1 FROM evaluations 
+            WHERE version_id = (SELECT version_id FROM evaluations WHERE evaluation_id = $1)
+            AND status = 'running'
+        )
+    """, evaluation_id)
+    
+    logger.debug(f"Successfully reset evaluation {evaluation_id}.")
+
+@db_operation
+async def cancel_screening_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> None:
+    """
+    Cancel a screening evaluation. This is so if a screener never reconnects, a new 
+    screening evaluation can be created for another screener instance.
+    This is the only way a miner agent can be awaiting screening—a screener disconnects.
+    """
+    await conn.execute("""
+        WITH cancelled_runs AS (
+            UPDATE evaluation_runs 
+            SET status = 'cancelled', cancelled_at = NOW() 
+            WHERE evaluation_id = $1
+        ),
+        updated_evaluation AS (
+            UPDATE evaluations 
+            SET status = 'error', 
+                started_at = NULL, 
+                finished_at = NOW(),
+                score = NULL, 
+                terminated_reason = 'screener-disconnected'
+            WHERE evaluation_id = $1 AND validator_hotkey LIKE 'i-0%'
+            RETURNING version_id
+        )
+        UPDATE miner_agents 
+        SET status = 'awaiting_screening' 
+        WHERE version_id = (SELECT version_id FROM updated_evaluation)
+    """, evaluation_id)
+    
+    logger.debug(f"Successfully cancelled screening evaluation {evaluation_id}.")
+
+
+@db_operation
 async def finish_evaluation(conn: asyncpg.Connection, evaluation_id: str, errored: bool) -> Evaluation:
     logger.debug(f"Attempting to finish evaluation {evaluation_id}.")
-    result = await conn.execute(
+    result = await conn.fetchrow(
         "UPDATE evaluations SET status = $1, finished_at = NOW() WHERE evaluation_id = $2 RETURNING *",
         'completed' if not errored else 'error',
         evaluation_id
     )
+
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'scored' 
+        WHERE version_id = (SELECT version_id FROM evaluations WHERE evaluation_id = $1)
+        AND NOT EXISTS (
+            SELECT 1 FROM evaluations 
+            WHERE version_id = (SELECT version_id FROM evaluations WHERE evaluation_id = $1)
+            AND status NOT IN ('completed', 'replaced', 'timedout', 'error')
+        )
+    """, evaluation_id)
 
     if not result:
         logger.warning(f"Attempted to finish evaluation {evaluation_id} but it was not found.")
@@ -278,6 +380,19 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
     return Evaluation(**dict(result)) 
 
 @db_operation
+async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional[Evaluation]:
+    result = await conn.fetchrow(
+        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%' "
+        "ORDER BY created_at ASC LIMIT 1"
+    )
+
+    if not result:
+        return None
+
+    return Evaluation(**dict(result)) 
+
+@db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
     result = await conn.fetch(
         "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
@@ -319,20 +434,5 @@ async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length
 
     return [Evaluation(**dict(row)) for row in result]
 
-'''
-Evaluation Creation/Upserts
-'''
-@db_operation
-async def reset_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> None:
-    """
-    Reset an evaluation to waiting, and cancel any evaluation runs.
-    """
-    await conn.execute("""
-        WITH cancelled_runs AS (
-            UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE evaluation_id = $1
-        )
-        UPDATE evaluations SET status = 'waiting', started_at = NULL, finished_at = NULL, score = NULL, terminated_reason = NULL WHERE evaluation_id = $1
-    """, evaluation_id)
-    
-    logger.debug(f"Successfully reset evaluation {evaluation_id}.")
+
 

@@ -17,7 +17,7 @@ async def handle_start_evaluation(
     logger.info(f"Validator with hotkey {validator_hotkey} has started an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
-        evaluation = await start_evaluation(evaluation_id)
+        evaluation = await start_evaluation(evaluation_id, screener=validator_hotkey.startswith("i-0"))
         logger.debug(f"Successfully started evaluation {evaluation_id}.")
         return evaluation
     except Exception as e:

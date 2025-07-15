@@ -8,6 +8,7 @@ from api.src.backend.queries.agents import get_agent_by_version_id
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import ValidatorInfo
 from api.src.backend.queries.evaluations import (
+    cancel_screening_evaluation,
     create_evaluation,
     get_running_evaluation_by_validator_hotkey,
     reset_evaluation,
@@ -113,9 +114,12 @@ class WebSocketManager:
 
                     evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
                     if evaluation:
-                        # Delete all associated evaluation runs first
-                        await reset_evaluation(evaluation.evaluation_id)
-                        logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
+                        if val_hotkey.startswith("i-0"):
+                            logger.info(f"Screener {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been cancelled.")
+                            await cancel_screening_evaluation(evaluation.evaluation_id)
+                        else:
+                            logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
+                            await reset_evaluation(evaluation.evaluation_id)
                     else:
                         logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
             except Exception as cleanup_error:
@@ -256,33 +260,18 @@ class WebSocketManager:
         logger.debug(f"Successfully got miner agent with version ID {version_id}.")
 
         try:
-            logger.debug(f"Creating evaluation ID...")
-            evaluation_id = str(uuid.uuid4())
-            pre_evaluation = Evaluation(
-                evaluation_id=evaluation_id,
-                version_id=version_id,
-                validator_hotkey=screener_hotkey,
-                status="running",
-                terminated_reason=None,
-                created_at=datetime.now(timezone.utc),
-                started_at=datetime.now(timezone.utc),
-                finished_at=None,
-                score=None
-            )
-
-            logger.debug(f"Creating pre-evaluation for screener {screener_hotkey} with evaluation ID: {evaluation_id}")
-
-            await store_evaluation(pre_evaluation)
+            evaluation = await create_evaluation(version_id, screener_hotkey)
+            evaluation_id = evaluation.evaluation_id
 
             logger.debug(f"Attempting to send screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
             await websocket.send_text(json.dumps({
                 "event": "screen-agent",
-                "evaluation_id": evaluation_id,
+                "evaluation_id": str(evaluation_id),
                 "agent_version": miner_agent.model_dump(mode='json')
             }))
             logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
 
-            return evaluation_id
+            return str(evaluation_id)
         except Exception as e:
             logger.error(f"Error creating pre-evaluation for screener {screener_hotkey}: {e}")
             return None

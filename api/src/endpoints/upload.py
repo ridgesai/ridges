@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import _get_miner_hotkey, _check_valid_filename, _check_agent_banned, _check_rate_limit, _check_replay_attack, _check_signature, _check_hotkey_registered, _check_file_size, _check_agent_code, _check_eval_running, _get_available_screener, _update_waiting_evals, _upload_agent_code_to_s3, _store_agent_in_db
+from api.src.utils.upload_agent_helpers import _get_miner_hotkey, _check_valid_filename, _check_agent_banned, _check_rate_limit, _check_replay_attack, _check_signature, _check_hotkey_registered, _check_file_size, _check_agent_code, _check_eval_running, _get_available_screener, _upload_agent_code_to_s3, _store_agent_in_db
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
@@ -70,11 +70,10 @@ async def post_agent(
         file_content = await _check_file_size(agent_file)
         if prod: pass # add code similarity check back later
         _check_agent_code(file_content)
-        waiting_evals = await _check_eval_running(latest_agent)
 
         async with lock:
+            await _check_eval_running(latest_agent)
             if prod: available_screener = await _get_available_screener()
-            await _update_waiting_evals(waiting_evals)
             version_id = await _store_agent_in_db(miner_hotkey, name, latest_agent)
             await _upload_agent_code_to_s3(version_id, agent_file)
             if prod:

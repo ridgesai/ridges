@@ -20,6 +20,7 @@ class AgentWithHydratedCode(MinerAgent):
     code: str
 
 class EvaluationStatus(Enum):
+    awaiting_screening = "awaiting_screening"
     waiting = "waiting"
     running = "running" 
     completed = "completed"

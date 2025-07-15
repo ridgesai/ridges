@@ -4,7 +4,7 @@ import logging
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.queries.evaluations import get_running_evaluations, reset_evaluation
+from api.src.backend.queries.evaluations import cancel_screening_evaluation, get_running_evaluations, reset_evaluation
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +16,14 @@ async def clean_running_evaluations(conn: asyncpg.Connection) -> int:
     This happens most often when the platform is restarted, having no chance to reset
     running evaluations.
     """
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'")
     running_evaluations = await get_running_evaluations()
     for evaluation in running_evaluations:
-        await reset_evaluation(evaluation.evaluation_id)
+        if evaluation.validator_hotkey.startswith("i-0"):
+            await cancel_screening_evaluation(evaluation.evaluation_id)
+        else:
+            await reset_evaluation(evaluation.evaluation_id)
     return len(running_evaluations)
-
 
 @db_operation
 async def clean_timed_out_evaluations(conn: asyncpg.Connection) -> int:

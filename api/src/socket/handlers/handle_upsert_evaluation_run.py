@@ -43,7 +43,8 @@ async def handle_upsert_evaluation_run(
             sandbox_created_at=parse_datetime(evaluation_run_data["sandbox_created_at"]),
             patch_generated_at=parse_datetime(evaluation_run_data["patch_generated_at"]),
             eval_started_at=parse_datetime(evaluation_run_data["eval_started_at"]),
-            result_scored_at=parse_datetime(evaluation_run_data["result_scored_at"])
+            result_scored_at=parse_datetime(evaluation_run_data["result_scored_at"]),
+            cancelled_at=parse_datetime(evaluation_run_data.get("cancelled_at"))
         )
         await store_evaluation_run(evaluation_run)
         
