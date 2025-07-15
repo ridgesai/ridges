@@ -40,7 +40,7 @@ async def handle_finish_evaluation(
                 await set_agent_status(evaluation.version_id, "waiting")
                 logger.debug(f"Successfully updated the agent status to waiting.")
             else:
-                logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
+                logger.debug(f"Evaluation {evaluation_id} failed screening with a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
                 await set_agent_status(evaluation.version_id, "scored")
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
