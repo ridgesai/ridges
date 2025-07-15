@@ -31,6 +31,8 @@ class DBManager:
             max_size=self.max_con,
             max_inactive_connection_lifetime=300,
             statement_cache_size=1_000,
+            command_timeout=30,
+            server_settings={'connect_timeout': '10'}
         )
         logger.info("Ensuring schema...")
         await self._ensure_schema()
