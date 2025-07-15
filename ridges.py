@@ -558,6 +558,35 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
     import traceback
     from pathlib import Path
     
+    # Check and setup .env file for proxy
+    proxy_env_path = Path("proxy/.env")
+    proxy_env_example_path = Path("proxy/.env.example")
+    
+    if not proxy_env_path.exists():
+        if proxy_env_example_path.exists():
+            console.print("📋 No .env file found, copying from .env.example...", style="yellow")
+            import shutil
+            shutil.copy(proxy_env_example_path, proxy_env_path)
+            console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
+        else:
+            console.print("💥 No proxy/.env.example file found! This is required for setup.", style="bold red")
+            return
+    
+    # Check for required Chutes API key
+    import os
+    if os.path.exists("proxy/.env"):
+        with open("proxy/.env", "r") as f:
+            env_content = f.read()
+        
+        if "CHUTES_API_KEY=your_chutes_api_key_here" in env_content or "CHUTES_API_KEY=" in env_content and "CHUTES_API_KEY=your_chutes_api_key_here" not in env_content:
+            # Check if it's just empty or still has placeholder
+            import re
+            api_key_match = re.search(r'CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
+            if not api_key_match or api_key_match.group(1).strip() in ['', 'your_chutes_api_key_here']:
+                console.print("💥 CHUTES_API_KEY is required in proxy/.env", style="bold red")
+                console.print("   Please get your API key from https://chutes.ai and update proxy/.env", style="yellow")
+                return
+
     # Load environment variables FIRST before any other imports
     try:
         from validator.local_testing.setup import load_environment
