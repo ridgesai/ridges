@@ -92,6 +92,7 @@ async def get_runs_for_evaluation(
 
     return evaluation_runs
 
+@db_operation
 async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> list[EvaluationRunWithUsageDetails]:
     run_rows = await conn.fetch(
         """
