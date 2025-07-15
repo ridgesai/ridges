@@ -41,11 +41,11 @@ def _display_single_test_result(result: Dict[str, Any], problem_index: int, tota
     console.print(f"✅ Completed test {completed_tests}/{total_problems} - {instance_id}", style="dim cyan")
     
     # Choose status icon and color
-    if status == 'COMPLETED' and solved:
+    if status == 'SOLVED':
         status_icon = "✅"
         status_color = "green"
         status_text = "SOLVED"
-    elif status == 'COMPLETED' and not solved:
+    elif status == 'COMPLETED':
         status_icon = "🔧"
         status_color = "yellow" 
         status_text = "PATCH GENERATED"
@@ -256,10 +256,18 @@ async def run_single_evaluation(sandbox, problem: SwebenchProblem) -> Dict[str, 
         # Extract results
         evaluation_run = sandbox.evaluation_run
         
+        # Determine status: preserve COMPLETED if patch was generated, even if not solved
+        if evaluation_run.solved:
+            status = 'SOLVED'
+        elif evaluation_run.response:  # Patch was generated but didn't solve the problem
+            status = 'COMPLETED'
+        else:
+            status = 'FAILED'
+        
         return {
             'instance_id': problem.instance_id,
-            'status': 'SOLVED' if evaluation_run.solved else 'FAILED',
-            'solved': evaluation_run.solved or False,
+            'status': status,
+            'solved': evaluation_run.solved,
             'error': evaluation_run.error,
             'patch_generated': bool(evaluation_run.response),
             'patch_length': len(evaluation_run.response) if evaluation_run.response else 0,

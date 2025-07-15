@@ -612,7 +612,7 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         try:
             # Check if proxy is already running
             import requests
-            proxy_url = os.getenv("RIDGES_PROXY_URL", "http://localhost:8001")
+            proxy_url = os.getenv("RIDGES_PROXY_URL", "http://10.0.0.9:8001")
             try:
                 response = requests.get(f"{proxy_url}/health", timeout=5)
                 if response.status_code == 200:
