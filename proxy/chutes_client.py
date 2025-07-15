@@ -14,6 +14,7 @@ from proxy.config import (
     EMBEDDING_PRICE_PER_SECOND,
     MODEL_PRICING,
     DEFAULT_MODEL,
+    ENV,
 )
 from proxy.models import GPTMessage
 from proxy.database import (
@@ -35,11 +36,13 @@ class ChutesClient:
         if not self.api_key:
             logger.warning("CHUTES_API_KEY not found in environment variables")
 
-    async def embed(self, run_id: UUID, input_text: str) -> Dict[str, Any]:
+    async def embed(self, run_id: UUID = None, input_text: str = None) -> Dict[str, Any]:
         """Get embedding for text input"""
 
-        # Create embedding record in database
-        embedding_id = await create_embedding(run_id, input_text)
+        # Create embedding record in database (skip in dev mode)
+        embedding_id = None
+        if ENV != 'dev':
+            embedding_id = await create_embedding(run_id, input_text)
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -60,8 +63,9 @@ class ChutesClient:
 
                 response_data = response.json()
 
-                # Update embedding record with cost and response
-                await update_embedding(embedding_id, cost, response_data)
+                # Update embedding record with cost and response (skip in dev mode)
+                if ENV != 'dev' and embedding_id:
+                    await update_embedding(embedding_id, cost, response_data)
 
                 logger.debug(
                     f"Embedding request for run {run_id} completed in {total_time_seconds:.2f}s, cost: ${cost:.6f}"
@@ -73,30 +77,33 @@ class ChutesClient:
             logger.error(
                 f"HTTP error in embedding request for run {run_id}: {e.response.status_code} - {e.response.text}"
             )
-            # Update embedding record with error
-            await update_embedding(
-                embedding_id,
-                0.0,
-                {"error": f"HTTP error: {e.response.status_code} - {e.response.text}"},
-            )
+            # Update embedding record with error (skip in dev mode)
+            if ENV != 'dev' and embedding_id:
+                await update_embedding(
+                    embedding_id,
+                    0.0,
+                    {"error": f"HTTP error: {e.response.status_code} - {e.response.text}"},
+                )
             return {"error": f"HTTP error in embedding request: {e.response.status_code} - {e.response.text}"}
         except httpx.TimeoutException:
             logger.error(f"Timeout in embedding request for run {run_id}")
-            # Update embedding record with error
-            await update_embedding(embedding_id, 0.0, {"error": "Embedding request timed out"})
+            # Update embedding record with error (skip in dev mode)
+            if ENV != 'dev' and embedding_id:
+                await update_embedding(embedding_id, 0.0, {"error": "Embedding request timed out"})
             return {"error": "Embedding request timed out. Please try again."}
         except Exception as e:
             logger.error(f"Error in embedding request for run {run_id}: {e}")
-            # Update embedding record with error
-            await update_embedding(embedding_id, 0.0, {"error": str(e)})
+            # Update embedding record with error (skip in dev mode)
+            if ENV != 'dev' and embedding_id:
+                await update_embedding(embedding_id, 0.0, {"error": str(e)})
             return {"error": f"Error in embedding request: {str(e)}"}
 
     async def inference(
         self,
-        run_id: UUID,
-        messages: List[GPTMessage],
-        temperature: float,
-        model: str,
+        run_id: UUID = None,
+        messages: List[GPTMessage] = None,
+        temperature: float = None,
+        model: str = None,
     ) -> Dict[str, Any]:
         """Get inference response for messages"""
 
@@ -114,8 +121,10 @@ class ChutesClient:
                 if message:
                     messages_dict.append({"role": message.role, "content": message.content})
 
-        # Create inference record in database
-        inference_id = await create_inference(run_id, messages_dict, temperature, model)
+        # Create inference record in database (skip in dev mode)
+        inference_id = None
+        if ENV != 'dev':
+            inference_id = await create_inference(run_id, messages_dict, temperature, model)
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -149,8 +158,9 @@ class ChutesClient:
                         logger.error(
                             f"Inference API request failed for run {run_id}: {response.status_code} - {error_message}"
                         )
-                        # Update inference record with error
-                        await update_inference(inference_id, 0.0, f"API request failed: {error_message}", 0)
+                        # Update inference record with error (skip in dev mode)
+                        if ENV != 'dev' and inference_id:
+                            await update_inference(inference_id, 0.0, f"API request failed: {error_message}", 0)
                         return {"error": f"API request failed with status {response.status_code}: {error_message}"}
 
                     # Process streaming response
@@ -184,8 +194,9 @@ class ChutesClient:
             # Calculate cost based on tokens
             cost = (total_tokens / 1_000_000) * MODEL_PRICING[model]
 
-            # Update inference record with cost and response
-            await update_inference(inference_id, cost, response_text, total_tokens)
+            # Update inference record with cost and response (skip in dev mode)
+            if ENV != 'dev' and inference_id:
+                await update_inference(inference_id, cost, response_text, total_tokens)
 
             logger.debug(f"Inference request for run {run_id} completed, tokens: {total_tokens}, cost: ${cost:.6f}")
 
@@ -195,21 +206,24 @@ class ChutesClient:
             logger.error(
                 f"HTTP error in inference request for run {run_id}: {e.response.status_code} - {e.response.text}"
             )
-            # Update inference record with error
-            await update_inference(
-                inference_id,
-                0.0,
-                f"HTTP error: {e.response.status_code} - {e.response.text}",
-                0,
-            )
+            # Update inference record with error (skip in dev mode)
+            if ENV != 'dev' and inference_id:
+                await update_inference(
+                    inference_id,
+                    0.0,
+                    f"HTTP error: {e.response.status_code} - {e.response.text}",
+                    0,
+                )
             return {"error": f"HTTP error in inference request: {e.response.status_code} - {e.response.text}"}
         except httpx.TimeoutException:
             logger.error(f"Timeout in inference request for run {run_id}")
-            # Update inference record with error
-            await update_inference(inference_id, 0.0, "Inference request timed out", 0)
+            # Update inference record with error (skip in dev mode)
+            if ENV != 'dev' and inference_id:
+                await update_inference(inference_id, 0.0, "Inference request timed out", 0)
             return {"error": "Inference request timed out. Please try again."}
         except Exception as e:
             logger.error(f"Error in inference request for run {run_id}: {e}")
-            # Update inference record with error
-            await update_inference(inference_id, 0.0, str(e), 0)
+            # Update inference record with error (skip in dev mode)
+            if ENV != 'dev' and inference_id:
+                await update_inference(inference_id, 0.0, str(e), 0)
             return {"error": f"Error in inference request: {str(e)}"}
