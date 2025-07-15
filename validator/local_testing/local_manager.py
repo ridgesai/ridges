@@ -187,6 +187,7 @@ class LocalSandbox:
         # Set up repo directory
         self.repo_dir = self.local_manager.repos_dir / f"repo_{self.evaluation_run.run_id}"
         self.repo_dir.mkdir(parents=True, exist_ok=True)
+        
         # Clone repository
         clone_repo(
             self.repo_dir,
