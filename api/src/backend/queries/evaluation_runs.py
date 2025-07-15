@@ -1,7 +1,7 @@
 from typing import Optional
 
 import asyncpg
-from api.src.backend.entities import EvaluationRun
+from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
 from api.src.backend.db_manager import db_operation
 
 
@@ -89,6 +89,75 @@ async def get_runs_for_evaluation(
     )
 
     evaluation_runs = [EvaluationRun(**dict(run_row)) for run_row in run_rows]
+
+    return evaluation_runs
+
+async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> list[EvaluationRunWithUsageDetails]:
+    run_rows = await conn.fetch(
+        """
+            WITH inf AS (
+                SELECT
+                    run_id,
+                    SUM(cost)          AS cost,
+                    SUM(total_tokens)  AS total_tokens,
+                    COUNT(*)           AS num_inference_calls,
+                    MAX(model)         AS model        -- assumes a run uses one model
+                FROM inferences
+                GROUP BY run_id
+            )
+            SELECT
+                e.run_id,
+                e.evaluation_id,
+                e.swebench_instance_id,
+                e.status,
+                e.response,
+                e.error,
+                e.pass_to_fail_success,
+                e.fail_to_pass_success,
+                e.pass_to_pass_success,
+                e.fail_to_fail_success,
+                e.solved,
+                e.started_at,
+                e.sandbox_created_at,
+                e.patch_generated_at,
+                e.eval_started_at,
+                e.result_scored_at,
+                i.cost,
+                i.total_tokens,
+                i.model,
+                i.num_inference_calls
+            FROM evaluation_runs  e
+            LEFT JOIN inf         i USING (run_id)        -- join on the PK only
+            WHERE e.evaluation_id = $1
+            ORDER BY e.started_at;
+        """,
+        evaluation_id
+    )
+
+    evaluation_runs = [
+        EvaluationRunWithUsageDetails(
+            run_id=str(run_row[0]),
+            evaluation_id=str(run_row[1]),
+            swebench_instance_id=run_row[2],
+            status=run_row[3],
+            response=run_row[4],
+            error=run_row[5],
+            pass_to_fail_success=run_row[6],
+            fail_to_pass_success=run_row[7],
+            pass_to_pass_success=run_row[8],
+            fail_to_fail_success=run_row[9],
+            solved=run_row[10],
+            started_at=run_row[11],
+            sandbox_created_at=run_row[12],
+            patch_generated_at=run_row[13],
+            eval_started_at=run_row[14],
+            result_scored_at=run_row[15],
+            cost=run_row[16],
+            total_tokens=run_row[17],
+            model=run_row[18],
+            num_inference_calls=run_row[19]
+        ) for run_row in run_rows
+    ]
 
     return evaluation_runs
 

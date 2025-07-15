@@ -6,7 +6,7 @@ from uuid import UUID
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import MinerAgent, Inference
 
 @db_operation
 async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
@@ -62,7 +62,7 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
         select e.version_id, e.validator_hotkey, e.started_at, a.agent_name, a.miner_hotkey, a.version_num
         from evaluations e
         left join miner_agents a on a.version_id = e.version_id
-        where status = 'running';
+        where e.status = 'running';
     """)
 
     return [RunningEvaluation(**dict(row)) for row in results]
@@ -107,3 +107,55 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
 
     
     return [MinerAgent(**dict(row)) for row in results]
+
+class QueuePositionPerValidator(BaseModel): 
+    validator_hotkey: str
+    queue_position: int
+
+@db_operation
+async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> list[QueuePositionPerValidator]:
+    results = await conn.fetch("""
+        WITH latest_version AS (
+            SELECT version_id
+            FROM   miner_agents
+            WHERE  miner_hotkey = $1
+            ORDER  BY version_num DESC
+            LIMIT  1
+        ),
+
+        waiting_queue AS (
+            SELECT
+                e.evaluation_id,
+                e.validator_hotkey,
+                ROW_NUMBER() OVER (                    --    ranked per validator
+                    PARTITION BY e.validator_hotkey
+                    ORDER BY     e.created_at
+                ) AS queue_position
+            FROM   evaluations   e
+            JOIN   miner_agents  ma ON ma.version_id = e.version_id
+            WHERE  e.status = 'waiting'                -- only items still in the queue
+            AND  ma.miner_hotkey NOT IN (SELECT miner_hotkey
+                                        FROM banned_hotkeys)  -- skip banned miners
+        )
+
+        SELECT
+            w.validator_hotkey,
+            w.queue_position
+        FROM   waiting_queue w
+        JOIN   evaluations  e  ON e.evaluation_id = w.evaluation_id
+        JOIN   latest_version lv ON lv.version_id  = e.version_id
+        ORDER  BY w.validator_hotkey;
+    """, miner_hotkey)
+
+    return [QueuePositionPerValidator(**dict(row)) for row in results]
+
+@db_operation
+async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -> list[Inference]:
+    runs = await conn.fetch("""
+        select 
+            id, run_id, messages->0->>'content' as message, temperature, model,cost, response, total_tokens, created_at, finished_at 
+        from inferences 
+        where run_id = $1;
+    """, run_id)
+
+    return [Inference(**dict(run)) for run in runs]

@@ -10,6 +10,7 @@ from uuid import UUID
 import asyncpg
 
 from proxy.models import EvaluationRun, SandboxStatus, Embedding, Inference
+from proxy.config import ENV
 
 logger = logging.getLogger(__name__)
 
@@ -49,31 +50,39 @@ class DBManager:
             yield con
 
 # Initialize database manager with environment variables
-DB_USER = os.getenv("AWS_MASTER_USERNAME")
-DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
-DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
-DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
-DB_PORT = os.getenv("PGPORT", "5432")
+if ENV != 'dev':
+    DB_USER = os.getenv("AWS_MASTER_USERNAME")
+    DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
+    DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
+    DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
+    DB_PORT = os.getenv("PGPORT", "5432")
 
-if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
-    raise RuntimeError(
-        "Missing one or more required environment variables: "
-        "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
-        "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
+    if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
+        raise RuntimeError(
+            "Missing one or more required environment variables: "
+            "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
+            "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
+        )
+
+    db_manager = DBManager(
+        user=DB_USER,
+        password=DB_PASS,
+        host=DB_HOST,
+        port=int(DB_PORT),
+        database=DB_NAME,
     )
-
-db_manager = DBManager(
-    user=DB_USER,
-    password=DB_PASS,
-    host=DB_HOST,
-    port=int(DB_PORT),
-    database=DB_NAME,
-)
+else:
+    # In dev mode, create a dummy db_manager that won't be used
+    db_manager = None
 
 def db_operation(func):
     """Decorator to handle database operations with logging and transaction management"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
+        if ENV == 'dev':
+            # In dev mode, skip database operations
+            logger.debug(f"Skipping database operation {func.__name__} in dev mode")
+            return None
         async with db_manager.acquire() as conn:
             try:
                 return await func(conn, *args, **kwargs)

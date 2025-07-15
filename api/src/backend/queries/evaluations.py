@@ -6,7 +6,8 @@ import asyncpg
 from datetime import datetime, timezone
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns
+from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
+from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 
 logger = logging.getLogger(__name__)
 
@@ -353,6 +354,49 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     
     return evaluations
 
+async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str) -> list[EvaluationsWithHydratedUsageRuns]:
+    evaluations: list[EvaluationsWithHydratedUsageRuns] = []
+
+    evaluation_rows = await conn.fetch("""
+            SELECT 
+                evaluation_id,
+                version_id,
+                validator_hotkey,
+                status,
+                terminated_reason,
+                created_at,
+                started_at,
+                finished_at,
+                score
+            FROM evaluations 
+            WHERE version_id = $1
+            ORDER BY created_at DESC
+        """,
+        version_id
+    )
+    
+    for evaluation_row in evaluation_rows:
+        evaluation_id = evaluation_row[0]
+
+        evaluation_runs = await get_runs_with_usage_for_evaluation(evaluation_id=evaluation_id)
+
+        hydrated_evaluation = EvaluationsWithHydratedRuns(
+            evaluation_id=evaluation_id,
+            version_id=evaluation_row[1],
+            validator_hotkey=evaluation_row[2],
+            status=evaluation_row[3],
+            terminated_reason=evaluation_row[4],
+            created_at=evaluation_row[5],
+            started_at=evaluation_row[6],
+            finished_at=evaluation_row[7],
+            score=evaluation_row[8],
+            evaluation_runs=evaluation_runs
+        )
+
+        evaluations.append(hydrated_evaluation)
+    
+    return evaluations
+
 @db_operation
 async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
     logger.debug(f"Fetching next evaluation from database for validator {validator_hotkey}.")
@@ -433,6 +477,3 @@ async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length
     )
 
     return [Evaluation(**dict(row)) for row in result]
-
-
-

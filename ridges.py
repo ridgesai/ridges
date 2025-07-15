@@ -10,6 +10,7 @@ from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
 import subprocess
+import requests
 from typing import Optional
 from dotenv import load_dotenv
 from rich.console import Console
@@ -540,6 +541,149 @@ def status():
             console.print(f"✅ {display_name}: [bold green]Running[/bold green]")
         else:
             console.print(f"❌ {display_name}: [bold red]Stopped[/bold red]")
+
+@cli.command()
+@click.option("--agent-file", default="miner/agent.py", help="Path to agent file to test")
+@click.option("--num-problems", default=3, type=int, help="Number of problems to test")
+@click.option("--timeout", default=1200, type=int, help="Timeout per problem in seconds")
+@click.option("--problem-set", default="screener", type=click.Choice(['screener', 'easy', 'medium']), help="Which problem set to use")
+@click.option("--verbose", is_flag=True, help="Show detailed output")
+@click.option("--cleanup", is_flag=True, default=True, help="Clean up containers after test")
+@click.option("--start-proxy", is_flag=True, default=True, help="Automatically start proxy if needed")
+def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: str, verbose: bool, cleanup: bool, start_proxy: bool):
+    """Test your agent locally with full SWE-bench evaluation"""
+    
+    import tempfile
+    import shutil
+    import traceback
+    from pathlib import Path
+    
+    # Load environment variables FIRST before any other imports
+    try:
+        from validator.local_testing.setup import load_environment
+        load_environment()
+    except ImportError as e:
+        console.print(f"💥 Failed to load environment setup: {e}", style="bold red")
+        return
+    
+    console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
+                        f"[yellow]Agent:[/yellow] {agent_file}\n"
+                        f"[yellow]Problems:[/yellow] {num_problems} from {problem_set} set\n"
+                        f"[yellow]Timeout:[/yellow] {timeout}s per problem", 
+                        title="🚀 Local Test", border_style="cyan"))
+    
+    # Validate agent file exists
+    if not Path(agent_file).exists():
+        console.print(f"💥 Agent file not found: {agent_file}", style="bold red")
+        return
+    
+    # Check if proxy is needed and start if required
+    proxy_process = None
+    if start_proxy:
+        try:
+            # Check if proxy is already running
+            import requests
+            proxy_url = os.getenv("RIDGES_PROXY_URL", "http://localhost:8001")
+            try:
+                response = requests.get(f"{proxy_url}/health", timeout=5)
+                if response.status_code == 200:
+                    console.print(f"✅ Proxy already running at {proxy_url}", style="green")
+                else:
+                    raise Exception("Proxy not responding")
+            except:
+                console.print("🚀 Starting proxy...", style="yellow")
+                proxy_process = subprocess.Popen(
+                    ["python", "ridges.py", "proxy", "run", "--no-auto-update"],
+                    stdout=subprocess.DEVNULL if not verbose else None,
+                    stderr=subprocess.DEVNULL if not verbose else None
+                )
+                # Give proxy time to start
+                import time
+                time.sleep(5)
+                console.print("✅ Proxy started", style="green")
+        except Exception as e:
+            console.print(f"⚠️  Could not start proxy: {e}", style="yellow")
+            console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
+    
+    try:
+        # Import our new local testing components (after environment is loaded)
+        from validator.local_testing.setup import setup_local_testing_environment
+        from validator.local_testing.local_manager import LocalSandboxManager
+        from validator.local_testing.runner import run_local_evaluations
+        
+        # One-time setup (pulls images, etc.)
+        console.print("🔧 Setting up local testing environment...", style="yellow")
+        setup_local_testing_environment()
+        
+        # Create local sandbox manager
+        local_manager = LocalSandboxManager(verbose=verbose)
+        
+        # Run evaluations
+        import asyncio
+        results = asyncio.run(run_local_evaluations(
+            agent_file=agent_file,
+            num_problems=num_problems,
+            timeout=timeout,
+            problem_set=problem_set,
+            manager=local_manager
+        ))
+        
+        # Display results
+        display_test_results(results)
+        
+    except KeyboardInterrupt:
+        console.print("\n🛑 Test interrupted by user", style="yellow")
+    except Exception as e:
+        console.print(f"💥 Test failed: {e}", style="bold red")
+        if verbose:
+            console.print(traceback.format_exc(), style="dim")
+    finally:
+        # Cleanup
+        if cleanup:
+            console.print("🧹 Cleaning up...", style="dim")
+            try:
+                if 'local_manager' in locals():
+                    local_manager.cleanup()
+            except:
+                pass
+        
+        # Stop proxy if we started it
+        if proxy_process:
+            try:
+                proxy_process.terminate()
+                proxy_process.wait(timeout=5)
+                console.print("🛑 Proxy stopped", style="dim")
+            except:
+                proxy_process.kill()
+                console.print("🛑 Proxy force stopped", style="dim")
+
+def display_test_results(results: dict):
+    """Display test results in a nice format"""
+    
+    summary = results['summary']
+    individual_results = results['results']
+    
+    # Summary panel
+    solved_count = summary['solved_count']
+    total_count = summary['total_count']
+    success_rate = summary['success_rate']
+    avg_time = summary['avg_time']
+    
+    console.print(Panel(
+        f"[bold green]✅ Solved:[/bold green] {solved_count}/{total_count} ({success_rate:.1f}%)\n"
+        f"[yellow]⏱️  Average time:[/yellow] {avg_time:.1f}s\n"
+        f"[cyan]🔧 Patches generated:[/cyan] {summary['patches_generated']}/{total_count}",
+        title="📊 Test Summary", border_style="green" if success_rate > 0 else "red"
+    ))
+    
+    # Individual results
+    console.print("\n[bold cyan]Individual Results:[/bold cyan]")
+    for i, result in enumerate(individual_results):
+        status_icon = "✅" if result['solved'] else "❌" if result['error'] else "⚠️"
+        console.print(f"{status_icon} {result['instance_id']}: {result['status']} ({result['duration']:.1f}s)")
+        
+        if result.get('error'):
+            console.print(f"   [red]Error:[/red] {result['error'][:100]}...")
 
 if __name__ == "__main__":
     run_cmd(". .venv/bin/activate")

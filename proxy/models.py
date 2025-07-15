@@ -26,11 +26,11 @@ class GPTMessage(BaseModel):
 class EmbeddingRequest(BaseModel):
     """Model for embedding request"""
     input: str = Field(..., description="Text to embed")
-    run_id: str = Field(..., description="Evaluation run ID")
+    run_id: Optional[str] = Field(None, description="Evaluation run ID")
 
 class InferenceRequest(BaseModel):
     """Model for inference request"""
-    run_id: str = Field(..., description="Evaluation run ID")
+    run_id: Optional[str] = Field(None, description="Evaluation run ID")
     model: Optional[str] = Field(None, description="Model to use for inference")
     temperature: Optional[float] = Field(None, description="Temperature for inference")
     messages: List[GPTMessage] = Field(..., description="Messages to send to the model")

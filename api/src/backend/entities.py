@@ -66,8 +66,18 @@ class EvaluationRun(BaseModel):
     result_scored_at: Optional[datetime]
     cancelled_at: Optional[datetime]
     
+
+class EvaluationRunWithUsageDetails(EvaluationRun):
+    cost: Optional[float]
+    total_tokens: Optional[int]
+    model: Optional[str]
+    num_inference_calls: Optional[int]
+
 class EvaluationsWithHydratedRuns(Evaluation):
     evaluation_runs: list[EvaluationRun]
+
+class EvaluationsWithHydratedUsageRuns(Evaluation):
+    evaluation_runs: list[EvaluationRunWithUsageDetails]
 
 class ValidatorInfo(BaseModel):
     """Information about a connected validator"""
@@ -77,3 +87,15 @@ class ValidatorInfo(BaseModel):
     ip_address: Optional[str] = None
     is_screener: Optional[bool] = False
     status: Optional[str] = None
+
+class Inference(BaseModel):
+    id: UUID
+    run_id: UUID
+    message: str
+    temperature: float
+    model: str
+    cost: float
+    response: str
+    total_tokens: int
+    created_at: datetime
+    finished_at: Optional[datetime]

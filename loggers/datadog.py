@@ -19,6 +19,7 @@ configuration = Configuration()
 
 hostname = os.getenv("DD_HOSTNAME")
 service = os.getenv("DD_SERVICE")
+env = os.getenv("DD_ENV")
 
 class DatadogLogHandler(logging.Handler):
     def __init__(self):
@@ -57,7 +58,8 @@ class DatadogLogHandler(logging.Handler):
                     function=f"{record.funcName}()",
                     message=record.msg,
                     service=top_folder,
-                    date=record.timestamp
+                    date=record.timestamp,
+                    env=env
                 ),
             ]
         )
@@ -96,7 +98,8 @@ class DatadogLogHandler(logging.Handler):
                     function=f"{record.funcName}()",
                     message=record.msg,
                     service=top_folder,
-                    date=record.timestamp
+                    date=record.timestamp,
+                    env=env
                 ),
             ]
         )

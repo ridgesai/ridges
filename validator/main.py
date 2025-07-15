@@ -42,7 +42,7 @@ async def main():
     This starts up the validator websocket, which connects to the Ridges platform 
     It receives and sends events like new agents to evaluate, eval status, scores, etc
     """
-    await check_and_generate_embeddings()
+    # await check_and_generate_embeddings()
     websocket_app = WebsocketApp()
     try:
         await websocket_app.start()
