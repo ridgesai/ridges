@@ -92,7 +92,7 @@ class SandboxManager:
     
     async def run_all_sandboxes(self) -> None:
         """Run all sandboxes in parallel"""
-        async def run_sandbox_with_error_handling(sandbox):
+        async def run_sandbox_with_error_handling(sandbox: Sandbox):
             """Run a single sandbox with error handling"""
             try:
                 await sandbox.run()
