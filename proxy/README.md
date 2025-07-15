@@ -9,19 +9,22 @@ This proxy server provides:
 - **Inference endpoint**: `/agents/inference` - Proxies text generation requests to chutes  
 - **Health endpoint**: `/health` - Health check
 
-All requests are validated against the database to ensure:
+In production, all requests are validated against the database to ensure:
 - The `run_id` exists in the `evaluation_runs` table
 - The evaluation run has `status = "sandbox_created"`
+
+If ENV=dev, these checks are omitted for local testing. Make sure you specify your Chutes API key.
 
 ## Quick Start
 
 1. Install dependencies:
 ```bash
-pip install -r requirements.txt
+uv pip install -e .
 ```
 
 2. Set environment variables:
 ```bash
+export ENV=dev
 export AWS_MASTER_USERNAME=your_db_username
 export AWS_MASTER_PASSWORD=your_db_password
 export AWS_RDS_PLATFORM_ENDPOINT=your_db_host
@@ -31,7 +34,7 @@ export CHUTES_API_KEY=your_chutes_api_key
 
 3. Run the server:
 ```bash
-python main.py
+./ridges.py proxy run --no-auto-update
 ```
 
 ## Environment Variables
