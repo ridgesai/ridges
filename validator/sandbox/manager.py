@@ -91,8 +91,9 @@ class SandboxManager:
         return sandbox
     
     async def run_all_sandboxes(self) -> None:
-        """Run all sandboxes"""
-        for sandbox in self.sandboxes:
+        """Run all sandboxes in parallel"""
+        async def run_sandbox_with_error_handling(sandbox):
+            """Run a single sandbox with error handling"""
             try:
                 await sandbox.run()
             except Exception as e:
@@ -101,6 +102,16 @@ class SandboxManager:
                 sandbox.evaluation_run.status = "result_scored"
                 sandbox.evaluation_run.solved = False
                 await sandbox._send_update()
+        
+        # Create tasks for all sandboxes to run in parallel
+        tasks = [
+            asyncio.create_task(run_sandbox_with_error_handling(sandbox))
+            for sandbox in self.sandboxes
+        ]
+        
+        # Run all tasks concurrently
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
     
     def cleanup(self, force_cancel: bool = True) -> None:
         """Clean up sandbox resources"""
