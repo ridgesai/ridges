@@ -123,6 +123,7 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
                 e.patch_generated_at,
                 e.eval_started_at,
                 e.result_scored_at,
+                e.cancelled_at,
                 i.cost,
                 i.total_tokens,
                 i.model,
@@ -153,10 +154,11 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
             patch_generated_at=run_row[13],
             eval_started_at=run_row[14],
             result_scored_at=run_row[15],
-            cost=run_row[16],
-            total_tokens=run_row[17],
-            model=run_row[18],
-            num_inference_calls=run_row[19]
+            cancelled_at=run_row[16],
+            cost=run_row[17],
+            total_tokens=run_row[18],
+            model=run_row[19],
+            num_inference_calls=run_row[20]
         ) for run_row in run_rows
     ]
 
