@@ -713,6 +713,15 @@ def display_test_results(results: dict):
         
         if result.get('error'):
             console.print(f"   [red]Error:[/red] {result['error'][:100]}...")
+        
+        # Display patch content if generated
+        if result.get('patch_content'):
+            console.print(f"   [green]📝 Generated Patch:[/green]")
+            # Display patch in a code block style
+            patch_lines = result['patch_content'].split('\n')
+            for line in patch_lines:  # Show all lines
+                console.print(f"   [dim]{line}[/dim]")
+            console.print("")  # Add spacing
 
 if __name__ == "__main__":
     run_cmd(". .venv/bin/activate")
