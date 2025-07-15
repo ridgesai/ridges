@@ -63,6 +63,7 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "shisa-ai/shisa-v2-llama3.3-70b": 0.0302,
                                 "moonshotai/Kimi-Dev-72B": 0.1008,
                                 "moonshotai/Kimi-K2-Instruct": 0.5292,
+                                "all-hands/openhands-lm-32b-v0.1": 0.0246,
                                 "sarvamai/sarvam-m": 0.0224
 }
 EMBEDDING_PRICE_PER_SECOND = 0.0001
