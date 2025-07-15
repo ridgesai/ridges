@@ -621,10 +621,12 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
                     raise Exception("Proxy not responding")
             except:
                 console.print("🚀 Starting proxy...", style="yellow")
+                import os
                 proxy_process = subprocess.Popen(
                     ["python", "ridges.py", "proxy", "run", "--no-auto-update"],
                     stdout=subprocess.DEVNULL if not verbose else None,
-                    stderr=subprocess.DEVNULL if not verbose else None
+                    stderr=subprocess.DEVNULL if not verbose else None,
+                    preexec_fn=os.setsid  # Create new process group for proper cleanup
                 )
                 # Give proxy time to start
                 import time
@@ -679,12 +681,32 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         # Stop proxy if we started it
         if proxy_process:
             try:
-                proxy_process.terminate()
-                proxy_process.wait(timeout=5)
-                console.print("🛑 Proxy stopped", style="dim")
-            except:
-                proxy_process.kill()
-                console.print("🛑 Proxy force stopped", style="dim")
+                # Kill the entire process group to ensure child processes are also terminated
+                import os
+                import signal
+                if hasattr(proxy_process, 'pid') and proxy_process.pid:
+                    try:
+                        # Send SIGTERM to the entire process group
+                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGTERM)
+                        proxy_process.wait(timeout=5)
+                        console.print("🛑 Proxy stopped", style="dim")
+                    except (ProcessLookupError, OSError):
+                        # Process already terminated
+                        console.print("🛑 Proxy stopped", style="dim")
+                    except subprocess.TimeoutExpired:
+                        # Force kill the process group
+                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGKILL)
+                        console.print("🛑 Proxy force stopped", style="dim")
+                else:
+                    proxy_process.terminate()
+                    proxy_process.wait(timeout=5)
+                    console.print("🛑 Proxy stopped", style="dim")
+            except Exception as e:
+                try:
+                    proxy_process.kill()
+                    console.print("🛑 Proxy force stopped", style="dim")
+                except:
+                    console.print("⚠️  Could not stop proxy process", style="yellow")
 
 def display_test_results(results: dict):
     """Display test results in a nice format"""
