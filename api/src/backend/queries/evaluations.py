@@ -354,6 +354,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     
     return evaluations
 
+@db_operation
 async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str) -> list[EvaluationsWithHydratedUsageRuns]:
     evaluations: list[EvaluationsWithHydratedUsageRuns] = []
 
