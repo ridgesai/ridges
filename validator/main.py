@@ -5,8 +5,6 @@ import json
 import shutil
 
 from dotenv import load_dotenv
-
-from validator.utils.logging import get_logger
 load_dotenv("validator/.env")
 
 # Internal package imports

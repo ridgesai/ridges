@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, store_evaluation, check_for_new_high_score
-from api.src.backend.entities import EvaluationStatus
+from api.src.backend.queries.evaluations import finish_evaluation, get_evaluation_by_evaluation_id
+from api.src.backend.queries.scores import check_for_new_high_score
 from api.src.backend.queries.agents import set_agent_status
 from loggers.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
@@ -23,13 +23,7 @@ async def handle_finish_evaluation(
     logger.info(f"Validator with hotkey {validator_hotkey} has informed the platform that it has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
-        evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-        evaluation.status = EvaluationStatus.completed if not errored else EvaluationStatus.error
-        evaluation.finished_at = datetime.now(timezone.utc)
-        # Set score to None to preserve the trigger-calculated score
-        evaluation.score = None
-        logger.debug(f"Attempting to update evaluation {evaluation_id} in the database with the following new details, status: {evaluation.status}, finished_at: {evaluation.finished_at}, score: {evaluation.score}.")
-        await store_evaluation(evaluation)
+        evaluation = await finish_evaluation(evaluation_id, errored)
 
         if evaluation.validator_hotkey.startswith("i-0"):
             from api.src.socket.websocket_manager import WebSocketManager
@@ -46,7 +40,7 @@ async def handle_finish_evaluation(
                 await set_agent_status(evaluation.version_id, "waiting")
                 logger.debug(f"Successfully updated the agent status to waiting.")
             else:
-                logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
+                logger.debug(f"Evaluation {evaluation_id} failed screening with a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
                 await set_agent_status(evaluation.version_id, "scored")
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
