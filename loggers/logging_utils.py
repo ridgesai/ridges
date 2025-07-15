@@ -33,7 +33,7 @@ def get_logger(name: str):
     
     setup_process_logging(logger)
 
-    if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE"):
+    if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV"):
         datadog_handler = DatadogLogHandler()
         logger.addHandler(datadog_handler)
         print("Datadog logging enabled")
