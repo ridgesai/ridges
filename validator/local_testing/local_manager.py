@@ -112,7 +112,7 @@ class LocalSandboxManager:
         self.proxy_url = f"http://{self.proxy_container_name}"
         if self.verbose:
             print(f"Using proxy URL: {self.proxy_url}")
-    async def create_sandbox(self, problem: SwebenchProblem, agent_file: Path) -> 'LocalSandbox':
+    async def create_sandbox(self, problem: SwebenchProblem, agent_file: Path, log_buffer: list = None) -> 'LocalSandbox':
         """Create a new sandbox for testing"""
         # Copy agent file to temp directory
         agent_name = f"agent_{uuid.uuid4().hex[:8]}.py"
@@ -134,7 +134,8 @@ class LocalSandboxManager:
             problem=problem,
             agent_path=agent_path,
             local_manager=self,
-            verbose=self.verbose
+            verbose=self.verbose,
+            log_buffer=log_buffer
         )
         return sandbox
     def cleanup(self):
@@ -169,7 +170,7 @@ class LocalSandboxManager:
                 print(f"Error removing temp directory: {e}")
 class LocalSandbox:
     """Local sandbox for testing agents without database dependencies"""
-    def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_path: Path, local_manager: LocalSandboxManager, verbose: bool = False):
+    def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_path: Path, local_manager: LocalSandboxManager, verbose: bool = False, log_buffer: list = None):
         self.evaluation_run = evaluation_run
         self.problem = problem
         self.agent_path = agent_path
@@ -178,8 +179,11 @@ class LocalSandbox:
         self.container = None
         self.repo_dir = None
         self._cancelled = asyncio.Event()
+        self.log_buffer = log_buffer  # Set immediately from constructor
+        self.container_logs = None  # Will store logs before container removal
         # Use the docker module from the manager
         self.docker_module = local_manager.docker_module
+        
         # Set up repo directory
         self.repo_dir = self.local_manager.repos_dir / f"repo_{self.evaluation_run.run_id}"
         self.repo_dir.mkdir(parents=True, exist_ok=True)
@@ -189,8 +193,14 @@ class LocalSandbox:
             problem.repo,
             problem.base_commit
         )
-        if self.verbose:
-            print(f"[{self.problem.instance_id}] Repository cloned to: {self.repo_dir}")
+        self._log(f"📁 Repository cloned to: {self.repo_dir}")
+    
+    def _log(self, message: str):
+        """Log a message to buffer if available, otherwise print"""
+        if self.log_buffer is not None:
+            self.log_buffer.append(message)
+        elif self.verbose:
+            print(message)
     async def run(self) -> None:
         """Run the sandbox - compatibility method for runner"""
         result = await self.run_agent()
@@ -231,7 +241,7 @@ class LocalSandbox:
             try:
                 self.local_manager.docker.images.get(SANDBOX_DOCKER_IMAGE)
             except self.docker_module.errors.ImageNotFound:
-                print(f"Pulling sandbox image: {SANDBOX_DOCKER_IMAGE}")
+                self._log(f"📥 Pulling sandbox image: {SANDBOX_DOCKER_IMAGE}")
                 self.local_manager.docker.images.pull(SANDBOX_DOCKER_IMAGE)
             # Run sandbox container
             self.container = self.local_manager.docker.containers.run(
@@ -251,8 +261,7 @@ class LocalSandbox:
                     'RIDGES_API_URL': os.getenv('RIDGES_API_URL', 'http://localhost:8000'),
                 }
             )
-            if self.verbose:
-                print(f"[{self.problem.instance_id}] Started sandbox container")
+            self._log("🐳 Started sandbox container")
             # Monitor container
             monitor_task = asyncio.create_task(self._monitor_container())
             # Wait for container to complete
@@ -281,35 +290,79 @@ class LocalSandbox:
                         'error': self.evaluation_run.error
                     }
                 else:
+                    # Use pre-captured container logs
+                    container_logs = f"\n{self.container_logs}" if self.container_logs else ""
+                    
+                    # Create detailed error message
+                    error_parts = [
+                        "Empty patch returned from agent.",
+                        f"Raw output data: {json.dumps(output_data, indent=2)[:1000]}..."
+                    ]
+                    if container_logs:
+                        error_parts.append(container_logs)
+                    
+                    detailed_error = "\n".join(error_parts)
+                    
                     self.evaluation_run.status = "no_patch_generated"
-                    logger.error(f"Sandbox {self.evaluation_run.run_id} failed: Empty patch returned from agent")
+                    self._log(f"❌ Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
+                    
                     return {
                         'instance_id': self.problem.instance_id,
                         'status': 'FAILED',
                         'solved': False,
-                        'error': 'Empty patch returned from agent',
+                        'error': detailed_error,
                         'patch_generated': False,
                         'patch_length': 0
                     }
             else:
+                # Use pre-captured container logs
+                container_logs = f"\n{self.container_logs}" if self.container_logs else ""
+                
+                # Create detailed error message
+                error_parts = [
+                    "No output file generated by agent.",
+                    f"Expected output file: {output_file}"
+                ]
+                if container_logs:
+                    error_parts.append(container_logs)
+                
+                detailed_error = "\n".join(error_parts)
+                
                 self.evaluation_run.status = "no_output_file"
+                self._log(f"❌ Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
+                
                 return {
                     'instance_id': self.problem.instance_id,
                     'status': 'FAILED',
                     'solved': False,
-                    'error': 'No output file generated',
+                    'error': detailed_error,
                     'patch_generated': False,
                     'patch_length': 0
                 }
         except Exception as e:
-            logger.error(f"Sandbox execution failed: {e}")
+            # Use pre-captured container logs
+            container_logs = f"\n{self.container_logs}" if self.container_logs else ""
+            
+            # Create detailed error message
+            import traceback
+            error_parts = [
+                f"Sandbox execution failed: {str(e)}",
+                f"Traceback: {traceback.format_exc()}"
+            ]
+            if container_logs:
+                error_parts.append(container_logs)
+            
+            detailed_error = "\n".join(error_parts)
+            
+            self._log(f"❌ Sandbox execution failed: {detailed_error}")
             self.evaluation_run.status = "execution_failed"
-            self.evaluation_run.error = str(e)
+            self.evaluation_run.error = detailed_error
+            
             return {
                 'instance_id': self.problem.instance_id,
                 'status': 'ERROR',
                 'solved': False,
-                'error': str(e),
+                'error': detailed_error,
                 'patch_generated': False,
                 'patch_length': 0
             }
@@ -362,7 +415,7 @@ class LocalSandbox:
                 self.evaluation_run.fail_to_fail_success = json.dumps([])
                 self.evaluation_run.pass_to_fail_success = json.dumps([])
         except Exception as e:
-            logger.error(f"SWE-bench evaluation failed: {e}")
+            self._log(f"❌ SWE-bench evaluation failed: {e}")
             self.evaluation_run.error = f"SWE-bench evaluation failed: {str(e)}"
             self.evaluation_run.solved = False
     async def _monitor_container(self) -> None:
@@ -404,6 +457,15 @@ class LocalSandbox:
                     break
                 logger.warning(f"Container monitoring error: {e}")
             await asyncio.sleep(1)
+        
+        # Capture container logs before removal
+        try:
+            if self.container:
+                logs = self.container.logs(stdout=True, stderr=True, tail=100).decode('utf-8', errors='ignore')
+                self.container_logs = f"Container logs (last 100 lines):\n{logs}"
+        except Exception as e:
+            self.container_logs = f"Failed to capture container logs: {e}"
+        
         # Clean up container
         try:
             self.container.remove()
