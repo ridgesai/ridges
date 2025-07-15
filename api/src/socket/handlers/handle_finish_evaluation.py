@@ -1,10 +1,11 @@
 
+import json
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from api.src.backend.queries.evaluations import finish_evaluation, get_evaluation_by_evaluation_id
+from api.src.backend.queries.evaluations import create_next_evaluation_for_screener, finish_evaluation, get_evaluation_by_evaluation_id
 from api.src.backend.queries.scores import check_for_new_high_score
-from api.src.backend.queries.agents import set_agent_status
+from api.src.backend.queries.agents import get_agent_by_version_id, set_agent_status
 from loggers.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
 
@@ -24,8 +25,9 @@ async def handle_finish_evaluation(
     
     try:
         evaluation = await finish_evaluation(evaluation_id, errored)
+        is_screener = evaluation.validator_hotkey.startswith("i-0")
 
-        if evaluation.validator_hotkey.startswith("i-0"):
+        if is_screener:
             from api.src.socket.websocket_manager import WebSocketManager
             ws = WebSocketManager.get_instance()
 
@@ -42,6 +44,17 @@ async def handle_finish_evaluation(
             else:
                 logger.debug(f"Evaluation {evaluation_id} failed screening with a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
                 await set_agent_status(evaluation.version_id, "scored")
+
+            evaluation = await create_next_evaluation_for_screener(validator_hotkey)
+            if evaluation:
+                logger.info(f"Sending screener {validator_hotkey} evaluation {evaluation.evaluation_id} to screener {validator_hotkey}")
+                miner_agent = await get_agent_by_version_id(evaluation.version_id)
+                await websocket.send_text(json.dumps({
+                    "event": "screen-agent",
+                    "evaluation_id": str(evaluation.evaluation_id),
+                    "agent_version": miner_agent.model_dump(mode='json')
+                }))
+                logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
         if not errored:  # Only check if evaluation completed successfully
