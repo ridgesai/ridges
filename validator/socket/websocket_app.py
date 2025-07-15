@@ -34,7 +34,6 @@ class WebsocketApp:
     async def send(self, message: Dict[str, Any]):
         if self.ws is None:
             logger.error("Websocket not connected")
-            await self.cancel_evaluation()
             return
         
         try:
