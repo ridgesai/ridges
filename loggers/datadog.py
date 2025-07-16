@@ -21,6 +21,8 @@ hostname = os.getenv("DD_HOSTNAME")
 service = os.getenv("DD_SERVICE")
 env = os.getenv("DD_ENV")
 
+source = "ec2" if env == "prod" else "local"
+
 class DatadogLogHandler(logging.Handler):
     def __init__(self):
         super().__init__()
@@ -48,18 +50,19 @@ class DatadogLogHandler(logging.Handler):
         body = HTTPLog(
             [
                 HTTPLogItem(
-                    ddsource="ec2",
+                    ddsource=source,
                     process_type=provided_process_type,
                     process_id=provided_process_id,
-                    ddtags=f"pathname:{record.pathname}",
+                    ddtags=f"env:{env}",
                     hostname=hostname,
                     level=record.levelname,
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service=top_folder,
+                    service=service,
+                    resource=top_folder,
+                    pathname=record.pathname,
                     date=record.timestamp,
-                    env=env
                 ),
             ]
         )
@@ -88,18 +91,19 @@ class DatadogLogHandler(logging.Handler):
         body = HTTPLog(
             [
                 HTTPLogItem(
-                    ddsource="ec2",
+                    ddsource=source,
                     process_type=provided_process_type,
                     process_id=provided_process_id,
-                    ddtags=f"pathname:{record.pathname}",
+                    ddtags=f"env:{env}",
                     hostname=hostname,
                     level=record.levelname,
                     location=f"{record.pathname}:{record.lineno}",
                     function=f"{record.funcName}()",
                     message=record.msg,
-                    service=top_folder,
+                    service=service,
+                    resource=top_folder,
+                    pathname=record.pathname,
                     date=record.timestamp,
-                    env=env
                 ),
             ]
         )
