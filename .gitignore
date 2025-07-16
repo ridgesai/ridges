@@ -40,3 +40,6 @@ SWE-agent/*
 LOCAL_NOTES.md
 LOCAL_NOTES.md
 conversation.jsonc
+
+# Platform cache
+subnet_hotkeys_cache.json

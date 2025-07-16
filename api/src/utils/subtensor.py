@@ -3,6 +3,9 @@ import requests
 import os
 import dotenv
 import time
+import json
+import threading
+from pathlib import Path
 
 from fiber.chain.interface import get_substrate
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
@@ -19,16 +22,69 @@ _cached_time = 0
 _cached_tao_usd_price = None
 _cached_tao_usd_time = 0
 
+# Hotkeys cache
+_hotkeys_cache_file = Path("subnet_hotkeys_cache.json")
+_hotkeys_update_timer = None
+
+def _fetch_and_cache_hotkeys():
+    """Fetch hotkeys and write to cache file."""
+    try:
+        # Suppress fiber library logs
+        import logging
+        fiber_logger = logging.getLogger('interface')
+        original_level = fiber_logger.level
+        fiber_logger.setLevel(logging.CRITICAL)
+        
+        try:
+            substrate = get_substrate(
+                subtensor_network=os.getenv("SUBTENSOR_NETWORK"), 
+                subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
+            )
+            active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
+            hotkeys = [node.hotkey for node in active_nodes]
+        finally:
+            # Restore original log level
+            fiber_logger.setLevel(original_level)
+        
+        with open(_hotkeys_cache_file, 'w') as f:
+            json.dump({"hotkeys": hotkeys, "timestamp": time.time()}, f)
+        
+        logger.debug(f"Updated hotkeys cache with {len(hotkeys)} hotkeys")
+    except Exception as e:
+        logger.error(f"Error updating hotkeys cache: {e}")
+    finally:
+        # Schedule next update
+        global _hotkeys_update_timer
+        _hotkeys_update_timer = threading.Timer(60.0, _fetch_and_cache_hotkeys)
+        _hotkeys_update_timer.daemon = True
+        _hotkeys_update_timer.start()
+
+def start_hotkeys_cache():
+    """Initialize the hotkeys cache system."""
+    global _hotkeys_update_timer
+    if _hotkeys_update_timer is None:
+        # Run immediately in background thread
+        thread = threading.Thread(target=_fetch_and_cache_hotkeys, daemon=True)
+        thread.start()
+
 async def get_subnet_hotkeys():
+    """Get subnet hotkeys from cache file (fast) or fallback to live fetch."""
+    try:
+        if _hotkeys_cache_file.exists():
+            with open(_hotkeys_cache_file, 'r') as f:
+                data = json.load(f)
+                return data["hotkeys"]
+    except Exception as e:
+        logger.warning(f"Error reading hotkeys cache: {e}")
+    
+    # Fallback: fetch directly (blocking, but only on first call or cache failure)
+    logger.warning("Fetching hotkeys directly (slow fallback)")
     substrate = get_substrate(
-        subtensor_network=os.getenv("SUBTENSOR_NETWORK"), subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
+        subtensor_network=os.getenv("SUBTENSOR_NETWORK"), 
+        subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
     )
-
     active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
-
-    hotkeys = [node.hotkey for node in active_nodes]
-
-    return hotkeys
+    return [node.hotkey for node in active_nodes]
 
 def get_current_weights(netuid: int = 62) -> dict:
     """
