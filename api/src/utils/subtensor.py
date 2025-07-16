@@ -4,11 +4,8 @@ import os
 import dotenv
 import time
 import json
-import threading
 from pathlib import Path
-
-from fiber.chain.interface import get_substrate
-from fiber.chain.fetch_nodes import get_nodes_for_netuid
+import aiofiles
 
 from loggers.logging_utils import get_logger
 
@@ -24,72 +21,27 @@ _cached_tao_usd_time = 0
 
 # Hotkeys cache
 _hotkeys_cache_file = Path("subnet_hotkeys_cache.json")
-_hotkeys_update_timer = None
-
-def _fetch_and_cache_hotkeys():
-    """Fetch hotkeys and write to cache file."""
-    try:
-        # Suppress fiber library logs
-        import logging
-        fiber_logger = logging.getLogger('interface')
-        original_level = fiber_logger.level
-        fiber_logger.setLevel(logging.CRITICAL)
-        
-        try:
-            substrate = get_substrate(
-                subtensor_network=os.getenv("SUBTENSOR_NETWORK"), 
-                subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
-            )
-            active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
-            hotkeys = [node.hotkey for node in active_nodes]
-        finally:
-            # Restore original log level
-            fiber_logger.setLevel(original_level)
-        
-        with open(_hotkeys_cache_file, 'w') as f:
-            json.dump({"hotkeys": hotkeys, "timestamp": time.time()}, f)
-        
-        logger.debug(f"Updated hotkeys cache with {len(hotkeys)} hotkeys")
-    except Exception as e:
-        logger.error(f"Error updating hotkeys cache: {e}")
-    finally:
-        # Schedule next update
-        global _hotkeys_update_timer
-        _hotkeys_update_timer = threading.Timer(60.0, _fetch_and_cache_hotkeys)
-        _hotkeys_update_timer.daemon = True
-        _hotkeys_update_timer.start()
-
-def start_hotkeys_cache():
-    """Initialize the hotkeys cache system."""
-    global _hotkeys_update_timer
-    if _hotkeys_update_timer is None:
-        # Run immediately in background thread
-        thread = threading.Thread(target=_fetch_and_cache_hotkeys, daemon=True)
-        thread.start()
 
 async def get_subnet_hotkeys():
-    """Get subnet hotkeys from cache file (fast) or fallback to live fetch."""
+    """Get subnet hotkeys from cache file."""
     try:
         if _hotkeys_cache_file.exists():
-            with open(_hotkeys_cache_file, 'r') as f:
-                data = json.load(f)
+            async with aiofiles.open(_hotkeys_cache_file, 'r') as f:
+                content = await f.read()
+                data = json.loads(content)
                 return data["hotkeys"]
+        else:
+            logger.warning("Hotkeys cache file does not exist. Make sure refresh_subnet_hotkeys.py service is running.")
+            return []
     except Exception as e:
-        logger.warning(f"Error reading hotkeys cache: {e}")
-    
-    # Fallback: fetch directly (blocking, but only on first call or cache failure)
-    logger.warning("Fetching hotkeys directly (slow fallback)")
-    substrate = get_substrate(
-        subtensor_network=os.getenv("SUBTENSOR_NETWORK"), 
-        subtensor_address=os.getenv("SUBTENSOR_ADDRESS")
-    )
-    active_nodes = get_nodes_for_netuid(substrate, int(os.getenv("NETUID")))
-    return [node.hotkey for node in active_nodes]
+        logger.error(f"Error reading hotkeys cache: {e}")
+        return []
 
 def get_current_weights(netuid: int = 62) -> dict:
     """
     Method using substrate-interface library to get weights in bittensor format. Returns None if there is an error.
     """
+    substrate = None
     try:
         substrate = SubstrateInterface (
             url="wss://entrypoint-finney.opentensor.ai:443",
@@ -110,11 +62,15 @@ def get_current_weights(netuid: int = 62) -> dict:
     except Exception as e:
         logger.error(f"Error getting weights from substrate: {e}")
         return None
+    finally:
+        if substrate is not None:
+            substrate.close()
     
 def get_uid_for_hotkey_on_subnet(hotkey: str, netuid: int = 62) -> int:
         """
         Get the UID for a hotkey on a subnet. Returns None if there is an error.
         """
+        substrate = None
         try:
             substrate = SubstrateInterface (
                 url="wss://entrypoint-finney.opentensor.ai:443",
@@ -133,6 +89,9 @@ def get_uid_for_hotkey_on_subnet(hotkey: str, netuid: int = 62) -> int:
         except Exception as e:
             logger.error(f"Error getting UID for hotkey {hotkey} on subnet {netuid}: {e}")
             return None
+        finally:
+            if substrate is not None:
+                substrate.close()
         
 def get_subnet_token_price_in_tao(netuid: int):
     """
