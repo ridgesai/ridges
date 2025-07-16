@@ -1,4 +1,5 @@
 import asyncpg
+import json
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import ValidatorQueueInfo, EvaluationQueueItem
@@ -29,8 +30,10 @@ async def get_queue_for_all_validators(
 
     validator_queues = []
     for queue_row in queue_rows:
+        queue_items_data = json.loads(queue_row['queue_items']) if queue_row['queue_items'] else []
+        
         queue_items = []
-        for item in queue_row['queue_items']:
+        for item in queue_items_data:
             queue_items.append(EvaluationQueueItem(
                 evaluation_id=item['evaluation_id'],
                 version_id=item['version_id'],

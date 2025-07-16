@@ -209,7 +209,7 @@ async def inferences_for_run(run_id: str) -> list[Inference]:
 
     return inferences
 
-async def full_queue_info():
+async def validator_queues():
     """
     Returns a list of every validator and their queue info
     """
@@ -239,7 +239,7 @@ routes = [
     ("/agent-by-hotkey", agent_summary_by_hotkey),
     ("/queue-position-by-hotkey", get_queue_position),
     ("/inferences-by-run", inferences_for_run),
-    ("/full-queue-info", full_queue_info)
+    ("/validator-queues", validator_queues)
 ]
 
 for path, endpoint in routes:
