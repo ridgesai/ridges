@@ -53,8 +53,11 @@ def _fetch_and_cache_hotkeys():
     except Exception as e:
         logger.error(f"Error updating hotkeys cache: {e}")
     finally:
-        # Schedule next update
+        # Schedule next update with proper cleanup
         global _hotkeys_update_timer
+        # Cancel existing timer if it exists
+        if _hotkeys_update_timer is not None:
+            _hotkeys_update_timer.cancel()
         _hotkeys_update_timer = threading.Timer(60.0, _fetch_and_cache_hotkeys)
         _hotkeys_update_timer.daemon = True
         _hotkeys_update_timer.start()
@@ -66,6 +69,14 @@ def start_hotkeys_cache():
         # Run immediately in background thread
         thread = threading.Thread(target=_fetch_and_cache_hotkeys, daemon=True)
         thread.start()
+
+def stop_hotkeys_cache():
+    """Stop the hotkeys cache system and cleanup timer."""
+    global _hotkeys_update_timer
+    if _hotkeys_update_timer is not None:
+        _hotkeys_update_timer.cancel()
+        _hotkeys_update_timer = None
+        logger.info("Stopped hotkeys cache timer")
 
 async def get_subnet_hotkeys():
     """Get subnet hotkeys from cache file (fast) or fallback to live fetch."""
