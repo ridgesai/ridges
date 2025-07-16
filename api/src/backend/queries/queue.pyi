@@ -1,0 +1,3 @@
+from api.src.backend.entities import ValidatorQueueInfo
+
+async def get_queue_for_all_validators() -> list[ValidatorQueueInfo]: ...

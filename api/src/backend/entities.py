@@ -99,3 +99,13 @@ class Inference(BaseModel):
     total_tokens: int
     created_at: datetime
     finished_at: Optional[datetime]
+
+class EvaluationQueueItem(BaseModel):
+    evaluation_id: UUID
+    version_id: UUID
+    created_at: datetime
+
+class ValidatorQueueInfo(BaseModel):
+    validator_hotkey: str
+    queue_size: int
+    queue: list[EvaluationQueueItem]

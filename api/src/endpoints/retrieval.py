@@ -13,6 +13,7 @@ from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_i
 from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as db_get_runs_for_evaluation
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
+from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
 
 load_dotenv()
 
@@ -208,6 +209,20 @@ async def inferences_for_run(run_id: str) -> list[Inference]:
 
     return inferences
 
+async def full_queue_info():
+    """
+    Returns a list of every validator and their queue info
+    """
+    queue_info = await db_get_queue_for_all_validators()
+
+    if queue_info is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Error loading queue info"
+        )
+    
+    return queue_info
+
 router = APIRouter()
 
 routes = [
@@ -223,7 +238,8 @@ routes = [
     ("/top-agents", get_top_agents),
     ("/agent-by-hotkey", agent_summary_by_hotkey),
     ("/queue-position-by-hotkey", get_queue_position),
-    ("/inferences-by-run", inferences_for_run)
+    ("/inferences-by-run", inferences_for_run),
+    ("/full-queue-info", full_queue_info)
 ]
 
 for path, endpoint in routes:
