@@ -1,1083 +1,373 @@
-# This is the top agent. We encourage you to try to improve it, however purely copying and submitting it will result in an error.
-# This is the top agent. We encourage you to try to improve it, however purely copying and submitting it will result in an error.
-#!/usr/bin/env python3
-"""One-file autonomous coding agent ("base-miner").
-
-The validator mounts a repository and a problem statement inside a sandbox and
-executes this file.  It talks to a local *AI-proxy* over HTTP using the
-OpenAI function-calling protocol.  It exposes a minimal but sufficient set of
-tools so the language-model can inspect and modify the repository and finally
-indicate it is done.
-
-Tools exposed to the LM
------------------------
-LS(dir=".")
-FIND(pattern, dir=".")
-READ_FILE(path, max_bytes=4000)
-DIFF(path1, path2)
-WRITE_FILE(path, content)
-APPLY_PATCH(patch)
-FINISH()
-
-Program exit codes
-------------------
-0  – model called FINISH (validator will run its own tests)
-1  – uncaught exception, timeout or max-steps exceeded
-
-Configuration (CLI flags *or* environment variables)
-----------------------------------------------------
-flag / env-var       default
-------------------   -----------------------------
---proxy   AI_PROXY_URL   http://sandbox_proxy
---problem PROBLEM_FILE    ./PROBLEM.md
---repo    REPO_ROOT       .
---timeout AGENT_TIMEOUT   600  (seconds)
---model   AGENT_MODEL     deepseek-ai/DeepSeek-V3-0324
-
-"""
 from __future__ import annotations
 
 import json
 import os
-import shlex
 import subprocess
 import textwrap
-import time
-import traceback
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, NamedTuple
 import urllib.request as _urlreq
 import urllib.error as _urlerr
-from dataclasses import dataclass
 import ast
 import re
 import math
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
 # ---------------------------------------------------------------------------
 # Defaults via environment variables ----------------------------------------
 # ---------------------------------------------------------------------------
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_PROBLEM = os.getenv("PROBLEM_FILE", "./PROBLEM.md")
-DEFAULT_REPO = os.getenv("REPO_ROOT", ".")
-DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
-DEFAULT_MODEL = os.getenv("AGENT_MODEL", "moonshotai/Kimi-Dev-72B")
+DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3"
 
-# Other constants
-MAX_STEPS = 100
-MAX_OBS_CHARS = 200_000
-MAX_BYTES_READ = 400_000
-MAX_EMBED_TOKENS = 512000
-MAX_EMBED_CHARS = MAX_EMBED_TOKENS * 4  # reserve but we'll split by tokens
+# Hybrid mode constants
+MAX_EXPLORATION_STEPS = int(os.getenv("MAX_EXPLORATION_STEPS", "20"))
+MAX_OBS_CHARS = 20_000
+MAX_BYTES_READ = 25_000
 
-# New env flag – set EMBED_WHOLE_FILES=1 to revert to legacy behaviour.
-# USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
-USE_FUNCTION_CHUNKS = 1
+# Use function chunks by default
+USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
 
-# ---------------------------------------------------------------------------
-# Prompt templates (adapted from SWE-agent/config/default.yaml) --------------
-# ---------------------------------------------------------------------------
+# Zero vector for failed embeddings
+ZERO_VEC = [0.0] * 768
 
-### ----------------------------------------------------------------------
-# Comprehensive prompt (SWE-agent default + coding_challenge) -------------
-### ----------------------------------------------------------------------
+# Available commands for exploration
+EXPLORATION_COMMANDS = {
+    "READ_FILE": "READ_FILE(path): Read a file up to 25KB. Takes ONLY ONE argument (file path). Usage: READ_FILE(\"path/to/file.py\")",
+    "FIND": "FIND(pattern): Find files by name pattern. Usage: FIND(\"*.py\") or FIND -name \"*.py\" -type f",
+    "LS": "LS(dir): List directory contents. Usage: LS(\".\") or LS -la or LS -R for recursive",
+    "CD": "CD(dir): Change current directory. Usage: CD(\"src/\") or CD(\"..\") to go up",
+    "GREP": "GREP(pattern, path): Search for pattern in files. Usage: GREP(\"def function_name\", \"src/\") or GREP -A 5 -B 2 \"pattern\" \"file\"",
+    "SMART_SEARCH": "SMART_SEARCH(): Use AI to find most relevant files based on problem. Provides intelligent suggestions. Usage: SMART_SEARCH()",
+    "RUN_TESTS": "RUN_TESTS(test_file): Run specific test file to understand expected behavior. Usage: RUN_TESTS(\"test_engine.py\") or RUN_TESTS -v -x test.py",
+    "FINISH": "FINISH(result): End exploration with findings. Usage: FINISH({\"target_files\": [...], \"problem_location\": \"description\"})"
+}
 
-# --- system prompt (long form) ---
-_RAW_SYSTEM_PROMPT = textwrap.dedent(
+# Structured system prompt for exploration
+EXPLORATION_SYSTEM_PROMPT = textwrap.dedent(
     """
-    SETTING: You are an autonomous programmer, and you're working directly in the command line with a special interface.
+    You are a methodical code exploration specialist, an AI assistant that efficiently locates bugs in codebases.
 
-    The special interface consists of a file editor that shows you 100 lines of a file at a time.
-    In addition to typical bash commands, you can also use the following commands to help you navigate and edit files.
+    <ROLE>
+    Your primary role is to identify the specific location where a bug exists in the codebase. You should be thorough, methodical, and prioritize accuracy over speed.
+    * Do NOT try to fix the problem - your job is to FIND where it needs to be fixed
+    * When you locate the problematic file(s), use FINISH to report your findings
+    </ROLE>
 
-    COMMANDS:
+    <EFFICIENCY>
+    * Each exploration step is expensive. Wherever possible, use strategic approaches:
+      - Use GREP to search for relevant keywords before reading entire files
+      - Use SMART_SEARCH to find the most relevant files based on the problem description
+      - Combine related searches when possible
+    * When exploring the codebase, use efficient patterns like grep with specific search terms
+    </EFFICIENCY>
+
+    <EXPLORATION_STRATEGY>
+    * Start broad, then narrow down:
+      1. Use SMART_SEARCH to identify candidate files
+      2. Use GREP to search for specific error messages, function names, or patterns
+      3. Use READ_FILE to examine the most promising files
+      4. Use targeted searches to understand the context
+    * Look for:
+      - Error messages mentioned in the problem description
+      - Function/class names referenced in stack traces
+      - File patterns that match the problem domain
+    </EXPLORATION_STRATEGY>
+
+    <PROBLEM_SOLVING_WORKFLOW>
+    1. ANALYSIS: Understand the problem description and extract key search terms
+    2. BROAD_SEARCH: Use SMART_SEARCH and GREP to identify candidate locations
+    3. FOCUSED_EXPLORATION: Read promising files and understand the context
+    4. VERIFICATION: Confirm you've found the correct location of the issue
+    5. CONCLUSION: Use FINISH to report the target files and problem location
+    </PROBLEM_SOLVING_WORKFLOW>
+
+    <TROUBLESHOOTING>
+    * If you can't find the issue immediately:
+      1. Extract different keywords from the problem description
+      2. Search for related concepts (e.g., if looking for "validation", try "check", "verify", "validate")
+      3. Look in test files for clues about expected behavior
+      4. Consider different file extensions or directory structures
+    * If you're getting truncated files, use GREP to find specific patterns within them
+    </TROUBLESHOOTING>
+
+    <AVAILABLE_COMMANDS>
     {command_docs}
+    </AVAILABLE_COMMANDS>
 
-    AVAILABLE TOOLS (exact names & how to call)
-    ------------------------------------------------
-    • LS                → ```ls <optional_dir>```
-    • FIND              → ```find <regex> <optional_dir>```
-    • READ_FILE         → ```read_file <path> [lo-hi]```
-    • DIFF              → ```diff <file1> <file2>```
-    • WRITE_FILE        → ```write_file <path>```  ← will be followed by the new file content in a separate message.
-    • APPLY_PATCH       → ```apply_patch <path_to_.patch>```  (patch must be written beforehand)
-    • FINISH / EXIT     → ```finish``` (or ```exit```)
-
-    Notes:
-    • Tool names are case-insensitive but using UPPER-CASE (as shown) is recommended.
-    • Only one tool call per assistant turn.
-
-    Please note that THE EDIT COMMAND REQUIRES PROPER INDENTATION.
-    If you'd like to add the line '        print(x)' you must fully write that out, with all those spaces before the code! Indentation is important and code that is not indented correctly will fail and require fixing before it can be run.
-
-    IMPORTANT FOR PATCHES:
-    When you later construct a *unified diff* (either via WRITE_FILE + APPLY_PATCH
-    or directly in code fences), every line inside the hunk **must keep the exact
-    leading whitespace that exists in the file on disk**.  Context lines (those
-    that begin with a single space), removed lines (-) and added lines (+) are
-    matched verbatim by the `patch` tool; if the indentation differs by even
-    one space the hunk will fail.  Always use READ_FILE or DIFF to confirm the
-    current indentation before you craft the patch.
-
-    RESPONSE FORMAT:
-    Your shell prompt is formatted as follows:
-    (Open file: <path>) <cwd> $
-
-    You need to format your output using two fields; discussion and command.
-    Your output should always include _one_ discussion and _one_ command field EXACTLY as in the following example:
+    <RESPONSE_FORMAT>
+    Your output should include _one_ discussion and _one_ command field EXACTLY as in this example:
     DISCUSSION
-    First I'll start by using ls to see what files are in the current directory. Then maybe we can look at some relevant files to see what they look like.
+    I'll search for the Engine class and render_to_string method mentioned in the error.
     ```
-    ls -a
+    GREP("class Engine", ".")
     ```
 
-    You should only include a *SINGLE* command in the command section and then wait for a response from the shell before continuing with more discussion and commands.
-    If you'd like to issue two commands at once, PLEASE DO NOT DO THAT! Instead submit the first command, wait for feedback, then issue the second.
-
-    You're free to use any other bash commands you want (e.g. FIND, READ_FILE, WRITE_FILE, APPLY_PATCH, LS, DIFF) in addition to the special commands listed above.
-    However, the environment does NOT support interactive session commands (e.g. python, vim), so please do not invoke them.
+    Use only ONE command per response and wait for results before continuing.
+    </RESPONSE_FORMAT>
     """
 )
 
-# --- instance prompt (long form) ---
-DEFAULT_INSTANCE_TEMPLATE = textwrap.dedent(
+# Structured system prompt for patch generation
+PATCH_GENERATION_SYSTEM_PROMPT = textwrap.dedent(
     """
-    <uploaded_files>
-    {working_dir}
-    </uploaded_files>
+    You are a methodical patch generation specialist, an AI that creates precise fixes for code issues.
 
-    We're currently attempting to solve the following problem:
-    ISSUE:
-    {problem_statement}
+    <ROLE>
+    Your primary role is to generate a single, correct unified diff patch that fixes the reported bug. You should be thorough, precise, and prioritize correctness over speed.
+    * Generate EXACTLY ONE unified diff patch that solves the problem
+    * If you have questions, solve them using your best judgment - do not ask the user
+    </ROLE>
 
-    INSTRUCTIONS:
-    You are going to solve this issue on your own. Your terminal session has started and you're in the repository's root directory. You can use any bash commands or the special interface to help you. Edit all the files you need to and run any checks or tests that you want.
-    Remember, YOU CAN ONLY ENTER ONE COMMAND AT A TIME. You should always wait for feedback after every command.
-    When you're satisfied with all of the changes you've made, you can submit your changes to the code base by calling the FINISH tool.
-    Note however that you cannot use any interactive session commands (e.g. python, vim) in this environment, but you can write scripts and run them with `python <script_name>.py`.
+    <CODE_QUALITY>
+    * Make minimal changes needed to solve the problem - avoid unnecessary modifications
+    * Preserve existing code style, formatting, and conventions
+    * Ensure your changes don't break existing functionality
+    * Focus on the root cause rather than symptoms
+    </CODE_QUALITY>
 
-    NOTE ABOUT EDITING FILES: Indentation really matters! When editing a file, make sure to insert appropriate indentation before each line!
+    <PROBLEM_SOLVING_APPROACH>
+    1. ANALYSIS: Understand the bug report and exploration findings thoroughly
+    2. ROOT_CAUSE: Identify the core issue that needs to be fixed
+    3. SOLUTION_DESIGN: Plan the minimal change needed to resolve the problem
+    4. IMPLEMENTATION: Generate the precise diff with correct syntax and formatting
+    5. VERIFICATION: Ensure the patch addresses the problem completely
+    </PROBLEM_SOLVING_APPROACH>
 
-    IMPORTANT TIPS:
-    1. Always test your code thoroughly before signalling FINISH, and if any tests fail, fix the code before continuing.
-    2. If you run a command and it doesn't work, try running a different command or inspecting the error.
-    3. Use commands like FIND or READ_FILE to inspect code instead of blindly scrolling.
-    4. Always pay attention to the current working directory.
-    5. When editing files, check that changes look correct; if not, issue another command to fix them.
+    <PATCH_QUALITY>
+    * Use proper unified diff format with correct headers and line numbers
+    * Include sufficient context lines (typically 3) around changes
+    * Preserve exact indentation and whitespace from the original file
+    * Make sure line numbers and file paths are accurate
+    * Test your logic mentally - will this change solve the reported issue?
+    </PATCH_QUALITY>
+
+    <CRITICAL_OUTPUT_RULES>
+    1. Your response must be EXACTLY the diff - absolutely nothing else
+    2. NO explanatory text before, after, or mixed with the diff
+    3. NO markdown formatting, NO backticks, NO code blocks
+    4. NO "Looking at the problem..." or "The solution is..." text
+    5. Start immediately with "diff --git a/..."
+    6. End immediately after the last diff line
+
+    WRONG EXAMPLES:
+    ❌ "Looking at the bug report... diff --git..."
+    ❌ "```diff\ndiff --git..."
+    ❌ "The solution is:\n\ndiff --git..."
+
+    CORRECT EXAMPLE:
+    ✅ diff --git a/path/to/file.py b/path/to/file.py
+    index abc123..def456 100644
+    --- a/path/to/file.py
+    +++ b/path/to/file.py
+    @@ -10,7 +10,7 @@ def function():
+         context_line
+    -    old_line
+    +    new_line
+         context_line
+
+    RESPONSE FORMAT ENFORCEMENT:
+    - If you include ANY text other than the diff, the patch will be rejected
+    - The diff must be syntactically perfect with correct line numbers
+    - Preserve exact indentation from the original file
+    - Use standard unified diff format with proper headers
+    </CRITICAL_OUTPUT_RULES>
     """
 ).strip()
 
-# When the last tool produced no output we can use this as a gentle reminder
-DEFAULT_NO_OUTPUT_MSG = (
-    "Your command ran successfully and did not produce any output."
-)
-
-# ---------------------------------------------------------------------------
-# One-shot mode system prompt ----------------------------------------------
-# ---------------------------------------------------------------------------
-
-ONESHOT_SYSTEM_PROMPT = (
-    "You are an autonomous programmer. The user will provide a bug report or "
-    "feature request (the \"problem\") plus a compact summary of the most "
-    "relevant repository files.  Your job is to return ONE *valid* unified "
-    "diff patch that fixes the problem. If you have any questions, do not ask the user. "
-    "Instead, solve it to the best of your ability with the knowledge you have.\n\n"
-    "STRICT FORMAT RULES\n"
-    "1. Return *only* the diff – no prose, no Markdown back-ticks.\n"
-    "2. The diff must start with 'diff --git a/<path> b/<path>' followed by "
-    "   the standard \"--- a/<path>\" and \"+++ b/<path>\" headers.\n"
-    "3. Use -u style context hunks that begin with lines like @@ -N,M +N,M @@.\n"
-    "4. Every changed file needs its own header block as in rule 2.\n"
-    "5. End the patch with a trailing newline.\n"
-    "6. Preserve the *exact* indentation that appears in the original file —\n"
-    "   mismatched leading spaces will cause the patch to be rejected.\n\n"
-    "Be exact: if the diff is syntactically malformed or wrapped in extra "
-    "text the automated patch tool will fail.\n\n"
-    "OUTPUT RULES (VERY IMPORTANT)\n"
-    "• You MUST end your reply with a *raw* JSON object – nothing else – that has exactly two keys: 'text_response' and 'code_response'.\n"
-    "• Do NOT surround the JSON with Markdown back-ticks or any other fencing.\n"
-    "• 'text_response' can hold arbitrary explanatory text (may be empty).\n"
-    "• 'code_response' must hold the unified diff from rules 1-5 *verbatim*.\n"
-    "Example: {\"text_response\": \"<explanation>\", \"code_response\": \"diff --git a/foo.py b/foo.py\n...\"}."
-)
-
-# ---------------------------------------------------------------------------
-# Tool implementations -------------------------------------------------------
-# ---------------------------------------------------------------------------
-
 def _ls(dir: str = ".") -> str:
-    path = Path(dir)
-    if not path.is_dir():
-        return f"Directory not found: {dir}"
-    entries = [f"{p.name}/" if p.is_dir() else p.name for p in sorted(path.iterdir())]
-    return "\n".join(entries) or "<empty>"
-
+    """List files and directories in the given directory."""
+    try:
+        result = subprocess.run(["ls", "-la", dir], capture_output=True, text=True, check=False, timeout=10)
+        return result.stdout if result.returncode == 0 else result.stderr
+    except Exception as e:
+        return f"Error running ls: {e}"
 
 def _find(pattern: str, dir: str = ".") -> str:
+    """Find files matching the given pattern in the directory tree."""
     try:
-        cmd = [
-            "bash",
-            "-lc",
-            f"grep -R -n --line-number --binary-files=text --color=never {shlex.quote(pattern)} {shlex.quote(dir)} || true",
-        ]
-        out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
-        return out or "<no matches>"
+        result = subprocess.run(["find", dir, "-name", pattern], capture_output=True, text=True, check=False, timeout=30)
+        return result.stdout if result.returncode == 0 else result.stderr
     except Exception as e:
-        return f"find error: {e}"
+        return f"Error running find: {e}"
 
-
-def _read_file(
-    path: str,
-    *,
-    max_bytes: int = MAX_BYTES_READ,
-    start_line_one_indexed: int | None = None,
-    end_line_one_indexed_inclusive: int | None = None,
-) -> str:
-    """Read *path* and optionally return only the given line range.
-
-    Parameters
-    ----------
-    path : str
-        File to read.
-    max_bytes : int, optional
-        Hard cap for bytes to read (applied before line slicing).
-    start_line_one_indexed, end_line_one_indexed_inclusive : int, optional
-        1-based line range. If only *start* is provided we return that single
-        line. If neither is provided the whole file up to *max_bytes* is
-        returned.
-    """
-    p = Path(path)
-    if not p.exists():
-        return f"File not found: {path}"
+def _read_file(path: str, max_bytes: int = MAX_BYTES_READ) -> str:
+    """Read a file, truncating if it's too large."""
     try:
-        raw = p.read_bytes()[:max_bytes].decode(errors="replace")
-        if start_line_one_indexed is None and end_line_one_indexed_inclusive is None:
-            return raw
-
-        lines = raw.splitlines()
-        lo = (start_line_one_indexed or 1) - 1
-        hi = (end_line_one_indexed_inclusive or start_line_one_indexed or len(lines))
-        clip = "\n".join(lines[lo:hi])
-        return clip
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read(max_bytes)
+            if len(content) == max_bytes:
+                content += "\n... [FILE TRUNCATED] ..."
+            return content
     except Exception as e:
-        return f"read error: {e}"
+        return f"Error reading file: {e}"
 
 
-def _diff(path1: str, path2: str) -> str:
-    cmd = ["diff", "-u", "--", path1, path2]
-    try:
-        out = subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT)
-        return out or "<no differences>"
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 1:  # files differ -> diff in stdout
-            return e.output
-        return f"diff error: {e.output}"
+
+def extract_diff_from_response(response_text: str) -> str:
+    """Extract diff from mixed text response as fallback when model includes explanations."""
+    if not response_text:
+        return None
+
+    # Primary: Look for complete diff pattern with proper structure
+    diff_match = re.search(r'(diff --git.*?)(?=\n\n\w+|\n\n[A-Z]|\Z)', response_text, re.DOTALL)
+    if diff_match:
+        extracted = diff_match.group(1).strip()
+        if extracted.count('diff --git') >= 1 and ('@@' in extracted or '---' in extracted):
+            return extracted
+
+    # Secondary: Look for diff start and extract until end of diff content
+    lines = response_text.split('\n')
+    diff_lines = []
+    in_diff = False
+
+    for i, line in enumerate(lines):
+        if line.startswith('diff --git'):
+            in_diff = True
+            diff_lines = [line]
+        elif in_diff:
+            # Valid diff line patterns
+            if (line.startswith(('---', '+++', '@@', '+', '-', ' ')) or
+                line.strip() == '' or
+                line.startswith('index ') or
+                line.startswith('new file mode') or
+                line.startswith('deleted file mode')):
+                diff_lines.append(line)
+            else:
+                # Check if this looks like explanatory text after diff
+                if (line and not line.startswith(('diff --git', '---', '+++', '@@', '+', '-', ' ')) and
+                    any(word in line.lower() for word in ['explanation', 'this', 'the', 'fix', 'change', 'solution'])):
+                    # End of diff - explanatory text found
+                    break
+                elif line.strip():
+                    # Non-empty line that doesn't match diff format - might be end
+                    # Only add if it looks like a valid context line (starts with space)
+                    if line.startswith(' '):
+                        diff_lines.append(line)
+                    else:
+                        # Probably end of diff
+                        break
+                else:
+                    diff_lines.append(line)
+
+    if diff_lines and diff_lines[0].startswith('diff --git'):
+        # Ensure proper diff termination
+        result = '\n'.join(diff_lines)
+        # Add final newline if not present
+        if not result.endswith('\n'):
+            result += '\n'
+        return result
+
+    return None
 
 
-def _write_file(path: str, content: str) -> str:
-    p = Path(path)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-        return f"{path} written. bytes={len(content.encode())}"
-    except Exception as e:
-        return f"write error: {e}"
+def _validate_patch_structure(patch: str) -> tuple[bool, str]:
+    """Validate that a patch has proper unified diff structure."""
+    if not patch or not patch.strip():
+        return False, "Empty patch"
 
+    lines = patch.strip().split('\n')
+    if not lines[0].startswith('diff --git'):
+        return False, "Patch must start with 'diff --git'"
+
+    # Check for required sections
+    has_index = any(line.startswith('index ') for line in lines)
+    has_minus_file = any(line.startswith('--- ') for line in lines)
+    has_plus_file = any(line.startswith('+++ ') for line in lines)
+    has_hunk = any(line.startswith('@@') for line in lines)
+
+    if not has_minus_file:
+        return False, "Missing '---' file marker"
+    if not has_plus_file:
+        return False, "Missing '+++' file marker"
+    if not has_hunk:
+        return False, "Missing '@@' hunk marker"
+
+    # Check that hunks have proper structure
+    in_hunk = False
+    for line in lines:
+        if line.startswith('@@'):
+            in_hunk = True
+        elif in_hunk and line and not line.startswith((' ', '+', '-', '\\')):
+            # Invalid line in hunk
+            return False, f"Invalid line in hunk: {line[:50]}..."
+
+    return True, "Valid patch structure"
 
 def _sanitize_patch(patch: str) -> str:
-    """Return *patch* stripped of markdown/code-fence chatter.
+    """Sanitize and validate a patch before applying it."""
+    if not patch or not patch.strip():
+        return ""
 
-    The LLM sometimes wraps the unified diff in Markdown fences or appends
-    explanatory text (e.g. `DISCUSSION`, `EOF`).  This helper keeps only the
-    lines that are valid in a unified diff so downstream tools (`patch`,
-    `git apply`) succeed and the resulting patch file is clean.
-    """
-    # If the diff is wrapped inside Markdown fences, unwrap them.
-    if "```" in patch:
-        import re
-        m = re.search(r"```[a-zA-Z0-9_+.-]*\n(.*?)\n```", patch, re.S)
-        if m:
-            patch = m.group(1)
-        else:
-            # Remove any sole opening fence on the first line
-            lines = patch.splitlines()
-            if lines and lines[0].strip().startswith("```"):
-                patch = "\n".join(lines[1:])
+    lines = patch.strip().split('\n')
+    sanitized_lines = []
 
-    allowed_prefixes = (
-        "diff --git",
-        "index ",
-        "--- ",
-        "+++ ",
-        "@@",
-        "new file mode",
-        "deleted file mode",
-        "similarity index",
-        "rename from",
-        "rename to",
-        "Binary files",
-        "\\ No newline",
-    )
-
-    cleaned_lines: list[str] = []
-    for line in patch.splitlines():
-        # Early exit markers – anything after is junk.
-        if line.strip() in {"DISCUSSION", "EOF"}:
-            break
-        if line.startswith(allowed_prefixes):
-            cleaned_lines.append(line)
+    for line in lines:
+        # Only remove lines that are clearly malicious commands (not diff content)
+        # Be very conservative - only remove obvious shell commands
+        if (line.strip().startswith(('rm ', 'sudo ', 'rm\t')) or
+            ('>' in line and not line.startswith(('---', '+++', '@@', '+', '-', ' '))) or
+            (';' in line and not line.startswith(('---', '+++', '@@', '+', '-', ' '))) or
+            ('&' in line and not line.startswith(('---', '+++', '@@', '+', '-', ' ')))):
+            print(f"[agent] Filtering potentially dangerous line: {line[:50]}...")
             continue
-        # Hunk content lines start with space, plus or minus.
-        if line.startswith(("+", "-", " ")):
-            cleaned_lines.append(line)
-            continue
-        # Ignore everything else (markdown, commentary, empty lines outside hunks).
+        sanitized_lines.append(line)
 
-    # Post-process header lines: ensure 'a/' and 'b/' prefixes so a default
-    # `patch -p1` invocation resolves correctly when run from the repository
-    # root.  We intentionally *do not* touch paths pointing to /dev/null.
-    for idx, ln in enumerate(cleaned_lines):
-        if ln.startswith("--- ") and not ln.startswith("--- a/") and not ln.startswith("--- /dev/null"):
-            cleaned_lines[idx] = "--- a/" + ln[4:]
-        elif ln.startswith("+++ ") and not ln.startswith("+++ b/") and not ln.startswith("+++ /dev/null"):
-            cleaned_lines[idx] = "+++ b/" + ln[4:]
+    result = '\n'.join(sanitized_lines)
 
-    # If the diff header ('diff --git') is missing, synthesise one from the
-    # first pair of +++/--- lines so downstream tooling like `git apply`
-    # still accepts the patch.
-    has_diff_header = any(l.startswith("diff --git") for l in cleaned_lines)
-    if not has_diff_header:
-        old_path = new_path = None
-        for ln in cleaned_lines:
-            if ln.startswith("--- a/"):
-                old_path = ln[6:]
-            elif ln.startswith("+++ b/"):
-                new_path = ln[6:]
-            if old_path and new_path:
-                break
-        if old_path and new_path:
-            cleaned_lines.insert(0, f"diff --git a/{old_path} b/{new_path}")
+    # Ensure patch ends with newline for proper format
+    if result and not result.endswith('\n'):
+        result += '\n'
 
-    # Ensure trailing newline for POSIX text files.
-    return "\n".join(cleaned_lines).rstrip("\n") + "\n"
-
+    return result
 
 def _apply_patch(patch: str) -> str:
-    """Apply unified diff using system `patch`. Returns result summary."""
-    # Clean up any stray markdown or commentary before applying.
-    patch = _sanitize_patch(patch)
-    try:
-        with NamedTemporaryFile("w", delete=False) as tmp:
-            tmp.write(patch)
-            tmp_path = tmp.name
+    """Apply a patch to the repository."""
+    sanitized_patch = _sanitize_patch(patch)
 
-        def _run_patch(p_level: str):
-            return subprocess.run(
-                ["patch", p_level, "--forward", "--reject-file=-", "-i", tmp_path],
-                text=True,
-                capture_output=True,
-                timeout=60,
-            )
+    if not sanitized_patch.strip():
+        return "Error: Empty or invalid patch"
 
-        # Try multiple patch strip levels then fallback to git apply
-        out = ""
-        proc = None
-        for level in ("-p1", "-p0", "-p2", "-p3"):
-            proc = _run_patch(level)
-            out += f"\n--- attempt {level} ---\n" + proc.stdout + proc.stderr
-            if proc.returncode in (0, 1):
-                break  # applied or with rejects
+    # Try different patch levels
+    for p_level in ['0', '1']:
+        with NamedTemporaryFile(mode='w', suffix='.patch', delete=False) as tmp:
+            tmp.write(sanitized_patch)
+            tmp.flush()
 
-        # Fallback to git apply if available and previous attempts failed
-        if proc.returncode not in (0, 1):
-            git_proc = subprocess.run(
-                ["git", "apply", "--unsafe-paths", tmp_path],
-                text=True,
-                capture_output=True,
-                timeout=60,
-            )
-            out += "\n--- git apply fallback ---\n" + git_proc.stdout + git_proc.stderr
-            if git_proc.returncode == 0:
-                proc = git_proc
-         
-        if proc.returncode == 0:
-            return "Patch applied successfully.\n" + out
-        elif proc.returncode == 1:
-            return "Patch applied with warnings/rejects.\n" + out
-        else:
-            return f"patch failed (code {proc.returncode}).\n" + out
-    except Exception:
-        return "patch execution error:\n" + traceback.format_exc()
-    finally:
-        try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
-
-
-def _finish() -> str:
-    return "<FINISHED>"
-
-
-# ---------------------------------------------------------------------------
-# Execution mode toggles -----------------------------------------------------
-# ---------------------------------------------------------------------------
-# • AGENT_MODE = ONESHOT (default) – single call that returns a diff patch.
-# • AGENT_MODE = TOOLS   – iterative loop with LS/FIND/READ_FILE/... tools.
-#   In this mode you can additionally set READ_ONLY=1 to hide WRITE_FILE and
-#   APPLY_PATCH so the model can only inspect the repository.
-
-MODE = os.getenv("AGENT_MODE", "TOOLS").upper()     # TOOLS (default) | ONESHOT
-# MODE = os.getenv("AGENT_MODE", "ONESHOT").upper()
-READ_ONLY = False  # read-only mode disabled – allow WRITE_FILE and APPLY_PATCH
-
-ALL_TOOLS = {
-    "LS": _ls,
-    "FIND": _find,
-    "READ_FILE": _read_file,
-    "DIFF": _diff,
-    "WRITE_FILE": _write_file,
-    "APPLY_PATCH": _apply_patch,
-    "EXIT": _finish,  # alias send by some models
-    "FINISH": _finish,
-}
-
-# Expose full tool set (no read-only restriction).
-TOOLS = ALL_TOOLS
-
-# Regenerate command docs from the *exposed* TOOLS so the prompt is honest.
-_COMMAND_DOCS = "\n".join(
-    f"- {name.lower()}: {fn.__doc__.splitlines()[0] if fn.__doc__ else ''}" for name, fn in TOOLS.items()
-)
-
-# Format the raw system prompt with command docs
-DEFAULT_SYSTEM_PROMPT = _RAW_SYSTEM_PROMPT.format(command_docs=_COMMAND_DOCS)
-
-# ---------------------------------------------------------------------------
-# Embedding cache and helper -------------------------------------------------
-# ---------------------------------------------------------------------------
-
-_EMBED_CACHE: Dict[str, List[float]] = {}
-ZERO_VEC: List[float] = [0.0] * 1024  # embedding for empty input
-
-# NOTE: run_id is optional; when provided the backend can correlate
-# embedding requests with an overall agent run (useful for logging & quota).
-
-def _remote_embed(text: str, proxy_url: str, run_id: str | None = None) -> List[float]:
-    """Return embedding vector for *text* via the proxy /agents/embedding endpoint.
-
-    Caches results in-memory to avoid duplicate HTTP calls.
-    """
-    # Short-circuit empty or whitespace-only inputs.
-    if not text.strip():
-        return _EMBED_CACHE.setdefault("", [0.0] * 1024)
-
-    # Retry–shrink loop to satisfy 512-token limit
-    attempt_text = text
-    for _ in range(2):  # original + 1 retry after halving
-        tokens = attempt_text.split()
-        if len(tokens) > MAX_EMBED_TOKENS:
-            attempt_text = " ".join(tokens[:MAX_EMBED_TOKENS])
-
-        url = f"{proxy_url.rstrip('/')}/agents/embedding"
-        payload = {"input": attempt_text}
-        if run_id:
-            payload["run_id"] = run_id
-
-        req = _urlreq.Request(
-            url,
-            data=json.dumps(payload, ensure_ascii=False).encode(),
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-
-        try:
-            with _urlreq.urlopen(req, timeout=300) as resp:
-                data_raw = resp.read()
-                data = json.loads(data_raw.decode())
-
-                if isinstance(data, list):
-                    vec = data[0] if (len(data) == 1 and isinstance(data[0], list)) else data
-                    _EMBED_CACHE[text] = vec
-                    return vec
-                if isinstance(data, dict) and "embedding" in data:
-                    vec = data["embedding"]
-                    _EMBED_CACHE[text] = vec
-                    return vec
-
-                # If we received a validation error about tokens, halve and retry
-                if isinstance(data, dict) and data.get("error_type") == "Validation":
-                    attempt_text = " ".join(tokens[: len(tokens) // 2])
-                    continue
-
-                raise ValueError(f"unexpected embedding response: {data!r}")
-        except Exception as exc:
-            if "less than 512 tokens" in str(exc):
-                attempt_text = " ".join(tokens[: len(tokens) // 2])
-                continue
-            raise RuntimeError(f"embedding request failed: {exc}")
-
-    # If all retries failed, return zero vector to keep pipeline alive
-    _EMBED_CACHE[text] = ZERO_VEC
-    return ZERO_VEC
-
-
-def _cosine(u: List[float], v: List[float]) -> float:
-    """Cosine similarity between two equal-length vectors."""
-    s = sum(a * b for a, b in zip(u, v))
-    nu = math.sqrt(sum(a * a for a in u))
-    nv = math.sqrt(sum(b * b for b in v))
-    if nu == 0 or nv == 0:
-        return 0.0
-    return s / (nu * nv)
-
-# ---------------------------------------------------------------------------
-# One-shot retrieval using remote embeddings --------------------------------
-# ---------------------------------------------------------------------------
-
-def run_oneshot(
-    problem_text: str,
-    *,
-    proxy_url: str,
-    model_name: str,
-    run_id: str,
-    top_k: int = 100,
-) -> str:
-    """Build repository summary and send a single LLM call.
-
-    Embeddings are fetched from the internal `/agents/embedding` proxy endpoint, so no model weights or internet access are required inside the sandbox.
-    """
-
-    if USE_FUNCTION_CHUNKS:
-        code_chunks = _collect_code_chunks()
-        if not code_chunks:
-            raise RuntimeError("repository appears empty – nothing to embed")
-        chunk_texts = [c.text for c in code_chunks]
-    else:
-        repo_texts = _collect_repo_texts()
-        if not repo_texts:
-            print("[agent] repository appears empty – waiting 10 minutes for inspection…")
             try:
-                time.sleep(600)
-            except Exception:
-                pass
-            raise RuntimeError("repository appears empty – nothing to embed (after wait)")
-        code_chunks = [Chunk(file=fp, start_line=1, end_line=text.count("\n") + 1, text=text) for fp, text in repo_texts.items()]
-        chunk_texts = [c.text for c in code_chunks]
-
-    # --------------------------------------------------------------------
-    # Cheap TF-IDF pre-filter to limit expensive embedding calls ----------
-    # --------------------------------------------------------------------
-
-    PRE_FILTER_TOP = int(os.getenv("PREFILTER_TOP", "800"))
-
-    if len(chunk_texts) > PRE_FILTER_TOP:
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore
-
-            tfidf_vec = TfidfVectorizer(stop_words="english", max_features=20_000)
-            mat = tfidf_vec.fit_transform([problem_text] + chunk_texts).astype("float32")
-
-            query_vec = mat[0]
-            chunk_mat = mat[1:]
-            sims_quick = (chunk_mat @ query_vec.T).toarray().ravel()  # cosine; TF-IDF rows are L2-normed
-
-            top_idx_quick = sims_quick.argsort()[-PRE_FILTER_TOP:][::-1]
-
-            chunk_texts = [chunk_texts[i] for i in top_idx_quick]
-            code_chunks = [code_chunks[i] for i in top_idx_quick]
-        except Exception as _e:
-            # If sklearn unavailable, skip pre-filter gracefully.
-            pass
-
-    # --------------------------------------------------------------------
-    # Obtain embeddings via proxy endpoint --------------------------------
-    # --------------------------------------------------------------------
-
-    query_vec = _remote_embed(problem_text, proxy_url, run_id)
-
-    # Parallel embedding of chunks to avoid long serial wait times.
-    chunk_vecs: List[List[float]] = [ZERO_VEC] * len(chunk_texts)
-    MAX_WORKERS = int(os.getenv("EMBED_CONCURRENCY", "8"))
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        fut_to_idx = {pool.submit(_remote_embed, txt, proxy_url, run_id): idx for idx, txt in enumerate(chunk_texts)}
-
-        for fut in as_completed(fut_to_idx):
-            idx = fut_to_idx[fut]
-            try:
-                chunk_vecs[idx] = fut.result()
-            except Exception as exc:
-                # Log and keep zero vector; retrieval will simply rank it low.
-                print(f"[agent] embedding error (chunk {idx}): {exc}")
-                chunk_vecs[idx] = ZERO_VEC
-
-    sims = [ _cosine(vec, query_vec) for vec in chunk_vecs ]
-
-    # --------------------------------------------------------------------
-    # Light path-based bonus if filename is mentioned in the problem text --
-    # --------------------------------------------------------------------
-    prob_lower = problem_text.lower()
-    for idx, ch in enumerate(code_chunks):
-        base = os.path.basename(ch.file).lower()
-        if base in prob_lower or base.split(".")[0] in prob_lower:
-            sims[idx] += 0.2
-
-    sorted_idx = sorted(range(len(sims)), key=lambda i: -sims[i])
-
-    TARGET_TOKENS = 128_000
-    token_budget = int(TARGET_TOKENS * 0.85)
-    token_total = 0
-    top_idx: list[int] = []
-    for idx in sorted_idx:
-        tok = _guess_tokens(chunk_texts[idx])
-        if token_total + tok > token_budget:
-            break
-        token_total += tok
-        top_idx.append(idx)
-
-    # # Fallback to at most top_k if budget yields too many
-    # if len(top_idx) > top_k:
-    #     top_idx = top_idx[:top_k]
-
-    summary_parts: list[str] = []
-    for idx in top_idx:
-        ch = code_chunks[idx]
-        body = ch.text
-        tag = _lang_tag(ch.file)
-        header = f"### {ch.file}:L{ch.start_line}-{ch.end_line}"
-        summary_parts.append(f"{header}\n```{tag}\n{body}\n```")
-
-    repo_summary = "\n\n".join(summary_parts)
-
-    # --------------------------------------------------------------------
-    # Build initial conversation messages.
-    # --------------------------------------------------------------------
-
-    messages = [
-        {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
-        {"role": "user", "content": problem_text},
-        {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
-    ]
-
-    ATTEMPTS = 26
-
-    for attempt in range(ATTEMPTS):
-        messages = [
-            {"role": "system", "content": ONESHOT_SYSTEM_PROMPT},
-            {"role": "user", "content": problem_text},
-            {"role": "user", "content": "Repository summary (top files):\n\n" + repo_summary},
-        ]
-
-        try:
-            proxy_resp = inference(messages, proxy_url, run_id, model_name)
-        except Exception as e:
-            print(f"[agent] Request failed (attempt {attempt + 1}): {e}")
-            if attempt == ATTEMPTS - 1:
-                raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
-            continue
-        
-        # proxy_resp is already a dict from inference(); no need to decode again.
-        if isinstance(proxy_resp, str):
-            # In case inference ever returns plain text, fail fast for inspection.
-            raise Exception(proxy_resp)
-
-        text_resp = (proxy_resp.get("text_response") or "").lstrip()
-        code_resp = (proxy_resp.get("code_response") or "").lstrip()
-
-        import re, json as _json
-        patch_text = None
-        for cand in (code_resp, text_resp):
-            if not cand:
-                continue
-            if cand.lstrip().startswith("diff") or cand.lstrip().startswith("--- "):
-                patch_text = cand
-                break
-            # Look for an embedded diff header somewhere inside.
-            m = re.search(r"^diff --git .*$", cand, re.M)
-            if m:
-                patch_text = cand[m.start():]
-                break
-            # Detect nested JSON layer produced by some models.
-            if cand.strip().startswith("{"):
-                try:
-                    inner = _json.loads(cand)
-                    inner_cand = (inner.get("code_response") or inner.get("text_response") or "").lstrip()
-                    if inner_cand.startswith("diff") or inner_cand.startswith("--- "):
-                        patch_text = inner_cand
-                        break
-                except Exception:
-                    pass
-
-        if patch_text is None:
-            print(f"[agent] No valid patch found in response. text_response: {text_resp[:200]}...")
-            print(f"[agent] code_response: {code_resp[:200]}...")
-            print(f"[agent] Full proxy response: {proxy_resp}")
-            raise Exception(f"No valid patch in response. Response: {proxy_resp}")
-
-        # Sanitize diff to strip markdown fences and chatter
-        patch_text = _sanitize_patch(patch_text)
-
-        ok, dry_out = _dry_run_patch(patch_text)
-        if ok:
-            result = _apply_patch(patch_text)
-            print(result)
-            return patch_text
-
-        # Patch failed – append feedback and ask for correction.
-        messages.append({"role": "assistant", "content": patch_text})
-        messages.append({"role": "user", "content": "Patch failed to apply. Patch output was:\n" + dry_out + "\nPlease reply with a corrected unified diff only."})
-
-    # All attempts exhausted
-    raise RuntimeError("Patch could not be applied after iterative corrections.")
-
-# ---------------------------------------------------------------------------
-# Proxy communication --------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model: str = None) -> dict:
-    """Send inference request to the proxy and return the response."""
-    # Build request data
-    request_data = {
-        "run_id": run_id,
-        "messages": messages,
-    }
-    
-    if model:
-        request_data["model"] = model
-
-    # Send HTTP request
-    url = f"{proxy_url.rstrip('/')}/agents/inference"
-    request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
-    
-    print(f"[agent] Making inference request to {url}")
-    print(f"[agent] Request data: {request_data}")
-    
-    try:
-        req = _urlreq.Request(url, data=request_bytes, method="POST")
-        req.add_header("Content-Type", "application/json")
-        
-        with _urlreq.urlopen(req, timeout=300) as resp:
-            response_body = resp.read()
-            print(f"[agent] HTTP {resp.status} from {url} ({len(response_body)} bytes)")
-            
-            response_json = json.loads(response_body.decode("utf-8"))
-            print(f"[agent] Response: {response_json}")
-
-            # The proxy may return a plain string instead of a JSON object with
-            # separate text / code fields.  In that case we wrap it in the
-            # expected shape so downstream logic can stay unchanged.
-            if isinstance(response_json, str):
-                raw_text: str = response_json.lstrip()
-
-                # Attempt to separate a unified diff from the explanatory text.
-                diff_start = None
-                if raw_text.startswith("diff") or raw_text.startswith("--- "):
-                    diff_start = 0
-                else:
-                    # Look for the first occurrence of a diff header inside the text.
-                    for marker in ("\ndiff --git", "\n--- "):
-                        idx = raw_text.find(marker)
-                        if idx != -1:
-                            diff_start = idx + 1  # skip the leading newline
-                            break
-
-                code_resp = ""
-                text_resp = raw_text
-                if diff_start is not None:
-                    code_resp = raw_text[diff_start:].lstrip()
-                    text_resp = raw_text[:diff_start].strip()
-
-                response_json = {"text_response": text_resp, "code_response": code_resp}
-
-            return response_json
-            
-    except Exception as e:
-        print(f"[agent] Inference request failed: {e}")
-        raise RuntimeError(f"Inference request failed: {e}")
-
-# ---------------------------------------------------------------------------
-# Helper utilities -----------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-def _truncate(text: str, limit: int = MAX_OBS_CHARS) -> str:
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "\n...<truncated>"
-
-# ---------------------------------------------------------------------------
-# Main agent logic -----------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-def run_agent(problem_text: str, *, proxy_url: str, timeout: int, model_name: str, run_id: str) -> str:
-    working_dir = os.getcwd()
-
-    system_prompt = DEFAULT_SYSTEM_PROMPT
-    instance_prompt = DEFAULT_INSTANCE_TEMPLATE.format(
-        working_dir=working_dir, problem_statement=problem_text
-    )
-
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": instance_prompt},
-    ]
-
-    start_time = time.time()
-
-    last_patch: str = ""
-
-    for step in range(1, MAX_STEPS + 1):
-        if time.time() - start_time > timeout:
-            print("[agent] global timeout reached")
-            return "Global timeout reached"
-
-        proxy_resp = inference(messages, proxy_url, run_id, model_name)
-
-        text_resp = (proxy_resp.get("text_response") or "").strip()
-        code_resp = (proxy_resp.get("code_response") or "").strip()
-
-        # Try diff first – model may send patch in code_response
-        if code_resp and (code_resp.lstrip().startswith("diff") or code_resp.lstrip().startswith("--- ")):
-            assistant_msg = {"role": "assistant", "content": "",
-                             "tool_call": {"name": "APPLY_PATCH", "arguments": {"patch": code_resp}}}
-            call = assistant_msg["tool_call"]
-            messages.append(assistant_msg)
-            thought_text = text_resp  # may be empty
-        else:
-            # Parse JSON tool call from text_response (preferred) or code_response fallback
-
-            def _extract_call(raw: str) -> Dict[str, Any] | None:
-                try:
-                    obj = json.loads(raw)
-                except Exception:
-                    obj = None
-
-                if obj is None:
-                    # ------------------------------------------------------------------
-                    # NEW: Accept fenced single-command blocks, e.g.
-                    # ```read_file foo.py 120-160```
-                    # or inline  ```ls```
-                    # ------------------------------------------------------------------
-                    import re, shlex
-
-                    m = re.search(r"```\s*([A-Za-z_]+)([^`]*)```", raw, re.S)
-                    if m:
-                        tool = m.group(1).strip().upper()
-                        if tool in TOOLS:
-                            arg_str = m.group(2).strip()
-                            argv = shlex.split(arg_str)
-
-                            # Basic argument handling per tool -------------------------
-                            if tool in {"LS", "FINISH"}:
-                                return {"name": tool, "arguments": {}}
-
-                            if tool == "READ_FILE":
-                                if not argv:
-                                    return None  # path required
-                                path = argv[0]
-                                if len(argv) == 2 and "-" in argv[1]:
-                                    lo, hi = argv[1].split("-", 1)
-                                    try:
-                                        return {
-                                            "name": "READ_FILE",
-                                            "arguments": {
-                                                "path": path,
-                                                "start_line_one_indexed": int(lo),
-                                                "end_line_one_indexed_inclusive": int(hi),
-                                            },
-                                        }
-                                    except ValueError:
-                                        pass  # fall through to plain path
-                                return {"name": "READ_FILE", "arguments": {"path": path}}
-
-                            if tool == "APPLY_PATCH":
-                                # Accept shell-style: `apply_patch path/to.patch [target]`
-                                if argv:
-                                    patch_source = argv[0]
-                                    try:
-                                        with open(patch_source, "r", encoding="utf-8") as fh:
-                                            patch_text = fh.read()
-                                    except Exception:
-                                        patch_text = ""  # will result in execution error later
-                                    return {"name": "APPLY_PATCH", "arguments": {"patch": patch_text}}
-                                # if no arg, cannot handle
-                                return None
-
-                            if tool in {"FIND", "DIFF", "WRITE_FILE"}:
-                                # These need JSON-shaped args; fallback to no-parse -> None
-                                return None
-
-                    return None
-
-                # Shape 1: {"name": ..., "arguments": {...}}
-                if isinstance(obj, dict) and "name" in obj:
-                    return {"name": str(obj["name"]).upper(), "arguments": obj.get("arguments", {})}
-
-                # Shape 2: {"tool_calls": [ {"function": {"name":..., "arguments":"{...}"}} ]}
-                if isinstance(obj, dict) and "tool_calls" in obj:
-                    try:
-                        fc = obj["tool_calls"][0]["function"]
-                        args_str = fc.get("arguments", "{}")
-                        args = json.loads(args_str) if isinstance(args_str, str) else args_str
-                        return {"name": str(fc["name"]).upper(), "arguments": args}
-                    except Exception:
-                        return None
-
-                return None
-
-            call = _extract_call(text_resp) or _extract_call(code_resp)
-
-            # Fallback: plain finish command (with or without fencing)
-            plain = text_resp.strip().lower()
-            if call is None:
-                if plain == "finish" or plain == "`finish`" or plain.startswith("```") and "finish" in plain:
-                    call = {"name": "FINISH", "arguments": {}}
-
-            thought_text = text_resp if call else text_resp or code_resp
-
-            if call:
-                messages.append({"role": "assistant", "content": thought_text})
-                messages.append({"role": "assistant", "content": "", "tool_call": call})
-            else:
-                messages.append({"role": "assistant", "content": thought_text})
-                continue  # nothing to execute this turn
-
-        name = call["name"]
-        args = call.get("arguments", {}) or {}
-
-        # Execute tool
-        try:
-            result = TOOLS[name](**args) if args else TOOLS[name]()
-        except Exception:
-            result = "Tool execution error:\n" + traceback.format_exc()
-
-        result_trunc = _truncate(result)
-
-        # Append messages to history
-        messages.append({"role": "assistant", "content": thought_text})
-        messages.append({"role": "assistant", "content": "", "tool_call": call})
-        messages.append({"role": "tool", "name": name, "content": result_trunc})
-
-
-        if name == "APPLY_PATCH":
-            last_patch = _sanitize_patch(args.get("patch"))
-            # _raw = args.get("patch", "")
-            # _clean = _sanitize_patch(_raw)
-            # last_patch = json.dumps({"raw": _raw, "san": _clean}, ensure_ascii=False)
-        if name == "FINISH":
-            print("[agent] FINISH called – exiting.")
-            return last_patch  # may be "" if nothing was applied
-
-    print("[agent] max steps exceeded")
-    return last_patch
-
-
-# ---------------------------------------------------------------------------
-# Compatibility wrapper for validator import style ---------------------------
-# ---------------------------------------------------------------------------
-
-def agent_main(input_dict: Dict[str, Any]):
-    """Entry-point expected by the validator legacy interface.
-
-    Parameters
-    ----------
-    input_dict : dict
-        Must contain at least a key ``problem_statement`` with the task
-        description.  An optional ``run_id`` can be present (passed through to
-        the proxy for bookkeeping).
-    """
-
-    problem_text = input_dict.get("problem_statement")
-    if not problem_text:
-        raise ValueError("input_dict must contain 'problem_statement'.")
-
-    # Environment overrides (the validator sets these); fall back to CLI defaults.
-    proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
-    timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
-    model_name = os.getenv("AGENT_MODEL", DEFAULT_MODEL)
-
-    # If the validator mounted the target repository at /sandbox/repo, switch
-    # to that directory so that all relative file paths and patch operations
-    # resolve correctly.  If the directory is absent we keep the current CWD
-    # (useful for local testing).
-    repo_root = Path("/sandbox/repo")
-    if repo_root.exists() and repo_root.is_dir():
-        os.chdir(repo_root)
-
-    if MODE == "TOOLS":
-        # Interactive tool loop; may be read-only if WRITE_FILE / APPLY_PATCH were hidden above.
-        patch_text = run_agent(
-            problem_text,
-            proxy_url=proxy_url,
-            timeout=timeout,
-            model_name=model_name,
-            run_id=input_dict.get("run_id", ""),
-        )
-        return {"patch": patch_text}
-
-    # Default: one-shot retrieval that returns a patch.
-    patch_text = run_oneshot(
-        problem_text,
-        proxy_url=proxy_url,
-        model_name=model_name,
-        run_id=input_dict.get("run_id", ""),
-    )
-
-    return {"patch": patch_text}
-
-# ---------------------------------------------------------------------------
-# Function specs (for iterative chat loop) ----------------------------------
-# ---------------------------------------------------------------------------
-
-FUNCTION_SPECS: List[Dict[str, Any]] = [
-    {"name": "LS", "description": "List directory contents.", "parameters": {"type": "object", "properties": {"dir": {"type": "string", "description": "Directory path", "default": "."}}}},
-    {
-        "name": "FIND",
-        "description": "Recursively search files for a regex pattern and return matching lines.",
-        "parameters": {
-            "type": "object",
-            "properties": {"pattern": {"type": "string"}, "dir": {"type": "string", "default": "."}},
-            "required": ["pattern"],
-        },
-    },
-    {
-        "name": "READ_FILE",
-        "description": "Read up to max_bytes bytes from a file.",
-        "parameters": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}, "max_bytes": {"type": "integer", "default": MAX_BYTES_READ}},
-            "required": ["path"],
-        },
-    },
-    {
-        "name": "DIFF",
-        "description": "Return unified diff between two files.",
-        "parameters": {
-            "type": "object",
-            "properties": {"path1": {"type": "string"}, "path2": {"type": "string"}},
-            "required": ["path1", "path2"],
-        },
-    },
-    {
-        "name": "WRITE_FILE",
-        "description": "Write content to a file (overwrites if exists).",
-        "parameters": {
-            "type": "object",
-            "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
-            "required": ["path", "content"],
-        },
-    },
-    {
-        "name": "APPLY_PATCH",
-        "description": "Apply a unified diff patch to the repository root using the patch command.",
-        "parameters": {"type": "object", "properties": {"patch": {"type": "string"}}, "required": ["patch"]},
-    },
-    {"name": "FINISH", "description": "Signal that all tasks are complete.", "parameters": {"type": "object", "properties": {}}},
-]
-
-# Dry-run version – returns (applies_cleanly: bool, output: str)
+                result = subprocess.run(
+                    ["patch", f"-p{p_level}", "--dry-run"],
+                    stdin=open(tmp.name),
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+
+                if result.returncode == 0:
+                    # Apply for real
+                    result = subprocess.run(
+                        ["patch", f"-p{p_level}"],
+                        stdin=open(tmp.name),
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    os.unlink(tmp.name)
+                    return f"Patch applied successfully with -p{p_level}:\n{result.stdout}"
+
+            except Exception as e:
+                os.unlink(tmp.name)
+                return f"Error applying patch: {e}"
+            finally:
+                if os.path.exists(tmp.name):
+                    os.unlink(tmp.name)
+
+    return "Failed to apply patch with any patch level"
+
+# Missing critical function - dry run patch validation
 def _dry_run_patch(patch: str) -> tuple[bool, str]:
+    """Dry-run version – returns (applies_cleanly: bool, output: str)"""
     # Sanitize before dry-run.
     patch = _sanitize_patch(patch)
     try:
@@ -1116,68 +406,1164 @@ def _dry_run_patch(patch: str) -> tuple[bool, str]:
         except Exception:
             pass
 
-# ---------------------------------------------------------------------------
-# Misc helper functions ------------------------------------------------------
-# ---------------------------------------------------------------------------
-
-def _lang_tag(path: str) -> str:
-    """Return a language tag for markdown fencing based on file extension."""
-    ext = os.path.splitext(path)[1].lower()
-    return {
-        ".py": "python",
-        ".js": "javascript",
-        ".ts": "typescript",
-        ".java": "java",
-        ".go": "go",
-    }.get(ext, "")
 
 
-def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
-    """Return {rel_path: text} for readable source files under *root*.
+def _remote_embed(text: str, proxy_url: str, run_id: str) -> List[float]:
+    """Get embeddings from the proxy service."""
+    try:
+        url = f"{proxy_url}/agents/embedding"
+        data = json.dumps({"text": text, "run_id": run_id}).encode('utf-8')
 
-    Preference order:
-    1. Python files (`*.py`).
-    2. If *no* Python file is found, fall back to any UTF-8 decodable text file
-       smaller than ~200 kB so the agent can still operate on non-Python repos
-       (Rust, JS, etc.).
+        req = _urlreq.Request(url, data=data)
+        req.add_header('Content-Type', 'application/json')
+
+        with _urlreq.urlopen(req, timeout=60) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return result.get("embedding", ZERO_VEC)
+
+    except Exception as e:
+        print(f"[agent] embedding error: {e}")
+        return ZERO_VEC
+
+def _cosine(u: List[float], v: List[float]) -> float:
+    """Compute cosine similarity between two vectors."""
+    if not u or not v:
+        return 0.0
+
+    dot_product = sum(a * b for a, b in zip(u, v))
+    norm_u = math.sqrt(sum(a * a for a in u))
+    norm_v = math.sqrt(sum(a * a for a in v))
+
+    if norm_u == 0 or norm_v == 0:
+        return 0.0
+
+    return dot_product / (norm_u * norm_v)
+
+def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model: str = None, tools: List[Dict[str, Any]] = None) -> dict:
+    """Send messages to the LLM via proxy and get response."""
+    request_data = {
+        "run_id": run_id,
+        "messages": messages,
+        "temperature": 0.0
+    }
+
+    if model:
+        request_data["model"] = model
+
+    # Add tools if provided
+    if tools:
+        request_data["tools"] = tools
+
+    url = f"{proxy_url.rstrip('/')}/agents/inference"
+    request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
+
+    try:
+        req = _urlreq.Request(url, data=request_bytes, method="POST")
+        req.add_header("Content-Type", "application/json")
+
+        with _urlreq.urlopen(req, timeout=300) as resp:
+            response_body = resp.read()
+            response_json = json.loads(response_body.decode("utf-8"))
+
+            # The proxy may return a plain string instead of a JSON object
+            if isinstance(response_json, str):
+                return {"text_response": response_json, "code_response": ""}
+
+            return response_json
+
+    except Exception as e:
+        raise RuntimeError(f"Inference failed: {e}")
+
+# --- Advanced Feature Extraction Functions (from legitimate parts of agent_3-miner-5) ---
+
+def _extract_problem_keywords(problem_text: str) -> Dict[str, List[str]]:
+    """Extract relevant keywords from natural language problem description."""
+    features = {
+        'domain_keywords': [],
+        'component_names': [],
+        'error_terms': [],
+        'action_words': [],
+        'technical_terms': [],
+        'file_mentions': []
+    }
+
+    # Domain-specific frameworks and libraries
+    DOMAIN_PATTERNS = {
+        'django': r'\b(django|model|queryset|migration|admin|form|view|template|url|settings|ORM)\b',
+        'flask': r'\b(flask|route|blueprint|request|response|session|app|render_template)\b',
+        'sklearn': r'\b(sklearn|scikit.learn|fit|transform|predict|estimator|classifier|regressor|pipeline)\b',
+        'numpy': r'\b(numpy|np|array|ndarray|dtype|shape|axis|broadcast)\b',
+        'pandas': r'\b(pandas|pd|dataframe|series|index|column|groupby|merge)\b',
+        'matplotlib': r'\b(matplotlib|plt|plot|figure|axis|subplot|legend|xlabel|ylabel)\b',
+        'sympy': r'\b(sympy|symbol|equation|solve|diff|integrate|matrix|polynomial)\b',
+        'pytest': r'\b(pytest|test|fixture|mock|assert|parametrize|unittest)\b',
+        'astropy': r'\b(astropy|fits|table|unit|quantity|coordinate|time|wcs)\b',
+        'sphinx': r'\b(sphinx|doc|directive|rst|autodoc|toctree)\b'
+    }
+
+    # Error and problem indicators
+    ERROR_PATTERNS = [
+        r'\b(error|exception|fail|failure|bug|issue|problem|broken|crash|traceback)\b',
+        r'\b(incorrect|wrong|invalid|unexpected|missing|not.working)\b',
+        r'\b(raise|throw|assert|warning|debug)\b'
+    ]
+
+    # Action words that indicate what needs to be done
+    ACTION_PATTERNS = [
+        r'\b(fix|repair|solve|resolve|handle|support|implement|add|remove|update|modify)\b',
+        r'\b(improve|enhance|optimize|refactor|validate|check|ensure)\b'
+    ]
+
+    # Technical terms and components
+    TECH_PATTERNS = [
+        r'\b(function|method|class|module|package|import|library)\b',
+        r'\b(parameter|argument|variable|attribute|property|field)\b',
+        r'\b(database|query|sql|json|xml|api|endpoint|request|response)\b',
+        r'\b(configuration|settings|options|preferences|default)\b'
+    ]
+
+    # File and path mentions
+    FILE_PATTERNS = [
+        r'\b([a-zA-Z_][a-zA-Z0-9_]*\.py)\b',  # Python files
+        r'\b([a-zA-Z_][a-zA-Z0-9_/]*\.[a-zA-Z]{2,4})\b',  # General files
+        r'\b([a-zA-Z_][a-zA-Z0-9_]*)/([a-zA-Z_][a-zA-Z0-9_]*)\b'  # Path-like structures
+    ]
+
+    problem_lower = problem_text.lower()
+
+    # Extract domain keywords
+    for domain, pattern in DOMAIN_PATTERNS.items():
+        matches = re.findall(pattern, problem_lower, re.IGNORECASE)
+        if matches:
+            features['domain_keywords'].extend([domain] + matches)
+
+    # Extract error terms
+    for pattern in ERROR_PATTERNS:
+        features['error_terms'].extend(re.findall(pattern, problem_lower, re.IGNORECASE))
+
+    # Extract action words
+    for pattern in ACTION_PATTERNS:
+        features['action_words'].extend(re.findall(pattern, problem_lower, re.IGNORECASE))
+
+    # Extract technical terms
+    for pattern in TECH_PATTERNS:
+        features['technical_terms'].extend(re.findall(pattern, problem_lower, re.IGNORECASE))
+
+    # Extract file mentions
+    for pattern in FILE_PATTERNS:
+        matches = re.findall(pattern, problem_text, re.IGNORECASE)  # Case sensitive for files
+        features['file_mentions'].extend([m if isinstance(m, str) else '/'.join(m) for m in matches])
+
+    # Extract component names (CamelCase or specific patterns)
+    component_patterns = [
+        r'\b([A-Z][a-zA-Z0-9]*(?:[A-Z][a-zA-Z0-9]*)*)\b',  # CamelCase
+        r'\b([a-z]+_[a-z_]+)\b',  # snake_case
+        r'\b([A-Z][A-Z_]+)\b'  # CONSTANTS
+    ]
+    for pattern in component_patterns:
+        features['component_names'].extend(re.findall(pattern, problem_text))
+
+    return features
+
+def _extract_code_features(text: str, file_path: str = "") -> Dict[str, List[str]]:
+    """Extract code-specific features for better similarity matching."""
+    features = {
+        'functions': [],
+        'classes': [],
+        'imports': [],
+        'identifiers': [],
+        'error_keywords': [],
+        'docstrings': []
+    }
+
+    # Error and exception related keywords in code
+    ERROR_KEYWORDS = [
+        'error', 'exception', 'fail', 'bug', 'issue', 'problem', 'fix', 'broken', 'crash',
+        'traceback', 'stacktrace', 'assert', 'raise', 'throw', 'catch', 'try', 'except',
+        'errno', 'stderr', 'warning', 'debug', 'test', 'unittest', 'pytest'
+    ]
+
+    # Extract file extension for language-specific processing
+    file_ext = os.path.splitext(file_path)[1].lower()
+
+    # Python-specific AST extraction
+    if file_ext == '.py':
+        try:
+            tree = ast.parse(text)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    features['functions'].append(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    features['classes'].append(node.name)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        features['imports'].append(alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        features['imports'].append(node.module)
+                    for alias in node.names:
+                        features['imports'].append(alias.name)
+        except:
+            pass  # Fall back to regex if AST parsing fails
+
+    # Regex-based extraction for all languages
+    text_lower = text.lower()
+
+    # Extract function/method definitions
+    func_patterns = [
+        r'\bdef\s+(\w+)',  # Python
+        r'\bfunction\s+(\w+)',  # JavaScript
+        r'\b(\w+)\s*\([^)]*\)\s*{',  # C/Java/JavaScript functions
+        r'\bfunc\s+(\w+)',  # Go
+    ]
+    for pattern in func_patterns:
+        features['functions'].extend(re.findall(pattern, text, re.IGNORECASE))
+
+    # Extract class definitions
+    class_patterns = [
+        r'\bclass\s+(\w+)',  # Python/Java/C++
+        r'\binterface\s+(\w+)',  # Java/TypeScript
+        r'\bstruct\s+(\w+)',  # C/Go
+    ]
+    for pattern in class_patterns:
+        features['classes'].extend(re.findall(pattern, text, re.IGNORECASE))
+
+    # Extract meaningful identifiers
+    identifier_pattern = r'\b[a-zA-Z_][a-zA-Z0-9_]{2,}\b'
+    all_identifiers = re.findall(identifier_pattern, text)
+    # Filter out common words and keep meaningful identifiers
+    meaningful_identifiers = [
+        word for word in all_identifiers
+        if len(word) > 2 and not word.lower() in ['the', 'and', 'for', 'with', 'this', 'that', 'from', 'import']
+    ]
+    features['identifiers'] = meaningful_identifiers[:50]  # Limit to avoid noise
+
+    # Extract error-related keywords
+    for keyword in ERROR_KEYWORDS:
+        if keyword in text_lower:
+            features['error_keywords'].append(keyword)
+
+    # Extract docstrings and comments
+    docstring_patterns = [
+        r'"""([^"]+)"""',  # Python docstrings
+        r"'''([^']+)'''",  # Python docstrings
+        r'/\*\*([^*]+)\*/',  # Javadoc
+        r'#\s*(.+)$',  # Comments
+    ]
+    for pattern in docstring_patterns:
+        matches = re.findall(pattern, text, re.MULTILINE | re.DOTALL)
+        features['docstrings'].extend(matches[:5])  # Limit to avoid noise
+
+    return features
+
+def _compute_problem_code_similarity(problem_features: Dict[str, List[str]], code_features: Dict[str, List[str]], file_path: str) -> float:
+    """Compute similarity between problem description and code chunk."""
+    score = 0.0
+
+    # Weight different types of matches
+    weights = {
+        'domain_match': 3.0,      # High weight for domain/framework matches
+        'error_match': 2.5,       # High weight for error-related matches
+        'component_match': 2.0,   # Component name matches
+        'file_match': 2.5,        # File name matches
+        'technical_match': 1.5,   # Technical term matches
+        'general_match': 1.0      # General identifier matches
+    }
+
+    # 1. Domain keyword matching
+    problem_domains = set(problem_features.get('domain_keywords', []))
+    code_all_text = ' '.join(
+        code_features.get('functions', []) +
+        code_features.get('classes', []) +
+        code_features.get('imports', []) +
+        code_features.get('identifiers', [])
+    ).lower()
+
+    for domain in problem_domains:
+        if domain in code_all_text or domain in file_path.lower():
+            score += weights['domain_match']
+
+    # 2. Error keyword matching
+    problem_errors = set(problem_features.get('error_terms', []))
+    code_errors = set(code_features.get('error_keywords', []))
+    error_overlap = len(problem_errors & code_errors)
+    if error_overlap > 0:
+        score += weights['error_match'] * error_overlap
+
+    # 3. Component name matching
+    problem_components = set(problem_features.get('component_names', []))
+    code_components = set(
+        code_features.get('functions', []) +
+        code_features.get('classes', [])
+    )
+    component_overlap = len(problem_components & code_components)
+    if component_overlap > 0:
+        score += weights['component_match'] * component_overlap
+
+    # 4. File name matching
+    problem_files = set(problem_features.get('file_mentions', []))
+    file_name = os.path.basename(file_path).lower()
+    for mentioned_file in problem_files:
+        if mentioned_file.lower() in file_path.lower() or file_name in mentioned_file.lower():
+            score += weights['file_match']
+
+    # 5. Technical term matching
+    problem_tech = set(problem_features.get('technical_terms', []))
+    code_identifiers = set(code_features.get('identifiers', []))
+    tech_overlap = len(problem_tech & code_identifiers)
+    if tech_overlap > 0:
+        score += weights['technical_match'] * min(tech_overlap, 3)  # Cap to avoid noise
+
+    # 6. General identifier overlap (with lower weight)
+    problem_all = set()
+    for feature_list in problem_features.values():
+        problem_all.update([f.lower() for f in feature_list])
+
+    code_all = set()
+    for feature_list in code_features.values():
+        code_all.update([f.lower() for f in feature_list])
+
+    general_overlap = len(problem_all & code_all)
+    if general_overlap > 0:
+        score += weights['general_match'] * min(general_overlap, 5)  # Cap to avoid noise
+
+    return score
+
+def _compute_enhanced_tfidf_similarity(problem_text: str, chunk_texts: List[str]) -> List[float]:
+    """Compute TF-IDF similarity with better preprocessing for problem-to-code matching."""
+    try:
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        def preprocess_text(text):
+            # Handle code-specific patterns
+            # Split camelCase and snake_case
+            text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+            text = text.replace('_', ' ')
+            # Remove common punctuation but keep important ones
+            text = re.sub(r'[^\w\s.-]', ' ', text)
+            return text.lower()
+
+        # More targeted stop words for problem-to-code matching
+        stop_words = [
+            'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
+            'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does',
+            'did', 'will', 'would', 'could', 'should', 'this', 'that', 'these', 'those', 'can'
+        ]
+
+        vectorizer = TfidfVectorizer(
+            preprocessor=preprocess_text,
+            stop_words=stop_words,
+            max_features=25000,
+            ngram_range=(1, 2),  # Include bigrams
+            max_df=0.85,
+            min_df=1
+        )
+
+        all_texts = [problem_text] + chunk_texts
+        tfidf_matrix = vectorizer.fit_transform(all_texts)
+
+        query_vec = tfidf_matrix[0]
+        chunk_matrix = tfidf_matrix[1:]
+
+        # Compute cosine similarity
+        similarities = []
+        for i in range(chunk_matrix.shape[0]):
+            chunk_vec = chunk_matrix[i]
+            similarity = (query_vec * chunk_vec.T).toarray()[0, 0]
+            similarities.append(similarity)
+
+        return similarities
+    except Exception as e:
+        print(f"Enhanced TF-IDF computation failed: {e}")
+        return [0.0] * len(chunk_texts)
+
+def _improved_problem_code_filter(problem_text: str, code_chunks: List[Chunk], chunk_texts: List[str], pre_filter_top: int) -> tuple[List[str], List[Chunk]]:
+    """Enhanced pre-filtering using problem-to-code similarity matching."""
+
+    print(f"Starting improved problem-to-code filtering with {len(chunk_texts)} chunks...")
+
+    # Extract features from problem text (natural language)
+    problem_features = _extract_problem_keywords(problem_text)
+    print(f"Problem features extracted: {sum(len(v) for v in problem_features.values())} total features")
+
+    # 1. Problem-to-code feature matching
+    print("Computing problem-to-code similarities...")
+    feature_similarities = []
+    for i, chunk in enumerate(code_chunks):
+        code_features = _extract_code_features(chunk_texts[i], chunk.file)
+        feature_sim = _compute_problem_code_similarity(problem_features, code_features, chunk.file)
+        feature_similarities.append(feature_sim)
+
+    # 2. Enhanced TF-IDF similarity
+    print("Computing enhanced TF-IDF similarities...")
+    tfidf_similarities = _compute_enhanced_tfidf_similarity(problem_text, chunk_texts)
+
+    # 3. Path-based similarity bonus
+    print("Computing path-based similarities...")
+    path_bonuses = []
+    problem_lower = problem_text.lower()
+    for chunk in code_chunks:
+        bonus = 0.0
+        file_parts = chunk.file.lower().split('/')
+        base_name = os.path.basename(chunk.file).lower()
+
+        # Check if filename or path components mentioned in problem
+        for part in file_parts + [base_name, base_name.split('.')[0]]:
+            if part in problem_lower and len(part) > 2:
+                bonus += 0.3
+
+        path_bonuses.append(bonus)
+
+    # Normalize similarities
+    def normalize_scores(scores):
+        if not scores:
+            return scores
+        min_score = min(scores)
+        max_score = max(scores)
+        if max_score > min_score:
+            return [(x - min_score) / (max_score - min_score) for x in scores]
+        else:
+            return [0.0] * len(scores)
+
+    feature_similarities = normalize_scores(feature_similarities)
+    tfidf_similarities = normalize_scores(tfidf_similarities)
+    path_bonuses = normalize_scores(path_bonuses)
+
+    # Combine all similarities with weights
+    print("Combining similarity scores...")
+    combined_similarities = []
+    weights = {
+        'feature': 0.4,    # Highest weight for problem-to-code feature matching
+        'tfidf': 0.45,     # Good for content similarity
+        'path': 0.15       # Path-based bonus
+    }
+
+    for i in range(len(chunk_texts)):
+        combined_score = (
+            weights['feature'] * feature_similarities[i] +
+            weights['tfidf'] * tfidf_similarities[i] +
+            weights['path'] * path_bonuses[i]
+        )
+        combined_similarities.append(combined_score)
+
+    # Get top indices
+    top_indices = sorted(range(len(combined_similarities)), key=lambda i: -combined_similarities[i])[:pre_filter_top]
+
+    # Return filtered chunks
+    filtered_chunk_texts = [chunk_texts[i] for i in top_indices]
+    filtered_code_chunks = [code_chunks[i] for i in top_indices]
+
+    return filtered_chunk_texts, filtered_code_chunks
+
+# --- Hybrid Mode Functions ---
+
+def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_id: str) -> Dict[str, Any]:
     """
-    texts: Dict[str, str] = {}
-    for dirpath, _dirs, files in os.walk(root):
-        if ".git" in dirpath.split(os.sep):
-            continue
-        for fn in files:
-            if fn.endswith(".py"):
-                path = os.path.join(dirpath, fn)
-                try:
-                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                        texts[os.path.relpath(path, root)] = fh.read()
-                except Exception:
-                    continue
+    Phase 1: Use tools to explore and locate the problem.
+    Enhanced with smart feature extraction to guide exploration.
+    Returns information about target files to focus on.
+    """
 
-    # If nothing collected, relax filter and read small-ish text files.
-    if not texts:
-        for dirpath, _dirs, files in os.walk(root):
-            if ".git" in dirpath.split(os.sep):
-                continue
-            for fn in files:
-                path = os.path.join(dirpath, fn)
+    # Extract features from problem to guide exploration
+    problem_features = _extract_problem_keywords(problem_text)
+
+    # Generate intelligent exploration hints
+    exploration_hints = []
+
+    # Suggest searches based on extracted features
+    if problem_features['domain_keywords']:
+        domain_hints = ', '.join(problem_features['domain_keywords'][:3])
+        exploration_hints.append(f"🎯 Domain: This appears to be a {domain_hints} related problem")
+
+    if problem_features['file_mentions']:
+        file_hints = ', '.join(problem_features['file_mentions'][:3])
+        exploration_hints.append(f"📁 Files: Problem mentions these files: {file_hints}")
+
+    if problem_features['component_names']:
+        component_hints = ', '.join(problem_features['component_names'][:3])
+        exploration_hints.append(f"🔧 Components: Look for these components: {component_hints}")
+
+    if problem_features['error_terms']:
+        error_hints = ', '.join(problem_features['error_terms'][:3])
+        exploration_hints.append(f"❌ Errors: Problem involves: {error_hints}")
+
+    hints_text = "\n".join(exploration_hints) if exploration_hints else "No specific hints extracted."
+
+    # Initialize current working directory BEFORE using it
+    current_working_directory = "."
+
+    # Use structured system prompt
+    command_docs = "\n".join(EXPLORATION_COMMANDS.values())
+    system_prompt = EXPLORATION_SYSTEM_PROMPT.format(command_docs=command_docs)
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"PROBLEM TO LOCATE:\n{problem_text}\n\nAI ANALYSIS HINTS:\n{hints_text}\n\n(Current dir: {current_working_directory}) $ Start your exploration to find where this problem exists in the codebase. Use the hints above to guide your search strategy."}
+    ]
+
+    step = 0
+    exploration_history = []
+    command_history = []  # Track commands to detect loops
+
+    while step < MAX_EXPLORATION_STEPS:
+        step += 1
+
+        try:
+            # Get next action from LLM using string commands
+            response = inference(messages, proxy_url, run_id, model_name)
+            text_response = response.get("text_response", "")
+
+                        # Parse the response to extract discussion and command
+            if "```" in text_response:
+                parts = text_response.split("```")
+                discussion = parts[0].strip()
+                command = parts[1].strip() if len(parts) > 1 else ""
+            else:
+                discussion = text_response.strip()
+                command = ""
+
+            # Clean up command - remove any extra whitespace and newlines
+            command = command.strip()
+
+            # Remove language identifiers from code blocks (e.g. "python\nFINISH(...)")
+            if '\n' in command and len(command.split('\n')) > 1:
+                lines = command.split('\n')
+                # If first line looks like a language identifier, skip it
+                if lines[0].strip().lower() in ['python', 'bash', 'shell', 'json', ''] and len(lines) > 1:
+                    command = '\n'.join(lines[1:]).strip()
+
+            # Debug logging for command parsing
+            print(f"[agent] Raw command: {repr(command[:100])}...")
+            print(f"[agent] Command starts with: {repr(command[:20])}")
+
+            # Extract just the first line if command spans multiple lines (for loop detection)
+            command_for_loop_check = command.split('\n')[0].strip() if command else ""
+
+            exploration_history.append(f"STEP {step}:\nDISCUSSION: {discussion}\nCOMMAND: {command}")
+
+            # Improved loop detection - only check actual commands, not analysis text
+            is_valid_command = any(command_for_loop_check.startswith(cmd) for cmd in [
+                "READ_FILE", "FIND", "LS", "CD", "GREP", "SMART_SEARCH", "RUN_TESTS", "FINISH"
+            ])
+
+            # Also detect repeated failed commands (even if slightly different)
+            command_base = command_for_loop_check.split('(')[0] if '(' in command_for_loop_check else command_for_loop_check
+            recent_command_bases = [cmd.split('(')[0] if '(' in cmd else cmd for cmd in command_history[-3:]]
+            repeated_base_command = command_base in recent_command_bases and len(command_history) >= 3
+
+            if (is_valid_command and command_for_loop_check in command_history[-3:]) or repeated_base_command:  # Same command in last 3 attempts
+                observation = f"Detected command loop with '{command_for_loop_check}'. Trying different approach..."
+                print(f"[agent] Loop detected: {command_for_loop_check}")
+
+                # Generic suggestions based on command type (not specific files/frameworks)
+                if "READ_FILE" in command_for_loop_check:
+                    observation += "\n\nSuggestion: File may be too large or truncated. Try GREP to find specific patterns or use SMART_SEARCH to identify target files."
+                elif "GREP" in command_for_loop_check:
+                    observation += "\n\nSuggestion: If you've found relevant files/patterns, consider using SMART_SEARCH for broader context or FINISH if you've identified the target location."
+                else:
+                    observation += "\n\nSuggestion: Try a different exploration strategy or use FINISH if you've identified the problem location."
+
+                # Skip command execution and provide feedback
+                messages.append({"role": "assistant", "content": text_response})
+                messages.append({"role": "user", "content": f"OBSERVATION:\n{observation[:MAX_OBS_CHARS]}"})
+                pwd_prompt = f"(Current dir: {current_working_directory}) $ "
+                messages.append({"role": "user", "content": f"{pwd_prompt}Continue exploration..."})
+                continue  # Skip to next iteration
+            else:
+                # Only track valid commands in history
+                if is_valid_command:
+                    command_history.append(command_for_loop_check)
+                    # Keep only last 5 commands to avoid memory bloat
+                    if len(command_history) > 5:
+                        command_history.pop(0)
+
+            # Handle FINISH command - improved detection
+            command_upper = command.upper().strip()
+            # Also check if FINISH appears anywhere in the text (fallback)
+            finish_in_text = "FINISH(" in text_response.upper()
+
+            if command_upper.startswith("FINISH") or finish_in_text:
+                print(f"[agent] FINISH command detected: {repr(command)}")
                 try:
-                    if os.path.getsize(path) > 200_000:
-                        continue
-                    with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                        texts[os.path.relpath(path, root)] = fh.read()
-                except Exception:
-                    continue
-                if len(texts) > 1000:  # sanity cap
+                    # Multiple strategies to extract JSON
+                    finish_data = None
+
+                    # Use full text if FINISH was found there but not in command
+                    text_to_parse = command if command_upper.startswith("FINISH") else text_response
+                    print(f"[agent] Parsing from: {'command' if text_to_parse == command else 'full text'}")
+
+                    # Strategy 1: Extract from parentheses
+                    if "(" in text_to_parse and ")" in text_to_parse:
+                        start_paren = text_to_parse.find("(")
+                        end_paren = text_to_parse.rfind(")")
+                        json_str = text_to_parse[start_paren+1:end_paren].strip()
+                        print(f"[agent] Extracted JSON from parens: {repr(json_str[:100])}...")
+                        try:
+                            finish_data = json.loads(json_str)
+                        except json.JSONDecodeError as e:
+                            print(f"[agent] JSON parsing failed: {e}")
+
+                    # Strategy 2: Look for JSON-like structure in the command
+                    if finish_data is None and "{" in text_to_parse and "}" in text_to_parse:
+                        start_brace = text_to_parse.find("{")
+                        end_brace = text_to_parse.rfind("}")
+                        json_str = text_to_parse[start_brace:end_brace+1].strip()
+                        print(f"[agent] Extracted JSON from braces: {repr(json_str[:100])}...")
+                        try:
+                            finish_data = json.loads(json_str)
+                        except json.JSONDecodeError as e:
+                            print(f"[agent] JSON parsing failed: {e}")
+
+                    # Strategy 3: Try to extract from multi-line text
+                    if finish_data is None:
+                        # Look for target_files and problem_location in text
+                        target_match = re.search(r'"target_files":\s*\[(.*?)\]', text_to_parse, re.DOTALL)
+                        location_match = re.search(r'"problem_location":\s*"(.*?)"', text_to_parse, re.DOTALL)
+
+                        if target_match and location_match:
+                            target_files_str = target_match.group(1)
+                            # Extract file names from the list
+                            file_matches = re.findall(r'"([^"]+)"', target_files_str)
+                            finish_data = {
+                                "target_files": file_matches,
+                                "problem_location": location_match.group(1)
+                            }
+                            print(f"[agent] Extracted via regex: {finish_data}")
+
+                    if finish_data:
+                        target_files = finish_data.get("target_files", [])
+                        problem_location = finish_data.get("problem_location", "")
+
+                        print(f"[agent] FINISH command executed successfully")
+                        print(f"[agent] Target files: {target_files}")
+                        print(f"[agent] Problem location: {problem_location}")
+
+                        if not target_files:
+                            observation = "Error: FINISH must specify target_files"
+                        else:
+                            return {
+                                "success": True,
+                                "target_files": target_files,
+                                "problem_location": problem_location,
+                                "exploration_history": exploration_history
+                            }
+                    else:
+                        observation = "Error: Could not extract valid JSON from FINISH command"
+
+                except Exception as e:
+                    print(f"[agent] FINISH command error: {e}")
+                    observation = f"Error parsing FINISH command: {e}"
+
+            # Handle other commands using string parsing
+            elif command.startswith("READ_FILE"):
+                try:
+                    # Extract content within parentheses
+                    paren_content = command[command.find("(")+1:command.rfind(")")]
+
+                    # Check if there are multiple arguments (commas) - this is invalid
+                    if ',' in paren_content:
+                        observation = f"Error: READ_FILE only accepts one argument (file path). Got: {paren_content}"
+                    else:
+                        path = paren_content.strip('\'"')
+                        if not path:
+                            observation = "Error: READ_FILE requires a file path argument"
+                        else:
+                            if not os.path.isabs(path):
+                                path = os.path.join(current_working_directory, path)
+                            observation = _read_file(path)
+                except Exception as e:
+                    observation = f"Error parsing READ_FILE command: {e}. Correct usage: READ_FILE(\"path/to/file.py\")"
+
+            elif command.startswith("FIND"):
+                # Enhanced FIND parsing to handle flags like -name, -type, -maxdepth
+                try:
+                    find_cmd = ["find", current_working_directory]
+
+                    if "(" in command and ")" in command:
+                        # FIND(pattern) format
+                        pattern = command[command.find("(")+1:command.rfind(")")]
+                        pattern = pattern.strip('\'"')
+                        find_cmd.extend(["-name", pattern])
+                    elif " -" in command:
+                        # FIND -name "*.py" -type f format
+                        parts = command.split()
+                        i = 1  # Skip "FIND"
+                        while i < len(parts):
+                            part = parts[i]
+                            if part == "-name" and i + 1 < len(parts):
+                                find_cmd.extend(["-name", parts[i + 1].strip('\'"')])
+                                i += 2
+                            elif part == "-type" and i + 1 < len(parts):
+                                find_cmd.extend(["-type", parts[i + 1]])
+                                i += 2
+                            elif part == "-maxdepth" and i + 1 < len(parts):
+                                find_cmd.extend(["-maxdepth", parts[i + 1]])
+                                i += 2
+                            else:
+                                i += 1
+                    else:
+                        # Default: find all files
+                        find_cmd.extend(["-type", "f"])
+
+                    result = subprocess.run(find_cmd, capture_output=True, text=True, check=False, timeout=30)
+                    observation = result.stdout if result.returncode == 0 else result.stderr
+                except Exception as e:
+                    observation = f"Error running find: {e}"
+
+            elif command.startswith("LS"):
+                # Enhanced LS parsing to handle flags like -la, -R
+                try:
+                    dir_path = current_working_directory
+                    ls_cmd = ["ls"]
+
+                    if "(" in command:
+                        # LS(dir) format
+                        dir_path = command[command.find("(")+1:command.rfind(")")]
+                        dir_path = dir_path.strip('\'"') if dir_path else current_working_directory
+                    elif " -" in command:
+                        # LS -la format or LS -R dir format
+                        parts = command.split()
+                        for i, part in enumerate(parts):
+                            if part.startswith("-"):
+                                # Add flags
+                                if "l" in part: ls_cmd.append("-l")
+                                if "a" in part: ls_cmd.append("-a")
+                                if "h" in part: ls_cmd.append("-h")
+                                if "R" in part: ls_cmd.append("-R")
+                            elif i > 0 and not part.startswith("-"):
+                                # This is the directory
+                                dir_path = part.strip('\'"')
+                                break
+
+                    if not os.path.isabs(dir_path):
+                        dir_path = os.path.join(current_working_directory, dir_path)
+
+                    ls_cmd.append(dir_path)
+                    result = subprocess.run(ls_cmd, capture_output=True, text=True, check=False, timeout=10)
+                    observation = result.stdout if result.returncode == 0 else result.stderr
+                except Exception as e:
+                    observation = f"Error running ls: {e}"
+
+            elif command.startswith("CD"):
+                new_dir = command[command.find("(")+1:command.rfind(")")]
+                new_dir = new_dir.strip('\'"')
+                try:
+                    if new_dir == "..":
+                        new_path = os.path.dirname(current_working_directory) or "."
+                    elif new_dir == ".":
+                        new_path = current_working_directory
+                    elif os.path.isabs(new_dir):
+                        new_path = new_dir
+                    else:
+                        new_path = os.path.join(current_working_directory, new_dir)
+
+                    new_path = os.path.normpath(new_path)
+                    if os.path.isdir(new_path):
+                        current_working_directory = new_path
+                        observation = f"Changed directory to: {current_working_directory}"
+                    else:
+                        observation = f"Directory not found: {new_path}"
+                except Exception as e:
+                    observation = f"Error changing directory: {e}"
+
+            elif command.startswith("GREP"):
+                # Enhanced GREP parsing to handle flags like -A, -B, -n
+                # Supports: GREP("pattern", "path") and GREP -A 10 -B 2 "pattern" "path"
+                try:
+                    if command.count('"') >= 2:
+                        # Check for flags before the first quote
+                        first_quote = command.find('"')
+                        before_quotes = command[:first_quote]
+
+                        # Extract all quoted strings
+                        quote_parts = []
+                        in_quote = False
+                        current_quote = ""
+                        for char in command[first_quote:]:
+                            if char == '"':
+                                if in_quote:
+                                    quote_parts.append(current_quote)
+                                    current_quote = ""
+                                    in_quote = False
+                                else:
+                                    in_quote = True
+                            elif in_quote:
+                                current_quote += char
+
+                        if len(quote_parts) >= 2:
+                            pattern = quote_parts[0]
+                            path = quote_parts[1]
+
+                            # Build grep command with flags
+                            grep_cmd = ["grep"]
+
+                            # Parse flags from before_quotes
+                            if "-A" in before_quotes:
+                                match = re.search(r'-A\s+(\d+)', before_quotes)
+                                if match:
+                                    grep_cmd.extend(["-A", match.group(1)])
+
+                            if "-B" in before_quotes:
+                                match = re.search(r'-B\s+(\d+)', before_quotes)
+                                if match:
+                                    grep_cmd.extend(["-B", match.group(1)])
+
+                            if "-n" in before_quotes:
+                                grep_cmd.append("-n")
+
+                            # Add recursive flag by default
+                            if "-r" not in before_quotes:
+                                grep_cmd.append("-r")
+
+                            # Add pattern and path
+                            grep_cmd.extend([pattern, path])
+
+                            # Make path absolute if needed
+                            if not os.path.isabs(path):
+                                path = os.path.join(current_working_directory, path)
+                                grep_cmd[-1] = path
+
+                            result = subprocess.run(
+                                grep_cmd, capture_output=True, text=True, check=False, timeout=30
+                            )
+                            observation = result.stdout if result.returncode == 0 else f"No matches found for '{pattern}'"
+                        else:
+                            observation = "Error: GREP requires pattern and path arguments"
+                    else:
+                        # Fallback to simple parsing for GREP(pattern, path)
+                        args = command[command.find("(")+1:command.rfind(")")]
+                        args_parts = [arg.strip().strip('\'"') for arg in args.split(",")]
+                        if len(args_parts) >= 2:
+                            pattern, path = args_parts[0], args_parts[1]
+                            if not os.path.isabs(path):
+                                path = os.path.join(current_working_directory, path)
+                            result = subprocess.run(
+                                ["grep", "-r", pattern, path],
+                                capture_output=True, text=True, check=False, timeout=30
+                            )
+                            observation = result.stdout if result.returncode == 0 else f"No matches found for '{pattern}'"
+                        else:
+                            observation = "Error: GREP requires pattern and path arguments"
+
+                except Exception as e:
+                    observation = f"Error running grep: {e}"
+
+            elif command.startswith("SMART_SEARCH"):
+                try:
+                    print("[agent] Performing smart search...")
+                    if USE_FUNCTION_CHUNKS:
+                        code_chunks = _collect_code_chunks()
+                        chunk_texts = [c.text for c in code_chunks]
+                    else:
+                        repo_texts = _collect_repo_texts()
+                        code_chunks = [Chunk(file=fp, start_line=1, end_line=text.count("\n") + 1, text=text) for fp, text in repo_texts.items()]
+                        chunk_texts = [c.text for c in code_chunks]
+
+                    if len(chunk_texts) > 20:
+                        filtered_chunk_texts, filtered_code_chunks = _improved_problem_code_filter(
+                            problem_text, code_chunks, chunk_texts, 10
+                        )
+
+                        results = []
+                        target_files = []
+                        for chunk in filtered_code_chunks:
+                            results.append(f"📁 {chunk.file} (lines {chunk.start_line}-{chunk.end_line})")
+                            # Extract unique file paths for potential FINISH
+                            if chunk.file not in target_files:
+                                target_files.append(chunk.file)
+
+                        observation = f"SMART_SEARCH found {len(results)} most relevant files:\n" + "\n".join(results[:10])
+
+                        # Intelligent suggestion based on results quality
+                        if len(filtered_code_chunks) > 0:
+                            top_file = filtered_code_chunks[0].file
+
+                            # Check if we have high-confidence results
+                            if len(target_files) <= 3:  # Few, focused results
+                                observation += f"\n\n💡 INTELLIGENT SUGGESTION: The top result '{top_file}' appears highly relevant to your problem."
+                                observation += f"\n   Consider using: FINISH({{\"target_files\": {target_files[:3]}, \"problem_location\": \"Found via SMART_SEARCH\"}})"
+                            else:
+                                observation += f"\n\n💡 SUGGESTION: Multiple relevant files found. Focus on the top results or use GREP to narrow down to specific patterns."
+
+                    else:
+                        observation = f"Repository has {len(chunk_texts)} files. Use FIND or LS to explore them manually."
+
+                except Exception as e:
+                    observation = f"Smart search failed: {e}"
+
+            elif command.startswith("RUN_TESTS"):
+                # Enhanced RUN_TESTS parsing to handle flags like -v, -x
+                try:
+                    test_cmd = ["python", "-m", "pytest"]
+                    test_file = ""
+
+                    if "(" in command and ")" in command:
+                        # RUN_TESTS(test_file) format
+                        test_file = command[command.find("(")+1:command.rfind(")")]
+                        test_file = test_file.strip('\'"')
+                    elif " -" in command:
+                        # RUN_TESTS -v test.py format
+                        parts = command.split()
+                        for i, part in enumerate(parts):
+                            if part.startswith("-"):
+                                if "v" in part: test_cmd.append("-v")
+                                if "x" in part: test_cmd.append("-x")
+                                if "s" in part: test_cmd.append("-s")  # Don't capture output
+                            elif i > 0 and not part.startswith("-") and part != "RUN_TESTS":
+                                test_file = part.strip('\'"')
+
+                    if test_file:
+                        test_cmd.append(test_file)
+                    else:
+                        # Default: add -v flag for verbose output
+                        test_cmd.append("-v")
+
+                    result = subprocess.run(
+                        test_cmd, capture_output=True, text=True, check=False, timeout=60
+                    )
+                    observation = f"Test output:\n{result.stdout}\n{result.stderr}"
+                except Exception as e:
+                    observation = f"Error running tests: {e}"
+
+            else:
+                print(f"[agent] Unrecognized command: {repr(command)}")
+                print(f"[agent] Command length: {len(command)}")
+                print(f"[agent] First 50 chars: {repr(command[:50])}")
+                observation = f"Unknown command: {command[:100]}..."
+
+            # Add observation to conversation with current directory context
+            messages.append({"role": "assistant", "content": text_response})
+            messages.append({"role": "user", "content": f"OBSERVATION:\n{observation[:MAX_OBS_CHARS]}"})
+
+            pwd_prompt = f"(Current dir: {current_working_directory}) $ "
+            messages.append({"role": "user", "content": f"{pwd_prompt}Continue exploration..."})
+
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Exploration failed at step {step}: {e}",
+                "exploration_history": exploration_history
+            }
+
+    # If we reached max steps without FINISH
+    return {
+        "success": False,
+        "error": f"Exploration exceeded {MAX_EXPLORATION_STEPS} steps without finding target files",
+        "exploration_history": exploration_history
+    }
+
+def run_focused_oneshot(problem_text: str, target_files: List[str], *, proxy_url: str, model_name: str, run_id: str) -> str:
+    """
+    Phase 2: Focused oneshot patch generation.
+
+    Given specific target files from exploration, generate a precise patch.
+    Uses the working agents' robust patch validation approach.
+    """
+
+    print(f"[agent] Reading {len(target_files)} target files for focused patch generation...")
+
+    # Read the target files completely
+    file_contents = []
+    for file_path in target_files:
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    # Limit file size to prevent token overflow
+                    if len(content) > 50000:  # 50KB limit
+                        content = content[:50000] + "\n... (truncated)"
+                    file_contents.append(f"=== {file_path} ===\n{content}")
+                    print(f"[agent] Read {file_path} ({len(content)} chars)")
+            except Exception as e:
+                print(f"[agent] Failed to read {file_path}: {e}")
+                file_contents.append(f"=== {file_path} ===\nError reading file: {e}")
+        else:
+            print(f"[agent] File not found: {file_path}")
+            file_contents.append(f"=== {file_path} ===\nFile not found")
+
+    full_context = "\n\n".join(file_contents)
+
+    # Create focused oneshot prompt with structured approach
+    messages = [
+        {"role": "system", "content": PATCH_GENERATION_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Problem to fix:\n{problem_text}"},
+        {"role": "user", "content": f"Relevant file contents:\n\n{full_context}"}
+    ]
+
+    print(f"[agent] Generating patch with focused context ({len(full_context)} chars)")
+
+    # Try up to 3 attempts with validation and correction
+    ATTEMPTS = 3
+    for attempt in range(ATTEMPTS):
+        try:
+            response = inference(messages, proxy_url, run_id, model_name)
+            text_response = response.get("text_response", "")
+            code_response = response.get("code_response", "")
+
+            print(f"[agent] Attempt {attempt + 1}: Got response with text ({len(text_response)} chars) and code ({len(code_response)} chars)")
+
+            # Extract patch from response using layered approach
+            patch_text = None
+
+            # Primary: Try clean responses first (code_response then text_response)
+            for cand in (code_response, text_response):
+                if cand and cand.strip().startswith("diff --git"):
+                    patch_text = cand.strip()
+                    print(f"[agent] Found clean diff in response")
                     break
-    return texts
 
-# ---------------------------------------------------------------------------
-# Chunk representation and collector ---------------------------------------
-# ---------------------------------------------------------------------------
+            # Secondary: Try extracting from markdown blocks
+            if patch_text is None:
+                for cand in (text_response, code_response):
+                    if cand and "```diff" in cand:
+                        patch_start = cand.find("```diff") + 7
+                        patch_end = cand.find("```", patch_start)
+                        if patch_end != -1:
+                            patch_text = cand[patch_start:patch_end].strip()
+                            print(f"[agent] Extracted diff from markdown block")
+                            break
+                    elif cand and "```" in cand:
+                        patch_start = cand.find("```") + 3
+                        patch_end = cand.find("```", patch_start)
+                        if patch_end != -1:
+                            extracted = cand[patch_start:patch_end].strip()
+                            if extracted.startswith(("diff", "---")):
+                                patch_text = extracted
+                                print(f"[agent] Extracted diff from generic markdown block")
+                                break
 
-from typing import NamedTuple
+            # Fallback: Use enhanced extraction for mixed responses (Kimi's case)
+            if patch_text is None:
+                for cand in (text_response, code_response):
+                    if cand:
+                        extracted = extract_diff_from_response(cand)
+                        if extracted:
+                            patch_text = extracted
+                            print(f"[agent] Extracted diff using fallback parser (likely mixed response)")
+                            break
 
+            if patch_text is None:
+                print(f"[agent] No valid patch found in response. text_response: {text_response[:300]}...")
+                print(f"[agent] code_response: {code_response[:300]}...")
+                raise Exception(f"No valid patch in response. Response: {response}")
+
+            print(f"[agent] Extracted patch ({len(patch_text)} chars)")
+
+            # Validate patch structure before sanitization
+            valid, error_msg = _validate_patch_structure(patch_text)
+            if not valid:
+                raise Exception(f"Invalid patch structure: {error_msg}")
+
+            # Count diff sections to ensure completeness
+            diff_sections = patch_text.count('diff --git')
+            hunk_sections = patch_text.count('@@')
+            print(f"[agent] Patch validation: {diff_sections} file(s), {hunk_sections} hunk(s)")
+
+            # Sanitize the patch
+            original_length = len(patch_text)
+            patch_text = _sanitize_patch(patch_text)
+            if len(patch_text) != original_length:
+                print(f"[agent] Patch sanitization changed length: {original_length} -> {len(patch_text)}")
+
+            # Final format check
+            if not patch_text.strip():
+                raise Exception("Patch became empty after sanitization")
+
+            # Re-validate after sanitization
+            valid, error_msg = _validate_patch_structure(patch_text)
+            if not valid:
+                raise Exception(f"Patch invalid after sanitization: {error_msg}")
+
+            print(f"[agent] Testing patch with dry run...")
+
+            # Test the patch with dry run
+            ok, dry_out = _dry_run_patch(patch_text)
+            if ok:
+                print(f"[agent] Patch validation successful!")
+                return patch_text
+
+            # Patch failed - add feedback for correction
+            print(f"[agent] Patch failed validation (attempt {attempt + 1})")
+            print(f"[agent] Dry run output: {dry_out[:500]}...")
+
+            # Debug: Show patch content for troubleshooting
+            print(f"[agent] Failed patch content (first 300 chars):")
+            print(repr(patch_text[:300]))
+            print(f"[agent] Failed patch content (last 100 chars):")
+            print(repr(patch_text[-100:]))
+
+            messages.append({"role": "assistant", "content": patch_text})
+            messages.append({"role": "user", "content": f"Patch failed to apply. Patch output was:\n{dry_out}\nPlease reply with a corrected unified diff only."})
+
+        except Exception as e:
+            print(f"[agent] Request failed (attempt {attempt + 1}): {e}")
+            if attempt == ATTEMPTS - 1:
+                raise RuntimeError(f"All {ATTEMPTS} attempts failed: {e}")
+            continue
+
+    # All attempts exhausted
+    raise RuntimeError("Patch could not be applied after iterative corrections.")
+
+def run_hybrid(problem_text: str, *, proxy_url: str, model_name: str, run_id: str) -> Dict[str, Any]:
+    """
+    Main hybrid approach: Exploration followed by focused oneshot.
+    """
+
+    print("[agent] Starting hybrid approach...")
+    print("[agent] Phase 1: Exploration to locate problem...")
+
+    # Phase 1: Exploration
+    exploration_result = run_exploration(
+        problem_text,
+        proxy_url=proxy_url,
+        model_name=model_name,
+        run_id=run_id
+    )
+
+    print(f"[agent] Exploration result: {exploration_result['success']}")
+    if not exploration_result["success"]:
+        print(f"[agent] Exploration failed: {exploration_result['error']}")
+        return {
+            "success": False,
+            "error": exploration_result["error"],
+            "exploration_history": exploration_result.get("exploration_history", [])
+        }
+
+    target_files = exploration_result["target_files"]
+    problem_location = exploration_result["problem_location"]
+
+    print(f"[agent] Exploration found target files: {target_files}")
+    print(f"[agent] Problem location: {problem_location}")
+    print("[agent] Phase 2: Focused patch generation...")
+
+    # Phase 2: Focused oneshot
+    try:
+        patch_text = run_focused_oneshot(
+            problem_text,
+            target_files,
+            proxy_url=proxy_url,
+            model_name=model_name,
+            run_id=run_id
+        )
+
+        print(f"[agent] Generated patch ({len(patch_text)} chars)")
+
+        return {
+            "success": True,
+            "patch": patch_text,
+            "target_files": target_files,
+            "problem_location": problem_location,
+            "exploration_history": exploration_result["exploration_history"]
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"Focused oneshot failed: {e}",
+            "target_files": target_files,
+            "problem_location": problem_location,
+            "exploration_history": exploration_result["exploration_history"]
+        }
 
 class Chunk(NamedTuple):
     file: str
@@ -1185,104 +1571,139 @@ class Chunk(NamedTuple):
     end_line: int
     text: str
 
+def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
+    """Collect entire files as single chunks."""
+    texts = {}
+    skip_patterns = {'.git', '__pycache__', '.pytest_cache', 'node_modules', '.venv', 'venv'}
 
-def _guess_tokens(text: str) -> int:
-    """Rough heuristic: 1 token ≈ 4 characters."""
-    return max(1, len(text) // 4)
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Skip hidden and cache directories
+        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in skip_patterns]
 
+        for filename in filenames:
+            if filename.startswith('.'):
+                continue
+
+            filepath = os.path.join(dirpath, filename)
+            try:
+                # Only process text files
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+                    if len(content.strip()) > 0:  # Skip empty files
+                        relative_path = os.path.relpath(filepath, root)
+                        texts[relative_path] = content
+            except (UnicodeDecodeError, PermissionError):
+                # Skip binary files and permission errors
+                continue
+
+    return texts
 
 def _collect_code_chunks(root: str = ".") -> List[Chunk]:
-    """Walk the repository and split source files into function/class chunks.
+    """Collect code chunks using function/class level granularity."""
+    chunks = []
+    skip_patterns = {'.git', '__pycache__', '.pytest_cache', 'node_modules', '.venv', 'venv'}
 
-    • Python: real AST split.
-    • Other langs: regex heuristic on `function` / `class` keywords.
-    • Files without matches fall back to one chunk (whole file).
-    """
-    chunks: List[Chunk] = []
-    root_path = Path(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Skip hidden and cache directories
+        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in skip_patterns]
 
-    for path in root_path.rglob("*"):
-        if path.is_dir() or ".git" in path.parts:
-            continue
-        rel_path = str(path.relative_to(root_path))
+        for filename in filenames:
+            if not filename.endswith('.py'):  # Focus on Python files for now
+                continue
+            if filename.startswith('.'):
+                continue
 
-        # Ignore non-Python files outright – the task set is Python-only.
-        if not rel_path.endswith(".py"):
-            continue
-
-        # Skip the agent itself to avoid feedback.
-        if rel_path == "miner/agent.py" or rel_path.endswith("/miner/agent.py"):
-            continue
-
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue  # binary/unreadable
-
-        if rel_path.endswith(".py"):
+            filepath = os.path.join(dirpath, filename)
             try:
-                tree = ast.parse(text)
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and hasattr(node, "end_lineno"):
-                        start, end = node.lineno, node.end_lineno
-                        lines = text.splitlines()[start - 1 : end]
-                        # break very long bodies into 400-line windows
-                        MAX_LINES = 400
-                        for i in range(0, len(lines), MAX_LINES):
-                            sub_lines = lines[i : i + MAX_LINES]
-                            if not sub_lines:
-                                continue
-                            sub_text = "\n".join(sub_lines)
-                            # further split on tokens <= 512
-                            offset = 0
-                            for piece in _token_windows(sub_text):
-                                piece_lines = piece.count("\n")
-                                sub_start = start + i + sub_text[:offset].count("\n")
-                                sub_end = sub_start + piece_lines
-                                offset += len(piece) + 1  # approximate advance
-                                chunks.append(Chunk(rel_path, sub_start, sub_end, piece))
-            except Exception:
-                for piece in _token_windows(text):
-                    end_line = piece.count("\n") + 1
-                    chunks.append(Chunk(rel_path, 1, end_line, piece))
-        else:
-            pattern = re.compile(r"^\s*(?:export\s+)?(?:async\s+)?function\b|^\s*class\b", re.MULTILINE)
-            indices = [m.start() for m in pattern.finditer(text)]
-            if not indices:
-                chunks.append(Chunk(rel_path, 1, text.count("\n") + 1, text))
-            else:
-                indices.append(len(text))
-                for j, start_char in enumerate(indices[:-1]):
-                    end_char = indices[j + 1]
-                    chunk_text = text[start_char:end_char]
-                    start_line = text[:start_char].count("\n") + 1
-                    end_line = start_line + chunk_text.count("\n")
-                    chunks.append(Chunk(rel_path, start_line, end_line, chunk_text))
+                with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
 
-                    if not chunk_text.strip():
-                        continue  # skip empty slices
+                relative_path = os.path.relpath(filepath, root)
 
-                    # enforce embedding size limit by token windows
-                    offset_chars = 0
-                    for piece in _token_windows(chunk_text):
-                        off_start_line = start_line + chunk_text[:offset_chars].count("\n")
-                        off_end_line = off_start_line + piece.count("\n")
-                        chunks.append(Chunk(rel_path, off_start_line, off_end_line, piece))
-                        offset_chars += len(piece) + 1
+                # Try to parse into functions/classes
+                try:
+                    tree = ast.parse(content)
+                    lines = content.split('\n')
 
-    # No need for a final text-level truncate here – each piece added to
-    # `chunks` is already guaranteed to be ≤ `MAX_EMBED_TOKENS` by
-    # `_token_windows`.  Returning as-is avoids referencing an undefined
-    # `text` variable when the repository contains zero Python files.
+                    for node in ast.walk(tree):
+                        if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                            start_line = node.lineno
+                            end_line = node.end_lineno or start_line + 10
+
+                            # Extract the function/class text
+                            chunk_lines = lines[start_line-1:end_line]
+                            chunk_text = '\n'.join(chunk_lines)
+
+                            if len(chunk_text.strip()) > 50:  # Skip very small chunks
+                                chunks.append(Chunk(
+                                    file=relative_path,
+                                    start_line=start_line,
+                                    end_line=end_line,
+                                    text=chunk_text
+                                ))
+
+                except SyntaxError:
+                    # If AST parsing fails, just use the whole file
+                    chunks.append(Chunk(
+                        file=relative_path,
+                        start_line=1,
+                        end_line=len(content.split('\n')),
+                        text=content
+                    ))
+
+            except (UnicodeDecodeError, PermissionError):
+                continue
 
     return chunks
 
-# Helper to split long texts by token count
-def _token_windows(text: str, max_tokens: int = MAX_EMBED_TOKENS) -> List[str]:
-    words = text.split()
-    windows: List[str] = []
-    for i in range(0, len(words), max_tokens):
-        seg = " ".join(words[i : i + max_tokens])
-        if seg.strip():
-            windows.append(seg)
-    return windows or [""]
+def agent_main(input_dict: Dict[str, Any]):
+    """
+    Main entry point for the hybrid agent.
+
+    Uses hybrid approach by default, but can fall back to traditional modes
+    via environment variables.
+    """
+
+    problem_text = input_dict.get("problem_statement", "")
+    proxy_url = input_dict.get("proxy_url", DEFAULT_PROXY_URL)
+    model_name = input_dict.get("model_name", DEFAULT_MODEL)
+    run_id = input_dict.get("run_id", "default")
+
+    mode = os.getenv("AGENT_MODE", "HYBRID").upper()
+
+    if mode == "HYBRID":
+        # Our new hybrid approach
+        result = run_hybrid(
+            problem_text,
+            proxy_url=proxy_url,
+            model_name=model_name,
+            run_id=run_id
+        )
+
+        if result["success"]:
+            patch = result["patch"]
+            print(f"[agent] Returning patch of length: {len(patch)}")
+            print(f"[agent] Patch preview: {patch[:100]}...")
+            return {"patch": patch}
+        else:
+            # If hybrid fails, could fall back to traditional oneshot
+            print(f"[agent] Hybrid approach failed: {result['error']}")
+            print("[agent] Falling back to traditional oneshot...")
+            # TODO: Add fallback to original oneshot if needed
+            return {"error": result["error"]}
+
+    else:
+        # Traditional modes would go here if needed
+        return {"error": f"Mode {mode} not implemented in hybrid agent"}
+
+if __name__ == "__main__":
+    # Simple test harness
+    test_input = {
+        "problem_statement": "Fix the Django username validator to properly handle Unicode characters",
+        "proxy_url": DEFAULT_PROXY_URL,
+        "model_name": DEFAULT_MODEL,
+        "run_id": "test"
+    }
+
+    result = agent_main(test_input)
+    print("Result:", result)
