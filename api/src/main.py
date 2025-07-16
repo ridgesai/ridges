@@ -4,16 +4,13 @@ from dotenv import load_dotenv
 from api.src.utils.subtensor import start_hotkeys_cache
 load_dotenv("api/.env")
 
-import os
-from datetime import timedelta
-from typing import Optional, Tuple, Any
 import asyncio
 from fastapi import FastAPI, WebSocket
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from api.src.backend.db_manager import new_db, batch_writer
+from api.src.backend.db_manager import new_db
 from api.src.backend.queries.cleanup import clean_running_evaluations, evaluation_timeout_cleanup_loop
 from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
@@ -25,8 +22,6 @@ from api.src.utils.top_agent_code import update_top_agent_code
 
 logger = get_logger(__name__)
 
-_batch_task: Optional[asyncio.Task] = None
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
@@ -37,10 +32,6 @@ async def lifespan(app: FastAPI):
         logger.error("Database health check failed, aborting startup")
         raise RuntimeError("Database not responsive")
     
-    app.state.stop_event = asyncio.Event()
-    global _batch_task
-    _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))
-
     await clean_running_evaluations()
     start_hotkeys_cache()
     # await update_top_agent_code()
@@ -50,23 +41,10 @@ async def lifespan(app: FastAPI):
     yield
 
     # TODO: Handle endpts for new db manager
-    app.state.stop_event.set()
-    if _batch_task:
-        await _batch_task
     await new_db.close()
 
 app = FastAPI(lifespan=lifespan)
 server = WebSocketManager()
-
-# Batching Queue & Writer Task
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "1000"))
-FLUSH_MS = int(os.getenv("FLUSH_MS", "500"))  # Flush every 500 ms if batch not full
-QUEUE_MAXSIZE = int(os.getenv("INGEST_QUEUE_MAXSIZE", "50000"))  # Back‑pressure guard
-
-# Global singletons
-queue: asyncio.Queue[Tuple[str, dict[str, Any]]]  # (device_id, payload)
-queue = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
-
 
 # Configure CORS
 app.add_middleware(

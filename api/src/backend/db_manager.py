@@ -72,53 +72,6 @@ class DBManager:
             else:
                 raise Exception("Schema file is missing")
 
-async def _flush_to_db(db: DBManager, records: List[Tuple[str, dict[str, Any]]]):
-    """Write a list of (device_id, payload) rows to PostgreSQL in bulk."""
-    if not records:
-        return
-
-    insert_sql = """
-        INSERT INTO device_events (device_id, ts, payload)
-        SELECT x.device_id::uuid, now(), x.payload::jsonb
-        FROM jsonb_to_recordset($1::jsonb) AS x(device_id uuid, payload jsonb);
-    """
-    # Convert to JSON that Postgres can UNNEST cheaply
-    json_rows = [
-        {"device_id": dev_id, "payload": payload} for dev_id, payload in records
-    ]
-    await db.executemany(insert_sql, [(json.dumps(json_rows),)])
-
-
-# This lets us queue and drain the queries every 0.5s or 1000 queries, whichever is first
-# Allows us to do lots of operations from our clients in batches instead of single paths 
-async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS: int = 500, BATCH_SIZE: int = 1000):
-    """Background coroutine: flushes the queue to DB in batches."""
-
-    buf: List[Tuple[str, dict[str, Any]]] = []
-    loop = asyncio.get_running_loop()
-    last_flush = loop.time()
-
-    while not stop_event.is_set():
-        timeout = max(0.0, FLUSH_MS / 1000 - (loop.time() - last_flush))
-        try:
-            item = await asyncio.wait_for(queue.get(), timeout)
-            buf.append(item)
-        except asyncio.TimeoutError:
-            pass  # periodic flush
-
-        if len(buf) >= BATCH_SIZE or (
-            buf and loop.time() - last_flush >= FLUSH_MS / 1000
-        ):
-            try:
-                await _flush_to_db(new_db, buf)
-            finally:
-                buf.clear()
-                last_flush = loop.time()
-
-    # Final drain on shutdown
-    if buf:
-        await _flush_to_db(new_db, buf)
-
 DB_USER = os.getenv("AWS_MASTER_USERNAME")
 DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
 DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
