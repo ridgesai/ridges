@@ -1,91 +1,147 @@
 # Miner Development Guide
 
-This document explains the **common infrastructure** that every "miner" implementation shares in the Ridges ecosystem.  It does **not** describe the internal design of the reference miner in this repo – feel free to ignore / replace that code entirely.  Instead, the sections below outline the fixed contracts (HTTP endpoints, sandbox layout, expected outputs) that *all* miners rely on.
+We recommend testing out running your agents locally before trying to compete in production - the subnet is a winner takes all system, and so if you cannot compete you risk being deregistered. You can fully simulate what score you'll get in production, end to end, by running the full platform API and validator locally, and submitting your agent. 
 
----
+This guide explains how to run Ridges locally. To get a better understanding of the incentive mechanism, read the [getting started documentation](/im-v3).
 
-## 1  High-level workflow
+## Requirements
 
-A miner is a program that
+To run Ridges locally, all you need is a laptop. Because you are spinning up agent sandboxes, we recommend at least 32gb of RAM and 512GB of SSD to be on the safe side. 
 
-1. receives a **problem description** (a failing SWE-bench issue),
-2. analyses the repository under test,
-3. produces **one unified diff** that is expected to fix the issue, and
-4. terminates.
+As a miner, you can interact with Ridges entirely through the CLI. The flow is pretty simple - 
 
-Everything runs inside a throw-away **sandbox** directory that contains a full checkout of the target repository.
+1. Edit your agent to improve its performance solving SWE problems, as measured by [SWE-Bench](https://www.swebench.com/) (for now 👀)
+    - We recommend looking at what top agents are doing on our [dashboard](https://www.ridges.ai/dashboard). You can integrate ideas, but pure copying is not allowed 
+2. Test your agent by running the Ridges CLI. This makes it easy to see how your agent scores.
+3. Once you are ready, you can also use the CLI to submit an agent
 
----
+This guide explains how to use the CLI both for evaluations and for submissions of your agent.
 
-## 2  Sandbox environment
+## Setup Guide
 
-• **Current working directory** – always the *root* of the cloned repo.  You can safely assume relative paths like `./setup.py` work.
+Previously, to run a miner you needed to be run a Bittensor subtensor, validator, platform, and API proxy system, as well as setup and S3 bucket, Chutes account, Postgres db, and multiple testing wallets. 
 
-• **No internet** – the miner cannot call external APIs directly.  Instead it interacts with the local **proxy service** (see next section) which handles LLM traffic.
+This is all gone now, all you need is a Chutes account - you can sign up [here](https://chutes.ai/). You should be able to grab an API key that looks like `cpk_some_long_.api_key`.
 
-• **Resource limits** – long-running shell commands will be killed by the orchestrator after a timeout.  Keep external processes short.
+Once you have this, clone the [Ridges Github Repo](https://github.com/ridgesai/ridges/), run the following to create a `.env` file with your Chutes key:
 
----
-
-## 3  Proxy endpoints
-
-All model-related calls go through an internal HTTP service running at `$PROXY_URL`.  Two endpoints are important:
-
-### POST `/agents/embedding`
-
-Request body (JSON):
+```bash
+cp proxy/.env.example proxy/.env
 ```
-{
-  "run_id": "<uuid string>",   // required – unique per miner run
-  "input":  "<arbitrary text>"
-}
+
+Next, go into `proxy/.env` and paste your Chutes key into the CHUTES_API_KEY field. That's all the setup needed on your end.
+
+## Testing Your Agent
+
+We give you the top agent at the time you cloned the repo at `miner/top-agent.py`, as well as a starting agent at `miner/agent.py`. Once you make edits, to test it, simply run:
+
+```bash
+./ridges.py test-agent
 ```
-Response body:
+
+### Test Agent Options
+
+The `test-agent` command supports several options to customize your testing:
+
+| Option | Description | Example |
+| --- | --- | --- |
+| `--agent-file` | Specify which agent file to test | `./ridges.py test-agent --agent-file miner/agent.py` |
+| `--num-problems` | Number of problems to test (default varies by problem set) | `./ridges.py test-agent --num-problems 1` |
+| `--problem-set` | Choose difficulty level: `easy`, `medium`, `screener` | `./ridges.py test-agent --problem-set medium` |
+| `--timeout` | Set timeout in seconds for each problem | `./ridges.py test-agent --timeout 300` |
+| `--verbose` | Enable verbose output for debugging | `./ridges.py test-agent --verbose` |
+
+### Common Usage Examples
+
+Test with a specific agent file and verbose output:
+```bash
+./ridges.py test-agent --agent-file miner/agent.py --num-problems 1 --problem-set easy --verbose
 ```
-[0.0123, -0.98, …]   // list[float] – fixed-length embedding vector
+
+Quick test with verbose output:
+```bash
+./ridges.py test-agent --num-problems 1 --verbose
 ```
-Guidelines:
 
-* Call this once per *text chunk* you want to embed (file, function, sliding window, etc.).
-* The service is stateless – caching on the miner side is recommended.
-
-### POST `/agents/inference`
-
-Request body:
+Test different difficulty levels:
+```bash
+./ridges.py test-agent --problem-set medium
+./ridges.py test-agent --problem-set easy
+./ridges.py test-agent --problem-set screener
 ```
-{
-  "run_id":  "<same uuid as above>",
-  "messages": [ {"role": "system", "content": "…"}, … ],
-  "model":       "<optional model name>",
-  "temperature": 0.7                    // optional
-}
+
+Test with different timeout settings:
+```bash
+./ridges.py test-agent --timeout 300
+./ridges.py test-agent --timeout 1800
 ```
-Response body: **raw text** directly streamed back from the LLM.  No JSON wrapper.  Your miner is responsible for parsing this text (e.g. extracting the unified diff).
 
-Notes:
-* `messages` follows the OpenAI chat format.  You can include arbitrary roles (`system`, `user`, `assistant`).
-* Keep messages concise – the proxy enforces a context-length limit (~64 k tokens at time of writing).
-* Always send the same `run_id` to group embedding and inference calls that belong to one miner execution.
+Basic test (uses default settings):
+```bash
+./ridges.py test-agent
+``` 
 
----
+## Submitting your agent 
 
-## 4  Producing the patch
+During submission you submit your code, version number, and file, along with a signature from your hotkey. We recommend using the Ridges CLI,  which handles all of this for you.
 
-A valid answer is **one unified diff** that starts with
+By default, the CLI gets the agent file from `miner/agent.py`.
+
+All you have to run is: 
+
+```bash
+./ridges.py upload
 ```
-diff --git a/<file> b/<file>
+
+## Agent structure
+Agents are a single python file, that have to adhere to two key specifications:
+
+1. The file must contain an entry file called `agent_main`, with the following structure:
+    ```python 
+        def agent_main(input_dict: Dict[str, Any]):
+            """
+            Entry point for your agent. This is the function the validator calls when running your code.
+
+            Parameters 
+            ----------
+            input_dict : dict
+                Must contain at least a key ``problem_statement`` with the task
+                description.  An optional ``run_id`` can be present (passed through to
+                the proxy for bookkeeping).
+            
+            Returns
+            -------
+            Your agent must return a Dict with a key "patch" that has a value of a valid git diff with your final agent changes.
+            """
+        # Your logic for how the agent should generate the final solution and format it as a diff
+
+        return {
+            "patch": """
+                diff --git file_a.py
+            """
+        }
+    ```
+2. You can only use built in Python libraries + a list of allowed external libs. If you would support for another library, message us on Discord and we will review it. You can see the supported external libraries [here](https://github.com/ridgesai/ridges/blob/im_v3/api/src/utils/config.py)
+
+### Agent access to tools and context
+
+Your agent will be injected into a sandbox with the repo mounted under the `/repo` path. You can see a full agent example [here](https://github.com/ridgesai/ridges/blob/im_v3/miner/agent.py).
+
+Further, the libraries you have access to are preinstalled and can be imported right away, no install commands etc needed.
+
+The problem statement is directly passed into the agent_main function, and you also recieve variables letting your agent know how long it has to solve the problem before the sandbox times out plus an inference/embedding query URL as environment variables:
+```python
+proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
+timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
 ```
-and ends with a trailing newline.  No Markdown fences, no JSON wrappers, no explanations unless the validator explicitly allows them.  If no change is necessary, output exactly `<>` (or whatever sentinel your orchestrator expects).
 
-### Tips
+What your agent does inside the sandbox is *up to you*, however all external requests (to APIs, DBs etc) will fail. This is what the `proxy_url` is for; you recieve access to two external endpoints, hosted by Ridges:
 
-* Run `patch -p1 --dry-run` inside the sandbox before exiting to ensure the diff applies cleanly.
-* Strip markdown fences (```), HTML, or other non-diff lines – the validator will reject malformed patches.
+1. Inference endpoint, which proxies to Chutes. You can specify whatever model you'd like to use, and output is unstructured and up to your agent. Access this at `f"{proxy_url}/agents/inference"`.
+2. Embedding endpoint, also proxying to Chutes. Again model is up to you, and the endpoint is at `f"{proxy_url}/agents/embedding"`.
 
----
+### Limits and timeouts 
 
-## 6  Reference implementation
-
-The file `miner/agent.py` in this repo is **one** way to implement a miner (≈1300 LOC, supports retries, sanitisation, embedding pre-filter, etc.).  Feel free to copy ideas or ignore it entirely – only the contracts above are fixed.
+Currently, the sandbox times out after two minutes and inference, embeddings are capped at a total cost of $2 each (this cost is paid for by Ridges on production and testnet, but for local testing you'll need your own Chutes key). These will likely change as we roll out to mainnet and get better information on actual usage requirements
 
 Happy mining!

@@ -110,14 +110,14 @@ async def batch_writer(stop_event: asyncio.Event, queue: asyncio.Queue, FLUSH_MS
             buf and loop.time() - last_flush >= FLUSH_MS / 1000
         ):
             try:
-                await _flush_to_db(buf)
+                await _flush_to_db(new_db, buf)
             finally:
                 buf.clear()
                 last_flush = loop.time()
 
     # Final drain on shutdown
     if buf:
-        await _flush_to_db(buf)
+        await _flush_to_db(new_db, buf)
 
 DB_USER = os.getenv("AWS_MASTER_USERNAME")
 DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
@@ -178,6 +178,18 @@ async def get_pool_status() -> dict:
     except Exception as e:
         logger.error(f"Error getting pool status: {str(e)}")
         return {"error": str(e)}
+
+async def check_db_health() -> bool:
+    """
+    Quick health check to ensure database is responsive before startup operations.
+    """
+    try:
+        async with new_db.acquire() as conn:
+            await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=5.0)
+            return True
+    except Exception as e:
+        logger.error(f"Database health check failed: {str(e)}")
+        return False
 
 async def check_idle_transactions() -> List[dict]:
     """

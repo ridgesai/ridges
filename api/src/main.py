@@ -28,6 +28,13 @@ _batch_task: Optional[asyncio.Task] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
+    
+    # Check database health before proceeding
+    from api.src.backend.db_manager import check_db_health
+    if not await check_db_health():
+        logger.error("Database health check failed, aborting startup")
+        raise RuntimeError("Database not responsive")
+    
     app.state.stop_event = asyncio.Event()
     global _batch_task
     _batch_task = asyncio.create_task(batch_writer(app.state.stop_event, queue))

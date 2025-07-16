@@ -91,8 +91,10 @@ class Sandbox:
         self.repo_dir = await self._setup_repository(repo_name, base_commit)
         
         # Create input/output files
-        input_file = self.agent_dir / "input.json"
-        output_file = self.agent_dir / "output.json"
+        io_dir = self.agent_dir / f"io-{self.evaluation_run.run_id}"
+        io_dir.mkdir(parents=True, exist_ok=True)
+        input_file = io_dir / "input.json"
+        output_file = io_dir / "output.json"
 
         input = SandboxInput(
             instance_id=self.problem.instance_id,
@@ -156,6 +158,9 @@ class Sandbox:
                 raise ValueError(result.get("error", "Unknown error"))
         except json.JSONDecodeError as e:
             raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
+        finally:
+            # Clean up IO directory after processing results
+            shutil.rmtree(io_dir, ignore_errors=True)
     
     async def _setup_repository(self, repo_name: str, base_commit: str) -> Path:
         """Setup repository from cache or clone"""
