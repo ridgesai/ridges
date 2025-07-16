@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_valid_filename, check_agent_banned, check_rate_limit, check_replay_attack, check_signature, check_hotkey_registered, check_file_size, check_agent_code, check_eval_running, get_available_screener, upload_agent_code_to_s3, store_agent_in_db
+from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_valid_filename, check_agent_banned, check_rate_limit, check_replay_attack, check_signature, check_hotkey_registered, check_file_size, check_agent_code, check_eval_running, get_available_screener, upload_agent_code_to_s3, store_agent_in_db, check_code_similarity
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
@@ -68,7 +68,7 @@ async def post_agent(
         if prod: check_signature(public_key, file_info, signature)
         if prod: await check_hotkey_registered(miner_hotkey)
         file_content = await check_file_size(agent_file)
-        if prod: pass # add code similarity check back later
+        if prod: await check_code_similarity(file_content, miner_hotkey)
         check_agent_code(file_content)
 
         async with lock:

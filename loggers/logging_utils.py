@@ -8,6 +8,10 @@ from loggers.process_tracking import setup_process_logging
 
 load_dotenv()
 
+# Flags to track if Datadog logging has been initialized
+_datadog_initialized = False
+_datadog_handler = None
+
 class TimestampFilter(logging.Filter):
     """Add high-precision timestamp to all log records"""
     def filter(self, record):
@@ -27,17 +31,25 @@ for handler in root_logger.handlers:
 logger = logging.getLogger(__name__)
 
 def get_logger(name: str):
+    global _datadog_initialized, _datadog_handler
+    
     logger = logging.getLogger(name)
     
     logger.addFilter(TimestampFilter())
     
     setup_process_logging(logger)
 
-    if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV"):
-        datadog_handler = DatadogLogHandler()
-        logger.addHandler(datadog_handler)
-        print("Datadog logging enabled")
-    else:
-        print("No Datadog API key or app key found, skipping Datadog logging")
+    # Only initialize Datadog logging once per program run
+    if not _datadog_initialized:
+        if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV"):
+            _datadog_handler = DatadogLogHandler()
+            print("Datadog logging enabled")
+        else:
+            print("No Datadog API key or app key found, skipping Datadog logging")
+        _datadog_initialized = True
+    
+    # Add Datadog handler to all loggers if it was created
+    if _datadog_handler is not None:
+        logger.addHandler(_datadog_handler)
     
     return logger

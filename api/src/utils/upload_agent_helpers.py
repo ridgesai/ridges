@@ -14,6 +14,7 @@ from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries.agents import store_agent, check_if_agent_banned
 from api.src.backend.entities import MinerAgent, Evaluation
 from api.src.utils.s3 import S3Manager
+from api.src.utils.similarity_checker import SimilarityChecker
 
 logger = get_logger(__name__)
 s3_manager = S3Manager()
@@ -129,6 +130,21 @@ async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug(f"The file size is valid.")
     await agent_file.seek(0)
     return content
+
+async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
+    logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
+
+    similarity_checker = SimilarityChecker()
+    is_valid, error_msg = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+
+    if not is_valid:
+        logger.error(error_msg)
+        raise HTTPException(
+            status_code=400, 
+            detail=error_msg
+        )
+
+    logger.debug(f"The uploaded code is not similar to the miner's previous version or top agents.")
 
 def check_agent_code(file_content: str) -> None:
     logger.debug(f"Checking if the agent code is valid...")
