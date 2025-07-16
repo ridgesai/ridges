@@ -13,7 +13,7 @@ from typing import Dict, Any, List
 from pathlib import Path
 
 from swebench.harness.run_evaluation import load_swebench_dataset
-from validator.local_testing.problem_instances import EASY_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES
+from validator.local_testing.problem_instances import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES
 from validator.sandbox.schema import SwebenchProblem
 from validator.local_testing.local_manager import LocalSandboxManager
 from loggers.logging_utils import get_logger
@@ -187,6 +187,11 @@ async def run_local_evaluations(
     
     start_time = time.time()
     
+    # Pre-build all SWE-bench environment images to enable truly parallel evaluations
+    console.print("🔨 Pre-building SWE-bench environment images for parallel execution...", style="cyan")
+    await manager.pre_build_swe_bench_images(problems)
+    console.print("✅ Environment images ready for parallel evaluation\n", style="green")
+    
     # Create tasks for all problems to run in parallel
     console.print("🏗️  Creating evaluation tasks...", style="cyan")
     tasks = []
@@ -206,6 +211,7 @@ async def run_local_evaluations(
     # Run all evaluations in parallel
     console.print(f"🚀 Starting {len(problems)} evaluations in parallel...\n", style="bold cyan")
     console.print(f"📝 Individual results will be displayed as each test completes.\n", style="dim")
+    console.print(f"🔥 SWE-bench evaluations will now run in TRUE PARALLEL using dedicated Docker clients!\n", style="bold yellow")
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # Handle any exceptions that were returned instead of results
@@ -295,6 +301,12 @@ def load_local_problems(problem_set: str, num_problems: int) -> List[SwebenchPro
         instances = TEST_SCREENER_INSTANCES  # Use smaller subset for local testing
     elif problem_set == "easy":
         instances = EASY_INSTANCES
+    elif problem_set == "medium":
+        instances = MEDIUM_INSTANCES
+    elif problem_set == "hard":
+        instances = HARD_INSTANCES
+    elif problem_set == "all":
+        instances = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
     else:
         instances = TEST_SCREENER_INSTANCES  # Default fallback
     

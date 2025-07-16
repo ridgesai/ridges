@@ -57,7 +57,12 @@ EASY_INSTANCES = [
 ]
 
 MEDIUM_INSTANCES = [
-    # "pylint-dev__pylint-8898",
+    "django__django-13279",
+    "astropy__astropy-13033",
+]
+
+HARD_INSTANCES = [
+    "pylint-dev__pylint-8898",
     # "django__django-15957",
 ]
 
