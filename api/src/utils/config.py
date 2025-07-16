@@ -1,4 +1,4 @@
-AGENT_RATE_LIMIT_SECONDS = 600
+AGENT_RATE_LIMIT_SECONDS = 60 * 60 * 6 # 6 hours
 PERMISSABLE_PACKAGES = [
     "numpy",
     "pandas",
