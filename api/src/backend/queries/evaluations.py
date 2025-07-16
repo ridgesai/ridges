@@ -466,6 +466,28 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
     return Evaluation(**dict(result)) 
 
 @db_operation
+async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
+    result = await conn.fetchrow(
+        """
+        SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+        FROM evaluations e
+        JOIN miner_agents ma ON e.version_id = ma.version_id
+        WHERE ma.miner_hotkey = $1
+        AND e.status = 'running'
+        ORDER BY e.created_at ASC
+        """,
+        miner_hotkey
+    )
+    if not result:
+        return None
+    if len(result) > 1:
+        validators = ", ".join([row[2] for row in result])
+        logger.warning(f"Multiple running evaluations found for miner {miner_hotkey} on validators {validators}")
+        return None
+    
+    return Evaluation(**dict(result[0]))
+
+@db_operation
 async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length: int = 10) -> List[Evaluation]:
     """Get a list of the queued evaluations for a given validator"""
     result = await conn.fetch(

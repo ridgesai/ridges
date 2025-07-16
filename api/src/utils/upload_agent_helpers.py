@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id
+from api.src.backend.queries.evaluations import get_evaluations_by_version_id, get_running_evaluation_by_miner_hotkey
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
@@ -150,23 +150,15 @@ def _check_agent_code(file_content: str) -> None:
     
     logger.debug(f"The agent code is valid.")
     
-async def _check_eval_running(latest_agent: Optional[MinerAgent]) -> list[Evaluation]:
-    logger.debug(f"Checking if an evaluation is currently running for the latest agent {latest_agent.version_id if latest_agent else None}...")
+async def _check_eval_running_for_hotkey(miner_hotkey: str) -> None:
+    logger.debug(f"Checking if an evaluation is currently running for the latest agent for miner {miner_hotkey}...")
 
-    if latest_agent:
-        evaluations = await get_evaluations_by_version_id(latest_agent.version_id)
-        for evaluation in evaluations:
-            if evaluation.status == "running":
-                logger.error(f"An exisiting version of this agent is currently being evaluated. Version ID: {latest_agent.version_id}.")
-                raise HTTPException(
-                    status_code=400,
-                    detail="An exisiting version of this agent is currently being evaluated. Please wait for it to finish before uploading a new version."
-                )
-        logger.debug(f"No evaluations are currently running for the latest agent {latest_agent.version_id}.")
-        return [evaluation for evaluation in evaluations if evaluation.status == "waiting"]
-    else:
-        logger.debug(f"No latest agent found. This is the first agent uploaded by this miner.")
-        return []
+    if await get_running_evaluation_by_miner_hotkey(miner_hotkey):
+        logger.error(f"An evaluation is currently running for the latest agent for miner {miner_hotkey}.")
+        raise HTTPException(
+            status_code=400,
+            detail="An evaluation is currently running for the latest agent for this miner. Please wait for it to finish before uploading a new version."
+        )
 
 async def _get_available_screener() -> str:
     logger.debug(f"Getting an available screener...")
