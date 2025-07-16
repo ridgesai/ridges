@@ -92,8 +92,8 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
     logger.debug(f"Fetched {len(agents)} recent agent versions from database for validator {validator_hotkey}.")
 
     if not agents:
-        logger.warning(f"Tried to create evaluations for validator {validator_hotkey} but no recent agent versions found.")
-        raise Exception("No recent agent versions found")
+        logger.debug(f"No recent agent versions found for validator {validator_hotkey}. No evaluations created.")
+        return 0
     
     evaluations_created = 0 
 
