@@ -4,19 +4,19 @@ import logging
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
+from api.src.backend.queries.agents import set_screening_to_awaiting
 from api.src.backend.queries.evaluations import cancel_screening_evaluation, get_running_evaluations, reset_evaluation
 
 logger = logging.getLogger(__name__)
 
 
-@db_operation
-async def clean_running_evaluations(conn: asyncpg.Connection) -> int:
+async def clean_running_evaluations() -> int:
     """
     Clean up evaluations that are stuck in 'running' status.
     This happens most often when the platform is restarted, having no chance to reset
     running evaluations.
     """
-    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'")
+    await set_screening_to_awaiting()
     running_evaluations = await get_running_evaluations()
     for evaluation in running_evaluations:
         if evaluation.validator_hotkey.startswith("i-0"):
@@ -30,6 +30,9 @@ async def clean_timed_out_evaluations(conn: asyncpg.Connection) -> int:
     """
     Clean up evaluations that have been running for more than 150 minutes.
     This is rare, happening most when validators get deregistered.
+
+    TODO: Remove db_operation decorator once we have a way to run this without a transaction.
+    This causes a deadlock since reset_evaluation waits for this transaction to finish
     """
 
     timed_out_evaluation_ids = await conn.fetch(

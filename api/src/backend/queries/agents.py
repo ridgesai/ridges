@@ -191,3 +191,10 @@ async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: st
     await conn.execute("""
         UPDATE miner_agents SET status = $1 WHERE version_id = $2
     """, status, version_id)
+
+@db_operation
+async def set_screening_to_awaiting(conn: asyncpg.Connection):
+    await conn.execute("""
+        UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'
+    """)
+    
