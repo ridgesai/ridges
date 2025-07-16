@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import os
+import threading
 from validator.sandbox.constants import (
     SANDBOX_DOCKER_IMAGE, PROXY_DOCKER_IMAGE, SANDBOX_NETWORK_NAME,
     PROXY_CONTAINER_NAME, SANDBOX_MAX_RAM_USAGE, SANDBOX_MAX_RUNTIME,
@@ -25,6 +26,52 @@ from validator.sandbox.sandbox import Sandbox
 from validator.sandbox.clone_repo import clone_repo
 from loggers.logging_utils import get_logger
 logger = get_logger(__name__)
+
+class DockerClientPool:
+    """Pool of Docker clients for parallel SWE-bench evaluations"""
+    
+    def __init__(self, pool_size: int = 4):
+        self.pool_size = pool_size
+        self.clients = []
+        self.available_clients = asyncio.Queue()
+        self.lock = threading.Lock()
+        
+        # Import docker here to handle ImportError properly
+        try:
+            import docker
+            self.docker_module = docker
+        except ImportError:
+            raise ImportError("Docker Python library is required for local testing. Install with: pip install docker")
+        
+        # Create pool of Docker clients
+        for i in range(pool_size):
+            try:
+                client = self.docker_module.from_env()
+                client.ping()
+                self.clients.append(client)
+            except Exception as e:
+                raise RuntimeError(f"Failed to create Docker client {i}: {e}")
+        
+        # Initialize the queue with all clients
+        for client in self.clients:
+            self.available_clients.put_nowait(client)
+    
+    async def get_client(self):
+        """Get an available Docker client from the pool"""
+        return await self.available_clients.get()
+    
+    async def return_client(self, client):
+        """Return a Docker client to the pool"""
+        await self.available_clients.put(client)
+    
+    def cleanup(self):
+        """Clean up all Docker clients"""
+        for client in self.clients:
+            try:
+                client.close()
+            except Exception:
+                pass
+
 class LocalSandboxManager:
     """Simplified sandbox manager for local testing"""
     def __init__(self, verbose: bool = False):
@@ -33,6 +80,7 @@ class LocalSandboxManager:
         self.agents_dir = self.temp_dir / "agents"
         self.repos_dir = self.temp_dir / "repos"
         self.repo_cache_dir = self.temp_dir / "repo_cache"
+        
         # Import docker here to handle ImportError properly
         try:
             import docker
@@ -41,16 +89,26 @@ class LocalSandboxManager:
             self.Container = Container
         except ImportError:
             raise ImportError("Docker Python library is required for local testing. Install with: pip install docker")
+        
         # Create directories
         self.agents_dir.mkdir(parents=True)
         self.repos_dir.mkdir(parents=True)
         self.repo_cache_dir.mkdir(parents=True)
-        # Initialize Docker client
+        
+        # Initialize main Docker client for infrastructure
         try:
             self.docker = self.docker_module.from_env()
             self.docker.ping()
         except Exception as e:
             raise RuntimeError(f"Docker is not running or accessible: {e}")
+        
+        # Create Docker client pool for parallel SWE-bench evaluations
+        # Use reasonable pool size - too many clients can overwhelm the system
+        pool_size = min(8, os.cpu_count() or 4)  # Max 8 clients, default to CPU count
+        self.docker_pool = DockerClientPool(pool_size=pool_size)
+        if self.verbose:
+            print(f"Created Docker client pool with {pool_size} clients for parallel evaluations")
+        
         # Create network for container communication
         self.network_name = f"local-test-{uuid.uuid4().hex[:8]}"
         try:
@@ -66,6 +124,7 @@ class LocalSandboxManager:
                 self.network = self.docker.networks.get(self.network_name)
             else:
                 raise
+        
         # Start proxy container
         self.proxy_container_name = "sandbox-proxy"
         try:
@@ -74,12 +133,14 @@ class LocalSandboxManager:
             existing.remove(force=True)
         except self.docker_module.errors.NotFound:
             pass
+        
         # Pull proxy image if needed
         try:
             self.docker.images.get(PROXY_DOCKER_IMAGE)
         except self.docker_module.errors.ImageNotFound:
             print(f"Pulling proxy image: {PROXY_DOCKER_IMAGE}")
             self.docker.images.pull(PROXY_DOCKER_IMAGE)
+        
         # Start proxy container on the custom network, but configure it to reach the host's proxy service
         host_proxy_url = os.getenv('RIDGES_PROXY_URL', 'http://localhost:8001')
         # Parse the URL and replace the hostname with host.docker.internal for Docker containers
@@ -104,20 +165,54 @@ class LocalSandboxManager:
         )
         if self.verbose:
             print(f"Started proxy container: {self.proxy_container_name}")
+        
         # Wait for proxy to be ready
         import time
         time.sleep(2)
+        
         # Use proxy container name for internal Docker network communication
         # The proxy listens on port 80 (default for nginx)
         self.proxy_url = f"http://{self.proxy_container_name}"
         if self.verbose:
             print(f"Using proxy URL: {self.proxy_url}")
+
+    async def pre_build_swe_bench_images(self, problems: List[SwebenchProblem]):
+        """Pre-build all SWE-bench environment images to enable parallel evaluations"""
+        if not problems:
+            return
+            
+        try:
+            self._log_manager("🔨 Pre-building SWE-bench environment images for parallel evaluation...")
+            
+            from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, build_env_images
+            
+            # Load instances and create test specs for all problems
+            instance_ids = [problem.instance_id for problem in problems]
+            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", instance_ids)
+            test_specs = [make_test_spec(instance) for instance in instances]
+            
+            # Build all environment images at once using the main Docker client
+            # This avoids the bottleneck of building images separately for each evaluation
+            build_env_images(self.docker, test_specs, max_workers=4)
+            
+            self._log_manager(f"✅ Pre-built environment images for {len(problems)} problems")
+            
+        except Exception as e:
+            self._log_manager(f"⚠️ Failed to pre-build SWE-bench images: {e}")
+            # Continue anyway - individual evaluations will build as needed
+    
+    def _log_manager(self, message: str):
+        """Log a message from the manager"""
+        if self.verbose:
+            print(f"[LocalSandboxManager] {message}")
+
     async def create_sandbox(self, problem: SwebenchProblem, agent_file: Path, log_buffer: list = None) -> 'LocalSandbox':
         """Create a new sandbox for testing"""
         # Copy agent file to temp directory
         agent_name = f"agent_{uuid.uuid4().hex[:8]}.py"
         agent_path = self.agents_dir / agent_name
         shutil.copy2(agent_file, agent_path)
+        
         # Create evaluation run
         evaluation_run = EvaluationRun(
             run_id=str(uuid.uuid4()),
@@ -128,6 +223,7 @@ class LocalSandboxManager:
             started_at=datetime.now(timezone.utc),
             sandbox_created_at=datetime.now(timezone.utc)
         )
+        
         # Create sandbox
         sandbox = LocalSandbox(
             evaluation_run=evaluation_run,
@@ -138,8 +234,18 @@ class LocalSandboxManager:
             log_buffer=log_buffer
         )
         return sandbox
+
     def cleanup(self):
         """Clean up all resources"""
+        try:
+            # Clean up Docker client pool
+            self.docker_pool.cleanup()
+            if self.verbose:
+                print("Cleaned up Docker client pool")
+        except Exception as e:
+            if self.verbose:
+                print(f"Error cleaning up Docker pool: {e}")
+        
         try:
             # Stop and remove proxy container
             if hasattr(self, 'proxy_container'):
@@ -150,6 +256,7 @@ class LocalSandboxManager:
         except Exception as e:
             if self.verbose:
                 print(f"Error removing proxy container: {e}")
+        
         try:
             # Remove network
             if hasattr(self, 'network'):
@@ -159,6 +266,7 @@ class LocalSandboxManager:
         except Exception as e:
             if self.verbose:
                 print(f"Error removing network: {e}")
+        
         try:
             # Remove temp directory
             if self.temp_dir.exists():
@@ -168,6 +276,7 @@ class LocalSandboxManager:
         except Exception as e:
             if self.verbose:
                 print(f"Error removing temp directory: {e}")
+
 class LocalSandbox:
     """Local sandbox for testing agents without database dependencies"""
     def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_path: Path, local_manager: LocalSandboxManager, verbose: bool = False, log_buffer: list = None):
@@ -202,6 +311,7 @@ class LocalSandbox:
             self.log_buffer.append(message)
         elif self.verbose:
             print(message)
+
     async def run(self) -> None:
         """Run the sandbox - compatibility method for runner"""
         result = await self.run_agent()
@@ -214,6 +324,7 @@ class LocalSandbox:
         elif result['status'] == 'ERROR':
             self.evaluation_run.solved = False
             self.evaluation_run.error = result['error']
+
     async def run_agent(self) -> Dict[str, Any]:
         """Run the agent in the sandbox"""
         try:
@@ -225,9 +336,11 @@ class LocalSandbox:
                 base_commit=self.problem.base_commit,
                 run_id=self.evaluation_run.run_id,
             )
+            
             # Write input file  
             input_file = self.repo_dir / "input.json"
             input_file.write_text(sandbox_input.model_dump_json())
+            
             # Copy agent file to sandbox
             src_dir = self.repo_dir / "src"
             src_dir.mkdir(exist_ok=True)
@@ -238,12 +351,14 @@ class LocalSandbox:
             runner_src = Path(__file__).parent.parent / "sandbox" / "agent_runner.py"
             runner_dest = self.repo_dir / "agent_runner.py"
             shutil.copy2(runner_src, runner_dest)
+            
             # Pull sandbox image if needed
             try:
                 self.local_manager.docker.images.get(SANDBOX_DOCKER_IMAGE)
             except self.docker_module.errors.ImageNotFound:
                 self._log(f"📥 Pulling sandbox image: {SANDBOX_DOCKER_IMAGE}")
                 self.local_manager.docker.images.pull(SANDBOX_DOCKER_IMAGE)
+            
             # Run sandbox container
             self.container = self.local_manager.docker.containers.run(
                 SANDBOX_DOCKER_IMAGE,
@@ -263,24 +378,28 @@ class LocalSandbox:
                 }
             )
             self._log("🐳 Started sandbox container")
+            
             # Monitor container
             monitor_task = asyncio.create_task(self._monitor_container())
             # Wait for container to complete
             await monitor_task
+            
             # Read output
             output_file = self.repo_dir / "output.json"
             if output_file.exists():
                 with open(output_file, 'r') as f:
                     output_data = json.load(f)
+                
                 # Check if agent_runner.py wrapped the output
                 if output_data.get('success') and 'output' in output_data:
                     patch = output_data['output'].get('patch', '')
                 else:
                     patch = output_data.get('patch', '')
+                
                 if patch:
                     self.evaluation_run.response = patch
                     self.evaluation_run.status = "patch_generated"
-                    # Run SWE-bench evaluation
+                    # Run SWE-bench evaluation with dedicated Docker client
                     await self._run_swe_bench_evaluation()
                     return {
                         'instance_id': self.problem.instance_id,
@@ -340,6 +459,7 @@ class LocalSandbox:
                     'patch_generated': False,
                     'patch_length': 0
                 }
+                
         except Exception as e:
             # Use pre-captured container logs
             container_logs = f"\n{self.container_logs}" if self.container_logs else ""
@@ -367,10 +487,17 @@ class LocalSandbox:
                 'patch_generated': False,
                 'patch_length': 0
             }
+
     async def _run_swe_bench_evaluation(self) -> None:
-        """Run SWE-bench evaluation on the generated patch"""
+        """Run SWE-bench evaluation on the generated patch using dedicated Docker client (images pre-built)"""
+        dedicated_client = None
         try:
-            from swebench.harness.run_evaluation import load_swebench_dataset, run_instance, make_test_spec, build_env_images
+            self._log("🔄 Getting dedicated Docker client for SWE-bench evaluation...")
+            # Get a dedicated Docker client from the pool
+            dedicated_client = await self.local_manager.docker_pool.get_client()
+            self._log("✅ Got dedicated Docker client, starting SWE-bench evaluation...")
+            
+            from swebench.harness.run_evaluation import load_swebench_dataset, run_instance, make_test_spec
             
             # Load instance and create prediction
             instance_id = self.problem.instance_id
@@ -382,18 +509,21 @@ class LocalSandbox:
             }
             test_spec = make_test_spec(instance)
             
-            # Build environment and run evaluation
-            build_env_images(self.local_manager.docker, [test_spec], max_workers=4)
+            # Skip the build step since images are pre-built - go directly to run_instance
+            # This should enable true parallel execution since each evaluation uses its own client
+            # and doesn't need to build any images
+            self._log("🏃 Running evaluation (using pre-built environment images)...")
             result = run_instance(
                 test_spec=test_spec,
                 pred=prediction,
                 rm_image=False,
-                force_rebuild=False,
-                client=self.local_manager.docker,
+                force_rebuild=False,  # Never rebuild since we pre-built
+                client=dedicated_client,  # Use dedicated client
                 run_id=self.evaluation_run.run_id,
                 timeout=1800,
                 rewrite_reports=False,
             )
+            
             # Process results
             if result:
                 _, report = result
@@ -405,9 +535,11 @@ class LocalSandbox:
                     self.evaluation_run.fail_to_fail_success = json.dumps(tests["FAIL_TO_FAIL"]["success"])
                     self.evaluation_run.pass_to_fail_success = json.dumps(tests["PASS_TO_FAIL"]["success"])
                     self.evaluation_run.solved = report.get("resolved", False)
+                    self._log(f"✅ SWE-bench evaluation completed: {'SOLVED' if self.evaluation_run.solved else 'NOT SOLVED'}")
                 else:
                     self.evaluation_run.solved = False
                     self.evaluation_run.error = "No test results found in evaluation report"
+                    self._log("❌ SWE-bench evaluation completed but no test results found")
             else:
                 # No results means patch didn't fix any tests
                 self.evaluation_run.solved = False
@@ -415,10 +547,18 @@ class LocalSandbox:
                 self.evaluation_run.pass_to_pass_success = json.dumps([])
                 self.evaluation_run.fail_to_fail_success = json.dumps([])
                 self.evaluation_run.pass_to_fail_success = json.dumps([])
+                self._log("✅ SWE-bench evaluation completed: NOT SOLVED (no test improvements)")
+                
         except Exception as e:
             self._log(f"❌ SWE-bench evaluation failed: {e}")
             self.evaluation_run.error = f"SWE-bench evaluation failed: {str(e)}"
             self.evaluation_run.solved = False
+        finally:
+            # Always return the dedicated client to the pool
+            if dedicated_client:
+                await self.local_manager.docker_pool.return_client(dedicated_client)
+                self._log("🔄 Returned dedicated Docker client to pool")
+
     async def _monitor_container(self) -> None:
         """Monitor container execution with resource limits"""
         while True:

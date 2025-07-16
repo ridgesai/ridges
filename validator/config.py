@@ -90,20 +90,26 @@ EASY_INSTANCES = [
 ]
 
 MEDIUM_INSTANCES = [
-    # "pylint-dev__pylint-8898",
+    "django__django-13279",
+    "astropy__astropy-13033",
+]
+
+HARD_INSTANCES = [
+    "pylint-dev__pylint-8898",
     # "django__django-15957",
 ]
 
 SCREENER_INSTANCES = [
-    "astropy__astropy-14309",
-    "django__django-11119",
+    # "astropy__astropy-14309",
+    "astropy__astropy-13033",
     "matplotlib__matplotlib-24570",
     "django__django-11099",
     "pytest-dev__pytest-6202",
+    "django__django-12276",
 ]
 
 # Calculate total number of evaluation instances
-TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES)
+TOTAL_EVALUATION_INSTANCES = len(EASY_INSTANCES) + len(MEDIUM_INSTANCES) + len(HARD_INSTANCES)
 
 # Log initial configuration
 from loggers.logging_utils import get_logger

@@ -3,7 +3,7 @@
 from typing import List, Dict, Any
 from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.schema import AgentVersion, SwebenchProblem
-from validator.config import EASY_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
+from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -14,7 +14,8 @@ def get_swebench_problems(agent_version: AgentVersion) -> List[SwebenchProblem]:
         if SCREENER_MODE:
             instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", SCREENER_INSTANCES)
         else:
-            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", EASY_INSTANCES)
+            all_instances = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
+            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", all_instances)
         
         problems: List[SwebenchProblem] = []
         for instance in instances:

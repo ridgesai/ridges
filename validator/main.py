@@ -10,7 +10,7 @@ load_dotenv("validator/.env")
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
 from validator.utils.pre_embed_tasks import generate_embeddings
-from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
+from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES
 from loggers.logging_utils import get_logger
 from pathlib import Path
 
@@ -21,7 +21,7 @@ REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 EMBED_VERSION = "1.3"  # Bump this to force regeneration across all validators
 
 async def check_and_generate_embeddings():
-    tasks = EASY_INSTANCES + MEDIUM_INSTANCES
+    tasks = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
     config_hash = hashlib.sha256((str(tasks) + EMBED_VERSION).encode()).hexdigest()
     manifest_path = REPO_EMBEDS_DIR / 'manifest.json'
     needs_regen = True
