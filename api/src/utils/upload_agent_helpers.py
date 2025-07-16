@@ -14,12 +14,13 @@ from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries.agents import store_agent, check_if_agent_banned
 from api.src.backend.entities import MinerAgent, Evaluation
 from api.src.utils.s3 import S3Manager
+from api.src.utils.similarity_checker import SimilarityChecker
 
 logger = get_logger(__name__)
 s3_manager = S3Manager()
 ws = WebSocketManager.get_instance()
 
-def _get_miner_hotkey(file_info: str) -> str:
+def get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Getting miner hotkey from file info: {file_info}.")
     miner_hotkey = file_info.split(":")[0]
 
@@ -33,7 +34,7 @@ def _get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Miner hotkey successfully extracted: {miner_hotkey}.")
     return miner_hotkey
 
-def _check_valid_filename(filename: str) -> bool:
+def check_valid_filename(filename: str) -> bool:
     logger.debug(f"Checking if filename is valid...")
 
     if filename != "agent.py":
@@ -45,7 +46,7 @@ def _check_valid_filename(filename: str) -> bool:
     
     logger.debug(f"Filename is valid: {filename}.")
 
-async def _check_agent_banned(miner_hotkey: str) -> None:
+async def check_agent_banned(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is banned...")
 
     if await check_if_agent_banned(miner_hotkey):
@@ -57,7 +58,7 @@ async def _check_agent_banned(miner_hotkey: str) -> None:
     
     logger.debug(f"Miner hotkey {miner_hotkey} is not banned.")
 
-def _check_rate_limit(latest_agent: MinerAgent) -> None:
+def check_rate_limit(latest_agent: MinerAgent) -> None:
     logger.debug(f"Checking if miner is rate limited...")
 
     earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
@@ -72,7 +73,7 @@ def _check_rate_limit(latest_agent: MinerAgent) -> None:
     
     logger.debug(f"Miner is not rate limited.")
 
-def _check_replay_attack(latest_agent: Optional[MinerAgent], file_info: str) -> None:
+def check_replay_attack(latest_agent: Optional[MinerAgent], file_info: str) -> None:
     logger.debug(f"Checking if this is a replay attack...")
 
     version_num = int(file_info.split(":")[-1])
@@ -87,7 +88,7 @@ def _check_replay_attack(latest_agent: Optional[MinerAgent], file_info: str) -> 
     
     logger.debug(f"This is not a replay attack.")
 
-def _check_signature(public_key: str, file_info: str, signature: str) -> None:
+def check_signature(public_key: str, file_info: str, signature: str) -> None:
     logger.debug(f"Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
 
@@ -101,7 +102,7 @@ def _check_signature(public_key: str, file_info: str, signature: str) -> None:
     
     logger.debug(f"The signature is valid.")
 
-async def _check_hotkey_registered(miner_hotkey: str) -> None:
+async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")
 
     if miner_hotkey not in await get_subnet_hotkeys():
@@ -110,7 +111,7 @@ async def _check_hotkey_registered(miner_hotkey: str) -> None:
     
     logger.debug(f"Miner hotkey {miner_hotkey} is registered on the subnet.")
     
-async def _check_file_size(agent_file: UploadFile) -> str:
+async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug(f"Checking if the file size is valid...")
 
     MAX_FILE_SIZE = 1 * 1024 * 1024 
@@ -130,7 +131,22 @@ async def _check_file_size(agent_file: UploadFile) -> str:
     await agent_file.seek(0)
     return content
 
-def _check_agent_code(file_content: str) -> None:
+async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
+    logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
+
+    similarity_checker = SimilarityChecker()
+    is_valid, error_msg = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+
+    if not is_valid:
+        logger.error(error_msg)
+        raise HTTPException(
+            status_code=400, 
+            detail=error_msg
+        )
+
+    logger.debug(f"The uploaded code is not similar to the miner's previous version or top agents.")
+
+def check_agent_code(file_content: str) -> None:
     logger.debug(f"Checking if the agent code is valid...")
 
     try:
@@ -150,7 +166,7 @@ def _check_agent_code(file_content: str) -> None:
     
     logger.debug(f"The agent code is valid.")
     
-async def _check_eval_running_for_hotkey(miner_hotkey: str) -> None:
+async def check_eval_running_for_hotkey(miner_hotkey: str) -> None:
     logger.debug(f"Checking if an evaluation is currently running for the latest agent for miner {miner_hotkey}...")
 
     if await get_running_evaluation_by_miner_hotkey(miner_hotkey):
@@ -160,7 +176,7 @@ async def _check_eval_running_for_hotkey(miner_hotkey: str) -> None:
             detail="An evaluation is currently running for the latest agent for this miner. Please wait for it to finish before uploading a new version."
         )
 
-async def _get_available_screener() -> str:
+async def get_available_screener() -> str:
     logger.debug(f"Getting an available screener...")
 
     available_screener = await ws.get_available_screener()
@@ -174,7 +190,7 @@ async def _get_available_screener() -> str:
     logger.debug(f"Available screener found: {available_screener}.")
     return available_screener
 
-async def _upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
+async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
     logger.debug(f"Uploading agent code for version {version_id} to S3...")
 
     try:
@@ -188,7 +204,7 @@ async def _upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> N
     
     logger.debug(f"Successfully uploaded agent code for version {version_id} to S3.")
     
-async def _store_agent_in_db(miner_hotkey: str, name: str, latest_agent: Optional[MinerAgent]) -> str:
+async def store_agent_in_db(miner_hotkey: str, name: str, latest_agent: Optional[MinerAgent]) -> str:
     logger.debug(f"Storing agent in database...")
 
     version_id = str(uuid.uuid4())
