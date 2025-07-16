@@ -32,7 +32,6 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("Database not responsive")
     
     await clean_running_evaluations()
-    start_hotkeys_cache()
     # await update_top_agent_code()
     asyncio.create_task(run_weight_setting_loop(30))
     # asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))
