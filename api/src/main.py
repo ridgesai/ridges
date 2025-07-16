@@ -1,7 +1,6 @@
 # TODO: cleanup how we set this all up
 from dotenv import load_dotenv
 
-from api.src.utils.subtensor import start_hotkeys_cache, stop_hotkeys_cache
 load_dotenv("api/.env")
 
 import asyncio
@@ -40,9 +39,6 @@ async def lifespan(app: FastAPI):
     # asyncio.create_task(run_weight_monitor(netuid=62, interval_seconds=60))
     yield
 
-    # Cleanup resources
-    stop_hotkeys_cache()
-    # TODO: Handle endpts for new db manager
     await new_db.close()
 
 app = FastAPI(lifespan=lifespan)
