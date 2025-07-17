@@ -152,3 +152,27 @@ CREATE TRIGGER tr_update_miner_agent_score_on_completion
     FOR EACH ROW
     WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'completed')
     EXECUTE FUNCTION update_miner_agent_score();
+
+-- Constraint to prevent evaluations on non-recent agent versions
+CREATE OR REPLACE FUNCTION check_evaluation_recent_version()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM miner_agents ma1
+        WHERE ma1.version_id = NEW.version_id
+        AND ma1.version_num = (
+            SELECT MAX(ma2.version_num) 
+            FROM miner_agents ma2 
+            WHERE ma2.miner_hotkey = ma1.miner_hotkey
+        )
+    ) THEN
+        RAISE EXCEPTION 'evaluation_non_recent_version: Cannot create evaluation for non-recent agent version';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tr_check_evaluation_recent_version
+    BEFORE INSERT ON evaluations
+    FOR EACH ROW
+    EXECUTE FUNCTION check_evaluation_recent_version();

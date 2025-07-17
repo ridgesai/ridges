@@ -223,7 +223,8 @@ class WebSocketManager:
                     "relative_version_num": relative_version_num,
                     "commit_hash": validator_info.version_commit_hash,
                     "connected_at": validator_info.connected_at.isoformat(),
-                    "ip_address": validator_info.ip_address
+                    "ip_address": validator_info.ip_address,
+                    "status": validator_info.status
                 })
         return validators 
     
