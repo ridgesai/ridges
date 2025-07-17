@@ -4,13 +4,11 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.backend.queries.evaluation_sets import get_latest_set_id
-from api.src.backend.queries.evaluations import create_evaluation, get_evaluations_by_version_id
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
-from api.src.backend.queries.agents import get_approved_miner_agents, get_top_agent, ban_agent as db_ban_agent, approve_agent_version, set_approved_agents_to_awaiting_screening
+from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version, set_approved_agents_to_awaiting_screening
 
 load_dotenv()
 

@@ -9,7 +9,6 @@ from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
 from api.src.backend.queries.agents import get_agents_awaiting_screening
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
-from api.src.backend.queries.evaluations import get_running_evaluation_by_validator_hotkey
 
 logger = logging.getLogger(__name__)
 
