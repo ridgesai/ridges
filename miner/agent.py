@@ -19,12 +19,20 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 # Defaults via environment variables ----------------------------------------
 # ---------------------------------------------------------------------------
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_MODEL = "deepseek-ai/DeepSeek-V3"
+DEFAULT_MODEL = "moonshotai/Kimi-K2-Instruct"
 
 # Hybrid mode constants
-MAX_EXPLORATION_STEPS = int(os.getenv("MAX_EXPLORATION_STEPS", "20"))
+MAX_EXPLORATION_STEPS = int(os.getenv("MAX_EXPLORATION_STEPS", "55"))
 MAX_OBS_CHARS = 20_000
-MAX_BYTES_READ = 25_000
+MAX_BYTES_READ = 65_000
+
+# Iterative refinement constants
+MAX_REFINEMENT_ITERATIONS = int(os.getenv("MAX_REFINEMENT_ITERATIONS", "4"))
+TEST_TIMEOUT_SECONDS = int(os.getenv("TEST_TIMEOUT_SECONDS", "300"))
+
+# Test analysis constants
+TEST_DISCOVERY_TIMEOUT = int(os.getenv("TEST_DISCOVERY_TIMEOUT", "120"))
+REPRODUCTION_TEST_TIMEOUT = int(os.getenv("REPRODUCTION_TEST_TIMEOUT", "120"))
 
 # Use function chunks by default
 USE_FUNCTION_CHUNKS = os.getenv("EMBED_WHOLE_FILES", "0") != "1"
@@ -34,7 +42,7 @@ ZERO_VEC = [0.0] * 768
 
 # Available commands for exploration
 EXPLORATION_COMMANDS = {
-    "READ_FILE": "READ_FILE(path): Read a file up to 25KB. Takes ONLY ONE argument (file path). Usage: READ_FILE(\"path/to/file.py\")",
+    "READ_FILE": "READ_FILE(path): Read a file up to 15KB. Takes ONLY ONE argument (file path). Usage: READ_FILE(\"path/to/file.py\")",
     "FIND": "FIND(pattern): Find files by name pattern. Usage: FIND(\"*.py\") or FIND -name \"*.py\" -type f",
     "LS": "LS(dir): List directory contents. Usage: LS(\".\") or LS -la or LS -R for recursive",
     "CD": "CD(dir): Change current directory. Usage: CD(\"src/\") or CD(\"..\") to go up",
@@ -176,6 +184,44 @@ PATCH_GENERATION_SYSTEM_PROMPT = textwrap.dedent(
     """
 ).strip()
 
+# Structured system prompt for patch refinement
+PATCH_REFINEMENT_SYSTEM_PROMPT = textwrap.dedent(
+    """
+    You are a methodical patch refinement specialist, an AI that improves code fixes based on test failures.
+
+    <ROLE>
+    Your role is to analyze why a patch failed testing and generate an improved version. You have:
+    * The original problem description
+    * A patch that was applied but failed tests
+    * Detailed test failure information
+    * The goal to create a refined patch that passes tests
+    </ROLE>
+
+    <REFINEMENT_APPROACH>
+    1. ANALYZE: Study the test failures to understand what went wrong
+    2. DIAGNOSE: Identify the root cause of the failure
+    3. STRATEGIZE: Plan a different or improved approach
+    4. IMPLEMENT: Generate a refined patch with correct syntax
+    5. VALIDATE: Ensure the refined approach addresses the test failures
+    </REFINEMENT_APPROACH>
+
+    <FAILURE_ANALYSIS>
+    * Compilation errors: Fix syntax, imports, or API usage issues
+    * Test failures: Address logic errors or incorrect assumptions
+    * Runtime errors: Handle edge cases or missing error handling
+    * Integration issues: Consider cross-module dependencies
+    </FAILURE_ANALYSIS>
+
+    <CRITICAL_OUTPUT_RULES>
+    1. Your response must be EXACTLY the refined diff - absolutely nothing else
+    2. NO explanatory text before, after, or mixed with the diff
+    3. Start immediately with "diff --git a/..."
+    4. Learn from the previous failure and try a different approach
+    5. Use proper unified diff format with correct line numbers
+    </CRITICAL_OUTPUT_RULES>
+    """
+).strip()
+
 def _ls(dir: str = ".") -> str:
     """List files and directories in the given directory."""
     try:
@@ -312,6 +358,27 @@ def _sanitize_patch(patch: str) -> str:
             ('&' in line and not line.startswith(('---', '+++', '@@', '+', '-', ' ')))):
             print(f"[agent] Filtering potentially dangerous line: {line[:50]}...")
             continue
+
+        # Fix malformed git index lines with fake hashes
+        if line.startswith('index ') and '..' in line:
+            # Check if this looks like a fake hash (too short, non-hex, etc.)
+            hash_part = line[6:].split()[0]  # Get the hash part after "index "
+            if '..' in hash_part:
+                old_hash, new_hash = hash_part.split('..', 1)
+                # Remove file mode if present (e.g., "100644")
+                new_hash = new_hash.split()[0]
+
+                # Check if hashes look fake (too short, contain non-hex chars, obvious placeholders)
+                fake_patterns = ['abc123', '123456', 'def456', '987654']
+                is_fake = (len(old_hash) < 7 or len(new_hash) < 7 or
+                          not all(c in '0123456789abcdef' for c in old_hash.lower()) or
+                          not all(c in '0123456789abcdef' for c in new_hash.lower()) or
+                          any(pattern in hash_part.lower() for pattern in fake_patterns))
+
+                if is_fake:
+                    print(f"[agent] Removing fake git index line: {line[:50]}...")
+                    continue
+
         sanitized_lines.append(line)
 
     result = '\n'.join(sanitized_lines)
@@ -476,16 +543,18 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
 
 # --- Advanced Feature Extraction Functions (from legitimate parts of agent_3-miner-5) ---
 
-def _extract_problem_keywords(problem_text: str) -> Dict[str, List[str]]:
-    """Extract relevant keywords from natural language problem description."""
-    features = {
-        'domain_keywords': [],
-        'component_names': [],
-        'error_terms': [],
-        'action_words': [],
-        'technical_terms': [],
-        'file_mentions': []
-    }
+# UNUSED: Domain pattern extraction (removed to prevent overfitting/spoon-feeding)
+# This function was creating bias by pre-categorizing problems instead of letting LLM discover organically
+# def _extract_problem_keywords(problem_text: str) -> Dict[str, List[str]]:
+#     """Extract relevant keywords from natural language problem description."""
+#     features = {
+#         'domain_keywords': [],
+#         'component_names': [],
+#         'error_terms': [],
+#         'action_words': [],
+#         'technical_terms': [],
+#         'file_mentions': []
+#     }
 
     # Domain-specific frameworks and libraries
     DOMAIN_PATTERNS = {
@@ -656,7 +725,8 @@ def _extract_code_features(text: str, file_path: str = "") -> Dict[str, List[str
 
     return features
 
-def _compute_problem_code_similarity(problem_features: Dict[str, List[str]], code_features: Dict[str, List[str]], file_path: str) -> float:
+# UNUSED: Domain-based similarity (removed to prevent overfitting)
+# def _compute_problem_code_similarity(problem_features: Dict[str, List[str]], code_features: Dict[str, List[str]], file_path: str) -> float:
     """Compute similarity between problem description and code chunk."""
     score = 0.0
 
@@ -778,24 +848,12 @@ def _compute_enhanced_tfidf_similarity(problem_text: str, chunk_texts: List[str]
         return [0.0] * len(chunk_texts)
 
 def _improved_problem_code_filter(problem_text: str, code_chunks: List[Chunk], chunk_texts: List[str], pre_filter_top: int) -> tuple[List[str], List[Chunk]]:
-    """Enhanced pre-filtering using problem-to-code similarity matching."""
+    """Organic problem-to-code similarity matching using only TF-IDF without domain bias."""
 
-    print(f"Starting improved problem-to-code filtering with {len(chunk_texts)} chunks...")
+    print(f"Starting organic problem-to-code filtering with {len(chunk_texts)} chunks...")
 
-    # Extract features from problem text (natural language)
-    problem_features = _extract_problem_keywords(problem_text)
-    print(f"Problem features extracted: {sum(len(v) for v in problem_features.values())} total features")
-
-    # 1. Problem-to-code feature matching
-    print("Computing problem-to-code similarities...")
-    feature_similarities = []
-    for i, chunk in enumerate(code_chunks):
-        code_features = _extract_code_features(chunk_texts[i], chunk.file)
-        feature_sim = _compute_problem_code_similarity(problem_features, code_features, chunk.file)
-        feature_similarities.append(feature_sim)
-
-    # 2. Enhanced TF-IDF similarity
-    print("Computing enhanced TF-IDF similarities...")
+    # Use only TF-IDF similarity - let the model discover patterns organically
+    print("Computing TF-IDF similarities...")
     tfidf_similarities = _compute_enhanced_tfidf_similarity(problem_text, chunk_texts)
 
     # 3. Path-based similarity bonus
@@ -825,22 +883,19 @@ def _improved_problem_code_filter(problem_text: str, code_chunks: List[Chunk], c
         else:
             return [0.0] * len(scores)
 
-    feature_similarities = normalize_scores(feature_similarities)
     tfidf_similarities = normalize_scores(tfidf_similarities)
     path_bonuses = normalize_scores(path_bonuses)
 
-    # Combine all similarities with weights
+    # Combine similarities with organic weighting (no domain bias)
     print("Combining similarity scores...")
     combined_similarities = []
     weights = {
-        'feature': 0.4,    # Highest weight for problem-to-code feature matching
-        'tfidf': 0.45,     # Good for content similarity
-        'path': 0.15       # Path-based bonus
+        'tfidf': 0.8,      # Primary weight for content similarity
+        'path': 0.2        # Minor bonus for path mentions
     }
 
     for i in range(len(chunk_texts)):
         combined_score = (
-            weights['feature'] * feature_similarities[i] +
             weights['tfidf'] * tfidf_similarities[i] +
             weights['path'] * path_bonuses[i]
         )
@@ -864,30 +919,14 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
     Returns information about target files to focus on.
     """
 
-    # Extract features from problem to guide exploration
-    problem_features = _extract_problem_keywords(problem_text)
+    # Initialize conversation memory to store rich exploration context
+    memory = ConversationMemory()
 
-    # Generate intelligent exploration hints
-    exploration_hints = []
-
-    # Suggest searches based on extracted features
-    if problem_features['domain_keywords']:
-        domain_hints = ', '.join(problem_features['domain_keywords'][:3])
-        exploration_hints.append(f"🎯 Domain: This appears to be a {domain_hints} related problem")
-
-    if problem_features['file_mentions']:
-        file_hints = ', '.join(problem_features['file_mentions'][:3])
-        exploration_hints.append(f"📁 Files: Problem mentions these files: {file_hints}")
-
-    if problem_features['component_names']:
-        component_hints = ', '.join(problem_features['component_names'][:3])
-        exploration_hints.append(f"🔧 Components: Look for these components: {component_hints}")
-
-    if problem_features['error_terms']:
-        error_hints = ', '.join(problem_features['error_terms'][:3])
-        exploration_hints.append(f"❌ Errors: Problem involves: {error_hints}")
-
-    hints_text = "\n".join(exploration_hints) if exploration_hints else "No specific hints extracted."
+        # Store just the raw problem text in memory - let LLM discover patterns organically
+    memory.add_problem_analysis({
+        "problem_text": problem_text[:500],  # Store raw problem for reference
+        "exploration_approach": "organic_discovery"  # Mark as discovery-based exploration
+    })
 
     # Initialize current working directory BEFORE using it
     current_working_directory = "."
@@ -898,7 +937,7 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"PROBLEM TO LOCATE:\n{problem_text}\n\nAI ANALYSIS HINTS:\n{hints_text}\n\n(Current dir: {current_working_directory}) $ Start your exploration to find where this problem exists in the codebase. Use the hints above to guide your search strategy."}
+        {"role": "user", "content": f"PROBLEM TO LOCATE:\n{problem_text}\n\n(Current dir: {current_working_directory}) $ Start your exploration to find where this problem exists in the codebase. Analyze the problem statement carefully and develop your own search strategy."}
     ]
 
     step = 0
@@ -911,7 +950,23 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
         try:
             # Get next action from LLM using string commands
             response = inference(messages, proxy_url, run_id, model_name)
+
+            # Handle API failures gracefully
+            if response is None:
+                print(f"[agent] API returned None response at step {step}")
+                raise Exception("API returned None response")
+
             text_response = response.get("text_response", "")
+
+            # Handle error responses from API
+            if "error" in response and not text_response:
+                error_msg = response.get("error", "Unknown API error")
+                print(f"[agent] API error at step {step}: {error_msg}")
+                raise Exception(f"API error: {error_msg}")
+
+            if not text_response or not text_response.strip():
+                print(f"[agent] Empty response from API at step {step}")
+                raise Exception("Empty response from API")
 
                         # Parse the response to extract discussion and command
             if "```" in text_response:
@@ -980,7 +1035,9 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
             # Handle FINISH command - improved detection
             command_upper = command.upper().strip()
             # Also check if FINISH appears anywhere in the text (fallback)
-            finish_in_text = "FINISH(" in text_response.upper()
+            # Check for both FINISH( and standalone FINISH patterns
+            finish_in_text = ("FINISH(" in text_response.upper() or
+                             re.search(r'\bFINISH\b', text_response.upper()))
 
             if command_upper.startswith("FINISH") or finish_in_text:
                 print(f"[agent] FINISH command detected: {repr(command)}")
@@ -1041,11 +1098,17 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
                         if not target_files:
                             observation = "Error: FINISH must specify target_files"
                         else:
+                            # Store final insights in memory
+                            memory.add_pattern("solution_location", problem_location, f"Found in files: {target_files}")
+                            for file_path in target_files:
+                                memory.add_file_analysis(file_path, {"identified_as_target": True, "reason": problem_location})
+
                             return {
                                 "success": True,
                                 "target_files": target_files,
                                 "problem_location": problem_location,
-                                "exploration_history": exploration_history
+                                "exploration_history": exploration_history,
+                                "memory": memory
                             }
                     else:
                         observation = "Error: Could not extract valid JSON from FINISH command"
@@ -1331,6 +1394,21 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
                 print(f"[agent] First 50 chars: {repr(command[:50])}")
                 observation = f"Unknown command: {command[:100]}..."
 
+            # Extract insights from observation and store in memory
+            insight = _extract_insight_from_observation(command, observation)
+            memory.add_exploration_step(step, command, observation, insight)
+
+            # Store specific insights based on command type
+            if command.startswith("READ_FILE") and "Error" not in observation:
+                file_path = command[command.find("(")+1:command.rfind(")")].strip('\'"')
+                if len(observation) > 100:  # Meaningful content
+                    memory.add_code_insight(file_path, "file_content", f"Contains {len(observation)} chars of code")
+            elif command.startswith("GREP") and observation.count('\n') > 0:
+                lines_found = observation.count('\n')
+                memory.add_pattern("grep_results", f"Found {lines_found} matches", observation[:200])
+            elif command.startswith("SMART_SEARCH") and "found" in observation.lower():
+                memory.add_pattern("smart_search", "Found relevant files", observation[:300])
+
             # Add observation to conversation with current directory context
             messages.append({"role": "assistant", "content": text_response})
             messages.append({"role": "user", "content": f"OBSERVATION:\n{observation[:MAX_OBS_CHARS]}"})
@@ -1342,17 +1420,19 @@ def run_exploration(problem_text: str, *, proxy_url: str, model_name: str, run_i
             return {
                 "success": False,
                 "error": f"Exploration failed at step {step}: {e}",
-                "exploration_history": exploration_history
+                "exploration_history": exploration_history,
+                "memory": memory
             }
 
     # If we reached max steps without FINISH
     return {
         "success": False,
         "error": f"Exploration exceeded {MAX_EXPLORATION_STEPS} steps without finding target files",
-        "exploration_history": exploration_history
+        "exploration_history": exploration_history,
+        "memory": memory
     }
 
-def run_focused_oneshot(problem_text: str, target_files: List[str], *, proxy_url: str, model_name: str, run_id: str) -> str:
+def run_focused_oneshot(problem_text: str, target_files: List[str], memory: ConversationMemory = None, behavior_analysis: Dict = None, *, proxy_url: str, model_name: str, run_id: str) -> str:
     """
     Phase 2: Focused oneshot patch generation.
 
@@ -1383,12 +1463,34 @@ def run_focused_oneshot(problem_text: str, target_files: List[str], *, proxy_url
 
     full_context = "\n\n".join(file_contents)
 
-    # Create focused oneshot prompt with structured approach
+    # Create focused oneshot prompt with structured approach and memory context
     messages = [
         {"role": "system", "content": PATCH_GENERATION_SYSTEM_PROMPT},
         {"role": "user", "content": f"Problem to fix:\n{problem_text}"},
         {"role": "user", "content": f"Relevant file contents:\n\n{full_context}"}
     ]
+
+    # Add rich context from exploration memory if available
+    if memory:
+        context_summary = memory.get_context_summary()
+        if context_summary.strip():
+            messages.append({"role": "user", "content": f"Exploration Context from Investigation:\n\n{context_summary}"})
+            print(f"[agent] Added exploration context ({len(context_summary)} chars)")
+
+    # Add behavior analysis from test-first understanding if available
+    if behavior_analysis:
+        behavior_context = f"""Test-First Behavior Analysis:
+
+CURRENT BEHAVIOR: {behavior_analysis.get('current_behavior', 'Unknown')}
+EXPECTED BEHAVIOR: {behavior_analysis.get('expected_behavior', 'Unknown')}
+BEHAVIOR GAP: {behavior_analysis.get('behavior_gap', 'Unknown')}
+
+TEST EVIDENCE: {behavior_analysis.get('test_evidence', 'No test evidence')}
+
+This analysis shows what the code currently does vs. what it should do. Use this to generate a targeted fix that addresses the specific behavior gap."""
+
+        messages.append({"role": "user", "content": behavior_context})
+        print(f"[agent] Added behavior analysis context ({len(behavior_context)} chars)")
 
     print(f"[agent] Generating patch with focused context ({len(full_context)} chars)")
 
@@ -1504,9 +1606,740 @@ def run_focused_oneshot(problem_text: str, target_files: List[str], *, proxy_url
     # All attempts exhausted
     raise RuntimeError("Patch could not be applied after iterative corrections.")
 
+# ============================================================================
+# ITERATIVE REFINEMENT FUNCTIONS
+# ============================================================================
+
+def _discover_relevant_tests(target_files: List[str], problem_text: str) -> List[str]:
+    """Find tests that are likely relevant to the problem"""
+    print(f"[refinement] Discovering tests for {len(target_files)} target files...")
+
+    test_files = []
+
+    # Strategy 1: Tests in same directory or parallel test directory
+    for target_file in target_files:
+        target_dir = os.path.dirname(target_file)
+
+        # Look for test files in same directory
+        if os.path.exists(target_dir):
+            for file in os.listdir(target_dir):
+                if file.startswith('test_') and file.endswith('.py'):
+                    test_files.append(os.path.join(target_dir, file))
+
+        # Look for tests/ directory structure
+        test_dirs = [
+            os.path.join(target_dir, 'tests'),
+            os.path.join('tests', target_dir),
+            'tests',
+            os.path.join(target_dir, '..', 'tests'),
+        ]
+
+        for test_dir in test_dirs:
+            if os.path.exists(test_dir):
+                for root, dirs, files in os.walk(test_dir):
+                    for file in files:
+                        if (file.startswith('test_') or file.endswith('_test.py')) and file.endswith('.py'):
+                            test_files.append(os.path.join(root, file))
+
+    # Strategy 2: Look for specific patterns mentioned in problem
+    problem_lower = problem_text.lower()
+    if 'session' in problem_lower and 'django' in problem_lower:
+        django_session_tests = [
+            'tests/sessions_tests/tests.py',
+            'tests/sessions_tests/',
+            'django/contrib/sessions/tests.py'
+        ]
+        for test_path in django_session_tests:
+            if os.path.exists(test_path):
+                test_files.append(test_path)
+
+    # Remove duplicates and return
+    test_files = list(set(test_files))
+    print(f"[refinement] Found {len(test_files)} potential test files")
+    return test_files
+
+def _test_patch(patch: str, target_files: List[str], problem_text: str) -> Dict[str, Any]:
+    """Apply patch and run tests to validate the fix"""
+    print(f"[refinement] Testing patch ({len(patch)} chars)...")
+
+    result = {
+        "patch_applied": False,
+        "compilation_success": False,
+        "test_results": {
+            "passed": 0,
+            "failed": 0,
+            "errors": [],
+            "output": ""
+        },
+        "success": False,
+        "tests_found": False
+    }
+
+    # First, try to apply the patch with dry run
+    print(f"[refinement] Applying patch with dry run...")
+    patch_ok, patch_output = _dry_run_patch(patch)
+
+    if not patch_ok:
+        print(f"[refinement] Patch failed to apply: {patch_output[:500]}")
+        result["test_results"]["errors"].append(f"Patch application failed: {patch_output}")
+        return result
+
+    result["patch_applied"] = True
+
+    # Create a backup of current state before applying patch
+    print(f"[refinement] Creating backup before applying patch...")
+    backup_files = {}
+
+    try:
+        # Apply the patch for real
+        with NamedTemporaryFile(mode='w', suffix='.patch', delete=False) as tmp:
+            tmp.write(patch)
+            tmp_path = tmp.name
+
+        apply_result = subprocess.run(
+            ["patch", "-p1", "-i", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+
+        os.unlink(tmp_path)
+
+        if apply_result.returncode != 0:
+            result["test_results"]["errors"].append(f"Patch application failed: {apply_result.stderr}")
+            return result
+
+        print(f"[refinement] Patch applied successfully")
+
+        # Try to compile/validate the changes
+        print(f"[refinement] Checking compilation...")
+        compilation_errors = []
+
+        for target_file in target_files:
+            if target_file.endswith('.py') and os.path.exists(target_file):
+                try:
+                    with open(target_file, 'r') as f:
+                        code = f.read()
+                    compile(code, target_file, 'exec')
+                except SyntaxError as e:
+                    compilation_errors.append(f"Syntax error in {target_file}: {e}")
+                except Exception as e:
+                    compilation_errors.append(f"Compilation error in {target_file}: {e}")
+
+        if compilation_errors:
+            result["test_results"]["errors"].extend(compilation_errors)
+            return result
+
+        result["compilation_success"] = True
+
+        # Discover and run relevant tests
+        test_files = _discover_relevant_tests(target_files, problem_text)
+
+        if not test_files:
+            print(f"[refinement] No test files found, considering patch successful")
+            result["success"] = True
+            return result
+
+        result["tests_found"] = True
+
+        # Run tests
+        print(f"[refinement] Running {len(test_files)} test files...")
+
+        test_commands = []
+
+        # Try different test runners based on project structure
+        if any('django' in f.lower() for f in target_files):
+            # Django project
+            test_commands = [
+                "python manage.py test --verbosity=2",
+                "python -m pytest tests/ -v",
+                "python runtests.py --verbosity=2"
+            ]
+        else:
+            # Generic Python project
+            test_commands = [
+                "python -m pytest tests/ -v",
+                "python -m unittest discover -s tests -v",
+                "python -m pytest . -v"
+            ]
+
+        test_passed = False
+        test_output = ""
+
+        for cmd in test_commands:
+            try:
+                print(f"[refinement] Trying test command: {cmd}")
+                test_result = subprocess.run(
+                    cmd.split(),
+                    capture_output=True,
+                    text=True,
+                    timeout=TEST_TIMEOUT_SECONDS,
+                    cwd='.'
+                )
+
+                test_output = test_result.stdout + test_result.stderr
+
+                if test_result.returncode == 0:
+                    print(f"[refinement] Tests passed with command: {cmd}")
+                    result["test_results"]["passed"] = test_output.count("PASSED") + test_output.count("ok")
+                    result["test_results"]["output"] = test_output
+                    result["success"] = True
+                    test_passed = True
+                    break
+                else:
+                    print(f"[refinement] Tests failed with command: {cmd}")
+                    result["test_results"]["failed"] += 1
+                    result["test_results"]["errors"].append(f"Test command failed: {cmd}\nOutput: {test_output[:1000]}")
+
+            except subprocess.TimeoutExpired:
+                print(f"[refinement] Test command timed out: {cmd}")
+                result["test_results"]["errors"].append(f"Test timeout: {cmd}")
+            except Exception as e:
+                print(f"[refinement] Test command error: {cmd} - {e}")
+                result["test_results"]["errors"].append(f"Test error: {cmd} - {e}")
+
+        if not test_passed and test_output:
+            result["test_results"]["output"] = test_output
+
+    except Exception as e:
+        print(f"[refinement] Exception during testing: {e}")
+        result["test_results"]["errors"].append(f"Testing exception: {e}")
+
+    finally:
+        # Rollback the patch to restore original state
+        print(f"[refinement] Rolling back patch...")
+        try:
+            subprocess.run(
+                ["git", "checkout", "."],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+        except Exception as e:
+            print(f"[refinement] Warning: Failed to rollback changes: {e}")
+
+    return result
+
+def _analyze_test_failures(test_results: Dict, patch: str, problem_text: str) -> Dict[str, Any]:
+    """Analyze why tests failed and what needs to be fixed"""
+    print(f"[refinement] Analyzing test failures...")
+
+    errors = test_results.get("test_results", {}).get("errors", [])
+    output = test_results.get("test_results", {}).get("output", "")
+
+    analysis = {
+        "failure_type": "unknown",
+        "root_cause": "",
+        "specific_errors": [],
+        "suggested_fixes": []
+    }
+
+    # Check for compilation errors
+    if not test_results.get("compilation_success", False):
+        analysis["failure_type"] = "compilation_error"
+        syntax_errors = [e for e in errors if "syntax" in e.lower() or "compilation" in e.lower()]
+        if syntax_errors:
+            analysis["root_cause"] = "Syntax or compilation errors in the patch"
+            analysis["specific_errors"] = syntax_errors
+            analysis["suggested_fixes"] = [
+                "Fix syntax errors in the patch",
+                "Check for missing imports or undefined variables",
+                "Verify proper indentation and structure"
+            ]
+        return analysis
+
+    # Check for patch application failures
+    if not test_results.get("patch_applied", False):
+        analysis["failure_type"] = "patch_application_error"
+        analysis["root_cause"] = "Patch could not be applied to the codebase"
+        analysis["specific_errors"] = [e for e in errors if "patch" in e.lower()]
+        analysis["suggested_fixes"] = [
+            "Check line numbers and context in the patch",
+            "Verify file paths are correct",
+            "Ensure patch format is valid"
+        ]
+        return analysis
+
+    # Analyze test failures
+    if errors or "failed" in output.lower() or "error" in output.lower():
+        analysis["failure_type"] = "test_failure"
+
+        # Look for specific error patterns
+        common_patterns = {
+            "attributeerror": "Method or attribute doesn't exist",
+            "typeerror": "Incorrect argument types or API usage",
+            "importerror": "Import or module issues",
+            "assertionerror": "Logic error - test expectations not met",
+            "keyerror": "Missing dictionary key or configuration",
+            "valueerror": "Invalid parameter values"
+        }
+
+        for pattern, description in common_patterns.items():
+            if pattern in output.lower() or any(pattern in e.lower() for e in errors):
+                analysis["root_cause"] = description
+                break
+
+        if not analysis["root_cause"]:
+            analysis["root_cause"] = "Tests are failing, likely due to incorrect logic in the patch"
+
+        analysis["specific_errors"] = errors
+        analysis["suggested_fixes"] = [
+            "Review the patch logic against test expectations",
+            "Check if the patch addresses the root cause of the problem",
+            "Consider alternative implementation approach",
+            "Verify all edge cases are handled"
+        ]
+
+    return analysis
+
+def _generate_refinement_prompt(
+    original_problem: str,
+    current_patch: str,
+    test_failures: Dict,
+    iteration: int
+) -> str:
+    """Create focused prompt for patch refinement based on test failures"""
+
+    failure_analysis = _analyze_test_failures(test_failures, current_patch, original_problem)
+
+    prompt = f"""Problem to fix:
+{original_problem}
+
+Previous patch attempt (iteration {iteration-1}) failed:
+{current_patch}
+
+Test Results:
+- Patch Applied: {test_failures.get('patch_applied', False)}
+- Compilation Success: {test_failures.get('compilation_success', False)}
+- Tests Found: {test_failures.get('tests_found', False)}
+- Success: {test_failures.get('success', False)}
+
+Failure Analysis:
+- Type: {failure_analysis['failure_type']}
+- Root Cause: {failure_analysis['root_cause']}
+- Specific Errors: {failure_analysis['specific_errors']}
+
+Test Output:
+{test_failures.get('test_results', {}).get('output', 'No test output')[:2000]}
+
+Errors:
+{'; '.join(test_failures.get('test_results', {}).get('errors', []))}
+
+Based on this analysis, please generate a refined patch that addresses these issues. Learn from the previous failure and try a different approach."""
+
+    return prompt
+
+def _is_refinement_worthwhile(test_result: Dict) -> bool:
+    """Decide if refinement is likely to help"""
+
+    # Don't refine if we can't run any validation
+    if not test_result.get("patch_applied", False):
+        patch_errors = test_result.get("test_results", {}).get("errors", [])
+        # Only refine patch application errors if they look fixable
+        if any("syntax" in e.lower() or "line" in e.lower() for e in patch_errors):
+            return True
+        return False
+
+    # DO refine for these recoverable issues:
+    if test_result.get("compilation_success", False):
+        return True  # Logic errors we can fix
+
+    errors = test_result.get("test_results", {}).get("errors", [])
+    if any("syntax" in str(e).lower() for e in errors):
+        return True  # Syntax errors we can fix
+
+    # If no tests found, but patch applied and compiles, consider it worthwhile
+    if not test_result.get("tests_found", False) and test_result.get("compilation_success", False):
+        return False  # Can't validate further
+
+    return True  # Default: try refinement
+
+def _should_continue_refinement(test_result: Dict, iteration: int) -> bool:
+    """Decide if another iteration is worthwhile"""
+
+    # Stop if we're at max iterations
+    if iteration >= MAX_REFINEMENT_ITERATIONS:
+        return False
+
+    # Stop if patch can't be applied and we've tried once
+    if not test_result.get("patch_applied", False) and iteration > 1:
+        return False
+
+    # Continue if there's clear progress potential
+    if test_result.get("compilation_success", False):
+        return True
+
+    return True
+
+def run_iterative_refinement(
+    initial_patch: str,
+    target_files: List[str],
+    problem_text: str,
+    memory: ConversationMemory,
+    *,
+    proxy_url: str,
+    model_name: str,
+    run_id: str
+) -> str:
+    """
+    Phase 3: Iterative refinement with test-driven validation
+
+    Flow:
+    1. Apply initial patch
+    2. Run relevant tests
+    3. Analyze results
+    4. If tests pass → return patch
+    5. If tests fail → generate refinement prompt
+    6. Generate improved patch
+    7. Repeat up to 3 times
+    """
+    print(f"[refinement] Starting iterative refinement with {len(target_files)} target files")
+
+    current_patch = initial_patch
+
+    for iteration in range(1, MAX_REFINEMENT_ITERATIONS + 1):
+        print(f"[refinement] Testing iteration {iteration}/{MAX_REFINEMENT_ITERATIONS}")
+
+        test_result = _test_patch(current_patch, target_files, problem_text)
+
+        # SUCCESS: Return immediately
+        if test_result["success"]:
+            print(f"[refinement] Success on iteration {iteration}! Tests pass.")
+            return current_patch
+
+        # FIRST ITERATION: Decide if refinement is worthwhile
+        if iteration == 1 and not _is_refinement_worthwhile(test_result):
+            print(f"[refinement] Refinement not worthwhile, returning initial patch")
+            return current_patch
+
+        # LAST ITERATION: Return best attempt
+        if iteration == MAX_REFINEMENT_ITERATIONS:
+            print(f"[refinement] Max iterations reached, returning best attempt")
+            return current_patch
+
+        # CONTINUE: Generate refinement for next iteration
+        if _should_continue_refinement(test_result, iteration):
+            print(f"[refinement] Generating refinement for iteration {iteration + 1}")
+
+            try:
+                # Generate refinement prompt
+                refinement_prompt = _generate_refinement_prompt(
+                    problem_text, current_patch, test_result, iteration
+                )
+
+                # Create messages for refinement request
+                messages = [
+                    {"role": "system", "content": PATCH_REFINEMENT_SYSTEM_PROMPT},
+                    {"role": "user", "content": refinement_prompt}
+                ]
+
+                # Add memory context if available
+                if memory:
+                    context_summary = memory.get_context_summary()
+                    if context_summary.strip():
+                        messages.append({"role": "user", "content": f"Additional Context from Exploration:\n\n{context_summary}"})
+
+                # Generate refined patch
+                response = inference(messages, proxy_url, run_id, model_name)
+                text_response = response.get("text_response", "")
+                code_response = response.get("code_response", "")
+
+                # Extract refined patch using same logic as focused oneshot
+                refined_patch = None
+                for cand in (code_response, text_response):
+                    if cand and cand.strip().startswith("diff --git"):
+                        refined_patch = cand.strip()
+                        break
+
+                if refined_patch is None:
+                    for cand in (text_response, code_response):
+                        if cand:
+                            extracted = extract_diff_from_response(cand)
+                            if extracted:
+                                refined_patch = extracted
+                                break
+
+                if refined_patch:
+                    # Validate and sanitize refined patch
+                    valid, error_msg = _validate_patch_structure(refined_patch)
+                    if valid:
+                        refined_patch = _sanitize_patch(refined_patch)
+                        if refined_patch.strip():
+                            print(f"[refinement] Generated refined patch ({len(refined_patch)} chars)")
+                            current_patch = refined_patch
+                        else:
+                            print(f"[refinement] Refined patch became empty after sanitization")
+                            break
+                    else:
+                        print(f"[refinement] Refined patch invalid: {error_msg}")
+                        break
+                else:
+                    print(f"[refinement] Failed to extract refined patch from response")
+                    break
+
+            except Exception as e:
+                print(f"[refinement] Failed to generate refinement: {e}")
+                break
+        else:
+            print(f"[refinement] Stopping early at iteration {iteration}")
+            break
+
+    return current_patch
+
+# ============================================================================
+# TEST ANALYSIS FUNCTIONS
+# ============================================================================
+
+def _discover_relevant_tests_for_analysis(target_files: List[str], problem_text: str) -> List[str]:
+    """Discover tests that are most likely to reveal the current bug behavior"""
+    print(f"[test-analysis] Discovering tests for {len(target_files)} target files...")
+
+    test_files = []
+
+    # Strategy 1: Tests in same directory or parallel test directory
+    for target_file in target_files:
+        target_dir = os.path.dirname(target_file)
+        target_name = os.path.basename(target_file).replace('.py', '')
+
+        # Look for test files in same directory
+        test_patterns = [
+            f"test_{target_name}.py",
+            f"{target_name}_test.py",
+            f"tests.py"
+        ]
+
+        for pattern in test_patterns:
+            test_path = os.path.join(target_dir, pattern)
+            if os.path.exists(test_path):
+                test_files.append(test_path)
+
+        # Look for tests directory
+        possible_test_dirs = [
+            os.path.join(target_dir, "tests"),
+            os.path.join(target_dir, "test"),
+            os.path.join(os.path.dirname(target_dir), "tests"),
+            "./tests"
+        ]
+
+        for test_dir in possible_test_dirs:
+            if os.path.exists(test_dir) and os.path.isdir(test_dir):
+                for root, dirs, files in os.walk(test_dir):
+                    for file in files:
+                        if (file.startswith('test_') or file.endswith('_test.py')) and file.endswith('.py'):
+                            test_path = os.path.join(root, file)
+                            # Check if test file mentions our target
+                            if _test_file_relevant(test_path, target_name, target_file):
+                                test_files.append(test_path)
+
+    # Remove duplicates and limit to most relevant
+    test_files = list(set(test_files))[:10]  # Limit to avoid excessive testing
+
+    print(f"[test-analysis] Found {len(test_files)} relevant test files")
+    return test_files
+
+def _test_file_relevant(test_file: str, target_name: str, target_file: str) -> bool:
+    """Check if a test file is likely relevant to our target"""
+    try:
+        with open(test_file, 'r') as f:
+            content = f.read()
+            # Check for imports or references to target
+            return (target_name in content or
+                   os.path.basename(target_file) in content or
+                   any(part in content for part in target_file.split('/') if len(part) > 3))
+    except:
+        return False
+
+def _run_current_tests(test_files: List[str], target_files: List[str]) -> Dict[str, Any]:
+    """Run existing tests to understand current behavior"""
+    print(f"[test-analysis] Running {len(test_files)} test files to analyze current behavior...")
+
+    results = {
+        "test_results": [],
+        "overall_status": "unknown",
+        "failure_patterns": [],
+        "current_behavior": ""
+    }
+
+    if not test_files:
+        print("[test-analysis] No test files found, skipping test execution")
+        return results
+
+    # Try to run tests using common patterns
+    for test_file in test_files[:5]:  # Limit to avoid long execution
+        print(f"[test-analysis] Running test file: {test_file}")
+
+        # Try different test runners
+        test_commands = [
+            ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
+            ["python", "-m", "unittest", test_file.replace('/', '.').replace('.py', ''), "-v"],
+            ["python", test_file]
+        ]
+
+        for cmd in test_commands:
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=TEST_DISCOVERY_TIMEOUT,
+                    cwd="."
+                )
+
+                test_result = {
+                    "file": test_file,
+                    "command": " ".join(cmd),
+                    "returncode": result.returncode,
+                    "stdout": result.stdout[:1000],  # Limit output
+                    "stderr": result.stderr[:1000]
+                }
+
+                results["test_results"].append(test_result)
+
+                # Analyze test output for behavior patterns
+                if result.returncode != 0:
+                    failure_info = _extract_failure_info(result.stdout + result.stderr)
+                    if failure_info:
+                        results["failure_patterns"].append(failure_info)
+
+                # If test ran successfully, don't try other runners
+                if result.returncode in [0, 1]:  # 0=pass, 1=test failures (but runner worked)
+                    break
+
+            except subprocess.TimeoutExpired:
+                print(f"[test-analysis] Test {test_file} timed out with command: {' '.join(cmd)}")
+                continue
+            except Exception as e:
+                print(f"[test-analysis] Failed to run {test_file}: {e}")
+                continue
+
+    # Determine overall status
+    if results["test_results"]:
+        failed_tests = [r for r in results["test_results"] if r["returncode"] != 0]
+        if failed_tests:
+            results["overall_status"] = "has_failures"
+            results["current_behavior"] = f"Found {len(failed_tests)} failing test(s)"
+        else:
+            results["overall_status"] = "passing"
+            results["current_behavior"] = "All tests currently pass"
+
+    print(f"[test-analysis] Test analysis complete: {results['overall_status']}")
+    return results
+
+def _extract_failure_info(test_output: str) -> str:
+    """Extract meaningful failure information from test output"""
+    failure_indicators = [
+        "AssertionError", "ValueError", "TypeError", "AttributeError",
+        "FAILED", "ERROR", "Exception", "Traceback"
+    ]
+
+    lines = test_output.split('\n')
+    failure_info = []
+
+    for i, line in enumerate(lines):
+        if any(indicator in line for indicator in failure_indicators):
+            # Capture this line and a few context lines
+            context_start = max(0, i-2)
+            context_end = min(len(lines), i+3)
+            context = lines[context_start:context_end]
+            failure_info.extend(context)
+
+    return '\n'.join(failure_info[:10])  # Limit output
+
+def _create_behavior_analysis(problem_text: str, target_files: List[str], test_results: Dict) -> Dict[str, Any]:
+    """Analyze current vs expected behavior based on problem description and test results"""
+    print("[test-analysis] Creating behavior analysis...")
+
+    analysis = {
+        "problem_summary": problem_text[:300],
+        "target_files": target_files,
+        "current_behavior": "Unknown",
+        "expected_behavior": "Unknown",
+        "behavior_gap": "Unknown",
+        "test_evidence": test_results.get("current_behavior", "No test evidence"),
+        "failure_patterns": test_results.get("failure_patterns", [])
+    }
+
+    # Extract expected behavior from problem description
+    expected_indicators = [
+        "should", "expected", "ought to", "supposed to",
+        "correct behavior", "desired", "intended"
+    ]
+
+    problem_lines = problem_text.split('\n')
+    expected_behaviors = []
+
+    for line in problem_lines:
+        if any(indicator in line.lower() for indicator in expected_indicators):
+            expected_behaviors.append(line.strip())
+
+    if expected_behaviors:
+        analysis["expected_behavior"] = '; '.join(expected_behaviors[:3])
+
+    # Determine current behavior from test results
+    if test_results["overall_status"] == "has_failures":
+        analysis["current_behavior"] = f"Tests failing: {test_results['current_behavior']}"
+        if test_results["failure_patterns"]:
+            analysis["current_behavior"] += f" | Errors: {test_results['failure_patterns'][0][:100]}"
+    elif test_results["overall_status"] == "passing":
+        analysis["current_behavior"] = "Tests pass but issue reported in problem statement"
+    else:
+        analysis["current_behavior"] = "Unable to determine from tests - need to reproduce issue"
+
+    # Identify behavior gap
+    if "fail" in analysis["current_behavior"].lower() and analysis["expected_behavior"] != "Unknown":
+        analysis["behavior_gap"] = f"Current: {analysis['current_behavior'][:100]} | Expected: {analysis['expected_behavior'][:100]}"
+    else:
+        analysis["behavior_gap"] = "Gap needs further investigation through reproduction"
+
+    print(f"[test-analysis] Behavior analysis complete")
+    return analysis
+
+def run_test_analysis(problem_text: str, target_files: List[str]) -> Dict[str, Any]:
+    """Phase 2: Test-First Understanding - Analyze current behavior before generating patches"""
+    print("[agent] Phase 2: Test-First Understanding...")
+
+    try:
+        # Step 1: Discover relevant tests
+        test_files = _discover_relevant_tests_for_analysis(target_files, problem_text)
+
+        # Step 2: Run tests to understand current behavior
+        test_results = _run_current_tests(test_files, target_files)
+
+        # Step 3: Create behavior analysis
+        behavior_analysis = _create_behavior_analysis(problem_text, target_files, test_results)
+
+        # Step 4: Package results for patch generation
+        analysis_result = {
+            "success": True,
+            "test_files_found": len(test_files),
+            "test_results": test_results,
+            "behavior_analysis": behavior_analysis,
+            "summary": f"Found {len(test_files)} test files, status: {test_results['overall_status']}"
+        }
+
+        print(f"[test-analysis] Analysis complete: {analysis_result['summary']}")
+        return analysis_result
+
+    except Exception as e:
+        print(f"[test-analysis] Test analysis failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "behavior_analysis": {
+                "current_behavior": "Test analysis failed",
+                "expected_behavior": "Unknown due to analysis failure",
+                "behavior_gap": f"Analysis error: {str(e)}"
+            }
+        }
+
 def run_hybrid(problem_text: str, *, proxy_url: str, model_name: str, run_id: str) -> Dict[str, Any]:
     """
-    Main hybrid approach: Exploration followed by focused oneshot.
+    Main hybrid approach: Four-phase pipeline for robust patch generation.
+
+    Phase 1: Exploration - Locate the problem in the codebase
+    Phase 2: Test-First Understanding - Analyze current behavior via tests before fixing
+    Phase 3: Initial Patch Generation - Generate focused patch based on exploration and test analysis
+    Phase 4: Iterative Refinement - Test and refine patch up to 3 times for correctness
     """
 
     print("[agent] Starting hybrid approach...")
@@ -1531,30 +2364,76 @@ def run_hybrid(problem_text: str, *, proxy_url: str, model_name: str, run_id: st
 
     target_files = exploration_result["target_files"]
     problem_location = exploration_result["problem_location"]
+    memory = exploration_result.get("memory")  # Extract conversation memory
 
     print(f"[agent] Exploration found target files: {target_files}")
     print(f"[agent] Problem location: {problem_location}")
-    print("[agent] Phase 2: Focused patch generation...")
+    if memory:
+        print(f"[agent] Retrieved conversation memory with {len(memory.exploration_steps)} exploration steps")
 
-    # Phase 2: Focused oneshot
+    # Phase 2: Test-First Understanding
+    test_analysis_result = run_test_analysis(problem_text, target_files)
+    print(f"[agent] Test analysis result: {test_analysis_result['success']}")
+    if test_analysis_result["success"]:
+        print(f"[agent] {test_analysis_result['summary']}")
+        behavior_analysis = test_analysis_result["behavior_analysis"]
+        print(f"[agent] Behavior gap: {behavior_analysis['behavior_gap'][:100]}")
+    else:
+        print(f"[agent] Test analysis failed: {test_analysis_result.get('error', 'Unknown error')}")
+        # Continue with limited information
+        behavior_analysis = test_analysis_result["behavior_analysis"]
+
+    print("[agent] Phase 3: Focused patch generation...")
+
+    # Phase 3: Focused oneshot
     try:
-        patch_text = run_focused_oneshot(
+        initial_patch = run_focused_oneshot(
             problem_text,
             target_files,
+            memory,  # Pass memory to patch generation
+            behavior_analysis,  # Pass test analysis to inform patch generation
             proxy_url=proxy_url,
             model_name=model_name,
             run_id=run_id
         )
 
-        print(f"[agent] Generated patch ({len(patch_text)} chars)")
+        print(f"[agent] Generated initial patch ({len(initial_patch)} chars)")
+        print("[agent] Phase 4: Iterative refinement with test validation...")
 
-        return {
-            "success": True,
-            "patch": patch_text,
-            "target_files": target_files,
-            "problem_location": problem_location,
-            "exploration_history": exploration_result["exploration_history"]
-        }
+        # Phase 4: Iterative refinement
+        try:
+            final_patch = run_iterative_refinement(
+                initial_patch,
+                target_files,
+                problem_text,
+                memory,
+                proxy_url=proxy_url,
+                model_name=model_name,
+                run_id=run_id
+            )
+
+            print(f"[agent] Refinement completed, final patch ({len(final_patch)} chars)")
+
+            return {
+                "success": True,
+                "patch": final_patch,
+                "target_files": target_files,
+                "problem_location": problem_location,
+                "exploration_history": exploration_result["exploration_history"]
+            }
+
+        except Exception as e:
+            print(f"[agent] Iterative refinement failed: {e}")
+            print(f"[agent] Returning initial patch as fallback")
+
+            return {
+                "success": True,
+                "patch": initial_patch,
+                "target_files": target_files,
+                "problem_location": problem_location,
+                "exploration_history": exploration_result["exploration_history"],
+                "refinement_error": str(e)
+            }
 
     except Exception as e:
         return {
@@ -1570,6 +2449,193 @@ class Chunk(NamedTuple):
     start_line: int
     end_line: int
     text: str
+
+class ConversationMemory:
+    """Stores rich context and insights from exploration to inform patch generation."""
+
+    def __init__(self):
+        self.problem_analysis = {}
+        self.code_insights = {}
+        self.exploration_steps = []
+        self.patterns_found = []
+        self.failed_attempts = []
+        self.file_analysis = {}
+
+    def add_problem_analysis(self, analysis: Dict[str, Any]):
+        """Store initial problem breakdown and analysis."""
+        self.problem_analysis.update(analysis)
+
+    def add_exploration_step(self, step: int, command: str, observation: str, insight: str = ""):
+        """Record an exploration step with its results and insights."""
+        self.exploration_steps.append({
+            "step": step,
+            "command": command,
+            "observation": observation[:1000],  # Truncate very long observations
+            "insight": insight,
+            "timestamp": step
+        })
+
+    def add_code_insight(self, file_path: str, insight_type: str, details: str):
+        """Store insights about specific code files or patterns."""
+        if file_path not in self.code_insights:
+            self.code_insights[file_path] = []
+        self.code_insights[file_path].append({
+            "type": insight_type,
+            "details": details
+        })
+
+    def add_pattern(self, pattern_type: str, description: str, evidence: str = ""):
+        """Record patterns found during exploration."""
+        self.patterns_found.append({
+            "type": pattern_type,
+            "description": description,
+            "evidence": evidence[:500]  # Truncate evidence
+        })
+
+    def add_file_analysis(self, file_path: str, analysis: Dict[str, Any]):
+        """Store detailed analysis of a specific file."""
+        self.file_analysis[file_path] = analysis
+
+    def get_context_summary(self) -> str:
+        """Generate a rich context summary for patch generation."""
+        summary_parts = []
+
+        # Problem analysis
+        if self.problem_analysis:
+            summary_parts.append("PROBLEM ANALYSIS:")
+            for key, value in self.problem_analysis.items():
+                summary_parts.append(f"- {key}: {value}")
+            summary_parts.append("")
+
+        # Key insights from exploration
+        if self.exploration_steps:
+            summary_parts.append("EXPLORATION INSIGHTS:")
+            for step in self.exploration_steps[-5:]:  # Last 5 steps
+                if step.get("insight"):
+                    summary_parts.append(f"- Step {step['step']}: {step['insight']}")
+            summary_parts.append("")
+
+        # Code patterns found
+        if self.patterns_found:
+            summary_parts.append("PATTERNS IDENTIFIED:")
+            for pattern in self.patterns_found:
+                summary_parts.append(f"- {pattern['type']}: {pattern['description']}")
+            summary_parts.append("")
+
+        # File-specific insights
+        if self.code_insights:
+            summary_parts.append("CODE INSIGHTS:")
+            for file_path, insights in self.code_insights.items():
+                summary_parts.append(f"- {file_path}:")
+                for insight in insights:
+                    summary_parts.append(f"  * {insight['type']}: {insight['details']}")
+            summary_parts.append("")
+
+        return "\n".join(summary_parts)
+
+    def get_detailed_exploration_log(self) -> str:
+        """Get detailed log of exploration steps for debugging."""
+        log_parts = []
+        for step in self.exploration_steps:
+            log_parts.append(f"Step {step['step']}: {step['command']}")
+            if step['observation']:
+                log_parts.append(f"  Result: {step['observation'][:200]}...")
+            if step['insight']:
+                log_parts.append(f"  Insight: {step['insight']}")
+            log_parts.append("")
+        return "\n".join(log_parts)
+
+def _extract_insight_from_observation(command: str, observation: str) -> str:
+    """Extract meaningful insights from command observations for memory storage."""
+    if not observation or "Error" in observation or not command.strip():
+        return ""
+
+    # Safe command type extraction - handle empty commands
+    if '(' in command:
+        command_type = command.split('(')[0]
+    else:
+        command_parts = command.split()
+        command_type = command_parts[0] if command_parts else ""
+
+    if not command_type:
+        return ""
+    observation_lower = observation.lower()
+
+    insights = []
+
+    # READ_FILE insights
+    if command_type == "READ_FILE":
+        if "def " in observation:
+            func_count = observation.count("def ")
+            insights.append(f"Contains {func_count} function definitions")
+        if "class " in observation:
+            class_count = observation.count("class ")
+            insights.append(f"Contains {class_count} class definitions")
+        if "import " in observation:
+            insights.append("Contains import statements")
+        if any(error_word in observation_lower for error_word in ["error", "exception", "traceback", "bug"]):
+            insights.append("Contains error-related code")
+
+    # GREP insights
+    elif command_type == "GREP":
+        if observation.strip():
+            line_count = observation.count('\n') + 1 if observation.strip() else 0
+            if line_count > 0:
+                insights.append(f"Found {line_count} matching lines")
+                # Extract file patterns
+                files = set()
+                for line in observation.split('\n'):
+                    if ':' in line:
+                        file_part = line.split(':')[0]
+                        if '/' in file_part:
+                            files.add(file_part)
+                if files:
+                    insights.append(f"Matches in {len(files)} files")
+
+    # SMART_SEARCH insights
+    elif command_type == "SMART_SEARCH":
+        if "relevant" in observation_lower:
+            insights.append("Found relevant files via AI search")
+        if "suggestion" in observation_lower:
+            insights.append("Provided intelligent suggestions")
+
+    # LS insights
+    elif command_type == "LS":
+        line_count = observation.count('\n')
+        if line_count > 5:
+            insights.append(f"Directory contains many files ({line_count} entries)")
+        if ".py" in observation:
+            py_count = observation.count(".py")
+            insights.append(f"Found {py_count} Python files")
+
+    # FIND insights
+    elif command_type == "FIND":
+        if observation.strip():
+            file_count = observation.count('\n') + 1 if observation.strip() else 0
+            insights.append(f"Found {file_count} matching files")
+
+    return "; ".join(insights) if insights else ""
+
+def _guess_tokens(text: str) -> int:
+    """Rough estimate of token count."""
+    return len(text) // 4
+
+def _lang_tag(path: str) -> str:
+    """Get language tag for syntax highlighting."""
+    ext = Path(path).suffix.lower()
+    return {
+        '.py': 'python',
+        '.js': 'javascript',
+        '.ts': 'typescript',
+        '.java': 'java',
+        '.cpp': 'cpp',
+        '.c': 'c',
+        '.rb': 'ruby',
+        '.go': 'go',
+        '.rs': 'rust',
+        '.php': 'php',
+        '.sh': 'bash',
+    }.get(ext, 'text')
 
 def _collect_repo_texts(root: str = ".") -> Dict[str, str]:
     """Collect entire files as single chunks."""

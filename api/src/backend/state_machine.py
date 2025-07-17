@@ -20,6 +20,7 @@ import uuid
 
 from api.src.backend.db_manager import db_operation, get_db_connection
 from api.src.backend.entities import EvaluationStatus, AgentStatus
+from api.src.utils.config import SCREENING_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ class EvaluationStateMachine:
             current_status = version_row["status"]
             
             # Map current status to enum
-            current_state = self._map_status_to_agent_state(current_status)
+            current_state = AgentStatus.from_string(current_status)
             
             # Skip if already replaced
             if current_state == AgentStatus.replaced:
@@ -286,13 +287,13 @@ class EvaluationStateMachine:
                 return False
             
             # Check if evaluation is in correct state
-            eval_state = self._map_status_to_evaluation_state(eval_info["status"])
+            eval_state = EvaluationStatus.from_string(eval_info["status"])
             if eval_state != EvaluationStatus.waiting:
                 logger.warning(f"Evaluation {evaluation_id} not in QUEUED state: {eval_state}")
                 return False
             
             # Check if agent is in correct state
-            agent_state = self._map_status_to_agent_state(eval_info["agent_status"])
+            agent_state = AgentStatus.from_string(eval_info["agent_status"])
             if agent_state != AgentStatus.awaiting_screening:
                 logger.warning(f"Agent {eval_info['version_id']} not in PENDING_SCREENING state: {agent_state}")
                 return False
@@ -340,7 +341,7 @@ class EvaluationStateMachine:
                 return False
             
             # Check if evaluation is in correct state
-            eval_state = self._map_status_to_evaluation_state(eval_info["status"])
+            eval_state = EvaluationStatus.from_string(eval_info["status"])
             if eval_state != EvaluationStatus.running:
                 logger.warning(f"Evaluation {evaluation_id} not in ASSIGNED state: {eval_state}")
                 return False
@@ -348,18 +349,18 @@ class EvaluationStateMachine:
             # Update evaluation state
             await conn.execute("""
                 UPDATE evaluations 
-                SET status = EvaluationStatus.completed.value, finished_at = NOW(), score = $1
-                WHERE evaluation_id = $2
-            """, score, evaluation_id)
+                SET status = $1, finished_at = NOW(), score = $2
+                WHERE evaluation_id = $3
+            """, EvaluationStatus.completed.value, score, evaluation_id)
             
             # Determine agent's next state based on score
-            if score >= 0.8:
+            if score >= SCREENING_THRESHOLD:
                 # Screening passed - create evaluations for validators
                 await conn.execute("""
                     UPDATE miner_agents 
-                    SET status = EvaluationStatus.waiting.value, score = $1
-                    WHERE version_id = $2
-                """, score, eval_info["version_id"])
+                    SET status = $1, score = $2
+                    WHERE version_id = $3
+                """, AgentStatus.waiting.value, score, eval_info["version_id"])
                 
                 # Create evaluations for all connected validators
                 await self._create_validator_evaluations(conn, eval_info["version_id"])
@@ -377,9 +378,9 @@ class EvaluationStateMachine:
                 # Screening failed
                 await conn.execute("""
                     UPDATE miner_agents 
-                    SET status = AgentStatus.scored.value, score = $1
-                    WHERE version_id = $2
-                """, score, eval_info["version_id"])
+                    SET status = $1, score = $2
+                    WHERE version_id = $3
+                """, AgentStatus.failed_screening.value, score, eval_info["version_id"])
                 
                 next_state = AgentStatus.failed_screening
                 reason = "screening_failed"
@@ -426,7 +427,7 @@ class EvaluationStateMachine:
                 return False
             
             # Check if evaluation is in correct state
-            eval_state = self._map_status_to_evaluation_state(eval_info["status"])
+            eval_state = EvaluationStatus.from_string(eval_info["status"])
             if eval_state != EvaluationStatus.waiting:
                 logger.warning(f"Evaluation {evaluation_id} not in QUEUED state: {eval_state}")
                 return False
@@ -434,18 +435,18 @@ class EvaluationStateMachine:
             # Update evaluation state
             await conn.execute("""
                 UPDATE evaluations 
-                SET status = EvaluationStatus.running.value, started_at = NOW() 
-                WHERE evaluation_id = $1
-            """, evaluation_id)
+                SET status = $1, started_at = NOW() 
+                WHERE evaluation_id = $2
+            """, EvaluationStatus.running.value, evaluation_id)
             
             # Update agent state to evaluating if it's the first evaluation to start
-            agent_state = self._map_status_to_agent_state(eval_info["agent_status"])
+            agent_state = AgentStatus.from_string(eval_info["agent_status"])
             if agent_state == AgentStatus.waiting:
                 await conn.execute("""
                     UPDATE miner_agents 
-                    SET status = AgentStatus.evaluating.value 
-                    WHERE version_id = $1
-                """, eval_info["version_id"])
+                    SET status = $1 
+                    WHERE version_id = $2
+                """, AgentStatus.evaluating.value, eval_info["version_id"])
             
             await self.log_transition(StateTransition(
                 entity_type="evaluation",
@@ -476,7 +477,7 @@ class EvaluationStateMachine:
                 return False
             
             # Check if evaluation is in correct state
-            eval_state = self._map_status_to_evaluation_state(eval_info["status"])
+            eval_state = EvaluationStatus.from_string(eval_info["status"])
             if eval_state != EvaluationStatus.running:
                 logger.warning(f"Evaluation {evaluation_id} not in ASSIGNED state: {eval_state}")
                 return False
@@ -492,16 +493,16 @@ class EvaluationStateMachine:
             # Check if all evaluations are complete for this agent
             still_running = await conn.fetchrow("""
                 SELECT COUNT(*) as count FROM evaluations 
-                WHERE version_id = $1 AND status IN (EvaluationStatus.waiting.value, EvaluationStatus.running.value)
-            """, eval_info["version_id"])
+                WHERE version_id = $1 AND status IN ($2, $3)
+            """, eval_info["version_id"], EvaluationStatus.waiting.value, EvaluationStatus.running.value)
             
             if still_running["count"] == 0:
                 # All evaluations complete - mark agent as scored
                 await conn.execute("""
                     UPDATE miner_agents 
-                    SET status = AgentStatus.scored.value 
-                    WHERE version_id = $1
-                """, eval_info["version_id"])
+                    SET status = $1 
+                    WHERE version_id = $2
+                """, AgentStatus.scored.value, eval_info["version_id"])
                 
                 await self.log_transition(StateTransition(
                     entity_type="agent",
@@ -537,9 +538,9 @@ class EvaluationStateMachine:
                 SELECT e.evaluation_id, e.version_id
                 FROM evaluations e
                 WHERE e.validator_hotkey = $1 
-                AND e.status = EvaluationStatus.running.value
+                AND e.status = $2
                 AND e.validator_hotkey LIKE 'i-0%'
-            """, screener_hotkey)
+            """, screener_hotkey, EvaluationStatus.running.value)
             
             for eval_row in running_evals:
                 evaluation_id = eval_row["evaluation_id"]
@@ -555,9 +556,9 @@ class EvaluationStateMachine:
                 # Reset agent to pending screening
                 await conn.execute("""
                     UPDATE miner_agents 
-                    SET status = AgentStatus.awaiting_screening.value
-                    WHERE version_id = $1
-                """, version_id)
+                    SET status = $1
+                    WHERE version_id = $2
+                """, AgentStatus.awaiting_screening.value, version_id)
                 
                 await self.log_transition(StateTransition(
                     entity_type="evaluation",
@@ -589,9 +590,9 @@ class EvaluationStateMachine:
                 SELECT e.evaluation_id, e.version_id
                 FROM evaluations e
                 WHERE e.validator_hotkey = $1 
-                AND e.status = EvaluationStatus.running.value
+                AND e.status = $2
                 AND e.validator_hotkey NOT LIKE 'i-0%'
-            """, validator_hotkey)
+            """, validator_hotkey, EvaluationStatus.running.value)
             
             for eval_row in running_evals:
                 evaluation_id = eval_row["evaluation_id"]
@@ -607,16 +608,16 @@ class EvaluationStateMachine:
                 # Check if agent should go back to waiting state
                 still_running = await conn.fetchrow("""
                     SELECT COUNT(*) as count FROM evaluations 
-                    WHERE version_id = $1 AND status = EvaluationStatus.running.value
-                """, version_id)
+                    WHERE version_id = $1 AND status = $2
+                """, version_id, EvaluationStatus.running.value)
                 
                 if still_running["count"] == 0:
                     # No more running evaluations - back to waiting
                     await conn.execute("""
                         UPDATE miner_agents 
-                        SET status = EvaluationStatus.waiting.value
-                        WHERE version_id = $1
-                    """, version_id)
+                        SET status = $1
+                        WHERE version_id = $2
+                    """, AgentStatus.waiting.value, version_id)
                 
                 await self.log_transition(StateTransition(
                     entity_type="evaluation",
@@ -650,10 +651,10 @@ class EvaluationStateMachine:
             screening_evals = await conn.fetch("""
                 SELECT e.evaluation_id, e.version_id, e.validator_hotkey
                 FROM evaluations e
-                WHERE e.status = EvaluationStatus.running.value 
+                WHERE e.status = $1 
                 AND e.validator_hotkey LIKE 'i-0%'
-                AND e.started_at < $1
-            """, screening_timeout)
+                AND e.started_at < $2
+            """, EvaluationStatus.running.value, screening_timeout)
             
             for eval_row in screening_evals:
                 await self._timeout_evaluation(conn, eval_row["evaluation_id"], eval_row["version_id"], "screening_timeout")
@@ -663,10 +664,10 @@ class EvaluationStateMachine:
             regular_evals = await conn.fetch("""
                 SELECT e.evaluation_id, e.version_id, e.validator_hotkey
                 FROM evaluations e
-                WHERE e.status = EvaluationStatus.running.value 
+                WHERE e.status = $1 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
-                AND e.started_at < $1
-            """, eval_timeout)
+                AND e.started_at < $2
+            """, EvaluationStatus.running.value, eval_timeout)
             
             for eval_row in regular_evals:
                 await self._timeout_evaluation(conn, eval_row["evaluation_id"], eval_row["version_id"], "evaluation_timeout")
@@ -676,23 +677,23 @@ class EvaluationStateMachine:
         # Update evaluation state
         await conn.execute("""
             UPDATE evaluations 
-            SET status = EvaluationStatus.timedout.value, finished_at = NOW()
-            WHERE evaluation_id = $1
-        """, evaluation_id)
+            SET status = $1, finished_at = NOW()
+            WHERE evaluation_id = $2
+        """, EvaluationStatus.timedout.value, evaluation_id)
         
         # Check if all evaluations are complete for this agent
         still_running = await conn.fetchrow("""
             SELECT COUNT(*) as count FROM evaluations 
-            WHERE version_id = $1 AND status IN (EvaluationStatus.waiting.value, EvaluationStatus.running.value)
-        """, version_id)
+            WHERE version_id = $1 AND status IN ($2, $3)
+        """, version_id, EvaluationStatus.waiting.value, EvaluationStatus.running.value)
         
         if still_running["count"] == 0:
             # All evaluations complete - mark agent as scored
             await conn.execute("""
                 UPDATE miner_agents 
-                SET status = AgentStatus.scored.value 
-                WHERE version_id = $1
-            """, version_id)
+                SET status = $1 
+                WHERE version_id = $2
+            """, AgentStatus.scored.value, version_id)
         
         await self.log_transition(StateTransition(
             entity_type="evaluation",
@@ -710,8 +711,8 @@ class EvaluationStateMachine:
         result = await conn.fetchrow("""
             SELECT COUNT(*) as count FROM evaluations e
             JOIN miner_agents ma ON e.version_id = ma.version_id
-            WHERE ma.miner_hotkey = $1 AND e.status = EvaluationStatus.running.value
-        """, miner_hotkey)
+            WHERE ma.miner_hotkey = $1 AND e.status = $2
+        """, miner_hotkey, EvaluationStatus.running.value)
         return result["count"] > 0
     
     async def _get_available_screener(self) -> Optional[str]:
@@ -741,8 +742,8 @@ class EvaluationStateMachine:
         evaluation_id = str(uuid.uuid4())
         await conn.execute("""
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-            VALUES ($1, $2, $3, EvaluationStatus.waiting.value, NOW())
-        """, evaluation_id, version_id, screener_hotkey)
+            VALUES ($1, $2, $3, $4, NOW())
+        """, evaluation_id, version_id, screener_hotkey, EvaluationStatus.waiting.value)
         return evaluation_id
     
     async def _create_validator_evaluations(self, conn: asyncpg.Connection, version_id: str):
@@ -769,33 +770,10 @@ class EvaluationStateMachine:
             evaluation_id = str(uuid.uuid4())
             await conn.execute("""
                 INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-                VALUES ($1, $2, $3, EvaluationStatus.waiting.value, NOW())
-            """, evaluation_id, version_id, validator_hotkey)
+                VALUES ($1, $2, $3, $4, NOW())
+            """, evaluation_id, version_id, validator_hotkey, EvaluationStatus.waiting.value)
     
-    def _map_status_to_agent_state(self, status: str) -> AgentStatus:
-        """Map database status to agent state enum"""
-        mapping = {
-            "awaiting_screening": AgentStatus.awaiting_screening,
-            "screening": AgentStatus.screening,
-            "failed_screening": AgentStatus.failed_screening,
-            "waiting": AgentStatus.waiting,
-            "evaluating": AgentStatus.evaluating,
-            "scored": AgentStatus.scored,
-            "replaced": AgentStatus.replaced
-        }
-        return mapping.get(status, AgentStatus.awaiting_screening)
-    
-    def _map_status_to_evaluation_state(self, status: str) -> EvaluationStatus:
-        """Map database status to evaluation state enum"""
-        mapping = {
-            "waiting": EvaluationStatus.waiting,
-            "running": EvaluationStatus.running,
-            "completed": EvaluationStatus.completed,
-            "error": EvaluationStatus.error,
-            "timedout": EvaluationStatus.timedout,
-            "replaced": EvaluationStatus.replaced
-        }
-        return mapping.get(status, EvaluationStatus.waiting)
+
     
     async def get_next_screening_evaluation(self, screener_hotkey: str) -> Optional[object]:
         """Get the next screening evaluation for a screener"""

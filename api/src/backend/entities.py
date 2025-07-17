@@ -28,6 +28,20 @@ class AgentStatus(Enum):
     evaluating = "evaluating"               # Currently being evaluated
     scored = "scored"                       # All evaluations complete
     replaced = "replaced"                   # Replaced by newer version
+    
+    @classmethod
+    def from_string(cls, status: str) -> 'AgentStatus':
+        """Map database status string to agent state enum"""
+        mapping = {
+            "awaiting_screening": cls.awaiting_screening,
+            "screening": cls.screening,
+            "failed_screening": cls.failed_screening,
+            "waiting": cls.waiting,
+            "evaluating": cls.evaluating,
+            "scored": cls.scored,
+            "replaced": cls.replaced
+        }
+        return mapping.get(status, cls.awaiting_screening)
 
 class EvaluationStatus(Enum):
     awaiting_screening = "awaiting_screening"
@@ -37,6 +51,20 @@ class EvaluationStatus(Enum):
     replaced = "replaced"
     timedout = "timedout"
     error = "error"
+    
+    @classmethod
+    def from_string(cls, status: str) -> 'EvaluationStatus':
+        """Map database status string to evaluation state enum"""
+        mapping = {
+            "awaiting_screening": cls.awaiting_screening,
+            "waiting": cls.waiting,
+            "running": cls.running,
+            "completed": cls.completed,
+            "error": cls.error,
+            "timedout": cls.timedout,
+            "replaced": cls.replaced
+        }
+        return mapping.get(status, cls.waiting)
 
 class Evaluation(BaseModel):
     evaluation_id: UUID
