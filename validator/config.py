@@ -7,6 +7,7 @@ from fiber import Keypair
 from fiber.chain.chain_utils import load_hotkey_keypair
 
 SCREENER_MODE = os.getenv("SCREENER_MODE", "false") == "true"
+SCREEENING_THRESHOLD = 0.6
 
 # Load validator config from env
 NETUID = int(os.getenv("NETUID", "1"))

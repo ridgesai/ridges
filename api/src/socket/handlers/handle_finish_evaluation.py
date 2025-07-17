@@ -8,6 +8,7 @@ from api.src.backend.queries.scores import check_for_new_high_score
 from api.src.backend.queries.agents import get_agent_by_version_id, set_agent_status
 from loggers.logging_utils import get_logger
 from api.src.utils.slack import send_high_score_notification
+from validator.config import SCREEENING_THRESHOLD
 
 logger = get_logger(__name__)
 
@@ -33,7 +34,7 @@ async def handle_finish_evaluation(
 
             logger.debug(f"Evaluation {evaluation_id} is from a screener. Attempting to update the agent status.")
             evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-            if evaluation.score is not None and evaluation.score >= 0.8:
+            if evaluation.score is not None and evaluation.score >= SCREEENING_THRESHOLD:
                 logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}, meaning they passed the screener. Attempting to create new evaluations.")
                 await ws.create_new_evaluations(evaluation.version_id)
                 logger.debug(f"Successfully created new evaluations.")
