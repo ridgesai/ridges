@@ -271,7 +271,7 @@ async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: st
     return [Evaluation(**dict(row)) for row in result]
 
 @db_operation
-async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id: str) -> list[EvaluationsWithHydratedRuns]:
+async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     evaluation_rows = await conn.fetch("""
         SELECT 
             e.evaluation_id,
@@ -312,9 +312,10 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
             AND er.status != 'cancelled'
         WHERE e.version_id = $1
+        AND ($2::int IS NULL OR e.set_id = $2)
         GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
-    """, version_id)
+    """, version_id, set_id)
     
     evaluations = []
     for row in evaluation_rows:
@@ -360,7 +361,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     return evaluations
 
 @db_operation
-async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedUsageRuns]:
     evaluations: list[EvaluationsWithHydratedUsageRuns] = []
 
     evaluation_rows = await conn.fetch("""
@@ -377,9 +378,10 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 score
             FROM evaluations 
             WHERE version_id = $1
+            AND ($2::int IS NULL OR set_id = $2)
             ORDER BY created_at DESC
         """,
-        version_id
+        version_id, set_id
     )
     
     for evaluation_row in evaluation_rows:
