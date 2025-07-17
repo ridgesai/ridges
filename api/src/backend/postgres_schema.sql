@@ -109,6 +109,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
 DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON evaluations;
 DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
+DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated
 CREATE TRIGGER tr_update_evaluation_score
