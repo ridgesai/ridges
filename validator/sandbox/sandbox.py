@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Dict, Any
+from ddtrace import tracer
 
 import docker
 from docker.models.containers import Container
@@ -33,6 +34,7 @@ PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
+    @tracer.wrap(resource="initialize-sandbox")
     def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path, manager: "SandboxManager"):
         self.evaluation_run = evaluation_run
         self.problem = problem
@@ -45,7 +47,8 @@ class Sandbox:
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
             raise FileNotFoundError("agent.py not found in agent directory")
-    
+
+    @tracer.wrap(resource="run-sandbox")
     async def run(self) -> None:
         """Run the complete sandbox evaluation pipeline"""
         
@@ -73,6 +76,7 @@ class Sandbox:
             self.evaluation_run.solved = False
             await self._send_update()
     
+    @tracer.wrap(resource="send-update")
     async def _send_update(self) -> None:
         """Send evaluation run update"""
         try:
@@ -83,6 +87,7 @@ class Sandbox:
         except Exception as e:
             logger.error(f"Failed to send update: {e}")
     
+    @tracer.wrap(resource="generate-patch")
     async def _generate_patch(self) -> None:
         """Generate patch using agent code"""
         # Setup repository
@@ -162,6 +167,7 @@ class Sandbox:
             # Clean up IO directory after processing results
             shutil.rmtree(io_dir, ignore_errors=True)
     
+    @tracer.wrap(resource="setup-repository")
     async def _setup_repository(self, repo_name: str, base_commit: str) -> Path:
         """Setup repository from cache or clone"""
         cache_key = f"{repo_name.replace('/', '_')}_{base_commit}"
@@ -184,6 +190,7 @@ class Sandbox:
         
         return repo_path
     
+    @tracer.wrap(resource="monitor-container")
     async def _monitor_container(self) -> None:
         """Monitor container execution with resource limits"""
         while True:
@@ -233,6 +240,7 @@ class Sandbox:
         except Exception:
             pass
     
+    @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:
         """Evaluate patch using SWE-bench"""
         # Check if patch applies
@@ -246,6 +254,7 @@ class Sandbox:
         # Run SWE-bench evaluation
         await asyncio.get_event_loop().run_in_executor(None, self._run_swebench_evaluation)
     
+    @tracer.wrap(resource="check-if-patch-applies")
     def _check_patch_applies(self) -> Optional[str]:
         """Test if the patch applies and return error if it doesn't"""
         if not self.evaluation_run.response or not self.evaluation_run.response.strip():
@@ -281,6 +290,7 @@ class Sandbox:
                 pass
             patch_path.unlink(missing_ok=True)
     
+    @tracer.wrap(resource="run-swebench-evaluation")
     def _run_swebench_evaluation(self) -> None:
         """Run SWE-bench evaluation (blocking operation)"""
         instance_id = self.evaluation_run.swebench_instance_id
@@ -336,6 +346,7 @@ class Sandbox:
             self.evaluation_run.error = f"SWE-bench evaluation failed: {str(e)}"
             self.evaluation_run.solved = False
     
+    @tracer.wrap(resource="cleanup-sandbox")
     def cleanup(self) -> None:
         """Clean up sandbox resources"""
         if self.container:
@@ -350,6 +361,7 @@ class Sandbox:
             except Exception:
                 pass
     
+    @tracer.wrap(resource="cancel-sandbox")
     async def cancel(self) -> None:
         """Cancel sandbox execution"""
         self._cancelled.set()

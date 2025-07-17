@@ -5,9 +5,11 @@ from validator.config import SCREENER_MODE
 from loggers.logging_utils import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
 from validator.socket.handle_evaluation_available import handle_evaluation_available
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="handle-message")
 async def handle_message(websocket_app, message: str):
     """Route incoming websocket message to appropriate handler.
 

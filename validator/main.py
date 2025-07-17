@@ -13,6 +13,7 @@ from validator.utils.pre_embed_tasks import generate_embeddings
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES
 from loggers.logging_utils import get_logger
 from pathlib import Path
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
@@ -20,6 +21,7 @@ REPO_EMBEDS_DIR = Path(__file__).parent / 'repo_embeds'
 
 EMBED_VERSION = "1.3"  # Bump this to force regeneration across all validators
 
+@tracer.wrap(resource="check-and-generate-embeddings")
 async def check_and_generate_embeddings():
     tasks = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
     config_hash = hashlib.sha256((str(tasks) + EMBED_VERSION).encode()).hexdigest()

@@ -9,9 +9,11 @@ from validator.config import (
     MAX_MINERS
 )
 import random
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="construct-server-address")
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
     
@@ -24,6 +26,7 @@ async def construct_server_address(node: Node) -> str:
         return f"http://127.0.0.1:{node.port}"
     return f"http://{node.ip}:{node.port}"
 
+@tracer.wrap(resource="get-active-nodes-on-chain")
 def get_active_nodes_on_chain() -> list[Node]:
     """This gets the miners registered as active on chain"""
     try:

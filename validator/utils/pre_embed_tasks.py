@@ -10,6 +10,7 @@ import ast
 from typing import List, NamedTuple
 import tempfile
 import shutil
+from ddtrace import tracer
 
 # Add missing imports
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES
@@ -26,9 +27,11 @@ EMBED_VERSION = "1.2"
 # Initialize logger
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="average-vectors")
 def average_vectors(vectors):
     return [sum(v[i] for v in vectors) / len(vectors) for i in range(len(vectors[0]))]
 
+@tracer.wrap(resource="collect-code-chunks")
 def _collect_code_chunks(repo_dir: Path) -> List[dict]:
     chunks = []
     for root, _, files in os.walk(repo_dir):
@@ -62,6 +65,7 @@ def _collect_code_chunks(repo_dir: Path) -> List[dict]:
                     chunks[-1]['sub_texts'] = sub_texts
     return chunks
 
+@tracer.wrap(resource="generate-embeddings")
 def generate_embeddings():
     client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
     if not client:

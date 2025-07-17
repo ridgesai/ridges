@@ -7,6 +7,7 @@ import json
 from typing import Any, Dict, Optional
 
 import websockets
+from ddtrace import tracer
 
 from validator.utils.get_screener_info import get_screener_info
 from loggers.logging_utils import get_logger
@@ -31,6 +32,7 @@ class WebsocketApp:
         self.evaluation_task = None
         self.authentication_failed = False
 
+    @tracer.wrap(resource="send-websocket-message")
     async def send(self, message: Dict[str, Any]):
         if self.ws is None:
             logger.error("Websocket not connected")
@@ -47,6 +49,7 @@ class WebsocketApp:
                 await self.ws.close()
                 self.ws = None
 
+    @tracer.wrap(resource="cancel-evaluation")
     async def cancel_evaluation(self):
         """Cancel the currently running evaluation if any."""
         if self.evaluation_task and not self.evaluation_task.done():
@@ -64,10 +67,12 @@ class WebsocketApp:
             self.evaluation_running.clear()
             logger.info("Cleared evaluation_running flag")
 
+    @tracer.wrap(resource="handle-websocket-disconnect")
     async def _handle_disconnect(self):
         """Handle websocket disconnection by cancelling running evaluation."""
         await self.cancel_evaluation()
 
+    @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
         logger.info("Shutting down WebsocketApp...")
@@ -82,6 +87,7 @@ class WebsocketApp:
             
         logger.info("WebsocketApp shutdown complete")
 
+    @tracer.wrap(resource="start-websocket-app")
     async def start(self):
         while True:
             try:

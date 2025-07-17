@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
+from ddtrace import tracer
 
 import httpx
 
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="run-evaluation")
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion):
     """Run evaluation for a specific agent version"""
     logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")

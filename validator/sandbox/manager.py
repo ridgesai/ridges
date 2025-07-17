@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import docker
 from docker.models.containers import Container
+from ddtrace import tracer
 
 from validator.config import RIDGES_PROXY_URL
 from validator.sandbox.constants import (
@@ -27,6 +28,7 @@ logger = get_logger(__name__)
 class SandboxManager:
     """Manages sandbox orchestration and Docker infrastructure"""
     
+    @tracer.wrap(resource="initialize-sandbox-manager")
     def __init__(self, websocket_app: "WebsocketApp"):
         self.websocket_app = websocket_app
         
@@ -43,6 +45,7 @@ class SandboxManager:
         self._setup_network()
         self._setup_proxy()
     
+    @tracer.wrap(resource="setup-network-for-sandbox-manager")
     def _setup_network(self) -> None:
         """Setup Docker network and proxy container"""
         # Create network
@@ -57,7 +60,8 @@ class SandboxManager:
             existing.remove(force=True)
         except docker.errors.NotFound:
             pass
-        
+    
+    @tracer.wrap(resource="setup-proxy-for-sandbox-manager")
     def _setup_proxy(self) -> None:
         """Setup proxy container"""
         # Start proxy container
@@ -79,6 +83,7 @@ class SandboxManager:
         network = self.docker.networks.get(SANDBOX_NETWORK_NAME)
         network.connect(self.proxy_container)
     
+    @tracer.wrap(resource="create-sandbox")
     async def create_sandbox(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path) -> Sandbox:
         """Create a new sandbox for evaluation"""
         sandbox = Sandbox(evaluation_run, problem, agent_dir, self)
@@ -90,6 +95,7 @@ class SandboxManager:
         await sandbox._send_update()
         return sandbox
     
+    @tracer.wrap(resource="run-all-sandboxes")
     async def run_all_sandboxes(self) -> None:
         """Run all sandboxes in parallel"""
         async def run_sandbox_with_error_handling(sandbox: Sandbox):
@@ -113,6 +119,7 @@ class SandboxManager:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
     
+    @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
         """Clean up sandbox resources"""
         # Cancel running sandboxes

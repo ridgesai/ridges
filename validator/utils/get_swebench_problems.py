@@ -5,9 +5,11 @@ from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.schema import AgentVersion, SwebenchProblem
 from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
 from loggers.logging_utils import get_logger
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="get-swebench-problems")
 def get_swebench_problems(agent_version: AgentVersion) -> List[SwebenchProblem]:
     """Get evaluation runs for an agent version"""
     try:

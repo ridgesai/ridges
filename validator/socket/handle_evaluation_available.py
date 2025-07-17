@@ -1,9 +1,11 @@
 """Handler for new agent version events."""
 
 from loggers.logging_utils import get_logger
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="handle-evaluation-available")
 async def handle_evaluation_available(websocket_app):
     """Handle evaluation available events.
 

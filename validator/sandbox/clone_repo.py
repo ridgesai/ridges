@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 from typing import Optional
 import time
-
+from ddtrace import tracer
 from git import Repo
 from git.exc import GitCommandError, InvalidGitRepositoryError
 
@@ -10,6 +10,7 @@ from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="clone-repo")
 def clone_repo(path: Path, repo_name: str, base_commit: Optional[str] = None) -> Path:
     try:
         path.mkdir(parents=True, exist_ok=True)

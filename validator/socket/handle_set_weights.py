@@ -1,8 +1,10 @@
 from loggers.logging_utils import get_logger
 from validator.tasks.set_weights import set_weights
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="handle-set-weights")
 async def handle_set_weights(websocket_app, json_message):
     """Handle a `set-weights` websocket event.
 

@@ -3,6 +3,7 @@ from typing import Tuple, List
 
 from fiber import SubstrateInterface
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
+from ddtrace import tracer
 
 from loggers.logging_utils import get_logger
 
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 U32_MAX = 4294967295
 U16_MAX = 65535
 
-
+@tracer.wrap(resource="normalize-max-weight")
 def normalize_max_weight(
         x: np.ndarray, limit: float = 0.1
 ) -> np.ndarray:
@@ -61,7 +62,7 @@ def normalize_max_weight(
 
         return y
 
-
+@tracer.wrap(resource="convert-weights-and-uids-for-emit")
 def convert_weights_and_uids_for_emit(
         uids: np.ndarray, weights: np.ndarray
 ) -> Tuple[List[int], List[int]]:
@@ -129,6 +130,7 @@ def convert_weights_and_uids_for_emit(
     return weight_uids, weight_vals
 
 
+@tracer.wrap(resource="process-weights-for-netuid")
 def process_weights_for_netuid(
         uids,
         weights: np.ndarray,

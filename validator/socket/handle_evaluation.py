@@ -6,9 +6,11 @@ from loggers.logging_utils import get_logger
 from validator.sandbox.schema import AgentVersion
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import SCREENER_MODE, validator_hotkey
+from ddtrace import tracer
 
 logger = get_logger(__name__)
 
+@tracer.wrap(resource="handle-evaluation")
 async def handle_evaluation(websocket_app, json_message):
     """Handle agent version events.
 
