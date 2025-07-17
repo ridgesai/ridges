@@ -80,14 +80,26 @@ async def re_eval_approved(approval_password: str):
         raise HTTPException(status_code=401, detail="Invalid approval password")
     
     try:
+        logger.info("Setting approved agents to awaiting screening")
         agents_to_re_evaluate = await set_approved_agents_to_awaiting_screening()
-
-        while screener_hotkey := await WebSocketManager.get_instance().get_available_screener():
-            await create_next_evaluation_for_screener(screener_hotkey)
         
-        return json.dumps(agents_to_re_evaluate)
+        ws = WebSocketManager.get_instance()
+
+        while screener_hotkey := await ws.get_available_screener():
+            logger.info(f"Creating evaluation for screener {screener_hotkey}")
+            await create_next_evaluation_for_screener(screener_hotkey)
+            # Find the websocket for the validator with the hotkey
+            for websocket, validator_info in ws.clients.items():
+                if validator_info.validator_hotkey == screener_hotkey:
+                    validator_info.status = "busy"
+                    break
+
+            logger.info(f"Finished creating evaluation for screener {screener_hotkey}")
+        
+        return [agent.model_dump(mode='json') for agent in agents_to_re_evaluate]
 
     except Exception as e:
+        logger.error(f"Error creating new evaluations for approved versions: {e}")
         logger.error(f"Error creating new evaluations for approved versions")
         raise HTTPException(status_code=500, detail="Error creating evaluations")
     

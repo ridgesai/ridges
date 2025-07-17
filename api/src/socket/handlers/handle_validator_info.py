@@ -163,6 +163,7 @@ async def handle_validator_info(
                 "evaluation_id": str(evaluation.evaluation_id),
                 "agent_version": miner_agent.model_dump(mode='json')
             }))
+            clients[websocket].status = "busy"
             logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
         
     if not is_screener:

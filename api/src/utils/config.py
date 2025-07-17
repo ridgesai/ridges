@@ -67,4 +67,4 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "sarvamai/sarvam-m": 0.0224
 }
 EMBEDDING_PRICE_PER_SECOND = 0.0001
-SCREENING_THRESHOLD = 0.6
+SCREENING_THRESHOLD = 0.4

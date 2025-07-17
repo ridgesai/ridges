@@ -9,7 +9,6 @@ load_dotenv("validator/.env")
 
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
-from validator.utils.pre_embed_tasks import generate_embeddings
 from loggers.logging_utils import get_logger
 from pathlib import Path
 from ddtrace import tracer

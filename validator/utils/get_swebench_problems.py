@@ -15,6 +15,7 @@ async def get_swebench_problems(evaluation_id: str) -> List[SwebenchProblem]:
     """Get evaluation runs for an agent version"""
     try:
         instance_ids = await get_evaluation_set_instances(evaluation_id)
+        logger.info(f"Instance IDs: {instance_ids}")
         instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", instance_ids)
         
         problems = [SwebenchProblem(
@@ -34,6 +35,6 @@ async def get_swebench_problems(evaluation_id: str) -> List[SwebenchProblem]:
 async def get_evaluation_set_instances(evaluation_id: str) -> List[str]:
     """Get evaluation set instances for a given evaluation_id and eval_type"""
     eval_type = "screener" if SCREENER_MODE else "validator"
-    with httpx.AsyncClient() as client:
-        response = await client.get(f"{RIDGES_API_URL}/evaluation-set", params={"evaluation_id": evaluation_id, "type": eval_type})
+    async with httpx.AsyncClient() as client:
+        response = await client.get(f"{RIDGES_API_URL}/retrieval/evaluation-set", params={"evaluation_id": evaluation_id, "type": eval_type})
         return response.json()

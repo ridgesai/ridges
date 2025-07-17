@@ -55,17 +55,11 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
     latest_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
     latest_set_id = latest_set_id_result['max_set_id'] if latest_set_id_result and latest_set_id_result['max_set_id'] is not None else 0
     
-    try:
-        evaluation = await conn.fetchrow("""
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-            VALUES ($1, $2, $3, $4, $5, NOW())
-            RETURNING *
-        """, str(uuid.uuid4()), version_id, validator_hotkey, latest_set_id, 'waiting')
-    except Exception as e:
-        if "evaluation_non_recent_version" in str(e):
-            logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
-            return None
-        raise
+    evaluation = await conn.fetchrow("""
+        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+        RETURNING *
+    """, str(uuid.uuid4()), version_id, validator_hotkey, latest_set_id, 'waiting')
 
     logger.debug(f"Successfully created evaluation for version {version_id} and validator {validator_hotkey}.")
 
@@ -77,7 +71,7 @@ async def create_next_evaluation_for_screener(validator_hotkey: str) -> Optional
     if not agents_awaiting_screening:
         return None
     
-    evaluation = await create_evaluation(agents_awaiting_screening[0][0], validator_hotkey)
+    evaluation = await create_evaluation(agents_awaiting_screening[0].version_id, validator_hotkey)
     if not evaluation:
         return None
     
@@ -87,19 +81,17 @@ async def create_next_evaluation_for_screener(validator_hotkey: str) -> Optional
 async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> int:
     logger.debug(f"Beginning to create evaluations for validator {validator_hotkey}.")
 
-    logger.debug(f"Fetching recent agent versions from database for validator {validator_hotkey}.")
+    logger.debug(f"Fetching agent versions from database for validator {validator_hotkey}.")
     agents = await conn.fetch(
         "SELECT ma.version_id "
         "FROM miner_agents ma "
-        "WHERE ma.created_at >= NOW() - INTERVAL '24 hours' "
-        "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey AND ma2.created_at >= NOW() - INTERVAL '24 hours') "
-        "AND ma.status = 'evaluating' "
+        "WHERE ma.status = 'evaluating' "
         "ORDER BY ma.created_at DESC"
     )
-    logger.debug(f"Fetched {len(agents)} recent agent versions from database for validator {validator_hotkey}.")
+    logger.debug(f"Fetched {len(agents)} agent versions from database for validator {validator_hotkey}.")
 
     if not agents:
-        logger.debug(f"No recent agent versions found for validator {validator_hotkey}. No evaluations created.")
+        logger.debug(f"No agent versions found for validator {validator_hotkey}. No evaluations created.")
         return 0
     
     # Get the latest set_id
@@ -130,16 +122,10 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         evaluation_id = str(uuid.uuid4())
         logger.debug(f"Created UUID for new evaluation: {evaluation_id}. Inserting new evaluation into database.")
         
-        try:
-            await conn.execute("""
-                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            """, evaluation_id, version_id, validator_hotkey, latest_set_id, 'waiting', datetime.now(timezone.utc))
-        except Exception as e:
-            if "evaluation_non_recent_version" in str(e):
-                logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
-                continue
-            raise
+        await conn.execute("""
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, evaluation_id, version_id, validator_hotkey, latest_set_id, 'waiting', datetime.now(timezone.utc))
         
         logger.debug(f"Successfully inserted new evaluation {evaluation_id} into database.")
         
@@ -261,7 +247,7 @@ async def finish_evaluation(conn: asyncpg.Connection, evaluation_id: str, errore
 async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
     logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score  "
+        "SELECT evaluation_id, version_id, validator_hotkey, set_id, status, terminated_reason, created_at, started_at, finished_at, score  "
         "FROM evaluations WHERE evaluation_id = $1",
         evaluation_id
     )
@@ -277,7 +263,7 @@ async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_i
 @db_operation
 async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: str) -> List[Evaluation]:
     result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE version_id = $1 ORDER BY created_at DESC",
         version_id
     )
@@ -421,7 +407,7 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
 
     result = await conn.fetchrow(
         """
-            SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+            SELECT e.*
             FROM evaluations e
             JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.validator_hotkey = $1
@@ -444,7 +430,7 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
 @db_operation
 async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional[Evaluation]:
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%' "
         "ORDER BY created_at ASC LIMIT 1"
     )
@@ -456,10 +442,7 @@ async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional
 
 @db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
-    result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
-        "FROM evaluations WHERE status = 'running'",
-    )
+    result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'running'")
 
     return [Evaluation(**dict(row)) for row in result]
 
@@ -467,7 +450,7 @@ async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
 async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
-            SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+            SELECT *
             FROM evaluations
             WHERE validator_hotkey = $1 
             AND status = 'running' 
@@ -486,7 +469,7 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
 async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
-        SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+        SELECT e.*
         FROM evaluations e
         JOIN miner_agents ma ON e.version_id = ma.version_id
         WHERE ma.miner_hotkey = $1
@@ -508,7 +491,7 @@ async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner
 async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length: int = 10) -> List[Evaluation]:
     """Get a list of the queued evaluations for a given validator"""
     result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey = $1 "
         "ORDER BY created_at DESC "
         "LIMIT $2",

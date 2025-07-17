@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     status TEXT
 );
 
+-- Legacy cleanup: Drop score column and any related triggers
+ALTER TABLE miner_agents DROP COLUMN IF EXISTS score;
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
+DROP TRIGGER IF EXISTS tr_miner_agent_score_update ON miner_agents;
+DROP TRIGGER IF EXISTS tr_score_update ON miner_agents;
+DROP FUNCTION IF EXISTS update_miner_agent_score() CASCADE;
+
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
     banned_reason TEXT,
@@ -122,26 +129,3 @@ CREATE TRIGGER tr_update_evaluation_score
     FOR EACH ROW
     EXECUTE FUNCTION update_evaluation_score();
 
--- Constraint to prevent evaluations on non-recent agent versions
-CREATE OR REPLACE FUNCTION check_evaluation_recent_version()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM miner_agents ma1
-        WHERE ma1.version_id = NEW.version_id
-        AND ma1.version_num = (
-            SELECT MAX(ma2.version_num) 
-            FROM miner_agents ma2 
-            WHERE ma2.miner_hotkey = ma1.miner_hotkey
-        )
-    ) THEN
-        RAISE EXCEPTION 'evaluation_non_recent_version: Cannot create evaluation for non-recent agent version';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER tr_check_evaluation_recent_version
-    BEFORE INSERT ON evaluations
-    FOR EACH ROW
-    EXECUTE FUNCTION check_evaluation_recent_version();
