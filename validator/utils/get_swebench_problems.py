@@ -1,37 +1,39 @@
 """Utility functions for getting agent evaluation runs"""
 
 from typing import List, Dict, Any
+import httpx
 from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.sandbox.schema import AgentVersion, SwebenchProblem
-from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, SCREENER_MODE
+from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, RIDGES_API_URL, SCREENER_INSTANCES, SCREENER_MODE
 from loggers.logging_utils import get_logger
 from ddtrace import tracer
 
 logger = get_logger(__name__)
 
 @tracer.wrap(resource="get-swebench-problems")
-def get_swebench_problems(agent_version: AgentVersion) -> List[SwebenchProblem]:
+async def get_swebench_problems(evaluation_id: str) -> List[SwebenchProblem]:
     """Get evaluation runs for an agent version"""
     try:
-        if SCREENER_MODE:
-            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", SCREENER_INSTANCES)
-        else:
-            all_instances = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
-            instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", all_instances)
+        instance_ids = await get_evaluation_set_instances(evaluation_id)
+        instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", instance_ids)
         
-        problems: List[SwebenchProblem] = []
-        for instance in instances:
-            problem = SwebenchProblem(
-                instance_id=instance["instance_id"],
-                problem_statement=instance["problem_statement"],
-                repo=instance["repo"],
-                base_commit=instance["base_commit"],
-            )
-            problems.append(problem)
+        problems = [SwebenchProblem(
+            instance_id=instance["instance_id"],
+            problem_statement=instance["problem_statement"],
+            repo=instance["repo"],
+            base_commit=instance["base_commit"],
+        ) for instance in instances]
         
-        logger.info(f"Generated {len(problems)} problems for agent {agent_version.miner_hotkey}")
+        logger.info(f"Generated {len(problems)} problems for evaluation {evaluation_id}")
         return problems
         
     except Exception as e:
-        logger.error(f"Failed to get evaluation runs for agent {agent_version.miner_hotkey}: {e}")
+        logger.error(f"Failed to get evaluation runs for evaluation {evaluation_id}: {e}")
         return [] 
+
+async def get_evaluation_set_instances(evaluation_id: str) -> List[str]:
+    """Get evaluation set instances for a given evaluation_id and eval_type"""
+    eval_type = "screener" if SCREENER_MODE else "validator"
+    with httpx.AsyncClient() as client:
+        response = await client.get(f"{RIDGES_API_URL}/evaluation-set", params={"evaluation_id": evaluation_id, "type": eval_type})
+        return response.json()

@@ -5,7 +5,6 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     agent_name TEXT NOT NULL,
     version_num INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    score FLOAT,
     status TEXT
 );
 
@@ -15,10 +14,18 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_sets (
+    set_id INT NOT NULL,
+    type TEXT NOT NULL, -- validator, screener
+    swebench_instance_id TEXT NOT NULL,
+    PRIMARY KEY (set_id, type, swebench_instance_id)
+);
+
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     validator_hotkey TEXT NOT NULL,
+    set_id INT NOT NULL,
     status TEXT NOT NULL,
     terminated_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL,
@@ -107,8 +114,6 @@ $$ LANGUAGE plpgsql;
 
 -- Drop existing triggers if they exist
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON evaluations;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
 DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated
@@ -116,43 +121,6 @@ CREATE TRIGGER tr_update_evaluation_score
     AFTER INSERT OR UPDATE OF solved ON evaluation_runs
     FOR EACH ROW
     EXECUTE FUNCTION update_evaluation_score();
-
--- Function to update miner agent score when evaluation scores are updated
-CREATE OR REPLACE FUNCTION update_miner_agent_score()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Update the miner agent's score as the average of all completed evaluation scores
-    -- Exclude 0 scores, screener scores, and require at least 2 validators
-    UPDATE miner_agents
-    SET score = (
-        SELECT AVG(e.score)
-        FROM evaluations e
-        WHERE e.version_id = NEW.version_id
-        AND e.status = 'completed'
-        AND e.score IS NOT NULL
-        AND e.score > 0  -- Exclude 0 scores
-        AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- Require at least 2 validators
-    )
-    WHERE version_id = NEW.version_id;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger to update miner agent score when evaluation scores are updated
-CREATE TRIGGER tr_update_miner_agent_score
-    AFTER UPDATE OF score ON evaluations
-    FOR EACH ROW
-    WHEN (OLD.score IS DISTINCT FROM NEW.score)
-    EXECUTE FUNCTION update_miner_agent_score();
-
--- Trigger to update miner agent score when evaluation status changes to completed
-CREATE TRIGGER tr_update_miner_agent_score_on_completion
-    AFTER UPDATE OF status ON evaluations
-    FOR EACH ROW
-    WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'completed')
-    EXECUTE FUNCTION update_miner_agent_score();
 
 -- Constraint to prevent evaluations on non-recent agent versions
 CREATE OR REPLACE FUNCTION check_evaluation_recent_version()

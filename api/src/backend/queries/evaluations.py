@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
+from api.src.backend.queries.agents import get_agents_awaiting_screening
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
+from api.src.backend.queries.evaluations import get_running_evaluation_by_validator_hotkey
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +52,16 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
         AND status = 'waiting'
     """, version_id)
     
+    # Get the latest set_id
+    latest_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    latest_set_id = latest_set_id_result['max_set_id'] if latest_set_id_result and latest_set_id_result['max_set_id'] is not None else 0
+    
     try:
         evaluation = await conn.fetchrow("""
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
             RETURNING *
-        """, str(uuid.uuid4()), version_id, validator_hotkey, 'waiting')
+        """, str(uuid.uuid4()), version_id, validator_hotkey, latest_set_id, 'waiting')
     except Exception as e:
         if "evaluation_non_recent_version" in str(e):
             logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
@@ -66,12 +72,8 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
 
     return Evaluation(**dict(evaluation))
 
-@db_operation
-async def create_next_evaluation_for_screener(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
-    agents_awaiting_screening = await conn.fetch(
-        "SELECT version_id FROM miner_agents WHERE status = 'awaiting_screening' "
-        "ORDER BY created_at ASC LIMIT 1"
-    )
+async def create_next_evaluation_for_screener(validator_hotkey: str) -> Optional[Evaluation]:
+    agents_awaiting_screening = await get_agents_awaiting_screening()
 
     if not agents_awaiting_screening:
         return None
@@ -101,6 +103,10 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         logger.debug(f"No recent agent versions found for validator {validator_hotkey}. No evaluations created.")
         return 0
     
+    # Get the latest set_id
+    latest_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    latest_set_id = latest_set_id_result['max_set_id'] if latest_set_id_result and latest_set_id_result['max_set_id'] is not None else 0
+    
     evaluations_created = 0 
 
     logger.debug(f"Beginning to create evaluations for validator {validator_hotkey}.")
@@ -127,9 +133,9 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         
         try:
             await conn.execute("""
-                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-                VALUES ($1, $2, $3, $4, $5)
-            """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """, evaluation_id, version_id, validator_hotkey, latest_set_id, 'waiting', datetime.now(timezone.utc))
         except Exception as e:
             if "evaluation_non_recent_version" in str(e):
                 logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
