@@ -13,7 +13,6 @@ class MinerAgent(BaseModel):
     agent_name: str
     version_num: int
     created_at: datetime
-    score: Optional[float]
     status: str
 
 class AgentWithHydratedCode(MinerAgent):
@@ -70,6 +69,7 @@ class Evaluation(BaseModel):
     evaluation_id: UUID
     version_id: UUID
     validator_hotkey: str
+    set_id: int
     status: EvaluationStatus
     terminated_reason: Optional[str]
     created_at: datetime

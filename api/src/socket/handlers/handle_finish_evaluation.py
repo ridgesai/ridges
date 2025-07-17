@@ -23,9 +23,13 @@ async def handle_finish_evaluation(
     This uses the state machine to ensure proper state transitions.
     """
     
+    from api.src.socket.websocket_manager import WebSocketManager
+    ws = WebSocketManager.get_instance()
     evaluation_id = response_json["evaluation_id"]
     errored = response_json["errored"]
-    
+
+    ws.clients[websocket].status = "available"
+
     logger.info(f"Validator with hotkey {validator_hotkey} has informed the platform that it has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
@@ -58,6 +62,7 @@ async def handle_finish_evaluation(
                 miner_agent = await get_agent_by_version_id(next_evaluation.version_id)
                 await websocket.send_text(json.dumps({
                     "event": "screen-agent",
+                    "evaluation_id": str(next_evaluation.evaluation_id),
                     "evaluation_id": str(next_evaluation.evaluation_id),
                     "agent_version": miner_agent.model_dump(mode='json')
                 }))

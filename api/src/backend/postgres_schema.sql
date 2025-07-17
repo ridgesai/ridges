@@ -5,9 +5,15 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     agent_name TEXT NOT NULL,
     version_num INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    score FLOAT,
     status TEXT
 );
+
+-- Legacy cleanup: Drop score column and any related triggers
+ALTER TABLE miner_agents DROP COLUMN IF EXISTS score;
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
+DROP TRIGGER IF EXISTS tr_miner_agent_score_update ON miner_agents;
+DROP TRIGGER IF EXISTS tr_score_update ON miner_agents;
+DROP FUNCTION IF EXISTS update_miner_agent_score() CASCADE;
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
@@ -15,10 +21,18 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_sets (
+    set_id INT NOT NULL,
+    type TEXT NOT NULL, -- validator, screener
+    swebench_instance_id TEXT NOT NULL,
+    PRIMARY KEY (set_id, type, swebench_instance_id)
+);
+
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID PRIMARY KEY NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     validator_hotkey TEXT NOT NULL,
+    set_id INT NOT NULL,
     status TEXT NOT NULL,
     terminated_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL,
@@ -107,8 +121,6 @@ $$ LANGUAGE plpgsql;
 
 -- Drop existing triggers if they exist
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON evaluations;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
 DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated

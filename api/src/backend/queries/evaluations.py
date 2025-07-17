@@ -5,6 +5,7 @@ import asyncpg
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
+from api.src.backend.queries.agents import get_agents_awaiting_screening
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
     logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score  "
+        "SELECT evaluation_id, version_id, validator_hotkey, set_id, status, terminated_reason, created_at, started_at, finished_at, score  "
         "FROM evaluations WHERE evaluation_id = $1",
         evaluation_id
     )
@@ -30,7 +31,7 @@ async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_i
 @db_operation
 async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: str) -> List[Evaluation]:
     result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE version_id = $1 ORDER BY created_at DESC",
         version_id
     )
@@ -174,7 +175,7 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
 
     result = await conn.fetchrow(
         """
-            SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+            SELECT e.*
             FROM evaluations e
             JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.validator_hotkey = $1
@@ -197,7 +198,7 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
 @db_operation
 async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional[Evaluation]:
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%' "
         "ORDER BY created_at ASC LIMIT 1"
     )
@@ -209,10 +210,7 @@ async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional
 
 @db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
-    result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
-        "FROM evaluations WHERE status = 'running'",
-    )
+    result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'running'")
 
     return [Evaluation(**dict(row)) for row in result]
 
@@ -220,7 +218,7 @@ async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
 async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
-            SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score
+            SELECT *
             FROM evaluations
             WHERE validator_hotkey = $1 
             AND status = 'running' 
@@ -239,7 +237,7 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
 async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
-        SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+        SELECT e.*
         FROM evaluations e
         JOIN miner_agents ma ON e.version_id = ma.version_id
         WHERE ma.miner_hotkey = $1
@@ -261,7 +259,7 @@ async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner
 async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length: int = 10) -> List[Evaluation]:
     """Get a list of the queued evaluations for a given validator"""
     result = await conn.fetch(
-        "SELECT evaluation_id, version_id, validator_hotkey, status, terminated_reason, created_at, started_at, finished_at, score "
+        "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey = $1 "
         "ORDER BY created_at DESC "
         "LIMIT $2",
