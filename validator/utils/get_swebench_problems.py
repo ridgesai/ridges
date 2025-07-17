@@ -1,10 +1,10 @@
 """Utility functions for getting agent evaluation runs"""
 
-from typing import List, Dict, Any
+from typing import List
 import httpx
 from swebench.harness.run_evaluation import load_swebench_dataset
-from validator.sandbox.schema import AgentVersion, SwebenchProblem
-from validator.config import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, RIDGES_API_URL, SCREENER_INSTANCES, SCREENER_MODE
+from validator.sandbox.schema import SwebenchProblem
+from validator.config import RIDGES_API_URL, SCREENER_MODE
 from loggers.logging_utils import get_logger
 from ddtrace import tracer
 
