@@ -19,7 +19,7 @@ class TimestampFilter(logging.Filter):
         return True
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
@@ -51,5 +51,12 @@ def get_logger(name: str):
     # Add Datadog handler to all loggers if it was created
     if _datadog_handler is not None:
         logger.addHandler(_datadog_handler)
+        logger.setLevel(logging.DEBUG)  # Allow DEBUG messages for this specific logger
+        _datadog_handler.setLevel(logging.DEBUG)
+        
+        # Set all other handlers to INFO level
+        for handler in logger.handlers:
+            if not isinstance(handler, DatadogLogHandler):
+                handler.setLevel(logging.INFO)
     
     return logger
