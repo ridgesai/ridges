@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.src.backend.queries.evaluations import create_next_evaluation_for_screener
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
@@ -80,6 +81,10 @@ async def re_eval_approved(approval_password: str):
     
     try:
         agents_to_re_evaluate = await set_approved_agents_to_awaiting_screening()
+
+        while screener_hotkey := await WebSocketManager.get_instance().get_available_screener():
+            await create_next_evaluation_for_screener(screener_hotkey)
+        
         return json.dumps(agents_to_re_evaluate)
 
     except Exception as e:
