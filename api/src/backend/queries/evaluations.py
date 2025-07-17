@@ -50,11 +50,17 @@ async def create_evaluation(conn: asyncpg.Connection, version_id: str, validator
         AND status = 'waiting'
     """, version_id)
     
-    evaluation = await conn.fetchrow("""
-        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
-        RETURNING *
-    """, str(uuid.uuid4()), version_id, validator_hotkey, 'waiting')
+    try:
+        evaluation = await conn.fetchrow("""
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
+            VALUES ($1, $2, $3, $4, NOW())
+            RETURNING *
+        """, str(uuid.uuid4()), version_id, validator_hotkey, 'waiting')
+    except Exception as e:
+        if "evaluation_non_recent_version" in str(e):
+            logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
+            return None
+        raise
 
     logger.debug(f"Successfully created evaluation for version {version_id} and validator {validator_hotkey}.")
 
@@ -85,7 +91,7 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         "SELECT ma.version_id "
         "FROM miner_agents ma "
         "WHERE ma.created_at >= NOW() - INTERVAL '24 hours' "
-        "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey) "
+        "AND ma.version_num = (SELECT MAX(ma2.version_num) FROM miner_agents ma2 WHERE ma2.miner_hotkey = ma.miner_hotkey AND ma2.created_at >= NOW() - INTERVAL '24 hours') "
         "AND ma.status = 'evaluating' "
         "ORDER BY ma.created_at DESC"
     )
@@ -119,10 +125,16 @@ async def create_evaluations_for_validator(conn: asyncpg.Connection, validator_h
         evaluation_id = str(uuid.uuid4())
         logger.debug(f"Created UUID for new evaluation: {evaluation_id}. Inserting new evaluation into database.")
         
-        await conn.execute("""
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-            VALUES ($1, $2, $3, $4, $5)
-        """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
+        try:
+            await conn.execute("""
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
+                VALUES ($1, $2, $3, $4, $5)
+            """, evaluation_id, version_id, validator_hotkey, 'waiting', datetime.now(timezone.utc))
+        except Exception as e:
+            if "evaluation_non_recent_version" in str(e):
+                logger.warning(f"Attempted to create evaluation for non-recent agent version {version_id} and validator {validator_hotkey}")
+                continue
+            raise
         
         logger.debug(f"Successfully inserted new evaluation {evaluation_id} into database.")
         

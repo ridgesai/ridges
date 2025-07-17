@@ -55,6 +55,8 @@ async def handle_finish_evaluation(
                     "agent_version": miner_agent.model_dump(mode='json')
                 }))
                 logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
+            else:
+                ws.clients[websocket].status = "available" # Mark the screener as available for next screening
         
         # 🆕 NEW: Check for high score after evaluation completes successfully
         if not errored:  # Only check if evaluation completed successfully
