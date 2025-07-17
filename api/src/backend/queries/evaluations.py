@@ -277,6 +277,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             e.evaluation_id,
             e.version_id,
             e.validator_hotkey,
+            e.set_id,
             e.status,
             e.terminated_reason,
             e.created_at,
@@ -311,7 +312,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
             AND er.status != 'cancelled'
         WHERE e.version_id = $1
-        GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+        GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
     """, version_id)
     
@@ -319,7 +320,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     for row in evaluation_rows:
         # Convert JSON objects to EvaluationRun objects
         evaluation_runs = []
-        for run_data in row[9]:  # evaluation_runs is at index 9
+        for run_data in row[10]:  # evaluation_runs is at index 10
             evaluation_run = EvaluationRun(
                 run_id=run_data['run_id'],
                 evaluation_id=run_data['evaluation_id'],
@@ -345,12 +346,13 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             evaluation_id=row[0],
             version_id=row[1],
             validator_hotkey=row[2],
-            status=row[3],
-            terminated_reason=row[4],
-            created_at=row[5],
-            started_at=row[6],
-            finished_at=row[7],
-            score=row[8],
+            set_id=row[3],
+            status=row[4],
+            terminated_reason=row[5],
+            created_at=row[6],
+            started_at=row[7],
+            finished_at=row[8],
+            score=row[9],
             evaluation_runs=evaluation_runs
         )
         evaluations.append(hydrated_evaluation)
@@ -366,6 +368,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 evaluation_id,
                 version_id,
                 validator_hotkey,
+                set_id,
                 status,
                 terminated_reason,
                 created_at,
@@ -384,16 +387,17 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
 
         evaluation_runs = await get_runs_with_usage_for_evaluation(evaluation_id=evaluation_id)
 
-        hydrated_evaluation = EvaluationsWithHydratedRuns(
+        hydrated_evaluation = EvaluationsWithHydratedUsageRuns(
             evaluation_id=evaluation_id,
             version_id=evaluation_row[1],
             validator_hotkey=evaluation_row[2],
-            status=evaluation_row[3],
-            terminated_reason=evaluation_row[4],
-            created_at=evaluation_row[5],
-            started_at=evaluation_row[6],
-            finished_at=evaluation_row[7],
-            score=evaluation_row[8],
+            set_id=evaluation_row[3],
+            status=evaluation_row[4],
+            terminated_reason=evaluation_row[5],
+            created_at=evaluation_row[6],
+            started_at=evaluation_row[7],
+            finished_at=evaluation_row[8],
+            score=evaluation_row[9],
             evaluation_runs=evaluation_runs
         )
 
