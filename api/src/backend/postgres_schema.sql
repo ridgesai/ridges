@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS miner_agents (
 );
 
 -- Legacy cleanup: Drop score column and any related triggers
-ALTER TABLE miner_agents DROP COLUMN IF EXISTS score;
 DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
 DROP TRIGGER IF EXISTS tr_miner_agent_score_update ON miner_agents;
 DROP TRIGGER IF EXISTS tr_score_update ON miner_agents;

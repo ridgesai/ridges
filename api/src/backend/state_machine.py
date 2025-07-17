@@ -20,6 +20,7 @@ import uuid
 
 from api.src.backend.db_manager import db_operation, get_db_connection
 from api.src.backend.entities import EvaluationStatus, AgentStatus
+from api.src.backend.queries.evaluation_sets import get_latest_set_id
 from api.src.utils.config import SCREENING_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -123,6 +124,19 @@ class EvaluationStateMachine:
     """
     The heart of the evaluation system - manages all state transitions
     with atomic operations and perfect error handling.
+    
+    This state machine handles:
+    - Agent lifecycle management (upload → screening → evaluation → scoring)
+    - Evaluation creation and management with proper set IDs
+    - Re-evaluation triggers for both screening and validation
+    - Atomic database operations with rollback on failure
+    - Websocket notifications for real-time updates
+    
+    Key Features:
+    - Singleton pattern ensures system-wide consistency
+    - Evaluation sets integration for reproducible evaluations
+    - Comprehensive state validation and transition logging
+    - Perfect disconnect handling and recovery mechanisms
     """
     
     _instance = None
@@ -740,10 +754,12 @@ class EvaluationStateMachine:
     async def _create_screening_evaluation(self, conn: asyncpg.Connection, version_id: str, screener_hotkey: str):
         """Create screening evaluation for agent"""
         evaluation_id = str(uuid.uuid4())
+        # Get current set_id for screening evaluations
+        current_set_id = await get_latest_set_id()
         await conn.execute("""
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
-        """, evaluation_id, version_id, screener_hotkey, EvaluationStatus.waiting.value)
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+        """, evaluation_id, version_id, screener_hotkey, current_set_id, EvaluationStatus.waiting.value)
         return evaluation_id
     
     async def _create_validator_evaluations(self, conn: asyncpg.Connection, version_id: str):
@@ -751,6 +767,9 @@ class EvaluationStateMachine:
         # Get all connected validators (non-screeners)
         ws_manager = self._get_websocket_manager()
         validators = await ws_manager.get_connected_validators()
+        
+        # Get current set_id for validator evaluations
+        current_set_id = await get_latest_set_id()
         
         for validator_hotkey in validators:
             # Skip screeners
@@ -769,9 +788,9 @@ class EvaluationStateMachine:
             # Create evaluation
             evaluation_id = str(uuid.uuid4())
             await conn.execute("""
-                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, status, created_at)
-                VALUES ($1, $2, $3, $4, NOW())
-            """, evaluation_id, version_id, validator_hotkey, EvaluationStatus.waiting.value)
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+            """, evaluation_id, version_id, validator_hotkey, current_set_id, EvaluationStatus.waiting.value)
     
 
     
@@ -779,6 +798,163 @@ class EvaluationStateMachine:
         """Get the next screening evaluation for a screener"""
         from api.src.backend.queries.evaluations import get_next_evaluation_for_screener
         return await get_next_evaluation_for_screener()
+
+    # ===== RE-EVALUATION TRIGGERS =====
+    
+    async def trigger_re_evaluation(self, version_id: str, evaluation_type: str = "validator") -> bool:
+        """
+        Trigger re-evaluation of a specific agent version.
+        
+        This method allows manual re-evaluation of agents, useful for:
+        - Re-testing agents after evaluation criteria changes
+        - Handling evaluation failures or timeouts
+        - Quality assurance and validation testing
+        
+        The method:
+        1. Validates the agent exists and is in a valid state
+        2. Marks existing evaluations as "replaced" 
+        3. Creates new evaluations with current evaluation set
+        4. Updates agent status appropriately
+        5. Notifies validators/screeners of new work
+        
+        Args:
+            version_id: The version ID to re-evaluate
+            evaluation_type: Either "validator" or "screener" (default: "validator")
+        
+        Returns:
+            bool: True if re-evaluation was triggered successfully
+        
+        Example:
+            # Re-evaluate a specific agent for validation
+            success = await state_machine.trigger_re_evaluation("uuid-123", "validator")
+            
+            # Re-evaluate an agent for screening
+            success = await state_machine.trigger_re_evaluation("uuid-456", "screener")
+        """
+        async with self.atomic_transaction() as conn:
+            # Validate the agent exists and is in a valid state for re-evaluation
+            agent = await conn.fetchrow("""
+                SELECT version_id, miner_hotkey, agent_name, status
+                FROM miner_agents 
+                WHERE version_id = $1
+            """, version_id)
+            
+            if not agent:
+                logger.warning(f"Agent {version_id} not found for re-evaluation")
+                return False
+            
+            # Check if agent is in a valid state for re-evaluation
+            valid_states = {AgentStatus.scored.value, AgentStatus.failed_screening.value, AgentStatus.waiting.value}
+            if agent["status"] not in valid_states:
+                logger.warning(f"Agent {version_id} is in invalid state {agent['status']} for re-evaluation")
+                return False
+            
+            # Mark existing evaluations as replaced
+            await conn.execute("""
+                UPDATE evaluations 
+                SET status = $1, terminated_reason = $2
+                WHERE version_id = $3 AND status IN ($4, $5, $6)
+            """, EvaluationStatus.replaced.value, "re_evaluation_triggered", version_id, 
+                EvaluationStatus.waiting.value, EvaluationStatus.running.value, EvaluationStatus.completed.value)
+            
+            if evaluation_type == "screener":
+                # Create new screening evaluation
+                screener_hotkey = await self._get_available_screener()
+                if screener_hotkey:
+                    await self._create_screening_evaluation(conn, version_id, screener_hotkey)
+                    
+                    # Update agent status to awaiting screening
+                    await conn.execute("""
+                        UPDATE miner_agents 
+                        SET status = $1
+                        WHERE version_id = $2
+                    """, AgentStatus.awaiting_screening.value, version_id)
+                    
+                    # Notify screener
+                    ws_manager = self._get_websocket_manager()
+                    await ws_manager.send_to_validator(screener_hotkey, {
+                        "type": "screen-agent",
+                        "version_id": version_id
+                    })
+                    
+            else:  # validator re-evaluation
+                # Create new validator evaluations
+                await self._create_validator_evaluations(conn, version_id)
+                
+                # Update agent status to waiting
+                await conn.execute("""
+                    UPDATE miner_agents 
+                    SET status = $1
+                    WHERE version_id = $2
+                """, AgentStatus.waiting.value, version_id)
+                
+                # Notify validators
+                ws_manager = self._get_websocket_manager()
+                await ws_manager.broadcast_to_validators({
+                    "type": "evaluation-available",
+                    "version_id": version_id
+                })
+            
+            await self.log_transition(StateTransition(
+                entity_type="agent",
+                entity_id=version_id,
+                from_state=agent["status"],
+                to_state=AgentStatus.awaiting_screening.value if evaluation_type == "screener" else AgentStatus.waiting.value,
+                timestamp=datetime.now(timezone.utc),
+                reason="re_evaluation_triggered",
+                metadata={"evaluation_type": evaluation_type}
+            ))
+            
+            logger.info(f"Re-evaluation triggered for agent {version_id} (type: {evaluation_type})")
+            return True
+    
+    async def trigger_bulk_re_evaluation(self, miner_hotkey: str = None, evaluation_type: str = "validator") -> int:
+        """
+        Trigger re-evaluation for multiple agents at once.
+        
+        This is useful for:
+        - Re-evaluating all agents after system updates
+        - Batch processing after evaluation criteria changes
+        - Miner-specific re-evaluation campaigns
+        
+        Args:
+            miner_hotkey: Optional miner hotkey to filter by specific miner.
+                         If None, re-evaluates all eligible agents.
+            evaluation_type: Either "validator" or "screener" (default: "validator")
+        
+        Returns:
+            int: Number of agents re-evaluation was triggered for
+        
+        Example:
+            # Re-evaluate all agents
+            count = await state_machine.trigger_bulk_re_evaluation()
+            
+            # Re-evaluate all agents from a specific miner
+            count = await state_machine.trigger_bulk_re_evaluation("miner-hotkey-123")
+        """
+        async with self.atomic_transaction() as conn:
+            # Get agents to re-evaluate
+            query = """
+                SELECT version_id, miner_hotkey, agent_name, status
+                FROM miner_agents 
+                WHERE status IN ($1, $2, $3)
+            """
+            params = [AgentStatus.scored.value, AgentStatus.failed_screening.value, AgentStatus.waiting.value]
+            
+            if miner_hotkey:
+                query += " AND miner_hotkey = $4"
+                params.append(miner_hotkey)
+            
+            agents = await conn.fetch(query, *params)
+            
+            count = 0
+            for agent in agents:
+                success = await self.trigger_re_evaluation(agent["version_id"], evaluation_type)
+                if success:
+                    count += 1
+            
+            logger.info(f"Bulk re-evaluation triggered for {count} agents (type: {evaluation_type})")
+            return count
 
 
 # Global state machine instance - singleton
