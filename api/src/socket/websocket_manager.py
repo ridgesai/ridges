@@ -270,6 +270,9 @@ class WebSocketManager:
                 "evaluation_id": str(evaluation_id),
                 "agent_version": miner_agent.model_dump(mode='json')
             }))
+
+            self.clients[websocket].status = "busy"
+
             logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
 
             return str(evaluation_id)

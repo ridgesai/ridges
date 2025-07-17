@@ -18,17 +18,30 @@ TOP_AGENTS_DIR = API_DIR / "top"
 @db_operation
 async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int = 5) -> List[str]:
     """
-    Get top approved version IDs by score from approved_version_ids joined with miner_agents.
+    Get top approved version IDs by computed score from max set_id.
     Returns the actual TOP agents by score, not just the first approved ones.
     """
+    # First, get the maximum set_id
+    max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    if not max_set_id_result or max_set_id_result['max_set_id'] is None:
+        return []
+    
+    max_set_id = max_set_id_result['max_set_id']
+    
     results = await conn.fetch("""
-        SELECT avi.version_id, ma.score
+        SELECT avi.version_id, AVG(e.score) as computed_score
         FROM approved_version_ids avi
-        JOIN miner_agents ma ON avi.version_id = ma.version_id
-        WHERE ma.score IS NOT NULL
-        ORDER BY ma.score DESC
-        LIMIT $1;
-    """, num_agents)
+        JOIN evaluations e ON avi.version_id = e.version_id
+        WHERE e.status = 'completed'
+          AND e.score IS NOT NULL
+          AND e.score > 0
+          AND e.set_id = $1  -- Only use max set_id
+          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
+        GROUP BY avi.version_id
+        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY AVG(e.score) DESC
+        LIMIT $2;
+    """, max_set_id, num_agents)
 
     return [str(row['version_id']) for row in results]
 
@@ -235,21 +248,37 @@ async def test_update():
     
     try:
         # Debug: Check what's in approved_version_ids
-        print("\n=== DEBUG: Getting TOP 5 approved agents by SCORE ===")
+        print("\n=== DEBUG: Getting TOP 5 approved agents by COMPUTED SCORE from MAX SET_ID ===")
         async with new_db.acquire() as conn:
-            # Get the top 5 approved agents by score
-            top_agents = await conn.fetch("""
-                SELECT avi.version_id, ma.score, ma.miner_hotkey
-                FROM approved_version_ids avi
-                JOIN miner_agents ma ON avi.version_id = ma.version_id
-                WHERE ma.score IS NOT NULL
-                ORDER BY ma.score DESC
-                LIMIT 5;
-            """)
+            # First get max set_id
+            max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+            if not max_set_id_result or max_set_id_result['max_set_id'] is None:
+                print("No evaluation sets found")
+                return
             
-            print(f"TOP 5 approved agents by score:")
+            max_set_id = max_set_id_result['max_set_id']
+            print(f"Using max set_id: {max_set_id}")
+            
+            # Get the top 5 approved agents by computed score from max set_id
+            top_agents = await conn.fetch("""
+                SELECT avi.version_id, AVG(e.score) as computed_score, ma.miner_hotkey
+                FROM approved_version_ids avi
+                JOIN evaluations e ON avi.version_id = e.version_id
+                JOIN miner_agents ma ON avi.version_id = ma.version_id
+                WHERE e.status = 'completed'
+                  AND e.score IS NOT NULL
+                  AND e.score > 0
+                  AND e.set_id = $1  -- Only use max set_id
+                  AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
+                GROUP BY avi.version_id, ma.miner_hotkey
+                HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+                ORDER BY AVG(e.score) DESC
+                LIMIT 5;
+            """, max_set_id)
+            
+            print(f"TOP 5 approved agents by computed score:")
             for i, row in enumerate(top_agents, 1):
-                print(f"  Rank {i}: {row['version_id']} (score: {row['score']:.4f}, hotkey: {row['miner_hotkey']})")
+                print(f"  Rank {i}: {row['version_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']})")
             
             # Also check total approved agents
             total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_version_ids")

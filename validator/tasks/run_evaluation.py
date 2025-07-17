@@ -13,6 +13,8 @@ import httpx
 from validator.config import RIDGES_API_URL, SCREENER_MODE, validator_hotkey
 from validator.sandbox.manager import SandboxManager
 from validator.sandbox.schema import AgentVersion, EvaluationRun
+from validator.sandbox.constants import AGENTS_BASE_DIR
+from validator.utils.get_swebench_problems import get_swebench_problems
 from loggers.logging_utils import get_logger
 
 if TYPE_CHECKING:
@@ -31,11 +33,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     try:
         await websocket_app.send({"event": "start-evaluation", "evaluation_id": evaluation_id})
         
-        # Get problems and create agent directory
-        from validator.sandbox.constants import AGENTS_BASE_DIR
-        from validator.utils.get_swebench_problems import get_swebench_problems
-        
-        problems = get_swebench_problems(agent_version)
+        problems = await get_swebench_problems(evaluation_id)
         if not problems:
             logger.warning(f"No problems found for agent {agent_version.miner_hotkey}")
             return

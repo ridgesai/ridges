@@ -14,39 +14,74 @@ async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
     Get 24-hour statistics for miner agents including count, recent iterations, 
     top score, and daily improvement metrics
     """
-    result = await conn.fetchrow("""
-        SELECT
-            COUNT(*) as number_of_agents,
-            COUNT(CASE WHEN created_at >= NOW() - INTERVAL '24 hours' THEN 1 END) as agent_iterations_last_24_hours,
-            MAX(score) as top_agent_score,
-            MAX(score) - COALESCE(
-                (SELECT MAX(ma.score)
-                FROM miner_agents ma
-                JOIN approved_version_ids av ON ma.version_id = av.version_id
-                WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                ), 0
-            ) as daily_score_improvement
-        FROM miner_agents
-        WHERE miner_hotkey NOT IN (
-            SELECT miner_hotkey
-            FROM banned_hotkeys
-        );
-    """)
+    # Get current statistics based on computed scores from max set_id
+    max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    max_set_id = max_set_id_result['max_set_id'] if max_set_id_result else None
     
-    if result is None:
-        return {
-            'number_of_agents': 0,
-            'agent_iterations_last_24_hours': 0,
+    if max_set_id is None:
+        # No evaluation sets exist yet
+        total_agents = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)")
+        recent_agents = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '24 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)")
+        
+        result = {
+            'number_of_agents': total_agents or 0,
+            'agent_iterations_last_24_hours': recent_agents or 0,
             'top_agent_score': None,
             'daily_score_improvement': 0
         }
-    
-    return {
-        'number_of_agents': result['number_of_agents'],
-        'agent_iterations_last_24_hours': result['agent_iterations_last_24_hours'],
-        'top_agent_score': result['top_agent_score'],
-        'daily_score_improvement': result['daily_score_improvement']
-    }
+    else:
+        result = await conn.fetchrow("""
+            WITH agent_scores AS (
+                SELECT 
+                    ma.miner_hotkey,
+                    ma.created_at,
+                    AVG(e.score) as computed_score
+                FROM miner_agents ma
+                JOIN evaluations e ON ma.version_id = e.version_id
+                WHERE e.status = 'completed'
+                  AND e.score IS NOT NULL
+                  AND e.score > 0
+                  AND e.set_id = $1  -- Only use max set_id
+                  AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
+                  AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                GROUP BY ma.miner_hotkey, ma.created_at, ma.version_id
+                HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+            ),
+            approved_scores AS (
+                SELECT AVG(e.score) as computed_score
+                FROM approved_version_ids avi
+                JOIN evaluations e ON avi.version_id = e.version_id
+                JOIN miner_agents ma ON avi.version_id = ma.version_id
+                WHERE e.status = 'completed'
+                  AND e.score IS NOT NULL
+                  AND e.score > 0
+                  AND e.set_id = $1
+                  AND e.validator_hotkey NOT LIKE 'i-0%'
+                  AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                GROUP BY e.version_id
+                HAVING COUNT(DISTINCT e.validator_hotkey) >= 2
+            )
+            SELECT
+                (SELECT COUNT(DISTINCT miner_hotkey) FROM miner_agents WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as number_of_agents,
+                (SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '24 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as agent_iterations_last_24_hours,
+                (SELECT MAX(computed_score) FROM agent_scores) as top_agent_score,
+                COALESCE((SELECT MAX(computed_score) FROM agent_scores) - (SELECT MAX(computed_score) FROM approved_scores), 0) as daily_score_improvement;
+                 """, max_set_id)
+        
+        if result is None:
+            return {
+                'number_of_agents': 0,
+                'agent_iterations_last_24_hours': 0,
+                'top_agent_score': None,
+                'daily_score_improvement': 0
+            }
+
+        return {
+            'number_of_agents': result['number_of_agents'],
+            'agent_iterations_last_24_hours': result['agent_iterations_last_24_hours'],
+            'top_agent_score': result['top_agent_score'],
+            'daily_score_improvement': result['daily_score_improvement']
+        }
 
 class RunningEvaluation(BaseModel):
     version_id: UUID
@@ -68,28 +103,42 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
     return [RunningEvaluation(**dict(row)) for row in results]
 
 @db_operation
-async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[MinerAgent]:
+async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[dict]:
+    """Get top agents based on scores from the maximum set_id only"""
+    
+    # First, get the maximum set_id
+    max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    if not max_set_id_result or max_set_id_result['max_set_id'] is None:
+        return []
+    
+    max_set_id = max_set_id_result['max_set_id']
+    
+    # Get top agents based on scores from max set_id only
     results = await conn.fetch("""
         SELECT
-            version_id,
-            miner_hotkey,
-            agent_name,
-            version_num,
-            created_at,
-            score,
-            status
-        FROM miner_agents
-        WHERE score IS NOT NULL
-        AND miner_hotkey NOT IN (
-            SELECT miner_hotkey
-            FROM banned_hotkeys
-            )
-        AND score > 0
-        ORDER BY score DESC
-        LIMIT $1;
-    """, num_agents)
+            ma.version_id,
+            ma.miner_hotkey,
+            ma.agent_name,
+            ma.version_num,
+            ma.created_at,
+            ma.status,
+            AVG(e.score) AS computed_score,
+            e.set_id
+        FROM miner_agents ma
+        JOIN evaluations e ON ma.version_id = e.version_id
+        WHERE e.status = 'completed'
+          AND e.score IS NOT NULL
+          AND e.score > 0
+          AND e.set_id = $1  -- Only use max set_id
+          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
+          AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        GROUP BY ma.version_id, ma.miner_hotkey, ma.agent_name, ma.version_num, ma.created_at, ma.status, e.set_id
+        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY AVG(e.score) DESC, ma.created_at ASC
+        LIMIT $2;
+    """, max_set_id, num_agents)
 
-    return [MinerAgent(**dict(row)) for row in results]
+    return [dict(row) for row in results]
 
 @db_operation
 async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> list[MinerAgent]:
@@ -100,13 +149,42 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
             agent_name,
             version_num,
             created_at,
-            score,
             status
         from miner_agents where miner_hotkey = $1 order by created_at desc;
     """, miner_hotkey)
 
     
     return [MinerAgent(**dict(row)) for row in results]
+
+@db_operation
+async def get_agents_with_scores_by_set_id(conn: asyncpg.Connection, num_agents: int = 10) -> list[dict]:
+    """Get agents with their computed scores grouped by set_id"""
+    
+    results = await conn.fetch("""
+        SELECT
+            ma.version_id,
+            ma.miner_hotkey,
+            ma.agent_name,
+            ma.version_num,
+            ma.created_at,
+            ma.status,
+            e.set_id,
+            AVG(e.score) AS computed_score,
+            COUNT(DISTINCT e.validator_hotkey) AS num_validators
+        FROM miner_agents ma
+        JOIN evaluations e ON ma.version_id = e.version_id
+        WHERE e.status = 'completed'
+          AND e.score IS NOT NULL
+          AND e.score > 0
+          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
+          AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        GROUP BY ma.version_id, ma.miner_hotkey, ma.agent_name, ma.version_num, ma.created_at, ma.status, e.set_id
+        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY e.set_id DESC, AVG(e.score) DESC, ma.created_at ASC
+        LIMIT $1;
+    """, num_agents)
+
+    return [dict(row) for row in results]
 
 class QueuePositionPerValidator(BaseModel): 
     validator_hotkey: str

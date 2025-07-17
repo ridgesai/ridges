@@ -1,13 +1,15 @@
 import asyncio
+import json
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.src.backend.queries.evaluations import create_next_evaluation_for_screener
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
-from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version
+from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version, set_approved_agents_to_awaiting_screening
 
 load_dotenv()
 
@@ -68,6 +70,38 @@ async def approve_version(version_id: str, approval_password: str):
     except Exception as e:
         logger.error(f"Error approving version {version_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
+
+async def re_eval_approved(approval_password: str):
+    """
+    Re-evaluate approved agents with the newest evaluation set
+    by setting the miner_agents status to "awaiting_screening"
+    """
+    if approval_password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid approval password")
+    
+    try:
+        logger.info("Setting approved agents to awaiting screening")
+        agents_to_re_evaluate = await set_approved_agents_to_awaiting_screening()
+        
+        ws = WebSocketManager.get_instance()
+
+        while screener_hotkey := await ws.get_available_screener():
+            logger.info(f"Creating evaluation for screener {screener_hotkey}")
+            await create_next_evaluation_for_screener(screener_hotkey)
+            # Find the websocket for the validator with the hotkey
+            for websocket, validator_info in ws.clients.items():
+                if validator_info.validator_hotkey == screener_hotkey:
+                    validator_info.status = "busy"
+                    break
+
+            logger.info(f"Finished creating evaluation for screener {screener_hotkey}")
+        
+        return [agent.model_dump(mode='json') for agent in agents_to_re_evaluate]
+
+    except Exception as e:
+        logger.error(f"Error creating new evaluations for approved versions: {e}")
+        logger.error(f"Error creating new evaluations for approved versions")
+        raise HTTPException(status_code=500, detail="Error creating evaluations")
     
 router = APIRouter()
 
@@ -76,6 +110,7 @@ routes = [
     ("/ban-agent", ban_agent, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
+    ("/re-eval-approved", re_eval_approved, ["POST"])
 ]
 
 for path, endpoint, methods in routes:

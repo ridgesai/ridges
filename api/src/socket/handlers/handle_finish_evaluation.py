@@ -19,9 +19,13 @@ async def handle_finish_evaluation(
 ) -> Dict[str, Any]:
     """Handle finish-evaluation message from a validator"""
     
+    from api.src.socket.websocket_manager import WebSocketManager
+    ws = WebSocketManager.get_instance()
     evaluation_id = response_json["evaluation_id"]
     errored = response_json["errored"]
-    
+
+    ws.clients[websocket].status = "available"
+
     logger.info(f"Validator with hotkey {validator_hotkey} has informed the platform that it has finished an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
     
     try:
@@ -29,33 +33,32 @@ async def handle_finish_evaluation(
         is_screener = evaluation.validator_hotkey.startswith("i-0")
 
         if is_screener:
-            from api.src.socket.websocket_manager import WebSocketManager
-            ws = WebSocketManager.get_instance()
 
             logger.debug(f"Evaluation {evaluation_id} is from a screener. Attempting to update the agent status.")
-            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-            if evaluation.score is not None and evaluation.score >= SCREENING_THRESHOLD:
-                logger.debug(f"Evaluation {evaluation_id} has a score of {evaluation.score}, meaning they passed the screener. Attempting to create new evaluations.")
-                await ws.create_new_evaluations(evaluation.version_id)
+            current_evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+            if current_evaluation.score is not None and current_evaluation.score >= SCREENING_THRESHOLD:
+                logger.debug(f"Evaluation {evaluation_id} has a score of {current_evaluation.score}, meaning they passed the screener. Attempting to create new evaluations.")
+                await ws.create_new_evaluations(current_evaluation.version_id)
                 logger.debug(f"Successfully created new evaluations.")
 
                 logger.debug(f"Attempting to update the agent status to waiting.")
-                await set_agent_status(evaluation.version_id, "waiting")
+                await set_agent_status(current_evaluation.version_id, "waiting")
                 logger.debug(f"Successfully updated the agent status to waiting.")
             else:
-                logger.debug(f"Evaluation {evaluation_id} failed screening with a score of {evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
-                await set_agent_status(evaluation.version_id, "scored")
+                logger.debug(f"Evaluation {evaluation_id} failed screening with a score of {current_evaluation.score}. There will be no new evaluations created. Attempting to update the agent status to scored.")
+                await set_agent_status(current_evaluation.version_id, "scored")
 
-            evaluation = await create_next_evaluation_for_screener(validator_hotkey)
-            if evaluation:
-                logger.info(f"Sending screener {validator_hotkey} evaluation {evaluation.evaluation_id} to screener {validator_hotkey}")
-                miner_agent = await get_agent_by_version_id(evaluation.version_id)
+            next_evaluation = await create_next_evaluation_for_screener(validator_hotkey)
+            if next_evaluation:
+                logger.info(f"Sending screener {validator_hotkey} evaluation {next_evaluation.evaluation_id} to screener {validator_hotkey}")
+                miner_agent = await get_agent_by_version_id(next_evaluation.version_id)
                 await websocket.send_text(json.dumps({
                     "event": "screen-agent",
-                    "evaluation_id": str(evaluation.evaluation_id),
+                    "evaluation_id": str(next_evaluation.evaluation_id),
                     "agent_version": miner_agent.model_dump(mode='json')
                 }))
-                logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
+                ws.clients[validator_hotkey].status = "busy"
+                logger.info(f"Successfully sent evaluation {next_evaluation.evaluation_id} to validator {validator_hotkey}")
             else:
                 ws.clients[websocket].status = "available" # Mark the screener as available for next screening
         

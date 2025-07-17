@@ -13,11 +13,14 @@ class MinerAgent(BaseModel):
     agent_name: str
     version_num: int
     created_at: datetime
-    score: Optional[float]
     status: str
 
 class AgentWithHydratedCode(MinerAgent):
     code: str
+
+class MinerAgentWithScores(MinerAgent):
+    """MinerAgent with computed scores by set_id"""
+    scores_by_set_id: dict[int, float]
 
 class EvaluationStatus(Enum):
     awaiting_screening = "awaiting_screening"
@@ -32,6 +35,7 @@ class Evaluation(BaseModel):
     evaluation_id: UUID
     version_id: UUID
     validator_hotkey: str
+    set_id: int
     status: EvaluationStatus
     terminated_reason: Optional[str]
     created_at: datetime
