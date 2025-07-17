@@ -7,7 +7,7 @@ import os
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import check_eval_running_for_hotkey, check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_available_screener, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, store_agent_in_db, upload_agent_code_to_s3
+from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, store_agent_in_db, upload_agent_code_to_s3
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
@@ -72,14 +72,10 @@ async def post_agent(
         check_agent_code(file_content)
 
         async with lock:
-            await check_eval_running_for_hotkey(miner_hotkey)
-            if prod: available_screener = await get_available_screener()
+            # The state machine handles all the evaluation checking and screener assignment
             version_id = await store_agent_in_db(miner_hotkey, name, latest_agent)
             await upload_agent_code_to_s3(version_id, agent_file)
-            if prod:
-                await ws.create_pre_evaluation(available_screener, version_id)
-            else:
-                await ws.create_new_evaluations(version_id)
+            # State machine has already handled screening assignment and notifications
 
         logger.info(f"Successfully uploaded agent {version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")

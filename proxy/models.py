@@ -4,14 +4,7 @@ from uuid import UUID
 from datetime import datetime
 
 from pydantic import BaseModel, Field
-
-class SandboxStatus(str, Enum):
-    """Enum for sandbox status values"""
-    started = "started"
-    sandbox_created = "sandbox_created"
-    patch_generated = "patch_generated"
-    eval_started = "eval_started"
-    result_scored = "result_scored"
+from api.src.backend.entities import SandboxStatus
 
 class EvaluationRun(BaseModel):
     """Model for evaluation run data"""

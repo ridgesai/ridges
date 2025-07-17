@@ -10,22 +10,6 @@ from loggers.logging_utils import get_logger
 logger = get_logger(__name__)
 
 @db_operation
-async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
-    try:
-        await conn.execute("""
-            INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, score, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (version_id) DO UPDATE 
-            SET agent_name = EXCLUDED.agent_name,
-                score = EXCLUDED.score,
-                version_num = EXCLUDED.version_num
-        """, agent.version_id, agent.miner_hotkey, agent.agent_name, agent.version_num, agent.created_at, agent.score, agent.status)
-
-        return True
-    except:
-        return False
-    
-@db_operation
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
         "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, score, status "
@@ -186,15 +170,3 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
         logger.error(f"Failed to update top agents cache after approval: {e}")
         # Don't fail the approval if cache update fails
 
-@db_operation
-async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: str):
-    await conn.execute("""
-        UPDATE miner_agents SET status = $1 WHERE version_id = $2
-    """, status, version_id)
-
-@db_operation
-async def set_screening_to_awaiting(conn: asyncpg.Connection):
-    await conn.execute("""
-        UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'
-    """)
-    

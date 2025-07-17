@@ -7,7 +7,7 @@ from fastapi import WebSocket
 from fiber import Keypair
 
 from api.src.backend.queries.agents import get_agent_by_version_id
-from api.src.backend.queries.evaluations import create_evaluations_for_validator, create_next_evaluation_for_screener, get_next_evaluation_for_validator, get_queue_info
+from api.src.backend.queries.evaluations import get_next_evaluation_for_validator, get_queue_info
 from loggers.logging_utils import get_logger
 from api.src.utils.validator_auth import is_validator_registered
 from api.src.backend.entities import ValidatorInfo
@@ -151,10 +151,11 @@ async def handle_validator_info(
     
     logger.info(f"Validator {validator_hotkey} has been authenticated and connected. Version commit hash: {version_commit_hash}")
 
-    # Create evaluations for the validator
+    # Check for available evaluations
     if is_screener:
         logger.info(f"Screener {validator_hotkey} has connected. Checking if there are agents awaiting screening.")
-        evaluation = await create_next_evaluation_for_screener(validator_hotkey)
+        from api.src.backend.queries.evaluations import get_next_evaluation_for_screener
+        evaluation = await get_next_evaluation_for_screener()
         if evaluation:
             logger.info(f"Sending screener {validator_hotkey} evaluation {evaluation.evaluation_id} to screener {validator_hotkey}")
             miner_agent = await get_agent_by_version_id(evaluation.version_id)
@@ -166,11 +167,6 @@ async def handle_validator_info(
             logger.info(f"Successfully sent evaluation {evaluation.evaluation_id} to validator {validator_hotkey}")
         
     if not is_screener:
-        try:
-            await create_evaluations_for_validator(validator_hotkey)
-        except Exception as e:
-            logger.error(f"Failed to create evaluations for validator {validator_hotkey}: {e}")
-
         # Check if there's a next evaluation available
         next_evaluation = await get_next_evaluation_for_validator(validator_hotkey)
         if next_evaluation:

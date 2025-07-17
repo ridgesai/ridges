@@ -112,6 +112,7 @@ DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
 DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated
+DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
 CREATE TRIGGER tr_update_evaluation_score
     AFTER INSERT OR UPDATE OF solved ON evaluation_runs
     FOR EACH ROW
@@ -141,6 +142,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to update miner agent score when evaluation scores are updated
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON evaluations;
 CREATE TRIGGER tr_update_miner_agent_score
     AFTER UPDATE OF score ON evaluations
     FOR EACH ROW
@@ -148,6 +150,7 @@ CREATE TRIGGER tr_update_miner_agent_score
     EXECUTE FUNCTION update_miner_agent_score();
 
 -- Trigger to update miner agent score when evaluation status changes to completed
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
 CREATE TRIGGER tr_update_miner_agent_score_on_completion
     AFTER UPDATE OF status ON evaluations
     FOR EACH ROW
@@ -173,6 +176,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
 CREATE TRIGGER tr_check_evaluation_recent_version
     BEFORE INSERT ON evaluations
     FOR EACH ROW

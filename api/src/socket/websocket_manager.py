@@ -1,18 +1,12 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.backend.queries.agents import get_agent_by_version_id
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import ValidatorInfo
-from api.src.backend.queries.evaluations import (
-    cancel_screening_evaluation,
-    create_evaluation,
-    get_running_evaluation_by_validator_hotkey,
-    reset_evaluation,
-)
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
 
@@ -112,16 +106,15 @@ class WebSocketManager:
                         "version_commit_hash": version_commit_hash
                     })
 
-                    evaluation = await get_running_evaluation_by_validator_hotkey(val_hotkey)
-                    if evaluation:
-                        if val_hotkey.startswith("i-0"):
-                            logger.info(f"Screener {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been cancelled.")
-                            await cancel_screening_evaluation(evaluation.evaluation_id)
-                        else:
-                            logger.info(f"Validator {val_hotkey} had a running evaluation {evaluation.evaluation_id} before it disconnected. It has been reset to waiting.")
-                            await reset_evaluation(evaluation.evaluation_id)
+                    # Use state machine for robust disconnect handling
+                    from api.src.backend.state_machine import state_machine
+                    
+                    if val_hotkey.startswith("i-0"):
+                        logger.info(f"Screener {val_hotkey} disconnected. Handling screening disconnect.")
+                        await state_machine.handle_screener_disconnect(val_hotkey)
                     else:
-                        logger.info(f"Validator {val_hotkey} did not have a running evaluation before it disconnected. No evaluations have been reset.")
+                        logger.info(f"Validator {val_hotkey} disconnected. Handling validator disconnect.")
+                        await state_machine.handle_validator_disconnect(val_hotkey)
             except Exception as cleanup_error:
                 logger.error(f"Error during disconnect cleanup for {val_hotkey}: {cleanup_error}")
                 
@@ -192,23 +185,6 @@ class WebSocketManager:
 
         logger.info(f"Platform socket broadcasted {event} to {validators} validators")
 
-    async def create_new_evaluations(self, version_id: str):
-        """Create new evaluations for all connected validators"""
-        
-        # Create a snapshot to avoid "dictionary changed size during iteration" error
-        clients_snapshot = dict(self.clients)
-        logger.debug(f"Looping through {len(clients_snapshot)} clients to create new evaluations for non-screener validators")
-        for websocket, validator_info in clients_snapshot.items():
-            if validator_info.validator_hotkey and not validator_info.is_screener:
-                logger.debug(f"Creating new evaluation for validator {validator_info.validator_hotkey} with version ID {version_id}")
-                try:
-                    await create_evaluation(version_id, validator_info.validator_hotkey)
-
-                    logger.debug(f"Attempting to send evaluation-available event to validator {validator_info.validator_hotkey}")
-                    await websocket.send_text(json.dumps({"event": "evaluation-available"}))
-                    logger.debug(f"Successfully sent evaluation-available event to validator {validator_info.validator_hotkey}")
-                except Exception:
-                    pass
 
     async def get_connected_validators(self):
         """Get list of connected validators"""
@@ -238,41 +214,40 @@ class WebSocketManager:
             else:
                 logger.debug(f"Client {validator_info.validator_hotkey} is not a screener or is not available.")
         logger.warning(f"A screener was requested but all screeners are currently busy.")
-        return None 
+        return None
     
-    async def create_pre_evaluation(self, screener_hotkey: str, version_id: str) -> str:
-        """Create a pre-evaluation for a specific screener hotkey"""
-        logger.debug(f"Attempting to create pre-evaluation for screener {screener_hotkey} with version ID {version_id}...")
-        
-        # Find the websocket for the specified screener
-        websocket = None
-        for ws, validator_info in self.clients.items():
-            if validator_info.validator_hotkey == screener_hotkey:
-                websocket = ws
-                logger.debug(f"Found websocket for screener {screener_hotkey}.")
-                break
-        
-        if not websocket:
-            logger.error(f"Tried to create pre-evaluation for screener {screener_hotkey} but screener not found in connected clients")
-            return None
-
-        logger.debug(f"Attempting to get miner agent with version ID {version_id}.")
-        miner_agent = await get_agent_by_version_id(version_id)
-        logger.debug(f"Successfully got miner agent with version ID {version_id}.")
-
-        try:
-            evaluation = await create_evaluation(version_id, screener_hotkey)
-            evaluation_id = evaluation.evaluation_id
-
-            logger.debug(f"Attempting to send screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
-            await websocket.send_text(json.dumps({
-                "event": "screen-agent",
-                "evaluation_id": str(evaluation_id),
-                "agent_version": miner_agent.model_dump(mode='json')
-            }))
-            logger.debug(f"Successfully sent screen-agent event to screener {screener_hotkey} with evaluation ID: {evaluation_id}")
-
-            return str(evaluation_id)
-        except Exception as e:
-            logger.error(f"Error creating pre-evaluation for screener {screener_hotkey}: {e}")
-            return None
+    async def get_connected_screeners(self) -> List[str]:
+        """Get all connected screeners"""
+        screeners = []
+        for websocket, validator_info in self.clients.items():
+            if (validator_info.is_screener and 
+                validator_info.validator_hotkey):
+                screeners.append(validator_info.validator_hotkey)
+        return screeners
+    
+    async def send_to_validator(self, validator_hotkey: str, message: Dict) -> bool:
+        """Send message to specific validator"""
+        for websocket, validator_info in self.clients.items():
+            if validator_info.validator_hotkey == validator_hotkey:
+                try:
+                    await websocket.send_text(json.dumps(message))
+                    return True
+                except Exception as e:
+                    logger.error(f"Failed to send message to validator {validator_hotkey}: {e}")
+                    return False
+        return False
+    
+    async def broadcast_to_validators(self, message: Dict):
+        """Broadcast message to all connected validators"""
+        for websocket, validator_info in self.clients.items():
+            if validator_info.validator_hotkey and not validator_info.is_screener:
+                try:
+                    await websocket.send_text(json.dumps(message))
+                except Exception as e:
+                    logger.error(f"Failed to broadcast to validator {validator_info.validator_hotkey}: {e}")
+                    # Remove dead connection
+                    try:
+                        del self.clients[websocket]
+                    except KeyError:
+                        pass 
+    

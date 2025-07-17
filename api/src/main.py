@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from api.src.backend.db_manager import new_db
-from api.src.backend.queries.cleanup import clean_running_evaluations, evaluation_timeout_cleanup_loop
 from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
@@ -31,7 +30,9 @@ async def lifespan(app: FastAPI):
         logger.error("Database health check failed, aborting startup")
         raise RuntimeError("Database not responsive")
     
-    await clean_running_evaluations()
+    # Startup recovery is now handled by the state machine
+    from api.src.backend.system_init import initialize_evaluation_system
+    await initialize_evaluation_system()
     # await update_top_agent_code()
     asyncio.create_task(run_weight_setting_loop(30))
     # asyncio.create_task(evaluation_cleanup_loop(timedelta(minutes=10)))

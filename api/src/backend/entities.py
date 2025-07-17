@@ -19,6 +19,16 @@ class MinerAgent(BaseModel):
 class AgentWithHydratedCode(MinerAgent):
     code: str
 
+class AgentStatus(Enum):
+    """States for miner agents - clear and unambiguous"""
+    awaiting_screening = "awaiting_screening"          # Just uploaded, needs screening
+    screening = "screening"                  # Currently being screened  
+    failed_screening = "failed_screening"              # Failed screening (score < 0.8)
+    waiting = "waiting"           # Passed screening, needs evaluation
+    evaluating = "evaluating"               # Currently being evaluated
+    scored = "scored"                       # All evaluations complete
+    replaced = "replaced"                   # Replaced by newer version
+
 class EvaluationStatus(Enum):
     awaiting_screening = "awaiting_screening"
     waiting = "waiting"
