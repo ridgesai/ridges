@@ -8,8 +8,9 @@ EASY_INSTANCES = [
     "django__django-11119",
     "django__django-12304",
     "django__django-11880",
-    "scikit-learn__scikit-learn-14141",
+    "sympy__sympy-24539",
     "pytest-dev__pytest-6202",
+    "scikit-learn__scikit-learn-14141",
     "django__django-14792",
     "pallets__flask-5014",
     "django__django-16333",
@@ -19,7 +20,6 @@ EASY_INSTANCES = [
     "django__django-13933",
     "django__django-12209",
     "matplotlib__matplotlib-24570",
-    "sympy__sympy-24539",
     "pytest-dev__pytest-7982",
     "django__django-11239",
     "sympy__sympy-15809",
@@ -57,8 +57,8 @@ EASY_INSTANCES = [
 ]
 
 MEDIUM_INSTANCES = [
-    "django__django-13279",
     "astropy__astropy-13033",
+    "django__django-13279",
 ]
 
 HARD_INSTANCES = [
@@ -67,28 +67,12 @@ HARD_INSTANCES = [
 ]
 
 SCREENER_INSTANCES = [
-    "astropy__astropy-12907",
+    # "astropy__astropy-14309",
     "astropy__astropy-13033",
-    "astropy__astropy-13236",
-    "astropy__astropy-13398",
-    "astropy__astropy-13453",
-    "astropy__astropy-13579",
-    "astropy__astropy-13977",
-    "astropy__astropy-14096",
-    "astropy__astropy-14182",
-    "astropy__astropy-14309",
-    "astropy__astropy-14365",
-    "astropy__astropy-14369",
-    "astropy__astropy-14508",
-    "astropy__astropy-14539",
-    "astropy__astropy-14598",
-    "astropy__astropy-14995",
-    "astropy__astropy-7166",
-    "astropy__astropy-7336",
-    "astropy__astropy-7606",
-    "astropy__astropy-7671",
-    "astropy__astropy-8707",
-    "astropy__astropy-8872",
+    "matplotlib__matplotlib-24570",
+    "django__django-11099",
+    "pytest-dev__pytest-6202",
+    "django__django-12276",
 ]
 
 # For testing purposes, use a smaller subset
