@@ -26,6 +26,10 @@ CONFIG_FILE = "miner/.env"
 load_dotenv(CONFIG_FILE)
 load_dotenv(".env")
 
+validator_tracing = False
+if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV") and os.getenv("DD_SERVICE"):
+    validator_tracing = True
+
 def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
     try:
@@ -219,7 +223,10 @@ def run(no_auto_update: bool):
 
     if no_auto_update:
         console.print("🚀 Starting validator...", style="yellow")
-        run_cmd("uv run -m validator.main", capture=False)
+        if validator_tracing:
+            run_cmd("ddtrace-run uv run -m validator.main", capture=False)
+        else:
+            run_cmd("uv run -m validator.main", capture=False)
         return
     
     # Check if already running
