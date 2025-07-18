@@ -65,15 +65,15 @@ class WebSocketManager:
                 
                 if client.get_type() == "screener":
                     logger.info(f"Screener {client_hotkey} disconnected. Handling screening disconnect.")
-                    await state_machine.handle_screener_disconnect(client_hotkey)
+                    await state_machine.screener_disconnect(client_hotkey)
                 elif client.get_type() == "validator":
                     logger.info(f"Validator {client_hotkey} disconnected. Handling validator disconnect.")
-                    await state_machine.handle_validator_disconnect(client_hotkey)
+                    await state_machine.validator_disconnect(client_hotkey)
             except Exception as cleanup_error:
                 logger.error(f"Error during disconnect cleanup for {client_hotkey}: {cleanup_error}")
                 
         except Exception as e:
-            logger.error(f"Error handling WebSocket connection: {str(e)}")
+            logger.error(f"Error handling WebSocket connection: {str(e.with_traceback())}")
             if websocket in self.clients:
                 del self.clients[websocket]
         finally:

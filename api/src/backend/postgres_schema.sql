@@ -121,6 +121,7 @@ $$ LANGUAGE plpgsql;
 -- Drop existing triggers if they exist
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
 DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
@@ -128,67 +129,3 @@ CREATE TRIGGER tr_update_evaluation_score
     AFTER INSERT OR UPDATE OF solved ON evaluation_runs
     FOR EACH ROW
     EXECUTE FUNCTION update_evaluation_score();
-
--- Function to update miner agent score when evaluation scores are updated
-CREATE OR REPLACE FUNCTION update_miner_agent_score()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Update the miner agent's score as the average of all completed evaluation scores
-    -- Exclude 0 scores, screener scores, and require at least 2 validators
-    UPDATE miner_agents
-    SET score = (
-        SELECT AVG(e.score)
-        FROM evaluations e
-        WHERE e.version_id = NEW.version_id
-        AND e.status = 'completed'
-        AND e.score IS NOT NULL
-        AND e.score > 0  -- Exclude 0 scores
-        AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- Require at least 2 validators
-    )
-    WHERE version_id = NEW.version_id;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Trigger to update miner agent score when evaluation scores are updated
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON evaluations;
-CREATE TRIGGER tr_update_miner_agent_score
-    AFTER UPDATE OF score ON evaluations
-    FOR EACH ROW
-    WHEN (OLD.score IS DISTINCT FROM NEW.score)
-    EXECUTE FUNCTION update_miner_agent_score();
-
--- Trigger to update miner agent score when evaluation status changes to completed
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score_on_completion ON evaluations;
-CREATE TRIGGER tr_update_miner_agent_score_on_completion
-    AFTER UPDATE OF status ON evaluations
-    FOR EACH ROW
-    WHEN (OLD.status IS DISTINCT FROM NEW.status AND NEW.status = 'completed')
-    EXECUTE FUNCTION update_miner_agent_score();
-
--- Constraint to prevent evaluations on non-recent agent versions
-CREATE OR REPLACE FUNCTION check_evaluation_recent_version()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM miner_agents ma1
-        WHERE ma1.version_id = NEW.version_id
-        AND ma1.version_num = (
-            SELECT MAX(ma2.version_num) 
-            FROM miner_agents ma2 
-            WHERE ma2.miner_hotkey = ma1.miner_hotkey
-        )
-    ) THEN
-        RAISE EXCEPTION 'evaluation_non_recent_version: Cannot create evaluation for non-recent agent version';
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
-CREATE TRIGGER tr_check_evaluation_recent_version
-    BEFORE INSERT ON evaluations
-    FOR EACH ROW
-    EXECUTE FUNCTION check_evaluation_recent_version();

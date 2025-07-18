@@ -191,31 +191,3 @@ async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> No
     
     logger.debug(f"Successfully uploaded agent code for version {version_id} to S3.")
     
-async def store_agent_in_db(miner_hotkey: str, name: str, latest_agent: Optional[MinerAgent]) -> str:
-    """
-    Store agent in database using the robust state machine.
-    This ensures all state transitions are handled correctly.
-    """
-    from api.src.backend.agent_machine import AgentStateMachine
-    
-    logger.debug(f"Storing agent in database using state machine...")
-
-    state_machine = AgentStateMachine.get_instance()
-    version_num = latest_agent.version_num + 1 if latest_agent else 0
-    
-    # Use state machine to upload agent - this handles all state transitions
-    version_id, success = await state_machine.upload_new_agent(
-        miner_hotkey=miner_hotkey,
-        agent_name=name if not latest_agent else latest_agent.agent_name,
-        version_num=version_num
-    )
-    
-    if not success:
-        logger.error(f"Failed to upload agent for miner {miner_hotkey}.")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to store agent version in our database. Please try again later."
-        )
-    
-    logger.debug(f"Successfully stored agent {version_id} in database.")
-    return version_id

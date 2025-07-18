@@ -5,6 +5,7 @@ from validator.config import SCREENER_MODE
 from loggers.logging_utils import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
 from validator.socket.handle_evaluation_available import handle_evaluation_available
+from validator.socket.handle_set_weights import handle_set_weights
 from ddtrace import tracer
 
 logger = get_logger(__name__)
@@ -34,7 +35,6 @@ async def handle_message(websocket_app, message: str):
         case "evaluation":
             await handle_evaluation(websocket_app, json_message)
         case "set-weights":
-            from validator.socket.handle_set_weights import handle_set_weights  # Local import to avoid circular deps
             await handle_set_weights(websocket_app, json_message)
         case "authentication-failed":
             error_msg = json_message.get("error", "Authentication failed")

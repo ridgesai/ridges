@@ -104,8 +104,8 @@ class AgentStateMachine:
             
             logger.info("Application startup recovery completed")
 
-    async def agent_upload(self, screener: 'Screener', miner_hotkey: str, agent_name: str, version_num: int) -> Tuple[Optional[str], bool]:
-        """Replace old agents, create new agent, start screening if screener available"""
+    async def agent_upload(self, screener: 'Screener', miner_hotkey: str, agent_name: str, version_num: int, version_id: str) -> bool:
+        """Replace old agents, create new agent, start screening with provided screener"""
         async with self.atomic_transaction() as conn:
             # Block if miner has running evaluations
             if await conn.fetchval("SELECT COUNT(*) FROM evaluations e JOIN miner_agents ma ON e.version_id = ma.version_id WHERE ma.miner_hotkey = $1 AND e.status = 'running'", miner_hotkey):
@@ -119,7 +119,6 @@ class AgentStateMachine:
                 await self.evaluation_machine.replace_for_agent(conn, agent["version_id"])
             
             # Create new agent which is awaiting_screening
-            version_id = str(uuid.uuid4())
             await conn.execute("""
                 INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status)
                 VALUES ($1, $2, $3, $4, NOW(), $5)
@@ -128,8 +127,16 @@ class AgentStateMachine:
             # Assign to provided screener
             eval_id = await self.evaluation_machine.create_screening(conn, version_id, screener.hotkey)
             
-            from api.src.backend.queries.agents import get_agent_by_version_id
-            agent_data = await get_agent_by_version_id(version_id)
+            from api.src.backend.entities import MinerAgent
+            from datetime import datetime
+            agent_data = MinerAgent(
+                version_id=version_id,
+                miner_hotkey=miner_hotkey,
+                agent_name=agent_name,
+                version_num=version_num,
+                created_at=datetime.now(),
+                status=AgentStatus.awaiting_screening
+            )
             
             success = await self.ws_manager.send_to_client(screener, {
                 "event": "screen-agent",
@@ -140,7 +147,7 @@ class AgentStateMachine:
             if success:
                 screener.status = "busy"
             
-            return version_id, success
+            return success
 
     async def screener_connect(self, screener) -> bool:
         """Assign screener to next awaiting agent if available"""
@@ -283,8 +290,9 @@ class AgentStateMachine:
             
             if score >= SCREENING_THRESHOLD:
                 # Agent passed screening - set to waiting and create evaluations for connected validators
-                await conn.execute("UPDATE miner_agents SET status = $1, score = $2 WHERE version_id = $3", 
-                                 AgentStatus.waiting.value, score, eval_data["version_id"])
+                logger.info(f"Screening {evaluation_id} passed with score {score}")
+                await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
+                                 AgentStatus.waiting.value, eval_data["version_id"])
                 
                 # Create evaluations for all connected validators
                 await self._create_evaluations_for_waiting_agent(conn, eval_data["version_id"])
@@ -292,8 +300,9 @@ class AgentStateMachine:
                 # Notify validators that work is available
                 await self.ws_manager.send_to_all_validators("evaluation-available", {"version_id": eval_data["version_id"]})
             else:
-                await conn.execute("UPDATE miner_agents SET status = $1, score = $2 WHERE version_id = $3", 
-                                 AgentStatus.failed_screening.value, score, eval_data["version_id"])
+                logger.info(f"Screening {evaluation_id} failed with score {score}")
+                await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
+                                 AgentStatus.failed_screening.value, eval_data["version_id"])
             
             screener.status = "available"
             

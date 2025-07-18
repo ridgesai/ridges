@@ -21,10 +21,10 @@ async def handle_start_evaluation(
     
     # Use appropriate start method based on client type
     if client.get_type() == "screener":
-        success = await state_machine.start_screening(evaluation_id, client.hotkey)
+        success = await state_machine.start_screening(client, evaluation_id)
         action = "Screening"
     else:
-        success = await state_machine.start_evaluation(evaluation_id, client.hotkey)
+        success = await state_machine.start_evaluation(client, evaluation_id)
         action = "Evaluation"
     
     status = "success" if success else "error"
