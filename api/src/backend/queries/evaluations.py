@@ -1,10 +1,11 @@
 from typing import Optional, List
 import logging
+import uuid
 
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
+from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, AgentStatus, EvaluationStatus
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 
 logger = logging.getLogger(__name__)
@@ -201,17 +202,45 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
     return Evaluation(**dict(result)) 
 
 @db_operation
-async def get_next_evaluation_for_screener(conn: asyncpg.Connection) -> Optional[Evaluation]:
-    result = await conn.fetchrow(
-        "SELECT * "
-        "FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%' "
-        "ORDER BY created_at ASC LIMIT 1"
+async def get_next_evaluation_for_screener(conn: asyncpg.Connection, screener_hotkey: str) -> Optional[Evaluation]:
+    """
+    Find an agent awaiting screening and create a new screening evaluation.
+    When screeners disconnect, their evaluations are cancelled, so we need to create new ones.
+    """
+    # Find the oldest agent awaiting screening
+    agent_result = await conn.fetchrow(
+        "SELECT version_id FROM miner_agents "
+        "WHERE status = $1 "
+        "ORDER BY created_at ASC LIMIT 1",
+        AgentStatus.awaiting_screening.value
     )
-
-    if not result:
+    
+    if not agent_result:
+        logger.debug("No agents awaiting screening found.")
         return None
-
-    return Evaluation(**dict(result)) 
+    
+    version_id = agent_result["version_id"]
+    logger.debug(f"Found agent {version_id} awaiting screening, creating screening evaluation for screener {screener_hotkey}.")
+    
+    # Create a new screening evaluation
+    from api.src.backend.queries.evaluation_sets import get_latest_set_id
+    
+    eval_id = str(uuid.uuid4())
+    set_id = await get_latest_set_id()
+    
+    await conn.execute("""
+        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
+    """, eval_id, version_id, screener_hotkey, set_id, EvaluationStatus.waiting.value)
+    
+    # Retrieve and return the created evaluation
+    result = await conn.fetchrow(
+        "SELECT * FROM evaluations WHERE evaluation_id = $1",
+        eval_id
+    )
+    
+    logger.debug(f"Created screening evaluation {eval_id} for agent {version_id} assigned to screener {screener_hotkey}.")
+    return Evaluation(**dict(result))
 
 @db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:

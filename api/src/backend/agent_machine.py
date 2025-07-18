@@ -155,7 +155,8 @@ class AgentStateMachine:
         from api.src.backend.queries.agents import get_agent_by_version_id
         
         screener.status = "available"
-        evaluation = await get_next_evaluation_for_screener()
+        logger.info(f"Screener {screener.hotkey} connected")
+        evaluation = await get_next_evaluation_for_screener(screener.hotkey)
         
         if not evaluation:
             return True
