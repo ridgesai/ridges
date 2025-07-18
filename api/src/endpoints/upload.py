@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 from loggers.logging_utils import get_logger
@@ -77,16 +77,28 @@ async def post_agent(
             version_id = await store_agent_in_db(miner_hotkey, name, latest_agent)
             await upload_agent_code_to_s3(version_id, agent_file)
             if prod:
-                await ws.create_pre_evaluation(available_screener, version_id)
+                eval_id = await ws.create_pre_evaluation(available_screener, version_id)
+                if not eval_id:
+                    logger.error(f"Failed to create pre-evaluation for screener {available_screener} and version {version_id}.")
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Failed to create pre-evaluation for screener and version. Please try again later or contact us on Discord if the issue persists."
+                    )
             else:
                 await ws.create_new_evaluations(version_id)
 
         logger.info(f"Successfully uploaded agent {version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
+
+        message = f"Successfully uploaded agent {version_id} for miner {miner_hotkey}." if latest_agent else f"Successfully created agent {version_id}."
+        if prod:
+            message += f" Pre-evaluation {eval_id} has been created for your agent and assigned to {available_screener}."
+        else:
+            message += f" New evaluations have been created for version {version_id}."
             
         return AgentUploadResponse(
             status="success",
-            message=f"Successfully updated agent {version_id} to version {latest_agent.version_num + 1}" if latest_agent else f"Successfully created agent {version_id}"
+            message=message
         )
 
 router = APIRouter()
