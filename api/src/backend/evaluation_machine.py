@@ -56,11 +56,11 @@ class EvaluationStateMachine:
             UPDATE evaluations SET started_at = NOW() WHERE evaluation_id = $1
         """, evaluation_id)
     
-    async def _complete(self, conn: asyncpg.Connection, evaluation_id: str, score: float, **context):
+    async def _complete(self, conn: asyncpg.Connection, evaluation_id: str, **context):
         """Evaluation completes successfully"""
         await conn.execute("""
-            UPDATE evaluations SET score = $1 WHERE evaluation_id = $2
-        """, score, evaluation_id)
+            UPDATE evaluations SET finished_at = NOW() WHERE evaluation_id = $1
+        """, evaluation_id)
     
     async def _error(self, conn: asyncpg.Connection, evaluation_id: str, 
                     reason: str = "unknown", **context):
@@ -161,10 +161,10 @@ class EvaluationStateMachine:
         # Agent should be scored if it has no active evaluations at all
         return not await self.has_active(conn, version_id, include_waiting=True)
     
-    async def complete_with_score(self, conn: asyncpg.Connection, evaluation_id: str, score: float) -> bool:
-        """Complete evaluation with score - returns True if successful"""
+    async def finish(self, conn: asyncpg.Connection, evaluation_id: str) -> bool:
+        """Finish evaluation - returns True if successful"""
         try:
-            await self.transition(conn, evaluation_id, EvaluationStatus.running, EvaluationStatus.completed, score=score)
+            await self.transition(conn, evaluation_id, EvaluationStatus.running, EvaluationStatus.completed)
             return True
         except EvaluationStateTransitionError:
             return False

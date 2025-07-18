@@ -73,7 +73,7 @@ class WebSocketManager:
                 logger.error(f"Error during disconnect cleanup for {client_hotkey}: {cleanup_error}")
                 
         except Exception as e:
-            logger.error(f"Error handling WebSocket connection: {str(e.with_traceback())}")
+            logger.error(f"Error handling WebSocket connection: {str(e)}")
             if websocket in self.clients:
                 del self.clients[websocket]
         finally:
@@ -124,7 +124,7 @@ class WebSocketManager:
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for client in clients_snapshot.values():
-            if client.get_type() != "validator":
+            if client.get_type() not in ["validator", "screener"]:
                 continue
             validator: 'Validator' = client
             relative_version_num = await get_relative_version_num(validator.version_commit_hash) if validator.version_commit_hash else None

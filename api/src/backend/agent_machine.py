@@ -244,7 +244,7 @@ class AgentStateMachine:
         async with self.atomic_transaction() as conn:
             # Get evaluation and agent info
             eval_data = await conn.fetchrow("""
-                SELECT e.version_id, ma.status as agent_status
+                SELECT e.version_id, ma.agent_name, ma.status as agent_status
                 FROM evaluations e JOIN miner_agents ma ON e.version_id = ma.version_id
                 WHERE e.evaluation_id = $1
             """, evaluation_id)
@@ -268,11 +268,11 @@ class AgentStateMachine:
             screener.status = f"Screening agent {eval_data['agent_name']} with evaluation {evaluation_id}"
             return True
 
-    async def finish_screening(self, screener: 'Screener', evaluation_id: str, score: float) -> bool:
+    async def finish_screening(self, screener: 'Screener', evaluation_id: str) -> bool:
         async with self.atomic_transaction() as conn:
             # Get evaluation and agent info
             eval_data = await conn.fetchrow("""
-                SELECT e.version_id, ma.status as agent_status
+                SELECT e.version_id, ma.status as agent_status, e.score
                 FROM evaluations e JOIN miner_agents ma ON e.version_id = ma.version_id
                 WHERE e.evaluation_id = $1
             """, evaluation_id)
@@ -286,11 +286,11 @@ class AgentStateMachine:
             if agent_state != AgentStatus.screening:
                 return False
             
-            await self.evaluation_machine.complete_with_score(conn, evaluation_id, score)
+            await self.evaluation_machine.finish(conn, evaluation_id)
             
-            if score >= SCREENING_THRESHOLD:
+            if eval_data["score"] >= SCREENING_THRESHOLD:
                 # Agent passed screening - set to waiting and create evaluations for connected validators
-                logger.info(f"Screening {evaluation_id} passed with score {score}")
+                logger.info(f"Screening {evaluation_id} passed with score {eval_data['score']}")
                 await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
                                  AgentStatus.waiting.value, eval_data["version_id"])
                 
@@ -298,9 +298,9 @@ class AgentStateMachine:
                 await self._create_evaluations_for_waiting_agent(conn, eval_data["version_id"])
                 
                 # Notify validators that work is available
-                await self.ws_manager.send_to_all_validators("evaluation-available", {"version_id": eval_data["version_id"]})
+                await self.ws_manager.send_to_all_validators("evaluation-available", {"version_id": str(eval_data["version_id"])})
             else:
-                logger.info(f"Screening {evaluation_id} failed with score {score}")
+                logger.info(f"Screening {evaluation_id} failed with score {eval_data['score']}")
                 await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
                                  AgentStatus.failed_screening.value, eval_data["version_id"])
             
@@ -339,7 +339,7 @@ class AgentStateMachine:
             validator.status = f"Evaluating agent {eval_data['agent_name']} with evaluation {evaluation_id}"
             return True
 
-    async def finish_evaluation(self, validator: 'Validator', evaluation_id: str, score: float, errored: bool = False, reason: str = None) -> bool:
+    async def finish_evaluation(self, validator: 'Validator', evaluation_id: str, errored: bool = False, reason: str = None) -> bool:
         async with self.atomic_transaction() as conn:
             # Get evaluation and agent info
             eval_data = await conn.fetchrow("""
@@ -360,7 +360,7 @@ class AgentStateMachine:
             if errored:
                 await self.evaluation_machine.error_with_reason(conn, evaluation_id, reason)
             else:
-                await self.evaluation_machine.complete_with_score(conn, evaluation_id, score)
+                await self.evaluation_machine.finish(conn, evaluation_id)
             
             if await self.evaluation_machine.should_agent_be_scored(conn, eval_data["version_id"]):
                 await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 

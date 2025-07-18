@@ -21,7 +21,6 @@ async def handle_finish_evaluation(
     state_machine = AgentStateMachine.get_instance()
     
     evaluation_id = response_json["evaluation_id"]
-    score = response_json.get("score", 0.0)
     errored = response_json.get("errored", False)
     
     
@@ -47,10 +46,10 @@ async def handle_finish_evaluation(
         
         # Use appropriate finish method based on evaluation type
         if is_screener_evaluation:
-            success = await state_machine.finish_screening(client, evaluation_id, score)
+            success = await state_machine.finish_screening(client, evaluation_id)
             action = "Screening"
         else:
-            success = await state_machine.finish_evaluation(client, evaluation_id, score, errored)
+            success = await state_machine.finish_evaluation(client, evaluation_id, errored)
             action = "Evaluation"
         
         if success:
