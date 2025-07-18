@@ -10,22 +10,6 @@ from loggers.logging_utils import get_logger
 logger = get_logger(__name__)
 
 @db_operation
-async def store_agent(conn: asyncpg.Connection, agent: MinerAgent) -> bool:
-    try:
-        await conn.execute("""
-            INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (version_id) DO UPDATE 
-            SET agent_name = EXCLUDED.agent_name,
-                version_num = EXCLUDED.version_num,
-                status = EXCLUDED.status
-        """, agent.version_id, agent.miner_hotkey, agent.agent_name, agent.version_num, agent.created_at, agent.status)
-
-        return True
-    except:
-        return False
-    
-@db_operation
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
         "SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status "
@@ -200,32 +184,21 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
 
 @db_operation
 async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) -> List[MinerAgent]:
-    rows = await conn.fetch("""
-        UPDATE miner_agents
-        SET status = 'awaiting_screening'
-        WHERE version_id IN (SELECT version_id FROM approved_version_ids)
-        AND status != 'awaiting_screening'
-        RETURNING *
-    """)
-    return [MinerAgent(**dict(row)) for row in rows]
-
-@db_operation
-async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: str):
-    await conn.execute("""
-        UPDATE miner_agents SET status = $1 WHERE version_id = $2
-    """, status, version_id)
-
-@db_operation
-async def set_screening_to_awaiting(conn: asyncpg.Connection):
-    await conn.execute("""
-        UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'
-    """)
-
-@db_operation
-async def get_agents_awaiting_screening(conn: asyncpg.Connection) -> List[MinerAgent]:
-    result = await conn.fetch("""
-        SELECT *
+    """
+    Set all approved agent versions to awaiting_screening status for re-evaluation
+    Returns the list of agents that were updated
+    """
+    # Update approved agents to awaiting_screening status
+    
+    # Get the updated agents
+    results = await conn.fetch("""
+        SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status
         FROM miner_agents 
-        WHERE status = 'awaiting_screening'
+        WHERE version_id IN (
+            SELECT version_id FROM approved_version_ids
+        )
+        AND status = 'awaiting_screening'
     """)
-    return [MinerAgent(**dict(row)) for row in result]
+    
+    return [MinerAgent(**dict(result)) for result in results]
+

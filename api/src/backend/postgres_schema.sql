@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS miner_agents (
 );
 
 -- Legacy cleanup: Drop score column and any related triggers
-ALTER TABLE miner_agents DROP COLUMN IF EXISTS score;
 DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
 DROP TRIGGER IF EXISTS tr_miner_agent_score_update ON miner_agents;
 DROP TRIGGER IF EXISTS tr_score_update ON miner_agents;
@@ -122,10 +121,11 @@ $$ LANGUAGE plpgsql;
 -- Drop existing triggers if they exist
 DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
 DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
+DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
 
 -- Trigger to update evaluation score when evaluation runs are inserted or updated
+DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
 CREATE TRIGGER tr_update_evaluation_score
     AFTER INSERT OR UPDATE OF solved ON evaluation_runs
     FOR EACH ROW
     EXECUTE FUNCTION update_evaluation_score();
-

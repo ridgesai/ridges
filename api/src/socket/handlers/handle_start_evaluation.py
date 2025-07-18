@@ -1,25 +1,33 @@
 from typing import Dict, Any
-from fastapi import WebSocket
 
-from api.src.backend.queries.evaluations import start_evaluation
+from api.src.backend.entities import Client
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 async def handle_start_evaluation(
-    websocket: WebSocket,
-    validator_hotkey: str,
+    client: Client,
     response_json: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Handle start-evaluation message from a validator"""
+    """Handle start-evaluation message from a client"""
+    # Validate client type
+    if client.get_type() not in ["validator", "screener"]:
+        logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring evaluation start.")
+        return {"status": "error", "message": "Client is not a validator or screener"}
+    
+    from api.src.backend.agent_machine import AgentStateMachine
+    state_machine = AgentStateMachine.get_instance()
     evaluation_id = response_json["evaluation_id"]
     
-    logger.info(f"Validator with hotkey {validator_hotkey} has started an evaluation {evaluation_id}. Attempting to update the evaluation in the database.")
+    # Use appropriate start method based on client type
+    if client.get_type() == "screener":
+        success = await state_machine.start_screening(client, evaluation_id)
+        action = "Screening"
+    else:
+        success = await state_machine.start_evaluation(client, evaluation_id)
+        action = "Evaluation"
     
-    try:
-        evaluation = await start_evaluation(evaluation_id, screener=validator_hotkey.startswith("i-0"))
-        logger.debug(f"Successfully started evaluation {evaluation_id}.")
-        return evaluation
-    except Exception as e:
-        logger.error(f"Error starting evaluation {evaluation_id}: {str(e)}")
-        return {"error": f"Failed to start evaluation: {str(e)}"} 
+    status = "success" if success else "error"
+    message = f"{action} {'started' if success else 'failed to start'}"
+    
+    return {"status": status, "message": message}

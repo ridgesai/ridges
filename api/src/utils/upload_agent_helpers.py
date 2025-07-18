@@ -7,11 +7,11 @@ from datetime import datetime, timedelta, timezone
 
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id, get_running_evaluation_by_miner_hotkey
+from api.src.backend.queries.evaluations import get_running_evaluation_by_miner_hotkey
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 from api.src.utils.subtensor import get_subnet_hotkeys
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.backend.queries.agents import store_agent, check_if_agent_banned
+from api.src.backend.queries.agents import check_if_agent_banned
 from api.src.backend.entities import MinerAgent, Evaluation
 from api.src.utils.s3 import S3Manager
 from api.src.utils.similarity_checker import SimilarityChecker
@@ -176,19 +176,6 @@ async def check_eval_running_for_hotkey(miner_hotkey: str) -> None:
             detail="An evaluation is currently running for the latest agent for this miner. Please wait for it to finish before uploading a new version."
         )
 
-async def get_available_screener() -> str:
-    logger.debug(f"Getting an available screener...")
-
-    available_screener = await ws.get_available_screener()
-    if available_screener is None:
-        logger.error(f"No available screeners found.")
-        raise HTTPException(
-            status_code=429,
-            detail="All our screeners are currently busy. Please try again later."
-        )
-    
-    logger.debug(f"Available screener found: {available_screener}.")
-    return available_screener
 
 async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
     logger.debug(f"Uploading agent code for version {version_id} to S3...")
@@ -204,33 +191,3 @@ async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> No
     
     logger.debug(f"Successfully uploaded agent code for version {version_id} to S3.")
     
-async def store_agent_in_db(miner_hotkey: str, name: str, latest_agent: Optional[MinerAgent]) -> str:
-    logger.debug(f"Storing agent in database...")
-
-    version_id = str(uuid.uuid4())
-    logger.debug(f"Generated new version ID: {version_id}.")
-
-    logger.debug(f"Creating MinerAgent object for version {version_id}...")
-
-    agent_object = MinerAgent(
-        version_id=version_id,
-        miner_hotkey=miner_hotkey,
-        agent_name=name if not latest_agent else latest_agent.agent_name,
-        version_num=latest_agent.version_num + 1 if latest_agent else 0,
-        created_at=datetime.now(timezone.utc),
-        score=None,
-        status="screening"
-    )
-    logger.debug(f"MinerAgent object created for version {version_id}.")
-
-    logger.debug(f"Attempting to store agent {version_id} in database...")
-    success = await store_agent(agent_object)
-    if not success:
-        logger.error(f"Failed to store agent in database. Version ID: {version_id}.")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to store agent version in our database. Please try again later."
-        )
-    
-    logger.debug(f"Successfully stored agent {version_id} in database.")
-    return version_id

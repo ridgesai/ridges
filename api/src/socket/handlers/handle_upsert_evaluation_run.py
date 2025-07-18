@@ -1,58 +1,45 @@
-from datetime import datetime
 from typing import Dict, Any
-from fastapi import WebSocket
 
-from loggers.logging_utils import get_logger
+from api.src.backend.entities import Client, EvaluationRun
 from api.src.backend.queries.evaluation_runs import store_evaluation_run
-from api.src.backend.entities import EvaluationRun, SandboxStatus
+from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 async def handle_upsert_evaluation_run(
-    websocket: WebSocket,
-    validator_hotkey: str,
+    client: Client,
     response_json: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """Handle upsert-evaluation-run message from a validator"""
-    evaluation_run_data = response_json["evaluation_run"]
+    """Handle upsert-evaluation-run message from a client"""
+    # Validate client type
+    if client.get_type() not in ["validator", "screener"]:
+        logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring upsert evaluation run request.")
+        return {"status": "error", "message": "Client is not a validator or screener"}
     
-    logger.info(f"Validator with hotkey {validator_hotkey} sent an evaluation run. Upserting evaluation run.")
+    evaluation_run_data = response_json.get("evaluation_run")
+    
+    if not evaluation_run_data:
+        return {"status": "error", "message": "Missing evaluation_run data"}
     
     try:
-        def parse_datetime(dt_str):
-            """Parse datetime string to datetime object, return None if None or empty"""
-            if not dt_str:
-                return None
-            if isinstance(dt_str, datetime):
-                return dt_str
-            return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+        logger.info(f"{client.get_type().title()} {client.hotkey} sent an evaluation run. Upserting evaluation run.")
         
-        evaluation_run = EvaluationRun(
-            run_id=evaluation_run_data["run_id"],
-            evaluation_id=evaluation_run_data["evaluation_id"],
-            swebench_instance_id=evaluation_run_data["swebench_instance_id"],
-            status=SandboxStatus(evaluation_run_data["status"]),
-            response=evaluation_run_data["response"],
-            error=evaluation_run_data["error"],
-            pass_to_fail_success=evaluation_run_data["pass_to_fail_success"],
-            fail_to_pass_success=evaluation_run_data["fail_to_pass_success"],
-            pass_to_pass_success=evaluation_run_data["pass_to_pass_success"],
-            fail_to_fail_success=evaluation_run_data["fail_to_fail_success"],
-            solved=evaluation_run_data["solved"],
-            started_at=parse_datetime(evaluation_run_data["started_at"]),
-            sandbox_created_at=parse_datetime(evaluation_run_data["sandbox_created_at"]),
-            patch_generated_at=parse_datetime(evaluation_run_data["patch_generated_at"]),
-            eval_started_at=parse_datetime(evaluation_run_data["eval_started_at"]),
-            result_scored_at=parse_datetime(evaluation_run_data["result_scored_at"]),
-            cancelled_at=parse_datetime(evaluation_run_data.get("cancelled_at"))
-        )
+        # Convert to EvaluationRun object and store
+        evaluation_run = EvaluationRun(**evaluation_run_data)
         await store_evaluation_run(evaluation_run)
         
-        # Create a dictionary for broadcasting that includes the validator_hotkey
+        # Broadcast update to connected clients
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws = WebSocketManager.get_instance()
+        
+        # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump()
-        broadcast_data["validator_hotkey"] = validator_hotkey
-        return broadcast_data
+        broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
+        
+        await ws.send_to_all_non_validators("evaluation-run-update", broadcast_data)
+        
+        return {"status": "success", "message": "Evaluation run stored successfully", "run_id": str(evaluation_run.run_id)}
         
     except Exception as e:
-        logger.error(f"Error upserting evaluation run: {str(e)}")
-        return {"error": f"Failed to upsert evaluation run: {str(e)}"} 
+        logger.error(f"Error upserting evaluation run for {client.get_type()} {client.hotkey}: {str(e)}")
+        return {"status": "error", "message": f"Failed to upsert evaluation run: {str(e)}"} 

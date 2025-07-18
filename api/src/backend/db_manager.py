@@ -144,6 +144,15 @@ async def check_db_health() -> bool:
         logger.error(f"Database health check failed: {str(e)}")
         return False
 
+@asynccontextmanager
+async def get_db_connection():
+    """
+    Get a database connection from the shared connection pool.
+    This ensures all parts of the application use the same pool.
+    """
+    async with new_db.acquire() as conn:
+        yield conn
+
 async def check_idle_transactions() -> List[dict]:
     """
     Check for idle transactions that may be blocking operations.

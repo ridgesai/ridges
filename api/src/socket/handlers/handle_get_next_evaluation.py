@@ -1,46 +1,39 @@
-import json
-from typing import Dict, Any
-from fastapi import WebSocket
+from typing import Dict, Any, Optional
 
-from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.entities import Client, Validator
 from api.src.backend.queries.evaluations import get_next_evaluation_for_validator
-
+from api.src.backend.queries.agents import get_agent_by_version_id
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
-
 async def handle_get_next_evaluation(
-    websocket: WebSocket,
-    validator_hotkey: str,
+    client: Client,
     response_json: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Handle get-next-evaluation message from a validator"""
-    
-    try:
-        logger.debug(f"Attempting to get next evaluation for validator {validator_hotkey}.")
-        evaluation = await get_next_evaluation_for_validator(validator_hotkey)
-        if evaluation is None:
-            logger.debug(f"No next evaluation found for validator {validator_hotkey}.")
-            socket_message = {"event": "evaluation"}  # No evaluations available for this validator
-            logger.info(f"Informed validator with hotkey {validator_hotkey} that there are no more evaluations available for it.")
-        else:
-            agent_version = await get_agent_by_version_id(evaluation.version_id)
-            logger.debug(f"Found next evaluation for validator {validator_hotkey}. Evaluation ID: {str(evaluation.evaluation_id)}.")
-            socket_message = {
-                "event": "evaluation",
-                "evaluation_id": str(evaluation.evaluation_id),
-                "agent_version": agent_version.model_dump(mode='json') if agent_version else None
-            }
-            logger.info(f"Platform socket will send requested evaluation {socket_message['evaluation_id']} to validator with hotkey {validator_hotkey}")
-        
-        evaluation_id = socket_message.get('evaluation_id', 'none')
-        logger.debug(f"Attempting to send requested evaluation {evaluation_id} to validator with hotkey {validator_hotkey}.")
-        await websocket.send_text(json.dumps(socket_message))
-        logger.debug(f"Successfully sent requested evaluation {evaluation_id} to validator with hotkey {validator_hotkey}.")
+) -> Optional[Dict[str, Any]]:
+    """Handle get-next-evaluation message from a client"""
+    # Validate client type
+    if client.get_type() != "validator":
+        logger.error(f"Client {client.ip_address} is not a validator. Ignoring get next evaluation request.")
+        return {"status": "error", "message": "Client is not a validator"}
 
-        return socket_message
-        
-    except Exception as e:
-        logger.error(f"Error getting next evaluation for validator {validator_hotkey}: {str(e)}")
-        return {"event": "error", "message": "Failed to get next evaluation"} 
+    from api.src.socket.websocket_manager import WebSocketManager
+    ws_manager = WebSocketManager.get_instance()
+
+    validator: 'Validator' = client
+
+    next_evaluation = await get_next_evaluation_for_validator(validator.hotkey)
+    if not next_evaluation:
+        return await ws_manager.send_to_client(validator, {"event": "evaluation", "message": "No evaluations available"})
+    
+    miner_agent = await get_agent_by_version_id(next_evaluation.version_id)
+    
+    evaluation_message = {
+        "event": "evaluation",
+        "evaluation_id": str(next_evaluation.evaluation_id),
+        "agent_version": miner_agent.model_dump(mode='json')
+    }
+    
+    success = await ws_manager.send_to_client(validator, evaluation_message)
+    return {"status": "success" if success else "error", "message": "Evaluation sent to validator" if success else "Failed to send evaluation"}
+    

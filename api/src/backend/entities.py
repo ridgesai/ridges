@@ -2,9 +2,11 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from fastapi import WebSocket
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional, TYPE_CHECKING
 from enum import Enum
+
 
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
@@ -22,6 +24,30 @@ class MinerAgentWithScores(MinerAgent):
     """MinerAgent with computed scores by set_id"""
     score: Optional[float]
     set_id: Optional[int]
+    
+class AgentStatus(Enum):
+    """States for miner agents - clear and unambiguous"""
+    awaiting_screening = "awaiting_screening"          # Just uploaded, needs screening
+    screening = "screening"                  # Currently being screened  
+    failed_screening = "failed_screening"              # Failed screening (score < 0.8)
+    waiting = "waiting"           # Passed screening, needs evaluation
+    evaluating = "evaluating"               # Currently being evaluated
+    scored = "scored"                       # All evaluations complete
+    replaced = "replaced"                   # Replaced by newer version
+    
+    @classmethod
+    def from_string(cls, status: str) -> 'AgentStatus':
+        """Map database status string to agent state enum"""
+        mapping = {
+            "awaiting_screening": cls.awaiting_screening,
+            "screening": cls.screening,
+            "failed_screening": cls.failed_screening,
+            "waiting": cls.waiting,
+            "evaluating": cls.evaluating,
+            "scored": cls.scored,
+            "replaced": cls.replaced
+        }
+        return mapping.get(status, cls.awaiting_screening)
 
 class EvaluationStatus(Enum):
     awaiting_screening = "awaiting_screening"
@@ -29,8 +55,20 @@ class EvaluationStatus(Enum):
     running = "running" 
     completed = "completed"
     replaced = "replaced"
-    timedout = "timedout"
     error = "error"
+    
+    @classmethod
+    def from_string(cls, status: str) -> 'EvaluationStatus':
+        """Map database status string to evaluation state enum"""
+        mapping = {
+            "awaiting_screening": cls.awaiting_screening,
+            "waiting": cls.waiting,
+            "running": cls.running,
+            "completed": cls.completed,
+            "error": cls.error,
+            "replaced": cls.replaced
+        }
+        return mapping.get(status, cls.waiting)
 
 class Evaluation(BaseModel):
     evaluation_id: UUID
@@ -84,14 +122,34 @@ class EvaluationsWithHydratedRuns(Evaluation):
 class EvaluationsWithHydratedUsageRuns(Evaluation):
     evaluation_runs: list[EvaluationRunWithUsageDetails]
 
-class ValidatorInfo(BaseModel):
-    """Information about a connected validator"""
-    validator_hotkey: Optional[str] = None
-    version_commit_hash: Optional[str] = None
+class Client(BaseModel):
+    """Base class for connected clients"""
+    model_config = {"arbitrary_types_allowed": True}
+
+    client_id: Optional[str] = None
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: Optional[str] = None
-    is_screener: Optional[bool] = False
+    websocket: Optional[WebSocket] = None
+
+    def get_type(self) -> str:
+        """Return the type of client"""
+        return "client"
+
+class Validator(Client):
+    """Validator client that performs evaluations"""
+    hotkey: str
+    version_commit_hash: Optional[str] = None
     status: Optional[str] = None
+    
+    def get_type(self) -> str:
+        return "validator"
+
+class Screener(Validator):
+    """Screener client that performs screening evaluations"""
+    
+    def get_type(self) -> str:
+        return "screener"
+
 
 class Inference(BaseModel):
     id: UUID

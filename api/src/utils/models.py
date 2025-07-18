@@ -40,7 +40,7 @@ class EvaluationResponse(BaseModel):
     evaluation_id: str
     version_id: str
     validator_hotkey: str
-    status: Literal["waiting", "running", "completed", "timedout", "disconnected", "error"]
+    status: Literal["waiting", "running", "completed", "disconnected", "error"]
     terminated_reason: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
@@ -108,7 +108,7 @@ class ExecutionNew(BaseModel):
     evaluation_id: str
     agent_version_id: str
     validator_hotkey: str
-    status: Literal["waiting", "running", "completed", "timedout", "error", "replaced"]
+    status: Literal["waiting", "running", "completed", "error", "replaced"]
     terminated_reason: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]

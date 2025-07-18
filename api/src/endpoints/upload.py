@@ -1,5 +1,6 @@
 import asyncio
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+import uuid
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from pydantic import BaseModel, Field
 from typing import Optional
 from loggers.logging_utils import get_logger
@@ -7,10 +8,12 @@ import os
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import check_eval_running_for_hotkey, check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_available_screener, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, store_agent_in_db, upload_agent_code_to_s3
+from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
+from api.src.backend.agent_machine import AgentStateMachine
+from fastapi import HTTPException
 from loggers.process_tracking import process_context
 
 load_dotenv()
@@ -72,33 +75,42 @@ async def post_agent(
         check_agent_code(file_content)
 
         async with lock:
-            await check_eval_running_for_hotkey(miner_hotkey)
-            if prod: available_screener = await get_available_screener()
-            version_id = await store_agent_in_db(miner_hotkey, name, latest_agent)
+            # Get an available screener for the upload
+            screener = await ws.get_available_screener()
+            if not screener:
+                logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
+                raise HTTPException(
+                    status_code=503,
+                    detail="No screeners available for agent evaluation. Please try again later."
+                )
+            
+            # Use state machine to upload agent with the screener
+            state_machine = AgentStateMachine.get_instance()
+            version_num = latest_agent.version_num + 1 if latest_agent else 0
+            version_id = str(uuid.uuid4())
             await upload_agent_code_to_s3(version_id, agent_file)
-            if prod:
-                eval_id = await ws.create_pre_evaluation(available_screener, version_id)
-                if not eval_id:
-                    logger.error(f"Failed to create pre-evaluation for screener {available_screener} and version {version_id}.")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Failed to create pre-evaluation for screener and version. Please try again later or contact us on Discord if the issue persists."
-                    )
-            else:
-                await ws.create_new_evaluations(version_id)
+
+            success = await state_machine.agent_upload(
+                screener=screener,
+                miner_hotkey=miner_hotkey,
+                agent_name=name if not latest_agent else latest_agent.agent_name,
+                version_num=version_num,
+                version_id=version_id
+            )
+            
+            if not success:
+                logger.error(f"Failed to upload agent for miner {miner_hotkey}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to store agent version in our database. Please try again later."
+                )
 
         logger.info(f"Successfully uploaded agent {version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
 
-        message = f"Successfully uploaded agent {version_id} for miner {miner_hotkey}." if latest_agent else f"Successfully created agent {version_id}."
-        if prod:
-            message += f" Pre-evaluation {eval_id} has been created for your agent and assigned to {available_screener}."
-        else:
-            message += f" New evaluations have been created for version {version_id}."
-            
         return AgentUploadResponse(
             status="success",
-            message=message
+            message=f"Successfully uploaded agent {version_id} for miner {miner_hotkey}."
         )
 
 router = APIRouter()
@@ -119,6 +131,7 @@ for path, endpoint in routes:
             400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
             409: {"model": ErrorResponse, "description": "Conflict - Upload request already processed"},
             429: {"model": ErrorResponse, "description": "Too Many Requests - Rate limit exceeded"},
-            500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"}
+            500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"},
+            503: {"model": ErrorResponse, "description": "Service Unavailable - No screeners available for evaluation"}
         }
     )

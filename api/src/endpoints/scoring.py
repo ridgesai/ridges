@@ -1,15 +1,13 @@
 import asyncio
-import json
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.backend.queries.evaluations import create_next_evaluation_for_screener
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
-from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version, set_approved_agents_to_awaiting_screening
+from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version
 
 load_dotenv()
 
@@ -80,28 +78,27 @@ async def re_eval_approved(approval_password: str):
         raise HTTPException(status_code=401, detail="Invalid approval password")
     
     try:
-        logger.info("Setting approved agents to awaiting screening")
-        agents_to_re_evaluate = await set_approved_agents_to_awaiting_screening()
+        logger.info("Starting re-evaluation of approved agents")
         
-        ws = WebSocketManager.get_instance()
-
-        while screener_hotkey := await ws.get_available_screener():
-            logger.info(f"Creating evaluation for screener {screener_hotkey}")
-            await create_next_evaluation_for_screener(screener_hotkey)
-            # Find the websocket for the validator with the hotkey
-            for websocket, validator_info in ws.clients.items():
-                if validator_info.validator_hotkey == screener_hotkey:
-                    validator_info.status = "busy"
-                    break
-
-            logger.info(f"Finished creating evaluation for screener {screener_hotkey}")
+        # Use state machine to handle the entire re-evaluation flow
+        from api.src.backend.agent_machine import AgentStateMachine
+        state_machine = AgentStateMachine.get_instance()
         
-        return [agent.model_dump(mode='json') for agent in agents_to_re_evaluate]
+        agents_to_re_evaluate = await state_machine.re_evaluate_approved_agents()
+        
+        if not agents_to_re_evaluate:
+            logger.info("No approved agents found for re-evaluation")
+            return {"message": "No approved agents found for re-evaluation", "agents": []}
+        
+        logger.info(f"Successfully initiated re-evaluation for {len(agents_to_re_evaluate)} approved agents")
+        return {
+            "message": f"Successfully initiated re-evaluation for {len(agents_to_re_evaluate)} approved agents",
+            "agents": [agent.model_dump(mode='json') for agent in agents_to_re_evaluate]
+        }
 
     except Exception as e:
-        logger.error(f"Error creating new evaluations for approved versions: {e}")
-        logger.error(f"Error creating new evaluations for approved versions")
-        raise HTTPException(status_code=500, detail="Error creating evaluations")
+        logger.error(f"Error re-evaluating approved agents: {e}")
+        raise HTTPException(status_code=500, detail="Error initiating re-evaluation of approved agents")
     
 router = APIRouter()
 
