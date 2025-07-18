@@ -54,7 +54,7 @@ async def ban_agent(agent_id: str, ban_password: str):
     
 
 async def trigger_weight_set():
-    tell_validators_to_set_weights()
+    await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
 async def approve_version(version_id: str, approval_password: str):
