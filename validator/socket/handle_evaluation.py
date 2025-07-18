@@ -28,7 +28,6 @@ async def handle_evaluation(websocket_app, json_message):
         logger.info("No agent versions left to evaluate")
         return
 
-    # FIX: Set the flag to prevent race conditions
     websocket_app.evaluation_running.set()
     logger.info("Set evaluation_running flag")
 

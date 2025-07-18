@@ -13,7 +13,6 @@ async def get_swebench_problems(evaluation_id: str) -> List[SwebenchProblem]:
     """Get evaluation runs for an agent version"""
     try:
         instance_ids = await get_evaluation_set_instances(evaluation_id)
-        logger.info(f"Instance IDs: {instance_ids}")
         instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", instance_ids)
         
         problems = [SwebenchProblem(

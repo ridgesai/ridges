@@ -315,7 +315,7 @@ class AgentStateMachine:
         async with self.atomic_transaction() as conn:
             # Get evaluation and agent info
             eval_data = await conn.fetchrow("""
-                SELECT e.version_id, ma.status as agent_status
+                SELECT e.version_id, ma.status as agent_status, ma.agent_name
                 FROM evaluations e JOIN miner_agents ma ON e.version_id = ma.version_id
                 WHERE e.evaluation_id = $1
             """, evaluation_id)
