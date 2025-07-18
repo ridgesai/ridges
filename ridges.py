@@ -159,7 +159,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
         console.print("💥 File must be named 'agent.py' and exist", style="bold red")
         return
     
-    console.print(Panel(f"[bold cyan]📤 Uploading Agent[/bold cyan]\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="🚀 Upload", border_style="cyan"))
+    console.print(Panel(f"[bold cyan] Uploading Agent[/bold cyan]\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="🚀 Upload", border_style="cyan"))
     
     try:
         with open(file, 'rb') as f:
@@ -233,7 +233,7 @@ def run(no_auto_update: bool):
     is_running, _ = check_pm2("ridges-validator-updater")
     if is_running:
         console.print("✅ Auto-updater already running!", style="green")
-        console.print("📋 Showing validator logs...", style="cyan")
+        console.print(" Showing validator logs...", style="cyan")
         run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
         return
     
@@ -244,8 +244,8 @@ def run(no_auto_update: bool):
     
     # Start auto-updater in background
     if run_cmd(f"pm2 start './ridges.py validator update --every 5' --name ridges-validator-updater", capture=False)[0] == 0:
-        console.print(Panel(f"[bold green]🎉 Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every 5 minutes.[/cyan]", title="✨ Success", border_style="green"))
-        console.print("📋 Showing validator logs...", style="cyan")
+        console.print(Panel(f"[bold green] Auto-updater started![/bold green]\n[cyan]Validator running with auto-updates every 5 minutes.[/cyan]", title="✨ Success", border_style="green"))
+        console.print(" Showing validator logs...", style="cyan")
         run_cmd("pm2 logs ridges-validator ridges-validator-updater", capture=False)
     else:
         console.print("💥 Failed to start validator", style="red")
@@ -255,9 +255,9 @@ def stop():
     """Stop the Ridges validator."""
     stopped = [p for p in ["ridges-validator", "ridges-validator-updater"] if run_cmd(f"pm2 delete {p}")[0] == 0]
     if stopped:
-        console.print(Panel(f"[bold green]🎉 Stopped:[/bold green]\n[cyan]{', '.join(stopped)}[/cyan]", title="✨ Stop Complete", border_style="green"))
+        console.print(Panel(f"[bold green] Stopped:[/bold green]\n[cyan]{', '.join(stopped)}[/cyan]", title="✨ Stop Complete", border_style="green"))
     else:
-        console.print("ℹ️  No validator processes running", style="cyan")
+        console.print("  No validator processes running", style="cyan")
 
 @validator.command()
 def logs():
@@ -317,7 +317,7 @@ def run(no_auto_update: bool):
         return
     
     if no_auto_update:
-        console.print("🚀 Starting platform...", style="yellow")
+        console.print(" Starting platform...", style="yellow")
         run_cmd("uv run -m api.src.main", capture=False)
         return
 
@@ -345,8 +345,8 @@ def run(no_auto_update: bool):
     
     # Start platform
     if run_cmd(f"pm2 start '.venv/bin/ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
-        console.print(Panel(f"[bold green]🎉 Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
-        console.print("📋 Showing platform logs...", style="cyan")
+        console.print(Panel(f"[bold green] Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
+        console.print(" Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
     else:
         console.print("💥 Failed to start platform", style="red")
@@ -355,14 +355,14 @@ def run(no_auto_update: bool):
 def stop():
     """Stop the Ridges API platform."""
     if run_cmd("pm2 delete ridges-api-platform")[0] == 0:
-        console.print(Panel("[bold green]🎉 Platform stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
+        console.print(Panel("[bold green] Platform stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
     else:
         console.print("⚠️  Platform not running", style="yellow")
 
 @platform.command()
 def logs():
     """Show platform logs."""
-    console.print("📋 Showing platform logs...", style="cyan")
+    console.print(" Showing platform logs...", style="cyan")
     run_cmd("pm2 logs ridges-api-platform", capture=False)
 
 @platform.command()
@@ -371,7 +371,7 @@ def update():
     # Get current commit and pull updates
     code, current_commit, _ = run_cmd("git rev-parse HEAD")
     if code != 0:
-        console.print("💥 Failed to get commit hash", style="red")
+        console.print(" Failed to get commit hash", style="red")
         return
     
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
@@ -383,7 +383,7 @@ def update():
     # Check if updates applied
     code, new_commit, _ = run_cmd("git rev-parse HEAD")
     if code != 0 or current_commit.strip() == new_commit.strip():
-        console.print(Panel("[bold yellow]ℹ️  No updates available[/bold yellow]", title="📋 Status", border_style="yellow"))
+        console.print(Panel("[bold yellow] No updates available[/bold yellow]", title="📋 Status", border_style="yellow"))
         return 0
     
     # Update deps and restart
@@ -409,30 +409,30 @@ def run(no_auto_update: bool):
         return
     
     if no_auto_update:
-        console.print("🚀 Starting proxy server...", style="yellow")
+        console.print(" Starting proxy server...", style="yellow")
         run_cmd("uv run -m proxy.main", capture=False)
         return
 
     # Start proxy with PM2
     if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
         console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8001", title="✨ Success", border_style="green"))
-        console.print("📋 Showing proxy logs...", style="cyan")
+        console.print(" Showing proxy logs...", style="cyan")
         run_cmd("pm2 logs ridges-proxy", capture=False)
     else:
-        console.print("💥 Failed to start proxy", style="red")
+        console.print(" Failed to start proxy", style="red")
 
 @proxy.command()
 def stop():
     """Stop the Ridges proxy server."""
     if run_cmd("pm2 delete ridges-proxy")[0] == 0:
-        console.print(Panel("[bold green]🎉 Proxy stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
+        console.print(Panel("[bold green] Proxy stopped![/bold green]", title="✨ Stop Complete", border_style="green"))
     else:
         console.print("⚠️  Proxy not running", style="yellow")
 
 @proxy.command()
 def logs():
     """Show proxy logs."""
-    console.print("📋 Showing proxy logs...", style="cyan")
+    console.print(" Showing proxy logs...", style="cyan")
     run_cmd("pm2 logs ridges-proxy", capture=False)
 
 @cli.group()
@@ -443,14 +443,14 @@ def local():
 @local.command()
 def run():
     """Run all Ridges services (platform, proxy, validator) in the background with PM2."""
-    console.print(Panel(f"[bold cyan]🚀 Starting All Services[/bold cyan]", title="🌐 Local Environment", border_style="cyan"))
+    console.print(Panel(f"[bold cyan] Starting All Services[/bold cyan]", title=" Local Environment", border_style="cyan"))
     
     services_started = []
     services_already_running = []
     services_failed = []
     
     # Start Platform
-    console.print("🌐 Starting platform...", style="yellow")
+    console.print(" Starting platform...", style="yellow")
     is_running, _ = check_pm2("ridges-api-platform")
     if is_running:
         services_already_running.append("Platform")
@@ -463,7 +463,7 @@ def run():
             console.print("✅ Platform started!", style="green")
         else:
             services_failed.append("Platform")
-            console.print("💥 Failed to start platform", style="red")
+            console.print(" Failed to start platform", style="red")
     
     # Start Proxy
     console.print("🔗 Starting proxy...", style="yellow")
@@ -477,7 +477,7 @@ def run():
             console.print("✅ Proxy started!", style="green")
         else:
             services_failed.append("Proxy")
-            console.print("💥 Failed to start proxy", style="red")
+            console.print(" Failed to start proxy", style="red")
     
     # Start Validator
     console.print("🔍 Starting validator...", style="yellow")
@@ -491,7 +491,7 @@ def run():
             console.print("✅ Validator started!", style="green")
         else:
             services_failed.append("Validator")
-            console.print("💥 Failed to start validator", style="red")
+            console.print(" Failed to start validator", style="red")
     
     # Summary
     console.print("\n" + "="*50)
@@ -500,13 +500,13 @@ def run():
     if services_already_running:
         console.print(f"[bold yellow]⚠️  Already Running:[/bold yellow] {', '.join(services_already_running)}")
     if services_failed:
-        console.print(f"[bold red]💥 Failed:[/bold red] {', '.join(services_failed)}")
+        console.print(f"[bold red] Failed:[/bold red] {', '.join(services_failed)}")
     
     # Show final status
     total_services = len(services_started) + len(services_already_running)
     if total_services == 3:
-        console.print(Panel(f"[bold green]🎉 All services are running![/bold green]\n[cyan]Platform, Proxy, and Validator are active[/cyan]", title="✨ Success", border_style="green"))
-        console.print("📋 Use 'pm2 logs' to view all logs or './ridges.py local logs' for combined logs", style="cyan")
+        console.print(Panel(f"[bold green] All services are running![/bold green]\n[cyan]Platform, Proxy, and Validator are active[/cyan]", title="✨ Success", border_style="green"))
+        console.print(" Use 'pm2 logs' to view all logs or './ridges.py local logs' for combined logs", style="cyan")
     else:
         console.print(Panel(f"[bold yellow]⚠️  {total_services}/3 services running[/bold yellow]", title="🔄 Status", border_style="yellow"))
 
@@ -523,7 +523,7 @@ def stop():
     if stopped:
         console.print(Panel(f"[bold green]🎉 Stopped:[/bold green]\n[cyan]{', '.join(stopped)}[/cyan]", title="✨ Stop Complete", border_style="green"))
     else:
-        console.print("ℹ️  No services running", style="cyan")
+        console.print(" No services running", style="cyan")
 
 @local.command()
 def logs():
@@ -534,7 +534,7 @@ def logs():
 @local.command()
 def status():
     """Show status of all services."""
-    console.print(Panel(f"[bold cyan]📊 Service Status[/bold cyan]", title="🔍 Status Check", border_style="cyan"))
+    console.print(Panel(f"[bold cyan] Service Status[/bold cyan]", title="🔍 Status Check", border_style="cyan"))
     
     services = [
         ("ridges-api-platform", "Platform"),
@@ -576,7 +576,7 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
             shutil.copy(proxy_env_example_path, proxy_env_path)
             console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
         else:
-            console.print("💥 No proxy/.env.example file found! This is required for setup.", style="bold red")
+            console.print(" No proxy/.env.example file found! This is required for setup.", style="bold red")
             return
     
     # Check for required Chutes API key
@@ -590,7 +590,7 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
             import re
             api_key_match = re.search(r'CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
             if not api_key_match or api_key_match.group(1).strip() in ['', 'your_chutes_api_key_here']:
-                console.print("💥 CHUTES_API_KEY is required in proxy/.env", style="bold red")
+                console.print(" CHUTES_API_KEY is required in proxy/.env", style="bold red")
                 console.print("   Please get your API key from https://chutes.ai and update proxy/.env", style="yellow")
                 return
 
@@ -599,18 +599,18 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         from validator.local_testing.setup import load_environment
         load_environment()
     except ImportError as e:
-        console.print(f"💥 Failed to load environment setup: {e}", style="bold red")
+        console.print(f" Failed to load environment setup: {e}", style="bold red")
         return
     
     console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
                         f"[yellow]Agent:[/yellow] {agent_file}\n"
                         f"[yellow]Problems:[/yellow] {num_problems} from {problem_set} set\n"
                         f"[yellow]Timeout:[/yellow] {timeout}s per problem", 
-                        title="🚀 Local Test", border_style="cyan"))
+                        title=" Local Test", border_style="cyan"))
     
     # Validate agent file exists
     if not Path(agent_file).exists():
-        console.print(f"💥 Agent file not found: {agent_file}", style="bold red")
+        console.print(f" Agent file not found: {agent_file}", style="bold red")
         return
     
     # Check if proxy is needed and start if required
@@ -672,7 +672,7 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
     except KeyboardInterrupt:
         console.print("\n🛑 Test interrupted by user", style="yellow")
     except Exception as e:
-        console.print(f"💥 Test failed: {e}", style="bold red")
+        console.print(f" Test failed: {e}", style="bold red")
         if verbose:
             console.print(traceback.format_exc(), style="dim")
     finally:
@@ -729,9 +729,9 @@ def display_test_results(results: dict):
     
     console.print(Panel(
         f"[bold green]✅ Solved:[/bold green] {solved_count}/{total_count} ({success_rate:.1f}%)\n"
-        f"[yellow]⏱️  Average time:[/yellow] {avg_time:.1f}s\n"
+        f"[yellow] Average time:[/yellow] {avg_time:.1f}s\n"
         f"[cyan]🔧 Patches generated:[/cyan] {summary['patches_generated']}/{total_count}",
-        title="📊 Test Summary", border_style="green" if success_rate > 0 else "red"
+        title="Test Summary", border_style="green" if success_rate > 0 else "red"
     ))
     
     # Individual results
@@ -745,7 +745,7 @@ def display_test_results(results: dict):
         
         # Display patch content if generated
         if result.get('patch_content'):
-            console.print(f"   [green]📝 Generated Patch:[/green]")
+            console.print(f"   [green] Generated Patch:[/green]")
             # Display patch in a code block style
             patch_lines = result['patch_content'].split('\n')
             for line in patch_lines:  # Show all lines
