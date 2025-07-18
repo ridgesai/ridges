@@ -20,6 +20,11 @@ class MinerAgent(BaseModel):
 class AgentWithHydratedCode(MinerAgent):
     code: str
 
+class MinerAgentWithScores(MinerAgent):
+    """MinerAgent with computed scores by set_id"""
+    score: Optional[float]
+    set_id: Optional[int]
+    
 class AgentStatus(Enum):
     """States for miner agents - clear and unambiguous"""
     awaiting_screening = "awaiting_screening"          # Just uploaded, needs screening

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional
 from fastapi.responses import StreamingResponse
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
@@ -6,7 +7,7 @@ from dotenv import load_dotenv
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns
+from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
@@ -14,7 +15,7 @@ from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as d
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
-from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances
+from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 
 load_dotenv()
 
@@ -90,9 +91,13 @@ async def get_queue_info(version_id: str):
     
     return queue_info
 
-async def get_evaluations(version_id: str) -> list[EvaluationsWithHydratedRuns]:
+async def get_evaluations(version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     try:
-        evaluations = await get_evaluations_for_agent_version(version_id)
+        # If no set_id provided, use the latest set_id
+        if set_id is None:
+            set_id = await get_latest_set_id()
+        
+        evaluations = await get_evaluations_for_agent_version(version_id, set_id)
     except Exception as e:
         logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
         raise HTTPException(
@@ -102,9 +107,13 @@ async def get_evaluations(version_id: str) -> list[EvaluationsWithHydratedRuns]:
     
     return evaluations
 
-async def get_evaluations_with_usage(version_id: str) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedUsageRuns]:
     try:
-        evaluations = await get_evaluations_with_usage_for_agent_version(version_id)
+        # If no set_id provided, use the latest set_id
+        if set_id is None:
+            set_id = await get_latest_set_id()
+        
+        evaluations = await get_evaluations_with_usage_for_agent_version(version_id, set_id)
     except Exception as e:
         logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
         raise HTTPException(
@@ -160,7 +169,7 @@ async def get_running_evaluations() -> list[RunningEvaluation]:
 
     return evaluations
 
-async def get_top_agents(num_agents: int = 3) -> list[MinerAgent]:
+async def get_top_agents(num_agents: int = 3) -> list[MinerAgentWithScores]:
     """
     Gets a list of current high score agents
     """
@@ -182,7 +191,7 @@ async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidato
 
     return positions
 
-async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
+async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgentWithScores]:
     """
     Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
     """
@@ -224,9 +233,10 @@ async def validator_queues():
     
     return queue_info
 
-async def get_evaluation_set(evaluation_id: str, type: str = Query(...)):
+async def get_evaluation_set(type: str = Query(...), evaluation_id: Optional[str] = None, set_id: Optional[int] = None):
     """
-    Returns a list of swebench instance IDs for a given evaluation set and type
+    Returns a list of swebench instance IDs for a given evaluation set and type.
+    Either evaluation_id or set_id must be provided. If neither is provided, uses max set_id.
     """
     # Validate type
     if type not in ["validator", "screener"]:
@@ -235,14 +245,19 @@ async def get_evaluation_set(evaluation_id: str, type: str = Query(...)):
             detail="Type must be either 'validator' or 'screener'"
         )
 
-    evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-    if not evaluation:
-        raise HTTPException(
-            status_code=404,
-            detail="Evaluation not found"
-        )
-
-    set_id = evaluation.set_id
+    # Determine set_id
+    if set_id is None:
+        if evaluation_id is not None:
+            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+            if not evaluation:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Evaluation not found"
+                )
+            set_id = evaluation.set_id
+        else:
+            # Use max set_id as default
+            set_id = await get_latest_set_id()
     
     try:
         instances = await get_evaluation_set_instances(set_id=set_id, eval_type=type)

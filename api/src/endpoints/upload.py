@@ -110,7 +110,7 @@ async def post_agent(
             
         return AgentUploadResponse(
             status="success",
-            message=f"Successfully updated agent {version_id} to version {latest_agent.version_num + 1}" if latest_agent else f"Successfully created agent {version_id}"
+            message=f"Successfully uploaded agent {version_id} for miner {miner_hotkey}."
         )
 
 router = APIRouter()
