@@ -2,7 +2,7 @@
 from typing import Dict, Any, Optional
 
 from api.src.backend.entities import Client
-from api.src.backend.queries.evaluations import get_evaluation_by_id
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -26,7 +26,7 @@ async def handle_finish_evaluation(
     
     
     # Get the evaluation to check if it's a screener evaluation
-    evaluation = await get_evaluation_by_id(evaluation_id)
+    evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
     if not evaluation:
         logger.warning(f"Evaluation {evaluation_id} not found")
         return {"status": "error", "message": "Evaluation not found"}
@@ -58,7 +58,7 @@ async def handle_finish_evaluation(
             
             # Check if we should assign more work to this client
             if client.get_type() == "screener":
-                await state_machine.handle_screener_connect(client)
+                await state_machine.screener_connect(client)
             
             return {"status": "success", "message": f"{action} finished successfully"}
         else:

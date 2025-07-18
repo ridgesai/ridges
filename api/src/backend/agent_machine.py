@@ -26,7 +26,7 @@ class AgentStateMachine:
         if not hasattr(self, '_initialized') or not self._initialized:
             from api.src.socket.websocket_manager import WebSocketManager
             self.ws_manager = WebSocketManager.get_instance()
-            self.evaluation_machine = EvaluationStateMachine(self.ws_manager)
+            self.evaluation_machine = EvaluationStateMachine()
             self._initialized = True
     
     @classmethod

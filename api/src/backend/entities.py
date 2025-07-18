@@ -119,6 +119,8 @@ class EvaluationsWithHydratedUsageRuns(Evaluation):
 
 class Client(BaseModel):
     """Base class for connected clients"""
+    model_config = {"arbitrary_types_allowed": True}
+
     client_id: Optional[str] = None
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: Optional[str] = None

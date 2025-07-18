@@ -5,7 +5,6 @@ import asyncpg
 
 from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns
-from api.src.backend.queries.agents import get_agents_awaiting_screening
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 
 logger = logging.getLogger(__name__)
