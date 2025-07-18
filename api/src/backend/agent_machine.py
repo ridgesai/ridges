@@ -56,7 +56,7 @@ class AgentStateMachine:
         })
         
         if success:
-            screener.status = "busy"
+            screener.status = f"Screening agent {agent_data.agent_name} with evaluation {eval_id}"
         return success
     
     async def _create_evaluations_for_waiting_agent(self, conn: asyncpg.Connection, version_id: str):
@@ -145,7 +145,7 @@ class AgentStateMachine:
             })
             
             if success:
-                screener.status = "busy"
+                screener.status = f"Screening agent {agent_data.agent_name} with evaluation {eval_id}"
             
             return success
 
@@ -168,7 +168,7 @@ class AgentStateMachine:
         })
         
         if success:
-            screener.status = "busy"
+            screener.status = f"Screening agent {agent_data.agent_name} with evaluation {evaluation.evaluation_id}"
             
         return success
 
@@ -265,7 +265,7 @@ class AgentStateMachine:
             await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
                              AgentStatus.screening.value, eval_data["version_id"])
             
-            screener.status = "busy"
+            screener.status = f"Screening agent {eval_data['agent_name']} with evaluation {evaluation_id}"
             return True
 
     async def finish_screening(self, screener: 'Screener', evaluation_id: str, score: float) -> bool:
@@ -336,7 +336,7 @@ class AgentStateMachine:
             await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
                              AgentStatus.evaluating.value, eval_data["version_id"])
             
-            validator.status = "busy"
+            validator.status = f"Evaluating agent {eval_data['agent_name']} with evaluation {evaluation_id}"
             return True
 
     async def finish_evaluation(self, validator: 'Validator', evaluation_id: str, score: float, errored: bool = False, reason: str = None) -> bool:
