@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns
+from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
@@ -169,7 +169,7 @@ async def get_running_evaluations() -> list[RunningEvaluation]:
 
     return evaluations
 
-async def get_top_agents(num_agents: int = 3) -> list[MinerAgent]:
+async def get_top_agents(num_agents: int = 3) -> list[MinerAgentWithScores]:
     """
     Gets a list of current high score agents
     """
@@ -191,7 +191,7 @@ async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidato
 
     return positions
 
-async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
+async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgentWithScores]:
     """
     Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
     """

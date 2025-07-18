@@ -20,7 +20,8 @@ class AgentWithHydratedCode(MinerAgent):
 
 class MinerAgentWithScores(MinerAgent):
     """MinerAgent with computed scores by set_id"""
-    scores_by_set_id: dict[int, float]
+    score: Optional[float]
+    set_id: Optional[int]
 
 class EvaluationStatus(Enum):
     awaiting_screening = "awaiting_screening"
