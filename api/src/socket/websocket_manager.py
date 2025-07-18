@@ -1,12 +1,9 @@
 import json
-import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 from fastapi import WebSocket, WebSocketDisconnect
 
-from api.src.backend.queries.agents import get_agent_by_version_id
 from loggers.logging_utils import get_logger
-from api.src.backend.entities import ValidatorInfo
+from api.src.backend.entities import Client, create_client
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
 
@@ -23,7 +20,7 @@ class WebSocketManager:
     
     def __init__(self):
         if not self._initialized:
-            self.clients: Dict[WebSocket, ValidatorInfo] = {}
+            self.clients: Dict[WebSocket, Client] = {}
             self._initialized = True
     
     @classmethod
@@ -37,94 +34,49 @@ class WebSocketManager:
         """Handle a new WebSocket connection"""
         await websocket.accept()
         
-        # Get client IP address
         client_ip = websocket.client.host if websocket.client else None
         
-        # Add new client with empty ValidatorInfo - will be populated after authentication
-        self.clients[websocket] = ValidatorInfo(ip_address=client_ip)
+        # Start with a base client until authentication
+        client = Client(ip_address=client_ip, websocket=websocket)
+        self.clients[websocket] = client
         logger.info(f"Client connected to platform socket. Total clients connected: {len(self.clients)}")
         
         try:
-            # Keep the connection alive and wait for messages
             while True:
-                # Wait for client's response
                 response = await websocket.receive_text()
                 response_json = json.loads(response)
+                hotkey = getattr(self.clients[websocket], 'hotkey', None)
 
-                # Route message to appropriate handler
-                validator_info = self.clients[websocket]
-                validator_hotkey = validator_info.validator_hotkey
-                    
-                # Pass self.clients for validator-info, otherwise None
-                result = await route_message(
-                    websocket,
-                    validator_hotkey,
-                    response_json,
-                    self.clients if response_json["event"] == "validator-info" else None
-                )
+                await route_message(websocket, hotkey, response_json, self.clients)
                 
-                # # Handle special cases for broadcasting
-                # if result and response_json["event"] == "validator-info":
-                #     await self.send_to_all_non_validators("validator-connected", result)
-                # elif result is None and response_json["event"] == "validator-info":
-                #     # Validator authentication failed, connection will be closed
-                #     logger.info("Validator authentication failed, connection rejected")
-                #     break
-                
-                # elif result and response_json["event"] == "start-evaluation":
-                #     await self.send_to_all_non_validators("evaluation-started", result)
-                
-                # elif result and response_json["event"] == "finish-evaluation":
-                #     await self.send_to_all_non_validators("evaluation-finished", result)
-                    
-                #     # Handle set-weights after finishing evaluation
-                #     weights_result = await handle_set_weights_after_evaluation()
-                #     if weights_result and "error" not in weights_result:
-                #         await self.send_to_all_validators("set-weights", weights_result)
-                
-                # elif result and response_json["event"] == "upsert-evaluation-run":
-                #     await self.send_to_all_non_validators("evaluation-run-updated", result)
-
         except WebSocketDisconnect:
-            # CRITICAL: Remove from clients immediately to prevent memory leak
-            validator_info = self.clients.pop(websocket, None)
-            if not validator_info:
+            client = self.clients.pop(websocket, None)
+            if not client:
                 return
                 
-            val_hotkey = validator_info.validator_hotkey
-            version_commit_hash = validator_info.version_commit_hash
+            client_hotkey = getattr(client, 'hotkey', None)
             
-            logger.warning(f"Validator with hotkey {val_hotkey} disconnected from platform socket. Total validators connected: {len(self.clients)}. Resetting any running evaluations for this validator.")
+            logger.warning(f"Client with hotkey {client_hotkey} disconnected from platform socket. Total clients connected: {len(self.clients)}. Resetting any running evaluations for this client.")
 
-            # Handle disconnect cleanup in a separate try-catch to not affect memory cleanup
             try:
-                if val_hotkey and version_commit_hash:
-                    relative_version_num = await get_relative_version_num(version_commit_hash)
-                    await self.send_to_all_non_validators("validator-disconnected", {
-                        "validator_hotkey": val_hotkey,
-                        "relative_version_num": relative_version_num,
-                        "version_commit_hash": version_commit_hash
-                    })
-
-                    # Use state machine for robust disconnect handling
-                    from api.src.backend.state_machine import state_machine
-                    
-                    if val_hotkey.startswith("i-0"):
-                        logger.info(f"Screener {val_hotkey} disconnected. Handling screening disconnect.")
-                        await state_machine.handle_screener_disconnect(val_hotkey)
-                    else:
-                        logger.info(f"Validator {val_hotkey} disconnected. Handling validator disconnect.")
-                        await state_machine.handle_validator_disconnect(val_hotkey)
+                from api.src.backend.state_machine import EvaluationStateMachine
+                state_machine = EvaluationStateMachine.get_instance()
+                await self.send_to_all_non_validators("validator-disconnected", { "validator_hotkey": client_hotkey })
+                
+                if client.get_type() == "screener":
+                    logger.info(f"Screener {client_hotkey} disconnected. Handling screening disconnect.")
+                    await state_machine.handle_screener_disconnect(client_hotkey)
+                elif client.get_type() == "validator":
+                    logger.info(f"Validator {client_hotkey} disconnected. Handling validator disconnect.")
+                    await state_machine.handle_validator_disconnect(client_hotkey)
             except Exception as cleanup_error:
-                logger.error(f"Error during disconnect cleanup for {val_hotkey}: {cleanup_error}")
+                logger.error(f"Error during disconnect cleanup for {client_hotkey}: {cleanup_error}")
                 
         except Exception as e:
             logger.error(f"Error handling WebSocket connection: {str(e)}")
-            # CRITICAL: Ensure cleanup happens even if there's an unexpected error
             if websocket in self.clients:
                 del self.clients[websocket]
         finally:
-            # Double-check cleanup in case of any edge cases
             if websocket in self.clients:
                 del self.clients[websocket]
                 logger.warning(f"Had to clean up websocket in finally block")
@@ -136,9 +88,9 @@ class WebSocketManager:
         clients_snapshot = dict(self.clients)
         dead_connections = []
         
-        for websocket, validator_info in clients_snapshot.items():
-            # Check if client is not an authenticated validator (no validator_hotkey means not authenticated)
-            if not validator_info.validator_hotkey:
+        for websocket, client in clients_snapshot.items():
+            # Check if client is not an authenticated validator (no hotkey means not authenticated)
+            if not hasattr(client, 'hotkey'):
                 non_validators += 1
                 try:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
@@ -155,99 +107,82 @@ class WebSocketManager:
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
     async def send_to_all_validators(self, event: str, data: dict):
-        """Broadcast an event to every connected validator.
+        """Broadcast an event to every connected validator"""
 
-        Entries in ``self.clients`` should map websocket → metadata dict, but we
-        defensively skip any rows that are not dicts (e.g. a stray string) so a
-        malformed client cannot break the entire broadcast.
-        """
-
-        validators = 0
-
-        # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
-        dead_connections = []
-        
-        for websocket, validator_info in clients_snapshot.items():
-            try:
-                if validator_info.validator_hotkey:
-                    await websocket.send_text(json.dumps({"event": event, "data": data}))
-                    validators += 1
-            except Exception:
-                # Connection is dead - mark for cleanup
-                dead_connections.append(websocket)
-        
-        # Clean up dead connections to prevent memory leaks
-        for dead_ws in dead_connections:
-            if dead_ws in self.clients:
-                logger.info(f"Removing dead validator connection from clients during broadcast")
-                del self.clients[dead_ws]
 
-        logger.info(f"Platform socket broadcasted {event} to {validators} validators")
-
+        validator_websockets = [websocket for websocket, client in clients_snapshot.items() if hasattr(client, 'hotkey')]
+        
+        for websocket in validator_websockets:
+                await websocket.send_text(json.dumps({"event": event, "data": data}))
+        
+        logger.info(f"Platform socket broadcasted {event} to {len(validator_websockets)} validators")
 
     async def get_connected_validators(self):
         """Get list of connected validators"""
         validators = []
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
-        for websocket, validator_info in clients_snapshot.items():
-            if validator_info.validator_hotkey:
-                relative_version_num = await get_relative_version_num(validator_info.version_commit_hash) if validator_info.version_commit_hash else None
+        for websocket, client in clients_snapshot.items():
+            if hasattr(client, 'hotkey'):
+                relative_version_num = await get_relative_version_num(client.version_commit_hash) if client.version_commit_hash else None
                 validators.append({
-                    "validator_hotkey": validator_info.validator_hotkey,
+                    "validator_hotkey": client.hotkey,  # Keep JSON field as validator_hotkey for compatibility
                     "relative_version_num": relative_version_num,
-                    "commit_hash": validator_info.version_commit_hash,
-                    "connected_at": validator_info.connected_at.isoformat(),
-                    "ip_address": validator_info.ip_address,
-                    "status": validator_info.status
+                    "commit_hash": client.version_commit_hash,
+                    "connected_at": client.connected_at.isoformat(),
+                    "ip_address": client.ip_address,
+                    "status": client.status
                 })
-        return validators 
+        return validators
     
-    async def get_available_screener(self) -> str:
+    async def get_connected_hotkeys(self) -> List[str]:
+        """Get all connected validator hotkeys"""
+        return [client.hotkey for client in self.clients.values() if client.get_type() == "validator"]
+    
+    async def get_connected_screener_hotkeys(self) -> List[str]:
+        """Get all connected screeners"""
+        return [client.hotkey for client in self.clients.values() if client.get_type() == "screener"]
+
+    async def get_available_screener(self) -> Optional[Client]:
         """Get the first available screener from the connected clients"""
         logger.debug(f"Looping through {len(self.clients)} clients to find an available screener...")
-        for websocket, validator_info in self.clients.items():
-            if validator_info.validator_hotkey and validator_info.is_screener and validator_info.status == "available":
-                logger.debug(f"Found an available screener: {validator_info.validator_hotkey}.")
-                return validator_info.validator_hotkey
+        for websocket, client in self.clients.items():
+            if client.get_type() == "screener" and client.status == "available":
+                logger.debug(f"Found an available screener: {client.hotkey}.")
+                return client
             else:
-                logger.debug(f"Client {validator_info.validator_hotkey} is not a screener or is not available.")
+                logger.debug(f"Client {getattr(client, 'hotkey', 'unknown')} is not a screener or is not available.")
         logger.warning(f"A screener was requested but all screeners are currently busy.")
         return None
     
-    async def get_connected_screeners(self) -> List[str]:
-        """Get all connected screeners"""
-        screeners = []
-        for websocket, validator_info in self.clients.items():
-            if (validator_info.is_screener and 
-                validator_info.validator_hotkey):
-                screeners.append(validator_info.validator_hotkey)
-        return screeners
-    
-    async def send_to_validator(self, validator_hotkey: str, message: Dict) -> bool:
-        """Send message to specific validator"""
-        for websocket, validator_info in self.clients.items():
-            if validator_info.validator_hotkey == validator_hotkey:
-                try:
-                    await websocket.send_text(json.dumps(message))
-                    return True
-                except Exception as e:
-                    logger.error(f"Failed to send message to validator {validator_hotkey}: {e}")
-                    return False
+    async def send_to_client(self, client: Client, message: Dict) -> bool:
+        """Send message to specific client using Client object"""
+        if client.websocket:
+            try:
+                await client.websocket.send_text(json.dumps(message))
+                return True
+            except Exception as e:
+                logger.error(f"Failed to send message to client {getattr(client, 'hotkey', 'unknown')}: {e}")
+                return False
         return False
     
-    async def broadcast_to_validators(self, message: Dict):
-        """Broadcast message to all connected validators"""
-        for websocket, validator_info in self.clients.items():
-            if validator_info.validator_hotkey and not validator_info.is_screener:
-                try:
-                    await websocket.send_text(json.dumps(message))
-                except Exception as e:
-                    logger.error(f"Failed to broadcast to validator {validator_info.validator_hotkey}: {e}")
-                    # Remove dead connection
-                    try:
-                        del self.clients[websocket]
-                    except KeyError:
-                        pass 
+    def replace_client_after_auth(self, websocket: WebSocket, hotkey: str, **kwargs) -> Client:
+        """Replace a base client with the appropriate typed client after authentication"""
+        old_client = self.clients[websocket]
+        
+        # Preserve existing data
+        client_data = {
+            'ip_address': old_client.ip_address,
+            'connected_at': old_client.connected_at,
+            'websocket': old_client.websocket,
+            'status': 'available',
+            **kwargs
+        }
+        
+        # Create the appropriate client type
+        new_client = create_client(hotkey, **client_data)
+        self.clients[websocket] = new_client
+        
+        return new_client
     

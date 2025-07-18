@@ -2,9 +2,11 @@
 from datetime import datetime, timezone
 from uuid import UUID
 
+from fastapi import WebSocket
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional, TYPE_CHECKING
 from enum import Enum
+
 
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
@@ -48,7 +50,6 @@ class EvaluationStatus(Enum):
     running = "running" 
     completed = "completed"
     replaced = "replaced"
-    timedout = "timedout"
     error = "error"
     
     @classmethod
@@ -60,7 +61,6 @@ class EvaluationStatus(Enum):
             "running": cls.running,
             "completed": cls.completed,
             "error": cls.error,
-            "timedout": cls.timedout,
             "replaced": cls.replaced
         }
         return mapping.get(status, cls.waiting)
@@ -117,14 +117,38 @@ class EvaluationsWithHydratedRuns(Evaluation):
 class EvaluationsWithHydratedUsageRuns(Evaluation):
     evaluation_runs: list[EvaluationRunWithUsageDetails]
 
-class ValidatorInfo(BaseModel):
-    """Information about a connected validator"""
-    validator_hotkey: Optional[str] = None
-    version_commit_hash: Optional[str] = None
+class Client(BaseModel):
+    """Base class for connected clients"""
+    client_id: Optional[str] = None
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: Optional[str] = None
-    is_screener: Optional[bool] = False
+    websocket: Optional[WebSocket] = None
+
+    def get_type(self) -> str:
+        """Return the type of client"""
+        return "client"
+
+class Validator(Client):
+    """Validator client that performs evaluations"""
+    hotkey: str
+    version_commit_hash: Optional[str] = None
     status: Optional[str] = None
+    
+    def get_type(self) -> str:
+        return "validator"
+
+class Screener(Validator):
+    """Screener client that performs screening evaluations"""
+    
+    def get_type(self) -> str:
+        return "screener"
+
+def create_client(hotkey: str, **kwargs) -> Client:
+    """Factory function to create appropriate client type based on hotkey"""
+    if hotkey.startswith("i-0"):
+        return Screener(hotkey=hotkey, **kwargs)
+    else:
+        return Validator(hotkey=hotkey, **kwargs)
 
 class Inference(BaseModel):
     id: UUID

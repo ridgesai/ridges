@@ -142,8 +142,8 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE status = 'waiting') as waiting_evaluations,
                     COUNT(*) FILTER (WHERE status = 'running') as running_evaluations,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_evaluations,
-                    COUNT(*) FILTER (WHERE status = 'error') as failed_evaluations,
-                    COUNT(*) FILTER (WHERE status = 'timedout') as timed_out_evaluations,
+                    COUNT(*) FILTER (WHERE status = 'error' AND terminated_reason != 'timed out') as failed_evaluations,
+                    COUNT(*) FILTER (WHERE status = 'error' AND terminated_reason = 'timed out') as timed_out_evaluations,
                     COUNT(*) FILTER (WHERE status = 'replaced') as replaced_evaluations
                 FROM evaluations
                 WHERE created_at >= NOW() - INTERVAL '24 hours'

@@ -182,3 +182,31 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
         logger.error(f"Failed to update top agents cache after approval: {e}")
         # Don't fail the approval if cache update fails
 
+@db_operation
+async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) -> List[MinerAgent]:
+    """
+    Set all approved agent versions to awaiting_screening status for re-evaluation
+    Returns the list of agents that were updated
+    """
+    # Update approved agents to awaiting_screening status
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'awaiting_screening'
+        WHERE version_id IN (
+            SELECT version_id FROM approved_version_ids
+        )
+        AND status != 'replaced'
+    """)
+    
+    # Get the updated agents
+    results = await conn.fetch("""
+        SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status
+        FROM miner_agents 
+        WHERE version_id IN (
+            SELECT version_id FROM approved_version_ids
+        )
+        AND status = 'awaiting_screening'
+    """)
+    
+    return [MinerAgent(**dict(result)) for result in results]
+

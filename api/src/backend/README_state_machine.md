@@ -95,7 +95,7 @@ valid_states = state_machine.validator.get_valid_next_states(
 ### Evaluation States
 - `waiting` → `running` → `completed` → `replaced`
 - `waiting` → `running` → `error` → `replaced`
-- `waiting` → `running` → `timedout` → `replaced`
+- `waiting` → `running` → `error` (with termination_reason='timed out') → `replaced`
 
 ## Error Handling
 

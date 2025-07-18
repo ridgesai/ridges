@@ -265,7 +265,7 @@ class EvaluationHealthMonitor:
                     # Mark as timed out
                     await conn.execute("""
                         UPDATE evaluations 
-                        SET status = 'timedout', finished_at = NOW()
+                        SET status = 'error', terminated_reason = 'Timed out', finished_at = NOW()
                         WHERE evaluation_id = $1
                     """, evaluation_id)
                     issues_fixed += 1
