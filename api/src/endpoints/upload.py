@@ -107,7 +107,7 @@ async def post_agent(
 
         logger.info(f"Successfully uploaded agent {version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
-            
+
         return AgentUploadResponse(
             status="success",
             message=f"Successfully uploaded agent {version_id} for miner {miner_hotkey}."
