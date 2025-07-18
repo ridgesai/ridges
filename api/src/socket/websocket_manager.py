@@ -3,7 +3,7 @@ from typing import Optional, Dict, List, Union
 from fastapi import WebSocket, WebSocketDisconnect
 
 from loggers.logging_utils import get_logger
-from api.src.backend.entities import Client, create_client
+from api.src.backend.entities import Client, Validator, Screener
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
 
@@ -59,8 +59,8 @@ class WebSocketManager:
             logger.warning(f"Client with hotkey {client_hotkey} disconnected from platform socket. Total clients connected: {len(self.clients)}. Resetting any running evaluations for this client.")
 
             try:
-                from api.src.backend.state_machine import EvaluationStateMachine
-                state_machine = EvaluationStateMachine.get_instance()
+                from api.src.backend.agent_machine import AgentStateMachine
+                state_machine = AgentStateMachine.get_instance()
                 await self.send_to_all_non_validators("validator-disconnected", { "validator_hotkey": client_hotkey })
                 
                 if client.get_type() == "screener":
@@ -123,37 +123,46 @@ class WebSocketManager:
         validators = []
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
-        for websocket, client in clients_snapshot.items():
-            if hasattr(client, 'hotkey'):
-                relative_version_num = await get_relative_version_num(client.version_commit_hash) if client.version_commit_hash else None
-                validators.append({
-                    "validator_hotkey": client.hotkey,  # Keep JSON field as validator_hotkey for compatibility
-                    "relative_version_num": relative_version_num,
-                    "commit_hash": client.version_commit_hash,
-                    "connected_at": client.connected_at.isoformat(),
-                    "ip_address": client.ip_address,
-                    "status": client.status
-                })
+        for client in clients_snapshot.values():
+            if client.get_type() != "validator":
+                continue
+            validator: 'Validator' = client
+            relative_version_num = await get_relative_version_num(validator.version_commit_hash) if validator.version_commit_hash else None
+            validators.append({
+                "validator_hotkey": validator.hotkey,  # Keep JSON field as validator_hotkey for compatibility
+                "relative_version_num": relative_version_num,
+                "commit_hash": validator.version_commit_hash,
+                "connected_at": validator.connected_at.isoformat(),
+                "ip_address": validator.ip_address,
+                "status": validator.status
+            })
         return validators
     
-    async def get_connected_hotkeys(self) -> List[str]:
+    async def get_connected_validator_hotkeys(self) -> List[str]:
         """Get all connected validator hotkeys"""
-        return [client.hotkey for client in self.clients.values() if client.get_type() == "validator"]
+        return [client.hotkey for client in self.clients.values() if isinstance(client, Validator)]
     
     async def get_connected_screener_hotkeys(self) -> List[str]:
         """Get all connected screeners"""
-        return [client.hotkey for client in self.clients.values() if client.get_type() == "screener"]
+        return [client.hotkey for client in self.clients.values() if isinstance(client, Screener)]
 
     async def get_available_screener(self) -> Optional[Client]:
         """Get the first available screener from the connected clients"""
         logger.debug(f"Looping through {len(self.clients)} clients to find an available screener...")
-        for websocket, client in self.clients.items():
+        for client in self.clients.values():
             if client.get_type() == "screener" and client.status == "available":
                 logger.debug(f"Found an available screener: {client.hotkey}.")
                 return client
             else:
                 logger.debug(f"Client {getattr(client, 'hotkey', 'unknown')} is not a screener or is not available.")
         logger.warning(f"A screener was requested but all screeners are currently busy.")
+        return None
+    
+    def get_client_by_hotkey(self, hotkey: str) -> Optional[Client]:
+        """Get a client by their hotkey"""
+        for client in self.clients.values():
+            if hasattr(client, 'hotkey') and client.hotkey == hotkey:
+                return client
         return None
     
     async def send_to_client(self, client: Client, message: Dict) -> bool:
@@ -167,22 +176,4 @@ class WebSocketManager:
                 return False
         return False
     
-    def replace_client_after_auth(self, websocket: WebSocket, hotkey: str, **kwargs) -> Client:
-        """Replace a base client with the appropriate typed client after authentication"""
-        old_client = self.clients[websocket]
-        
-        # Preserve existing data
-        client_data = {
-            'ip_address': old_client.ip_address,
-            'connected_at': old_client.connected_at,
-            'websocket': old_client.websocket,
-            'status': 'available',
-            **kwargs
-        }
-        
-        # Create the appropriate client type
-        new_client = create_client(hotkey, **client_data)
-        self.clients[websocket] = new_client
-        
-        return new_client
     

@@ -189,14 +189,6 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     Returns the list of agents that were updated
     """
     # Update approved agents to awaiting_screening status
-    await conn.execute("""
-        UPDATE miner_agents 
-        SET status = 'awaiting_screening'
-        WHERE version_id IN (
-            SELECT version_id FROM approved_version_ids
-        )
-        AND status != 'replaced'
-    """)
     
     # Get the updated agents
     results = await conn.fetch("""

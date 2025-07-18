@@ -81,8 +81,8 @@ async def re_eval_approved(approval_password: str):
         logger.info("Starting re-evaluation of approved agents")
         
         # Use state machine to handle the entire re-evaluation flow
-        from api.src.backend.state_machine import EvaluationStateMachine
-        state_machine = EvaluationStateMachine.get_instance()
+        from api.src.backend.agent_machine import AgentStateMachine
+        state_machine = AgentStateMachine.get_instance()
         
         agents_to_re_evaluate = await state_machine.re_evaluate_approved_agents()
         

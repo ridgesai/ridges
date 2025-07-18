@@ -1,5 +1,84 @@
 # State Machine Documentation
 
+```mermaid
+sequenceDiagram
+    participant API as API Layer
+    participant AM as AgentStateMachine
+    participant EM as EvaluationStateMachine
+    participant DB as Database
+    participant WS as WebSocket Manager
+    
+    Note over API,WS: Agent Upload Flow
+    API->>AM: upload_new_agent()
+    AM->>AM: replace_older_versions()
+    loop For each old agent
+        AM->>AM: transition(current_state → replaced)
+        AM->>DB: UPDATE old agent status
+        AM->>DB: UPDATE old evaluations → replaced
+    end
+    AM->>DB: INSERT new agent (awaiting_screening)
+    AM->>AM: create_screening_evaluation()
+    AM->>DB: INSERT screening evaluation (waiting)
+    AM->>WS: assign to screener
+    AM-->>API: return version_id, success
+    
+    Note over API,WS: Screening Flow
+    API->>AM: start_screening()
+    AM->>EM: transition(waiting → running)
+    EM->>DB: UPDATE evaluation status, started_at
+    AM->>AM: transition(awaiting_screening → screening)
+    AM->>DB: UPDATE agent status
+    AM-->>API: return success
+    
+    API->>AM: finish_screening(score)
+    AM->>EM: transition(running → completed)
+    EM->>DB: UPDATE evaluation status, score
+    
+    alt Score >= Threshold (Pass)
+        AM->>AM: transition(screening → waiting)
+        AM->>DB: UPDATE agent status, score
+        AM->>AM: create_validator_evaluations()
+        loop For each connected validator
+            AM->>DB: INSERT validator evaluation (waiting)
+        end
+        AM->>WS: notify_all_validators()
+    else Score < Threshold (Fail)
+        AM->>AM: transition(screening → failed_screening)
+        AM->>DB: UPDATE agent status, score
+    end
+    AM-->>API: return success
+    
+    Note over API,WS: Evaluation Flow
+    API->>AM: start_evaluation()
+    AM->>EM: transition(waiting → running)
+    EM->>DB: UPDATE evaluation status, started_at
+    alt Agent is waiting
+        AM->>AM: transition(waiting → evaluating)
+        AM->>DB: UPDATE agent status
+    end
+    AM-->>API: return success
+    
+    API->>AM: finish_evaluation(score)
+    AM->>EM: transition(running → completed)
+    EM->>DB: UPDATE evaluation status, score
+    AM->>AM: check_if_evaluations_complete()
+    AM->>DB: SELECT COUNT of running evaluations
+    
+    alt All evaluations complete
+        AM->>AM: transition(evaluating → scored)
+        AM->>DB: UPDATE agent status
+        Note over AM: ✅ Agent Fully Scored
+    else More evaluations running
+        Note over AM: Agent stays in evaluating
+    end
+    AM-->>API: return success
+    
+    Note over API,WS: Complete Agent Lifecycle
+    Note over AM: awaiting_screening → screening → waiting → evaluating → scored
+    Note over EM: waiting → running → completed (for each evaluation)
+    Note over DB: All state changes persisted atomically
+```
+
 ## Overview
 
 The `EvaluationStateMachine` is the core component managing agent evaluation lifecycle in the ridges system. It provides atomic operations, perfect error handling, and seamless integration with the evaluation sets system.
@@ -161,3 +240,4 @@ logging.getLogger("api.src.backend.state_machine").setLevel(logging.DEBUG)
 - **Upload Endpoints**: Use state machine for agent uploads
 - **Scoring System**: Use state machine for score updates
 - **Health Monitoring**: Query state machine for system health
+

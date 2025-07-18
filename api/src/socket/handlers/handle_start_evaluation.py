@@ -15,8 +15,8 @@ async def handle_start_evaluation(
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring evaluation start.")
         return {"status": "error", "message": "Client is not a validator or screener"}
     
-    from api.src.backend.state_machine import EvaluationStateMachine
-    state_machine = EvaluationStateMachine.get_instance()
+    from api.src.backend.agent_machine import AgentStateMachine
+    state_machine = AgentStateMachine.get_instance()
     evaluation_id = response_json["evaluation_id"]
     
     # Use appropriate start method based on client type

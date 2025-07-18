@@ -21,8 +21,8 @@ async def handle_get_next_evaluation(
     
     if client.get_type() == "screener":
         # For screeners, we handle connecting and getting work
-        from api.src.backend.state_machine import EvaluationStateMachine
-        state_machine = EvaluationStateMachine.get_instance()
+        from api.src.backend.agent_machine import AgentStateMachine
+        state_machine = AgentStateMachine.get_instance()
         success = await state_machine.handle_screener_connect(client)
         return {"status": "success" if success else "error", "message": "Screener work assigned" if success else "No work available"}
     else:

@@ -196,10 +196,11 @@ async def store_agent_in_db(miner_hotkey: str, name: str, latest_agent: Optional
     Store agent in database using the robust state machine.
     This ensures all state transitions are handled correctly.
     """
-    from api.src.backend.state_machine import state_machine
+    from api.src.backend.agent_machine import AgentStateMachine
     
     logger.debug(f"Storing agent in database using state machine...")
 
+    state_machine = AgentStateMachine.get_instance()
     version_num = latest_agent.version_num + 1 if latest_agent else 0
     
     # Use state machine to upload agent - this handles all state transitions

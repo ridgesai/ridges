@@ -143,12 +143,6 @@ class Screener(Validator):
     def get_type(self) -> str:
         return "screener"
 
-def create_client(hotkey: str, **kwargs) -> Client:
-    """Factory function to create appropriate client type based on hotkey"""
-    if hotkey.startswith("i-0"):
-        return Screener(hotkey=hotkey, **kwargs)
-    else:
-        return Validator(hotkey=hotkey, **kwargs)
 
 class Inference(BaseModel):
     id: UUID

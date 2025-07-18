@@ -1,8 +1,7 @@
 """
 System Status Endpoint
 
-Provides real-time status information about the evaluation system,
-including health checks, recovery status, and system metrics.
+Provides real-time status information about the evaluation system.
 """
 
 from fastapi import APIRouter, HTTPException
@@ -10,8 +9,6 @@ from pydantic import BaseModel
 from typing import Dict, List, Optional
 import logging
 
-from api.src.backend.health_monitor import health_monitor
-from api.src.backend.startup_recovery import recovery_manager
 from api.src.backend.db_manager import get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -21,11 +18,8 @@ router = APIRouter()
 
 class SystemStatusResponse(BaseModel):
     """Response model for system status"""
-    status: str  # 'healthy', 'warning', 'critical', 'starting'
+    status: str  # 'healthy', 'warning', 'critical'
     message: str
-    uptime_info: Dict
-    health_checks: Dict
-    recovery_status: Dict
     system_metrics: Dict
 
 
@@ -36,21 +30,14 @@ async def get_health_status():
     Used for load balancer health checks and monitoring.
     """
     try:
-        health_status = await health_monitor.get_health_status()
+        # Simple health check - verify database connectivity
+        async with get_db_connection() as conn:
+            await conn.fetchval("SELECT 1")
         
-        # Simple health check response
-        if health_status["status"] == "healthy":
-            return {
-                "status": "healthy",
-                "message": "System is operating normally",
-                "timestamp": health_status.get("last_check")
-            }
-        else:
-            return {
-                "status": health_status["status"],
-                "message": health_status["message"],
-                "timestamp": health_status.get("last_check")
-            }
+        return {
+            "status": "healthy",
+            "message": "System is operating normally"
+        }
             
     except Exception as e:
         logger.error(f"Error getting health status: {e}")
@@ -60,41 +47,24 @@ async def get_health_status():
 @router.get("/status", response_model=SystemStatusResponse)
 async def get_system_status():
     """
-    Get comprehensive system status including health, recovery, and metrics.
+    Get comprehensive system status including metrics.
     """
     try:
-        # Get health status
-        health_status = await health_monitor.get_health_status()
-        
-        # Get recovery status
-        recovery_status = await recovery_manager.get_recovery_status()
-        
         # Get system metrics
         system_metrics = await _get_system_metrics()
         
-        # Determine overall status
+        # Determine overall status based on running evaluations
         overall_status = "healthy"
         message = "System is operating normally"
         
-        if not recovery_status["completed"]:
-            overall_status = "starting"
-            message = "System is starting up and recovering"
-        elif health_status["status"] == "critical":
-            overall_status = "critical"
-            message = "System has critical issues"
-        elif health_status["status"] == "warning":
+        # Check for any obvious issues
+        if system_metrics.get("evaluations", {}).get("running_evaluations", 0) > 100:
             overall_status = "warning"
-            message = "System has warnings"
+            message = "High number of running evaluations"
         
         return SystemStatusResponse(
             status=overall_status,
             message=message,
-            uptime_info={
-                "monitoring_active": health_status["is_monitoring"],
-                "recovery_completed": recovery_status["completed"]
-            },
-            health_checks=health_status,
-            recovery_status=recovery_status,
             system_metrics=system_metrics
         )
         
@@ -110,8 +80,35 @@ async def run_manual_health_check():
     Useful for debugging and manual system verification.
     """
     try:
-        results = await health_monitor.run_manual_health_check()
-        return results
+        # Simple health check - verify database connectivity and basic metrics
+        async with get_db_connection() as conn:
+            await conn.fetchval("SELECT 1")
+            
+            # Check for obviously broken states
+            running_evals = await conn.fetchval("SELECT COUNT(*) FROM evaluations WHERE status = 'running'")
+            inconsistent_agents = await conn.fetchval("""
+                SELECT COUNT(*) FROM miner_agents 
+                WHERE status = 'evaluating' 
+                AND NOT EXISTS (
+                    SELECT 1 FROM evaluations 
+                    WHERE version_id = miner_agents.version_id 
+                    AND status = 'running'
+                )
+            """)
+            
+            issues = []
+            if running_evals > 0:
+                issues.append(f"{running_evals} evaluations still running after startup")
+            if inconsistent_agents > 0:
+                issues.append(f"{inconsistent_agents} agents in inconsistent state")
+            
+            return {
+                "status": "healthy" if not issues else "warning",
+                "message": "Manual health check completed",
+                "issues": issues,
+                "running_evaluations": running_evals,
+                "inconsistent_agents": inconsistent_agents
+            }
         
     except Exception as e:
         logger.error(f"Error running manual health check: {e}")
@@ -142,8 +139,7 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE status = 'waiting') as waiting_evaluations,
                     COUNT(*) FILTER (WHERE status = 'running') as running_evaluations,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_evaluations,
-                    COUNT(*) FILTER (WHERE status = 'error' AND terminated_reason != 'timed out') as failed_evaluations,
-                    COUNT(*) FILTER (WHERE status = 'error' AND terminated_reason = 'timed out') as timed_out_evaluations,
+                    COUNT(*) FILTER (WHERE status = 'error') as failed_evaluations,
                     COUNT(*) FILTER (WHERE status = 'replaced') as replaced_evaluations
                 FROM evaluations
                 WHERE created_at >= NOW() - INTERVAL '24 hours'
@@ -174,15 +170,3 @@ async def _get_system_metrics() -> Dict:
         }
 
 
-# Add routes to router
-routes = [
-    ("/health", get_health_status),
-    ("/status", get_system_status),
-    ("/health-check", run_manual_health_check),
-]
-
-for path, endpoint in routes:
-    if path == "/health-check":
-        router.add_api_route(path, endpoint, methods=["POST"])
-    else:
-        router.add_api_route(path, endpoint, methods=["GET"])

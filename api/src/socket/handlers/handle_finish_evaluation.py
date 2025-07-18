@@ -17,15 +17,13 @@ async def handle_finish_evaluation(
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring finish evaluation request.")
         return {"status": "error", "message": "Client is not a validator or screener"}
     
-    from api.src.backend.state_machine import EvaluationStateMachine
-    state_machine = EvaluationStateMachine.get_instance()
+    from api.src.backend.agent_machine import AgentStateMachine
+    state_machine = AgentStateMachine.get_instance()
     
     evaluation_id = response_json["evaluation_id"]
     score = response_json.get("score", 0.0)
     errored = response_json.get("errored", False)
     
-    # Mark client as available
-    client.status = "available"
     
     # Get the evaluation to check if it's a screener evaluation
     evaluation = await get_evaluation_by_id(evaluation_id)
@@ -49,10 +47,10 @@ async def handle_finish_evaluation(
         
         # Use appropriate finish method based on evaluation type
         if is_screener_evaluation:
-            success = await state_machine.finish_screening(evaluation_id, score)
+            success = await state_machine.finish_screening(client, evaluation_id, score)
             action = "Screening"
         else:
-            success = await state_machine.finish_evaluation(evaluation_id, score, errored)
+            success = await state_machine.finish_evaluation(client, evaluation_id, score, errored)
             action = "Evaluation"
         
         if success:
