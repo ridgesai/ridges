@@ -146,7 +146,7 @@ class WebSocketManager:
         """Get all connected screeners"""
         return [client.hotkey for client in self.clients.values() if isinstance(client, Screener)]
 
-    async def get_available_screener(self) -> Optional[Client]:
+    async def get_available_screener(self) -> Optional[Screener]:
         """Get the first available screener from the connected clients"""
         logger.debug(f"Looping through {len(self.clients)} clients to find an available screener...")
         for client in self.clients.values():

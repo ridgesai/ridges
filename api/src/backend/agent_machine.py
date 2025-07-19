@@ -5,8 +5,10 @@ import asyncpg
 import uuid
 
 from api.src.backend.db_manager import get_db_connection
-from api.src.backend.entities import AgentStatus, EvaluationStatus, Screener, Validator
+from api.src.backend.entities import AgentStatus, EvaluationStatus, MinerAgent, Screener, Validator
 from api.src.backend.evaluation_machine import EvaluationStateMachine
+from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.evaluations import create_screening
 from api.src.utils.config import SCREENING_THRESHOLD
 
 logger = logging.getLogger(__name__)
@@ -42,22 +44,7 @@ class AgentStateMachine:
                 yield conn
     
     
-    async def _assign_agent_to_screener(self, conn: asyncpg.Connection, version_id: str, screener) -> bool:
-        """Try to assign agent to screener"""
-        eval_id = await self.evaluation_machine.create_screening(conn, version_id, screener.hotkey)
-        
-        from api.src.backend.queries.agents import get_agent_by_version_id
-        agent_data = await get_agent_by_version_id(version_id)
-        
-        success = await self.ws_manager.send_to_client(screener, {
-            "event": "screen-agent",
-            "evaluation_id": eval_id,
-            "agent_version": agent_data.model_dump(mode='json')
-        })
-        
-        if success:
-            screener.status = f"Screening agent {agent_data.agent_name} with evaluation {eval_id}"
-        return success
+
     
     async def _create_evaluations_for_waiting_agent(self, conn: asyncpg.Connection, version_id: str):
         """Create evaluations for all connected validators for a waiting agent"""
@@ -124,7 +111,7 @@ class AgentStateMachine:
                 VALUES ($1, $2, $3, $4, NOW(), $5)
             """, version_id, miner_hotkey, agent_name, version_num, AgentStatus.awaiting_screening.value)
             
-            # Assign to provided screener
+            # Assign to the provided screener that handled the upload
             eval_id = await self.evaluation_machine.create_screening(conn, version_id, screener.hotkey)
             
             from api.src.backend.entities import MinerAgent
@@ -149,43 +136,46 @@ class AgentStateMachine:
             
             return success
 
-    async def screener_connect(self, screener) -> bool:
+    async def screener_connect(self, screener: 'Screener') -> bool:
         """Assign screener to next awaiting agent if available"""
-        from api.src.backend.queries.evaluations import get_next_evaluation_for_screener
-        from api.src.backend.queries.agents import get_agent_by_version_id
-        
-        screener.status = "available"
-        logger.info(f"Screener {screener.hotkey} connected")
-        evaluation = await get_next_evaluation_for_screener(screener.hotkey)
-        
-        if not evaluation:
-            return True
+        async with self.atomic_transaction() as conn:
+            from api.src.backend.queries.evaluations import create_screening
+            from api.src.backend.queries.agents import get_agent_by_version_id
             
-        agent_data = await get_agent_by_version_id(evaluation.version_id)
-        success = await self.ws_manager.send_to_client(screener, {
-            "event": "screen-agent",
-            "evaluation_id": str(evaluation.evaluation_id),
-            "agent_version": agent_data.model_dump(mode='json')
-        })
-        
-        if success:
-            screener.status = f"Screening agent {agent_data.agent_name} with evaluation {evaluation.evaluation_id}"
+            screener.status = "available"
+            logger.info(f"Screener {screener.hotkey} connected")
+            evaluation = await create_screening(screener.hotkey)
             
-        return success
+            if not evaluation:
+                return True
+                
+            agent_data = await get_agent_by_version_id(evaluation.version_id)
+            success = await self.ws_manager.send_to_client(screener, {
+                "event": "screen-agent",
+                "evaluation_id": str(evaluation.evaluation_id),
+                "agent_version": agent_data.model_dump(mode='json')
+            })
+            
+            if success:
+                screener.status = f"Screening agent {agent_data.agent_name} with evaluation {evaluation.evaluation_id}"
+                
+            return success
 
     async def screener_disconnect(self, screener_hotkey: str):
-        """Reset screening work: error evaluation, agent back to awaiting_screening"""
+        """Reset screening work: cancel evaluation, reset agent to awaiting_screening"""
         async with self.atomic_transaction() as conn:
-            running_evals = await conn.fetch("""
-                SELECT e.evaluation_id, e.version_id
+            # Handle both running and waiting evaluations for this screener
+            active_evals = await conn.fetch("""
+                SELECT e.evaluation_id, e.version_id, e.status
                 FROM evaluations e
-                WHERE e.validator_hotkey = $1 AND e.status = 'running' AND e.validator_hotkey LIKE 'i-0%'
+                WHERE e.validator_hotkey = $1 AND e.status IN ('running', 'waiting') AND e.validator_hotkey LIKE 'i-0%'
             """, screener_hotkey)
             
-            for eval_row in running_evals:
-                await self.evaluation_machine.transition(conn, eval_row["evaluation_id"], 
-                                                        EvaluationStatus.running, EvaluationStatus.error, 
-                                                        reason="Disconnected from screener")
+            for eval_row in active_evals:
+                # Cancel the evaluation 
+                await self.evaluation_machine.error_with_reason(conn, eval_row["evaluation_id"], "Disconnected from screener")
+                
+                # Reset agent to awaiting_screening - next screener will create fresh evaluation
                 await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
                                  AgentStatus.awaiting_screening.value, eval_row["version_id"])
 
@@ -372,19 +362,32 @@ class AgentStateMachine:
 
 
     async def re_evaluate_approved_agents(self) -> List:
-        """Re-evaluate all approved agents: reset to awaiting_screening, try to assign screeners"""
+        """Re-evaluate all approved agents: reset to awaiting_screening"""
         async with self.atomic_transaction() as conn:
-            agents = await conn.fetch("""
+            agent_data = await conn.fetch("""
                 UPDATE miner_agents 
                 SET status = 'awaiting_screening'
                 WHERE version_id IN (SELECT version_id FROM approved_version_ids)
                 AND status != 'replaced'
                 RETURNING *
             """)
-            
+
+            agents = [MinerAgent(**agent) for agent in agent_data]
+
+            # Assign each agent to the first available screener 
             for agent in agents:
-                screener = await self.ws_manager.get_available_screener()
-                if screener:
-                    await self._assign_agent_to_screener(conn, agent["version_id"], screener)
+                available_screener = await self.ws_manager.get_available_screener()
+                if not available_screener:
+                    break
+
+                screening_evaluation = await create_screening(available_screener.hotkey)
+                if screening_evaluation:
+                    await self.ws_manager.send_to_client(available_screener, {
+                        "event": "screen-agent",
+                        "evaluation_id": str(screening_evaluation.evaluation_id),
+                        "agent_version": agent.model_dump(mode='json')
+                    })
+            
+            logger.info(f"Reset {len(agents)} approved agents to awaiting_screening status")
             
             return agents
