@@ -36,7 +36,7 @@ class Validator(Client):
         evaluation = await Evaluation.get_by_id(evaluation_id)
 
         async with get_db_connection() as conn:
-            agent_name = await conn.fetchval("SELECT agent_name FROM miner_agents WHERE version_id = $1", evaluation_id)
+            agent_name = await conn.fetchval("SELECT agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             await evaluation.start(conn)
             
         self.status = f"Evaluating agent {agent_name} with evaluation {evaluation_id}"
