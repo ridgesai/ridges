@@ -28,19 +28,19 @@ class Screener(Client):
         self.current_agent_name = None
         logger.info(f"Screener {self.hotkey}: -> available")
 
-    async def start_screening(self, evaluation_id: str):
+    async def start_screening(self, evaluation_id: str) -> bool:
         """Handle start-evaluation message"""
         from api.src.models.evaluation import Evaluation
         
         evaluation = await Evaluation.get_by_id(evaluation_id)
         if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
-            return
+            return False
         
         async with get_transaction() as conn:
             agent = await conn.fetchrow("SELECT status, agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
             if not agent or agent_status != AgentStatus.awaiting_screening:
-                return
+                return False
             agent_name = agent["agent_name"]
 
             await evaluation.start(conn)
@@ -48,6 +48,7 @@ class Screener(Client):
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = agent_name
             logger.info(f"Screener {self.hotkey}: -> screening {agent_name}")
+            return True
     
     async def connect(self):
         """Handle screener connection"""

@@ -30,19 +30,25 @@ class Validator(Client):
         self.current_agent_name = None
         logger.info(f"Validator {self.hotkey}: -> available")
     
-    async def start_evaluation(self, evaluation_id: str) -> None:
+    async def start_evaluation(self, evaluation_id: str) -> bool:
         """Start evaluation - update status"""
         from api.src.models.evaluation import Evaluation
         evaluation = await Evaluation.get_by_id(evaluation_id)
+        
+        if not evaluation or evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+            return False
 
         async with get_db_connection() as conn:
             agent_name = await conn.fetchval("SELECT agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+            if not agent_name:
+                return False
             await evaluation.start(conn)
             
         self.status = f"Evaluating agent {agent_name} with evaluation {evaluation_id}"
         self.current_evaluation_id = evaluation_id
         self.current_agent_name = agent_name
         logger.info(f"Validator {self.hotkey}: -> evaluating {agent_name}")
+        return True
     
     async def connect(self):
         """Handle validator connection"""

@@ -91,7 +91,7 @@ async def post_agent(
                     status_code=503,
                     detail="No screeners available for agent evaluation. Please try again later."
                 )
-            
+
             async with get_transaction() as conn:
                 can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, miner_hotkey)
                 if not can_upload:
@@ -117,13 +117,8 @@ async def post_agent(
                 )
 
                 success = await Evaluation.create_screening_and_send(conn, agent, screener)
-
-            if not success:
-                logger.error(f"Failed to send screening task to screener for miner {miner_hotkey}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to assign agent to screener. Please try again later."
-                )
+                if not success:
+                    logger.warning(f"Failed to immediately assign agent {agent.version_id} to screener, will be picked up later")
 
         logger.info(f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
