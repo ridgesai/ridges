@@ -43,20 +43,15 @@ async def handle_finish_evaluation(
     try:
         logger.info(f"{client.get_type().title()} {client.hotkey} has finished evaluation {evaluation_id}.")
         
-        # Use appropriate finish method based on client type
         if isinstance(client, Screener):
-            success = await client.finish_screening_by_id(evaluation_id, errored, reason)
+            await client.finish_screening(evaluation_id, errored, reason)
             action = "Screening"
         elif isinstance(client, Validator):
-            success = await client.finish_evaluation(evaluation_id, errored, reason)
+            await client.finish_evaluation(evaluation_id, errored, reason)
             action = "Evaluation"
         
-        if success:
-            logger.info(f"{action} {evaluation_id} finished successfully by {client.get_type()} {client.hotkey}")
-            return {"status": "success", "message": f"{action} finished successfully"}
-        else:
-            logger.warning(f"Failed to finish {action.lower()} {evaluation_id} for {client.get_type()} {client.hotkey}")
-            return {"status": "error", "message": f"Failed to finish {action.lower()}"}
+        logger.info(f"{action} {evaluation_id} finished successfully by {client.get_type()} {client.hotkey}")
+        return {"status": "success", "message": f"{action} finished successfully"}
             
     except Exception as e:
         logger.error(f"Error finishing evaluation for {client.get_type()} {client.hotkey}: {str(e)}")

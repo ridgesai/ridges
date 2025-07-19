@@ -106,19 +106,7 @@ class WebSocketManager:
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
-    async def send_to_all_validators(self, event: str, data: dict):
-        """Broadcast an event to every connected validator"""
-
-        clients_snapshot = dict(self.clients)
-
-        validator_websockets = [websocket for websocket, client in clients_snapshot.items() if hasattr(client, 'hotkey')]
-        
-        for websocket in validator_websockets:
-                await websocket.send_text(json.dumps({"event": event, "data": data}))
-        
-        logger.info(f"Platform socket broadcasted {event} to {len(validator_websockets)} validators")
-
-    async def get_connected_clients(self):
+    async def get_clients(self):
         """Get list of connected validators"""
         validators = []
         # Create a snapshot to avoid "dictionary changed size during iteration" error

@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.socket.websocket_manager import WebSocketManager
+from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
@@ -20,8 +20,9 @@ async def tell_validators_to_set_weights():
         logger.info("No top agent found, skipping weight update")
         return
     
-    await WebSocketManager.get_instance().send_to_all_validators("set-weights", top_agent.model_dump(mode='json'))
-    
+    for validator in await Validator.get_connected():
+        await validator.send_set_weights(top_agent.model_dump(mode='json'))
+
     logger.info(f"Sent updated top agent to all validators: {top_agent.miner_hotkey}")
 
 async def run_weight_setting_loop(minutes: int):

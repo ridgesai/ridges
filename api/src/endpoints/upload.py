@@ -71,6 +71,7 @@ async def post_agent(
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
             created_at=datetime.now(),
+            status=AgentStatus.awaiting_screening,
         )
 
         if prod: await check_agent_banned(miner_hotkey=miner_hotkey)

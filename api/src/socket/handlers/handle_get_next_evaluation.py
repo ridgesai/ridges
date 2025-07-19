@@ -38,7 +38,7 @@ async def handle_get_next_evaluation(
     
     evaluation_message = {
         "event": "evaluation",
-        "evaluation_id": evaluation_id,
+        "evaluation_id": str(evaluation_id),
         "agent_version": miner_agent.model_dump(mode='json')
     }
     

@@ -11,14 +11,11 @@ logger = logging.getLogger(__name__)
 class Validator(Client):
     """Validator model - manages evaluations atomically"""
     
-    def __init__(self, hotkey: str, websocket: WebSocket, ip_address: str, 
-                 version_commit_hash: Optional[str] = None, connected_at: Optional[datetime] = None):
-        super().__init__(ip_address=ip_address, websocket=websocket, connected_at=connected_at)
-        self.hotkey = hotkey
-        self.version_commit_hash = version_commit_hash
-        self.status = "available"
-        self.current_evaluation_id: Optional[str] = None
-        self.current_agent_name: Optional[str] = None
+    hotkey: str
+    version_commit_hash: Optional[str] = None
+    status: str = "available"
+    current_evaluation_id: Optional[str] = None
+    current_agent_name: Optional[str] = None
     
     def get_type(self) -> str:
         return "validator"
@@ -35,8 +32,12 @@ class Validator(Client):
     
     async def start_evaluation(self, evaluation_id: str) -> None:
         """Start evaluation - update status"""
+        from api.src.models.evaluation import Evaluation
+        evaluation = await Evaluation.get_by_id(evaluation_id)
+
         async with get_db_connection() as conn:
             agent_name = await conn.fetchval("SELECT agent_name FROM miner_agents WHERE version_id = $1", evaluation_id)
+            await evaluation.start(conn)
             
         self.status = f"Evaluating agent {agent_name} with evaluation {evaluation_id}"
         self.current_evaluation_id = evaluation_id
@@ -46,8 +47,6 @@ class Validator(Client):
     async def connect(self):
         """Handle validator connection"""
         from api.src.models.evaluation import Evaluation
-        from api.src.socket.websocket_manager import WebSocketManager
-        
         self.set_available()
         
         if await Evaluation.has_waiting_for_validator(self):
@@ -62,9 +61,11 @@ class Validator(Client):
         """Get next evaluation ID for this validator"""
         async with get_db_connection() as conn:
             return await conn.fetchval("""
-                SELECT evaluation_id FROM evaluations 
-                WHERE validator_hotkey = $1 AND status = 'waiting'
-                ORDER BY created_at ASC LIMIT 1
+                SELECT e.evaluation_id FROM evaluations e
+                JOIN miner_agents ma ON e.version_id = ma.version_id
+                WHERE e.validator_hotkey = $1 AND e.status = 'waiting'
+                AND ma.status NOT IN ('screening', 'awaiting_screening')
+                ORDER BY e.created_at ASC LIMIT 1
             """, self.hotkey)
     
     async def finish_evaluation(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
@@ -91,7 +92,13 @@ class Validator(Client):
         """Send evaluation available message to validator"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
-        await ws_manager.send_to_client(self, {"event": "evaluation-available", "version_id": version_id})
+        await ws_manager.send_to_client(self, {"event": "evaluation-available", "version_id": str(version_id)})
+    
+    async def send_set_weights(self, data: dict):
+        """Send set weights message to validator"""
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        await ws_manager.send_to_client(self, {"event": "set-weights", "data": data})
     
     @staticmethod
     async def get_connected() -> List['Validator']:

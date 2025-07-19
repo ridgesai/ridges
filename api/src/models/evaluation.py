@@ -41,16 +41,27 @@ class Evaluation:
         """Finish evaluation"""
         await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
         self.status = EvaluationStatus.completed
-        self.score = conn.fetchval("SELECT score FROM evaluations WHERE evaluation_id = $1", self.evaluation_id)
+        self.score = await conn.fetchval("SELECT score FROM evaluations WHERE evaluation_id = $1", self.evaluation_id)
 
-        if self.is_screening and self.score >= SCREENING_THRESHOLD:
-            from api.src.models.validator import Validator
+        # Store validators to notify after agent status update
+        validators_to_notify = []
+        
+        if self.is_screening:
+            if self.score < SCREENING_THRESHOLD:
+                logger.info(f"Screening failed for agent {self.version_id} with score {self.score}")
+            else:
+                logger.info(f"Screening passed for agent {self.version_id} with score {self.score}")
+                from api.src.models.validator import Validator
 
-            for validator in await Validator.get_connected():
-                await self.create_for_validator(conn, self.version_id, validator.hotkey)
-                await validator.send_evaluation_available(self.version_id)
+                # Create evaluation records but don't notify yet
+                validators_to_notify = await Validator.get_connected()
+                for validator in validators_to_notify:
+                    await self.create_for_validator(conn, self.version_id, validator.hotkey)
 
         await self._update_agent_status(conn)
+        
+        for validator in validators_to_notify:
+            await validator.send_evaluation_available(self.version_id)
 
     async def error(self, conn: asyncpg.Connection, reason: Optional[str] = None):
         """Error evaluation and reset agent"""
@@ -265,9 +276,10 @@ class Evaluation:
             for agent in agents:
                 await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey)
 
+        async with get_transaction() as conn:
             # Check if validator has waiting work
             has_work = await conn.fetchval(
-                "SELECT EXISTS(SELECT 1 FROM evaluations WHERE validator_hotkey = $1 AND status = 'waiting')", validator_hotkey
+                "SELECT EXISTS(SELECT 1 FROM evaluations WHERE validator_hotkey = $1 AND status = 'waiting')", validator.hotkey
             )
 
             return has_work
@@ -327,10 +339,14 @@ class Evaluation:
                     else:
                         await evaluation.reset_to_waiting(conn)
 
-            # Fix evaluating agents
-            evaluating_agents = await conn.fetch("SELECT version_id FROM miner_agents WHERE status = 'evaluating'")
-            for agent in evaluating_agents:
-                temp_eval = Evaluation("", agent["version_id"], "", 0, EvaluationStatus.running)
-                await temp_eval._update_agent_status(conn)
+            # Cancel waiting screenings
+            waiting_screenings = await conn.fetch("SELECT evaluation_id FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%'")
+            for screening_row in waiting_screenings:
+                evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
+                if evaluation:
+                    await evaluation.error(conn, "Disconnected from screener")
+
+            # Cancel dangling evaluation runs
+            await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')")
 
             logger.info("Application startup recovery completed")

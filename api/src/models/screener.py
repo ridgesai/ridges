@@ -1,18 +1,32 @@
 import logging
 from typing import Optional, List
 
-
-from api.src.models.validator import Validator
-from api.src.backend.entities import AgentStatus, MinerAgent
+from api.src.backend.entities import Client, AgentStatus, MinerAgent
 from api.src.backend.db_manager import get_db_connection, get_transaction
 
 logger = logging.getLogger(__name__)
 
-class Screener(Validator):
+class Screener(Client):
     """Screener model - handles screening evaluations atomically"""
+    
+    hotkey: str
+    version_commit_hash: Optional[str] = None
+    status: str = "available"
+    current_evaluation_id: Optional[str] = None
+    current_agent_name: Optional[str] = None
     
     def get_type(self) -> str:
         return "screener"
+    
+    def is_available(self) -> bool:
+        return self.status == "available"
+    
+    def set_available(self) -> None:
+        """Set screener to available state"""
+        self.status = "available"
+        self.current_evaluation_id = None
+        self.current_agent_name = None
+        logger.info(f"Screener {self.hotkey}: -> available")
 
     async def start_screening(self, evaluation_id: str):
         """Handle start-evaluation message"""
@@ -24,18 +38,16 @@ class Screener(Validator):
         
         async with get_transaction() as conn:
             agent = await conn.fetchrow("SELECT status, agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-            if not agent or AgentStatus.from_string(agent["status"]) != AgentStatus.screening:
+            agent_status = AgentStatus.from_string(agent["status"]) if agent else None
+            if not agent or agent_status != AgentStatus.awaiting_screening:
                 return
-            
+            agent_name = agent["agent_name"]
+
             await evaluation.start(conn)
-            self._set_screening_status(evaluation_id, agent["agent_name"])
-    
-    def _set_screening_status(self, evaluation_id: str, agent_name: str) -> None:
-        """Update screener status to show current screening work"""
-        self.status = f"Screening agent {agent_name} with evaluation {evaluation_id}"
-        self.current_evaluation_id = evaluation_id
-        self.current_agent_name = agent_name
-        logger.info(f"Screener {self.hotkey}: -> screening {agent_name}")
+            self.status = f"Screening agent {agent_name} with evaluation {evaluation_id}"
+            self.current_evaluation_id = evaluation_id
+            self.current_agent_name = agent_name
+            logger.info(f"Screener {self.hotkey}: -> screening {agent_name}")
     
     async def connect(self):
         """Handle screener connection"""
@@ -70,7 +82,7 @@ class Screener(Validator):
         await Evaluation.screen_next_awaiting_agent(self)
     
     @staticmethod
-    def get_first_available() -> Optional['Screener']:
+    async def get_first_available() -> Optional['Screener']:
         """Get first available screener"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
