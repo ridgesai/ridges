@@ -132,6 +132,9 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
 async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedUsageRuns]:
     evaluations: list[EvaluationsWithHydratedUsageRuns] = []
 
+    if set_id is None:
+        set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+
     evaluation_rows = await conn.fetch("""
             SELECT 
                 evaluation_id,
@@ -146,7 +149,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 score
             FROM evaluations 
             WHERE version_id = $1
-            AND ($2::int IS NULL OR set_id = $2)
+            AND set_id = $2
             ORDER BY created_at DESC
         """,
         version_id, set_id

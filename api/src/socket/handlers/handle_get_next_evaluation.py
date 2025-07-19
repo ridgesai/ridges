@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 
-from api.src.backend.entities import Client, Validator
+from api.src.backend.entities import Client
+from api.src.models.validator import Validator
 from api.src.backend.queries.evaluations import get_next_evaluation_for_validator
 from api.src.backend.queries.agents import get_agent_by_version_id
 from loggers.logging_utils import get_logger
@@ -18,19 +19,26 @@ async def handle_get_next_evaluation(
         return {"status": "error", "message": "Client is not a validator"}
 
     from api.src.socket.websocket_manager import WebSocketManager
+    from api.src.backend.queries.agents import get_agent_by_version_id
     ws_manager = WebSocketManager.get_instance()
 
     validator: 'Validator' = client
 
-    next_evaluation = await get_next_evaluation_for_validator(validator.hotkey)
-    if not next_evaluation:
+    evaluation_id = await validator.get_next_evaluation()
+    if not evaluation_id:
         return await ws_manager.send_to_client(validator, {"event": "evaluation", "message": "No evaluations available"})
     
-    miner_agent = await get_agent_by_version_id(next_evaluation.version_id)
+    # Get evaluation details
+    from api.src.models.evaluation import Evaluation
+    evaluation = await Evaluation.get_by_id(evaluation_id)
+    if not evaluation:
+        return {"status": "error", "message": "Evaluation not found"}
+    
+    miner_agent = await get_agent_by_version_id(evaluation.version_id)
     
     evaluation_message = {
         "event": "evaluation",
-        "evaluation_id": str(next_evaluation.evaluation_id),
+        "evaluation_id": evaluation_id,
         "agent_version": miner_agent.model_dump(mode='json')
     }
     

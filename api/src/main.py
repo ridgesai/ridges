@@ -23,10 +23,9 @@ logger = get_logger(__name__)
 async def lifespan(app: FastAPI):
     await new_db.open()
     
-    # Simple startup recovery through agent machine
-    from api.src.backend.evaluation_machine import EvaluationStateMachine
-    evaluation_machine = EvaluationStateMachine.get_instance()
-    await evaluation_machine.application_startup()
+    # Simple startup recovery through evaluation model
+    from api.src.models.evaluation import Evaluation
+    await Evaluation.startup_recovery()
     
     asyncio.create_task(run_weight_setting_loop(30))
     yield

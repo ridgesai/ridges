@@ -135,22 +135,6 @@ class Client(BaseModel):
         """Return the type of client"""
         return "client"
 
-class Validator(Client):
-    """Validator client that performs evaluations"""
-    hotkey: str
-    version_commit_hash: Optional[str] = None
-    status: Optional[str] = None
-    
-    def get_type(self) -> str:
-        return "validator"
-
-class Screener(Validator):
-    """Screener client that performs screening evaluations"""
-    
-    def get_type(self) -> str:
-        return "screener"
-
-
 class Inference(BaseModel):
     id: UUID
     run_id: UUID
