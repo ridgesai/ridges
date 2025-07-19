@@ -36,57 +36,52 @@ class EvaluationStateMachine:
             raise EvaluationStateTransitionError(f"Invalid evaluation transition: {from_state} -> {to_state}")
         
         # Execute transition-specific logic
-        await handler(conn, evaluation_id, **context)
-        
-        # Update database
-        update_query = """
-            UPDATE evaluations SET status = $1, finished_at = CASE 
-                WHEN $1 IN ('completed', 'error', 'replaced') THEN NOW() 
-                ELSE finished_at END
-            WHERE evaluation_id = $2
-        """
-        await conn.execute(update_query, to_state.value, evaluation_id)
+        await handler(conn, evaluation_id, to_state, **context)
         
         logger.info(f"Evaluation {evaluation_id}: {from_state} -> {to_state}")
     
     # Transition handlers
-    async def _start(self, conn: asyncpg.Connection, evaluation_id: str, **context):
+    async def _start(self, conn: asyncpg.Connection, evaluation_id: str, to_state, **context):
         """Evaluation starts running"""
         await conn.execute("""
-            UPDATE evaluations SET started_at = NOW() WHERE evaluation_id = $1
-        """, evaluation_id)
+            UPDATE evaluations SET status = $1, started_at = NOW() WHERE evaluation_id = $2
+        """, to_state.value, evaluation_id)
     
-    async def _complete(self, conn: asyncpg.Connection, evaluation_id: str, **context):
+    async def _complete(self, conn: asyncpg.Connection, evaluation_id: str, to_state, **context):
         """Evaluation completes successfully"""
         await conn.execute("""
-            UPDATE evaluations SET finished_at = NOW() WHERE evaluation_id = $1
-        """, evaluation_id)
+            UPDATE evaluations SET status = $1, finished_at = NOW() WHERE evaluation_id = $2
+        """, to_state.value, evaluation_id)
     
-    async def _error(self, conn: asyncpg.Connection, evaluation_id: str, 
+    async def _error(self, conn: asyncpg.Connection, evaluation_id: str, to_state,
                     reason: str = "unknown", **context):
         """Evaluation encounters an error"""
         await conn.execute("""
-            UPDATE evaluations SET terminated_reason = $1 WHERE evaluation_id = $2
-        """, reason, evaluation_id)
+            UPDATE evaluations SET status = $1, finished_at = NOW(), terminated_reason = $2 
+            WHERE evaluation_id = $3
+        """, to_state.value, reason, evaluation_id)
         # Cancel associated evaluation runs
         await conn.execute("""
             UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW()
             WHERE evaluation_id = $1 AND status != 'cancelled'
         """, evaluation_id)
     
-    async def _replace(self, conn: asyncpg.Connection, evaluation_id: str, **context):
+    async def _replace(self, conn: asyncpg.Connection, evaluation_id: str, to_state, **context):
         """Evaluation is replaced (agent was replaced)"""
+        await conn.execute("""
+            UPDATE evaluations SET status = $1, finished_at = NOW() WHERE evaluation_id = $2
+        """, to_state.value, evaluation_id)
         # Cancel associated evaluation runs
         await conn.execute("""
             UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW()
             WHERE evaluation_id = $1 AND status != 'cancelled'
         """, evaluation_id)
 
-    async def _reset_to_waiting(self, conn: asyncpg.Connection, evaluation_id: str, **context):
+    async def _reset_to_waiting(self, conn: asyncpg.Connection, evaluation_id: str, to_state, **context):
         """Reset evaluation back to waiting (e.g., due to validator disconnect)"""
         await conn.execute("""
-            UPDATE evaluations SET started_at = NULL WHERE evaluation_id = $1
-        """, evaluation_id)
+            UPDATE evaluations SET status = $1, started_at = NULL WHERE evaluation_id = $2
+        """, to_state.value, evaluation_id)
         # Cancel associated evaluation runs since we're resetting
         await conn.execute("""
             UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW()
