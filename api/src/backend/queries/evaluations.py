@@ -40,7 +40,19 @@ async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: st
 
 @db_operation
 async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
+    if set_id is None:
+        set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+
     evaluation_rows = await conn.fetch("""
+        WITH latest_screener AS (
+            SELECT evaluation_id
+            FROM evaluations 
+            WHERE version_id = $1
+            AND set_id = $2
+            AND validator_hotkey LIKE 'i-%'
+            ORDER BY created_at DESC
+            LIMIT 1
+        )
         SELECT 
             e.evaluation_id,
             e.version_id,
@@ -80,7 +92,11 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
             AND er.status != 'cancelled'
         WHERE e.version_id = $1
-        AND ($2::int IS NULL OR e.set_id = $2)
+        AND e.set_id = $2
+        AND (
+            e.validator_hotkey NOT LIKE 'i-%'  -- Include all non-screener evaluations
+            OR e.evaluation_id IN (SELECT evaluation_id FROM latest_screener)  -- Include only the latest screener
+        )
         GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
     """, version_id, set_id)
@@ -133,21 +149,34 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
     evaluations: list[EvaluationsWithHydratedUsageRuns] = []
 
     evaluation_rows = await conn.fetch("""
-            SELECT 
-                evaluation_id,
-                version_id,
-                validator_hotkey,
-                set_id,
-                status,
-                terminated_reason,
-                created_at,
-                started_at,
-                finished_at,
-                score
+        WITH latest_screener AS (
+            SELECT evaluation_id
             FROM evaluations 
             WHERE version_id = $1
             AND ($2::int IS NULL OR set_id = $2)
+            AND validator_hotkey LIKE 'i-%'
             ORDER BY created_at DESC
+            LIMIT 1
+        )
+        SELECT 
+            evaluation_id,
+            version_id,
+            validator_hotkey,
+            set_id,
+            status,
+            terminated_reason,
+            created_at,
+            started_at,
+            finished_at,
+            score
+        FROM evaluations 
+        WHERE version_id = $1
+        AND ($2::int IS NULL OR set_id = $2)
+        AND (
+            validator_hotkey NOT LIKE 'i-%'  -- Include all non-screener evaluations
+            OR evaluation_id IN (SELECT evaluation_id FROM latest_screener)  -- Include only the latest screener
+        )
+        ORDER BY created_at DESC
         """,
         version_id, set_id
     )
@@ -242,6 +271,10 @@ async def create_screening(conn: asyncpg.Connection, screener_hotkey: str) -> Op
     result = await conn.fetchrow("""
         SELECT * FROM evaluations WHERE evaluation_id = $1
     """, eval_id)
+    
+    if not result:
+        logger.error(f"Failed to retrieve created screening evaluation {eval_id}")
+        raise Exception(f"Failed to retrieve created screening evaluation {eval_id}")
     
     logger.debug(f"Created screening evaluation {eval_id} for agent {version_id} assigned to screener {screener_hotkey}.")
     return Evaluation(**dict(result))
