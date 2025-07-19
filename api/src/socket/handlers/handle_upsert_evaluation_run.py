@@ -33,7 +33,7 @@ async def handle_upsert_evaluation_run(
         ws = WebSocketManager.get_instance()
         
         # Prepare broadcast data
-        broadcast_data = evaluation_run.model_dump()
+        broadcast_data = evaluation_run.model_dump(mode='json')
         broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
         
         await ws.send_to_all_non_validators("evaluation-run-update", broadcast_data)

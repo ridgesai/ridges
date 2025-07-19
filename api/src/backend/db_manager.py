@@ -153,6 +153,16 @@ async def get_db_connection():
     async with new_db.acquire() as conn:
         yield conn
 
+@asynccontextmanager
+async def get_transaction():
+    """
+    Get a database connection with an active transaction.
+    This provides atomic database operations for models.
+    """
+    async with new_db.acquire() as conn:
+        async with conn.transaction():
+            yield conn
+
 async def check_idle_transactions() -> List[dict]:
     """
     Check for idle transactions that may be blocking operations.

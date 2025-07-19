@@ -23,33 +23,33 @@ async def handle_validator_info(
 
     # Replace the base client with the appropriate typed client
     from api.src.socket.websocket_manager import WebSocketManager
-    from api.src.backend.entities import Screener, Validator
+    from api.src.models.validator import Validator
+    from api.src.models.screener import Screener
     ws_manager = WebSocketManager.get_instance()
     
-    # Inline the client replacement logic
+    # Get old client info
     old_client = ws_manager.clients[websocket]
-    client_data = {
-        'ip_address': old_client.ip_address,
-        'connected_at': old_client.connected_at,
-        'websocket': old_client.websocket,
-        'status': 'available',
-        'version_commit_hash': version_commit_hash
-    }
     
     # Create appropriate client type based on hotkey
     if hotkey.startswith("i-0"):
-        client = Screener(hotkey=hotkey, **client_data)
+        client = Screener(
+            hotkey=hotkey,
+            websocket=old_client.websocket,
+            ip_address=old_client.ip_address,
+            version_commit_hash=version_commit_hash,
+            connected_at=old_client.connected_at
+        )
     else:
-        client = Validator(hotkey=hotkey, **client_data)
+        client = Validator(
+            hotkey=hotkey,
+            websocket=old_client.websocket,
+            ip_address=old_client.ip_address,
+            version_commit_hash=version_commit_hash,
+            connected_at=old_client.connected_at
+        )
     
     ws_manager.clients[websocket] = client
     
     logger.debug(f"Populated the WebSocket's client dictionary with the following information: hotkey: {client.hotkey}, version_commit_hash: {client.version_commit_hash}")
 
-    from api.src.backend.agent_machine import AgentStateMachine
-    state_machine = AgentStateMachine.get_instance()
-    
-    if client.get_type() == "screener":
-        await state_machine.screener_connect(client)
-    elif client.get_type() == "validator":
-        await state_machine.validator_connect(client)
+    await client.connect()

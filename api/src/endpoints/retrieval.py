@@ -68,8 +68,11 @@ async def get_agent_code(version_id: str, return_as_text: bool = False):
     return StreamingResponse(file_generator(), media_type='application/octet-stream', headers=headers)
 
 async def get_connected_validators():
+    """
+    Returns a list of all connected validators and screener validators
+    """
     try:
-        validators = await WebSocketManager.get_instance().get_connected_validators()
+        validators = await WebSocketManager.get_instance().get_clients()
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
         raise HTTPException(

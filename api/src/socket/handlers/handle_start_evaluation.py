@@ -1,6 +1,8 @@
 from typing import Dict, Any
 
 from api.src.backend.entities import Client
+from api.src.models.screener import Screener
+from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -15,16 +17,14 @@ async def handle_start_evaluation(
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring evaluation start.")
         return {"status": "error", "message": "Client is not a validator or screener"}
     
-    from api.src.backend.agent_machine import AgentStateMachine
-    state_machine = AgentStateMachine.get_instance()
     evaluation_id = response_json["evaluation_id"]
     
     # Use appropriate start method based on client type
-    if client.get_type() == "screener":
-        success = await state_machine.start_screening(client, evaluation_id)
+    if isinstance(client, Screener):
+        success = await client.start_screening(evaluation_id)
         action = "Screening"
-    else:
-        success = await state_machine.start_evaluation(client, evaluation_id)
+    elif isinstance(client, Validator):
+        success = await client.start_evaluation(evaluation_id)
         action = "Evaluation"
     
     status = "success" if success else "error"

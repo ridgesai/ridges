@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.socket.websocket_manager import WebSocketManager
+from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
@@ -20,8 +20,9 @@ async def tell_validators_to_set_weights():
         logger.info("No top agent found, skipping weight update")
         return
     
-    await WebSocketManager.get_instance().send_to_all_validators("set-weights", top_agent.model_dump(mode='json'))
-    
+    for validator in await Validator.get_connected():
+        await validator.send_set_weights(top_agent.model_dump(mode='json'))
+
     logger.info(f"Sent updated top agent to all validators: {top_agent.miner_hotkey}")
 
 async def run_weight_setting_loop(minutes: int):
@@ -80,11 +81,10 @@ async def re_eval_approved(approval_password: str):
     try:
         logger.info("Starting re-evaluation of approved agents")
         
-        # Use state machine to handle the entire re-evaluation flow
-        from api.src.backend.agent_machine import AgentStateMachine
-        state_machine = AgentStateMachine.get_instance()
+        # Use screener to handle the entire re-evaluation flow
+        from api.src.models.screener import Screener
         
-        agents_to_re_evaluate = await state_machine.re_evaluate_approved_agents()
+        agents_to_re_evaluate = await Screener.re_evaluate_approved_agents()
         
         if not agents_to_re_evaluate:
             logger.info("No approved agents found for re-evaluation")

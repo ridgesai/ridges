@@ -1,26 +1,26 @@
 import asyncio
+import os
 import uuid
-from fastapi import APIRouter, Depends, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from api.src.models.screener import Screener
+from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
 from loggers.logging_utils import get_logger
-import os
-from dotenv import load_dotenv
+from loggers.process_tracking import process_context
 
 from api.src.utils.auth import verify_request
 from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3
 from api.src.socket.websocket_manager import WebSocketManager
+from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
-from api.src.backend.agent_machine import AgentStateMachine
-from fastapi import HTTPException
-from loggers.process_tracking import process_context
-
-load_dotenv()
+from api.src.backend.entities import MinerAgent, AgentStatus
+from api.src.backend.db_manager import get_transaction
 
 logger = get_logger(__name__)
 ws = WebSocketManager.get_instance()
-lock = asyncio.Lock()
+upload_lock = asyncio.Lock()
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -63,8 +63,17 @@ async def post_agent(
         miner_hotkey = get_miner_hotkey(file_info)
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
         check_valid_filename(agent_file.filename)
-
         latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
+
+        agent = MinerAgent(
+            version_id=str(uuid.uuid4()),
+            miner_hotkey=miner_hotkey,
+            agent_name=name if not latest_agent else latest_agent.agent_name,
+            version_num=latest_agent.version_num + 1 if latest_agent else 0,
+            created_at=datetime.now(),
+            status=AgentStatus.awaiting_screening,
+        )
+
         if prod: await check_agent_banned(miner_hotkey=miner_hotkey)
         if prod and latest_agent: check_rate_limit(latest_agent)
         check_replay_attack(latest_agent, file_info)
@@ -74,9 +83,8 @@ async def post_agent(
         if prod: await check_code_similarity(file_content, miner_hotkey)
         check_agent_code(file_content)
 
-        async with lock:
-            # Get an available screener for the upload
-            screener = await ws.get_available_screener()
+        async with upload_lock:
+            screener = await Screener.get_first_available()
             if not screener:
                 logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
                 raise HTTPException(
@@ -84,33 +92,45 @@ async def post_agent(
                     detail="No screeners available for agent evaluation. Please try again later."
                 )
             
-            # Use state machine to upload agent with the screener
-            state_machine = AgentStateMachine.get_instance()
-            version_num = latest_agent.version_num + 1 if latest_agent else 0
-            version_id = str(uuid.uuid4())
-            await upload_agent_code_to_s3(version_id, agent_file)
+            async with get_transaction() as conn:
+                can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, miner_hotkey)
+                if not can_upload:
+                    logger.error(f"Cannot upload agent for miner {miner_hotkey} - has running evaluations")
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cannot upload new agent while previous evaluations are still running. Please wait and try again."
+                    )
 
-            success = await state_machine.agent_upload(
-                screener=screener,
-                miner_hotkey=miner_hotkey,
-                agent_name=name if not latest_agent else latest_agent.agent_name,
-                version_num=version_num,
-                version_id=version_id
-            )
-            
-            if not success:
-                logger.error(f"Failed to upload agent for miner {miner_hotkey}")
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to store agent version in our database. Please try again later."
+                await Evaluation.replace_old_agents(conn, miner_hotkey)
+
+                await upload_agent_code_to_s3(agent.version_id, agent_file)
+
+                await conn.execute(
+                    """
+                    INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status)
+                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening')
+                """,
+                    agent.version_id,
+                    agent.miner_hotkey,
+                    agent.agent_name,
+                    agent.version_num,
                 )
 
-        logger.info(f"Successfully uploaded agent {version_id} for miner {miner_hotkey}.")
+                success = await Evaluation.create_screening_and_send(conn, agent, screener)
+
+            if not success:
+                logger.error(f"Failed to send screening task to screener for miner {miner_hotkey}")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to assign agent to screener. Please try again later."
+                )
+
+        logger.info(f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
 
         return AgentUploadResponse(
             status="success",
-            message=f"Successfully uploaded agent {version_id} for miner {miner_hotkey}."
+            message=f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}."
         )
 
 router = APIRouter()
