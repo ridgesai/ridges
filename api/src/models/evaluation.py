@@ -204,6 +204,7 @@ class Evaluation:
             )
 
             if not claimed_agent:
+                logger.info(f"No agents awaiting screening for screener {screener.hotkey}")
                 return None
 
             agent = MinerAgent(

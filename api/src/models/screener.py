@@ -40,7 +40,8 @@ class Screener(Client):
         async with get_transaction() as conn:
             agent = await conn.fetchrow("SELECT status, agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
-            if not agent or agent_status != AgentStatus.awaiting_screening:
+            if not agent or agent_status != AgentStatus.screening:
+                logger.info(f"Screener {self.hotkey}: tried to start screening but agent is not in screening status")
                 return False
             agent_name = agent["agent_name"]
 
