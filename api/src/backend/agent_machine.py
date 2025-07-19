@@ -76,10 +76,25 @@ class AgentStateMachine:
                     await self.evaluation_machine.transition(conn, eval_row["evaluation_id"], 
                                                            EvaluationStatus.running, EvaluationStatus.waiting)
             
-            # 2. Reset screening agents (screeners disconnect on restart)
+            # 2. Cancel all waiting screener evaluations (screeners disconnect on restart)
+            waiting_screener_evals = await conn.fetch("""
+                SELECT evaluation_id, version_id 
+                FROM evaluations 
+                WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%'
+            """)
+            
+            for eval_row in waiting_screener_evals:
+                await self.evaluation_machine.error_with_reason(conn, eval_row["evaluation_id"], "Disconnected from screener")
+                await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE version_id = $1", 
+                                 eval_row["version_id"])
+            
+            if waiting_screener_evals:
+                logger.info(f"Cancelled {len(waiting_screener_evals)} waiting screener evaluations on startup")
+            
+            # 3. Reset screening agents (screeners disconnect on restart)
             await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'")
             
-            # 3. Fix evaluating agents based on their evaluation state
+            # 4. Fix evaluating agents based on their evaluation state
             evaluating_agents = await conn.fetch("SELECT version_id FROM miner_agents WHERE status = 'evaluating'")
             for agent in evaluating_agents:
                 if await self.evaluation_machine.should_agent_be_waiting(conn, agent["version_id"]):
