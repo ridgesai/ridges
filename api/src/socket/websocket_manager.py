@@ -59,16 +59,16 @@ class WebSocketManager:
             logger.warning(f"Client with hotkey {client_hotkey} disconnected from platform socket. Total clients connected: {len(self.clients)}. Resetting any running evaluations for this client.")
 
             try:
-                from api.src.backend.agent_machine import AgentStateMachine
-                state_machine = AgentStateMachine.get_instance()
+                from api.src.backend.evaluation_machine import EvaluationStateMachine
+                evaluation_machine = EvaluationStateMachine.get_instance()
                 await self.send_to_all_non_validators("validator-disconnected", { "validator_hotkey": client_hotkey })
                 
                 if client.get_type() == "screener":
                     logger.info(f"Screener {client_hotkey} disconnected. Handling screening disconnect.")
-                    await state_machine.screener_disconnect(client_hotkey)
+                    await evaluation_machine.screener_disconnect(client_hotkey)
                 elif client.get_type() == "validator":
                     logger.info(f"Validator {client_hotkey} disconnected. Handling validator disconnect.")
-                    await state_machine.validator_disconnect(client_hotkey)
+                    await evaluation_machine.validator_disconnect(client_hotkey)
             except Exception as cleanup_error:
                 logger.error(f"Error during disconnect cleanup for {client_hotkey}: {cleanup_error}")
                 

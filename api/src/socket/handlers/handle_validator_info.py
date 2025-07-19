@@ -46,10 +46,10 @@ async def handle_validator_info(
     
     logger.debug(f"Populated the WebSocket's client dictionary with the following information: hotkey: {client.hotkey}, version_commit_hash: {client.version_commit_hash}")
 
-    from api.src.backend.agent_machine import AgentStateMachine
-    state_machine = AgentStateMachine.get_instance()
+    from api.src.backend.evaluation_machine import EvaluationStateMachine
+    evaluation_machine = EvaluationStateMachine.get_instance()
     
     if client.get_type() == "screener":
-        await state_machine.screener_connect(client)
+        await evaluation_machine.screener_connect(client)
     elif client.get_type() == "validator":
-        await state_machine.validator_connect(client)
+        await evaluation_machine.validator_connect(client)

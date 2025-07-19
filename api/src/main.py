@@ -24,9 +24,9 @@ async def lifespan(app: FastAPI):
     await new_db.open()
     
     # Simple startup recovery through agent machine
-    from api.src.backend.agent_machine import AgentStateMachine
-    agent_machine = AgentStateMachine.get_instance()
-    await agent_machine.application_startup()
+    from api.src.backend.evaluation_machine import EvaluationStateMachine
+    evaluation_machine = EvaluationStateMachine.get_instance()
+    await evaluation_machine.application_startup()
     
     asyncio.create_task(run_weight_setting_loop(30))
     yield

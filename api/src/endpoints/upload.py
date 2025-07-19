@@ -12,7 +12,7 @@ from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent
-from api.src.backend.agent_machine import AgentStateMachine
+from api.src.backend.evaluation_machine import EvaluationStateMachine
 from fastapi import HTTPException
 from loggers.process_tracking import process_context
 
@@ -84,13 +84,13 @@ async def post_agent(
                     detail="No screeners available for agent evaluation. Please try again later."
                 )
             
-            # Use state machine to upload agent with the screener
-            state_machine = AgentStateMachine.get_instance()
+            # Use evaluation machine to upload agent with the screener
+            evaluation_machine = EvaluationStateMachine.get_instance()
             version_num = latest_agent.version_num + 1 if latest_agent else 0
             version_id = str(uuid.uuid4())
             await upload_agent_code_to_s3(version_id, agent_file)
 
-            success = await state_machine.agent_upload(
+            success = await evaluation_machine.agent_upload(
                 screener=screener,
                 miner_hotkey=miner_hotkey,
                 agent_name=name if not latest_agent else latest_agent.agent_name,
