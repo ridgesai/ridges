@@ -91,7 +91,7 @@ class Evaluation:
         """Update agent status based on evaluation state"""
         # Handle screening completion
         if self.is_screening and self.status == EvaluationStatus.completed:
-            if self.score and self.score >= SCREENING_THRESHOLD:
+            if self.score is not None and self.score >= SCREENING_THRESHOLD:
                 await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
             else:
                 await conn.execute("UPDATE miner_agents SET status = 'failed_screening' WHERE version_id = $1", self.version_id)
