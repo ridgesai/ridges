@@ -107,24 +107,24 @@ class WebSocketManager:
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
     async def get_clients(self):
-        """Get list of connected validators"""
-        validators = []
+        """Get list of connected validators and screeners"""
+        clients_list = []
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for client in clients_snapshot.values():
             if client.get_type() not in ["validator", "screener"]:
                 continue
-            validator: 'Validator' = client
-            relative_version_num = await get_relative_version_num(validator.version_commit_hash) if validator.version_commit_hash else None
-            validators.append({
-                "validator_hotkey": validator.hotkey,  # Keep JSON field as validator_hotkey for compatibility
+            # Client can be either Validator or Screener, both have the required attributes
+            relative_version_num = await get_relative_version_num(client.version_commit_hash) if client.version_commit_hash else None
+            clients_list.append({
+                "validator_hotkey": client.hotkey,  # Keep JSON field as validator_hotkey for compatibility
                 "relative_version_num": relative_version_num,
-                "commit_hash": validator.version_commit_hash,
-                "connected_at": validator.connected_at.isoformat(),
-                "ip_address": validator.ip_address,
-                "status": validator.status
+                "commit_hash": client.version_commit_hash,
+                "connected_at": client.connected_at.isoformat(),
+                "ip_address": client.ip_address,
+                "status": client.status
             })
-        return validators
+        return clients_list
     
     async def send_to_client(self, client: Client, message: Dict) -> bool:
         """Send message to specific client using Client object"""

@@ -36,16 +36,14 @@ async def handle_validator_info(
             hotkey=hotkey,
             websocket=old_client.websocket,
             ip_address=old_client.ip_address,
-            version_commit_hash=version_commit_hash,
-            connected_at=old_client.connected_at
+            version_commit_hash=version_commit_hash
         )
     else:
         client = Validator(
             hotkey=hotkey,
             websocket=old_client.websocket,
             ip_address=old_client.ip_address,
-            version_commit_hash=version_commit_hash,
-            connected_at=old_client.connected_at
+            version_commit_hash=version_commit_hash
         )
     
     ws_manager.clients[websocket] = client

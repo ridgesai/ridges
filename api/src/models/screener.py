@@ -23,10 +23,11 @@ class Screener(Client):
     
     def set_available(self) -> None:
         """Set screener to available state"""
+        old_status = getattr(self, 'status', None)
         self.status = "available"
         self.current_evaluation_id = None
         self.current_agent_name = None
-        logger.info(f"Screener {self.hotkey}: -> available")
+        logger.info(f"Screener {self.hotkey}: {old_status} -> available")
 
     async def start_screening(self, evaluation_id: str) -> bool:
         """Handle start-evaluation message"""
@@ -44,21 +45,26 @@ class Screener(Client):
             agent_name = agent["agent_name"]
 
             await evaluation.start(conn)
+            old_status = self.status
             self.status = f"Screening agent {agent_name} with evaluation {evaluation_id}"
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = agent_name
-            logger.info(f"Screener {self.hotkey}: -> screening {agent_name}")
+            logger.info(f"Screener {self.hotkey}: {old_status} -> screening {agent_name}")
             return True
     
     async def connect(self):
         """Handle screener connection"""
         from api.src.models.evaluation import Evaluation
         self.set_available()
+        logger.info(f"Screener {self.hotkey} connected with status: {self.status}")
         await Evaluation.screen_next_awaiting_agent(self)
     
     async def disconnect(self):
         """Handle screener disconnection"""
         from api.src.models.evaluation import Evaluation
+        # Explicitly reset status on disconnect to ensure clean state
+        self.set_available()
+        logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
         await Evaluation.handle_screener_disconnection(self.hotkey)
     
     async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
