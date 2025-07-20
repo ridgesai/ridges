@@ -182,7 +182,7 @@ class Evaluation:
             )
 
     @staticmethod
-    async def screen_next_awaiting_agent(screener: 'Screener') -> Optional[Tuple[str, "MinerAgent"]]:
+    async def screen_next_awaiting_agent(screener: 'Screener'):
         """Atomically claim an awaiting agent for screening and create evaluation"""
         from api.src.backend.entities import MinerAgent, AgentStatus
 
@@ -205,7 +205,7 @@ class Evaluation:
 
             if not claimed_agent:
                 logger.info(f"No agents awaiting screening for screener {screener.hotkey}")
-                return None
+                return
 
             agent = MinerAgent(
                 version_id=claimed_agent["version_id"],
