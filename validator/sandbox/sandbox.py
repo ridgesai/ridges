@@ -127,7 +127,6 @@ class Sandbox:
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
             self.container = self.manager.docker.containers.run(
-                remove=True,
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
@@ -352,7 +351,7 @@ class Sandbox:
         """Clean up sandbox resources"""
         if self.container:
             try:
-                self.container.remove()
+                self.container.remove(force=True)
             except Exception:
                 pass
         
