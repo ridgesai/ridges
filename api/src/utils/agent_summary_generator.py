@@ -194,7 +194,14 @@ async def generate_agent_summary(version_id: str, *, proxy_url: str = None, run_
         logger.info(f"Calling AI inference to analyze agent code ({len(agent_code)} chars)")
         
         # Use Anthropic API directly for summary generation
-        if not ANTHROPIC_AVAILABLE or not os.getenv("ANTHROPIC_API_KEY"):
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+        logger.info(f"Debug: ANTHROPIC_AVAILABLE={ANTHROPIC_AVAILABLE}, API_KEY={'SET' if anthropic_key else 'NOT_SET'}")
+        
+        if not ANTHROPIC_AVAILABLE:
+            logger.error("Anthropic package not available - cannot generate summary")
+            return None
+            
+        if not anthropic_key:
             logger.error("Anthropic API key not configured - cannot generate summary")
             return None
             
