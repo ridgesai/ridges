@@ -144,9 +144,25 @@ class Evaluation:
     @staticmethod
     async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str) -> str:
         """Create evaluation for validator"""
-        eval_id = str(uuid.uuid4())
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
+        # Check if evaluation already exists for this combination
+        existing_eval_id = await conn.fetchval(
+            """
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id = $1 AND validator_hotkey = $2 AND set_id = $3
+        """,
+            version_id,
+            validator_hotkey,
+            set_id,
+        )
+
+        if existing_eval_id:
+            logger.debug(f"Evaluation already exists for version {version_id}, validator {validator_hotkey}, set {set_id}")
+            return str(existing_eval_id)
+
+        # Create new evaluation
+        eval_id = str(uuid.uuid4())
         await conn.execute(
             """
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
@@ -295,14 +311,23 @@ class Evaluation:
     async def has_waiting_for_validator(validator: 'Validator') -> bool:
         """Atomically handle validator connection: create missing evaluations and check for work"""
         async with get_transaction() as conn:
+            # Get current max set_id
+            max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+            
             # Create evaluations for waiting/evaluating agents that don't have one for this validator
             agents = await conn.fetch(
                 """
                 SELECT version_id FROM miner_agents 
                 WHERE status IN ('waiting', 'evaluating') 
-                AND NOT EXISTS (SELECT 1 FROM evaluations WHERE version_id = miner_agents.version_id AND validator_hotkey = $1)
+                AND NOT EXISTS (
+                    SELECT 1 FROM evaluations 
+                    WHERE version_id = miner_agents.version_id 
+                    AND validator_hotkey = $1 
+                    AND set_id = $2
+                )
             """,
                 validator.hotkey,
+                max_set_id,
             )
 
             for agent in agents:
