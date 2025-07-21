@@ -16,6 +16,7 @@ class MinerAgent(BaseModel):
     version_num: int
     created_at: datetime
     status: str
+    agent_summary: Optional[str] = None
 
 class AgentWithHydratedCode(MinerAgent):
     code: str

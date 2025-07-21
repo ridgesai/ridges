@@ -16,6 +16,7 @@ from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.endpoints.healthcheck import router as healthcheck_router
+from api.src.endpoints.agent_summaries import router as agent_summaries_router
 
 logger = get_logger(__name__)
 
@@ -47,6 +48,7 @@ app.add_middleware(
 app.include_router(upload_router, prefix="/upload")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
+app.include_router(agent_summaries_router, prefix="/agent-summaries")
 app.include_router(healthcheck_router)
 
 @app.websocket("/ws")

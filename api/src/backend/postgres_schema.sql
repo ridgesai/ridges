@@ -5,8 +5,20 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     agent_name TEXT NOT NULL,
     version_num INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
-    status TEXT
+    status TEXT,
+    agent_summary TEXT  -- AI-generated summary of agent code describing its approach and functionality
 );
+
+-- Add agent_summary column if it doesn't exist (for existing tables)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'miner_agents' AND column_name = 'agent_summary'
+    ) THEN
+        ALTER TABLE miner_agents ADD COLUMN agent_summary TEXT;
+    END IF;
+END $$;
 
 -- Legacy cleanup: Drop score column and any related triggers
 DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
