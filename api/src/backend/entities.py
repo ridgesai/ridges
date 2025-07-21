@@ -151,6 +151,8 @@ class Inference(BaseModel):
 class EvaluationQueueItem(BaseModel):
     evaluation_id: UUID
     version_id: UUID
+    miner_hotkey: str
+    agent_name: str
     created_at: datetime
 
 class ValidatorQueueInfo(BaseModel):

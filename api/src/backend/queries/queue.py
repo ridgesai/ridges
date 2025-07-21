@@ -12,18 +12,21 @@ async def get_queue_for_all_validators(
     queue_rows = await conn.fetch(
         """
             SELECT
-                validator_hotkey,
+                e.validator_hotkey,
                 COUNT(*) as queue_size,
                 json_agg(
                     json_build_object(
-                        'evaluation_id', evaluation_id,
-                        'version_id', version_id,
-                        'created_at', created_at
-                    ) ORDER BY created_at ASC
+                        'evaluation_id', e.evaluation_id,
+                        'version_id', e.version_id,
+                        'miner_hotkey', m.miner_hotkey,
+                        'agent_name', m.agent_name,
+                        'created_at', e.created_at
+                    ) ORDER BY e.created_at ASC
                 ) as queue_items
-            FROM evaluations
-            WHERE status = 'waiting'
-            GROUP BY validator_hotkey
+            FROM evaluations e
+            JOIN miner_agents m ON e.version_id = m.version_id
+            WHERE e.status = 'waiting'
+            GROUP BY e.validator_hotkey
             ORDER BY queue_size DESC;
         """,
     )
@@ -37,6 +40,8 @@ async def get_queue_for_all_validators(
             queue_items.append(EvaluationQueueItem(
                 evaluation_id=item['evaluation_id'],
                 version_id=item['version_id'],
+                miner_hotkey=item['miner_hotkey'],
+                agent_name=item['agent_name'],
                 created_at=item['created_at']
             ))
         
