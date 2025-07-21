@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List
 
 from api.src.backend.entities import Client, AgentStatus, MinerAgent
-from api.src.backend.db_manager import get_db_connection, get_transaction
+from api.src.backend.db_manager import get_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,8 @@ class Screener(Client):
         from api.src.models.evaluation import Evaluation
         self.set_available()
         logger.info(f"Screener {self.hotkey} connected with status: {self.status}")
-        await Evaluation.screen_next_awaiting_agent(self)
+        async with Evaluation.get_lock():
+            await Evaluation.screen_next_awaiting_agent(self)
     
     async def disconnect(self):
         """Handle screener disconnection"""
@@ -87,7 +88,8 @@ class Screener(Client):
                 await evaluation.finish(conn)
         
         self.set_available()
-        await Evaluation.screen_next_awaiting_agent(self)
+        async with Evaluation.get_lock():
+            await Evaluation.screen_next_awaiting_agent(self)
     
     @staticmethod
     async def get_first_available() -> Optional['Screener']:

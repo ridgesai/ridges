@@ -234,55 +234,6 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
     return Evaluation(**dict(result)) 
 
 @db_operation
-async def create_screening(conn: asyncpg.Connection, screener_hotkey: str) -> Optional[Evaluation]:
-    """
-    Find the agent awaiting screening and create a new evaluation for the specified screener.
-    There should only be one agent awaiting screening at any time.
-    Returns the created evaluation or None if no agents need screening.
-    """
-    logger.debug(f"Looking for agent awaiting screening to assign to screener {screener_hotkey}.")
-    
-    # Find the agent awaiting screening - there should only be one
-    agents = await conn.fetch("""
-        SELECT version_id 
-        FROM miner_agents 
-        WHERE status = 'awaiting_screening'
-    """)
-    
-    if not agents:
-        logger.debug(f"No agent awaiting screening found for screener {screener_hotkey}.")
-        return None
-    
-    if len(agents) > 1:
-        logger.warning(f"Found {len(agents)} agents awaiting screening - there should only be one! Taking the first one.")
-    
-    version_id = agents[0]["version_id"]
-    logger.debug(f"Found agent {version_id} awaiting screening, creating evaluation for screener {screener_hotkey}.")
-    
-    # Create a new screening evaluation for this agent and screener
-    from api.src.backend.queries.evaluation_sets import get_latest_set_id
-    
-    eval_id = str(uuid.uuid4())
-    set_id = await get_latest_set_id()
-    
-    await conn.execute("""
-        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-        VALUES ($1, $2, $3, $4, 'waiting', NOW())
-    """, eval_id, version_id, screener_hotkey, set_id)
-    
-    # Retrieve and return the created evaluation
-    result = await conn.fetchrow("""
-        SELECT * FROM evaluations WHERE evaluation_id = $1
-    """, eval_id)
-    
-    if not result:
-        logger.error(f"Failed to retrieve created screening evaluation {eval_id}")
-        raise Exception(f"Failed to retrieve created screening evaluation {eval_id}")
-    
-    logger.debug(f"Created screening evaluation {eval_id} for agent {version_id} assigned to screener {screener_hotkey}.")
-    return Evaluation(**dict(result))
-
-@db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
     result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'running'")
 

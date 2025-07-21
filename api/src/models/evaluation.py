@@ -1,10 +1,10 @@
 import logging
 import uuid
-from typing import Optional, Tuple
-from datetime import datetime
+from typing import Optional
 import asyncpg
+import asyncio
 
-from api.src.backend.entities import EvaluationStatus, AgentStatus, MinerAgent
+from api.src.backend.entities import EvaluationStatus, MinerAgent
 from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 
 class Evaluation:
     """Evaluation model - handles its own lifecycle atomically"""
+    
+    _lock = asyncio.Lock()
 
     def __init__(
         self, evaluation_id: str, version_id: str, validator_hotkey: str, set_id: int, status: EvaluationStatus, score: Optional[float] = None
@@ -102,15 +104,29 @@ class Evaluation:
             await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE version_id = $1", self.version_id)
             return
 
-        # Handle evaluation status transitions
-        if self.status == EvaluationStatus.running:
-            agent_status = "screening" if self.is_screening else "evaluating"
-            await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", agent_status, self.version_id)
+        # Check for any screening evaluations (waiting OR running) - agent should be in screening state
+        screening_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND status IN ('waiting', 'running')", 
+            self.version_id
+        )
+        if screening_count > 0:
+            await conn.execute("UPDATE miner_agents SET status = 'screening' WHERE version_id = $1", self.version_id)
             return
 
-        # For other cases, check remaining evaluations
-        waiting_count = await conn.fetchval("SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'waiting'", self.version_id)
-        running_count = await conn.fetchval("SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'running'", self.version_id)
+        # Handle evaluation status transitions for regular evaluations
+        if self.status == EvaluationStatus.running and not self.is_screening:
+            await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE version_id = $1", self.version_id)
+            return
+
+        # For other cases, check remaining regular evaluations (non-screening)
+        waiting_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'waiting' AND validator_hotkey NOT LIKE 'i-0%'", 
+            self.version_id
+        )
+        running_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'running' AND validator_hotkey NOT LIKE 'i-0%'", 
+            self.version_id
+        )
 
         if waiting_count > 0 and running_count == 0:
             await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
@@ -118,6 +134,12 @@ class Evaluation:
             await conn.execute("UPDATE miner_agents SET status = 'scored' WHERE version_id = $1", self.version_id)
         else:
             await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE version_id = $1", self.version_id)
+
+    
+    @staticmethod
+    def get_lock():
+        """Get the shared lock for evaluation operations"""
+        return Evaluation._lock
 
     @staticmethod
     async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str) -> str:
@@ -157,7 +179,7 @@ class Evaluation:
             screener.hotkey,
             set_id,
         )
-
+        
         return await ws.send_to_client(screener, {
             "event": "screen-agent",
             "evaluation_id": eval_id,
@@ -197,7 +219,6 @@ class Evaluation:
                     WHERE status = 'awaiting_screening' 
                     ORDER BY created_at ASC 
                     LIMIT 1
-                    FOR UPDATE SKIP LOCKED
                 )
                 RETURNING version_id, miner_hotkey, agent_name, version_num, created_at
             """
@@ -215,7 +236,7 @@ class Evaluation:
                 created_at=claimed_agent["created_at"],
                 status=AgentStatus.screening,
             )
-
+        
             await Evaluation.create_screening_and_send(conn, agent, screener)
 
     @staticmethod

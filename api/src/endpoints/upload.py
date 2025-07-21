@@ -1,4 +1,3 @@
-import asyncio
 import os
 import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
@@ -14,13 +13,11 @@ from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
-from api.src.backend.entities import MinerAgent
 from api.src.backend.entities import MinerAgent, AgentStatus
 from api.src.backend.db_manager import get_transaction
 
 logger = get_logger(__name__)
 ws = WebSocketManager.get_instance()
-upload_lock = asyncio.Lock()
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -83,7 +80,7 @@ async def post_agent(
         if prod: await check_code_similarity(file_content, miner_hotkey)
         check_agent_code(file_content)
 
-        async with upload_lock:
+        async with Evaluation.get_lock():
             screener = await Screener.get_first_available()
             if not screener:
                 logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
