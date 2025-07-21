@@ -55,7 +55,7 @@ async def generate_agent_summary_endpoint(
             # Check if agent exists
             async with get_transaction() as conn:
                 result = await conn.fetchrow("""
-                    SELECT version_id, miner_hotkey, agent_name, version_num, created_at, agent_summary
+                    SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status, agent_summary
                     FROM miner_agents 
                     WHERE version_id = $1
                 """, request.version_id)
