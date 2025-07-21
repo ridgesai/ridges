@@ -254,7 +254,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
 async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -> list[Inference]:
     runs = await conn.fetch("""
         select 
-            id, run_id, messages->0->>'content' as message, temperature, model,cost, response, total_tokens, created_at, finished_at 
+            id, run_id, messages->-1->>'content' as message, temperature, model,cost, response, total_tokens, created_at, finished_at 
         from inferences 
         where run_id = $1;
     """, run_id)
