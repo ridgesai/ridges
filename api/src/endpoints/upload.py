@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
 from api.src.models.screener import Screener
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent, AgentStatus
 from api.src.backend.db_manager import get_transaction
+from api.src.utils.agent_summary_generator import generate_and_store_agent_summary
 
 logger = get_logger(__name__)
 ws = WebSocketManager.get_instance()
@@ -41,6 +42,7 @@ async def post_agent(
     file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -116,6 +118,14 @@ async def post_agent(
                 success = await Evaluation.create_screening_and_send(conn, agent, screener)
                 if not success:
                     logger.warning(f"Failed to immediately assign agent {agent.version_id} to screener, will be picked up later")
+
+        # Schedule background agent summary generation
+        logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+        background_tasks.add_task(
+            generate_and_store_agent_summary,
+            agent.version_id,
+            run_id=f"upload-{agent.version_id}"
+        )
 
         logger.info(f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}.")
         logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
