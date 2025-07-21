@@ -208,6 +208,11 @@ class Evaluation:
         """Atomically claim an awaiting agent for screening and create evaluation"""
         from api.src.backend.entities import MinerAgent, AgentStatus
 
+        # Atomically check availability and mark busy to prevent race conditions
+        if not screener.is_available():
+            return
+        screener.status = "claiming_agent"
+
         async with get_transaction() as conn:
             # Atomically claim the next awaiting agent
             claimed_agent = await conn.fetchrow(
@@ -225,6 +230,7 @@ class Evaluation:
             )
 
             if not claimed_agent:
+                screener.set_available()  # Revert to available if no agent found
                 logger.info(f"No agents awaiting screening for screener {screener.hotkey}")
                 return
 
@@ -237,6 +243,10 @@ class Evaluation:
                 status=AgentStatus.screening,
             )
         
+            # Set final status before sending evaluation
+            screener.status = f"Assigned agent {agent.agent_name}"
+            screener.current_agent_name = agent.agent_name
+            
             await Evaluation.create_screening_and_send(conn, agent, screener)
 
     @staticmethod
