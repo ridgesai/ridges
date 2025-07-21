@@ -152,32 +152,46 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
 
     evaluation_rows = await conn.fetch("""
-        WITH latest_screener AS (
-            SELECT evaluation_id
+        (
+            -- Get all non-screener evaluations
+            SELECT 
+                evaluation_id,
+                version_id,
+                validator_hotkey,
+                set_id,
+                status,
+                terminated_reason,
+                created_at,
+                started_at,
+                finished_at,
+                score
             FROM evaluations 
             WHERE version_id = $1
-            AND ($2::int IS NULL OR set_id = $2)
+            AND set_id = $2
+            AND validator_hotkey NOT LIKE 'i-%'
+        )
+        
+        UNION ALL
+        
+        (
+            -- Get only the latest screener evaluation
+            SELECT 
+                evaluation_id,
+                version_id,
+                validator_hotkey,
+                set_id,
+                status,
+                terminated_reason,
+                created_at,
+                started_at,
+                finished_at,
+                score
+            FROM evaluations 
+            WHERE version_id = $1
+            AND set_id = $2
             AND validator_hotkey LIKE 'i-%'
             ORDER BY created_at DESC
             LIMIT 1
-        )
-        SELECT 
-            evaluation_id,
-            version_id,
-            validator_hotkey,
-            set_id,
-            status,
-            terminated_reason,
-            created_at,
-            started_at,
-            finished_at,
-            score
-        FROM evaluations 
-        WHERE version_id = $1
-        AND ($2::int IS NULL OR set_id = $2)
-        AND (
-            validator_hotkey NOT LIKE 'i-%'  -- Include all non-screener evaluations
-            OR evaluation_id IN (SELECT evaluation_id FROM latest_screener)  -- Include only the latest screener
         )
         ORDER BY created_at DESC
         """,

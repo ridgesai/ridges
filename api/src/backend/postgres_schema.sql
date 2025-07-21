@@ -129,3 +129,26 @@ CREATE TRIGGER tr_update_evaluation_score
     AFTER INSERT OR UPDATE OF solved ON evaluation_runs
     FOR EACH ROW
     EXECUTE FUNCTION update_evaluation_score();
+
+-- Performance optimization indices for evaluations queries
+
+-- Primary composite index for main query filtering and ordering
+CREATE INDEX IF NOT EXISTS idx_evaluations_version_set_created 
+ON evaluations (version_id, set_id, created_at DESC);
+
+-- Composite index optimized for screener evaluations in CTE
+CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup 
+ON evaluations (version_id, set_id, validator_hotkey, created_at DESC) 
+WHERE validator_hotkey LIKE 'i-%';
+
+-- Index for evaluation_id lookups (used in IN clause)
+CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
+
+-- Pattern-based index for validator_hotkey filtering
+CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern 
+ON evaluations (validator_hotkey text_pattern_ops);
+
+-- Partial index for non-screener evaluations
+CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener 
+ON evaluations (version_id, set_id, created_at DESC) 
+WHERE validator_hotkey NOT LIKE 'i-%';
