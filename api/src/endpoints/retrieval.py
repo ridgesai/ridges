@@ -187,6 +187,10 @@ async def get_top_agents(num_agents: int = 3) -> list[MinerAgentWithScores]:
 
     return top_agents
 
+async def agent_scores_over_time(set_id: Optional[int] = None):
+    """Gets agent scores over time for charting"""
+    return await db_get_agent_scores_over_time(set_id)
+
 async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidator]:
     """
     Gives a list of where an agent is in queue for every validator
@@ -303,7 +307,7 @@ routes = [
     ("/inferences-by-run", inferences_for_run),
     ("/validator-queues", validator_queues),
     ("/evaluation-set", get_evaluation_set),
-    ("/agent-scores-over-time", db_get_agent_scores_over_time)
+    ("/agent-scores-over-time", agent_scores_over_time)
 ]
 
 for path, endpoint in routes:
