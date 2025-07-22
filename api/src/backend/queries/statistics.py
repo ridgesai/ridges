@@ -118,29 +118,53 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
     """Get agent scores over time for charting"""
     # Use max set_id if not provided
     if set_id is None:
-        set_id_query = "SELECT MAX(set_id) FROM agent_scores"
+        set_id_query = "SELECT MAX(set_id) FROM evaluations"
         set_id = await conn.fetchval(set_id_query)
     
-    # Aggregated data for all miners by date
+    # Get comprehensive data from miner_agents and evaluations
     query = """
-        WITH hourly_scores AS (
+        WITH hourly_data AS (
             SELECT 
-                DATE_TRUNC('hour', created_at) as hour,
-                final_score
-            FROM agent_scores 
-            WHERE set_id = $1 AND final_score IS NOT NULL
+                DATE_TRUNC('hour', ma.created_at) as hour,
+                ma.miner_hotkey,
+                ma.version_id,
+                e.score
+            FROM miner_agents ma
+            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+                AND e.set_id = $1 
+                AND e.status = 'completed' 
+                AND e.score IS NOT NULL
+                AND e.validator_hotkey NOT LIKE 'i-0%'
+            WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        ),
+        hourly_stats AS (
+            SELECT 
+                hour,
+                COUNT(DISTINCT miner_hotkey) as active_miners,
+                COUNT(DISTINCT CASE WHEN score IS NOT NULL THEN miner_hotkey END) as scored_miners,
+                AVG(score) as avg_score,
+                PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY score) as top_10_percent,
+                PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY score) as top_25_percent,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY score) as median_score,
+                MIN(score) as min_score,
+                MAX(score) as max_score,
+                COUNT(score) as total_evaluations
+            FROM hourly_data
+            GROUP BY hour
         )
         SELECT 
             hour,
-            COUNT(*) as active_miners,
-            ROUND(AVG(final_score)::numeric, 3) as average_score,
-            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as top_10_percent,
-            ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as top_25_percent,
-            ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as median_score,
-            ROUND(MIN(final_score)::numeric, 3) as min_score,
-            ROUND(MAX(final_score)::numeric, 3) as max_score
-        FROM hourly_scores
-        GROUP BY hour
+            active_miners,
+            scored_miners,
+            total_evaluations,
+            ROUND(COALESCE(avg_score, 0)::numeric, 3) as average_score,
+            ROUND(COALESCE(top_10_percent, 0)::numeric, 3) as top_10_percent,
+            ROUND(COALESCE(top_25_percent, 0)::numeric, 3) as top_25_percent,
+            ROUND(COALESCE(median_score, 0)::numeric, 3) as median_score,
+            ROUND(COALESCE(min_score, 0)::numeric, 3) as min_score,
+            ROUND(COALESCE(max_score, 0)::numeric, 3) as max_score
+        FROM hourly_stats
+        WHERE hour IS NOT NULL
         ORDER BY hour
     """
     rows = await conn.fetch(query, set_id)
