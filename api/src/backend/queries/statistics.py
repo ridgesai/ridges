@@ -221,22 +221,22 @@ async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[
             GROUP BY version_id
         )
         SELECT
-            version_id,
-            miner_hotkey,
-            agent_name,
-            version_num,
-            created_at,
-            status,
-            set_id,
-            AVG(score) AS score,
-            COUNT(DISTINCT validator_hotkey) AS validator_count
+            swd.version_id,
+            swd.miner_hotkey,
+            swd.agent_name,
+            swd.version_num,
+            swd.created_at,
+            swd.status,
+            swd.set_id,
+            AVG(swd.score) AS score,
+            COUNT(DISTINCT swd.validator_hotkey) AS validator_count
         FROM scores_with_deviation swd
         LEFT JOIN max_outliers mo ON swd.version_id = mo.version_id 
             AND swd.deviation = mo.max_deviation
         WHERE mo.max_deviation IS NULL  -- Exclude most outlier score
-        GROUP BY version_id, miner_hotkey, agent_name, version_num, created_at, status, set_id
-        HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
-        ORDER BY AVG(score) DESC, created_at ASC
+        GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, swd.created_at, swd.status, swd.set_id
+        HAVING COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY AVG(swd.score) DESC, swd.created_at ASC
         LIMIT $2;
     """, max_set_id, num_agents)
 
