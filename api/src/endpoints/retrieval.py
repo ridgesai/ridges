@@ -14,6 +14,7 @@ from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_i
 from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as db_get_runs_for_evaluation
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
+from api.src.backend.queries.statistics import get_agent_scores_over_time
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 
@@ -301,7 +302,8 @@ routes = [
     ("/queue-position-by-hotkey", get_queue_position),
     ("/inferences-by-run", inferences_for_run),
     ("/validator-queues", validator_queues),
-    ("/evaluation-set", get_evaluation_set)
+    ("/evaluation-set", get_evaluation_set),
+    ("/agent-scores-over-time", get_agent_scores_over_time)
 ]
 
 for path, endpoint in routes:

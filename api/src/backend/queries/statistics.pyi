@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime
 from uuid import UUID
 
@@ -25,3 +25,5 @@ class QueuePositionPerValidator(BaseModel):
 
 async def get_queue_position_by_hotkey(miner_hotkey: str) -> list[QueuePositionPerValidator]: ...
 async def get_inference_details_for_run(run_id: str) -> list[Inference]: ...
+
+async def get_agent_scores_over_time(set_id: Optional[int] = None) -> list[dict]: ...

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 from datetime import datetime
 
 from pydantic import BaseModel
@@ -112,3 +112,36 @@ async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -
     """, run_id)
 
     return [Inference(**dict(run)) for run in runs]
+
+@db_operation
+async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[int] = None) -> list[dict]:
+    """Get agent scores over time for charting"""
+    # Use max set_id if not provided
+    if set_id is None:
+        set_id_query = "SELECT MAX(set_id) FROM agent_scores"
+        set_id = await conn.fetchval(set_id_query)
+    
+    # Aggregated data for all miners by date
+    query = """
+        WITH hourly_scores AS (
+            SELECT 
+                DATE_TRUNC('hour', created_at) as hour,
+                final_score
+            FROM agent_scores 
+            WHERE set_id = $1 AND final_score IS NOT NULL
+        )
+        SELECT 
+            hour,
+            COUNT(*) as active_miners,
+            ROUND(AVG(final_score)::numeric, 3) as average_score,
+            ROUND(PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as top_10_percent,
+            ROUND(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as top_25_percent,
+            ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY final_score)::numeric, 3) as median_score,
+            ROUND(MIN(final_score)::numeric, 3) as min_score,
+            ROUND(MAX(final_score)::numeric, 3) as max_score
+        FROM hourly_scores
+        GROUP BY hour
+        ORDER BY hour
+    """
+    rows = await conn.fetch(query, set_id)
+    return [dict(row) for row in rows]
