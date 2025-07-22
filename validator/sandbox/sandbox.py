@@ -127,6 +127,7 @@ class Sandbox:
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
             self.container = self.manager.docker.containers.run(
+                remove=True,
                 image=SANDBOX_DOCKER_IMAGE,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
@@ -234,11 +235,6 @@ class Sandbox:
             
             await asyncio.sleep(1)
         
-        # Clean up container
-        try:
-            self.container.remove()
-        except Exception:
-            pass
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:
@@ -349,12 +345,7 @@ class Sandbox:
     @tracer.wrap(resource="cleanup-sandbox")
     def cleanup(self) -> None:
         """Clean up sandbox resources"""
-        if self.container:
-            try:
-                self.container.remove(force=True)
-            except Exception:
-                pass
-        
+        # Sandbox container has --rm (remove=True) so it will be removed automatically
         if self.repo_dir and self.repo_dir.exists():
             try:
                 shutil.rmtree(self.repo_dir, ignore_errors=True)
