@@ -279,6 +279,7 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
                 ma.version_num,
                 ma.created_at,
                 ma.status,
+                ma.agent_summary,
                 e.set_id,
                 e.score,
                 e.validator_hotkey,
@@ -296,28 +297,29 @@ async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: st
             AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
         max_outliers AS (
-            SELECT version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_deviation
-            WHERE score IS NOT NULL
-            GROUP BY version_id
+            SELECT swd.version_id, MAX(swd.deviation) AS max_deviation
+            FROM scores_with_deviation swd
+            WHERE swd.score IS NOT NULL
+            GROUP BY swd.version_id
         )
         SELECT
-            version_id,
-            miner_hotkey,
-            agent_name,
-            version_num,
-            created_at,
-            status,
-            set_id,
-            AVG(score) AS score,
-            COUNT(DISTINCT validator_hotkey) AS validator_count
+            swd.version_id,
+            swd.miner_hotkey,
+            swd.agent_name,
+            swd.version_num,
+            swd.created_at,
+            swd.status,
+            swd.agent_summary,
+            swd.set_id,
+            AVG(swd.score) AS score,
+            COUNT(DISTINCT swd.validator_hotkey) AS validator_count
         FROM scores_with_deviation swd
         LEFT JOIN max_outliers mo ON swd.version_id = mo.version_id 
             AND swd.deviation = mo.max_deviation
         WHERE swd.score IS NULL OR mo.max_deviation IS NULL  -- Include null scores or exclude outliers
-        GROUP BY version_id, miner_hotkey, agent_name, version_num, created_at, status, set_id
-        HAVING set_id IS NULL OR COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validators for scored versions
-        ORDER BY version_num DESC, created_at DESC;
+        GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, swd.created_at, swd.status, swd.agent_summary, swd.set_id
+        HAVING swd.set_id IS NULL OR COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validators for scored versions
+        ORDER BY swd.version_num DESC, swd.created_at DESC;
     """, miner_hotkey)
     
     return [MinerAgentWithScores(**dict(row)) for row in results]
@@ -348,6 +350,7 @@ async def get_agents_with_scores_by_set_id(conn: asyncpg.Connection, num_agents:
                 ma.version_num,
                 ma.created_at,
                 ma.status,
+                ma.agent_summary,
                 e.set_id,
                 e.score,
                 e.validator_hotkey,
@@ -362,27 +365,28 @@ async def get_agents_with_scores_by_set_id(conn: asyncpg.Connection, num_agents:
               AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
         max_outliers AS (
-            SELECT version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_deviation
-            GROUP BY version_id
+            SELECT swd.version_id, MAX(swd.deviation) AS max_deviation
+            FROM scores_with_deviation swd
+            GROUP BY swd.version_id
         )
         SELECT
-            version_id,
-            miner_hotkey,
-            agent_name,
-            version_num,
-            created_at,
-            status,
-            set_id,
-            AVG(score) AS computed_score,
-            COUNT(DISTINCT validator_hotkey) AS num_validators
+            swd.version_id,
+            swd.miner_hotkey,
+            swd.agent_name,
+            swd.version_num,
+            swd.created_at,
+            swd.status,
+            swd.agent_summary,
+            swd.set_id,
+            AVG(swd.score) AS computed_score,
+            COUNT(DISTINCT swd.validator_hotkey) AS num_validators
         FROM scores_with_deviation swd
         LEFT JOIN max_outliers mo ON swd.version_id = mo.version_id 
             AND swd.deviation = mo.max_deviation
         WHERE mo.max_deviation IS NULL  -- Exclude most outlier score
-        GROUP BY version_id, miner_hotkey, agent_name, version_num, created_at, status, set_id
-        HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
-        ORDER BY set_id DESC, AVG(score) DESC, created_at ASC
+        GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, swd.created_at, swd.status, swd.agent_summary, swd.set_id
+        HAVING COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY swd.set_id DESC, AVG(swd.score) DESC, swd.created_at ASC
         LIMIT $1;
     """, num_agents)
 
