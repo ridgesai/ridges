@@ -8,6 +8,8 @@ from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version
+from api.src.backend.entities import MinerAgentScored
+from api.src.backend.db_manager import new_db
 
 load_dotenv()
 
@@ -99,6 +101,17 @@ async def re_eval_approved(approval_password: str):
     except Exception as e:
         logger.error(f"Error re-evaluating approved agents: {e}")
         raise HTTPException(status_code=500, detail="Error initiating re-evaluation of approved agents")
+
+async def refresh_scores():
+    """Manually refresh the agent_scores materialized view"""
+    try:
+        async with new_db.acquire() as conn:
+            await MinerAgentScored.refresh_materialized_view(conn)
+        logger.info("Successfully refreshed agent_scores materialized view")
+        return {"message": "Successfully refreshed agent scores"}
+    except Exception as e:
+        logger.error(f"Error refreshing agent scores: {e}")
+        raise HTTPException(status_code=500, detail="Error refreshing agent scores")
     
 router = APIRouter()
 
@@ -107,7 +120,8 @@ routes = [
     ("/ban-agent", ban_agent, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
-    ("/re-eval-approved", re_eval_approved, ["POST"])
+    ("/re-eval-approved", re_eval_approved, ["POST"]),
+    ("/refresh-scores", refresh_scores, ["POST"])
 ]
 
 for path, endpoint, methods in routes:

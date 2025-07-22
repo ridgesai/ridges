@@ -164,3 +164,134 @@ ON evaluations (validator_hotkey text_pattern_ops);
 CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener 
 ON evaluations (version_id, set_id, created_at DESC) 
 WHERE validator_hotkey NOT LIKE 'i-%';
+
+-- Materialized view to precompute agent scores
+CREATE MATERIALIZED VIEW IF NOT EXISTS agent_scores AS
+WITH latest_agents AS (
+    -- Get the most recent version for each hotkey
+    SELECT DISTINCT ON (miner_hotkey)
+        version_id,
+        miner_hotkey,
+        agent_name,
+        version_num,
+        created_at,
+        status,
+        agent_summary
+    FROM miner_agents
+    WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+    ORDER BY miner_hotkey, version_num DESC, created_at DESC
+),
+agent_evaluations AS (
+    -- Get all evaluations for these latest agents
+    SELECT
+        la.version_id,
+        la.miner_hotkey,
+        la.agent_name,
+        la.version_num,
+        la.created_at,
+        la.status,
+        la.agent_summary,
+        e.set_id,
+        e.score,
+        e.validator_hotkey,
+        (avi.version_id IS NOT NULL) as approved
+    FROM latest_agents la
+    LEFT JOIN approved_version_ids avi ON la.version_id = avi.version_id
+    LEFT JOIN evaluations e ON la.version_id = e.version_id
+        AND e.status = 'completed' 
+        AND e.score IS NOT NULL
+        AND e.score > 0
+        AND e.validator_hotkey NOT LIKE 'i-0%'
+),
+-- For agents with evaluations, apply outlier logic
+avg_scores AS (
+    SELECT
+        miner_hotkey,
+        version_id,
+        set_id,
+        AVG(score) as avg_score
+    FROM agent_evaluations
+    WHERE score IS NOT NULL
+    GROUP BY miner_hotkey, version_id, set_id
+),
+scores_with_deviation AS (
+    SELECT
+        ae.*,
+        ABS(ae.score - avs.avg_score) AS deviation
+    FROM agent_evaluations ae
+    LEFT JOIN avg_scores avs ON ae.miner_hotkey = avs.miner_hotkey 
+        AND ae.version_id = avs.version_id 
+        AND ae.set_id = avs.set_id
+    WHERE ae.score IS NOT NULL
+),
+max_outliers AS (
+    SELECT miner_hotkey, version_id, set_id, MAX(deviation) AS max_deviation
+    FROM scores_with_deviation
+    GROUP BY miner_hotkey, version_id, set_id
+)
+SELECT
+    swd.version_id,
+    swd.miner_hotkey,
+    swd.agent_name,
+    swd.version_num,
+    swd.created_at,
+    swd.status,
+    swd.agent_summary,
+    swd.set_id,
+    swd.approved,
+    COUNT(DISTINCT swd.validator_hotkey) AS validator_count,
+    AVG(swd.score) AS final_score
+FROM scores_with_deviation swd
+LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
+    AND swd.version_id = mo.version_id 
+    AND swd.set_id = mo.set_id
+    AND swd.deviation = mo.max_deviation
+WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
+GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, 
+         swd.created_at, swd.status, swd.agent_summary, swd.set_id, swd.approved
+HAVING COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validators
+ORDER BY final_score DESC, created_at ASC;
+
+-- Create indexes for fast querying on the materialized view
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_scores_unique ON agent_scores (version_id, set_id);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_version ON agent_scores (version_id);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
+
+-- Function to refresh the agent_scores materialized view
+CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to refresh materialized view when evaluations are updated
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;
+CREATE TRIGGER tr_refresh_agent_scores
+    AFTER INSERT OR UPDATE OR DELETE ON evaluations
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_agent_scores_view();
+
+-- Trigger to refresh materialized view when agent status changes
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_agents ON miner_agents;
+CREATE TRIGGER tr_refresh_agent_scores_agents
+    AFTER UPDATE OF status ON miner_agents
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_agent_scores_view();
+
+-- Trigger to refresh materialized view when approved agents change
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved ON approved_version_ids;
+CREATE TRIGGER tr_refresh_agent_scores_approved
+    AFTER INSERT OR DELETE ON approved_version_ids
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_agent_scores_view();
+
+-- Trigger to refresh materialized view when banned hotkeys change
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned ON banned_hotkeys;
+CREATE TRIGGER tr_refresh_agent_scores_banned
+    AFTER INSERT OR DELETE ON banned_hotkeys
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_agent_scores_view();
