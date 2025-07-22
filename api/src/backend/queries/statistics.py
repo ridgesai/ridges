@@ -169,3 +169,73 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
     """
     rows = await conn.fetch(query, set_id)
     return [dict(row) for row in rows]
+
+@db_operation
+async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[int] = None) -> list[dict]:
+    """Get miner submissions and top scores by hour for correlation analysis"""
+    # Use max set_id if not provided
+    if set_id is None:
+        set_id_query = "SELECT MAX(set_id) FROM agent_scores"
+        set_id = await conn.fetchval(set_id_query)
+    
+    query = """
+        WITH hourly_submissions AS (
+            SELECT 
+                DATE_TRUNC('hour', created_at) as hour,
+                COUNT(DISTINCT version_id) as miner_submissions
+            FROM miner_agents
+            WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            GROUP BY DATE_TRUNC('hour', created_at)
+        ),
+        hourly_scores AS (
+            SELECT 
+                DATE_TRUNC('hour', created_at) as hour,
+                MAX(final_score) as hour_max_score
+            FROM agent_scores
+            WHERE set_id = $1 AND final_score IS NOT NULL
+            GROUP BY DATE_TRUNC('hour', created_at)
+            
+            UNION ALL
+            
+            SELECT 
+                DATE_TRUNC('hour', ma.created_at) as hour,
+                AVG(e.score) as hour_max_score
+            FROM miner_agents ma
+            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+                AND e.set_id = $1 
+                AND e.status = 'completed' 
+                AND e.score IS NOT NULL
+                AND e.validator_hotkey NOT LIKE 'i-0%'
+            WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND e.score IS NOT NULL
+            AND DATE_TRUNC('hour', ma.created_at) NOT IN (
+                SELECT DATE_TRUNC('hour', created_at) 
+                FROM agent_scores 
+                WHERE set_id = $1 AND final_score IS NOT NULL
+            )
+            GROUP BY DATE_TRUNC('hour', ma.created_at)
+        ),
+        combined_hourly AS (
+            SELECT 
+                hs.hour,
+                hs.miner_submissions,
+                COALESCE(hsc.hour_max_score, 0) as hour_score
+            FROM hourly_submissions hs
+            LEFT JOIN hourly_scores hsc ON hs.hour = hsc.hour
+        )
+        SELECT 
+            hour,
+            miner_submissions,
+            GREATEST(
+                COALESCE(
+                    MAX(hour_score) OVER (ORDER BY hour ROWS UNBOUNDED PRECEDING), 
+                    0
+                ), 
+                0
+            ) as top_score
+        FROM combined_hourly
+        WHERE hour IS NOT NULL
+        ORDER BY hour
+    """
+    rows = await conn.fetch(query, set_id)
+    return [{"hour": row["hour"], "miner_submissions": row["miner_submissions"], "top_score": float(row["top_score"] or 0)} for row in rows]

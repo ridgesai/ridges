@@ -15,6 +15,7 @@ from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as d
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time
+from api.src.backend.queries.statistics import get_miner_score_activity as db_get_miner_score_activity
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 
@@ -191,6 +192,10 @@ async def agent_scores_over_time(set_id: Optional[int] = None):
     """Gets agent scores over time for charting"""
     return await db_get_agent_scores_over_time(set_id)
 
+async def miner_score_activity(set_id: Optional[int] = None):
+    """Gets miner submissions and top scores by hour for correlation analysis"""
+    return await db_get_miner_score_activity(set_id)
+
 async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidator]:
     """
     Gives a list of where an agent is in queue for every validator
@@ -307,7 +312,8 @@ routes = [
     ("/inferences-by-run", inferences_for_run),
     ("/validator-queues", validator_queues),
     ("/evaluation-set", get_evaluation_set),
-    ("/agent-scores-over-time", agent_scores_over_time)
+    ("/agent-scores-over-time", agent_scores_over_time),
+    ("/miner-score-activity", miner_score_activity)
 ]
 
 for path, endpoint in routes:
