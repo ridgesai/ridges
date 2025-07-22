@@ -57,6 +57,7 @@ class EvaluationStatus(Enum):
     completed = "completed"
     replaced = "replaced"
     error = "error"
+    cancelled = "cancelled"
     
     @classmethod
     def from_string(cls, status: str) -> 'EvaluationStatus':
