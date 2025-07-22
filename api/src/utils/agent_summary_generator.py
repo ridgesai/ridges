@@ -146,6 +146,7 @@ Simple Tool-Based Iterative Agent
 • Key Feature: Structured response format ensures consistent `next_thought` → `next_tool_name` → `next_tool_args` flow
 • Robustness: JSON parsing fallbacks and multi-model retry logic handle malformed responses and API failures
 
+Only provide the summary, no other text, or explanation of your thinking.
 ---
 
 Now analyze the following agent code and generate a summary:
