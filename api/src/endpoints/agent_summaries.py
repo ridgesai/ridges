@@ -279,14 +279,11 @@ async def get_summary_status(
 
 @router.get("/agent-summary/{version_id}", response_model=AdminResponse)
 async def get_agent_summary_endpoint(
-    version_id: str,
-    admin_password: str
+    version_id: str
 ) -> AdminResponse:
     """
     Get detailed information about a specific agent and its summary
     """
-    if admin_password != os.getenv("ADMIN_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid admin password")
     
     try:
         with process_context("get_agent_summary"):
