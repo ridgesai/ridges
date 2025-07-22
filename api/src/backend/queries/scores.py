@@ -21,16 +21,9 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
     
     # Get the current agent's details and computed score excluding most outlier
     agent_score_result = await conn.fetchrow("""
-        WITH scores_with_outliers AS (
+        WITH avg_score AS (
             SELECT 
-                ma.agent_name, 
-                ma.miner_hotkey, 
-                ma.version_num,
-                e.set_id,
-                e.score,
-                e.validator_hotkey,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.version_id) AS median_score,
-                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.version_id)) AS deviation
+                AVG(e.score) as avg_score
             FROM miner_agents ma
             JOIN evaluations e ON ma.version_id = e.version_id
             WHERE ma.version_id = $1 
@@ -39,9 +32,27 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
               AND e.score > 0
               AND e.validator_hotkey NOT LIKE 'i-0%'
         ),
+        scores_with_deviation AS (
+            SELECT 
+                ma.agent_name, 
+                ma.miner_hotkey, 
+                ma.version_num,
+                e.set_id,
+                e.score,
+                e.validator_hotkey,
+                ABS(e.score - avs.avg_score) AS deviation
+            FROM miner_agents ma
+            JOIN evaluations e ON ma.version_id = e.version_id
+            CROSS JOIN avg_score avs
+            WHERE ma.version_id = $1 
+              AND e.status = 'completed'
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+        ),
         max_outlier AS (
             SELECT MAX(deviation) AS max_deviation
-            FROM scores_with_outliers
+            FROM scores_with_deviation
         )
         SELECT 
             agent_name, 
@@ -50,8 +61,8 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
             set_id,
             AVG(score) AS computed_score,
             COUNT(DISTINCT validator_hotkey) AS num_validators
-        FROM scores_with_outliers swo
-        LEFT JOIN max_outlier mo ON swo.deviation = mo.max_deviation
+        FROM scores_with_deviation swd
+        LEFT JOIN max_outlier mo ON swd.deviation = mo.max_deviation
         WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
         GROUP BY agent_name, miner_hotkey, version_num, set_id
         HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
@@ -71,14 +82,27 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
     # Get the highest score among ALL approved agents within the same set_id excluding outliers
     logger.debug(f"Attempting to get the highest score among ALL approved agents for set_id {current_set_id}.")
     max_approved_result = await conn.fetchrow("""
-        WITH scores_with_outliers AS (
+        WITH version_avg_scores AS (
+            SELECT 
+                avi.version_id,
+                AVG(e.score) as avg_score
+            FROM approved_version_ids avi
+            JOIN evaluations e ON avi.version_id = e.version_id  
+            WHERE e.status = 'completed' 
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.set_id = $1
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+            GROUP BY avi.version_id
+        ),
+        scores_with_deviation AS (
             SELECT 
                 avi.version_id,
                 e.score,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
-                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
+                ABS(e.score - vas.avg_score) AS deviation
             FROM approved_version_ids avi
             JOIN evaluations e ON avi.version_id = e.version_id  
+            JOIN version_avg_scores vas ON avi.version_id = vas.version_id
             WHERE e.status = 'completed' 
               AND e.score IS NOT NULL
               AND e.score > 0
@@ -87,18 +111,18 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
         ),
         version_outliers AS (
             SELECT version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_outliers
+            FROM scores_with_deviation
             GROUP BY version_id
         )
         SELECT 
-            AVG(swo.score) as computed_score
-        FROM scores_with_outliers swo
-        LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
-            AND swo.deviation = vo.max_deviation
+            AVG(swd.score) as computed_score
+        FROM scores_with_deviation swd
+        LEFT JOIN version_outliers vo ON swd.version_id = vo.version_id 
+            AND swd.deviation = vo.max_deviation
         WHERE vo.max_deviation IS NULL  -- Exclude most outlier score per version
-        GROUP BY swo.version_id
-        HAVING COUNT(DISTINCT swo.score) >= 2  -- Need at least 2 scores after outlier removal
-        ORDER BY AVG(swo.score) DESC
+        GROUP BY swd.version_id
+        HAVING COUNT(DISTINCT swd.score) >= 2  -- Need at least 2 scores after outlier removal
+        ORDER BY AVG(swd.score) DESC
         LIMIT 1
     """, current_set_id)
     

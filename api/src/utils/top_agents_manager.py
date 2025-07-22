@@ -30,15 +30,28 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
     max_set_id = max_set_id_result['max_set_id']
     
     results = await conn.fetch("""
-        WITH scores_with_outliers AS (
+        WITH version_avg_scores AS (
+            SELECT 
+                avi.version_id,
+                AVG(e.score) as avg_score
+            FROM approved_version_ids avi
+            JOIN evaluations e ON avi.version_id = e.version_id
+            WHERE e.status = 'completed'
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.set_id = $1
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+            GROUP BY avi.version_id
+        ),
+        scores_with_deviation AS (
             SELECT 
                 avi.version_id,
                 e.score,
                 e.validator_hotkey,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
-                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
+                ABS(e.score - vas.avg_score) AS deviation
             FROM approved_version_ids avi
             JOIN evaluations e ON avi.version_id = e.version_id
+            JOIN version_avg_scores vas ON avi.version_id = vas.version_id
             WHERE e.status = 'completed'
               AND e.score IS NOT NULL
               AND e.score > 0
@@ -47,16 +60,16 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
         ),
         version_outliers AS (
             SELECT version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_outliers
+            FROM scores_with_deviation
             GROUP BY version_id
         )
         SELECT 
             version_id, 
             AVG(score) as computed_score,
             COUNT(DISTINCT validator_hotkey) as num_validators
-        FROM scores_with_outliers swo
-        LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
-            AND swo.deviation = vo.max_deviation
+        FROM scores_with_deviation swd
+        LEFT JOIN version_outliers vo ON swd.version_id = vo.version_id 
+            AND swd.deviation = vo.max_deviation
         WHERE vo.max_deviation IS NULL  -- Exclude most outlier score
         GROUP BY version_id
         HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
@@ -282,16 +295,30 @@ async def test_update():
             
             # Get the top 5 approved agents by computed score excluding outliers
             top_agents = await conn.fetch("""
-                WITH scores_with_outliers AS (
+                WITH version_avg_scores AS (
+                    SELECT 
+                        avi.version_id,
+                        AVG(e.score) as avg_score
+                    FROM approved_version_ids avi
+                    JOIN evaluations e ON avi.version_id = e.version_id
+                    WHERE e.status = 'completed'
+                      AND e.score IS NOT NULL
+                      AND e.score > 0
+                      AND e.set_id = $1
+                      AND e.validator_hotkey NOT LIKE 'i-0%'
+                    GROUP BY avi.version_id
+                ),
+                scores_with_deviation AS (
                     SELECT 
                         avi.version_id,
                         ma.miner_hotkey,
                         e.score,
-                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
-                        ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
+                        e.validator_hotkey,
+                        ABS(e.score - vas.avg_score) AS deviation
                     FROM approved_version_ids avi
                     JOIN evaluations e ON avi.version_id = e.version_id
                     JOIN miner_agents ma ON avi.version_id = ma.version_id
+                    JOIN version_avg_scores vas ON avi.version_id = vas.version_id
                     WHERE e.status = 'completed'
                       AND e.score IS NOT NULL
                       AND e.score > 0
@@ -300,7 +327,7 @@ async def test_update():
                 ),
                 version_outliers AS (
                     SELECT version_id, MAX(deviation) AS max_deviation
-                    FROM scores_with_outliers
+                    FROM scores_with_deviation
                     GROUP BY version_id
                 )
                 SELECT 
@@ -308,9 +335,9 @@ async def test_update():
                     miner_hotkey,
                     AVG(score) as computed_score,
                     COUNT(DISTINCT score) as num_scores_used
-                FROM scores_with_outliers swo
-                LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
-                    AND swo.deviation = vo.max_deviation
+                FROM scores_with_deviation swd
+                LEFT JOIN version_outliers vo ON swd.version_id = vo.version_id 
+                    AND swd.deviation = vo.max_deviation
                 WHERE vo.max_deviation IS NULL  -- Exclude most outlier score
                 GROUP BY version_id, miner_hotkey
                 HAVING COUNT(DISTINCT score) >= 2  -- Need at least 2 scores after outlier removal
