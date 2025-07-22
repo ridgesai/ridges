@@ -297,17 +297,17 @@ async def get_agent_summary_endpoint(
             
             return AdminResponse(
                 status="success",
-                message=f"Agent information retrieved for {agent.agent_name} (v{agent.version_num})",
+                message=f"Agent information retrieved for {agent['agent_name']} (v{agent['version_num']})",
                 data={
-                    "version_id": str(agent.version_id),
-                    "miner_hotkey": agent.miner_hotkey,
-                    "agent_name": agent.agent_name,
-                    "version_num": agent.version_num,
-                    "created_at": agent.created_at.isoformat(),
-                    "status": agent.status,
-                    "has_summary": agent.agent_summary is not None,
-                    "agent_summary": agent.agent_summary,
-                    "summary_length": len(agent.agent_summary) if agent.agent_summary else 0
+                    "version_id": str(agent['version_id']),
+                    "miner_hotkey": agent['miner_hotkey'],
+                    "agent_name": agent['agent_name'],
+                    "version_num": agent['version_num'],
+                    "created_at": agent['created_at'].isoformat(),
+                    "status": agent['status'],
+                    "has_summary": agent['agent_summary'] is not None,
+                    "agent_summary": agent['agent_summary'],
+                    "summary_length": len(agent['agent_summary']) if agent['agent_summary'] else 0
                 }
             )
             
