@@ -228,6 +228,10 @@ class Sandbox:
                     self.container.kill()
                     raise TimeoutError(f"Runtime limit exceeded: {runtime:.1f}s")
                 
+            except DockerNotFound:
+                # Container was auto-removed by Docker (remove=True) - evaluation completed
+                logger.debug(f"Container was auto-removed, evaluation completed")
+                break
             except Exception as e:
                 if "exited" in str(e).lower():
                     break
