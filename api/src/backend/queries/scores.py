@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -> dict:
     """
     Check if version_id scored higher than all approved agents within the same set_id.
-    Uses dynamic scoring calculation from evaluations table.
+    Uses dynamic scoring calculation from evaluations table, excluding the most outlier score.
     
     Returns dict with:
     - high_score_detected: bool
@@ -19,24 +19,42 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
     """
     logger.debug(f"Attempting to get the current agent's details and computed score for version {version_id}.")
     
-    # Get the current agent's details and computed score from evaluations
+    # Get the current agent's details and computed score excluding most outlier
     agent_score_result = await conn.fetchrow("""
+        WITH scores_with_outliers AS (
+            SELECT 
+                ma.agent_name, 
+                ma.miner_hotkey, 
+                ma.version_num,
+                e.set_id,
+                e.score,
+                e.validator_hotkey,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.version_id) AS median_score,
+                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.version_id)) AS deviation
+            FROM miner_agents ma
+            JOIN evaluations e ON ma.version_id = e.version_id
+            WHERE ma.version_id = $1 
+              AND e.status = 'completed'
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+        ),
+        max_outlier AS (
+            SELECT MAX(deviation) AS max_deviation
+            FROM scores_with_outliers
+        )
         SELECT 
-            ma.agent_name, 
-            ma.miner_hotkey, 
-            ma.version_num,
-            e.set_id,
-            AVG(e.score) AS computed_score,
-            COUNT(DISTINCT e.validator_hotkey) AS num_validators
-        FROM miner_agents ma
-        JOIN evaluations e ON ma.version_id = e.version_id
-        WHERE ma.version_id = $1 
-          AND e.status = 'completed'
-          AND e.score IS NOT NULL
-          AND e.score > 0
-          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-        GROUP BY ma.agent_name, ma.miner_hotkey, ma.version_num, e.set_id
-        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
+            agent_name, 
+            miner_hotkey, 
+            version_num,
+            set_id,
+            AVG(score) AS computed_score,
+            COUNT(DISTINCT validator_hotkey) AS num_validators
+        FROM scores_with_outliers swo
+        LEFT JOIN max_outlier mo ON swo.deviation = mo.max_deviation
+        WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
+        GROUP BY agent_name, miner_hotkey, version_num, set_id
+        HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
     """, version_id)
     
     if not agent_score_result:
@@ -50,25 +68,41 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
     current_set_id = agent_score_result['set_id']
     logger.debug(f"Current agent's computed score for version {version_id} is {current_score} on set_id {current_set_id}.")
     
-    # Get the highest score among ALL approved agents within the same set_id
+    # Get the highest score among ALL approved agents within the same set_id excluding outliers
     logger.debug(f"Attempting to get the highest score among ALL approved agents for set_id {current_set_id}.")
     max_approved_result = await conn.fetchrow("""
-        SELECT MAX(avg_scores.computed_score) as max_approved_score
-        FROM (
-            SELECT AVG(e.score) AS computed_score
+        WITH scores_with_outliers AS (
+            SELECT 
+                avi.version_id,
+                e.score,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
+                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
             FROM approved_version_ids avi
             JOIN evaluations e ON avi.version_id = e.version_id  
             WHERE e.status = 'completed' 
               AND e.score IS NOT NULL
               AND e.score > 0
               AND e.set_id = $1
-              AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-            GROUP BY e.version_id
-            HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
-        ) avg_scores
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+        ),
+        version_outliers AS (
+            SELECT version_id, MAX(deviation) AS max_deviation
+            FROM scores_with_outliers
+            GROUP BY version_id
+        )
+        SELECT 
+            AVG(swo.score) as computed_score
+        FROM scores_with_outliers swo
+        LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
+            AND swo.deviation = vo.max_deviation
+        WHERE vo.max_deviation IS NULL  -- Exclude most outlier score per version
+        GROUP BY swo.version_id
+        HAVING COUNT(DISTINCT swo.score) >= 2  -- Need at least 2 scores after outlier removal
+        ORDER BY AVG(swo.score) DESC
+        LIMIT 1
     """, current_set_id)
     
-    max_approved_score = max_approved_result['max_approved_score'] if max_approved_result else None
+    max_approved_score = max_approved_result['computed_score'] if max_approved_result else None
     logger.debug(f"The highest score among ALL approved agents for set_id {current_set_id} is {max_approved_score}.")
     
     # Check if this beats all approved agents (ANY improvement triggers notification)
