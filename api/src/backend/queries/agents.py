@@ -72,14 +72,11 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     
     # Get the current leader excluding the most outlier score
     current_leader = await conn.fetchrow("""
-        WITH scores_with_outliers AS (
+        WITH avg_scores AS (
             SELECT
                 ma.miner_hotkey,
                 e.version_id,
-                ma.created_at,
-                e.score,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id) AS median_score,
-                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id)) AS deviation
+                AVG(e.score) as avg_score
             FROM evaluations e
             JOIN approved_version_ids avi ON e.version_id = avi.version_id
             JOIN miner_agents ma ON e.version_id = ma.version_id
@@ -89,38 +86,54 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
               AND e.validator_hotkey NOT LIKE 'i-0%'
               AND e.set_id = $1
               AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            GROUP BY ma.miner_hotkey, e.version_id
+        ),
+        scores_with_deviation AS (
+            SELECT
+                ma.miner_hotkey,
+                e.version_id,
+                ma.created_at,
+                e.score,
+                ABS(e.score - avs.avg_score) AS deviation
+            FROM evaluations e
+            JOIN approved_version_ids avi ON e.version_id = avi.version_id
+            JOIN miner_agents ma ON e.version_id = ma.version_id
+            JOIN avg_scores avs ON ma.miner_hotkey = avs.miner_hotkey AND e.version_id = avs.version_id
+            WHERE e.status = 'completed' 
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+              AND e.set_id = $1
+              AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
         max_outliers AS (
             SELECT miner_hotkey, version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_outliers
+            FROM scores_with_deviation
             GROUP BY miner_hotkey, version_id
         )
         SELECT
-            swo.miner_hotkey,
-            swo.version_id,
-            AVG(swo.score) AS avg_score
-        FROM scores_with_outliers swo
-        LEFT JOIN max_outliers mo ON swo.miner_hotkey = mo.miner_hotkey 
-            AND swo.version_id = mo.version_id 
-            AND swo.deviation = mo.max_deviation
+            swd.miner_hotkey,
+            swd.version_id,
+            AVG(swd.score) AS avg_score
+        FROM scores_with_deviation swd
+        LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
+            AND swd.version_id = mo.version_id 
+            AND swd.deviation = mo.max_deviation
         WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
-        GROUP BY swo.miner_hotkey, swo.version_id, swo.created_at
-        HAVING COUNT(DISTINCT swo.score) >= 2  -- At least 2 validator evaluations
-        ORDER BY AVG(swo.score) DESC, swo.created_at ASC
+        GROUP BY swd.miner_hotkey, swd.version_id, swd.created_at
+        HAVING COUNT(DISTINCT swd.score) >= 2  -- At least 2 validator evaluations
+        ORDER BY AVG(swd.score) DESC, swd.created_at ASC
         LIMIT 1
     """, max_set_id)
     
     if not current_leader:
         # No current leader - return highest scoring agent excluding outliers
         fallback_agent = await conn.fetchrow("""
-            WITH scores_with_outliers AS (
+            WITH avg_scores AS (
                 SELECT
                     ma.miner_hotkey,
                     e.version_id,
-                    ma.created_at,
-                    e.score,
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id) AS median_score,
-                    ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id)) AS deviation
+                    AVG(e.score) as avg_score
                 FROM evaluations e
                 JOIN approved_version_ids avi ON e.version_id = avi.version_id
                 JOIN miner_agents ma ON e.version_id = ma.version_id
@@ -130,24 +143,43 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
                   AND e.validator_hotkey NOT LIKE 'i-0%'
                   AND e.set_id = $1
                   AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                GROUP BY ma.miner_hotkey, e.version_id
+            ),
+            scores_with_deviation AS (
+                SELECT
+                    ma.miner_hotkey,
+                    e.version_id,
+                    ma.created_at,
+                    e.score,
+                    ABS(e.score - avs.avg_score) AS deviation
+                FROM evaluations e
+                JOIN approved_version_ids avi ON e.version_id = avi.version_id
+                JOIN miner_agents ma ON e.version_id = ma.version_id
+                JOIN avg_scores avs ON ma.miner_hotkey = avs.miner_hotkey AND e.version_id = avs.version_id
+                WHERE e.status = 'completed' 
+                  AND e.score IS NOT NULL
+                  AND e.score > 0
+                  AND e.validator_hotkey NOT LIKE 'i-0%'
+                  AND e.set_id = $1
+                  AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             ),
             max_outliers AS (
                 SELECT miner_hotkey, version_id, MAX(deviation) AS max_deviation
-                FROM scores_with_outliers
+                FROM scores_with_deviation
                 GROUP BY miner_hotkey, version_id
             )
             SELECT
-                swo.miner_hotkey,
-                swo.version_id,
-                AVG(swo.score) AS avg_score
-            FROM scores_with_outliers swo
-            LEFT JOIN max_outliers mo ON swo.miner_hotkey = mo.miner_hotkey 
-                AND swo.version_id = mo.version_id 
-                AND swo.deviation = mo.max_deviation
+                swd.miner_hotkey,
+                swd.version_id,
+                AVG(swd.score) AS avg_score
+            FROM scores_with_deviation swd
+            LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
+                AND swd.version_id = mo.version_id 
+                AND swd.deviation = mo.max_deviation
             WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
-            GROUP BY swo.miner_hotkey, swo.version_id, swo.created_at
-            HAVING COUNT(DISTINCT swo.score) >= 2  -- At least 2 validator evaluations
-            ORDER BY AVG(swo.score) DESC, swo.created_at ASC
+            GROUP BY swd.miner_hotkey, swd.version_id, swd.created_at
+            HAVING COUNT(DISTINCT swd.score) >= 2  -- At least 2 validator evaluations
+            ORDER BY AVG(swd.score) DESC, swd.created_at ASC
             LIMIT 1
         """, max_set_id)
         
@@ -165,14 +197,11 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     
     # Find agents that beat the current leader by 1.5% excluding outliers
     challenger = await conn.fetchrow("""
-        WITH scores_with_outliers AS (
+        WITH avg_scores AS (
             SELECT
                 ma.miner_hotkey,
                 e.version_id,
-                ma.created_at,
-                e.score,
-                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id) AS median_score,
-                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY ma.miner_hotkey, e.version_id)) AS deviation
+                AVG(e.score) as avg_score
             FROM evaluations e
             JOIN approved_version_ids avi ON e.version_id = avi.version_id
             JOIN miner_agents ma ON e.version_id = ma.version_id
@@ -182,25 +211,44 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
               AND e.validator_hotkey NOT LIKE 'i-0%'
               AND e.set_id = $2
               AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            GROUP BY ma.miner_hotkey, e.version_id
+        ),
+        scores_with_deviation AS (
+            SELECT
+                ma.miner_hotkey,
+                e.version_id,
+                ma.created_at,
+                e.score,
+                ABS(e.score - avs.avg_score) AS deviation
+            FROM evaluations e
+            JOIN approved_version_ids avi ON e.version_id = avi.version_id
+            JOIN miner_agents ma ON e.version_id = ma.version_id
+            JOIN avg_scores avs ON ma.miner_hotkey = avs.miner_hotkey AND e.version_id = avs.version_id
+            WHERE e.status = 'completed' 
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+              AND e.set_id = $2
+              AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
         max_outliers AS (
             SELECT miner_hotkey, version_id, MAX(deviation) AS max_deviation
-            FROM scores_with_outliers
+            FROM scores_with_deviation
             GROUP BY miner_hotkey, version_id
         )
         SELECT
-            swo.miner_hotkey,
-            swo.version_id,
-            AVG(swo.score) AS avg_score
-        FROM scores_with_outliers swo
-        LEFT JOIN max_outliers mo ON swo.miner_hotkey = mo.miner_hotkey 
-            AND swo.version_id = mo.version_id 
-            AND swo.deviation = mo.max_deviation
+            swd.miner_hotkey,
+            swd.version_id,
+            AVG(swd.score) AS avg_score
+        FROM scores_with_deviation swd
+        LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
+            AND swd.version_id = mo.version_id 
+            AND swd.deviation = mo.max_deviation
         WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
-        GROUP BY swo.miner_hotkey, swo.version_id, swo.created_at
-        HAVING COUNT(DISTINCT swo.score) >= 2  -- At least 2 validator evaluations
-          AND AVG(swo.score) >= $1  -- Must beat current leader by 1.5%
-        ORDER BY AVG(swo.score) DESC, swo.created_at ASC
+        GROUP BY swd.miner_hotkey, swd.version_id, swd.created_at
+        HAVING COUNT(DISTINCT swd.score) >= 2  -- At least 2 validator evaluations
+          AND AVG(swd.score) >= $1  -- Must beat current leader by 1.5%
+        ORDER BY AVG(swd.score) DESC, swd.created_at ASC
         LIMIT 1
     """, required_score, max_set_id)
     
