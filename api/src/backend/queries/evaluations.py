@@ -1,6 +1,6 @@
 from typing import Optional, List
 import logging
-import uuid
+import json
 
 import asyncpg
 
@@ -106,6 +106,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         # Convert JSON objects to EvaluationRun objects
         evaluation_runs = []
         for run_data in row[10]:  # evaluation_runs is at index 10
+            run_data = json.loads(run_data)
             evaluation_run = EvaluationRun(
                 run_id=run_data['run_id'],
                 evaluation_id=run_data['evaluation_id'],
