@@ -20,6 +20,7 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
     """
     Get top approved version IDs by computed score from max set_id.
     Returns the actual TOP agents by score, not just the first approved ones.
+    Excludes the single most outlier validator score for robust averaging.
     """
     # First, get the maximum set_id
     max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
@@ -29,17 +30,37 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
     max_set_id = max_set_id_result['max_set_id']
     
     results = await conn.fetch("""
-        SELECT avi.version_id, AVG(e.score) as computed_score
-        FROM approved_version_ids avi
-        JOIN evaluations e ON avi.version_id = e.version_id
-        WHERE e.status = 'completed'
-          AND e.score IS NOT NULL
-          AND e.score > 0
-          AND e.set_id = $1  -- Only use max set_id
-          AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-        GROUP BY avi.version_id
-        HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
-        ORDER BY AVG(e.score) DESC
+        WITH scores_with_outliers AS (
+            SELECT 
+                avi.version_id,
+                e.score,
+                e.validator_hotkey,
+                PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
+                ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
+            FROM approved_version_ids avi
+            JOIN evaluations e ON avi.version_id = e.version_id
+            WHERE e.status = 'completed'
+              AND e.score IS NOT NULL
+              AND e.score > 0
+              AND e.set_id = $1
+              AND e.validator_hotkey NOT LIKE 'i-0%'
+        ),
+        version_outliers AS (
+            SELECT version_id, MAX(deviation) AS max_deviation
+            FROM scores_with_outliers
+            GROUP BY version_id
+        )
+        SELECT 
+            version_id, 
+            AVG(score) as computed_score,
+            COUNT(DISTINCT validator_hotkey) as num_validators
+        FROM scores_with_outliers swo
+        LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
+            AND swo.deviation = vo.max_deviation
+        WHERE vo.max_deviation IS NULL  -- Exclude most outlier score
+        GROUP BY version_id
+        HAVING COUNT(DISTINCT validator_hotkey) >= 2  -- At least 2 validator evaluations
+        ORDER BY AVG(score) DESC
         LIMIT $2;
     """, max_set_id, num_agents)
 
@@ -248,7 +269,7 @@ async def test_update():
     
     try:
         # Debug: Check what's in approved_version_ids
-        print("\n=== DEBUG: Getting TOP 5 approved agents by COMPUTED SCORE from MAX SET_ID ===")
+        print("\n=== DEBUG: Getting TOP 5 approved agents by COMPUTED SCORE (excluding outliers) from MAX SET_ID ===")
         async with new_db.acquire() as conn:
             # First get max set_id
             max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
@@ -259,26 +280,47 @@ async def test_update():
             max_set_id = max_set_id_result['max_set_id']
             print(f"Using max set_id: {max_set_id}")
             
-            # Get the top 5 approved agents by computed score from max set_id
+            # Get the top 5 approved agents by computed score excluding outliers
             top_agents = await conn.fetch("""
-                SELECT avi.version_id, AVG(e.score) as computed_score, ma.miner_hotkey
-                FROM approved_version_ids avi
-                JOIN evaluations e ON avi.version_id = e.version_id
-                JOIN miner_agents ma ON avi.version_id = ma.version_id
-                WHERE e.status = 'completed'
-                  AND e.score IS NOT NULL
-                  AND e.score > 0
-                  AND e.set_id = $1  -- Only use max set_id
-                  AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude screener scores
-                GROUP BY avi.version_id, ma.miner_hotkey
-                HAVING COUNT(DISTINCT e.validator_hotkey) >= 2  -- At least 2 validator evaluations
-                ORDER BY AVG(e.score) DESC
+                WITH scores_with_outliers AS (
+                    SELECT 
+                        avi.version_id,
+                        ma.miner_hotkey,
+                        e.score,
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id) AS median_score,
+                        ABS(e.score - PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY e.score) OVER (PARTITION BY avi.version_id)) AS deviation
+                    FROM approved_version_ids avi
+                    JOIN evaluations e ON avi.version_id = e.version_id
+                    JOIN miner_agents ma ON avi.version_id = ma.version_id
+                    WHERE e.status = 'completed'
+                      AND e.score IS NOT NULL
+                      AND e.score > 0
+                      AND e.set_id = $1
+                      AND e.validator_hotkey NOT LIKE 'i-0%'
+                ),
+                version_outliers AS (
+                    SELECT version_id, MAX(deviation) AS max_deviation
+                    FROM scores_with_outliers
+                    GROUP BY version_id
+                )
+                SELECT 
+                    version_id, 
+                    miner_hotkey,
+                    AVG(score) as computed_score,
+                    COUNT(DISTINCT score) as num_scores_used
+                FROM scores_with_outliers swo
+                LEFT JOIN version_outliers vo ON swo.version_id = vo.version_id 
+                    AND swo.deviation = vo.max_deviation
+                WHERE vo.max_deviation IS NULL  -- Exclude most outlier score
+                GROUP BY version_id, miner_hotkey
+                HAVING COUNT(DISTINCT score) >= 2  -- Need at least 2 scores after outlier removal
+                ORDER BY AVG(score) DESC
                 LIMIT 5;
             """, max_set_id)
             
-            print(f"TOP 5 approved agents by computed score:")
+            print(f"TOP 5 approved agents by computed score (excluding outliers):")
             for i, row in enumerate(top_agents, 1):
-                print(f"  Rank {i}: {row['version_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']})")
+                print(f"  Rank {i}: {row['version_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']}, scores used: {row['num_scores_used']})")
             
             # Also check total approved agents
             total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_version_ids")
