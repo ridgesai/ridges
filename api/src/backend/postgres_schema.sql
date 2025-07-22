@@ -167,9 +167,9 @@ WHERE validator_hotkey NOT LIKE 'i-%';
 
 -- Materialized view to precompute agent scores
 CREATE MATERIALIZED VIEW IF NOT EXISTS agent_scores AS
-WITH latest_agents AS (
-    -- Get the most recent version for each hotkey
-    SELECT DISTINCT ON (miner_hotkey)
+WITH all_agents AS (
+    -- Get all agent versions from non-banned hotkeys
+    SELECT
         version_id,
         miner_hotkey,
         agent_name,
@@ -179,25 +179,24 @@ WITH latest_agents AS (
         agent_summary
     FROM miner_agents
     WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-    ORDER BY miner_hotkey, version_num DESC, created_at DESC
 ),
 agent_evaluations AS (
-    -- Get all evaluations for these latest agents
+    -- Get all evaluations for all agent versions
     SELECT
-        la.version_id,
-        la.miner_hotkey,
-        la.agent_name,
-        la.version_num,
-        la.created_at,
-        la.status,
-        la.agent_summary,
+        aa.version_id,
+        aa.miner_hotkey,
+        aa.agent_name,
+        aa.version_num,
+        aa.created_at,
+        aa.status,
+        aa.agent_summary,
         e.set_id,
         e.score,
         e.validator_hotkey,
         (avi.version_id IS NOT NULL) as approved
-    FROM latest_agents la
-    LEFT JOIN approved_version_ids avi ON la.version_id = avi.version_id
-    LEFT JOIN evaluations e ON la.version_id = e.version_id
+    FROM all_agents aa
+    LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id
+    LEFT JOIN evaluations e ON aa.version_id = e.version_id
         AND e.status = 'completed' 
         AND e.score IS NOT NULL
         AND e.score > 0
