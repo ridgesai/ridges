@@ -21,6 +21,7 @@ MODEL_PRICING: Dict[str, float] = {
     "NousResearch/DeepHermes-3-Llama-3-8B-Preview": 0.224,
     "chutesai/Llama-4-Maverick-17B-128E-Instruct-FP8": 0.2722,
     "Qwen/Qwen3-32B": 0.0272,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": 0.0000,
     "Qwen/QwQ-32B": 0.0151,
     "chutesai/Mistral-Small-3.2-24B-Instruct-2506": 0.0302,
     "unsloth/gemma-3-27b-it": 0.1568,
