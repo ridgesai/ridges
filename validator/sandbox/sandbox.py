@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Optional, Dict, Any
 from ddtrace import tracer
 
 import docker
+from docker.errors import NotFound as DockerNotFound
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
 from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, run_instance
