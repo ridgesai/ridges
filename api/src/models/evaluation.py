@@ -196,11 +196,14 @@ class Evaluation:
             set_id,
         )
         
-        return await ws.send_to_client(screener, {
+        message = {
             "event": "screen-agent",
             "evaluation_id": eval_id,
             "agent_version": agent.model_dump(mode="json"),
-        })
+        }
+        logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
+        
+        return await ws.send_to_client(screener, message)
 
     @staticmethod
     async def get_by_id(evaluation_id: str) -> Optional["Evaluation"]:
@@ -224,12 +227,25 @@ class Evaluation:
         """Atomically claim an awaiting agent for screening and create evaluation"""
         from api.src.backend.entities import MinerAgent, AgentStatus
 
+        logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey}")
+        
         # Atomically check availability and mark busy to prevent race conditions
         if not screener.is_available():
+            logger.info(f"Screener {screener.hotkey} is not available (status: {screener.status})")
             return
         screener.status = "claiming_agent"
 
         async with get_transaction() as conn:
+            # First check if there are any agents awaiting screening
+            awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE status = 'awaiting_screening'")
+            logger.info(f"Found {awaiting_count} agents with awaiting_screening status")
+            
+            if awaiting_count > 0:
+                # Log the agents for debugging
+                awaiting_agents = await conn.fetch("SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents WHERE status = 'awaiting_screening' ORDER BY created_at ASC")
+                for agent in awaiting_agents[:3]:  # Log first 3
+                    logger.info(f"Awaiting agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
+            
             # Atomically claim the next awaiting agent
             claimed_agent = await conn.fetchrow(
                 """
@@ -247,8 +263,10 @@ class Evaluation:
 
             if not claimed_agent:
                 screener.set_available()  # Revert to available if no agent found
-                logger.info(f"No agents awaiting screening for screener {screener.hotkey}")
+                logger.info(f"No agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
                 return
+
+            logger.info(f"Screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
 
             agent = MinerAgent(
                 version_id=claimed_agent["version_id"],
@@ -263,7 +281,8 @@ class Evaluation:
             screener.status = f"Assigned agent {agent.agent_name}"
             screener.current_agent_name = agent.agent_name
             
-            await Evaluation.create_screening_and_send(conn, agent, screener)
+            success = await Evaluation.create_screening_and_send(conn, agent, screener)
+            logger.info(f"WebSocket send to screener {screener.hotkey} for agent {agent.agent_name}: {'SUCCESS' if success else 'FAILED'}")
 
     @staticmethod
     async def check_miner_has_no_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
