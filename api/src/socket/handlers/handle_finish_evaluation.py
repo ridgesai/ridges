@@ -43,10 +43,10 @@ async def handle_finish_evaluation(
     try:
         logger.info(f"{client.get_type().title()} {client.hotkey} has finished evaluation {evaluation_id}.")
         
-        if isinstance(client, Screener):
+        if client.get_type() == "screener":
             await client.finish_screening(evaluation_id, errored, reason)
             action = "Screening"
-        elif isinstance(client, Validator):
+        elif client.get_type() == "validator":
             await client.finish_evaluation(evaluation_id, errored, reason)
             action = "Evaluation"
         
