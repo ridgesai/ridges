@@ -19,6 +19,15 @@ async def handle_validator_info(
     hotkey = response_json["validator_hotkey"]
     version_commit_hash = response_json["version_commit_hash"]
     
+    # Check if validator hotkey is already connected
+    for existing_websocket, existing_client in clients.items():
+        if hasattr(existing_client, 'hotkey') and existing_client.hotkey == hotkey:
+            logger.warning(f"Rejecting connection: validator hotkey {hotkey} is already connected")
+            # Send authentication-failed message
+            await websocket.send_text('{"event": "authentication-failed", "error": "Validator hotkey already connected"}')
+            await websocket.close()
+            return
+    
     logger.info(f"Client {hotkey} has been authenticated and connected. Version commit hash: {version_commit_hash}")
 
     # Replace the base client with the appropriate typed client
