@@ -182,8 +182,24 @@ class Evaluation:
         from api.src.socket.websocket_manager import WebSocketManager
         ws = WebSocketManager.get_instance()
 
-        eval_id = str(uuid.uuid4())
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
+
+        # Check if there's already a non-errored screening evaluation for this agent
+        existing_screening = await conn.fetchval(
+            """
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND set_id = $2
+            AND status NOT IN ('error', 'cancelled', 'replaced')
+            """,
+            agent.version_id,
+            set_id
+        )
+        
+        if existing_screening:
+            logger.warning(f"Screening evaluation already exists for agent {agent.version_id}: {existing_screening}")
+            return False
+
+        eval_id = str(uuid.uuid4())
 
         await conn.execute(
             """
@@ -414,6 +430,29 @@ class Evaluation:
                         await evaluation.error(conn, "Disconnected from screener")
                     else:
                         await evaluation.reset_to_waiting(conn)
+
+            # Check for running evaluations that should be auto-completed
+            stuck_evaluations = await conn.fetch(
+                """
+                SELECT e.evaluation_id FROM evaluations e
+                WHERE e.status = 'running'
+                AND NOT EXISTS (
+                    SELECT 1 FROM evaluation_runs er 
+                    WHERE er.evaluation_id = e.evaluation_id 
+                    AND er.status NOT IN ('result_scored', 'cancelled')
+                )
+                AND EXISTS (
+                    SELECT 1 FROM evaluation_runs er2
+                    WHERE er2.evaluation_id = e.evaluation_id
+                )
+                """
+            )
+            
+            for stuck_eval in stuck_evaluations:
+                evaluation = await Evaluation.get_by_id(stuck_eval["evaluation_id"])
+                if evaluation:
+                    logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
+                    await evaluation.finish(conn)
 
             # Cancel waiting screenings
             waiting_screenings = await conn.fetch("SELECT evaluation_id FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%'")
