@@ -140,9 +140,18 @@ class Sandbox:
             if embed_file.exists():
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
+            # Get image name and ensure it exists locally
+            image_name = get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id)
+            try:
+                self.manager.docker.images.get(image_name)
+            except docker.errors.ImageNotFound:
+                logger.info(f"Image not found locally, pulling: {image_name}")
+                self.manager.docker.images.pull(image_name)
+                logger.info(f"Successfully pulled image: {image_name}")
+
             self.container = self.manager.docker.containers.run(
                 remove=True,
-                image=get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id),
+                image=image_name,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
                 working_dir=SANDBOX_DIR,
