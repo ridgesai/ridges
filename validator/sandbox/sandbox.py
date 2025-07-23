@@ -32,6 +32,19 @@ logger = get_logger(__name__)
 
 PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
 
+def get_sandbox_image_for_instance(instance_id: str) -> str:
+    """Get commit-specific Docker image for a SWE-bench instance."""
+    try:
+        commit_image = f"ghcr.io/ridgesai/ridges/sandbox-{instance_id}:latest"
+        logger.info(f"Using commit-specific image for {instance_id}: {commit_image}")
+        return commit_image
+        
+    except Exception as e:
+        logger.warning(f"Error constructing commit-specific image name: {e}, using default")
+    
+    # Fallback to default image
+    return SANDBOX_DOCKER_IMAGE
+
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
@@ -129,7 +142,7 @@ class Sandbox:
 
             self.container = self.manager.docker.containers.run(
                 remove=True,
-                image=SANDBOX_DOCKER_IMAGE,
+                image=get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id),
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
                 working_dir=SANDBOX_DIR,
