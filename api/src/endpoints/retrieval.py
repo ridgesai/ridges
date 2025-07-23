@@ -112,7 +112,7 @@ async def get_evaluations(version_id: str, set_id: Optional[int] = None) -> list
     
     return evaluations
 
-async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None, fast: bool = Query(default=False, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None, fast: bool = Query(default=True, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
     try:
         evaluations = await get_evaluations_with_usage_for_agent_version(version_id, set_id, fast=fast)
     except Exception as e:
