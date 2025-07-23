@@ -11,6 +11,7 @@ import asyncio
 import time
 from typing import Dict, Any, List
 from pathlib import Path
+import json
 
 from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.local_testing.problem_instances import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES
@@ -38,23 +39,23 @@ def _display_single_test_result(result: Dict[str, Any], problem_index: int, tota
     solved = result.get('solved', False)
     
     # Show progress counter
-    console.print(f"✅ Completed test {completed_tests}/{total_problems} - {instance_id}", style="dim cyan")
+    console.print(f"Completed test {completed_tests}/{total_problems} - {instance_id}", style="dim cyan")
     
     # Choose status icon and color
     if status == 'SOLVED':
-        status_icon = "✅"
+        status_icon = "[SOLVED]"
         status_color = "green"
         status_text = "SOLVED"
     elif status == 'COMPLETED':
-        status_icon = "🔧"
+        status_icon = "[PATCH]"
         status_color = "yellow" 
         status_text = "PATCH GENERATED"
     elif status == 'TIMEOUT':
-        status_icon = "⏰"
+        status_icon = "[TIMEOUT]"
         status_color = "red"
         status_text = "TIMEOUT"
     else:
-        status_icon = "❌"
+        status_icon = "[FAILED]"
         status_color = "red"
         status_text = "FAILED"
     
@@ -104,15 +105,15 @@ async def run_single_problem_evaluation(
     problem_start = time.time()
     
     # Show test start progress
-    console.print(f"🚀 Starting test {problem_index}/{total_problems}: {problem.instance_id}", style="blue")
-    console.print(f"   📂 Cloning repository: {problem.repo}...", style="dim blue")
+    console.print(f"Starting test {problem_index}/{total_problems}: {problem.instance_id}", style="blue")
+    console.print(f"   Cloning repository: {problem.repo}...", style="dim blue")
     
     try:
         # Create sandbox with log buffer
         sandbox = await manager.create_sandbox(problem, Path(agent_file), log_buffer)
         
         # Show that repo cloning is complete and evaluation is starting
-        console.print(f"   ✅ Repository ready, running evaluation...", style="dim green")
+        console.print(f"   Repository ready, running evaluation...", style="dim green")
         
         # Run evaluation with timeout
         result = await asyncio.wait_for(
@@ -129,8 +130,8 @@ async def run_single_problem_evaluation(
         return result
         
     except asyncio.TimeoutError:
-        console.print(f"   ⏰ Test {problem_index} timed out after {timeout}s", style="red")
-        log_buffer.append(f"❌ Evaluation timed out after {timeout}s")
+        console.print(f"   Test {problem_index} timed out after {timeout}s", style="red")
+        log_buffer.append(f"Evaluation timed out after {timeout}s")
         result = {
             'instance_id': problem.instance_id,
             'status': 'TIMEOUT',
@@ -146,8 +147,8 @@ async def run_single_problem_evaluation(
         return result
         
     except Exception as e:
-        console.print(f"   ❌ Test {problem_index} failed: {str(e)}", style="red")
-        log_buffer.append(f"❌ Exception during evaluation: {str(e)}")
+        console.print(f"   Test {problem_index} failed: {str(e)}", style="red")
+        log_buffer.append(f"Exception during evaluation: {str(e)}")
         result = {
             'instance_id': problem.instance_id,
             'status': 'ERROR',
@@ -177,23 +178,23 @@ async def run_local_evaluations(
     completed_tests = 0
     
     # Load problems
-    console.print("📋 Loading problem set...", style="cyan")
+    console.print("Loading problem set...", style="cyan")
     problems = load_local_problems(problem_set, num_problems)
     total_tests = len(problems)
     
-    console.print(f"🎯 Selected {len(problems)} problems from {problem_set} set", style="green")
-    console.print(f"⏱️  Timeout per test: {timeout}s", style="yellow")
-    console.print(f"🤖 Agent file: {agent_file}\n", style="magenta")
+    console.print(f"Selected {len(problems)} problems from {problem_set} set", style="green")
+    console.print(f"Timeout per test: {timeout}s", style="yellow")
+    console.print(f"Agent file: {agent_file}\n", style="magenta")
     
     start_time = time.time()
     
     # Pre-build all SWE-bench environment images to enable truly parallel evaluations
-    console.print("🔨 Pre-building SWE-bench environment images for parallel execution...", style="cyan")
+    console.print("Pre-building SWE-bench environment images for parallel execution...", style="cyan")
     await manager.pre_build_swe_bench_images(problems)
-    console.print("✅ Environment images ready for parallel evaluation\n", style="green")
+    console.print("Environment images ready for parallel evaluation\n", style="green")
     
     # Create tasks for all problems to run in parallel
-    console.print("🏗️  Creating evaluation tasks...", style="cyan")
+    console.print("Creating evaluation tasks...", style="cyan")
     tasks = []
     for i, problem in enumerate(problems):
         task = asyncio.create_task(
@@ -209,9 +210,8 @@ async def run_local_evaluations(
         tasks.append(task)
     
     # Run all evaluations in parallel
-    console.print(f"🚀 Starting {len(problems)} evaluations in parallel...\n", style="bold cyan")
-    console.print(f"📝 Individual results will be displayed as each test completes.\n", style="dim")
-    console.print(f"🔥 SWE-bench evaluations will now run in TRUE PARALLEL using dedicated Docker clients!\n", style="bold yellow")
+    console.print(f"Starting {len(problems)} evaluations in parallel...\n", style="bold cyan")
+    console.print(f"Individual results will be displayed as each test completes.\n", style="dim")
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     # Handle any exceptions that were returned instead of results
@@ -234,8 +234,8 @@ async def run_local_evaluations(
     total_duration = time.time() - start_time
     
     # Show completion message
-    console.print(f"\n🎉 All {len(problems)} evaluations completed!", style="bold green")
-    console.print(f"⏱️  Total time: {total_duration:.1f}s", style="cyan")
+    console.print(f"\nAll {len(problems)} evaluations completed!", style="bold green")
+    console.print(f"Total time: {total_duration:.1f}s", style="cyan")
     
     # Generate summary
     summary = generate_summary(final_results)
@@ -244,7 +244,7 @@ async def run_local_evaluations(
     solved = summary['solved_count']
     total = summary['total_count'] 
     success_rate = summary['success_rate']
-    console.print(f"📊 Results: {solved}/{total} solved ({success_rate:.1f}%)", style="bold yellow")
+    console.print(f"Results: {solved}/{total} solved ({success_rate:.1f}%)", style="bold yellow")
     
     return {
         'results': final_results,

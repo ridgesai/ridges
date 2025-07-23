@@ -22,7 +22,7 @@ from validator.sandbox.constants import (
     SANDBOX_SOURCE_DIR, SANDBOX_REPO_DIR, SANDBOX_DIR
 )
 from validator.sandbox.schema import EvaluationRun, SwebenchProblem, SandboxInput
-from validator.sandbox.sandbox import Sandbox
+from validator.sandbox.sandbox import Sandbox, get_sandbox_image_for_instance
 from validator.sandbox.clone_repo import clone_repo
 from loggers.logging_utils import get_logger
 logger = get_logger(__name__)
@@ -182,7 +182,7 @@ class LocalSandboxManager:
             return
             
         try:
-            self._log_manager("🔨 Pre-building SWE-bench environment images for parallel evaluation...")
+            self._log_manager("Pre-building SWE-bench environment images for parallel evaluation...")
             
             from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, build_env_images
             
@@ -195,10 +195,10 @@ class LocalSandboxManager:
             # This avoids the bottleneck of building images separately for each evaluation
             build_env_images(self.docker, test_specs, max_workers=4)
             
-            self._log_manager(f"✅ Pre-built environment images for {len(problems)} problems")
+            self._log_manager(f"Pre-built environment images for {len(problems)} problems")
             
         except Exception as e:
-            self._log_manager(f"⚠️ Failed to pre-build SWE-bench images: {e}")
+            self._log_manager(f"Failed to pre-build SWE-bench images: {e}")
             # Continue anyway - individual evaluations will build as needed
     
     def _log_manager(self, message: str):
@@ -303,7 +303,7 @@ class LocalSandbox:
             problem.repo,
             problem.base_commit
         )
-        self._log(f"📁 Repository cloned to: {self.repo_dir}")
+        self._log(f"Repository cloned to: {self.repo_dir}")
     
     def _log(self, message: str):
         """Log a message to buffer if available, otherwise print"""
@@ -352,16 +352,31 @@ class LocalSandbox:
             runner_dest = self.repo_dir / "agent_runner.py"
             shutil.copy2(runner_src, runner_dest)
             
+            # Get commit-specific image for this instance (same as production)
+            sandbox_image = get_sandbox_image_for_instance(self.problem.instance_id)
+            
             # Pull sandbox image if needed
             try:
-                self.local_manager.docker.images.get(SANDBOX_DOCKER_IMAGE)
+                self.local_manager.docker.images.get(sandbox_image)
+                self._log(f"Using existing image: {sandbox_image}")
             except self.docker_module.errors.ImageNotFound:
-                self._log(f"📥 Pulling sandbox image: {SANDBOX_DOCKER_IMAGE}")
-                self.local_manager.docker.images.pull(SANDBOX_DOCKER_IMAGE)
+                self._log(f"Pulling commit-specific image: {sandbox_image}")
+                try:
+                    self.local_manager.docker.images.pull(sandbox_image)
+                    self._log(f"Successfully pulled: {sandbox_image}")
+                except self.docker_module.errors.APIError as e:
+                    self._log(f"Failed to pull commit-specific image {sandbox_image}: {e}")
+                    self._log(f"Falling back to default image: {SANDBOX_DOCKER_IMAGE}")
+                    sandbox_image = SANDBOX_DOCKER_IMAGE
+                    try:
+                        self.local_manager.docker.images.get(sandbox_image)
+                    except self.docker_module.errors.ImageNotFound:
+                        self._log(f"Pulling fallback image: {sandbox_image}")
+                        self.local_manager.docker.images.pull(sandbox_image)
             
             # Run sandbox container
             self.container = self.local_manager.docker.containers.run(
-                SANDBOX_DOCKER_IMAGE,
+                sandbox_image,
                 f"python agent_runner.py",
                 volumes={
                     str(self.repo_dir): {"bind": SANDBOX_DIR, "mode": "rw"}
@@ -377,7 +392,7 @@ class LocalSandbox:
                     'RIDGES_API_URL': os.getenv('RIDGES_API_URL', 'http://localhost:8000'),
                 }
             )
-            self._log("🐳 Started sandbox container")
+            self._log("Started sandbox container")
             
             # Monitor container
             monitor_task = asyncio.create_task(self._monitor_container())
@@ -424,7 +439,7 @@ class LocalSandbox:
                     detailed_error = "\n".join(error_parts)
                     
                     self.evaluation_run.status = "no_patch_generated"
-                    self._log(f"❌ Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
+                    self._log(f"Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
                     
                     return {
                         'instance_id': self.problem.instance_id,
@@ -449,7 +464,7 @@ class LocalSandbox:
                 detailed_error = "\n".join(error_parts)
                 
                 self.evaluation_run.status = "no_output_file"
-                self._log(f"❌ Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
+                self._log(f"Sandbox {self.evaluation_run.run_id} failed: {detailed_error}")
                 
                 return {
                     'instance_id': self.problem.instance_id,
@@ -475,7 +490,7 @@ class LocalSandbox:
             
             detailed_error = "\n".join(error_parts)
             
-            self._log(f"❌ Sandbox execution failed: {detailed_error}")
+            self._log(f"Sandbox execution failed: {detailed_error}")
             self.evaluation_run.status = "execution_failed"
             self.evaluation_run.error = detailed_error
             
@@ -492,10 +507,10 @@ class LocalSandbox:
         """Run SWE-bench evaluation on the generated patch using dedicated Docker client (images pre-built)"""
         dedicated_client = None
         try:
-            self._log("🔄 Getting dedicated Docker client for SWE-bench evaluation...")
+            self._log("Getting dedicated Docker client for SWE-bench evaluation...")
             # Get a dedicated Docker client from the pool
             dedicated_client = await self.local_manager.docker_pool.get_client()
-            self._log("✅ Got dedicated Docker client, starting SWE-bench evaluation...")
+            self._log("Got dedicated Docker client, starting SWE-bench evaluation...")
             
             from swebench.harness.run_evaluation import load_swebench_dataset, run_instance, make_test_spec
             
@@ -512,7 +527,7 @@ class LocalSandbox:
             # Skip the build step since images are pre-built - go directly to run_instance
             # This should enable true parallel execution since each evaluation uses its own client
             # and doesn't need to build any images
-            self._log("🏃 Running evaluation (using pre-built environment images)...")
+            self._log("Running evaluation (using pre-built environment images)...")
             result = run_instance(
                 test_spec=test_spec,
                 pred=prediction,
@@ -535,11 +550,11 @@ class LocalSandbox:
                     self.evaluation_run.fail_to_fail_success = json.dumps(tests["FAIL_TO_FAIL"]["success"])
                     self.evaluation_run.pass_to_fail_success = json.dumps(tests["PASS_TO_FAIL"]["success"])
                     self.evaluation_run.solved = report.get("resolved", False)
-                    self._log(f"✅ SWE-bench evaluation completed: {'SOLVED' if self.evaluation_run.solved else 'NOT SOLVED'}")
+                    self._log(f"SWE-bench evaluation completed: {'SOLVED' if self.evaluation_run.solved else 'NOT SOLVED'}")
                 else:
                     self.evaluation_run.solved = False
                     self.evaluation_run.error = "No test results found in evaluation report"
-                    self._log("❌ SWE-bench evaluation completed but no test results found")
+                    self._log("SWE-bench evaluation completed but no test results found")
             else:
                 # No results means patch didn't fix any tests
                 self.evaluation_run.solved = False
@@ -547,17 +562,17 @@ class LocalSandbox:
                 self.evaluation_run.pass_to_pass_success = json.dumps([])
                 self.evaluation_run.fail_to_fail_success = json.dumps([])
                 self.evaluation_run.pass_to_fail_success = json.dumps([])
-                self._log("✅ SWE-bench evaluation completed: NOT SOLVED (no test improvements)")
+                self._log("SWE-bench evaluation completed: NOT SOLVED (no test improvements)")
                 
         except Exception as e:
-            self._log(f"❌ SWE-bench evaluation failed: {e}")
+            self._log(f"SWE-bench evaluation failed: {e}")
             self.evaluation_run.error = f"SWE-bench evaluation failed: {str(e)}"
             self.evaluation_run.solved = False
         finally:
             # Always return the dedicated client to the pool
             if dedicated_client:
                 await self.local_manager.docker_pool.return_client(dedicated_client)
-                self._log("🔄 Returned dedicated Docker client to pool")
+                self._log("Returned dedicated Docker client to pool")
 
     async def _monitor_container(self) -> None:
         """Monitor container execution with resource limits"""
