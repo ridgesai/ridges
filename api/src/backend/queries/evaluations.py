@@ -5,7 +5,7 @@ import json
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, AgentStatus, EvaluationStatus
+from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, EvaluationRunWithUsageDetails, AgentStatus, EvaluationStatus
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 
 logger = logging.getLogger(__name__)
@@ -146,11 +146,135 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     return evaluations
 
 @db_operation
-async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedUsageRuns]:
-    evaluations: list[EvaluationsWithHydratedUsageRuns] = []
-
+async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None, fast: bool = False) -> list[EvaluationsWithHydratedUsageRuns]:
     if set_id is None:
         set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+
+    if fast:
+        # Fast path: single query with JSON aggregations
+        evaluation_rows = await conn.fetch("""
+            WITH latest_screener AS (
+                SELECT evaluation_id
+                FROM evaluations 
+                WHERE version_id = $1
+                AND set_id = $2
+                AND validator_hotkey LIKE 'i-%'
+                ORDER BY created_at DESC
+                LIMIT 1
+            ),
+            inf AS (
+                SELECT
+                    run_id,
+                    SUM(cost)          AS cost,
+                    SUM(total_tokens)  AS total_tokens,
+                    COUNT(*)           AS num_inference_calls,
+                    MAX(model)         AS model
+                FROM inferences
+                GROUP BY run_id
+            )
+            SELECT 
+                e.evaluation_id,
+                e.version_id,
+                e.validator_hotkey,
+                e.set_id,
+                e.status,
+                e.terminated_reason,
+                e.created_at,
+                e.started_at,
+                e.finished_at,
+                e.score,
+                COALESCE(
+                    array_agg(
+                        json_build_object(
+                            'run_id', er.run_id::text,
+                            'evaluation_id', er.evaluation_id::text,
+                            'swebench_instance_id', er.swebench_instance_id,
+                            'status', er.status,
+                            'response', er.response,
+                            'error', er.error,
+                            'pass_to_fail_success', er.pass_to_fail_success,
+                            'fail_to_pass_success', er.fail_to_pass_success,
+                            'pass_to_pass_success', er.pass_to_pass_success,
+                            'fail_to_fail_success', er.fail_to_fail_success,
+                            'solved', er.solved,
+                            'started_at', er.started_at,
+                            'sandbox_created_at', er.sandbox_created_at,
+                            'patch_generated_at', er.patch_generated_at,
+                            'eval_started_at', er.eval_started_at,
+                            'result_scored_at', er.result_scored_at,
+                            'cancelled_at', er.cancelled_at,
+                            'cost', i.cost,
+                            'total_tokens', i.total_tokens,
+                            'model', i.model,
+                            'num_inference_calls', i.num_inference_calls
+                        ) ORDER BY er.started_at
+                    ) FILTER (WHERE er.run_id IS NOT NULL),
+                    '{}'::json[]
+                ) as evaluation_runs
+            FROM evaluations e
+            LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
+                AND er.status != 'cancelled'
+            LEFT JOIN inf i ON er.run_id = i.run_id
+            WHERE e.version_id = $1
+            AND e.set_id = $2
+            AND (
+                e.validator_hotkey NOT LIKE 'i-%'
+                OR e.evaluation_id IN (SELECT evaluation_id FROM latest_screener)
+            )
+            GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+            ORDER BY e.created_at DESC
+        """, version_id, set_id)
+        
+        evaluations = []
+        for row in evaluation_rows:
+            # Convert JSON objects to EvaluationRunWithUsageDetails objects
+            evaluation_runs = []
+            for run_data in row[10]:  # evaluation_runs is at index 10
+                run_data = json.loads(run_data)
+                evaluation_run = EvaluationRunWithUsageDetails(
+                    run_id=run_data['run_id'],
+                    evaluation_id=run_data['evaluation_id'],
+                    swebench_instance_id=run_data['swebench_instance_id'],
+                    status=run_data['status'],
+                    response=run_data['response'],
+                    error=run_data['error'],
+                    pass_to_fail_success=run_data['pass_to_fail_success'],
+                    fail_to_pass_success=run_data['fail_to_pass_success'],
+                    pass_to_pass_success=run_data['pass_to_pass_success'],
+                    fail_to_fail_success=run_data['fail_to_fail_success'],
+                    solved=run_data['solved'],
+                    started_at=run_data['started_at'],
+                    sandbox_created_at=run_data['sandbox_created_at'],
+                    patch_generated_at=run_data['patch_generated_at'],
+                    eval_started_at=run_data['eval_started_at'],
+                    result_scored_at=run_data['result_scored_at'],
+                    cancelled_at=run_data['cancelled_at'],
+                    cost=run_data['cost'],
+                    total_tokens=run_data['total_tokens'],
+                    model=run_data['model'],
+                    num_inference_calls=run_data['num_inference_calls']
+                )
+                evaluation_runs.append(evaluation_run)
+            
+            hydrated_evaluation = EvaluationsWithHydratedUsageRuns(
+                evaluation_id=row[0],
+                version_id=row[1],
+                validator_hotkey=row[2],
+                set_id=row[3],
+                status=row[4],
+                terminated_reason=row[5],
+                created_at=row[6],
+                started_at=row[7],
+                finished_at=row[8],
+                score=row[9],
+                evaluation_runs=evaluation_runs
+            )
+            evaluations.append(hydrated_evaluation)
+        
+        return evaluations
+    
+    # Original slower path for backward compatibility
+    evaluations: list[EvaluationsWithHydratedUsageRuns] = []
 
     evaluation_rows = await conn.fetch("""
         (

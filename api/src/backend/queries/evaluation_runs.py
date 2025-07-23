@@ -131,6 +131,7 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
             FROM evaluation_runs  e
             LEFT JOIN inf         i USING (run_id)        -- join on the PK only
             WHERE e.evaluation_id = $1
+            AND e.status != 'cancelled'
             ORDER BY e.started_at;
         """,
         evaluation_id

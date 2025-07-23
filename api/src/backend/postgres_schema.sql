@@ -165,11 +165,36 @@ CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener
 ON evaluations (version_id, set_id, created_at DESC) 
 WHERE validator_hotkey NOT LIKE 'i-%';
 
+-- NEW INDICES FOR OPTIMIZED get_evaluations_with_usage_for_agent_version QUERY
+
+-- Critical index for evaluation_runs JOIN and filtering
+-- Covers: JOIN ON evaluation_id, WHERE status != 'cancelled', ORDER BY started_at
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_status_started 
+ON evaluation_runs (evaluation_id, status, started_at) 
+WHERE status != 'cancelled';
+
+-- Optimized index for non-cancelled runs only (partial index for better performance)
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled 
+ON evaluation_runs (evaluation_id, started_at) 
+WHERE status != 'cancelled';
+
+-- Index for inferences aggregation in CTE - critical for GROUP BY run_id performance
+CREATE INDEX IF NOT EXISTS idx_inferences_run_id_aggregation 
+ON inferences (run_id, cost, total_tokens, model);
+
+-- General index for evaluation_runs foreign key if it doesn't exist
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
+ON evaluation_runs (evaluation_id);
+
+-- General index for inferences foreign key if it doesn't exist  
+CREATE INDEX IF NOT EXISTS idx_inferences_run_id 
+ON inferences (run_id);
+
 -- Materialized view to precompute agent scores
 CREATE MATERIALIZED VIEW IF NOT EXISTS agent_scores AS
-WITH latest_agents AS (
-    -- Get the most recent version for each hotkey
-    SELECT DISTINCT ON (miner_hotkey)
+WITH all_agents AS (
+    -- Get all agent versions from non-banned hotkeys
+    SELECT
         version_id,
         miner_hotkey,
         agent_name,
@@ -179,25 +204,24 @@ WITH latest_agents AS (
         agent_summary
     FROM miner_agents
     WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-    ORDER BY miner_hotkey, version_num DESC, created_at DESC
 ),
 agent_evaluations AS (
-    -- Get all evaluations for these latest agents
+    -- Get all evaluations for all agent versions
     SELECT
-        la.version_id,
-        la.miner_hotkey,
-        la.agent_name,
-        la.version_num,
-        la.created_at,
-        la.status,
-        la.agent_summary,
+        aa.version_id,
+        aa.miner_hotkey,
+        aa.agent_name,
+        aa.version_num,
+        aa.created_at,
+        aa.status,
+        aa.agent_summary,
         e.set_id,
         e.score,
         e.validator_hotkey,
         (avi.version_id IS NOT NULL) as approved
-    FROM latest_agents la
-    LEFT JOIN approved_version_ids avi ON la.version_id = avi.version_id
-    LEFT JOIN evaluations e ON la.version_id = e.version_id
+    FROM all_agents aa
+    LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id
+    LEFT JOIN evaluations e ON aa.version_id = e.version_id
         AND e.status = 'completed' 
         AND e.score IS NOT NULL
         AND e.score > 0

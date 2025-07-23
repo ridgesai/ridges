@@ -15,11 +15,12 @@ from validator.config import RIDGES_API_URL, SCREENER_MODE
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info
 
-print("SCREENER_MODE", SCREENER_MODE)
 
 websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws"
 
 logger = get_logger(__name__)
+
+logger.info("SCREENER_MODE", SCREENER_MODE)
 
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection] = None

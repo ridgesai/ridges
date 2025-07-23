@@ -112,13 +112,9 @@ async def get_evaluations(version_id: str, set_id: Optional[int] = None) -> list
     
     return evaluations
 
-async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None, fast: bool = Query(default=False, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
     try:
-        # If no set_id provided, use the latest set_id
-        if set_id is None:
-            set_id = await get_latest_set_id()
-        
-        evaluations = await get_evaluations_with_usage_for_agent_version(version_id, set_id)
+        evaluations = await get_evaluations_with_usage_for_agent_version(version_id, set_id, fast=fast)
     except Exception as e:
         logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
         raise HTTPException(
