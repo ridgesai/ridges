@@ -151,8 +151,9 @@ class Sandbox:
                     self.manager.docker.images.pull(image_name)
                     logger.info(f"Successfully pulled image: {image_name}")
                 except Exception as e:
-                    logger.error(f"Failed to pull image {image_name}: {e}")
-                    raise
+                    logger.warning(f"Failed to pull commit-specific image {image_name}: {e}")
+                    logger.info(f"Falling back to default sandbox image: {SANDBOX_DOCKER_IMAGE}")
+                    image_name = SANDBOX_DOCKER_IMAGE
 
             self.container = self.manager.docker.containers.run(
                 remove=True,
