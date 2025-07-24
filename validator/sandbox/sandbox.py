@@ -169,6 +169,13 @@ class Sandbox:
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
             )
+            
+            # Fix repository permissions to prevent git ownership errors
+            try:
+                self.container.exec_run(['chown', '-R', 'root:root', '/sandbox/repo'])
+                logger.info(f"Fixed repository permissions for container {self.evaluation_run.run_id}")
+            except Exception as e:
+                logger.warning(f"Failed to fix repository permissions for container {self.evaluation_run.run_id}: {e}")
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
         except docker.errors.APIError as e:

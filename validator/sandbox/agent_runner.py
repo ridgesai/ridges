@@ -7,16 +7,6 @@ import sys
 import json
 import traceback
 import importlib.util
-import subprocess
-
-# Configure git to trust the mounted repository directory in the sandbox
-# This prevents "dubious ownership" errors when the repo is mounted from host
-try:
-    subprocess.run(['git', 'config', '--global', '--add', 'safe.directory', '/sandbox/repo'], 
-                   check=True, capture_output=True)
-    print('[DOCKER] Configured git safe.directory for /sandbox/repo')
-except Exception as e:
-    print(f'[DOCKER] Warning: Failed to configure git safe.directory: {e}')
 
 try:
     # Load the input
