@@ -20,7 +20,7 @@ websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws"
 
 logger = get_logger(__name__)
 
-logger.info("SCREENER_MODE", SCREENER_MODE)
+logger.info(f"SCREENER_MODE: {SCREENER_MODE}")
 
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection] = None

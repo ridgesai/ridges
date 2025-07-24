@@ -111,4 +111,4 @@ class Validator(Client):
         """Get all connected validators"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
-        return [client for client in ws_manager.clients.values() if isinstance(client, Validator)]
+        return [client for client in ws_manager.clients.values() if client.get_type() == "validator"]

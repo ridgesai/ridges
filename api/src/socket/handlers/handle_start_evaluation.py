@@ -20,10 +20,10 @@ async def handle_start_evaluation(
     evaluation_id = response_json["evaluation_id"]
     
     # Use appropriate start method based on client type
-    if isinstance(client, Screener):
+    if client.get_type() == "screener":
         success = await client.start_screening(evaluation_id)
         action = "Screening"
-    elif isinstance(client, Validator):
+    elif client.get_type() == "validator":
         success = await client.start_evaluation(evaluation_id)
         action = "Evaluation"
     

@@ -190,8 +190,11 @@ ON evaluation_runs (evaluation_id);
 CREATE INDEX IF NOT EXISTS idx_inferences_run_id 
 ON inferences (run_id);
 
--- Materialized view to precompute agent scores
-CREATE MATERIALIZED VIEW IF NOT EXISTS agent_scores AS
+-- Drop and recreate materialized view to ensure clean state for concurrent refresh
+DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
+
+-- Recreate the materialized view
+CREATE MATERIALIZED VIEW agent_scores AS
 WITH all_agents AS (
     -- Get all agent versions from non-banned hotkeys
     SELECT
@@ -221,67 +224,52 @@ agent_evaluations AS (
         (avi.version_id IS NOT NULL) as approved
     FROM all_agents aa
     LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id
-    LEFT JOIN evaluations e ON aa.version_id = e.version_id
+    INNER JOIN evaluations e ON aa.version_id = e.version_id
         AND e.status = 'completed' 
         AND e.score IS NOT NULL
         AND e.score > 0
         AND e.validator_hotkey NOT LIKE 'i-0%'
+        AND e.set_id IS NOT NULL
 ),
--- For agents with evaluations, apply outlier logic
-avg_scores AS (
-    SELECT
-        miner_hotkey,
-        version_id,
-        set_id,
-        AVG(score) as avg_score
-    FROM agent_evaluations
-    WHERE score IS NOT NULL
-    GROUP BY miner_hotkey, version_id, set_id
-),
-scores_with_deviation AS (
-    SELECT
+-- Calculate weights based on score relative to max, since lower scores are more likely validator failure
+weighted_scores AS (
+    SELECT 
         ae.*,
-        ABS(ae.score - avs.avg_score) AS deviation
+        MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) as max_score,
+        CASE 
+            WHEN MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) > 0 
+            THEN POWER(ae.score / MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id), 4.0)
+            ELSE 1.0
+        END as score_weight
     FROM agent_evaluations ae
-    LEFT JOIN avg_scores avs ON ae.miner_hotkey = avs.miner_hotkey 
-        AND ae.version_id = avs.version_id 
-        AND ae.set_id = avs.set_id
-    WHERE ae.score IS NOT NULL
-),
-max_outliers AS (
-    SELECT miner_hotkey, version_id, set_id, MAX(deviation) AS max_deviation
-    FROM scores_with_deviation
-    GROUP BY miner_hotkey, version_id, set_id
+    WHERE ae.score IS NOT NULL AND ae.set_id IS NOT NULL
 )
 SELECT
-    swd.version_id,
-    swd.miner_hotkey,
-    swd.agent_name,
-    swd.version_num,
-    swd.created_at,
-    swd.status,
-    swd.agent_summary,
-    swd.set_id,
-    swd.approved,
-    COUNT(DISTINCT swd.validator_hotkey) AS validator_count,
-    AVG(swd.score) AS final_score
-FROM scores_with_deviation swd
-LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
-    AND swd.version_id = mo.version_id 
-    AND swd.set_id = mo.set_id
-    AND swd.deviation = mo.max_deviation
-WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
-GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, 
-         swd.created_at, swd.status, swd.agent_summary, swd.set_id, swd.approved
-HAVING COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validators
+    ws.version_id,
+    ws.miner_hotkey,
+    ws.agent_name,
+    ws.version_num,
+    ws.created_at,
+    ws.status,
+    ws.agent_summary,
+    ws.set_id,
+    ws.approved,
+    COUNT(DISTINCT ws.validator_hotkey) AS validator_count,
+    SUM(ws.score * ws.score_weight) / SUM(ws.score_weight) AS final_score
+FROM weighted_scores ws
+WHERE ws.set_id IS NOT NULL
+GROUP BY ws.version_id, ws.miner_hotkey, ws.agent_name, ws.version_num, 
+         ws.created_at, ws.status, ws.agent_summary, ws.set_id, ws.approved
+HAVING COUNT(DISTINCT ws.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_scores_unique ON agent_scores (version_id, set_id);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_version ON agent_scores (version_id);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
+-- CRITICAL: This unique index enables CONCURRENT refresh
+CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (version_id, set_id);
+CREATE INDEX idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
+CREATE INDEX idx_agent_scores_version ON agent_scores (version_id);
+CREATE INDEX idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
+CREATE INDEX idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
 
 -- Function to refresh the agent_scores materialized view
 CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
