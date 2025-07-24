@@ -184,20 +184,20 @@ class Evaluation:
 
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
-        # Check if there's already a non-errored screening evaluation for this agent
-        existing_screening = await conn.fetchval(
-            """
-            SELECT evaluation_id FROM evaluations 
-            WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND set_id = $2
-            AND status NOT IN ('error', 'cancelled', 'replaced')
-            """,
-            agent.version_id,
-            set_id
-        )
+        # # Check if there's already a non-errored screening evaluation for this agent
+        # existing_screening = await conn.fetchval(
+        #     """
+        #     SELECT evaluation_id FROM evaluations 
+        #     WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND set_id = $2
+        #     AND status NOT IN ('error', 'cancelled', 'replaced')
+        #     """,
+        #     agent.version_id,
+        #     set_id
+        # )
         
-        if existing_screening:
-            logger.warning(f"Screening evaluation already exists for agent {agent.version_id}: {existing_screening}")
-            return False
+        # if existing_screening:
+        #     logger.warning(f"Screening evaluation already exists for agent {agent.version_id}: {existing_screening}")
+        #     return False
 
         eval_id = str(uuid.uuid4())
 
