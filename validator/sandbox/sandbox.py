@@ -166,6 +166,8 @@ class Sandbox:
                     "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy"
                 },
                 detach=True,
+                # Add CPU and memory limits to prevent resource exhaustion
+                mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
             )
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
@@ -174,8 +176,27 @@ class Sandbox:
                 raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
             raise
         
-        # Monitor container
-        await self._monitor_container()
+        # Monitor container with asyncio timeout as additional safety
+        try:
+            await asyncio.wait_for(self._monitor_container(), timeout=SANDBOX_MAX_RUNTIME + 60)
+        except asyncio.TimeoutError:
+            logger.error(f"Container monitoring timed out for {self.evaluation_run.run_id}, force killing")
+            try:
+                # Try graceful stop first
+                try:
+                    self.container.stop(timeout=5)
+                except Exception:
+                    self.container.kill()
+                # Wait a bit for graceful shutdown
+                await asyncio.sleep(2)
+                # Force remove if still exists
+                try:
+                    self.container.remove(force=True)
+                except Exception:
+                    pass
+            except Exception as e:
+                logger.error(f"Failed to force kill container {self.evaluation_run.run_id}: {e}")
+            raise TimeoutError(f"Container monitoring timed out after {SANDBOX_MAX_RUNTIME + 60}s")
         
         # Process results
         try:
@@ -223,16 +244,28 @@ class Sandbox:
     @tracer.wrap(resource="monitor-container")
     async def _monitor_container(self) -> None:
         """Monitor container execution with resource limits"""
+        logger.info(f"Starting container monitoring for {self.evaluation_run.run_id}")
+        container_start_time = datetime.now(timezone.utc)
+        
         while True:
             if self._cancelled.is_set():
-                self.container.kill()
+                logger.info(f"Container monitoring cancelled for {self.evaluation_run.run_id}")
+                try:
+                    self.container.stop(timeout=5)
+                except Exception:
+                    self.container.kill()
                 raise asyncio.CancelledError()
             
             try:
                 self.container.reload()
-                if self.container.status == "exited":
+                status = self.container.status
+                logger.debug(f"Container {self.evaluation_run.run_id} status: {status}")
+                
+                if status == "exited":
+                    logger.info(f"Container {self.evaluation_run.run_id} exited normally")
                     break
-                elif self.container.status in ["dead", "removing"]:
+                elif status in ["dead", "removing"]:
+                    logger.info(f"Container {self.evaluation_run.run_id} is {status}")
                     break
                 
                 # Check memory usage
@@ -245,29 +278,55 @@ class Sandbox:
                         if key in memory_stats:
                             usage_mb = memory_stats[key] / (1024 * 1024)
                             if usage_mb > SANDBOX_MAX_RAM_USAGE:
-                                self.container.kill()
+                                logger.warning(f"Container {self.evaluation_run.run_id} exceeded RAM limit: {usage_mb:.1f}MB")
+                                try:
+                                    self.container.stop(timeout=5)
+                                except Exception:
+                                    self.container.kill()
                                 raise MemoryError(f"RAM limit exceeded: {usage_mb:.1f}MB")
                             break
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to get container stats for {self.evaluation_run.run_id}: {e}")
                     pass  # Continue monitoring even if stats fail
                 
-                # Check runtime limit
-                runtime = (datetime.now(timezone.utc) - self.evaluation_run.sandbox_created_at).total_seconds()
+                # Check runtime limit - use container start time as fallback
+                sandbox_start_time = self.evaluation_run.sandbox_created_at or container_start_time
+                runtime = (datetime.now(timezone.utc) - sandbox_start_time).total_seconds()
+                
                 if runtime > SANDBOX_MAX_RUNTIME:
-                    self.container.kill()
+                    logger.error(f"Container {self.evaluation_run.run_id} exceeded runtime limit: {runtime:.1f}s")
+                    try:
+                        # Try graceful stop first, then force kill
+                        self.container.stop(timeout=5)
+                        logger.info(f"Successfully stopped container {self.evaluation_run.run_id}")
+                    except Exception as stop_error:
+                        logger.warning(f"Failed to stop container gracefully, force killing: {stop_error}")
+                        try:
+                            self.container.kill()
+                            logger.info(f"Successfully killed container {self.evaluation_run.run_id}")
+                        except Exception as kill_error:
+                            logger.error(f"Failed to kill container {self.evaluation_run.run_id}: {kill_error}")
                     raise TimeoutError(f"Runtime limit exceeded: {runtime:.1f}s")
+                
+                # Log progress every 5 minutes for long-running containers
+                if runtime > 0 and runtime % 300 == 0:  # Every 5 minutes
+                    logger.info(f"Container {self.evaluation_run.run_id} still running after {runtime:.0f}s")
                 
             except DockerNotFound:
                 # Container was auto-removed by Docker (remove=True) - evaluation completed
-                logger.debug(f"Container was auto-removed, evaluation completed")
+                logger.info(f"Container {self.evaluation_run.run_id} was auto-removed, evaluation completed")
                 break
+            except (TimeoutError, MemoryError):
+                # Re-raise timeout and memory errors
+                raise
             except Exception as e:
                 if "exited" in str(e).lower():
+                    logger.info(f"Container {self.evaluation_run.run_id} exited: {e}")
                     break
-                logger.warning(f"Container monitoring error: {e}")
+                logger.warning(f"Container monitoring error for {self.evaluation_run.run_id}: {e}")
             
             await asyncio.sleep(1)
-        
+    
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:
