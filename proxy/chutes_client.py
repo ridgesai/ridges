@@ -7,6 +7,13 @@ from uuid import UUID
 
 import httpx
 
+# Add OpenAI and Anthropic imports for local testing
+try:
+    import openai
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+
 from proxy.config import (
     CHUTES_API_KEY,
     CHUTES_EMBEDDING_URL,
@@ -15,6 +22,9 @@ from proxy.config import (
     MODEL_PRICING,
     DEFAULT_MODEL,
     ENV,
+    TARGON_API_KEY,
+    TARGON_FALLBACK_MODELS,
+    TARGON_PRICING,
 )
 from proxy.models import GPTMessage
 from proxy.database import (
@@ -98,6 +108,56 @@ class ChutesClient:
                 await update_embedding(embedding_id, 0.0, {"error": str(e)})
             return {"error": f"Error in embedding request: {str(e)}"}
 
+    async def _targon_inference(
+        self,
+        run_id: UUID = None,
+        messages: List[GPTMessage] = None,
+        temperature: float = None,
+        model: str = None,
+    ) -> str:
+        """Handle Targon inference as fallback"""
+        if not TARGON_API_KEY:
+            raise RuntimeError("Targon API key not set")
+            
+        if not OPENAI_AVAILABLE:
+            raise RuntimeError("OpenAI package not available for Targon client")
+            
+        try:
+            client = openai.OpenAI(
+                base_url="https://api.targon.com/v1",
+                api_key=TARGON_API_KEY
+            )
+            
+            # Convert messages to OpenAI format
+            openai_messages = []
+            for msg in messages:
+                openai_messages.append({"role": msg.role, "content": msg.content})
+            
+            response = client.chat.completions.create(
+                model=model,
+                stream=True,
+                messages=openai_messages,
+                temperature=temperature,
+                max_tokens=1024,
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+            
+            # Handle streaming response
+            response_text = ""
+            for chunk in response:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, 'content') and delta.content is not None:
+                        response_text += delta.content
+            
+            return response_text
+            
+        except Exception as e:
+            logger.error(f"Targon inference error for run {run_id}: {e}")
+            raise
+
     async def inference(
         self,
         run_id: UUID = None,
@@ -114,6 +174,7 @@ class ChutesClient:
                 "error": f"Model {model} not supported. Please use one of the following models: {list(MODEL_PRICING.keys())}"
             }
 
+        # Default to Chutes for all other models
         # Convert messages to dict format for database storage
         messages_dict = []
         if messages:
@@ -126,26 +187,27 @@ class ChutesClient:
         if ENV != 'dev':
             inference_id = await create_inference(run_id, messages_dict, temperature, model)
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        body = {
-            "model": model,
-            "messages": messages_dict,
-            "stream": True,
-            "max_tokens": 1024,
-            "temperature": temperature,
-            "seed": random.randint(0, 2**32 - 1),
-        }
-
-        logger.debug(f"Inference request for run {run_id} with model {model}")
-
-        response_text = ""
-        total_tokens = 0
-
+        # Try Chutes first, fallback to Targon if it fails and model supports it
+        chutes_error = None
         try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            }
+
+            body = {
+                "model": model,
+                "messages": messages_dict,
+                "stream": True,
+                "max_tokens": 1024,
+                "temperature": temperature,
+                "seed": random.randint(0, 2**32 - 1),
+            }
+
+            logger.debug(f"Inference request for run {run_id} with model {model}")
+
+            response_text = ""
+            total_tokens = 0
             async with httpx.AsyncClient(timeout=None) as client:
                 async with client.stream("POST", CHUTES_INFERENCE_URL, headers=headers, json=body) as response:
 
@@ -158,10 +220,12 @@ class ChutesClient:
                         logger.error(
                             f"Inference API request failed for run {run_id}: {response.status_code} - {error_message}"
                         )
-                        # Update inference record with error (skip in dev mode)
-                        if ENV != 'dev' and inference_id:
-                            await update_inference(inference_id, 0.0, f"API request failed: {error_message}", 0)
-                        return {"error": f"API request failed with status {response.status_code}: {error_message}"}
+                        # Raise an exception to trigger fallback logic instead of returning early
+                        raise httpx.HTTPStatusError(
+                            f"API request failed with status {response.status_code}: {error_message}",
+                            request=None,
+                            response=response
+                        )
 
                     # Process streaming response
                     async for chunk in response.aiter_lines():
@@ -203,27 +267,45 @@ class ChutesClient:
             return response_text
 
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"HTTP error in inference request for run {run_id}: {e.response.status_code} - {e.response.text}"
-            )
-            # Update inference record with error (skip in dev mode)
-            if ENV != 'dev' and inference_id:
-                await update_inference(
-                    inference_id,
-                    0.0,
-                    f"HTTP error: {e.response.status_code} - {e.response.text}",
-                    0,
-                )
-            return {"error": f"HTTP error in inference request: {e.response.status_code} - {e.response.text}"}
-        except httpx.TimeoutException:
+            chutes_error = f"HTTP error: {e.response.status_code} - {e.response.text}"
+            logger.error(f"HTTP error in inference request for run {run_id}: {e.response.status_code} - {e.response.text}")
+        except httpx.TimeoutException as e:
+            chutes_error = "Inference request timed out"
             logger.error(f"Timeout in inference request for run {run_id}")
-            # Update inference record with error (skip in dev mode)
-            if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, 0.0, "Inference request timed out", 0)
-            return {"error": "Inference request timed out. Please try again."}
         except Exception as e:
+            chutes_error = str(e)
             logger.error(f"Error in inference request for run {run_id}: {e}")
-            # Update inference record with error (skip in dev mode)
-            if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, 0.0, str(e), 0)
-            return {"error": f"Error in inference request: {str(e)}"}
+
+        # Attempt Targon fallback if model supports it
+        if model in TARGON_FALLBACK_MODELS:
+            logger.info(f"Attempting Targon fallback for model {model} after Chutes failure")
+            try:
+                response_text = await self._targon_inference(run_id, messages, temperature, model)
+                
+                # Estimate tokens for cost calculation (rough estimate: 1 token ≈ 4 chars)
+                total_tokens = len(response_text) // 4
+                cost = (total_tokens / 1_000_000) * TARGON_PRICING.get(model, MODEL_PRICING[model])
+                
+                # Update inference record with cost and response, noting it was a fallback (skip in dev mode)
+                if ENV != 'dev' and inference_id:
+                    await update_inference(inference_id, cost, f"[Targon fallback] {response_text}", total_tokens)
+                
+                logger.info(f"Targon fallback successful for run {run_id}, estimated tokens: {total_tokens}, cost: ${cost:.6f}")
+                return response_text
+                
+            except Exception as targon_error:
+                logger.error(f"Targon fallback also failed for run {run_id}: {targon_error}")
+                # Update inference record with both errors (skip in dev mode)
+                if ENV != 'dev' and inference_id:
+                    await update_inference(
+                        inference_id, 
+                        0.0, 
+                        f"Chutes error: {chutes_error} | Targon fallback error: {str(targon_error)}", 
+                        0
+                    )
+                return {"error": f"Chutes error: {chutes_error} | Targon fallback also failed: {str(targon_error)}"}
+        
+        # No fallback available or model doesn't support Targon
+        if ENV != 'dev' and inference_id:
+            await update_inference(inference_id, 0.0, chutes_error, 0)
+        return {"error": f"Error in inference request: {chutes_error}"}
