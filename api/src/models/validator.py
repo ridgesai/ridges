@@ -17,6 +17,7 @@ class Validator(Client):
     status: str = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
+    current_agent_hotkey: Optional[str] = None
     
     def get_type(self) -> str:
         return "validator"
@@ -29,6 +30,7 @@ class Validator(Client):
         self.status = "available"
         self.current_evaluation_id = None
         self.current_agent_name = None
+        self.current_agent_hotkey = None
         logger.info(f"Validator {self.hotkey}: -> available")
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
