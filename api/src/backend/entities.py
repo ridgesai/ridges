@@ -189,16 +189,22 @@ class MinerAgentScored(BaseModel):
             }
         
         result = await conn.fetchrow("""
-            WITH set_scores AS (
+            WITH current_max AS (
                 SELECT MAX(ass.final_score) as max_score
                 FROM agent_scores ass
                 WHERE ass.set_id = $1
+            ),
+            yesterday_max AS (
+                SELECT MAX(ass.final_score) as max_score
+                FROM agent_scores ass
+                WHERE ass.set_id = $1
+                AND ass.created_at < NOW() - INTERVAL '48 hours'
             )
             SELECT
                 (SELECT COUNT(DISTINCT miner_hotkey) FROM miner_agents WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as number_of_agents,
-                (SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '24 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as agent_iterations_last_24_hours,
-                (SELECT MAX(final_score) FROM agent_scores WHERE set_id = $1) as top_agent_score,
-                COALESCE((SELECT MAX(final_score) FROM agent_scores WHERE set_id = $1) - (SELECT max_score FROM set_scores), 0) as daily_score_improvement
+                (SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '48 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as agent_iterations_last_24_hours,
+                (SELECT max_score FROM current_max) as top_agent_score,
+                COALESCE((SELECT max_score FROM current_max) - COALESCE((SELECT max_score FROM yesterday_max), 0), 0) as daily_score_improvement
         """, max_set_id)
         
         if result is None:
