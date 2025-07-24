@@ -9,6 +9,7 @@ on:
       - 'validator/sandbox/proxy/Dockerfile'
       - 'validator/sandbox/proxy/default.conf.template'
       - '.github/workflows/build-and-push-docker.yml'
+      - 'validator/sandbox/agent_runner.py'
 
 env:
   REGISTRY: ghcr.io
