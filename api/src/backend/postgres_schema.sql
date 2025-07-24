@@ -227,53 +227,35 @@ agent_evaluations AS (
         AND e.score > 0
         AND e.validator_hotkey NOT LIKE 'i-0%'
 ),
--- For agents with evaluations, apply outlier logic
-avg_scores AS (
-    SELECT
-        miner_hotkey,
-        version_id,
-        set_id,
-        AVG(score) as avg_score
-    FROM agent_evaluations
-    WHERE score IS NOT NULL
-    GROUP BY miner_hotkey, version_id, set_id
-),
-scores_with_deviation AS (
-    SELECT
+-- Calculate weights based on score relative to max, since lower scores are more likely validator failure
+weighted_scores AS (
+    SELECT 
         ae.*,
-        ABS(ae.score - avs.avg_score) AS deviation
+        MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) as max_score,
+        CASE 
+            WHEN MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) > 0 
+            THEN POWER(ae.score / MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id), 4.0)
+            ELSE 1.0
+        END as score_weight
     FROM agent_evaluations ae
-    LEFT JOIN avg_scores avs ON ae.miner_hotkey = avs.miner_hotkey 
-        AND ae.version_id = avs.version_id 
-        AND ae.set_id = avs.set_id
     WHERE ae.score IS NOT NULL
-),
-max_outliers AS (
-    SELECT miner_hotkey, version_id, set_id, MAX(deviation) AS max_deviation
-    FROM scores_with_deviation
-    GROUP BY miner_hotkey, version_id, set_id
 )
 SELECT
-    swd.version_id,
-    swd.miner_hotkey,
-    swd.agent_name,
-    swd.version_num,
-    swd.created_at,
-    swd.status,
-    swd.agent_summary,
-    swd.set_id,
-    swd.approved,
-    COUNT(DISTINCT swd.validator_hotkey) AS validator_count,
-    AVG(swd.score) AS final_score
-FROM scores_with_deviation swd
-LEFT JOIN max_outliers mo ON swd.miner_hotkey = mo.miner_hotkey 
-    AND swd.version_id = mo.version_id 
-    AND swd.set_id = mo.set_id
-    AND swd.deviation = mo.max_deviation
-WHERE mo.max_deviation IS NULL  -- Exclude the most outlier score
-GROUP BY swd.version_id, swd.miner_hotkey, swd.agent_name, swd.version_num, 
-         swd.created_at, swd.status, swd.agent_summary, swd.set_id, swd.approved
-HAVING COUNT(DISTINCT swd.validator_hotkey) >= 2  -- At least 2 validators
+    ws.version_id,
+    ws.miner_hotkey,
+    ws.agent_name,
+    ws.version_num,
+    ws.created_at,
+    ws.status,
+    ws.agent_summary,
+    ws.set_id,
+    ws.approved,
+    COUNT(DISTINCT ws.validator_hotkey) AS validator_count,
+    SUM(ws.score * ws.score_weight) / SUM(ws.score_weight) AS final_score
+FROM weighted_scores ws
+GROUP BY ws.version_id, ws.miner_hotkey, ws.agent_name, ws.version_num, 
+         ws.created_at, ws.status, ws.agent_summary, ws.set_id, ws.approved
+HAVING COUNT(DISTINCT ws.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
