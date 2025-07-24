@@ -109,6 +109,42 @@ async def inference_endpoint(request: InferenceRequest):
         logger.info(f"Request model: {request.model}")
         logger.info(f"Request temperature: {request.temperature}")
         
+        # Log the actual request messages for debugging
+        logger.info(f"=== REQUEST MESSAGES ===")
+        for i, message in enumerate(request.messages or []):
+            try:
+                # Handle both dict and object types
+                if hasattr(message, 'role'):
+                    role = message.role
+                    content = getattr(message, 'content', '')
+                    tool_calls = getattr(message, 'tool_calls', None)
+                elif isinstance(message, dict):
+                    role = message.get('role', 'unknown')
+                    content = message.get('content', '')
+                    tool_calls = message.get('tool_calls', None)
+                else:
+                    logger.info(f"Message {i+1}: Unknown message type {type(message)}")
+                    continue
+                    
+                logger.info(f"Message {i+1}: role={role}")
+                
+                # Truncate very long content but show enough for debugging
+                if content and len(str(content)) > 1000:
+                    content_str = str(content)
+                    logger.info(f"Content (truncated): {content_str[:500]}...[{len(content_str)-1000} chars]...{content_str[-500:]}")
+                else:
+                    logger.info(f"Content: {content}")
+                
+                # Log tool calls if present
+                if tool_calls:
+                    logger.info(f"Tool calls: {tool_calls}")
+                    
+            except Exception as e:
+                logger.error(f"Error logging message {i+1}: {e}")
+                logger.info(f"Message {i+1}: {type(message)} - {message}")
+                
+        logger.info(f"=== END REQUEST MESSAGES ===")
+        
         if ENV != 'dev' and request.run_id:
             logger.info(f"Taking production path with run_id validation")
             # Get evaluation run from database
@@ -159,6 +195,33 @@ async def inference_endpoint(request: InferenceRequest):
             )
         
         logger.info(f"Inference request completed successfully")
+        
+        # Log the LLM response for debugging
+        logger.info(f"=== LLM RESPONSE ===")
+        if hasattr(inference_result, 'choices') and inference_result.choices:
+            choice = inference_result.choices[0]
+            if hasattr(choice, 'message'):
+                message = choice.message
+                logger.info(f"Response role: {getattr(message, 'role', 'unknown')}")
+                
+                content = getattr(message, 'content', '')
+                if content:
+                    # Truncate very long content but show enough for debugging
+                    if len(content) > 1000:
+                        logger.info(f"Response content (truncated): {content[:500]}...[{len(content)-1000} chars]...{content[-500:]}")
+                    else:
+                        logger.info(f"Response content: {content}")
+                
+                # Log tool calls if present
+                tool_calls = getattr(message, 'tool_calls', None)
+                if tool_calls:
+                    logger.info(f"Response tool calls: {tool_calls}")
+                    
+            logger.info(f"Finish reason: {getattr(choice, 'finish_reason', 'unknown')}")
+        else:
+            logger.info(f"Response structure: {type(inference_result)} - {inference_result}")
+        logger.info(f"=== END LLM RESPONSE ===")
+        
         return inference_result
         
     except HTTPException:
