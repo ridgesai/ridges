@@ -56,6 +56,46 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
     return evaluation_run
 
 @db_operation
+async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> EvaluationRun:
+    """
+    Update an evaluation run. The evaluation score is automatically updated by a database trigger.
+    """
+    await conn.execute(
+        """
+        UPDATE evaluation_runs SET 
+            response = $1,
+            error = $2,
+            pass_to_fail_success = $3,
+            fail_to_pass_success = $4,
+            pass_to_pass_success = $5,
+            fail_to_fail_success = $6,
+            solved = $7,
+            status = $8,
+            started_at = $9,
+            sandbox_created_at = $10,
+            patch_generated_at = $11,
+            eval_started_at = $12,
+            result_scored_at = $13,
+            cancelled_at = $14
+        WHERE run_id = $1
+        """,
+        evaluation_run.response,
+        evaluation_run.error,
+        evaluation_run.pass_to_fail_success,
+        evaluation_run.fail_to_pass_success,
+        evaluation_run.pass_to_pass_success,
+        evaluation_run.fail_to_fail_success,
+        evaluation_run.solved,
+        evaluation_run.status.value,
+        evaluation_run.sandbox_created_at,
+        evaluation_run.patch_generated_at,
+        evaluation_run.eval_started_at,
+        evaluation_run.result_scored_at,
+        evaluation_run.cancelled_at,
+        evaluation_run.run_id,
+    )
+
+@db_operation
 async def get_runs_for_evaluation(
     conn: asyncpg.Connection, evaluation_id: str, include_cancelled: bool = False
 ) -> list[EvaluationRun]:
@@ -91,6 +131,10 @@ async def get_runs_for_evaluation(
     evaluation_runs = [EvaluationRun(**dict(run_row)) for run_row in run_rows]
 
     return evaluation_runs
+
+@db_operation
+async def all_runs_finished(conn: asyncpg.Connection, evaluation_id: str) -> bool:
+    return await conn.fetchval("SELECT COUNT(*) FROM evaluation_runs WHERE result_scored_at IS NOT NULL AND evaluation_id = $1", evaluation_id) == 0
 
 @db_operation
 async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> list[EvaluationRunWithUsageDetails]:

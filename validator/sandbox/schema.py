@@ -37,7 +37,6 @@ class AgentVersion(BaseModel):
 class EvaluationRun(BaseModel):
     run_id: str
     evaluation_id: str
-    validator_hotkey: str
     swebench_instance_id: str
     response: Optional[str] = None
     error: Optional[str] = None
@@ -58,7 +57,6 @@ class EvaluationRun(BaseModel):
         return {
             "run_id": self.run_id,
             "evaluation_id": self.evaluation_id,
-            "validator_hotkey": self.validator_hotkey,
             "swebench_instance_id": self.swebench_instance_id,
             "response": self.response,
             "error": self.error,

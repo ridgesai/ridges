@@ -5,6 +5,7 @@ from fastapi import WebSocket
 
 from api.src.backend.entities import Client, AgentStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
+from api.src.backend.queries.agents import get_agent_by_version_id
 
 logger = logging.getLogger(__name__)
 
@@ -38,16 +39,28 @@ class Validator(Client):
         if not evaluation or evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
             return False
 
+        miner_agent = await get_agent_by_version_id(evaluation.version_id)
+
         async with get_db_connection() as conn:
-            agent_name = await conn.fetchval("SELECT agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-            if not agent_name:
-                return False
-            await evaluation.start(conn)
+            evaluation_runs = await evaluation.start(conn)
+
+        message = {
+            "event": "evaluation",
+            "evaluation_id": evaluation_id,
+            "agent_version": {
+                "version_id": str(evaluation.version_id),
+                "miner_hotkey": evaluation.validator_hotkey,
+                "version_num": miner_agent.version_num,
+            },
+            "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
+        }
+        await self.websocket.send_json(message)
             
-        self.status = f"Evaluating agent {agent_name} with evaluation {evaluation_id}"
+        self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
         self.current_evaluation_id = evaluation_id
-        self.current_agent_name = agent_name
-        logger.info(f"Validator {self.hotkey}: -> evaluating {agent_name}")
+        self.current_agent_name = miner_agent.agent_name
+        logger.info(f"Validator {self.hotkey}: -> evaluating {miner_agent.agent_name}")
+
         return True
     
     async def connect(self):

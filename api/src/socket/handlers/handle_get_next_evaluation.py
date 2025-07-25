@@ -41,6 +41,8 @@ async def handle_get_next_evaluation(
         "evaluation_id": str(evaluation_id),
         "agent_version": miner_agent.model_dump(mode='json')
     }
+
+    await Validator.start_evaluation(validator, evaluation_id)
     
     success = await ws_manager.send_to_client(validator, evaluation_message)
     return {"status": "success" if success else "error", "message": "Evaluation sent to validator" if success else "Failed to send evaluation"}

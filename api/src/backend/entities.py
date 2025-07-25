@@ -11,6 +11,8 @@ from enum import Enum
 
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
+    model_config = {"arbitrary_types_allowed": True}
+    
     version_id: UUID
     miner_hotkey: str
     agent_name: str
@@ -30,6 +32,8 @@ class MinerAgentWithScores(MinerAgent):
 
 class MinerAgentScored(BaseModel):
     """Maps to the agent_scores materialized view with precomputed scoring logic"""
+    model_config = {"arbitrary_types_allowed": True}
+    
     version_id: UUID
     miner_hotkey: str
     agent_name: str
@@ -310,6 +314,8 @@ class EvaluationStatus(Enum):
         return mapping.get(status, cls.error)
 
 class Evaluation(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     evaluation_id: UUID
     version_id: UUID
     validator_hotkey: str
@@ -330,23 +336,25 @@ class SandboxStatus(Enum):
     cancelled = "cancelled"
 
 class EvaluationRun(BaseModel):
+    model_config = {"arbitrary_types_allowed": True, "validate_assignment": True}
+    
     run_id: UUID
     evaluation_id: UUID
     swebench_instance_id: str
-    response: Optional[str]
-    error: Optional[str]
-    pass_to_fail_success: Optional[str]
-    fail_to_pass_success: Optional[str]
-    pass_to_pass_success: Optional[str]
-    fail_to_fail_success: Optional[str]
-    solved: Optional[bool]
+    response: Optional[str] = None
+    error: Optional[str] = None
+    pass_to_fail_success: Optional[str] = None
+    fail_to_pass_success: Optional[str] = None
+    pass_to_pass_success: Optional[str] = None
+    fail_to_fail_success: Optional[str] = None
+    solved: Optional[bool] = None
     status: SandboxStatus
     started_at: datetime
-    sandbox_created_at: Optional[datetime]
-    patch_generated_at: Optional[datetime]
-    eval_started_at: Optional[datetime]
-    result_scored_at: Optional[datetime]
-    cancelled_at: Optional[datetime]
+    sandbox_created_at: Optional[datetime] = None
+    patch_generated_at: Optional[datetime] = None
+    eval_started_at: Optional[datetime] = None
+    result_scored_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
     
 
 class EvaluationRunWithUsageDetails(EvaluationRun):
@@ -375,6 +383,8 @@ class Client(BaseModel):
         return "client"
 
 class Inference(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     id: UUID
     run_id: UUID
     message: str
@@ -387,6 +397,8 @@ class Inference(BaseModel):
     finished_at: Optional[datetime]
 
 class EvaluationQueueItem(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+    
     evaluation_id: UUID
     version_id: UUID
     miner_hotkey: str
