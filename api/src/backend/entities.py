@@ -294,6 +294,7 @@ class EvaluationStatus(Enum):
     replaced = "replaced"
     error = "error"
     completed = "completed"
+    cancelled = "cancelled"
 
     @classmethod
     def from_string(cls, status: str) -> 'EvaluationStatus':
@@ -304,6 +305,7 @@ class EvaluationStatus(Enum):
             "error": cls.error,
             "replaced": cls.replaced,
             "completed": cls.completed,
+            "cancelled": cls.cancelled,
         }
         return mapping.get(status, cls.error)
 
