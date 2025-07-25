@@ -303,8 +303,101 @@ class LocalSandbox:
             problem.repo,
             problem.base_commit
         )
+        
+        # --------------------------------------------------------------
+        # Apply the fail-to-pass test patch for this SWE-bench instance
+        # so that local testing matches production behavior.
+        # --------------------------------------------------------------
+        try:
+            from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid heavy dependency at module load
+
+            instance = load_swebench_dataset(
+                "SWE-bench/SWE-bench_Verified",
+                "test",
+                [problem.instance_id],
+            )[0]
+
+            test_patch = instance.get("test_patch")
+            if test_patch:
+                # Try applying with several strip levels; fall back to `patch` if needed
+                import tempfile, os, shlex, textwrap
+                with tempfile.NamedTemporaryFile("w", delete=False) as tmp:
+                    tmp.write(test_patch)
+                    tmp_path = tmp.name
+
+                def _run_git_apply(p_level: str):
+                    return subprocess.run(
+                        ["git", "apply", p_level, "--verbose", "--reject", "--unidiff-zero", tmp_path],
+                        cwd=self.repo_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                applied = False
+                for p_level in ("-p1", "-p0", "-p2", "-p3"):
+                    res = _run_git_apply(p_level)
+                    if res.returncode == 0:
+                        applied = True
+                        break
+                if not applied:
+                    # Fallback to system `patch`
+                    res = subprocess.run(
+                        ["patch", "-p1", "--forward", "--reject-file=-", "-i", tmp_path],
+                        cwd=self.repo_dir,
+                        capture_output=True,
+                        text=True,
+                    )
+                    applied = res.returncode in (0, 1)
+
+                os.unlink(tmp_path)
+
+                if applied:
+                    self._log_manager(
+                        f"Applied test_patch for {problem.instance_id}"
+                    )
+                    if res.stdout or res.stderr:
+                        self._log_manager("git/patch output:\n" + (res.stdout or "") + (res.stderr or ""))
+
+                    # Simple verification: check that at least one added line now exists in repo
+                    first_added = None
+                    for ln in test_patch.splitlines():
+                        if ln.startswith("+") and not ln.startswith("+++"):
+                            snippet = ln[1:].strip()
+                            if snippet:
+                                first_added = snippet
+                                break
+                    if first_added:
+                        grep_res = subprocess.run(
+                            ["grep", "-R", "-n", first_added, "tests"],
+                            cwd=self.repo_dir,
+                            capture_output=True,
+                            text=True,
+                        )
+                        if grep_res.returncode == 0 and first_added in grep_res.stdout:
+                            self._log_manager("✅ Patch verification succeeded: snippet found in repo")
+                        else:
+                            self._log_manager(
+                                "⚠️  Patch applied but verification snippet not found; check manually"
+                            )
+                else:
+                    self._log_manager(
+                        textwrap.dedent(
+                            f"""
+                            Failed to apply test_patch for {problem.instance_id}
+                            stdout:\n{res.stdout}\nstderr:\n{res.stderr}
+                            """
+                        )
+                    )
+            else:
+                self._log_manager(f"No test_patch found for {problem.instance_id}")
+        except Exception as e:
+            self._log_manager(f"Error applying test_patch for {problem.instance_id}: {e}")
+
         self._log(f"Repository cloned to: {self.repo_dir}")
-    
+    def _log_manager(self, message: str):
+        """Log a message from the manager"""
+        if self.verbose:
+            print(f"[LocalSandboxManager] {message}")
     def _log(self, message: str):
         """Log a message to buffer if available, otherwise print"""
         if self.log_buffer is not None:

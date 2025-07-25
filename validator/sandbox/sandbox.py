@@ -239,6 +239,44 @@ class Sandbox:
         if repo_path.exists():
             shutil.rmtree(repo_path, ignore_errors=True)
         shutil.copytree(cache_path, repo_path)
+
+        # ------------------------------------------------------------------
+        # Apply instance-specific test patch so the agent sees the extra tests
+        # ------------------------------------------------------------------
+        try:
+            from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid at module load
+
+            instance_id = self.evaluation_run.swebench_instance_id
+            instance = load_swebench_dataset(
+                "SWE-bench/SWE-bench_Verified",
+                "test",
+                [instance_id],
+            )[0]
+
+            test_patch = instance.get("test_patch")
+            if test_patch:
+                proc = subprocess.run(
+                    ["git", "apply", "--verbose", "--reject", "--unidiff-zero", "-"],
+                    cwd=repo_path,
+                    input=test_patch,
+                    text=True,
+                    capture_output=True,
+                )
+                if proc.returncode != 0:
+                    logger.error(
+                        "Failed to apply test_patch for %s: %s %s",
+                        instance_id,
+                        proc.stdout,
+                        proc.stderr,
+                    )
+                    raise RuntimeError(
+                        f"Failed to apply test_patch for {instance_id}. See logs for details."
+                    )
+                else:
+                    logger.info("Successfully applied test_patch for %s", instance_id)
+        except Exception as e:
+            # Reraise to fail early – the sandbox should not continue with an incomplete test suite
+            raise
         
         return repo_path
     
