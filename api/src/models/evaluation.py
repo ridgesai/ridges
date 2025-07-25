@@ -4,14 +4,14 @@ from typing import Optional
 import asyncpg
 import asyncio
 
-from api.src.backend.entities import EvaluationStatus, MinerAgent
+from api.src.backend.entities import MinerAgent
 from api.src.backend.db_manager import get_db_connection, get_transaction
+from api.src.backend.entities import EvaluationStatus
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_THRESHOLD
 
 logger = logging.getLogger(__name__)
-
 
 class Evaluation:
     """Evaluation model - handles its own lifecycle atomically"""
@@ -266,7 +266,7 @@ class Evaluation:
             claimed_agent = await conn.fetchrow(
                 """
                 UPDATE miner_agents 
-                SET status = 'screening' 
+                SET status = 'claimed' 
                 WHERE version_id = (
                     SELECT version_id FROM miner_agents 
                     WHERE status = 'awaiting_screening' 

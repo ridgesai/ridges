@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     validator_hotkey TEXT NOT NULL,
     set_id INT NOT NULL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL, -- Possible values: waiting, running, replaced, error, completed
     terminated_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,

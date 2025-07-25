@@ -8,6 +8,7 @@ from typing import Literal, Optional, TYPE_CHECKING
 from enum import Enum
 
 
+
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
     version_id: UUID
@@ -286,27 +287,25 @@ class AgentStatus(Enum):
         }
         return mapping.get(status, cls.awaiting_screening)
 
+
 class EvaluationStatus(Enum):
-    awaiting_screening = "awaiting_screening"
     waiting = "waiting"
-    running = "running" 
-    completed = "completed"
+    running = "running"
     replaced = "replaced"
     error = "error"
-    cancelled = "cancelled"
-    
+    completed = "completed"
+
     @classmethod
     def from_string(cls, status: str) -> 'EvaluationStatus':
         """Map database status string to evaluation state enum"""
         mapping = {
-            "awaiting_screening": cls.awaiting_screening,
             "waiting": cls.waiting,
             "running": cls.running,
-            "completed": cls.completed,
             "error": cls.error,
-            "replaced": cls.replaced
+            "replaced": cls.replaced,
+            "completed": cls.completed,
         }
-        return mapping.get(status, cls.waiting)
+        return mapping.get(status, cls.error)
 
 class Evaluation(BaseModel):
     evaluation_id: UUID
