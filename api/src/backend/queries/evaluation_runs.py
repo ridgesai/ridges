@@ -77,7 +77,7 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
             eval_started_at = $12,
             result_scored_at = $13,
             cancelled_at = $14
-        WHERE run_id = $1
+        WHERE run_id = $15
         """,
         evaluation_run.response,
         evaluation_run.error,
@@ -87,6 +87,7 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
         evaluation_run.fail_to_fail_success,
         evaluation_run.solved,
         evaluation_run.status.value,
+        evaluation_run.started_at,
         evaluation_run.sandbox_created_at,
         evaluation_run.patch_generated_at,
         evaluation_run.eval_started_at,
@@ -134,7 +135,7 @@ async def get_runs_for_evaluation(
 
 @db_operation
 async def all_runs_finished(conn: asyncpg.Connection, evaluation_id: str) -> bool:
-    return await conn.fetchval("SELECT COUNT(*) FROM evaluation_runs WHERE result_scored_at IS NOT NULL AND evaluation_id = $1", evaluation_id) == 0
+    return await conn.fetchval("SELECT COUNT(*) FROM evaluation_runs WHERE result_scored_at IS NULL AND status != 'cancelled' AND evaluation_id = $1", evaluation_id) == 0
 
 @db_operation
 async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluation_id: str) -> list[EvaluationRunWithUsageDetails]:

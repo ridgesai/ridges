@@ -11,7 +11,12 @@ from enum import Enum
 
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     version_id: UUID
     miner_hotkey: str
@@ -32,7 +37,12 @@ class MinerAgentWithScores(MinerAgent):
 
 class MinerAgentScored(BaseModel):
     """Maps to the agent_scores materialized view with precomputed scoring logic"""
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     version_id: UUID
     miner_hotkey: str
@@ -314,7 +324,12 @@ class EvaluationStatus(Enum):
         return mapping.get(status, cls.error)
 
 class Evaluation(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     evaluation_id: UUID
     version_id: UUID
@@ -336,7 +351,13 @@ class SandboxStatus(Enum):
     cancelled = "cancelled"
 
 class EvaluationRun(BaseModel):
-    model_config = {"arbitrary_types_allowed": True, "validate_assignment": True}
+    model_config = {
+        "arbitrary_types_allowed": True, 
+        "validate_assignment": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     run_id: UUID
     evaluation_id: UUID
@@ -371,7 +392,12 @@ class EvaluationsWithHydratedUsageRuns(Evaluation):
 
 class Client(BaseModel):
     """Base class for connected clients"""
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
 
     client_id: Optional[str] = None
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -383,7 +409,12 @@ class Client(BaseModel):
         return "client"
 
 class Inference(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     id: UUID
     run_id: UUID
@@ -397,7 +428,12 @@ class Inference(BaseModel):
     finished_at: Optional[datetime]
 
 class EvaluationQueueItem(BaseModel):
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
     
     evaluation_id: UUID
     version_id: UUID

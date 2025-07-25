@@ -70,15 +70,3 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         errored = True
     finally:
         sandbox_manager.cleanup(force_cancel=errored)
-
-        if websocket_app.ws:
-            try:
-                await websocket_app.send(
-                    {
-                        "event": "finish-evaluation",
-                        "evaluation_id": evaluation_id,
-                        "errored": errored,
-                    }
-                )
-            except Exception as e:
-                logger.error(f"Failed to send finish-evaluation message: {e}")

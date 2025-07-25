@@ -34,6 +34,11 @@ async def handle_upsert_evaluation_run(
         
         # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump(mode='json')
+        # Ensure UUIDs are converted to strings
+        if 'run_id' in broadcast_data and isinstance(broadcast_data['run_id'], str) == False:
+            broadcast_data['run_id'] = str(broadcast_data['run_id'])
+        if 'evaluation_id' in broadcast_data and isinstance(broadcast_data['evaluation_id'], str) == False:
+            broadcast_data['evaluation_id'] = str(broadcast_data['evaluation_id'])
         broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
         
         await ws.send_to_all_non_validators("evaluation-run-update", broadcast_data)

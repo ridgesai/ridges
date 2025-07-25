@@ -95,7 +95,7 @@ class Sandbox:
         """Send evaluation run update"""
         try:
             await self.manager.websocket_app.send({
-                "event": "upsert-evaluation-run",
+                "event": "update-evaluation-run",
                 "evaluation_run": self.evaluation_run.to_dict(),
             })
         except Exception as e:

@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING
 from loggers.logging_utils import get_logger
-from validator.sandbox.schema import AgentVersion
+from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import SCREENER_MODE, validator_hotkey
 from ddtrace import tracer
@@ -41,12 +41,14 @@ async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
 
     try:
         # Extract agent version data from the response
+        logger.info(f"Received evaluation: {json_message}")
         evaluation_id = json_message.get("evaluation_id")
         agent_data = json_message.get("agent_version", {})
         miner_hotkey = agent_data.get("miner_hotkey")
         version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
         version_id = agent_data.get("version_id")
+        evaluation_runs = [EvaluationRun(**run) for run in json_message.get("evaluation_runs", [])]
 
         # Create AgentVersion object
         # Handle 'Z' suffix in ISO format datetime string
@@ -62,7 +64,7 @@ async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
 
         # Create and track the evaluation task
         websocket_app.evaluation_task = asyncio.create_task(
-            run_evaluation(websocket_app, evaluation_id, agent_version)
+            run_evaluation(websocket_app, evaluation_id, agent_version, evaluation_runs)
         )
 
         try:

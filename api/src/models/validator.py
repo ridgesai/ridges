@@ -31,7 +31,7 @@ class Validator(Client):
         self.current_agent_name = None
         logger.info(f"Validator {self.hotkey}: -> available")
     
-    async def start_evaluation(self, evaluation_id: str) -> bool:
+    async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
         """Start evaluation - update status"""
         from api.src.models.evaluation import Evaluation
         evaluation = await Evaluation.get_by_id(evaluation_id)
@@ -46,12 +46,8 @@ class Validator(Client):
 
         message = {
             "event": "evaluation",
-            "evaluation_id": evaluation_id,
-            "agent_version": {
-                "version_id": str(evaluation.version_id),
-                "miner_hotkey": evaluation.validator_hotkey,
-                "version_num": miner_agent.version_num,
-            },
+            "evaluation_id": str(evaluation_id),
+            "agent_version": miner_agent.model_dump(mode='json'),
             "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
         }
         await self.websocket.send_json(message)

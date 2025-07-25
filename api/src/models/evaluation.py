@@ -101,7 +101,7 @@ class Evaluation:
         # If it's a screener, create validator evaluations and notify
         if self.is_screening:
             if self.score < SCREENING_THRESHOLD:
-                logger.info(f"Screening failed for agent {self.version_id} with score {self.score}")
+                logger.info(f"Screening did not pass for agent {self.version_id} with score {self.score}")
             else:
                 logger.info(f"Screening passed for agent {self.version_id} with score {self.score}")
                 from api.src.models.validator import Validator
@@ -136,7 +136,7 @@ class Evaluation:
         self.status = EvaluationStatus.waiting
 
         # Reset running evaluation_runs to pending so they can be picked up again
-        await conn.execute("UPDATE evaluation_runs SET status = 'cancelled' WHERE evaluation_id = $1 AND status = 'running'", self.evaluation_id)
+        await conn.execute("UPDATE evaluation_runs SET status = 'cancelled' WHERE evaluation_id = $1", self.evaluation_id)
 
         await self._update_agent_status(conn)
 
@@ -269,7 +269,7 @@ class Evaluation:
 
         message = {
             "event": "screen-agent",
-            "evaluation_id": eval_id,
+            "evaluation_id": str(eval_id),
             "agent_version": agent.model_dump(mode="json"),
             "evaluation_runs": [run.model_dump(mode="json") for run in evaluation_runs],
         }
