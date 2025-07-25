@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Optional
+from typing import Optional, Tuple
 import asyncpg
 import asyncio
 
@@ -177,7 +177,7 @@ class Evaluation:
         return eval_id
 
     @staticmethod
-    async def create_screening_and_send(conn: asyncpg.Connection, agent: 'MinerAgent', screener: 'Screener') -> bool:
+    async def create_screening_and_send(conn: asyncpg.Connection, agent: 'MinerAgent', screener: 'Screener') -> Tuple[str, bool]:
         """Create screening evaluation"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws = WebSocketManager.get_instance()
@@ -219,7 +219,7 @@ class Evaluation:
         }
         logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
         
-        return await ws.send_to_client(screener, message)
+        return eval_id, await ws.send_to_client(screener, message)
 
     @staticmethod
     async def get_by_id(evaluation_id: str) -> Optional["Evaluation"]:
@@ -293,11 +293,10 @@ class Evaluation:
                 status=AgentStatus.screening,
             )
         
-            # Set final status before sending evaluation
-            screener.status = f"Assigned agent {agent.agent_name}"
+            eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
+            screener.status = f"Screening agent {agent.agent_name} with evaluation {eval_id}"
             screener.current_agent_name = agent.agent_name
-            
-            success = await Evaluation.create_screening_and_send(conn, agent, screener)
+            screener.current_evaluation_id = eval_id
             logger.info(f"WebSocket send to screener {screener.hotkey} for agent {agent.agent_name}: {'SUCCESS' if success else 'FAILED'}")
 
     @staticmethod

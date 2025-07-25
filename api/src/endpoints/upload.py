@@ -115,7 +115,7 @@ async def post_agent(
                     agent.version_num,
                 )
 
-                success = await Evaluation.create_screening_and_send(conn, agent, screener)
+                eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
                 if not success:
                     logger.warning(f"Failed to immediately assign agent {agent.version_id} to screener, will be picked up later")
 
