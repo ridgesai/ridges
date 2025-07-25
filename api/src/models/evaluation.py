@@ -99,7 +99,7 @@ class Evaluation:
                 await conn.execute("UPDATE miner_agents SET status = 'failed_screening' WHERE version_id = $1", self.version_id)
             return
 
-        # Handle screening errors - reset to awaiting_screening
+        # Handle screening errors like disconnection - reset to awaiting_screening
         if self.is_screening and self.status == EvaluationStatus.error:
             await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE version_id = $1", self.version_id)
             return
