@@ -6,9 +6,7 @@ from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
-from api.src.socket.handlers.handle_start_evaluation import handle_start_evaluation
-from api.src.socket.handlers.handle_finish_evaluation import handle_finish_evaluation
-from api.src.socket.handlers.handle_upsert_evaluation_run import handle_upsert_evaluation_run
+from api.src.socket.handlers.handle_update_evaluation_run import handle_update_evaluation_run
 
 logger = get_logger(__name__)
 
@@ -43,22 +41,8 @@ async def route_message(
             logger.debug(f"Completed handle-get-next-evaluation with process ID {process_id}.")
             return result
     
-    elif event == "start-evaluation":
-        with process_context("handle-start-evaluation") as process_id:
-            logger.debug(f"Platform received start-evaluation from client {client.hotkey}. Beginning process handle-start-evaluation with process ID: {process_id}.")
-            result = await handle_start_evaluation(client, response_json)
-            logger.debug(f"Completed handle-start-evaluation with process ID {process_id}.")
-            return result
-    
-    elif event == "finish-evaluation":
-        with process_context("handle-finish-evaluation") as process_id:
-            logger.debug(f"Platform received finish-evaluation from client {client.hotkey}. Beginning process handle-finish-evaluation with process ID: {process_id}.")
-            result = await handle_finish_evaluation(client, response_json)
-            logger.debug(f"Completed handle-finish-evaluation with process ID {process_id}.")
-            return result
-    
-    elif event == "upsert-evaluation-run":
-        return await handle_upsert_evaluation_run(client, response_json)
+    elif event == "update-evaluation-run":
+        return await handle_update_evaluation_run(client, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")
