@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import uuid
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import asyncpg
 import asyncio
 
