@@ -31,7 +31,7 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
 # Configuration
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+DEFAULT_MODEL = "moonshotai/Kimi-K2-Instruct"
 MAX_EXPLORATION_STEPS = 20
 MAX_TEST_ANALYSIS_STEPS = 15
 MAX_IMPLEMENTATION_ITERATIONS = 5
