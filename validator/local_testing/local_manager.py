@@ -303,11 +303,6 @@ class LocalSandbox:
             problem.repo,
             problem.base_commit
         )
-        
-        # --------------------------------------------------------------
-        # Apply the fail-to-pass test patch for this SWE-bench instance
-        # so that local testing matches production behavior.
-        # --------------------------------------------------------------
         try:
             from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid heavy dependency at module load
 
@@ -373,21 +368,21 @@ class LocalSandbox:
                             capture_output=True,
                             text=True,
                         )
-                        if grep_res.returncode == 0 and first_added in grep_res.stdout:
-                            self._log_manager("✅ Patch verification succeeded: snippet found in repo")
-                        else:
-                            self._log_manager(
-                                "⚠️  Patch applied but verification snippet not found; check manually"
-                            )
-                else:
-                    self._log_manager(
-                        textwrap.dedent(
-                            f"""
-                            Failed to apply test_patch for {problem.instance_id}
-                            stdout:\n{res.stdout}\nstderr:\n{res.stderr}
-                            """
-                        )
-                    )
+                    try:
+                        subprocess.run(["git", "add", "-A"], cwd=self.repo_dir, check=True)
+                        subprocess.run([
+                            "git",
+                            "-c",
+                            "user.email=tao@localhost",
+                            "-c",
+                            "user.name=Tao God",
+                            "commit",
+                            "-m",
+                            "updates",
+                        ], cwd=self.repo_dir, check=True)
+                        self._log_manager("Committed test_patch for " + problem.instance_id)
+                    except Exception as cex:
+                        self._log_manager("Could not commit test_patch: " + str(cex))
             else:
                 self._log_manager(f"No test_patch found for {problem.instance_id}")
         except Exception as e:
