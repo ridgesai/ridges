@@ -61,16 +61,6 @@ class Sandbox:
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
             raise FileNotFoundError("agent.py not found in agent directory")
-        
-        # Validate agent code has required function
-        agent_file = agent_dir / "agent.py"
-        try:
-            with open(agent_file, 'r') as f:
-                agent_code = f.read()
-            if 'def agent_main(' not in agent_code:
-                raise ValueError("agent.py must contain a 'agent_main' function")
-        except Exception as e:
-            raise ValueError(f"Failed to validate agent code: {e}")
 
     @tracer.wrap(resource="run-sandbox")
     async def run(self) -> None:
@@ -136,18 +126,8 @@ class Sandbox:
         input_file.write_text(input.model_dump_json())
         output_file.touch()
         
-        # Verify files exist
-        logger.info(f"Created input file: {input_file} (size: {input_file.stat().st_size} bytes)")
-        logger.info(f"Created output file: {output_file}")
-        logger.info(f"Agent directory: {self.agent_dir}")
-        logger.info(f"Agent file exists: {(self.agent_dir / 'agent.py').exists()}")
-        
         # Run container
         try:
-            # Verify MAIN_FILE exists
-            if not Path(MAIN_FILE).exists():
-                raise FileNotFoundError(f"agent_runner.py not found at {MAIN_FILE}")
-            
             volumes = {
                 str(MAIN_FILE): {"bind": SANDBOX_MAIN_FILE, "mode": "ro"},
                 str(input_file): {"bind": SANDBOX_INPUT_FILE, "mode": "ro"},
@@ -179,7 +159,6 @@ class Sandbox:
             self.container = self.manager.docker.containers.run(
                 remove=True,
                 image=image_name,
-                command=["python", "agent_runner.py"],
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
                 working_dir=SANDBOX_DIR,
@@ -191,7 +170,6 @@ class Sandbox:
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
             )
-            logger.info(f"Started container {self.evaluation_run.run_id} with image {image_name}")
             
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
@@ -224,17 +202,7 @@ class Sandbox:
         
         # Process results
         try:
-            # Use stored container logs for debugging
-            container_logs = getattr(self, 'container_logs', '')
-            
-            # Check if output file exists and has content
-            if not output_file.exists():
-                raise ValueError(f"Output file does not exist{container_logs}")
-            
             text = output_file.read_text()
-            if not text.strip():
-                raise ValueError(f"Output file is empty{container_logs}")
-            
             result = json.loads(text)
             if result.get("success"):
                 patch = result.get("output", {}).get("patch", "")
@@ -243,12 +211,11 @@ class Sandbox:
                     self.evaluation_run.status = "patch_generated"
                     self.evaluation_run.patch_generated_at = datetime.now(timezone.utc)
                 else:
-                    raise ValueError(f"Empty patch returned from agent{container_logs}")
+                    raise ValueError("Empty patch returned from agent")
             else:
-                error_msg = result.get("error", "Unknown error")
-                raise ValueError(f"Agent execution failed: {error_msg}{container_logs}")
+                raise ValueError(result.get("error", "Unknown error"))
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}{container_logs}")
+            raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
         finally:
             # Clean up IO directory after processing results
             shutil.rmtree(io_dir, ignore_errors=True)
@@ -331,7 +298,6 @@ class Sandbox:
         """Monitor container execution with resource limits"""
         logger.info(f"Starting container monitoring for {self.evaluation_run.run_id}")
         container_start_time = datetime.now(timezone.utc)
-        self.container_logs = ""  # Store logs for later use
         
         while True:
             if self._cancelled.is_set():
@@ -348,33 +314,10 @@ class Sandbox:
                 logger.debug(f"Container {self.evaluation_run.run_id} status: {status}")
                 
                 if status == "exited":
-                    # Check exit code to see if it was successful
-                    exit_code = self.container.attrs.get('State', {}).get('ExitCode', -1)
-                    if exit_code == 0:
-                        logger.info(f"Container {self.evaluation_run.run_id} exited successfully (code: {exit_code})")
-                    else:
-                        logger.warning(f"Container {self.evaluation_run.run_id} exited with error code: {exit_code}")
-                    
-                    # Capture logs before container is removed
-                    try:
-                        logs = self.container.logs(stdout=True, stderr=True, tail=100).decode('utf-8', errors='ignore')
-                        self.container_logs = f"\nContainer logs:\n{logs}"
-                        logger.debug(f"Captured container logs for {self.evaluation_run.run_id}")
-                    except Exception as log_error:
-                        self.container_logs = f"\nFailed to get container logs: {log_error}"
-                        logger.warning(f"Failed to capture container logs: {log_error}")
+                    logger.info(f"Container {self.evaluation_run.run_id} exited normally")
                     break
                 elif status in ["dead", "removing"]:
                     logger.info(f"Container {self.evaluation_run.run_id} is {status}")
-                    
-                    # Capture logs before container is removed
-                    try:
-                        logs = self.container.logs(stdout=True, stderr=True, tail=100).decode('utf-8', errors='ignore')
-                        self.container_logs = f"\nContainer logs:\n{logs}"
-                        logger.debug(f"Captured container logs for {self.evaluation_run.run_id}")
-                    except Exception as log_error:
-                        self.container_logs = f"\nFailed to get container logs: {log_error}"
-                        logger.warning(f"Failed to capture container logs: {log_error}")
                     break
                 
                 # Check memory usage
@@ -421,21 +364,9 @@ class Sandbox:
                 if runtime > 0 and runtime % 300 == 0:  # Every 5 minutes
                     logger.info(f"Container {self.evaluation_run.run_id} still running after {runtime:.0f}s")
                 
-                # Capture logs periodically for debugging (every 30 seconds)
-                if runtime > 0 and runtime % 30 == 0:  # Every 30 seconds
-                    try:
-                        logs = self.container.logs(stdout=True, stderr=True, tail=20).decode('utf-8', errors='ignore')
-                        if logs.strip():
-                            self.container_logs = f"\nContainer logs (periodic capture):\n{logs}"
-                    except Exception:
-                        pass  # Don't fail monitoring for log capture
-                
             except DockerNotFound:
                 # Container was auto-removed by Docker (remove=True) - evaluation completed
                 logger.info(f"Container {self.evaluation_run.run_id} was auto-removed, evaluation completed")
-                # Try to capture logs from the container before it was removed
-                if not hasattr(self, 'container_logs') or not self.container_logs:
-                    self.container_logs = "\nContainer was auto-removed before logs could be captured"
                 break
             except (TimeoutError, MemoryError):
                 # Re-raise timeout and memory errors
