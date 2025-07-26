@@ -305,7 +305,6 @@ class Evaluation:
         if not screener.is_available():
             logger.info(f"Screener {screener.hotkey} is not available (status: {screener.status})")
             return
-        screener.status = "claiming_agent"
 
         async with get_transaction() as conn:
             # First check if there are any agents awaiting screening
@@ -352,9 +351,11 @@ class Evaluation:
             )
         
             eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
+
             screener.status = f"Screening agent {agent.agent_name} with evaluation {eval_id}"
             screener.current_agent_name = agent.agent_name
             screener.current_evaluation_id = eval_id
+
             logger.info(f"WebSocket send to screener {screener.hotkey} for agent {agent.agent_name}: {'SUCCESS' if success else 'FAILED'}")
 
     @staticmethod
