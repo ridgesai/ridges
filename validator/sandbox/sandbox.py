@@ -140,18 +140,19 @@ class Sandbox:
             if embed_file.exists():
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
-            # Get image name and ensure it exists locally
+            # Get image name and always pull the latest version from GHCR
             image_name = get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id)
+            logger.info(f"Pulling latest version of image: {image_name}")
             try:
-                self.manager.docker.images.get(image_name)
-                logger.info(f"Image found locally: {image_name}")
-            except docker.errors.ImageNotFound:
-                logger.info(f"Image not found locally, pulling: {image_name}")
+                self.manager.docker.images.pull(image_name)
+                logger.info(f"Successfully pulled image: {image_name}")
+            except Exception as e:
+                logger.warning(f"Failed to pull commit-specific image {image_name}: {e}")
+                # Check if image exists locally as fallback
                 try:
-                    self.manager.docker.images.pull(image_name)
-                    logger.info(f"Successfully pulled image: {image_name}")
-                except Exception as e:
-                    logger.warning(f"Failed to pull commit-specific image {image_name}: {e}")
+                    self.manager.docker.images.get(image_name)
+                    logger.info(f"Using existing local image: {image_name}")
+                except docker.errors.ImageNotFound:
                     logger.info(f"Falling back to default sandbox image: {SANDBOX_DOCKER_IMAGE}")
                     image_name = SANDBOX_DOCKER_IMAGE
 
