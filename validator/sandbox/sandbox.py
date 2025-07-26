@@ -240,9 +240,6 @@ class Sandbox:
             shutil.rmtree(repo_path, ignore_errors=True)
         shutil.copytree(cache_path, repo_path)
 
-        # ------------------------------------------------------------------
-        # Apply instance-specific test patch so the agent sees the extra tests
-        # ------------------------------------------------------------------
         try:
             from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid at module load
 
@@ -274,6 +271,21 @@ class Sandbox:
                     )
                 else:
                     logger.info("Successfully applied test_patch for %s", instance_id)
+                    try:
+                        subprocess.run(["git", "add", "-A"], cwd=repo_path, check=True)
+                        subprocess.run([
+                            "git",
+                            "-c",
+                            "user.email=tao@localhost",
+                            "-c",
+                            "user.name=Tao God",
+                            "commit",
+                            "-m",
+                            "updates",
+                        ], cwd=repo_path, check=True)
+                        logger.info("Committed test_patch for %s", instance_id)
+                    except Exception as ce:
+                        logger.warning("Could not commit test_patch for %s: %s", instance_id, ce)
         except Exception as e:
             # Reraise to fail early – the sandbox should not continue with an incomplete test suite
             raise
