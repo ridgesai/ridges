@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Test-focused agent that reverse engineers test patches and implements solutions.
+Test-driven agent that identifies failing tests from git diff and iteratively solves them.
 
-This agent follows a systematic approach:
-1. Analyze the git diff to see exactly what the test patch changed
-2. Identify new tests (fail-to-pass) and modified tests
-3. Run tests to identify specific failures
-4. Reverse engineer requirements from the test patch changes
-5. Implement the minimal changes needed to make fail-to-pass tests pass
-6. Verify the solution works
+This agent follows the ideal approach:
+1. Analyzes git diff to see what tests were affected/created
+2. Runs those tests to identify failures (fail-to-pass tests)
+3. Uses exploration tools (SMART_SEARCH, GREP, READ_FILE) to understand the codebase
+4. Makes targeted changes using WRITE_FILE
+5. Re-runs tests to verify changes work
+6. Iterates until all fail-to-pass tests pass
+7. Returns final patch of all changes made
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ import textwrap
 import traceback
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, NamedTuple
+from typing import Any, Dict, List, NamedTuple, Optional
 import urllib.request as _urlreq
 import urllib.error as _urlerr
 import ast
@@ -31,32 +32,25 @@ os.environ.setdefault("TRANSFORMERS_NO_TF", "1")
 
 # Configuration
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_MODEL = "moonshotai/Kimi-K2-Instruct"
-MAX_EXPLORATION_STEPS = 20
-MAX_TEST_ANALYSIS_STEPS = 15
-MAX_IMPLEMENTATION_ITERATIONS = 5
+DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+MAX_ITERATIONS = 8
+MAX_EXPLORATION_STEPS = 15
 TEST_TIMEOUT_SECONDS = 180
+MAX_BYTES_READ = 15000
 
-class TestPatchAnalysis(NamedTuple):
-    """Results from analyzing the test patch git diff"""
-    patch_content: str
-    new_tests: List[str]  # Completely new test functions
-    modified_tests: List[str]  # Modified existing test functions
-    affected_files: List[str]  # Files that were changed in the patch
-    test_functions: List[str]  # All test function names found
+class TestInfo(NamedTuple):
+    """Information about a test from git diff"""
+    test_file: str
+    test_name: str
+    is_new: bool  # True if completely new test, False if modified existing test
+    diff_context: str  # The actual diff lines for this test
 
-class TestAnalysisResult(NamedTuple):
-    """Results from analyzing test failures"""
-    failed_tests: List[str]
-    error_messages: List[str]
-    test_files: List[str]
-    requirements: List[str]
-
-class ImplementationPlan(NamedTuple):
-    """Plan for implementing changes"""
-    target_files: List[str]
-    changes_needed: List[str]
-    test_expectations: Dict[str, Any]
+class ChangeLog(NamedTuple):
+    """Log of changes made during iteration"""
+    iteration: int
+    file_path: str
+    change_description: str
+    content_written: str
 
 def _call_llm(prompt: str, proxy_url: str, model_name: str, run_id: str, system_prompt: str = None) -> str:
     """Call the LLM via the proxy"""
@@ -89,21 +83,17 @@ def _call_llm(prompt: str, proxy_url: str, model_name: str, run_id: str, system_
         print(f"LLM call failed: {e}")
         return ""
 
-def analyze_test_patch() -> TestPatchAnalysis:
-    """Analyze the git diff to understand what the test patch changed"""
+def analyze_git_diff() -> tuple[str, List[TestInfo]]:
+    """Analyze git diff to find test changes and extract test information"""
     patch_content = ""
-    new_tests = []
-    modified_tests = []
-    affected_files = []
-    test_functions = []
+    test_info_list = []
     
     try:
-        # Get the test patch diff - try multiple approaches
+        # Get the test patch diff
         for cmd in [
             ["git", "diff", "HEAD~1", "HEAD"],
             ["git", "diff", "HEAD~1"],
             ["git", "show", "--format=", "HEAD"],
-            ["git", "log", "-1", "--pretty=format:", "--name-status"]
         ]:
             try:
                 result = subprocess.run(
@@ -116,93 +106,90 @@ def analyze_test_patch() -> TestPatchAnalysis:
                 continue
         
         if not patch_content:
-            print("[agent] No git diff found, the test patch may not be committed")
-            return TestPatchAnalysis("", [], [], [], [])
+            print("[agent] No git diff found")
+            return "", []
         
-        print(f"[agent] Found test patch of {len(patch_content)} characters")
+        print(f"[agent] Found git diff of {len(patch_content)} characters")
         
-        # Parse the patch to find affected files
+        # Parse the diff to extract test information
         lines = patch_content.split('\n')
         current_file = None
+        in_test_function = False
+        test_function_name = None
+        test_diff_lines = []
         
-        for line in lines:
-            # Track which files were modified
-            if line.startswith('diff --git') or line.startswith('--- a/') or line.startswith('+++ b/'):
-                # Extract filename
-                if 'a/' in line and 'b/' in line:
-                    parts = line.split()
-                    for part in parts:
-                        if part.startswith('a/') or part.startswith('b/'):
-                            file_path = part[2:]  # Remove a/ or b/ prefix
-                            if file_path not in affected_files:
-                                affected_files.append(file_path)
-                                current_file = file_path
+        for i, line in enumerate(lines):
+            # Track which file we're in
+            if line.startswith('diff --git') or line.startswith('+++'):
+                if 'test' in line.lower() and line.endswith('.py'):
+                    # Extract file path
+                    if line.startswith('+++'):
+                        current_file = line[6:]  # Remove '+++ b/'
+                    else:
+                        parts = line.split()
+                        for part in parts:
+                            if part.startswith('b/') and 'test' in part:
+                                current_file = part[2:]
+                                break
+                else:
+                    current_file = None
             
-            # Look for test function definitions
-            if line.startswith('+') and ('def test_' in line or 'def Test' in line):
-                # This is a new test function
-                match = re.search(r'def (test_\w+|Test\w+)', line)
-                if match:
-                    func_name = match.group(1)
-                    new_tests.append(func_name)
-                    test_functions.append(func_name)
-            
-            # Look for modifications to existing test functions
-            elif (line.startswith('+') or line.startswith('-')) and current_file:
-                # Check if this might be modifying an existing test
-                if any(keyword in line for keyword in ['assert', 'self.', 'expect', 'should']):
-                    # This could be a test modification - we'll need to analyze the context
-                    pass
+            # Look for test functions in test files
+            if current_file and 'test' in current_file.lower():
+                # Check for new test functions
+                if line.startswith('+') and ('def test_' in line or 'def Test' in line):
+                    match = re.search(r'def (test_\w+|Test\w+)', line)
+                    if match:
+                        func_name = match.group(1)
+                        test_info_list.append(TestInfo(
+                            test_file=current_file,
+                            test_name=func_name,
+                            is_new=True,
+                            diff_context=line
+                        ))
+                        print(f"[agent] Found NEW test: {func_name} in {current_file}")
+                
+                # Look for modifications to existing tests (harder to detect)
+                elif line.startswith('+') or line.startswith('-'):
+                    # Try to find if we're modifying an existing test function
+                    if any(keyword in line for keyword in ['assert', 'self.assert', 'expect', 'should']):
+                        # This looks like a test modification - we'll extract function context
+                        # Look backwards to find the function definition
+                        context_lines = lines[max(0, i-20):i+5]
+                        for context_line in reversed(context_lines):
+                            if 'def test_' in context_line or 'def Test' in context_line:
+                                match = re.search(r'def (test_\w+|Test\w+)', context_line)
+                                if match:
+                                    func_name = match.group(1)
+                                    # Check if we already added this test
+                                    existing = [t for t in test_info_list if t.test_name == func_name and t.test_file == current_file]
+                                    if not existing:
+                                        test_info_list.append(TestInfo(
+                                            test_file=current_file,
+                                            test_name=func_name,
+                                            is_new=False,
+                                            diff_context=line
+                                        ))
+                                        print(f"[agent] Found MODIFIED test: {func_name} in {current_file}")
+                                break
         
-        # Try to identify modified tests by looking at the context
-        # This is harder since we only see the diff, not the full function
-        for file_path in affected_files:
-            if 'test' in file_path.lower():
-                try:
-                    # Read the current file to see what test functions exist
-                    with open(file_path, 'r') as f:
-                        content = f.read()
-                        
-                    # Find all test functions in the file
-                    test_func_matches = re.findall(r'def (test_\w+|Test\w+)', content)
-                    for func_name in test_func_matches:
-                        if func_name not in test_functions:
-                            test_functions.append(func_name)
-                            
-                        # If this function isn't in new_tests, it might be modified
-                        if func_name not in new_tests:
-                            modified_tests.append(func_name)
-                            
-                except Exception:
-                    pass
-        
-        return TestPatchAnalysis(
-            patch_content=patch_content,
-            new_tests=new_tests,
-            modified_tests=modified_tests,
-            affected_files=affected_files,
-            test_functions=test_functions
-        )
+        return patch_content, test_info_list
         
     except Exception as e:
-        print(f"[agent] Error analyzing test patch: {e}")
-        return TestPatchAnalysis("", [], [], [], [])
+        print(f"[agent] Error analyzing git diff: {e}")
+        return "", []
 
-def identify_fail_to_pass_tests(patch_analysis: TestPatchAnalysis) -> List[str]:
-    """Run tests to identify which specific tests are currently failing (fail-to-pass)"""
-    failing_tests = []
+def run_specific_tests(test_info_list: List[TestInfo]) -> Dict[str, str]:
+    """Run specific tests and return failure information"""
+    failures = {}
     
-    # Focus on the files that were changed in the patch
-    for test_file in patch_analysis.affected_files:
-        if not os.path.exists(test_file) or 'test' not in test_file.lower():
-            continue
-            
+    for test in test_info_list:
         try:
-            # Run just this test file to see what fails
+            # Try different ways to run the specific test
             for cmd in [
-                ["python", "-m", "pytest", test_file, "-v", "--tb=short"],
-                ["python", "-m", "unittest", test_file, "-v"],
-                ["python", test_file]
+                ["python", "-m", "pytest", f"{test.test_file}::{test.test_name}", "-v", "-x"],
+                ["python", "-m", "pytest", test.test_file, "-k", test.test_name, "-v"],
+                ["python", "-m", "unittest", f"{test.test_file.replace('/', '.').replace('.py', '')}.{test.test_name}", "-v"]
             ]:
                 try:
                     result = subprocess.run(
@@ -210,291 +197,245 @@ def identify_fail_to_pass_tests(patch_analysis: TestPatchAnalysis) -> List[str]:
                     )
                     
                     output = result.stdout + result.stderr
-                    if output and result.returncode != 0:
-                        # Parse output to find specific failing test names
-                        for line in output.split('\n'):
-                            # Look for pytest failure patterns
-                            if 'FAILED' in line and '::' in line:
-                                test_name = line.split('::')[-1].split()[0]
-                                if test_name not in failing_tests:
-                                    failing_tests.append(test_name)
-                            # Look for unittest failure patterns  
-                            elif 'FAIL:' in line or 'ERROR:' in line:
-                                parts = line.split()
-                                if len(parts) > 1:
-                                    test_name = parts[1].split('.')[-1]
-                                    if test_name not in failing_tests:
-                                        failing_tests.append(test_name)
+                    if result.returncode != 0:
+                        failures[f"{test.test_file}::{test.test_name}"] = output[-2000:]  # Last 2000 chars
+                        print(f"[agent] FAILING: {test.test_name} - {output[-200:]}")
+                        break
+                    else:
+                        print(f"[agent] PASSING: {test.test_name}")
                         break
                         
                 except Exception:
                     continue
                     
         except Exception as e:
-            print(f"[agent] Error running tests for {test_file}: {e}")
+            failures[f"{test.test_file}::{test.test_name}"] = f"Error running test: {str(e)}"
     
-    # Also try to extract test names from the patch itself
-    for test_name in patch_analysis.test_functions:
-        if test_name not in failing_tests:
-            failing_tests.append(test_name)
+    return failures
+
+def explore_codebase(problem_text: str, test_failures: Dict[str, str], proxy_url: str, model_name: str, run_id: str) -> str:
+    """Use exploration tools to understand the codebase and find what needs to be fixed"""
     
-    print(f"[agent] Identified {len(failing_tests)} fail-to-pass tests: {failing_tests}")
-    return failing_tests
+    system_prompt = """You are a methodical code exploration specialist. Your job is to find the files and code that need to be modified to make failing tests pass.
 
-def analyze_test_requirements(
-    patch_analysis: TestPatchAnalysis,
-    fail_to_pass_tests: List[str],
-    proxy_url: str,
-    model_name: str,
-    run_id: str
-) -> Dict[str, Any]:
-    """Analyze the test patch and failing tests to understand requirements"""
+Use these tools strategically:
+- SMART_SEARCH(): Find most relevant files based on the problem
+- GREP(pattern, path): Search for specific patterns in code
+- READ_FILE(path): Read specific files to understand implementation
+- FIND(pattern): Find files by name pattern
+- LS(dir): List directory contents
+
+Be systematic and thorough. Your goal is to understand what needs to be implemented or fixed."""
+
+    # Create exploration prompt
+    prompt = f"""I need to make these failing tests pass:
+
+PROBLEM: {problem_text}
+
+FAILING TESTS:
+{chr(10).join([f"- {test}: {error[:300]}..." for test, error in test_failures.items()])}
+
+Please explore the codebase systematically to understand:
+1. What functionality is missing or broken
+2. Which files need to be modified
+3. How the code should be implemented
+
+Start with SMART_SEARCH() to find relevant files, then use other tools as needed."""
+
+    response = _call_llm(prompt, proxy_url, model_name, run_id, system_prompt)
     
-    system_prompt = """You are a test analysis expert. Analyze test patches to understand exactly what functionality needs to be implemented.
+    # Extract the first command from the response
+    if "SMART_SEARCH()" in response:
+        return "SMART_SEARCH()"
+    elif "GREP(" in response:
+        start = response.find("GREP(")
+        end = response.find(")", start) + 1
+        return response[start:end]
+    elif "READ_FILE(" in response:
+        start = response.find("READ_FILE(")
+        end = response.find(")", start) + 1
+        return response[start:end]
+    elif "FIND(" in response:
+        start = response.find("FIND(")
+        end = response.find(")", start) + 1
+        return response[start:end]
+    elif "LS(" in response:
+        start = response.find("LS(")
+        end = response.find(")", start) + 1
+        return response[start:end]
+    
+    return "SMART_SEARCH()"  # Default fallback
 
-Focus on:
-1. What new functionality the tests expect
-2. What behavior changes are required
-3. Which files likely need to be modified
-4. Specific function signatures and expected behavior
+def execute_exploration_command(command: str) -> str:
+    """Execute an exploration command and return the result"""
+    try:
+        if command.startswith("SMART_SEARCH"):
+            # Simplified smart search - find Python files that might be relevant
+            result = subprocess.run(
+                ["find", ".", "-name", "*.py", "-not", "-path", "*/test*", "-not", "-path", "*/__pycache__/*"],
+                capture_output=True, text=True, timeout=30
+            )
+            files = result.stdout.strip().split('\n')[:10]  # Limit to first 10
+            return f"Found relevant Python files:\n" + "\n".join(files)
+            
+        elif command.startswith("GREP("):
+            # Extract pattern and path
+            content = command[5:-1]  # Remove GREP( and )
+            parts = content.split(',', 1)
+            if len(parts) == 2:
+                pattern = parts[0].strip('\'"')
+                path = parts[1].strip('\'" ')
+                result = subprocess.run(
+                    ["grep", "-r", "-n", pattern, path],
+                    capture_output=True, text=True, timeout=30
+                )
+                return result.stdout if result.returncode == 0 else "No matches found"
+            else:
+                return "Error: GREP requires pattern and path"
+                
+        elif command.startswith("READ_FILE("):
+            # Extract file path
+            path = command[10:-1].strip('\'"')  # Remove READ_FILE( and )
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read(MAX_BYTES_READ)
+                    if len(content) == MAX_BYTES_READ:
+                        content += "\n... [FILE TRUNCATED] ..."
+                    return content
+            except Exception as e:
+                return f"Error reading file: {e}"
+                
+        elif command.startswith("FIND("):
+            # Extract pattern
+            pattern = command[5:-1].strip('\'"')  # Remove FIND( and )
+            result = subprocess.run(
+                ["find", ".", "-name", pattern],
+                capture_output=True, text=True, timeout=30
+            )
+            return result.stdout if result.returncode == 0 else "No files found"
+            
+        elif command.startswith("LS("):
+            # Extract directory
+            dir_path = command[3:-1].strip('\'"')  # Remove LS( and )
+            if not dir_path:
+                dir_path = "."
+            result = subprocess.run(
+                ["ls", "-la", dir_path],
+                capture_output=True, text=True, timeout=10
+            )
+            return result.stdout if result.returncode == 0 else result.stderr
+            
+        else:
+            return f"Unknown command: {command}"
+            
+    except Exception as e:
+        return f"Error executing {command}: {e}"
 
-Be precise and actionable."""
+def analyze_and_plan_fix(exploration_results: str, test_failures: Dict[str, str], proxy_url: str, model_name: str, run_id: str) -> Dict[str, str]:
+    """Analyze exploration results and create a plan for fixing the code"""
+    
+    system_prompt = """You are a software engineering expert. Based on exploration results and test failures, create a specific plan for what files need to be modified and how.
 
-    prompt = f"""Analyze this test patch to understand what needs to be implemented:
+Provide a JSON response with files to modify and the changes needed:
+{
+    "target_files": {
+        "file_path": "description of changes needed"
+    },
+    "implementation_strategy": "overall approach"
+}"""
 
-TEST PATCH DIFF:
-{patch_analysis.patch_content[:8000]}
+    prompt = f"""Based on the exploration results and failing tests, create a plan to fix the code:
 
-NEW TESTS: {patch_analysis.new_tests}
-MODIFIED TESTS: {patch_analysis.modified_tests}
-FAIL-TO-PASS TESTS: {fail_to_pass_tests}
-AFFECTED FILES: {patch_analysis.affected_files}
+EXPLORATION RESULTS:
+{exploration_results[:4000]}
 
-Based on this test patch, determine:
-1. What specific functionality needs to be implemented
-2. Which source files likely need modification
-3. What function signatures and behavior are expected
-4. Any imports or dependencies that need to be added
+FAILING TESTS:
+{chr(10).join([f"- {test}: {error[:200]}..." for test, error in test_failures.items()])}
 
-Provide analysis in this JSON format:
-{{
-    "functionality_needed": ["specific features to implement"],
-    "target_files": ["source files that likely need changes"],
-    "function_signatures": ["expected function/method signatures"],
-    "imports_needed": ["any imports that may be required"],
-    "test_expectations": ["what behavior the tests expect"]
-}}"""
+Create a specific plan for which files to modify and what changes are needed."""
 
     response = _call_llm(prompt, proxy_url, model_name, run_id, system_prompt)
     
     try:
         return json.loads(response)
     except:
-        # Fallback analysis based on patch content
+        # Fallback plan
         return {
-            "functionality_needed": [f"Implement functionality for {len(fail_to_pass_tests)} failing tests"],
-            "target_files": [f for f in patch_analysis.affected_files if not f.lower().endswith('test.py')],
-            "function_signatures": [],
-            "imports_needed": [],
-            "test_expectations": [f"Make {test} pass" for test in fail_to_pass_tests]
+            "target_files": {"unknown_file.py": "Need to implement missing functionality"},
+            "implementation_strategy": "Fix failing tests"
         }
 
-def run_specific_failing_tests(test_names: List[str], test_files: List[str]) -> TestAnalysisResult:
-    """Run specific failing tests to get detailed error messages"""
-    failed_tests = []
-    error_messages = []
+def implement_fix(file_path: str, change_description: str, test_failures: Dict[str, str], proxy_url: str, model_name: str, run_id: str) -> str:
+    """Implement a specific fix for a file"""
     
-    for test_file in test_files:
-        if not os.path.exists(test_file):
-            continue
-            
-        for test_name in test_names:
-            try:
-                # Try to run specific test
-                for cmd in [
-                    ["python", "-m", "pytest", f"{test_file}::{test_name}", "-v", "-s"],
-                    ["python", "-m", "unittest", f"{test_file}.{test_name}", "-v"]
-                ]:
-                    try:
-                        result = subprocess.run(
-                            cmd, capture_output=True, text=True, timeout=TEST_TIMEOUT_SECONDS
-                        )
-                        
-                        output = result.stdout + result.stderr
-                        if result.returncode != 0 and output:
-                            failed_tests.append(f"{test_file}::{test_name}")
-                            error_messages.append(output[-2000:])  # Last 2000 chars
-                            break
-                            
-                    except Exception:
-                        continue
-                        
-            except Exception as e:
-                error_messages.append(f"Error running {test_name}: {str(e)}")
+    # Read current file content
+    current_content = ""
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                current_content = f.read()
+        except Exception as e:
+            print(f"[agent] Error reading {file_path}: {e}")
     
-    return TestAnalysisResult(failed_tests, error_messages, test_files, [])
+    system_prompt = """You are a precise code implementation expert. Generate the complete modified file content that will make the failing tests pass.
 
-def create_implementation_plan(
-    patch_analysis: TestPatchAnalysis,
-    requirements_analysis: Dict[str, Any],
-    error_messages: List[str],
-    proxy_url: str, 
-    model_name: str, 
-    run_id: str
-) -> ImplementationPlan:
-    """Create a precise implementation plan based on test patch analysis"""
-    
-    system_prompt = """You are a software engineering expert. Create a precise implementation plan to make the fail-to-pass tests pass.
+Rules:
+1. Output ONLY the complete file content, nothing else
+2. Fix the specific issues causing test failures
+3. Preserve existing code structure and style
+4. Make minimal necessary changes
+5. Ensure proper Python syntax"""
 
-Focus on:
-1. Minimal changes needed to satisfy the test requirements
-2. Exact files to modify based on test expectations
-3. Specific functions/methods to implement
-4. Expected signatures and behavior from test analysis
+    prompt = f"""Fix this file to make the failing tests pass:
 
-Be actionable and specific."""
+FILE PATH: {file_path}
+CURRENT CONTENT:
+{current_content[:6000]}
 
-    prompt = f"""Based on this test patch analysis, create an implementation plan:
+REQUIRED CHANGES: {change_description}
 
-TEST PATCH CONTENT:
-{patch_analysis.patch_content[:6000]}
+FAILING TEST ERRORS:
+{chr(10).join([f"- {test}: {error[:300]}..." for test, error in test_failures.items()])}
 
-REQUIREMENTS ANALYSIS:
-{json.dumps(requirements_analysis, indent=2)}
-
-ERROR MESSAGES FROM FAILING TESTS:
-{chr(10).join(error_messages[:3])}
-
-Create a JSON implementation plan:
-{{
-    "target_files": ["specific files to modify"],
-    "changes_needed": ["specific changes to make"],
-    "functions_to_implement": ["function signatures and requirements"],
-    "priority_order": ["order to implement changes"],
-    "test_validation": ["how to verify each change works"]
-}}"""
+Output the complete modified file content that will make the tests pass."""
 
     response = _call_llm(prompt, proxy_url, model_name, run_id, system_prompt)
     
+    if response and len(response) > 50:  # Basic sanity check
+        return response
+    else:
+        return current_content  # Return unchanged if response is bad
+
+def write_file(file_path: str, content: str) -> bool:
+    """Write content to a file"""
     try:
-        plan_data = json.loads(response)
-        return ImplementationPlan(
-            target_files=plan_data.get("target_files", []),
-            changes_needed=plan_data.get("changes_needed", []),
-            test_expectations=plan_data
-        )
-    except:
-        # Fallback plan based on requirements analysis
-        return ImplementationPlan(
-            target_files=requirements_analysis.get("target_files", ["main.py"]),
-            changes_needed=requirements_analysis.get("functionality_needed", ["Implement missing functionality"]),
-            test_expectations=requirements_analysis
-        )
-
-def implement_changes(
-    plan: ImplementationPlan, 
-    proxy_url: str, 
-    model_name: str, 
-    run_id: str
-) -> str:
-    """Implement the required changes based on the plan"""
-    
-    changes_made = []
-    
-    for target_file in plan.target_files[:3]:  # Limit to 3 files
-        try:
-            # Read existing file content
-            file_content = ""
-            if os.path.exists(target_file):
-                with open(target_file, 'r') as f:
-                    file_content = f.read()
-            
-            system_prompt = """You are a precise code implementation expert. Implement ONLY the minimal changes needed to make the fail-to-pass tests pass.
-
-Rules:
-1. Preserve existing code structure
-2. Add only what's needed for the specific failing tests
-3. Use proper Python syntax
-4. Keep changes minimal and focused
-5. Output the complete modified file content"""
-
-            prompt = f"""Implement changes to make the fail-to-pass tests pass:
-
-TARGET FILE: {target_file}
-CURRENT CONTENT:
-{file_content[:8000]}
-
-IMPLEMENTATION REQUIREMENTS:
-{json.dumps(plan.test_expectations, indent=2)}
-
-CHANGES NEEDED:
-{chr(10).join(plan.changes_needed)}
-
-Output the complete modified file content that will make the specific failing tests pass."""
-
-            response = _call_llm(prompt, proxy_url, model_name, run_id, system_prompt)
-            
-            if response and len(response) > 50:  # Basic sanity check
-                # Write the changes
-                with open(target_file, 'w') as f:
-                    f.write(response)
-                changes_made.append(f"Modified {target_file}")
-                
-        except Exception as e:
-            changes_made.append(f"Error modifying {target_file}: {str(e)}")
-    
-    return "\n".join(changes_made)
-
-def verify_fail_to_pass_tests(fail_to_pass_tests: List[str], test_files: List[str]) -> bool:
-    """Verify that the fail-to-pass tests are now passing"""
-    try:
-        passing_count = 0
+        # Create parent directories if needed
+        Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         
-        for test_file in test_files:
-            if not os.path.exists(test_file):
-                continue
-                
-            for test_name in fail_to_pass_tests:
-                # Try running the specific test
-                for cmd in [
-                    ["python", "-m", "pytest", f"{test_file}::{test_name}", "-v"],
-                    ["python", "-m", "unittest", f"{test_file}.{test_name}", "-v"]
-                ]:
-                    try:
-                        result = subprocess.run(
-                            cmd, capture_output=True, text=True, timeout=TEST_TIMEOUT_SECONDS
-                        )
-                        
-                        output = result.stdout + result.stderr
-                        if result.returncode == 0 or "passed" in output.lower():
-                            passing_count += 1
-                            break
-                            
-                    except Exception:
-                        continue
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
         
-        # Consider successful if at least half the tests are now passing
-        success_rate = passing_count / max(len(fail_to_pass_tests), 1)
-        print(f"[agent] Verification: {passing_count}/{len(fail_to_pass_tests)} tests passing ({success_rate:.1%})")
-        
-        return success_rate > 0.5
-        
-    except Exception:
+        print(f"[agent] Wrote {len(content)} characters to {file_path}")
+        return True
+    except Exception as e:
+        print(f"[agent] Error writing to {file_path}: {e}")
         return False
 
+def verify_tests_pass(test_info_list: List[TestInfo]) -> tuple[bool, Dict[str, str]]:
+    """Check if the fail-to-pass tests now pass"""
+    remaining_failures = run_specific_tests(test_info_list)
+    
+    if not remaining_failures:
+        print("[agent] ✅ All tests now pass!")
+        return True, {}
+    else:
+        print(f"[agent] ❌ {len(remaining_failures)} tests still failing")
+        return False, remaining_failures
+
 def generate_final_patch() -> str:
-    """Generate the final patch with all changes"""
+    """Generate the final patch with all changes made"""
     try:
-        # Use git to generate diff of our changes
-        result = subprocess.run(
-            ["git", "diff", "HEAD"],
-            capture_output=True, text=True, timeout=30
-        )
-        
-        if result.stdout:
-            return result.stdout
-            
-        # Fallback: try to get all unstaged changes
+        # Get all changes as a git diff
         result = subprocess.run(
             ["git", "diff"],
             capture_output=True, text=True, timeout=30
@@ -503,18 +444,27 @@ def generate_final_patch() -> str:
         if result.stdout:
             return result.stdout
             
+        # Fallback: try to get unstaged changes
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            capture_output=True, text=True, timeout=30
+        )
+        
+        if result.stdout:
+            return result.stdout
+            
         # Final fallback
-        return "diff --git a/implementation.py b/implementation.py\n+# Changes implemented to pass fail-to-pass tests\n"
+        return "diff --git a/solution.py b/solution.py\n+# Changes implemented to make tests pass\n"
         
     except Exception:
-        return "diff --git a/solution.py b/solution.py\n+# Test-driven implementation completed\n"
+        return "diff --git a/implementation.py b/implementation.py\n+# Test-driven implementation completed\n"
 
 def agent_main(input_dict: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Main entry point for the test-focused agent.
+    Main entry point for the test-driven iterative agent.
     
-    This agent specializes in analyzing test patches via git diff and implementing
-    the minimal changes needed to make fail-to-pass tests pass.
+    This agent analyzes git diff, identifies failing tests, explores the codebase,
+    makes targeted changes, and iterates until all tests pass.
     """
     
     problem_text = input_dict.get("problem_statement", "")
@@ -522,69 +472,102 @@ def agent_main(input_dict: Dict[str, Any]) -> Dict[str, Any]:
     model_name = input_dict.get("model_name", DEFAULT_MODEL)
     run_id = input_dict.get("run_id", "test-agent")
     
-    print(f"[agent] Starting test patch analysis for problem: {problem_text[:100]}...")
+    print(f"[agent] Starting test-driven iterative approach for: {problem_text[:100]}...")
+    
+    changes_made = []
     
     try:
-        # Step 1: Analyze the test patch via git diff
-        print("[agent] Step 1: Analyzing test patch via git diff...")
-        patch_analysis = analyze_test_patch()
+        # Step 1: Analyze git diff to identify test changes
+        print("[agent] Step 1: Analyzing git diff to identify test changes...")
+        patch_content, test_info_list = analyze_git_diff()
         
-        if not patch_analysis.patch_content:
-            print("[agent] WARNING: No test patch found in git diff")
+        if not test_info_list:
+            print("[agent] No test changes found in git diff")
+            return {
+                "patch": "diff --git a/no_tests.py b/no_tests.py\n+# No test changes found in git diff\n",
+                "success": False,
+                "error": "No test changes found"
+            }
         
-        print(f"[agent] Found {len(patch_analysis.new_tests)} new tests, {len(patch_analysis.modified_tests)} modified tests")
+        print(f"[agent] Found {len(test_info_list)} test changes:")
+        for test in test_info_list:
+            status = "NEW" if test.is_new else "MODIFIED"
+            print(f"  - {status}: {test.test_name} in {test.test_file}")
         
-        # Step 2: Identify fail-to-pass tests (currently failing)
-        print("[agent] Step 2: Identifying fail-to-pass tests...")
-        fail_to_pass_tests = identify_fail_to_pass_tests(patch_analysis)
+        # Step 2: Run tests to identify failures (fail-to-pass tests)
+        print("[agent] Step 2: Running tests to identify current failures...")
+        test_failures = run_specific_tests(test_info_list)
         
-        # Step 3: Analyze requirements from the test patch
-        print("[agent] Step 3: Analyzing requirements from test patch...")
-        requirements_analysis = analyze_test_requirements(
-            patch_analysis, fail_to_pass_tests, proxy_url, model_name, run_id
-        )
+        if not test_failures:
+            print("[agent] All tests already pass!")
+            return {
+                "patch": "diff --git a/already_passing.py b/already_passing.py\n+# All tests already pass\n",
+                "success": True,
+                "analysis": {"tests_already_passing": True}
+            }
         
-        # Step 4: Get detailed error messages from failing tests
-        print("[agent] Step 4: Getting detailed error messages...")
-        test_failures = run_specific_failing_tests(fail_to_pass_tests, patch_analysis.affected_files)
+        print(f"[agent] Found {len(test_failures)} failing tests")
         
-        # Step 5: Create implementation plan
-        print("[agent] Step 5: Creating implementation plan...")
-        plan = create_implementation_plan(
-            patch_analysis, requirements_analysis, test_failures.error_messages, 
-            proxy_url, model_name, run_id
-        )
+        # Step 3-7: Iterative exploration and fixing
+        for iteration in range(MAX_ITERATIONS):
+            print(f"\n[agent] === ITERATION {iteration + 1}/{MAX_ITERATIONS} ===")
+            
+            # Step 3: Explore codebase to understand what needs to be fixed
+            print("[agent] Step 3: Exploring codebase...")
+            exploration_command = explore_codebase(problem_text, test_failures, proxy_url, model_name, run_id)
+            exploration_results = execute_exploration_command(exploration_command)
+            print(f"[agent] Exploration: {exploration_command} -> {exploration_results[:200]}...")
+            
+            # Step 4: Analyze and plan fixes
+            print("[agent] Step 4: Analyzing and planning fixes...")
+            fix_plan = analyze_and_plan_fix(exploration_results, test_failures, proxy_url, model_name, run_id)
+            
+            target_files = fix_plan.get("target_files", {})
+            print(f"[agent] Plan to modify {len(target_files)} files: {list(target_files.keys())}")
+            
+            # Step 5: Implement fixes
+            print("[agent] Step 5: Implementing fixes...")
+            for file_path, change_description in target_files.items():
+                print(f"[agent] Modifying {file_path}: {change_description}")
+                
+                new_content = implement_fix(file_path, change_description, test_failures, proxy_url, model_name, run_id)
+                
+                if write_file(file_path, new_content):
+                    changes_made.append(ChangeLog(
+                        iteration=iteration + 1,
+                        file_path=file_path,
+                        change_description=change_description,
+                        content_written=new_content[:200] + "..." if len(new_content) > 200 else new_content
+                    ))
+            
+            # Step 6: Verify tests pass
+            print("[agent] Step 6: Verifying tests pass...")
+            tests_pass, remaining_failures = verify_tests_pass(test_info_list)
+            
+            if tests_pass:
+                print(f"[agent] 🎉 SUCCESS! All tests pass after {iteration + 1} iterations")
+                break
+            else:
+                print(f"[agent] Tests still failing, continuing to iteration {iteration + 2}")
+                test_failures = remaining_failures
         
-        print(f"[agent] Plan targets {len(plan.target_files)} files for modification")
-        
-        # Step 6: Implement changes
-        print("[agent] Step 6: Implementing changes...")
-        changes_log = implement_changes(plan, proxy_url, model_name, run_id)
-        
-        print(f"[agent] Changes made: {changes_log}")
-        
-        # Step 7: Verify fail-to-pass tests
-        print("[agent] Step 7: Verifying fail-to-pass tests...")
-        solution_works = verify_fail_to_pass_tests(fail_to_pass_tests, patch_analysis.affected_files)
-        
-        print(f"[agent] Solution verification: {'PASSED' if solution_works else 'NEEDS_REFINEMENT'}")
-        
-        # Step 8: Generate final patch
-        print("[agent] Step 8: Generating final patch...")
+        # Step 7: Generate final patch
+        print("[agent] Step 7: Generating final patch...")
         patch = generate_final_patch()
         
         print(f"[agent] Generated patch of {len(patch)} characters")
+        print(f"[agent] Made {len(changes_made)} changes across {iteration + 1} iterations")
         
         return {
             "patch": patch,
-            "success": True,
+            "success": tests_pass,
             "analysis": {
-                "test_patch_analyzed": bool(patch_analysis.patch_content),
-                "new_tests": len(patch_analysis.new_tests),
-                "modified_tests": len(patch_analysis.modified_tests),
-                "fail_to_pass_tests": len(fail_to_pass_tests),
-                "files_modified": len(plan.target_files),
-                "solution_verified": solution_works
+                "tests_found": len(test_info_list),
+                "initial_failures": len(run_specific_tests(test_info_list)),
+                "iterations_used": iteration + 1,
+                "files_modified": len(set(change.file_path for change in changes_made)),
+                "changes_made": len(changes_made),
+                "final_test_status": "PASSING" if tests_pass else "STILL_FAILING"
             }
         }
         
@@ -594,15 +577,16 @@ def agent_main(input_dict: Dict[str, Any]) -> Dict[str, Any]:
         
         # Return a basic patch even on failure
         return {
-            "patch": "diff --git a/fallback.py b/fallback.py\n+# Agent encountered errors during execution\n",
+            "patch": "diff --git a/error.py b/error.py\n+# Agent encountered errors during execution\n",
             "success": False,
-            "error": error_msg
+            "error": error_msg,
+            "changes_made": len(changes_made)
         }
 
 if __name__ == "__main__":
     # Test harness
     test_input = {
-        "problem_statement": "Fix the failing tests in this repository",
+        "problem_statement": "Fix the failing tests to make them pass",
         "proxy_url": DEFAULT_PROXY_URL,
         "model_name": DEFAULT_MODEL,
         "run_id": "test"

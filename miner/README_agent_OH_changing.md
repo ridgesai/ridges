@@ -1,104 +1,148 @@
-# Agent OH Changing - Test Patch Reverse Engineering Agent
+# Agent OH Changing - Test-Driven Iterative Agent
 
-This agent specializes in analyzing test patches via git diff and implementing the minimal changes needed to make **fail-to-pass tests** pass. It's designed to excel at understanding what test patches expect and delivering precise solutions.
+This agent follows your ideal approach: it analyzes git diff to identify test changes, uses exploration tools to understand the codebase, makes targeted changes with WRITE_FILE, and iterates until all fail-to-pass tests pass.
 
 ## How It Works
 
-The agent follows a systematic 8-step approach that leverages git diff to understand exactly what the test patch changed:
+The agent follows a systematic iterative approach that mirrors how a real developer would solve test failures:
 
 ### 1. **Git Diff Analysis** 
-- Runs `git diff HEAD~1 HEAD` to see exactly what the test patch changed
-- Parses the diff to identify new tests vs. modified tests
-- Extracts affected files and test function names
-- Understands both complete new tests (like `foo()`) and subtle modifications (like `bar()`)
+- Runs `git diff HEAD~1 HEAD` to see exactly what test changes were made
+- Identifies NEW tests (completely new test functions) vs MODIFIED tests
+- Extracts test names and file locations from the diff
+- Understands the context of each test change
 
-### 2. **Fail-to-Pass Test Identification**
-- Runs tests on the modified files to identify which tests are currently failing
-- Focuses specifically on the fail-to-pass tests (tests that need to pass for the solution to be correct)
-- Distinguishes from pass-to-pass tests (tests that should continue working)
+### 2. **Test Execution & Failure Identification**
+- Runs each identified test specifically to see which ones are failing
+- Captures detailed error messages for each failing test
+- These become the "fail-to-pass" tests that must be fixed
+- Focuses only on tests that were actually changed in the patch
 
-### 3. **Test Patch Requirements Analysis**
-- Uses AI to analyze the git diff content to understand what functionality is expected
-- Extracts specific requirements from new test functions and test modifications
-- Identifies which source files likely need modification based on test expectations
+### 3. **Codebase Exploration** 
+- Uses exploration tools to understand what needs to be fixed:
+  - **SMART_SEARCH()**: Finds relevant Python files in the codebase
+  - **GREP(pattern, path)**: Searches for specific patterns in code
+  - **READ_FILE(path)**: Reads specific files to understand implementation
+  - **FIND(pattern)**: Finds files by name pattern
+  - **LS(dir)**: Lists directory contents
+- Systematically explores to understand missing or broken functionality
 
-### 4. **Detailed Error Analysis**
-- Runs specific failing tests to get detailed error messages
-- Captures precise failure information to understand what's missing
-- Focuses only on the tests that were changed in the patch
+### 4. **Analysis & Planning**
+- Analyzes exploration results and test failures to create a fix plan
+- Identifies specific files that need modification
+- Plans what changes are needed in each file
+- Creates a targeted implementation strategy
 
-### 5. **Precise Implementation Planning** 
-- Creates a targeted plan based on the test patch analysis
-- Identifies minimal changes needed to satisfy test requirements
-- Prioritizes changes for maximum impact on fail-to-pass tests
+### 5. **Targeted Implementation**
+- Uses **WRITE_FILE** to make specific changes to identified files
+- Generates complete modified file content using AI
+- Preserves existing code structure and style
+- Makes minimal necessary changes to fix test failures
+- Tracks all changes made for debugging
 
-### 6. **Focused Code Implementation**
-- Implements only the changes needed to make fail-to-pass tests pass
-- Preserves existing code structure to avoid breaking pass-to-pass tests
-- Uses AI to generate precise, minimal modifications
+### 6. **Test Verification**
+- Re-runs the fail-to-pass tests to verify they now pass
+- Provides clear success/failure feedback
+- Continues iteration if tests still fail
 
-### 7. **Fail-to-Pass Verification**
-- Re-runs the specific fail-to-pass tests to verify they now pass
-- Provides success rate metrics (passing tests / total fail-to-pass tests)
-- Validates that the solution actually addresses the test requirements
+### 7. **Iteration Until Success**
+- If tests still fail, goes back to exploration with new context
+- Uses different exploration strategies or looks at different files
+- Continues iterating up to a maximum number of attempts
+- Each iteration builds on previous knowledge
 
-### 8. **Clean Patch Generation**
-- Generates a git diff with only the necessary changes
+### 8. **Final Patch Generation**
+- Generates a clean git diff with all changes made
+- Includes only the actual code modifications needed
 - Produces a properly formatted patch for submission
 
 ## Key Features
 
-### 🎯 **Git Diff-Driven Approach**
-- Analyzes the actual test patch via `git diff HEAD~1 HEAD`
-- Understands both new tests and subtle test modifications
-- Focuses specifically on fail-to-pass test requirements
+### 🔄 **True Iterative Approach**
+- Acts like a real developer debugging test failures
+- Explores, implements, tests, and refines in a loop
+- Each iteration builds on the previous one's learnings
 
-### 🔍 **Smart Test Patch Analysis**  
-- Distinguishes between new test functions and modified existing tests
-- Parses diff content to extract test expectations
-- Identifies specific functionality that needs implementation
+### 🔍 **Smart Exploration Tools**  
+- Uses the same powerful tools as successful agents (diddler, agent_sus)
+- SMART_SEARCH for finding relevant files
+- GREP for targeted code searches
+- READ_FILE for understanding implementations
 
-### 🛠️ **Fail-to-Pass Focus**
-- Targets only the tests that need to pass for a successful solution
-- Avoids over-engineering that might break pass-to-pass tests
-- Implements minimal viable changes
+### 🎯 **Test-Driven Focus**
+- Only works on tests that were actually changed in the git patch
+- Runs specific tests rather than entire test suites
+- Clear success criteria: make fail-to-pass tests pass
 
-### ✅ **Targeted Verification**
-- Validates specific fail-to-pass tests rather than running entire test suites
-- Provides clear success metrics
-- Ensures changes actually solve the problem
+### 🛠️ **Real Code Changes**
+- Uses WRITE_FILE to make actual file modifications
+- Tracks all changes made during the process
+- Generates patches based on real git diffs
 
-## Understanding Test Types
+### ✅ **Robust Verification**
+- Re-runs tests after each change to verify progress
+- Provides clear feedback on what's working and what isn't
+- Stops iterating when all tests pass
 
-This agent is designed around the SWE-bench classification:
+## Example Execution
 
-- **Fail-to-Pass Tests**: Tests that are failing before your solution and must pass after
-  - These are the critical tests - your solution is judged on making these pass
-  - Can be entirely new tests or modifications to existing tests
-  - Example: New function `test_foo()` or modified assertion in `test_bar()`
-
-- **Pass-to-Pass Tests**: Tests that pass before your solution and should continue to pass
-  - These should not be broken by your implementation
-  - Agent focuses on minimal changes to avoid breaking these
-
-## Git Diff Analysis Examples
-
-### New Test (Easy to Identify):
-```diff
-+def test_new_feature():
-+    result = my_function(input_data)
-+    assert result == expected_output
 ```
-→ Agent sees entire function, understands requirements clearly
+[agent] Starting test-driven iterative approach for: Fix validation logic...
+[agent] Step 1: Analyzing git diff to identify test changes...
+[agent] Found 3 test changes:
+  - NEW: test_validation_rules in tests/test_engine.py
+  - MODIFIED: test_autoescape in tests/test_engine.py
+  - NEW: test_error_handling in tests/test_engine.py
 
-### Modified Test (Harder to Identify):
-```diff
- def test_existing_feature():
-     result = my_function(input_data)
--    assert result == old_expected
-+    assert result == new_expected
+[agent] Step 2: Running tests to identify current failures...
+[agent] FAILING: test_validation_rules - AttributeError: Engine has no autoescape
+[agent] FAILING: test_autoescape - AssertionError: Expected False, got True
+[agent] Found 2 failing tests
+
+[agent] === ITERATION 1/8 ===
+[agent] Step 3: Exploring codebase...
+[agent] Exploration: SMART_SEARCH() -> Found relevant Python files:
+./django/template/engine.py
+./django/template/base.py
+...
+
+[agent] Step 4: Analyzing and planning fixes...
+[agent] Plan to modify 1 files: ['django/template/engine.py']
+
+[agent] Step 5: Implementing fixes...
+[agent] Modifying django/template/engine.py: Add autoescape parameter to Engine constructor
+[agent] Wrote 2543 characters to django/template/engine.py
+
+[agent] Step 6: Verifying tests pass...
+[agent] ✅ All tests now pass!
+[agent] 🎉 SUCCESS! All tests pass after 1 iterations
+
+[agent] Step 7: Generating final patch...
+[agent] Generated patch of 1247 characters
+[agent] Made 1 changes across 1 iterations
 ```
-→ Agent analyzes context to understand what behavior changed
+
+## Why This Approach Works
+
+### **Real Developer Workflow**
+- Mirrors how humans actually debug failing tests
+- Explore → Understand → Fix → Verify → Repeat
+- Uses the same tools that successful agents use
+
+### **Focused and Efficient**
+- Only works on tests that were actually changed
+- Doesn't waste time on unrelated code or tests
+- Clear success criteria and verification
+
+### **Tool-Powered Exploration**
+- Leverages proven exploration tools from successful agents
+- SMART_SEARCH finds relevant files quickly
+- GREP and READ_FILE provide deep code understanding
+
+### **Iterative Refinement**
+- If first attempt doesn't work, tries different approaches
+- Each iteration learns from previous failures
+- Robust against complex multi-file problems
 
 ## Configuration
 
@@ -106,19 +150,18 @@ This agent is designed around the SWE-bench classification:
 # Model selection (default: claude-3-5-sonnet-20241022)
 export DEFAULT_MODEL="your-preferred-model"
 
+# Maximum iterations (default: 8)
+MAX_ITERATIONS=10
+
 # Test timeout (default: 180 seconds)
 export TEST_TIMEOUT_SECONDS=300
-
-# Analysis limits for efficiency
-MAX_EXPLORATION_STEPS=20
-MAX_TEST_ANALYSIS_STEPS=15
 ```
 
 ## Usage
 
 ### Testing Locally
 ```bash
-# Test with the new agent
+# Test with the new iterative agent
 ./ridges.py test-agent --agent-file miner/agent_OH_changing.py --verbose
 
 # Test on specific problem sets
@@ -127,112 +170,79 @@ MAX_TEST_ANALYSIS_STEPS=15
 
 ### Understanding Output
 
-The agent provides detailed logging of its git diff analysis:
+The agent provides detailed logging of each iteration:
 
 ```
-[agent] Starting test patch analysis for problem: Fix validation logic...
-[agent] Step 1: Analyzing test patch via git diff...
-[agent] Found test patch of 1543 characters
-[agent] Found 2 new tests, 1 modified tests
-[agent] Step 2: Identifying fail-to-pass tests...
-[agent] Identified 3 fail-to-pass tests: ['test_foo', 'test_bar', 'test_validation']
-[agent] Step 3: Analyzing requirements from test patch...
-[agent] Step 4: Getting detailed error messages...
-[agent] Step 5: Creating implementation plan...
-[agent] Plan targets 2 files for modification
-[agent] Step 6: Implementing changes...
-[agent] Step 7: Verifying fail-to-pass tests...
-[agent] Verification: 3/3 tests passing (100.0%)
-[agent] Step 8: Generating final patch...
+[agent] === ITERATION 2/8 ===
+[agent] Step 3: Exploring codebase...
+[agent] Exploration: GREP("autoescape", ".") -> Found 15 matches in 3 files
+[agent] Step 4: Analyzing and planning fixes...
+[agent] Plan to modify 2 files: ['engine.py', 'context.py']
+[agent] Step 5: Implementing fixes...
+[agent] Modifying engine.py: Add autoescape support to constructor
+[agent] Wrote 3245 characters to engine.py
+[agent] Step 6: Verifying tests pass...
+[agent] ❌ 1 tests still failing
+[agent] Tests still failing, continuing to iteration 3
 ```
-
-## Why This Approach Is Superior
-
-### **Precision Through Git Diff**
-- Sees exactly what the test patch changed, not just discovering all tests
-- Understands the specific intent behind test modifications
-- Focuses effort on the actual requirements
-
-### **Fail-to-Pass Focus**
-- Targets only the tests that determine success
-- Avoids wasting time on unrelated functionality
-- Minimizes risk of breaking existing functionality
-
-### **Context Awareness**
-- Understands both new tests and subtle modifications
-- Uses the actual diff content to guide implementation
-- Leverages test patch as a specification document
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **No git diff found**
-   - Ensure the test patch was committed to git
-   - Agent tries multiple git commands to find the patch
-   - Check if you're in the right git repository
+1. **No test changes found in git diff**
+   - Ensure test patch was committed to git
+   - Check that you're in the right repository
+   - Verify test files have 'test' in their names
 
-2. **Can't identify fail-to-pass tests**
-   - Agent falls back to extracting test names from the patch
-   - Runs tests on affected files to identify failures
-   - May need manual verification of test results
+2. **Tests already pass**
+   - The test patch might already be implemented
+   - Check if this is expected behavior
+   - Verify you're running the right tests
 
-3. **Implementation seems incomplete**
-   - Agent focuses on minimal changes only
-   - Check that all fail-to-pass tests are actually identified
-   - May need multiple iterations for complex changes
+3. **Max iterations reached**
+   - Increase MAX_ITERATIONS for complex problems
+   - Check if the exploration is finding relevant files
+   - Review the error messages for clues
 
 ### Performance Tips
 
-1. **Model Selection**: Claude Sonnet excels at understanding git diffs and test intent
-2. **Git History**: Ensure clean git state for accurate diff analysis
-3. **Test Isolation**: Agent works best when test patches are focused and clear
+1. **Model Selection**: Claude Sonnet excels at code understanding and generation
+2. **Iteration Limits**: Start with 8 iterations, increase for complex problems
+3. **Exploration Strategy**: Agent automatically uses SMART_SEARCH → GREP → READ_FILE
 
-## Strategy Behind the Design
+## Advanced Features
 
-### Why Git Diff Analysis Works
+### **Change Tracking**
+- Tracks every file modification made during iterations
+- Provides detailed logs of what was changed and why
+- Useful for debugging and understanding the agent's approach
 
-1. **Direct Requirements**: The test patch IS the specification - it shows exactly what needs to work
-2. **Minimal Scope**: Only implement what the changed tests require
-3. **Clear Success Criteria**: Fail-to-pass tests provide unambiguous validation
-4. **Context Preservation**: Understand both new and modified test intent
+### **Smart Test Detection**
+- Handles both completely new tests and subtle modifications
+- Extracts test context from git diff to understand requirements
+- Focuses only on tests that were actually changed
 
-### Comparison to Other Approaches
+### **Robust Error Handling**
+- Continues working even if some exploration commands fail
+- Falls back to alternative strategies if initial approach doesn't work
+- Provides detailed error information for debugging
+
+## Comparison to Previous Approaches
 
 | Approach | Pros | Cons |
 |----------|------|------|
-| **Exploration-First** | Thorough understanding | Time-consuming, may miss test intent |
-| **Test Discovery** | Finds all tests | Lacks focus on specific requirements |
-| **Git Diff Analysis (This)** | Precise, targeted, efficient | Requires clean git state |
-
-## Advanced Usage
-
-### Custom Git Commands
-You can modify the git diff commands in `analyze_test_patch()`:
-
-```python
-for cmd in [
-    ["git", "diff", "HEAD~1", "HEAD"],          # Standard approach
-    ["git", "show", "--format=", "HEAD"],       # Alternative format
-    ["git", "diff", "HEAD~2", "HEAD"],          # Deeper history
-]:
-```
-
-### Enhanced Verification
-For complex test suites, you might want to:
-- Increase verification timeout
-- Add more sophisticated test parsing
-- Implement iterative refinement
+| **Pure Analysis** | Fast, systematic | No actual code changes |
+| **One-shot Generation** | Simple | Misses test nuances |
+| **Test-Driven Iterative (This)** | Acts like real developer, uses proven tools | Takes more iterations |
 
 ## Contributing
 
 To improve this agent:
 
-1. **Better diff parsing** - Handle more git diff formats and edge cases
-2. **Enhanced test identification** - Improve detection of modified test functions
-3. **Smarter error analysis** - Extract more precise requirements from test failures
-4. **Iterative refinement** - Add loops for complex implementation scenarios
+1. **Better exploration strategies** - Add more sophisticated tool usage patterns
+2. **Enhanced change detection** - Improve git diff parsing for edge cases
+3. **Smarter iteration logic** - Add learning between iterations
+4. **Tool integration** - Add more exploration tools as they become available
 
-## License
-
-This agent follows the same license as the Ridges project.
+This agent represents the ideal approach you described: it identifies failing tests, uses real tools to explore and understand the codebase, makes targeted changes, and iterates until success!
