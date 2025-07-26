@@ -61,6 +61,16 @@ class Sandbox:
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
             raise FileNotFoundError("agent.py not found in agent directory")
+        
+        # Validate agent code has required function
+        agent_file = agent_dir / "agent.py"
+        try:
+            with open(agent_file, 'r') as f:
+                agent_code = f.read()
+            if 'def agent_main(' not in agent_code:
+                raise ValueError("agent.py must contain a 'agent_main' function")
+        except Exception as e:
+            raise ValueError(f"Failed to validate agent code: {e}")
 
     @tracer.wrap(resource="run-sandbox")
     async def run(self) -> None:
@@ -202,7 +212,23 @@ class Sandbox:
         
         # Process results
         try:
+            # First, try to get container logs for debugging
+            container_logs = ""
+            try:
+                if self.container:
+                    logs = self.container.logs(stdout=True, stderr=True, tail=50).decode('utf-8', errors='ignore')
+                    container_logs = f"\nContainer logs:\n{logs}"
+            except Exception as log_error:
+                container_logs = f"\nFailed to get container logs: {log_error}"
+            
+            # Check if output file exists and has content
+            if not output_file.exists():
+                raise ValueError(f"Output file does not exist{container_logs}")
+            
             text = output_file.read_text()
+            if not text.strip():
+                raise ValueError(f"Output file is empty{container_logs}")
+            
             result = json.loads(text)
             if result.get("success"):
                 patch = result.get("output", {}).get("patch", "")
@@ -211,11 +237,12 @@ class Sandbox:
                     self.evaluation_run.status = "patch_generated"
                     self.evaluation_run.patch_generated_at = datetime.now(timezone.utc)
                 else:
-                    raise ValueError("Empty patch returned from agent")
+                    raise ValueError(f"Empty patch returned from agent{container_logs}")
             else:
-                raise ValueError(result.get("error", "Unknown error"))
+                error_msg = result.get("error", "Unknown error")
+                raise ValueError(f"Agent execution failed: {error_msg}{container_logs}")
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
+            raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}{container_logs}")
         finally:
             # Clean up IO directory after processing results
             shutil.rmtree(io_dir, ignore_errors=True)
@@ -314,7 +341,12 @@ class Sandbox:
                 logger.debug(f"Container {self.evaluation_run.run_id} status: {status}")
                 
                 if status == "exited":
-                    logger.info(f"Container {self.evaluation_run.run_id} exited normally")
+                    # Check exit code to see if it was successful
+                    exit_code = self.container.attrs.get('State', {}).get('ExitCode', -1)
+                    if exit_code == 0:
+                        logger.info(f"Container {self.evaluation_run.run_id} exited successfully (code: {exit_code})")
+                    else:
+                        logger.warning(f"Container {self.evaluation_run.run_id} exited with error code: {exit_code}")
                     break
                 elif status in ["dead", "removing"]:
                     logger.info(f"Container {self.evaluation_run.run_id} is {status}")
