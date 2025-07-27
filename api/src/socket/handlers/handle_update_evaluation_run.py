@@ -1,10 +1,14 @@
-from typing import Dict, Any
+from typing import TYPE_CHECKING, Dict, Any
 
 from api.src.backend.db_manager import get_transaction
 from api.src.backend.entities import Client, EvaluationRun
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.evaluation_runs import all_runs_finished, update_evaluation_run
 from loggers.logging_utils import get_logger
+
+if TYPE_CHECKING:
+    from api.src.models.screener import Screener
+    from api.src.models.validator import Validator
 
 logger = get_logger(__name__)
 
@@ -17,6 +21,7 @@ async def handle_update_evaluation_run(
     if client.get_type() not in ["validator", "screener"]:
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring update evaluation run request.")
         return {"status": "error", "message": "Client is not a validator or screener"}
+    client: "Validator" | "Screener" = client
     
     evaluation_run_data = response_json.get("evaluation_run")
     
@@ -40,6 +45,8 @@ async def handle_update_evaluation_run(
             if evaluation:
                 async with get_transaction() as conn:
                     await evaluation.finish(conn)
+                    client.set_available()
+                    
         
         # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump(mode='json')
