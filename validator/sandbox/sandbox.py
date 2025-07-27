@@ -34,15 +34,8 @@ PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
 
 def get_sandbox_image_for_instance(instance_id: str) -> str:
     """Get commit-specific Docker image for a SWE-bench instance."""
-    try:
-        commit_image = f"ghcr.io/ridgesai/ridges/sandbox-{instance_id}:latest"
-        logger.info(f"Using commit-specific image for {instance_id}: {commit_image}")
-        return commit_image
-        
-    except Exception as e:
-        logger.warning(f"Error constructing commit-specific image name: {e}, using default")
-    
-    # Fallback to default image
+    # TEMPORARILY: Use default image until commit-specific images are fixed for AMD64
+    logger.info(f"Using default sandbox image for {instance_id} (commit-specific images have architecture issues)")
     return SANDBOX_DOCKER_IMAGE
 
 class Sandbox:
@@ -147,14 +140,10 @@ class Sandbox:
                 self.manager.docker.images.pull(image_name)
                 logger.info(f"Successfully pulled image: {image_name}")
             except Exception as e:
-                logger.warning(f"Failed to pull commit-specific image {image_name}: {e}")
-                # Check if image exists locally as fallback
-                try:
-                    self.manager.docker.images.get(image_name)
-                    logger.info(f"Using existing local image: {image_name}")
-                except docker.errors.ImageNotFound:
-                    logger.info(f"Falling back to default sandbox image: {SANDBOX_DOCKER_IMAGE}")
-                    image_name = SANDBOX_DOCKER_IMAGE
+                logger.warning(f"Failed to pull image {image_name}: {e}")
+                # For default sandbox image, this should not fail
+                if image_name == SANDBOX_DOCKER_IMAGE:
+                    raise SystemExit(f"Failed to pull default sandbox image {SANDBOX_DOCKER_IMAGE}: {e}")
 
             self.container = self.manager.docker.containers.run(
                 remove=True,
