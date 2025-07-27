@@ -33,9 +33,9 @@ class Validator(Client):
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
         """Start evaluation - update status"""
-        # if not self.is_available():
-        #     logger.info(f"Validator {self.hotkey}: -> not available")
-        #     return False
+        if not self.is_available():
+            logger.info(f"Validator {self.hotkey}: -> not available")
+            return False
         # comment out for now, idfk
         
         from api.src.models.evaluation import Evaluation

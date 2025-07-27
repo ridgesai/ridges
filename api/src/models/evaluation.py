@@ -306,8 +306,6 @@ class Evaluation:
             logger.info(f"Screener {screener.hotkey} is not available (status: {screener.status})")
             return
         
-        screener.status = "claiming_agent" #revert or smth, it was working before so I'm just trying things. 
-
         async with get_transaction() as conn:
             # First check if there are any agents awaiting screening
             awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE status = 'awaiting_screening'")
