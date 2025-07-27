@@ -89,6 +89,8 @@ class Screener(Client):
                     await evaluation.error(conn, reason)
                 else:
                     await evaluation.finish(conn)
+
+                self.set_available()
                     
                 logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
         finally:
