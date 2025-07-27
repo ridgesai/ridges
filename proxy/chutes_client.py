@@ -200,6 +200,17 @@ class ChutesClient:
 
             logger.debug(f"Inference request for run {run_id} completed, tokens: {total_tokens}, cost: ${cost:.6f}")
 
+            # Validate that we received actual content
+            if not response_text.strip():
+                error_msg = f"Chutes API returned empty response for model {model}. This may indicate API issues or malformed streaming response."
+                logger.error(f"Empty response for run {run_id}: {error_msg}")
+                
+                # Update inference record with error (skip in dev mode)
+                if ENV != 'dev' and inference_id:
+                    await update_inference(inference_id, 0.0, error_msg, 0)
+                
+                return {"error": error_msg}
+
             return response_text
 
         except httpx.HTTPStatusError as e:
