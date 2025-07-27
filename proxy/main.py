@@ -12,14 +12,16 @@ from fastapi import FastAPI, HTTPException
 from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE
 from proxy.database import db_manager, get_evaluation_run_by_id, get_total_inference_cost, get_total_embedding_cost
 from proxy.chutes_client import ChutesClient
+from proxy.providers import InferenceManager
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
 
 
 
 logger = get_logger(__name__)
 
-# Global chutes client instance
-chutes_client = ChutesClient()
+# Global client instances
+chutes_client = ChutesClient()  # For embeddings
+inference_manager = InferenceManager()  # For inference
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -102,7 +104,24 @@ async def embedding_endpoint(request: EmbeddingRequest):
 async def inference_endpoint(request: InferenceRequest):
     """Proxy endpoint for chutes inference with database validation"""
     try:
-        logger.info(f"Inference request: model={request.model}, messages={len(request.messages) if request.messages else 0}, run_id={request.run_id}")
+        # Log only the last incoming message to avoid flooding the console
+        if request.messages:
+            last_msg = request.messages[-1]
+            snippet = (last_msg.content[:300] + "…") if last_msg.content and len(last_msg.content) > 300 else last_msg.content
+            logger.info(
+                "Inference request | model=%s | run_id=%s | total_msgs=%d | last_role=%s | last_preview=%s",
+                request.model,
+                request.run_id,
+                len(request.messages),
+                last_msg.role,
+                snippet,
+            )
+        else:
+            logger.info(
+                "Inference request | model=%s | run_id=%s | total_msgs=0",
+                request.model,
+                request.run_id,
+            )
         
         if ENV != 'dev' and request.run_id:
             logger.info(f"Taking production path with run_id validation")
@@ -131,10 +150,10 @@ async def inference_endpoint(request: InferenceRequest):
                     detail=f"Agent version has reached the maximum cost ({MAX_COST_PER_RUN}) for this evaluation run. Please do not request more inference."
                 )
             
-            # Get inference from chutes (use defaults if None)
+            # Get inference using manager (use defaults if None)
             temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
             model = request.model if request.model is not None else DEFAULT_MODEL
-            inference_result = await chutes_client.inference(
+            inference_result = await inference_manager.inference(
                 run_uuid,
                 request.messages,
                 temperature,
@@ -145,14 +164,25 @@ async def inference_endpoint(request: InferenceRequest):
             logger.info(f"Taking dev path - ENV: {ENV}, run_id: {request.run_id}")
             temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
             model = request.model if request.model is not None else DEFAULT_MODEL
-            inference_result = await chutes_client.inference(
+            inference_result = await inference_manager.inference(
                 None,
                 request.messages,
                 temperature,
                 model
             )
         
-        logger.info(f"Inference request completed successfully")
+        # Truncate and log the first 200 chars of the response to avoid log spam
+        try:
+            if isinstance(inference_result, str):
+                resp_preview = (inference_result[:200] + "…") if len(inference_result) > 200 else inference_result
+            else:
+                resp_preview = str(inference_result)[:200]
+        except Exception:
+            resp_preview = "<non-string response>"
+
+        logger.info("Inference response preview (first 200 chars): %s", resp_preview)
+
+        logger.info("Inference request completed successfully")
         
         return inference_result
         

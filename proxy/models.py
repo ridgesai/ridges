@@ -45,6 +45,7 @@ class Inference(BaseModel):
     messages: List[Dict[str, str]] = Field(..., description="Messages sent to the model")
     temperature: float = Field(..., description="Temperature used for inference")
     model: str = Field(..., description="Model used for inference")
+    provider: Optional[str] = Field(None, description="AI provider used (Chutes, Targon)")
     cost: Optional[float] = Field(None, description="Cost of the inference")
     response: Optional[str] = Field(None, description="Response from the inference API")
     total_tokens: Optional[int] = Field(None, description="Total tokens used")

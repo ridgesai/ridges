@@ -149,17 +149,17 @@ async def update_embedding(conn: asyncpg.Connection, embedding_id: UUID, cost: f
 
 @db_operation
 async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: List[Dict[str, str]], 
-                          temperature: float, model: str) -> UUID:
+                          temperature: float, model: str, provider: str = None) -> UUID:
     """Create a new inference record and return its ID"""
     try:
         # Convert messages list to JSON string for JSONB storage
         messages_json = json.dumps(messages)
         
         row = await conn.fetchrow("""
-            INSERT INTO inferences (run_id, messages, temperature, model, created_at)
-            VALUES ($1, $2, $3, $4, NOW())
+            INSERT INTO inferences (run_id, messages, temperature, model, provider, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
             RETURNING id
-        """, run_id, messages_json, temperature, model)
+        """, run_id, messages_json, temperature, model, provider)
         
         return row['id']
         
@@ -169,14 +169,21 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
 
 @db_operation
 async def update_inference(conn: asyncpg.Connection, inference_id: UUID, cost: float, 
-                          response: str, total_tokens: int) -> None:
-    """Update an inference record with cost, response, and tokens"""
+                          response: str, total_tokens: int, provider: str = None) -> None:
+    """Update an inference record with cost, response, tokens, and optionally provider"""
     try:
-        await conn.execute("""
-            UPDATE inferences 
-            SET cost = $1, response = $2, total_tokens = $3, finished_at = NOW()
-            WHERE id = $4
-        """, cost, response, total_tokens, inference_id)
+        if provider is not None:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, provider = $4, finished_at = NOW()
+                WHERE id = $5
+            """, cost, response, total_tokens, provider, inference_id)
+        else:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, finished_at = NOW()
+                WHERE id = $4
+            """, cost, response, total_tokens, inference_id)
         
     except Exception as e:
         logger.error(f"Error updating inference {inference_id}: {e}")

@@ -41,8 +41,9 @@ from .database import (
     DBManager,
 )
 
-# Chutes client
+# Chutes client and providers
 from .chutes_client import ChutesClient
+from .providers import InferenceManager
 
 # Configuration
 from .config import (
