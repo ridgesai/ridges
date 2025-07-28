@@ -2,6 +2,7 @@ import json
 from typing import Optional, Dict, List, Union
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.src.models.evaluation import Evaluation
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.models.validator import Validator
@@ -127,6 +128,7 @@ class WebSocketManager:
                         "evaluating_id": validator.current_evaluation_id,
                         "evaluating_agent_hotkey": validator.current_agent_hotkey,
                         "evaluating_agent_name": validator.current_agent_name,
+                        "progress": await Evaluation.get_progress(validator.current_evaluation_id) if validator.current_evaluation_id else 0
                     })
                 case "screener":
                     screener: Screener = client
@@ -142,6 +144,7 @@ class WebSocketManager:
                         "screening_id": screener.screening_id,
                         "screening_agent_hotkey": screener.screening_agent_hotkey,
                         "screening_agent_name": screener.screening_agent_name,
+                        "progress": await Evaluation.get_progress(screener.screening_id) if screener.screening_id else 0
                     })
                 case _:
                     continue
