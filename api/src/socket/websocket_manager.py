@@ -124,9 +124,9 @@ class WebSocketManager:
                         "connected_at": validator.connected_at.isoformat(),
                         "ip_address": validator.ip_address,
                         "status": validator.status,
-                        "evaluating_id": validator.evaluating_id,
-                        "evaluating_agent_hotkey": validator.evaluating_agent_hotkey,
-                        "evaluating_agent_name": validator.evaluating_agent_name,
+                        "evaluating_id": validator.current_evaluation_id,
+                        "evaluating_agent_hotkey": validator.current_agent_hotkey,
+                        "evaluating_agent_name": validator.current_agent_name,
                     })
                 case "screener":
                     screener: Screener = client
