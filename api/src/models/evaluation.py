@@ -362,7 +362,7 @@ class Evaluation:
     async def get_progress(evaluation_id: str) -> float:
         """Get progress of evaluation across all runs"""
         async with get_db_connection() as conn:
-            return await conn.fetchval("""
+            progress = await conn.fetchval("""
                 SELECT COALESCE(AVG(
                     CASE status
                         WHEN 'started' THEN 0.2
@@ -377,6 +377,7 @@ class Evaluation:
                 WHERE evaluation_id = $1
                 AND status NOT IN ('cancelled', 'error')
             """, evaluation_id)
+            return float(progress)
 
     @staticmethod
     async def check_miner_has_no_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
