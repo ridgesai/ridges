@@ -90,7 +90,16 @@ class Evaluation:
         return evaluation_runs
 
     async def finish(self, conn: asyncpg.Connection):
-        """Finish evaluation"""
+        """Finish evaluation, but retry if >=50% of inferences failed"""
+        # Check if we should retry due to inference failures
+        successful, total, success_rate = await self._check_inference_success_rate(conn)
+        
+        # If we have inferences and >=50% failed, retry instead of finishing
+        if total > 0 and success_rate < 0.5:
+            logger.info(f"Evaluation {self.evaluation_id} completed but {successful}/{total} successful inferences ({success_rate:.1%}). Retrying...")
+            await self.reset_to_waiting(conn)
+            return
+        
         await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
         self.status = EvaluationStatus.completed
         self.score = await conn.fetchval("SELECT score FROM evaluations WHERE evaluation_id = $1", self.evaluation_id)
@@ -115,6 +124,27 @@ class Evaluation:
 
         for validator in validators_to_notify:
             await validator.start_evaluation_and_send(self.evaluation_id)
+
+    async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float]:
+        """Check inference success rate for this evaluation
+        
+        Returns:
+            tuple: (successful_count, total_count, success_rate)
+        """
+        result = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) as total_inferences,
+                COUNT(*) FILTER (WHERE status_code = 200) as successful_inferences
+            FROM inferences i
+            JOIN evaluation_runs er ON i.run_id = er.run_id
+            WHERE er.evaluation_id = $1
+        """, self.evaluation_id)
+        
+        total = result['total_inferences'] or 0
+        successful = result['successful_inferences'] or 0
+        success_rate = successful / total if total > 0 else 1.0
+        
+        return successful, total, success_rate
 
     async def error(self, conn: asyncpg.Connection, reason: Optional[str] = None):
         """Error evaluation and reset agent"""
