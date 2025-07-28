@@ -95,7 +95,9 @@ CREATE TABLE IF NOT EXISTS inferences (
     response TEXT,
     total_tokens INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    finished_at TIMESTAMPTZ
+    finished_at TIMESTAMPTZ,
+    provider TEXT,
+    status_code INT
 );
 
 CREATE TABLE IF NOT EXISTS approved_version_ids (
