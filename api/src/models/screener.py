@@ -14,6 +14,7 @@ class Screener(Client):
     status: str = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
+    current_agent_hotkey: Optional[str] = None
     
     def get_type(self) -> str:
         return "screener"
@@ -27,7 +28,21 @@ class Screener(Client):
         self.status = "available"
         self.current_evaluation_id = None
         self.current_agent_name = None
+        self.current_agent_hotkey = None
         logger.info(f"Screener {self.hotkey}: {old_status} -> available")
+
+    # Property mappings for get_clients method
+    @property
+    def screening_id(self) -> Optional[str]:
+        return self.current_evaluation_id
+    
+    @property
+    def screening_agent_hotkey(self) -> Optional[str]:
+        return self.current_agent_hotkey
+    
+    @property
+    def screening_agent_name(self) -> Optional[str]:
+        return self.current_agent_name
 
     async def start_screening(self, evaluation_id: str) -> bool:
         """Handle start-evaluation message"""
@@ -38,18 +53,20 @@ class Screener(Client):
             return False
         
         async with get_transaction() as conn:
-            agent = await conn.fetchrow("SELECT status, agent_name FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
             if not agent or agent_status != AgentStatus.screening:
                 logger.info(f"Screener {self.hotkey}: tried to start screening but agent is not in screening status")
                 return False
             agent_name = agent["agent_name"]
+            agent_hotkey = agent["miner_hotkey"]
 
             await evaluation.start(conn)
             old_status = self.status
             self.status = f"Screening agent {agent_name} with evaluation {evaluation_id}"
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = agent_name
+            self.current_agent_hotkey = agent_hotkey
             logger.info(f"Screener {self.hotkey}: {old_status} -> screening {agent_name}")
             return True
     

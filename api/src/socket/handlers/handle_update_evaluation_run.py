@@ -41,16 +41,15 @@ async def handle_update_evaluation_run(
 
         if await all_runs_finished(evaluation_run.evaluation_id):
             logger.info(f"All runs finished for evaluation {evaluation_run.evaluation_id}. Finishing evaluation.")
-            evaluation = await Evaluation.get_by_id(str(evaluation_run.evaluation_id))
-            if evaluation:
-                async with get_transaction() as conn:
-                    await evaluation.finish(conn)
-                    client.set_available()
-                    
+            if client.get_type() == "validator":
+                client.finish_evaluation(evaluation_run.evaluation_id)
+            elif client.get_type() == "screener":
+                client.finish_screening(evaluation_run.evaluation_id)
         
         # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump(mode='json')
         broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
+        broadcast_data["progress"] = await Evaluation.get_progress(evaluation_run.evaluation_id)
         
         await ws.send_to_all_non_validators("evaluation-run-update", broadcast_data)
         
