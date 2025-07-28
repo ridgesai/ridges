@@ -149,17 +149,18 @@ async def update_embedding(conn: asyncpg.Connection, embedding_id: UUID, cost: f
 
 @db_operation
 async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: List[Dict[str, str]], 
-                          temperature: float, model: str, provider: str = None) -> UUID:
-    """Create a new inference record and return its ID"""
+                          temperature: float, model: str, provider: str, status_code: int = None,
+                          cost: float = None, response: str = None, total_tokens: int = None) -> UUID:
+    """Create a complete inference record"""
     try:
         # Convert messages list to JSON string for JSONB storage
         messages_json = json.dumps(messages)
         
         row = await conn.fetchrow("""
-            INSERT INTO inferences (run_id, messages, temperature, model, provider, created_at)
-            VALUES ($1, $2, $3, $4, $5, NOW())
+            INSERT INTO inferences (run_id, messages, temperature, model, provider, status_code, cost, response, total_tokens, created_at, finished_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
             RETURNING id
-        """, run_id, messages_json, temperature, model, provider)
+        """, run_id, messages_json, temperature, model, provider, status_code, cost, response, total_tokens)
         
         return row['id']
         

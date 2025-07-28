@@ -83,64 +83,60 @@ class InferenceManager:
                 if message:
                     messages_dict.append({"role": message.role, "content": message.content})
 
-        # Create inference record in database (skip in dev mode)
-        inference_id = None
-        if ENV != 'dev':
-            inference_id = await create_inference(run_id, messages_dict, temperature, model, primary_provider.name)
-
         # Try primary provider first
-        primary_error = None
-        try:
-            logger.debug(f"Trying {primary_provider.name} for model {model}")
-            response_text = await primary_provider.inference(run_id, messages, temperature, model)
-            
-            # Calculate cost using provider-specific pricing
+        logger.debug(f"Trying {primary_provider.name} for model {model}")
+        response_text, status_code = await primary_provider.inference(run_id, messages, temperature, model)
+        
+        # Calculate cost and tokens
+        if status_code == 200:
             total_tokens = len(response_text) // 4  # Rough estimate: 1 token ≈ 4 chars
             cost = (total_tokens / 1_000_000) * primary_provider.get_pricing(model)
-            
-            # Update inference record with cost and response (skip in dev mode)
-            if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, cost, response_text, total_tokens)
-            
+        else:
+            total_tokens = 0
+            cost = 0.0
+        
+        # Log primary provider attempt to database (skip in dev mode)
+        if ENV != 'dev':
+            await create_inference(
+                run_id, messages_dict, temperature, model, 
+                primary_provider.name, status_code, cost, response_text, total_tokens
+            )
+        
+        # If primary succeeded, return
+        if status_code == 200:
             logger.debug(f"{primary_provider.name} inference for run {run_id} completed, tokens: {total_tokens}, cost: ${cost:.6f}")
             return response_text
-            
-        except Exception as e:
-            primary_error = str(e)
-            logger.error(f"{primary_provider.name} inference failed for run {run_id}: {e}")
+        
+        # Primary failed, log the error
+        logger.error(f"{primary_provider.name} inference failed for run {run_id}: status {status_code}, response: {response_text}")
         
         # Try fallback provider if available
         fallback_provider = self._get_fallback_provider(model, primary_provider)
         if fallback_provider:
             logger.info(f"Attempting {fallback_provider.name} fallback for model {model} after {primary_provider.name} failure")
-            try:
-                response_text = await fallback_provider.inference(run_id, messages, temperature, model)
-                
-                # Calculate cost using fallback provider pricing
-                total_tokens = len(response_text) // 4
-                cost = (total_tokens / 1_000_000) * fallback_provider.get_pricing(model)
-                
-                # Update inference record with cost and response (skip in dev mode)
-                if ENV != 'dev' and inference_id:
-                    await update_inference(inference_id, cost, response_text, total_tokens, fallback_provider.name)
-                
-                logger.info(f"{fallback_provider.name} fallback successful for run {run_id}, tokens: {total_tokens}, cost: ${cost:.6f}")
-                return response_text
-                
-            except Exception as fallback_error:
-                logger.error(f"{fallback_provider.name} fallback also failed for run {run_id}: {fallback_error}")
-                # Update inference record with both errors (skip in dev mode)
-                if ENV != 'dev' and inference_id:
-                    await update_inference(
-                        inference_id, 
-                        0.0, 
-                        f"{primary_provider.name} error: {primary_error} | {fallback_provider.name} fallback error: {str(fallback_error)}", 
-                        0,
-                        None  # Keep original provider since both failed
-                    )
-                return {"error": f"{primary_provider.name} error: {primary_error} | {fallback_provider.name} fallback also failed: {str(fallback_error)}"}
+            fallback_response, fallback_status = await fallback_provider.inference(run_id, messages, temperature, model)
+            
+            # Calculate cost and tokens for fallback
+            if fallback_status == 200:
+                fallback_tokens = len(fallback_response) // 4
+                fallback_cost = (fallback_tokens / 1_000_000) * fallback_provider.get_pricing(model)
+            else:
+                fallback_tokens = 0
+                fallback_cost = 0.0
+            
+            # Log fallback attempt to database (skip in dev mode)
+            if ENV != 'dev':
+                await create_inference(
+                    run_id, messages_dict, temperature, model,
+                    fallback_provider.name, fallback_status, fallback_cost, fallback_response, fallback_tokens
+                )
+            
+            if fallback_status == 200:
+                logger.info(f"{fallback_provider.name} fallback successful for run {run_id}, tokens: {fallback_tokens}, cost: ${fallback_cost:.6f}")
+                return fallback_response
+            else:
+                logger.error(f"{fallback_provider.name} fallback also failed for run {run_id}: status {fallback_status}, response: {fallback_response}")
+                return {"error": f"{primary_provider.name} error: {response_text} | {fallback_provider.name} fallback also failed: {fallback_response}"}
         
         # No fallback available or model doesn't support fallback
-        if ENV != 'dev' and inference_id:
-            await update_inference(inference_id, 0.0, primary_error, 0, None)
-        return {"error": f"Error in inference request: {primary_error}"} 
+        return {"error": f"Error in inference request: {response_text}"} 
