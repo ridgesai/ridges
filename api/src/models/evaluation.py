@@ -114,7 +114,7 @@ class Evaluation:
         await self._update_agent_status(conn)
 
         for validator in validators_to_notify:
-            await validator.send_evaluation_available(self.version_id)
+            await validator.start_evaluation_and_send(self.evaluation_id)
 
     async def error(self, conn: asyncpg.Connection, reason: Optional[str] = None):
         """Error evaluation and reset agent"""

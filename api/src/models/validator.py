@@ -73,7 +73,8 @@ class Validator(Client):
         self.set_available()
         
         if await Evaluation.has_waiting_for_validator(self):
-            await self.send_evaluation_available(self.current_evaluation_id)
+            evaluation_id = await self.get_next_evaluation()
+            await self.start_evaluation_and_send(evaluation_id)
     
     async def disconnect(self):
         """Handle validator disconnection"""
