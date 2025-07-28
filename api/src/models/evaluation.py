@@ -90,13 +90,13 @@ class Evaluation:
         return evaluation_runs
 
     async def finish(self, conn: asyncpg.Connection):
-        """Finish evaluation, but retry if >=50% of inferences failed"""
+        """Finish evaluation, but retry if >=50% of inferences failed and any run errored"""
         # Check if we should retry due to inference failures
-        successful, total, success_rate = await self._check_inference_success_rate(conn)
+        successful, total, success_rate, any_run_errored = await self._check_inference_success_rate(conn)
         
-        # If we have inferences and >=50% failed, retry instead of finishing
-        if total > 0 and success_rate < 0.5:
-            logger.info(f"Evaluation {self.evaluation_id} completed but {successful}/{total} successful inferences ({success_rate:.1%}). Retrying...")
+        # If we have inferences and >=50% failed AND any run errored, retry instead of finishing
+        if total > 0 and success_rate < 0.5 and any_run_errored:
+            logger.info(f"Evaluation {self.evaluation_id} completed but {successful}/{total} successful inferences ({success_rate:.1%}) with run errors. Retrying...")
             await self.reset_to_waiting(conn)
             return
         
@@ -125,26 +125,28 @@ class Evaluation:
         for validator in validators_to_notify:
             await validator.start_evaluation_and_send(self.evaluation_id)
 
-    async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float]:
+    async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float, bool]:
         """Check inference success rate for this evaluation
         
         Returns:
-            tuple: (successful_count, total_count, success_rate)
+            tuple: (successful_count, total_count, success_rate, any_run_errored)
         """
         result = await conn.fetchrow("""
             SELECT 
                 COUNT(*) as total_inferences,
-                COUNT(*) FILTER (WHERE status_code = 200) as successful_inferences
+                COUNT(*) FILTER (WHERE status_code = 200) as successful_inferences,
+                COUNT(*) FILTER (WHERE er.error IS NOT NULL) > 0 as any_run_errored
             FROM inferences i
             JOIN evaluation_runs er ON i.run_id = er.run_id
-            WHERE er.evaluation_id = $1
+            WHERE er.evaluation_id = $1 AND er.status != 'cancelled'
         """, self.evaluation_id)
         
         total = result['total_inferences'] or 0
         successful = result['successful_inferences'] or 0
         success_rate = successful / total if total > 0 else 1.0
+        any_run_errored = bool(result['any_run_errored'])
         
-        return successful, total, success_rate
+        return successful, total, success_rate, any_run_errored
 
     async def error(self, conn: asyncpg.Connection, reason: Optional[str] = None):
         """Error evaluation and reset agent"""
