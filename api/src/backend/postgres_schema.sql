@@ -263,6 +263,7 @@ ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
 -- CRITICAL: This unique index enables CONCURRENT refresh
+DROP INDEX IF EXISTS idx_agent_scores_unique;
 CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (version_id, set_id);
 CREATE INDEX idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
 CREATE INDEX idx_agent_scores_version ON agent_scores (version_id);
