@@ -17,6 +17,7 @@ class Validator(Client):
     status: str = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
+    current_agent_hotkey: Optional[str] = None
     
     def get_type(self) -> str:
         return "validator"
@@ -29,6 +30,7 @@ class Validator(Client):
         self.status = "available"
         self.current_evaluation_id = None
         self.current_agent_name = None
+        self.current_agent_hotkey = None
         logger.info(f"Validator {self.hotkey}: -> available")
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
@@ -60,6 +62,7 @@ class Validator(Client):
         self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
         self.current_evaluation_id = evaluation_id
         self.current_agent_name = miner_agent.agent_name
+        self.current_agent_hotkey = miner_agent.miner_hotkey
         logger.info(f"Validator {self.hotkey}: -> evaluating {miner_agent.agent_name}")
 
         return True
@@ -70,7 +73,8 @@ class Validator(Client):
         self.set_available()
         
         if await Evaluation.has_waiting_for_validator(self):
-            await self.send_evaluation_available(self.current_evaluation_id)
+            evaluation_id = await self.get_next_evaluation()
+            await self.start_evaluation_and_send(evaluation_id)
     
     async def disconnect(self):
         """Handle validator disconnection"""
@@ -99,6 +103,7 @@ class Validator(Client):
         async with get_transaction() as conn:
             agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
+                logger.warning(f"Validator {self.hotkey}: -> agent {evaluation.version_id} is not evaluating")
                 return
             
             if errored:
@@ -107,12 +112,6 @@ class Validator(Client):
                 await evaluation.finish(conn)
         
         self.set_available()
-    
-    async def send_evaluation_available(self, version_id: str):
-        """Send evaluation available message to validator"""
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        await ws_manager.send_to_client(self, {"event": "evaluation-available", "version_id": str(version_id)})
     
     async def send_set_weights(self, data: dict):
         """Send set weights message to validator"""

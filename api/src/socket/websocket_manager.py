@@ -2,6 +2,7 @@ import json
 from typing import Optional, Dict, List, Union
 from fastapi import WebSocket, WebSocketDisconnect
 
+from api.src.models.evaluation import Evaluation
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.models.validator import Validator
@@ -112,18 +113,42 @@ class WebSocketManager:
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for client in clients_snapshot.values():
-            if client.get_type() not in ["validator", "screener"]:
-                continue
-            # Client can be either Validator or Screener, both have the required attributes
-            relative_version_num = await get_relative_version_num(client.version_commit_hash) if client.version_commit_hash else None
-            clients_list.append({
-                "validator_hotkey": client.hotkey,  # Keep JSON field as validator_hotkey for compatibility
-                "relative_version_num": relative_version_num,
-                "commit_hash": client.version_commit_hash,
-                "connected_at": client.connected_at.isoformat(),
-                "ip_address": client.ip_address,
-                "status": client.status
-            })
+            match client.get_type():
+                case "validator":
+                    validator: Validator = client
+                    relative_version_num = await get_relative_version_num(validator.version_commit_hash)
+                    clients_list.append({
+                        "type": "validator",
+                        "validator_hotkey": validator.hotkey,  
+                        "relative_version_num": relative_version_num,
+                        "commit_hash": validator.version_commit_hash,
+                        "connected_at": validator.connected_at.isoformat(),
+                        "ip_address": validator.ip_address,
+                        "status": validator.status,
+                        "evaluating_id": validator.current_evaluation_id,
+                        "evaluating_agent_hotkey": validator.current_agent_hotkey,
+                        "evaluating_agent_name": validator.current_agent_name,
+                        "progress": await Evaluation.get_progress(validator.current_evaluation_id) if validator.current_evaluation_id else 0
+                    })
+                case "screener":
+                    screener: Screener = client
+                    relative_version_num = await get_relative_version_num(screener.version_commit_hash)
+                    clients_list.append({
+                        "type": "screener",
+                        "screener_hotkey": screener.hotkey,
+                        "relative_version_num": relative_version_num,
+                        "commit_hash": screener.version_commit_hash,
+                        "connected_at": screener.connected_at.isoformat(),
+                        "ip_address": screener.ip_address,
+                        "status": screener.status,
+                        "screening_id": screener.screening_id,
+                        "screening_agent_hotkey": screener.screening_agent_hotkey,
+                        "screening_agent_name": screener.screening_agent_name,
+                        "progress": await Evaluation.get_progress(screener.screening_id) if screener.screening_id else 0
+                    })
+                case _:
+                    continue
+
         return clients_list
     
     async def send_to_client(self, client: Client, message: Dict) -> bool:

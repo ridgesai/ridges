@@ -114,7 +114,7 @@ class Evaluation:
         await self._update_agent_status(conn)
 
         for validator in validators_to_notify:
-            await validator.send_evaluation_available(self.version_id)
+            await validator.start_evaluation_and_send(self.evaluation_id)
 
     async def error(self, conn: asyncpg.Connection, reason: Optional[str] = None):
         """Error evaluation and reset agent"""
@@ -357,6 +357,26 @@ class Evaluation:
             screener.current_evaluation_id = eval_id
 
             logger.info(f"WebSocket send to screener {screener.hotkey} for agent {agent.agent_name}: {'SUCCESS' if success else 'FAILED'}")
+
+    @staticmethod
+    async def get_progress(evaluation_id: str) -> float:
+        """Get progress of evaluation across all runs"""
+        async with get_db_connection() as conn:
+            return await conn.fetchval("""
+                SELECT COALESCE(AVG(
+                    CASE status
+                        WHEN 'started' THEN 0.2
+                        WHEN 'sandbox_created' THEN 0.4
+                        WHEN 'patch_generated' THEN 0.6
+                        WHEN 'eval_started' THEN 0.8
+                        WHEN 'result_scored' THEN 1.0
+                        ELSE 0.0
+                    END
+                ), 0.0)
+                FROM evaluation_runs 
+                WHERE evaluation_id = $1
+                AND status NOT IN ('cancelled', 'error')
+            """, evaluation_id)
 
     @staticmethod
     async def check_miner_has_no_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:

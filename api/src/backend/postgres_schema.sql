@@ -231,40 +231,39 @@ agent_evaluations AS (
         AND e.validator_hotkey NOT LIKE 'i-0%'
         AND e.set_id IS NOT NULL
 ),
--- Calculate weights based on score relative to max, since lower scores are more likely validator failure
-weighted_scores AS (
+filtered_scores AS (
+    -- Remove the lowest score for each agent version and set combination
     SELECT 
         ae.*,
-        MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) as max_score,
-        CASE 
-            WHEN MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id) > 0 
-            THEN POWER(ae.score / MAX(ae.score) OVER (PARTITION BY ae.miner_hotkey, ae.version_id, ae.set_id), 4.0)
-            ELSE 1.0
-        END as score_weight
+        ROW_NUMBER() OVER (
+            PARTITION BY ae.version_id, ae.set_id 
+            ORDER BY ae.score ASC
+        ) as score_rank
     FROM agent_evaluations ae
-    WHERE ae.score IS NOT NULL AND ae.set_id IS NOT NULL
 )
 SELECT
-    ws.version_id,
-    ws.miner_hotkey,
-    ws.agent_name,
-    ws.version_num,
-    ws.created_at,
-    ws.status,
-    ws.agent_summary,
-    ws.set_id,
-    ws.approved,
-    COUNT(DISTINCT ws.validator_hotkey) AS validator_count,
-    SUM(ws.score * ws.score_weight) / SUM(ws.score_weight) AS final_score
-FROM weighted_scores ws
-WHERE ws.set_id IS NOT NULL
-GROUP BY ws.version_id, ws.miner_hotkey, ws.agent_name, ws.version_num, 
-         ws.created_at, ws.status, ws.agent_summary, ws.set_id, ws.approved
-HAVING COUNT(DISTINCT ws.validator_hotkey) >= 2  -- At least 2 validators
+    fs.version_id,
+    fs.miner_hotkey,
+    fs.agent_name,
+    fs.version_num,
+    fs.created_at,
+    fs.status,
+    fs.agent_summary,
+    fs.set_id,
+    fs.approved,
+    COUNT(DISTINCT fs.validator_hotkey) AS validator_count,
+    AVG(fs.score) AS final_score
+FROM filtered_scores fs
+WHERE fs.set_id IS NOT NULL
+    AND fs.score_rank > 1  -- Exclude the lowest score (rank 1)
+GROUP BY fs.version_id, fs.miner_hotkey, fs.agent_name, fs.version_num, 
+         fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved
+HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
 -- CRITICAL: This unique index enables CONCURRENT refresh
+DROP INDEX IF EXISTS idx_agent_scores_unique;
 CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (version_id, set_id);
 CREATE INDEX idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
 CREATE INDEX idx_agent_scores_version ON agent_scores (version_id);
