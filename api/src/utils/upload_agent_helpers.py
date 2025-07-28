@@ -129,7 +129,7 @@ async def check_file_size(agent_file: UploadFile) -> str:
     
     logger.debug(f"The file size is valid.")
     await agent_file.seek(0)
-    return content
+    return content.decode('utf-8')
 
 async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
     logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
