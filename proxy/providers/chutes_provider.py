@@ -51,7 +51,7 @@ class ChutesProvider(InferenceProvider):
         messages: List[GPTMessage] = None,
         temperature: float = None,
         model: str = None,
-    ) -> str:
+    ) -> tuple[str, int]:
         """Perform inference using Chutes API"""
         
         if not self.is_available():
@@ -97,11 +97,7 @@ class ChutesProvider(InferenceProvider):
                     logger.error(
                         f"Chutes API request failed for run {run_id}: {response.status_code} - {error_message}"
                     )
-                    raise httpx.HTTPStatusError(
-                        f"API request failed with status {response.status_code}: {error_message}",
-                        request=None,
-                        response=response
-                    )
+                    return error_message, response.status_code
 
                 # Process streaming response
                 async for chunk in response.aiter_lines():
@@ -130,7 +126,8 @@ class ChutesProvider(InferenceProvider):
         
         # Validate that we received actual content
         if not response_text.strip():
-            logger.error(f"Chutes API returned empty response for run {run_id} with model {model}")
-            raise RuntimeError(f"Chutes API returned empty response for model {model}. This may indicate API issues or malformed streaming response.")
+            error_msg = f"Chutes API returned empty response for model {model}. This may indicate API issues or malformed streaming response."
+            logger.error(f"Empty response for run {run_id}: {error_msg}")
+            return error_msg, 200  # Status was 200 but response was empty
         
-        return response_text 
+        return response_text, 200 

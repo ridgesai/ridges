@@ -19,7 +19,7 @@ class InferenceProvider(ABC):
         messages: List[GPTMessage] = None,
         temperature: float = None,
         model: str = None,
-    ) -> str:
+    ) -> tuple[str, int]:
         """
         Perform inference with the given parameters.
         
@@ -30,7 +30,7 @@ class InferenceProvider(ABC):
             model: Model name to use
             
         Returns:
-            str: The inference response text
+            tuple[str, int]: (response_text, status_code)
             
         Raises:
             RuntimeError: If the provider is not available or configured

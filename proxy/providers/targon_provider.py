@@ -54,7 +54,7 @@ class TargonProvider(InferenceProvider):
         messages: List[GPTMessage] = None,
         temperature: float = None,
         model: str = None,
-    ) -> str:
+    ) -> tuple[str, int]:
         """Perform inference using Targon API"""
         
         if not self.is_available():
@@ -103,11 +103,14 @@ class TargonProvider(InferenceProvider):
             
             # Validate that we received actual content
             if not response_text.strip():
-                logger.error(f"Targon API returned empty response for run {run_id} with model {model}")
-                raise RuntimeError(f"Targon API returned empty response for model {model}. This may indicate API issues or streaming problems.")
+                error_msg = f"Targon API returned empty response for model {model}. This may indicate API issues or streaming problems."
+                logger.error(f"Empty response for run {run_id}: {error_msg}")
+                return error_msg, 200  # Status was 200 but response was empty
             
-            return response_text
+            return response_text, 200
             
         except Exception as e:
             logger.error(f"Targon inference error for run {run_id}: {e}")
-            raise 
+            # Extract status code from OpenAI errors if possible
+            status_code = getattr(e, 'status_code', None) or 500
+            return str(e), status_code 
