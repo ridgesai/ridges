@@ -83,6 +83,11 @@ class InferenceManager:
                 if message:
                     messages_dict.append({"role": message.role, "content": message.content})
 
+        # Create inference record in database before starting (skip in dev mode)
+        inference_id = None
+        if ENV != 'dev':
+            inference_id = await create_inference(run_id, messages_dict, temperature, model, primary_provider.name)
+
         # Try primary provider first
         logger.debug(f"Trying {primary_provider.name} for model {model}")
         response_text, status_code = await primary_provider.inference(run_id, messages, temperature, model)
@@ -95,12 +100,9 @@ class InferenceManager:
             total_tokens = 0
             cost = 0.0
         
-        # Log primary provider attempt to database (skip in dev mode)
-        if ENV != 'dev':
-            await create_inference(
-                run_id, messages_dict, temperature, model, 
-                primary_provider.name, status_code, cost, response_text, total_tokens
-            )
+        # Update inference record with results (skip in dev mode)
+        if ENV != 'dev' and inference_id:
+            await update_inference(inference_id, cost, response_text, total_tokens, primary_provider.name, status_code)
         
         # If primary succeeded, return
         if status_code == 200:
@@ -114,6 +116,12 @@ class InferenceManager:
         fallback_provider = self._get_fallback_provider(model, primary_provider)
         if fallback_provider:
             logger.info(f"Attempting {fallback_provider.name} fallback for model {model} after {primary_provider.name} failure")
+            
+            # Create separate inference record for fallback attempt (skip in dev mode)
+            fallback_inference_id = None
+            if ENV != 'dev':
+                fallback_inference_id = await create_inference(run_id, messages_dict, temperature, model, fallback_provider.name)
+            
             fallback_response, fallback_status = await fallback_provider.inference(run_id, messages, temperature, model)
             
             # Calculate cost and tokens for fallback
@@ -124,12 +132,9 @@ class InferenceManager:
                 fallback_tokens = 0
                 fallback_cost = 0.0
             
-            # Log fallback attempt to database (skip in dev mode)
-            if ENV != 'dev':
-                await create_inference(
-                    run_id, messages_dict, temperature, model,
-                    fallback_provider.name, fallback_status, fallback_cost, fallback_response, fallback_tokens
-                )
+            # Update fallback inference record with results (skip in dev mode)
+            if ENV != 'dev' and fallback_inference_id:
+                await update_inference(fallback_inference_id, fallback_cost, fallback_response, fallback_tokens, fallback_provider.name, fallback_status)
             
             if fallback_status == 200:
                 logger.info(f"{fallback_provider.name} fallback successful for run {run_id}, tokens: {fallback_tokens}, cost: ${fallback_cost:.6f}")

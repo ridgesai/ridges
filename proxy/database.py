@@ -18,7 +18,7 @@ class DBManager:
     """Database connection manager for the proxy server"""
     
     def __init__(self, *, user: str, password: str, host: str, port: int, database: str,
-                 min_con: int = 2, max_con: int = 10):
+                 min_con: int = 60, max_con: int = 600):
         self.conn_args = dict(user=user, password=password, host=host, port=port, database=database)
         self.min_con = min_con
         self.max_con = max_con
@@ -158,7 +158,7 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
         
         row = await conn.fetchrow("""
             INSERT INTO inferences (run_id, messages, temperature, model, provider, status_code, cost, response, total_tokens, created_at, finished_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NULL)
             RETURNING id
         """, run_id, messages_json, temperature, model, provider, status_code, cost, response, total_tokens)
         
@@ -170,15 +170,28 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
 
 @db_operation
 async def update_inference(conn: asyncpg.Connection, inference_id: UUID, cost: float, 
-                          response: str, total_tokens: int, provider: str = None) -> None:
-    """Update an inference record with cost, response, tokens, and optionally provider"""
+                          response: str, total_tokens: int, provider: str = None, 
+                          status_code: int = None) -> None:
+    """Update an inference record with cost, response, tokens, and optionally provider and status_code"""
     try:
-        if provider is not None:
+        if provider is not None and status_code is not None:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, provider = $4, status_code = $5, finished_at = NOW()
+                WHERE id = $6
+            """, cost, response, total_tokens, provider, status_code, inference_id)
+        elif provider is not None:
             await conn.execute("""
                 UPDATE inferences 
                 SET cost = $1, response = $2, total_tokens = $3, provider = $4, finished_at = NOW()
                 WHERE id = $5
             """, cost, response, total_tokens, provider, inference_id)
+        elif status_code is not None:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, status_code = $4, finished_at = NOW()
+                WHERE id = $5
+            """, cost, response, total_tokens, status_code, inference_id)
         else:
             await conn.execute("""
                 UPDATE inferences 

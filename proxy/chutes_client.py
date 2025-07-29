@@ -124,7 +124,7 @@ class ChutesClient:
         # Create inference record in database (skip in dev mode)
         inference_id = None
         if ENV != 'dev':
-            inference_id = await create_inference(run_id, messages_dict, temperature, model)
+            inference_id = await create_inference(run_id, messages_dict, temperature, model, "Chutes")
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -160,7 +160,7 @@ class ChutesClient:
                         )
                         # Update inference record with error (skip in dev mode)
                         if ENV != 'dev' and inference_id:
-                            await update_inference(inference_id, 0.0, f"API request failed: {error_message}", 0)
+                            await update_inference(inference_id, 0.0, f"API request failed: {error_message}", 0, None, response.status_code)
                         return {"error": f"API request failed with status {response.status_code}: {error_message}"}
 
                     # Process streaming response
@@ -196,7 +196,7 @@ class ChutesClient:
 
             # Update inference record with cost and response (skip in dev mode)
             if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, cost, response_text, total_tokens)
+                await update_inference(inference_id, cost, response_text, total_tokens, None, 200)
 
             logger.debug(f"Inference request for run {run_id} completed, tokens: {total_tokens}, cost: ${cost:.6f}")
 
@@ -207,7 +207,7 @@ class ChutesClient:
                 
                 # Update inference record with error (skip in dev mode)
                 if ENV != 'dev' and inference_id:
-                    await update_inference(inference_id, 0.0, error_msg, 0)
+                    await update_inference(inference_id, 0.0, error_msg, 0, None, 200)
                 
                 return {"error": error_msg}
 
@@ -224,17 +224,19 @@ class ChutesClient:
                     0.0,
                     f"HTTP error: {e.response.status_code} - {e.response.text}",
                     0,
+                    None,
+                    e.response.status_code,
                 )
             return {"error": f"HTTP error in inference request: {e.response.status_code} - {e.response.text}"}
         except httpx.TimeoutException:
             logger.error(f"Timeout in inference request for run {run_id}")
             # Update inference record with error (skip in dev mode)
             if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, 0.0, "Inference request timed out", 0)
+                await update_inference(inference_id, 0.0, "Inference request timed out", 0, None, 408)
             return {"error": "Inference request timed out. Please try again."}
         except Exception as e:
             logger.error(f"Error in inference request for run {run_id}: {e}")
             # Update inference record with error (skip in dev mode)
             if ENV != 'dev' and inference_id:
-                await update_inference(inference_id, 0.0, str(e), 0)
+                await update_inference(inference_id, 0.0, str(e), 0, None, 500)
             return {"error": f"Error in inference request: {str(e)}"}
