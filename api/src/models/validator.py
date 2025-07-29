@@ -58,6 +58,10 @@ class Validator(Client):
             "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
         }
         await self.websocket.send_json(message)
+
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        await ws_manager.send_to_all_non_validators("evaluation-started", message)
             
         self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
         self.current_evaluation_id = evaluation_id
@@ -111,6 +115,10 @@ class Validator(Client):
             else:
                 await evaluation.finish(conn)
         
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+
         self.set_available()
     
     async def send_set_weights(self, data: dict):

@@ -107,6 +107,10 @@ class Screener(Client):
                 else:
                     await evaluation.finish(conn)
 
+                from api.src.socket.websocket_manager import WebSocketManager
+                ws_manager = WebSocketManager.get_instance()
+                await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+
                 self.set_available()
                     
                 logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")

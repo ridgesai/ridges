@@ -307,6 +307,7 @@ class Evaluation:
         }
         logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
         
+        await ws.send_to_all_non_validators("evaluation-started", message)
         return eval_id, await ws.send_to_client(screener, message)
 
     @staticmethod
