@@ -170,15 +170,28 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
 
 @db_operation
 async def update_inference(conn: asyncpg.Connection, inference_id: UUID, cost: float, 
-                          response: str, total_tokens: int, provider: str = None) -> None:
-    """Update an inference record with cost, response, tokens, and optionally provider"""
+                          response: str, total_tokens: int, provider: str = None, 
+                          status_code: int = None) -> None:
+    """Update an inference record with cost, response, tokens, and optionally provider and status_code"""
     try:
-        if provider is not None:
+        if provider is not None and status_code is not None:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, provider = $4, status_code = $5, finished_at = NOW()
+                WHERE id = $6
+            """, cost, response, total_tokens, provider, status_code, inference_id)
+        elif provider is not None:
             await conn.execute("""
                 UPDATE inferences 
                 SET cost = $1, response = $2, total_tokens = $3, provider = $4, finished_at = NOW()
                 WHERE id = $5
             """, cost, response, total_tokens, provider, inference_id)
+        elif status_code is not None:
+            await conn.execute("""
+                UPDATE inferences 
+                SET cost = $1, response = $2, total_tokens = $3, status_code = $4, finished_at = NOW()
+                WHERE id = $5
+            """, cost, response, total_tokens, status_code, inference_id)
         else:
             await conn.execute("""
                 UPDATE inferences 
