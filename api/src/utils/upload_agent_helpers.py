@@ -155,7 +155,12 @@ def check_agent_code(file_content: str) -> None:
     logger.debug(f"Checking if the agent code is valid...")
 
     try:
-        AgentCodeChecker(file_content).run()
+        # AgentCodeChecker expects bytes, so ensure we have bytes
+        if isinstance(file_content, str):
+            file_content_bytes = file_content.encode('utf-8')
+        else:
+            file_content_bytes = file_content  # Already bytes
+        AgentCodeChecker(file_content_bytes).run()
     except CheckError as e:
         logger.error(f"A miner attempted to upload an agent with invalid code. Error: {e}.")
         raise HTTPException(
