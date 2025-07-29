@@ -356,12 +356,11 @@ class Sandbox:
                 try:
                     # Decode the log line (handle Docker's 8-byte header)
                     if len(raw_log_line) >= 8 and raw_log_line[0] in [1, 2]:
-                        line = raw_log_line[8:].decode('utf-8', errors='ignore').rstrip()
+                        line = raw_log_line[8:].decode('utf-8', errors='ignore')
                     else:
-                        line = raw_log_line.decode('utf-8', errors='ignore').rstrip()
+                        line = raw_log_line.decode('utf-8', errors='ignore')
                     
-                    if line.strip():  # Only process non-empty lines
-                        asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
+                    asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
                         
                 except Exception as e:
                     logger.error(f"Error processing log line for {run_id}: {e}")
