@@ -124,7 +124,7 @@ class ChutesClient:
         # Create inference record in database (skip in dev mode)
         inference_id = None
         if ENV != 'dev':
-            inference_id = await create_inference(run_id, messages_dict, temperature, model)
+            inference_id = await create_inference(run_id, messages_dict, temperature, model, "Chutes")
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

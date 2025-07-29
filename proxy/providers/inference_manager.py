@@ -86,7 +86,7 @@ class InferenceManager:
         # Create inference record in database before starting (skip in dev mode)
         inference_id = None
         if ENV != 'dev':
-            inference_id = await create_inference(run_id, messages_dict, temperature, model)
+            inference_id = await create_inference(run_id, messages_dict, temperature, model, primary_provider.name)
 
         # Try primary provider first
         logger.debug(f"Trying {primary_provider.name} for model {model}")
@@ -120,7 +120,7 @@ class InferenceManager:
             # Create separate inference record for fallback attempt (skip in dev mode)
             fallback_inference_id = None
             if ENV != 'dev':
-                fallback_inference_id = await create_inference(run_id, messages_dict, temperature, model)
+                fallback_inference_id = await create_inference(run_id, messages_dict, temperature, model, fallback_provider.name)
             
             fallback_response, fallback_status = await fallback_provider.inference(run_id, messages, temperature, model)
             
