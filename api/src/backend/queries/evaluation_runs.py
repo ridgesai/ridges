@@ -1,8 +1,13 @@
+import uuid
 from typing import Optional
 
 import asyncpg
-from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
+from api.src.backend.entities import EvaluationRun, EvaluationRunLog, EvaluationRunWithUsageDetails
 from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import get_transaction
+from loggers.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 @db_operation
@@ -247,3 +252,30 @@ async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[Evalu
     run = EvaluationRun(**dict(run_row))
 
     return run
+
+
+@db_operation
+async def insert_evaluation_run_log(conn: asyncpg.Connection, run_id: str, log_line: str) -> None:
+    """Insert a log line for an evaluation run"""
+    await conn.execute(
+        """
+        INSERT INTO evaluation_run_logs (run_id, line)
+        VALUES ($1, $2)
+        """,
+        run_id, log_line
+    )
+
+@db_operation
+async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> list[EvaluationRunLog]:
+    """Get all log lines for an evaluation run"""
+    log_rows = await conn.fetch(
+        """
+        SELECT id, run_id, created_at, line
+        FROM evaluation_run_logs
+        WHERE run_id = $1
+        ORDER BY created_at
+        """,
+        run_id
+    )
+
+    return [EvaluationRunLog(**dict(log_row)) for log_row in log_rows]

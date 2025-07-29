@@ -153,7 +153,8 @@ class Sandbox:
                 working_dir=SANDBOX_DIR,
                 environment={
                     "AI_PROXY_URL": "http://sandbox-proxy",
-                    "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy"
+                    "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy",
+                    "PYTHONUNBUFFERED": "1"  # Ensure Python output is not buffered
                 },
                 detach=True,
                 # Add CPU and memory limits to prevent resource exhaustion
@@ -167,27 +168,11 @@ class Sandbox:
                 raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
             raise
         
-        # Monitor container with asyncio timeout as additional safety
-        try:
-            await asyncio.wait_for(self._monitor_container(), timeout=SANDBOX_MAX_RUNTIME + 60)
-        except asyncio.TimeoutError:
-            logger.error(f"Container monitoring timed out for {self.evaluation_run.run_id}, force killing")
-            try:
-                # Try graceful stop first
-                try:
-                    self.container.stop(timeout=5)
-                except Exception:
-                    self.container.kill()
-                # Wait a bit for graceful shutdown
-                await asyncio.sleep(2)
-                # Force remove if still exists
-                try:
-                    self.container.remove(force=True)
-                except Exception:
-                    pass
-            except Exception as e:
-                logger.error(f"Failed to force kill container {self.evaluation_run.run_id}: {e}")
-            raise TimeoutError(f"Container monitoring timed out after {SANDBOX_MAX_RUNTIME + 60}s")
+        # Start log streaming and monitoring in parallel
+        await asyncio.gather(
+            self._stream_and_monitor_container(),
+            return_exceptions=True
+        )
         
         # Process results
         try:
@@ -282,92 +267,130 @@ class Sandbox:
         
         return repo_path
     
-    @tracer.wrap(resource="monitor-container")
-    async def _monitor_container(self) -> None:
-        """Monitor container execution with resource limits"""
-        logger.info(f"Starting container monitoring for {self.evaluation_run.run_id}")
+    @tracer.wrap(resource="stream-and-monitor-container")
+    async def _stream_and_monitor_container(self) -> None:
+        """Stream logs and monitor container in a clean, minimal way"""
+        run_id = self.evaluation_run.run_id
+        logger.info(f"🚀 STARTING LOG CAPTURE FOR CONTAINER {self.container.id[:12]} (run_id: {run_id})")
+        
+        # Start log streaming immediately
+        log_task = asyncio.create_task(self._capture_container_logs())
+        
+        # Monitor container status
         container_start_time = datetime.now(timezone.utc)
         
-        while True:
-            if self._cancelled.is_set():
-                logger.info(f"Container monitoring cancelled for {self.evaluation_run.run_id}")
-                try:
-                    self.container.stop(timeout=5)
-                except Exception:
-                    self.container.kill()
-                raise asyncio.CancelledError()
-            
-            try:
-                self.container.reload()
-                status = self.container.status
-                logger.debug(f"Container {self.evaluation_run.run_id} status: {status}")
-                
-                if status == "exited":
-                    logger.info(f"Container {self.evaluation_run.run_id} exited normally")
-                    break
-                elif status in ["dead", "removing"]:
-                    logger.info(f"Container {self.evaluation_run.run_id} is {status}")
+        try:
+            while True:
+                if self._cancelled.is_set():
+                    logger.info(f"Container cancelled for {run_id}")
                     break
                 
-                # Check memory usage
+                # Check container status
                 try:
-                    stats = self.container.stats(stream=False)
-                    memory_stats = stats.get("memory_stats", {})
+                    self.container.reload()
+                    status = self.container.status
                     
-                    # Try different memory usage keys
-                    for key in ["usage", "current", "memory.current"]:
-                        if key in memory_stats:
-                            usage_mb = memory_stats[key] / (1024 * 1024)
-                            if usage_mb > SANDBOX_MAX_RAM_USAGE:
-                                logger.warning(f"Container {self.evaluation_run.run_id} exceeded RAM limit: {usage_mb:.1f}MB")
-                                try:
-                                    self.container.stop(timeout=5)
-                                except Exception:
-                                    self.container.kill()
-                                raise MemoryError(f"RAM limit exceeded: {usage_mb:.1f}MB")
-                            break
-                except Exception as e:
-                    logger.debug(f"Failed to get container stats for {self.evaluation_run.run_id}: {e}")
-                    pass  # Continue monitoring even if stats fail
-                
-                # Check runtime limit - use container start time as fallback
-                sandbox_start_time = self.evaluation_run.sandbox_created_at or container_start_time
-                runtime = (datetime.now(timezone.utc) - sandbox_start_time).total_seconds()
-                
-                if runtime > SANDBOX_MAX_RUNTIME:
-                    logger.error(f"Container {self.evaluation_run.run_id} exceeded runtime limit: {runtime:.1f}s")
-                    try:
-                        # Try graceful stop first, then force kill
-                        self.container.stop(timeout=5)
-                        logger.info(f"Successfully stopped container {self.evaluation_run.run_id}")
-                    except Exception as stop_error:
-                        logger.warning(f"Failed to stop container gracefully, force killing: {stop_error}")
-                        try:
-                            self.container.kill()
-                            logger.info(f"Successfully killed container {self.evaluation_run.run_id}")
-                        except Exception as kill_error:
-                            logger.error(f"Failed to kill container {self.evaluation_run.run_id}: {kill_error}")
-                    raise TimeoutError(f"Runtime limit exceeded: {runtime:.1f}s")
-                
-                # Log progress every 5 minutes for long-running containers
-                if runtime > 0 and runtime % 300 == 0:  # Every 5 minutes
-                    logger.info(f"Container {self.evaluation_run.run_id} still running after {runtime:.0f}s")
-                
-            except DockerNotFound:
-                # Container was auto-removed by Docker (remove=True) - evaluation completed
-                logger.info(f"Container {self.evaluation_run.run_id} was auto-removed, evaluation completed")
-                break
-            except (TimeoutError, MemoryError):
-                # Re-raise timeout and memory errors
-                raise
-            except Exception as e:
-                if "exited" in str(e).lower():
-                    logger.info(f"Container {self.evaluation_run.run_id} exited: {e}")
+                    if status in ["exited", "dead", "removing"]:
+                        logger.info(f"Container {run_id} status: {status} - stopping monitoring")
+                        break
+                        
+                except DockerNotFound:
+                    logger.info(f"Container {run_id} auto-removed - evaluation completed")
                     break
-                logger.warning(f"Container monitoring error for {self.evaluation_run.run_id}: {e}")
+                except Exception as e:
+                    logger.warning(f"Container status check failed for {run_id}: {e}")
+                    break
+                
+                # Check runtime limit
+                runtime = (datetime.now(timezone.utc) - container_start_time).total_seconds()
+                if runtime > SANDBOX_MAX_RUNTIME:
+                    logger.error(f"Container {run_id} exceeded runtime limit: {runtime:.1f}s")
+                    try:
+                        self.container.stop(timeout=5)
+                    except:
+                        self.container.kill()
+                    break
+                
+                await asyncio.sleep(1)
+                
+        finally:
+            # Ensure log streaming stops
+            if not log_task.done():
+                log_task.cancel()
+                try:
+                    await log_task
+                except asyncio.CancelledError:
+                    pass
             
-            await asyncio.sleep(1)
+    @tracer.wrap(resource="capture-container-logs")  
+    async def _capture_container_logs(self) -> None:
+        """Capture all container logs in real-time - FIXED THREADING"""
+        run_id = self.evaluation_run.run_id
+        
+        try:
+            # Get the current event loop to pass to the blocking thread
+            loop = asyncio.get_running_loop()
+            
+            await loop.run_in_executor(
+                None, self._read_logs_blocking, loop
+            )
+            
+        except Exception as e:
+            logger.error(f"LOG CAPTURE ERROR for {run_id}: {e}")
     
+    def _read_logs_blocking(self, loop) -> None:
+        """Read logs in blocking thread - FIXED EVENT LOOP"""
+        run_id = self.evaluation_run.run_id
+        
+        try:
+            # Get real-time log stream 
+            log_stream = self.container.logs(
+                stream=True,
+                follow=True, 
+                stdout=True,
+                stderr=True,
+                timestamps=False
+            )
+            
+            for raw_log_line in log_stream:
+                try:
+                    # Decode the log line (handle Docker's 8-byte header)
+                    if len(raw_log_line) >= 8 and raw_log_line[0] in [1, 2]:
+                        line = raw_log_line[8:].decode('utf-8', errors='ignore').rstrip()
+                    else:
+                        line = raw_log_line.decode('utf-8', errors='ignore').rstrip()
+                    
+                    if line.strip():  # Only process non-empty lines
+                        asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
+                        
+                except Exception as e:
+                    logger.error(f"Error processing log line for {run_id}: {e}")
+                    
+                # Check if container stopped
+                try:
+                    self.container.reload()
+                    if self.container.status not in ["running", "created"]:
+                        logger.info(f"Container {run_id} stopped, ending log stream")
+                        break
+                except:
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error in log stream for {run_id}: {e}")
+        finally:
+            logger.info(f"LOG STREAM ENDED for {run_id}")
+    
+    @tracer.wrap(resource="send-log-via-websocket")
+    async def _send_log_via_websocket(self, line: str) -> None:
+        """Send log line via websocket and store in database"""
+        try:
+            await self.manager.websocket_app.send({
+                "event": "evaluation-run-log",
+                "run_id": str(self.evaluation_run.run_id),
+                "line": line,
+            })
+        except Exception as e:
+            logger.error(f"Failed to send websocket log for {self.evaluation_run.run_id}: {e}")
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:

@@ -376,7 +376,6 @@ class EvaluationRun(BaseModel):
     eval_started_at: Optional[datetime] = None
     result_scored_at: Optional[datetime] = None
     cancelled_at: Optional[datetime] = None
-    
 
 class EvaluationRunWithUsageDetails(EvaluationRun):
     cost: Optional[float]
@@ -389,6 +388,12 @@ class EvaluationsWithHydratedRuns(Evaluation):
 
 class EvaluationsWithHydratedUsageRuns(Evaluation):
     evaluation_runs: list[EvaluationRunWithUsageDetails]
+
+class EvaluationRunLog(BaseModel):
+    id: UUID
+    run_id: UUID
+    created_at: datetime
+    line: str
 
 class Client(BaseModel):
     """Base class for connected clients"""

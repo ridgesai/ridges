@@ -7,15 +7,14 @@ from dotenv import load_dotenv
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores
+from api.src.backend.entities import EvaluationRun, EvaluationRunLog, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
-from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as db_get_runs_for_evaluation
+from api.src.backend.queries.evaluation_runs import get_evaluation_run_logs, get_runs_for_evaluation as db_get_runs_for_evaluation, get_evaluation_run_logs as db_get_evaluation_run_logs
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
-from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time
-from api.src.backend.queries.statistics import get_miner_score_activity as db_get_miner_score_activity
+from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 
@@ -123,6 +122,18 @@ async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = No
         )
     
     return evaluations
+
+async def get_evaluation_run_logs(run_id: str) -> list[EvaluationRunLog]:
+    try:
+        logs = await db_get_evaluation_run_logs(run_id)
+    except Exception as e:
+        logger.error(f"Error retrieving logs for run {run_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving logs for run. Please try again later."
+        )
+    
+    return logs
 
 async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
     try:
@@ -298,6 +309,7 @@ routes = [
     ("/queue-info", get_queue_info), 
     ("/evaluations", get_evaluations),
     ("/evaluations-with-usage", get_evaluations_with_usage),
+    ("/evaluation-run-logs", get_evaluation_run_logs),
     ("/runs-for-evaluation", get_runs_for_evaluation), 
     ("/latest-agent", get_latest_agent),
     ("/network-stats", get_network_stats),

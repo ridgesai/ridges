@@ -73,6 +73,14 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     cancelled_at TIMESTAMPTZ
 );
 
+-- Evaluation Run Logs table
+CREATE TABLE IF NOT EXISTS evaluation_run_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    line TEXT NOT NULL
+);
+
 -- Embeddings table
 CREATE TABLE IF NOT EXISTS embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
