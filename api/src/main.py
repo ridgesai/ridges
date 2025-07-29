@@ -17,12 +17,17 @@ from api.src.endpoints.scoring import router as scoring_router, run_weight_setti
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.endpoints.healthcheck import router as healthcheck_router
 from api.src.endpoints.agent_summaries import router as agent_summaries_router
+from api.src.socket.server_helpers import fetch_and_store_commits
 
 logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
+    
+    # Fetch and cache GitHub commits at startup
+    logger.info("Fetching and caching GitHub commits...")
+    await fetch_and_store_commits()
     
     # Simple startup recovery through evaluation model
     from api.src.models.evaluation import Evaluation
