@@ -18,7 +18,7 @@ class DBManager:
     """Database connection manager for the proxy server"""
     
     def __init__(self, *, user: str, password: str, host: str, port: int, database: str,
-                 min_con: int = 2, max_con: int = 10):
+                 min_con: int = 20, max_con: int = 200):
         self.conn_args = dict(user=user, password=password, host=host, port=port, database=database)
         self.min_con = min_con
         self.max_con = max_con
