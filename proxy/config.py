@@ -38,6 +38,8 @@ MODEL_PRICING: Dict[str, float] = {
     "moonshotai/Kimi-Dev-72B": 0.1008,
     "moonshotai/Kimi-K2-Instruct": 0.5292,
     "all-hands/openhands-lm-32b-v0.1": 0.0246,
+    "zai-org/GLM-4.5-FP8": 0.2000,
+    "zai-org/GLM-4.5-Air": 0.0000,
 }
 
 # Models that support Targon fallback
