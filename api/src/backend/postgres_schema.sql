@@ -180,10 +180,6 @@ CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled
 ON evaluation_runs (evaluation_id, started_at) 
 WHERE status != 'cancelled';
 
--- Index for inferences aggregation in CTE - critical for GROUP BY run_id performance
-CREATE INDEX IF NOT EXISTS idx_inferences_run_id_aggregation 
-ON inferences (run_id, cost, total_tokens, model);
-
 -- General index for evaluation_runs foreign key if it doesn't exist
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
