@@ -21,4 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 RUN pip cache purge && \
     rm -rf /root/.cache/pip
 
+# Configure git to trust all sandbox directories to avoid dubious ownership warnings
+RUN git config --global --add safe.directory '/sandbox/*'
+
 CMD ["python", "/sandbox/agent_runner.py"]
