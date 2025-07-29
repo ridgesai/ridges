@@ -158,7 +158,7 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
         
         row = await conn.fetchrow("""
             INSERT INTO inferences (run_id, messages, temperature, model, provider, status_code, cost, response, total_tokens, created_at, finished_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NULL)
             RETURNING id
         """, run_id, messages_json, temperature, model, provider, status_code, cost, response, total_tokens)
         
