@@ -33,6 +33,6 @@ async def handle_message(websocket_app, message: str):
         case "set-weights":
             await handle_set_weights(websocket_app, json_message)
         case "authentication-failed":
-            raise SystemExit("FATAL: Authentication failed. You must be a registered validator in the metagraph to connect")
+            raise SystemExit(f"FATAL: {json_message.get('error')}")
         case _:
             logger.info(f"Validator received unrecognized message: {message}")
