@@ -49,11 +49,15 @@ class Sandbox:
         self.manager = manager
         self.container: Optional[Container] = None
         self.repo_dir: Optional[Path] = None
-        self._cancelled = asyncio.Event()
+        self._cancelled = False
         
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
             raise FileNotFoundError("agent.py not found in agent directory")
+    
+    def cancel(self) -> None:
+        """Mark this sandbox as cancelled to stop websocket communications."""
+        self._cancelled = True
 
     @tracer.wrap(resource="run-sandbox")
     async def run(self) -> None:
@@ -86,6 +90,8 @@ class Sandbox:
     @tracer.wrap(resource="send-update")
     async def _send_update(self) -> None:
         """Send evaluation run update"""
+        if self._cancelled:
+            return
         try:
             await self.manager.websocket_app.send({
                 "event": "update-evaluation-run",
@@ -176,19 +182,35 @@ class Sandbox:
         
         # Process results
         try:
+            logger.info(f"Checking output file: {output_file}")
+            logger.info(f"Output file exists: {output_file.exists()}")
+            if output_file.exists():
+                logger.info(f"Output file size: {output_file.stat().st_size} bytes")
+            
             text = output_file.read_text()
+            logger.info(f"Raw agent output: {repr(text[:500])}{'...' if len(text) > 500 else ''}")
+            
+            if not text.strip():
+                raise ValueError("Agent produced empty output")
+                
             result = json.loads(text)
+            logger.info(f"Parsed agent result keys: {list(result.keys())}")
+            
             if result.get("success"):
-                patch = result.get("output", {}).get("patch", "")
+                output = result.get("output", {})
+                logger.info(f"Output section keys: {list(output.keys()) if isinstance(output, dict) else type(output)}")
+                patch = output.get("patch", "") if isinstance(output, dict) else ""
                 if patch:
                     self.evaluation_run.response = patch
                     self.evaluation_run.status = "patch_generated"
                     self.evaluation_run.patch_generated_at = datetime.now(timezone.utc)
                 else:
-                    raise ValueError("Empty patch returned from agent")
+                    raise ValueError(f"Empty patch returned from agent. Output: {output}")
             else:
                 raise ValueError(result.get("error", "Unknown error"))
         except json.JSONDecodeError as e:
+            logger.error(f"JSON decode error: {e}")
+            logger.error(f"Full agent output text: {repr(text)}")
             raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
         finally:
             # Clean up IO directory after processing results
@@ -281,7 +303,7 @@ class Sandbox:
         
         try:
             while True:
-                if self._cancelled.is_set():
+                if self._cancelled:
                     logger.info(f"Container cancelled for {run_id}")
                     break
                 
@@ -291,7 +313,11 @@ class Sandbox:
                     status = self.container.status
                     
                     if status in ["exited", "dead", "removing"]:
-                        logger.info(f"Container {run_id} status: {status} - stopping monitoring")
+                        try:
+                            exit_code = self.container.attrs.get('State', {}).get('ExitCode', 'unknown')
+                            logger.info(f"Container {run_id} status: {status}, exit code: {exit_code} - stopping monitoring")
+                        except:
+                            logger.info(f"Container {run_id} status: {status} - stopping monitoring")
                         break
                         
                 except DockerNotFound:
@@ -360,10 +386,22 @@ class Sandbox:
                     else:
                         line = raw_log_line.decode('utf-8', errors='ignore')
                     
-                    asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
+                    # Check if event loop is still running before scheduling coroutine
+                    if not loop.is_closed():
+                        try:
+                            asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
+                        except RuntimeError:
+                            # Event loop was closed between check and execution
+                            break
+                    else:
+                        # Event loop is closed, stop processing
+                        break
                         
                 except Exception as e:
                     logger.error(f"Error processing log line for {run_id}: {e}")
+                    # If event loop is closed, stop processing
+                    if loop.is_closed():
+                        break
                     
                 # Check if container stopped
                 try:
@@ -382,6 +420,8 @@ class Sandbox:
     @tracer.wrap(resource="send-log-via-websocket")
     async def _send_log_via_websocket(self, line: str) -> None:
         """Send log line via websocket and store in database"""
+        if self._cancelled:
+            return
         try:
             await self.manager.websocket_app.send({
                 "event": "evaluation-run-log",
@@ -507,7 +547,3 @@ class Sandbox:
             except Exception:
                 pass
     
-    @tracer.wrap(resource="cancel-sandbox")
-    async def cancel(self) -> None:
-        """Cancel sandbox execution"""
-        self._cancelled.set()

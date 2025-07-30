@@ -1,10 +1,8 @@
 import json
-import time
 
 from validator.config import SCREENER_MODE
 from loggers.logging_utils import get_logger
 from validator.socket.handle_evaluation import handle_evaluation
-from validator.socket.handle_evaluation_available import handle_evaluation_available
 from validator.socket.handle_set_weights import handle_set_weights
 from ddtrace import tracer
 
@@ -30,16 +28,11 @@ async def handle_message(websocket_app, message: str):
         return
 
     match event:
-        case "evaluation-available":
-            await handle_evaluation_available(websocket_app)
         case "evaluation":
             await handle_evaluation(websocket_app, json_message)
         case "set-weights":
             await handle_set_weights(websocket_app, json_message)
         case "authentication-failed":
-            error_msg = json_message.get("error", "Authentication failed")
-            logger.error(f"Authentication failed: {error_msg}")
-            websocket_app.authentication_failed = True
-            raise SystemExit(f"FATAL: {error_msg}")
+            raise SystemExit("FATAL: Authentication failed. You must be a registered validator in the metagraph to connect")
         case _:
             logger.info(f"Validator received unrecognized message: {message}")

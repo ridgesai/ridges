@@ -1,17 +1,13 @@
 """Task for running agents in sandboxes."""
 
 import asyncio
-import os
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, List
 from ddtrace import tracer
 
 import httpx
 from swebench.harness.utils import load_swebench_dataset
 
-from validator.config import RIDGES_API_URL, SCREENER_MODE, validator_hotkey
+from validator.config import RIDGES_API_URL
 from validator.sandbox.manager import SandboxManager
 from validator.sandbox.schema import AgentVersion, EvaluationRun, SwebenchProblem
 from validator.sandbox.constants import AGENTS_BASE_DIR
@@ -29,6 +25,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")
 
     sandbox_manager = SandboxManager(websocket_app)
+    websocket_app.sandbox_manager = sandbox_manager  # Store reference for cancellation
     errored = False
 
     try:
@@ -65,6 +62,10 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
 
         await sandbox_manager.run_all_sandboxes()
         logger.info(f"Evaluation {evaluation_id} completed successfully")
+    except asyncio.CancelledError:
+        logger.info(f"Evaluation {evaluation_id} was cancelled")
+        errored = True
+        raise  # Re-raise CancelledError so it can be handled by the websocket app
     except Exception as e:
         logger.error(f"Error during evaluation: {e}", exc_info=True)
         errored = True

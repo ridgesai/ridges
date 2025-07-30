@@ -25,6 +25,10 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+
+class TerminateTaskGroup(Exception):
+    """Exception raised to terminate a task group."""
+
 class SandboxManager:
     """Manages sandbox orchestration and Docker infrastructure"""
     
@@ -40,6 +44,7 @@ class SandboxManager:
         
         self.sandboxes: List[Sandbox] = []
         self.proxy_container: Optional[Container] = None
+        self._task_group: Optional[asyncio.TaskGroup] = None
         
         # Setup infrastructure
         self._setup_network()
@@ -64,7 +69,6 @@ class SandboxManager:
     @tracer.wrap(resource="setup-proxy-for-sandbox-manager")
     def _setup_proxy(self) -> None:
         """Setup proxy container"""
-        # Start proxy container
         try:
             self.proxy_container = self.docker.containers.run(
                 image=PROXY_DOCKER_IMAGE,
@@ -95,6 +99,34 @@ class SandboxManager:
         await sandbox._send_update()
         return sandbox
     
+    async def _force_terminate_task_group(self) -> None:
+        """Used to force termination of a task group."""
+        raise TerminateTaskGroup()
+    
+    def force_cancel_all_tasks(self) -> None:
+        """Immediately cancel all running sandbox tasks."""
+        # First, mark all sandboxes as cancelled to stop websocket communications
+        for sandbox in self.sandboxes:
+            sandbox.cancel()
+        
+        if self._task_group is not None:
+            # Get all tasks from the task group and cancel them directly
+            # This is more aggressive than raising an exception
+            try:
+                # Access the internal task set to cancel all tasks immediately
+                if hasattr(self._task_group, '_tasks'):
+                    for task in list(self._task_group._tasks):
+                        if not task.done():
+                            task.cancel()
+                
+                # Also create a termination task as backup
+                task = asyncio.create_task(self._force_terminate_task_group())
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            except Exception:
+                # Fallback to original method if internal access fails
+                task = asyncio.create_task(self._force_terminate_task_group())
+                task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
     @tracer.wrap(resource="run-all-sandboxes")
     async def run_all_sandboxes(self) -> None:
         """Run all sandboxes in parallel"""
@@ -108,25 +140,27 @@ class SandboxManager:
                 sandbox.evaluation_run.status = "result_scored"
                 sandbox.evaluation_run.solved = False
                 await sandbox._send_update()
-        
-        # Create tasks for all sandboxes to run in parallel
-        tasks = [
-            asyncio.create_task(run_sandbox_with_error_handling(sandbox))
-            for sandbox in self.sandboxes
-        ]
-        
-        # Run all tasks concurrently
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                self._task_group = tg
+                for sandbox in self.sandboxes:
+                    tg.create_task(run_sandbox_with_error_handling(sandbox))
+        except* TerminateTaskGroup:
+            logger.info("TaskGroup terminated by TerminateTaskGroup exception")
+            pass
+        except* asyncio.CancelledError:
+            logger.info("TaskGroup cancelled due to task cancellation")
+            pass
+        finally:
+            self._task_group = None
     
     @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
         """Clean up sandbox resources"""
-        # Cancel running sandboxes
-        if force_cancel:
-            for sandbox in self.sandboxes:
-                if hasattr(sandbox, '_task') and sandbox._task and not sandbox._task.done():
-                    sandbox._task.cancel()
+        # Terminate task group if running
+        if force_cancel and self._task_group:
+            self._task_group.create_task(self._force_terminate_task_group())
         
         # Clean up sandboxes
         for sandbox in self.sandboxes:
