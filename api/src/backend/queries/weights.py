@@ -5,12 +5,12 @@ from typing import Optional, List
 
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.utils.models import WeightsData
 
 logger = logging.getLogger(__name__)
 
-@db_operation
+@db_transaction
 async def store_weights(conn: asyncpg.Connection, miner_weights: dict, time_since_last_update=None) -> int:
     """
     Store miner weights in the weights_history table. Return 1 if successful, 0 if not.

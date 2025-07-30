@@ -6,7 +6,7 @@ import os
 from typing import Optional, Dict, Any
 from uuid import UUID
 
-from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.endpoints.retrieval import get_agent_code
 from loggers.logging_utils import get_logger
@@ -223,7 +223,7 @@ async def generate_agent_summary(version_id: str, *, proxy_url: str = None, run_
         logger.error(f"Failed to generate agent summary for version {version_id}: {e}")
         return None
 
-@db_operation
+@db_transaction
 async def update_agent_summary(conn: asyncpg.Connection, version_id: str, summary: str) -> bool:
     """
     Update the agent_summary field in the database.

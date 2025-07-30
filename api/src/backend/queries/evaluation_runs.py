@@ -4,14 +4,14 @@ from typing import Optional
 
 import asyncpg
 from api.src.backend.entities import EvaluationRun, EvaluationRunLog, EvaluationRunWithUsageDetails
-from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.db_manager import get_transaction
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 
-@db_operation
+@db_transaction
 async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> EvaluationRun:
     """
     Store or update an evaluation run. The evaluation score is automatically updated by a database trigger.
@@ -61,7 +61,7 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
 
     return evaluation_run
 
-@db_operation
+@db_transaction
 async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> EvaluationRun:
     """
     Update an evaluation run. The evaluation score is automatically updated by a database trigger.
@@ -255,7 +255,7 @@ async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[Evalu
     return run
 
 
-@db_operation
+@db_transaction
 async def insert_evaluation_run_log(conn: asyncpg.Connection, run_id: str, log_line: str) -> None:
     """Insert a log line for an evaluation run"""
     await conn.execute(
@@ -266,7 +266,7 @@ async def insert_evaluation_run_log(conn: asyncpg.Connection, run_id: str, log_l
         run_id, log_line
     )
 
-@db_operation
+@db_transaction
 async def insert_evaluation_run_logs_batch(conn: asyncpg.Connection, run_id: str, logs: list[dict]) -> None:
     """Insert multiple log lines for an evaluation run in a single transaction"""
     # Extract log data with explicit timestamps

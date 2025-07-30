@@ -4,7 +4,7 @@ import json
 
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, EvaluationRunWithUsageDetails, AgentStatus
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 from api.src.backend.entities import EvaluationStatus
@@ -347,7 +347,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
     
     return evaluations
 
-@db_operation
+@db_transaction
 async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
     logger.debug(f"Fetching next evaluation from database for validator {validator_hotkey}.")
 

@@ -2,7 +2,7 @@ from typing import Optional, List
 
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
@@ -60,14 +60,14 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     logger.debug("Getting top agent using agent_scores materialized view")
     return await MinerAgentScored.get_top_agent(conn)
 
-@db_operation
+@db_transaction
 async def ban_agent(conn: asyncpg.Connection, miner_hotkey: str):
     await conn.execute("""
         INSERT INTO banned_hotkeys (miner_hotkey)
         VALUES ($1)
     """, miner_hotkey)
 
-@db_operation
+@db_transaction
 async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
     """
     Approve an agent version as a valid, non decoding agent solution
@@ -87,7 +87,7 @@ async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
         logger.error(f"Failed to update top agents cache after approval: {e}")
         # Don't fail the approval if cache update fails
 
-@db_operation
+@db_transaction
 async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) -> List[MinerAgent]:
     """
     Set all approved agent versions to awaiting_screening status for re-evaluation

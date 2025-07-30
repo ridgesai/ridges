@@ -3,7 +3,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional, List
 
-from api.src.backend.db_manager import new_db, db_operation
+from api.src.backend.db_manager import db_operation, new_db
 from api.src.backend.entities import MinerAgent
 from api.src.utils.s3 import S3Manager
 from loggers.logging_utils import get_logger

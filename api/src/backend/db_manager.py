@@ -93,7 +93,7 @@ new_db = DBManager(
     database=DB_NAME,
 )
 
-def db_operation(func):
+def db_transaction(func):
     """Decorator to handle database operations with logging and transaction rollback"""
     @wraps(func)
     async def wrapper(*args, **kwargs):
@@ -112,6 +112,14 @@ def db_operation(func):
                     # Context manager will roll back transaction, reversing any failed commits
                     raise
 
+    return wrapper
+
+def db_operation(func):
+    """Decorator to handle database operations without transactions"""
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        async with new_db.acquire() as conn:
+            return await func(conn, *args, **kwargs)
     return wrapper
 
 async def get_pool_status() -> dict:
