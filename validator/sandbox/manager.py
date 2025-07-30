@@ -146,12 +146,18 @@ class SandboxManager:
                 self._task_group = tg
                 for sandbox in self.sandboxes:
                     tg.create_task(run_sandbox_with_error_handling(sandbox))
-        except* TerminateTaskGroup:
-            logger.info("TaskGroup terminated by TerminateTaskGroup exception")
-            pass
-        except* asyncio.CancelledError:
-            logger.info("TaskGroup cancelled due to task cancellation")
-            pass
+        except BaseExceptionGroup as eg:
+            # Handle exception groups from TaskGroup (Python 3.11+ style)
+            for exc in eg.exceptions:
+                if isinstance(exc, TerminateTaskGroup):
+                    logger.info("TaskGroup terminated by TerminateTaskGroup exception")
+                elif isinstance(exc, asyncio.CancelledError):
+                    logger.info("TaskGroup cancelled due to task cancellation")
+                else:
+                    logger.warning(f"TaskGroup exception: {exc}")
+        except (TerminateTaskGroup, asyncio.CancelledError) as e:
+            # Handle individual exceptions for compatibility
+            logger.info(f"TaskGroup terminated: {type(e).__name__}")
         finally:
             self._task_group = None
     
