@@ -274,7 +274,10 @@ def update(every: Optional[int]):
         code, current_commit, _ = run_cmd("git rev-parse HEAD")
         if code != 0 or run_cmd("git pull")[0] != 0:
             console.print("💥 Git operation failed", style="red")
-            break
+            console.print("Resetting with `git reset --hard HEAD`")
+            if run_cmd("git reset --hard HEAD")[0] != 0:
+                console.print("💥 Git reset failed", style="red")
+                return
         
         # Check if updates applied
         code, new_commit, _ = run_cmd("git rev-parse HEAD")
