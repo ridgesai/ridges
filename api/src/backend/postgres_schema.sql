@@ -20,12 +20,6 @@ BEGIN
     END IF;
 END $$;
 
--- Legacy cleanup: Drop score column and any related triggers
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
-DROP TRIGGER IF EXISTS tr_miner_agent_score_update ON miner_agents;
-DROP TRIGGER IF EXISTS tr_score_update ON miner_agents;
-DROP FUNCTION IF EXISTS update_miner_agent_score() CASCADE;
-
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
     banned_reason TEXT,
@@ -95,7 +89,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 -- Inference table
 CREATE TABLE IF NOT EXISTS inferences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    run_id UUID NOT NULL,
     messages JSONB NOT NULL,
     temperature FLOAT NOT NULL,
     model TEXT NOT NULL,
@@ -191,10 +185,6 @@ WHERE status != 'cancelled';
 -- General index for evaluation_runs foreign key if it doesn't exist
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
-
--- General index for inferences foreign key if it doesn't exist  
-CREATE INDEX IF NOT EXISTS idx_inferences_run_id 
-ON inferences (run_id);
 
 -- Drop and recreate materialized view to ensure clean state for concurrent refresh
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
