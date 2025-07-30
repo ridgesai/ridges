@@ -272,7 +272,7 @@ def update(every: Optional[int]):
     while True:
         # Get current commit and pull updates
         code, current_commit, _ = run_cmd("git rev-parse HEAD")
-        if code != 0 or run_cmd("git pull")[0] != 0:
+        if code != 0 or run_cmd("git pull --autostash")[0] != 0:
             console.print("💥 Git operation failed", style="red")
             console.print("Resetting with `git reset --hard HEAD`")
             if run_cmd("git reset --hard HEAD")[0] != 0:
