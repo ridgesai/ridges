@@ -50,6 +50,7 @@ class Sandbox:
         self.container: Optional[Container] = None
         self.repo_dir: Optional[Path] = None
         self._cancelled = False
+        self.logs = []  # Store logs in memory until patch generation is complete
         
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
@@ -182,6 +183,17 @@ class Sandbox:
         
         # Process results
         try:
+
+            if self.logs:
+                try:
+                    await self.manager.websocket_app.send({
+                        "event": "evaluation-run-logs-batch",
+                        "run_id": str(self.evaluation_run.run_id),
+                        "logs": self.logs
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to send logs for {self.evaluation_run.run_id}: {e}")
+
             logger.info(f"Checking output file: {output_file}")
             logger.info(f"Output file exists: {output_file.exists()}")
             if output_file.exists():
@@ -204,6 +216,7 @@ class Sandbox:
                     self.evaluation_run.response = patch
                     self.evaluation_run.status = "patch_generated"
                     self.evaluation_run.patch_generated_at = datetime.now(timezone.utc)
+                    # Send all logs as a single batch now that patch is generated
                 else:
                     raise ValueError(f"Empty patch returned from agent. Output: {output}")
             else:
@@ -212,6 +225,8 @@ class Sandbox:
             logger.error(f"JSON decode error: {e}")
             logger.error(f"Full agent output text: {repr(text)}")
             raise ValueError(f"Failed to parse agent output: {e}. Agent output: {text}")
+        except Exception as e:
+            raise
         finally:
             # Clean up IO directory after processing results
             shutil.rmtree(io_dir, ignore_errors=True)
@@ -389,7 +404,11 @@ class Sandbox:
                     # Check if event loop is still running before scheduling coroutine
                     if not loop.is_closed():
                         try:
-                            asyncio.run_coroutine_threadsafe(self._send_log_via_websocket(line), loop)
+                            self.logs.append({
+                                "time": datetime.now(timezone.utc).isoformat(),
+                                "line": line
+                            })
+                            asyncio.run_coroutine_threadsafe(self.store_log_line(line), loop)
                         except RuntimeError:
                             # Event loop was closed between check and execution
                             break
@@ -416,20 +435,6 @@ class Sandbox:
             logger.error(f"Error in log stream for {run_id}: {e}")
         finally:
             logger.info(f"LOG STREAM ENDED for {run_id}")
-    
-    @tracer.wrap(resource="send-log-via-websocket")
-    async def _send_log_via_websocket(self, line: str) -> None:
-        """Send log line via websocket and store in database"""
-        if self._cancelled:
-            return
-        try:
-            await self.manager.websocket_app.send({
-                "event": "evaluation-run-log",
-                "run_id": str(self.evaluation_run.run_id),
-                "line": line,
-            })
-        except Exception as e:
-            logger.error(f"Failed to send websocket log for {self.evaluation_run.run_id}: {e}")
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:

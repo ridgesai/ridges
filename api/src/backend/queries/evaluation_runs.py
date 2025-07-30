@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Optional
 
 import asyncpg
@@ -264,6 +265,34 @@ async def insert_evaluation_run_log(conn: asyncpg.Connection, run_id: str, log_l
         """,
         run_id, log_line
     )
+
+@db_operation
+async def insert_evaluation_run_logs_batch(conn: asyncpg.Connection, run_id: str, logs: list[dict]) -> None:
+    """Insert multiple log lines for an evaluation run in a single transaction"""
+    # Extract log data with explicit timestamps
+    log_data = []
+    for log_entry in logs:
+        line = log_entry.get("line", "")
+        timestamp = log_entry.get("time")
+        if line:  # Only insert non-empty lines
+            # Parse the ISO timestamp if provided, otherwise use current time
+            if timestamp:
+                try:
+                    parsed_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    parsed_timestamp = datetime.now()
+            else:
+                parsed_timestamp = datetime.now()
+            log_data.append((run_id, line, parsed_timestamp))
+    
+    if log_data:
+        await conn.executemany(
+            """
+            INSERT INTO evaluation_run_logs (run_id, line, created_at)
+            VALUES ($1, $2, $3)
+            """,
+            log_data
+        )
 
 @db_operation
 async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> list[EvaluationRunLog]:
