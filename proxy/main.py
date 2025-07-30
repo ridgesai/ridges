@@ -16,6 +16,7 @@ from proxy.providers import InferenceManager
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
 
 
+CHECK_COST_LIMITS = False
 
 logger = get_logger(__name__)
 
@@ -71,15 +72,16 @@ async def embedding_endpoint(request: EmbeddingRequest):
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
                 )
             
-            # Check cost limits at FastAPI level
-            run_uuid = UUID(request.run_id)
-            current_cost = await get_total_embedding_cost(run_uuid)
-            if current_cost > MAX_COST_PER_RUN:
-                logger.warning(f"Embedding request for run_id {request.run_id} exceeded cost limit: ${current_cost:.6f}")
-                raise HTTPException(
-                    status_code=429,
-                    detail=f"Agent version has reached the maximum cost ({MAX_COST_PER_RUN}) for this evaluation run. Please do not request more embeddings."
-                )
+            if CHECK_COST_LIMITS:
+                # Check cost limits at FastAPI level
+                run_uuid = UUID(request.run_id)
+                current_cost = await get_total_embedding_cost(run_uuid)
+                if current_cost > MAX_COST_PER_RUN:
+                    logger.warning(f"Embedding request for run_id {request.run_id} exceeded cost limit: ${current_cost:.6f}")
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Agent version has reached the maximum cost ({MAX_COST_PER_RUN}) for this evaluation run. Please do not request more embeddings."
+                    )
             
             # Get embedding from chutes
             embedding_result = await chutes_client.embed(run_uuid, request.input)
