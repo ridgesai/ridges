@@ -122,8 +122,21 @@ class Evaluation:
 
         await self._update_agent_status(conn)
 
+        # Notify validators with proper lock protection
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        
         for validator in validators_to_notify:
-            await validator.start_evaluation_and_send(self.evaluation_id)
+            # Use lock protection for validator work assignment
+            async with Evaluation.get_lock():
+                if validator.is_available():
+                    success = await validator.start_evaluation_and_send(self.evaluation_id)
+                    if success:
+                        logger.info(f"Successfully assigned evaluation {self.evaluation_id} to validator {validator.hotkey}")
+                    else:
+                        logger.warning(f"Failed to assign evaluation {self.evaluation_id} to validator {validator.hotkey}")
+                else:
+                    logger.info(f"Validator {validator.hotkey} not available for evaluation {self.evaluation_id}")
 
     async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float, bool]:
         """Check inference success rate for this evaluation

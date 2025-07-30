@@ -27,58 +27,72 @@ class Validator(Client):
     
     def set_available(self) -> None:
         """Set validator to available state"""
+        old_status = getattr(self, 'status', None)
         self.status = "available"
         self.current_evaluation_id = None
         self.current_agent_name = None
         self.current_agent_hotkey = None
-        logger.info(f"Validator {self.hotkey}: -> available")
+        logger.info(f"Validator {self.hotkey}: {old_status} -> available")
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
-        """Start evaluation - update status"""
+        """Start evaluation and send to validator"""
         if not self.is_available():
-            logger.info(f"Validator {self.hotkey}: -> not available")
+            logger.info(f"Validator {self.hotkey} not available for evaluation {evaluation_id}")
             return False
-        # comment out for now, idfk
         
         from api.src.models.evaluation import Evaluation
         evaluation = await Evaluation.get_by_id(evaluation_id)
         
         if not evaluation or evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+            logger.warning(f"Validator {self.hotkey}: Invalid evaluation {evaluation_id}")
             return False
 
         miner_agent = await get_agent_by_version_id(evaluation.version_id)
+        if not miner_agent:
+            logger.error(f"Validator {self.hotkey}: Agent not found for evaluation {evaluation_id}")
+            return False
 
-        async with get_db_connection() as conn:
-            evaluation_runs = await evaluation.start(conn)
+        try:
+            async with get_transaction() as conn:
+                evaluation_runs = await evaluation.start(conn)
 
-        message = {
-            "event": "evaluation",
-            "evaluation_id": str(evaluation_id),
-            "agent_version": miner_agent.model_dump(mode='json'),
-            "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
-        }
-        await self.websocket.send_json(message)
-
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        await ws_manager.send_to_all_non_validators("evaluation-started", message)
+            message = {
+                "event": "evaluation",
+                "evaluation_id": str(evaluation_id),
+                "agent_version": miner_agent.model_dump(mode='json'),
+                "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
+            }
             
-        self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
-        self.current_evaluation_id = evaluation_id
-        self.current_agent_name = miner_agent.agent_name
-        self.current_agent_hotkey = miner_agent.miner_hotkey
-        logger.info(f"Validator {self.hotkey}: -> evaluating {miner_agent.agent_name}")
+            # Send message to validator
+            await self.websocket.send_json(message)
 
-        return True
+            # Broadcast to other clients
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws_manager = WebSocketManager.get_instance()
+            await ws_manager.send_to_all_non_validators("evaluation-started", message)
+                
+            # Commit validator state changes
+            self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
+            self.current_evaluation_id = evaluation_id
+            self.current_agent_name = miner_agent.agent_name
+            self.current_agent_hotkey = miner_agent.miner_hotkey
+            logger.info(f"Validator {self.hotkey} successfully started evaluating {miner_agent.agent_name}")
+
+            return True
+            
+        except Exception as e:
+            logger.error(f"Validator {self.hotkey}: Failed to send evaluation {evaluation_id}: {e}")
+            return False
     
     async def connect(self):
         """Handle validator connection"""
         from api.src.models.evaluation import Evaluation
-        self.set_available()
+        logger.info(f"Validator {self.hotkey} connected")
         
-        if await Evaluation.has_waiting_for_validator(self):
-            evaluation_id = await self.get_next_evaluation()
-            await self.start_evaluation_and_send(evaluation_id)
+        async with Evaluation.get_lock():
+            self.set_available()
+            logger.info(f"Validator {self.hotkey} available with status: {self.status}")
+            await self._check_and_start_next_evaluation()
     
     async def disconnect(self):
         """Handle validator disconnection"""
@@ -97,35 +111,68 @@ class Validator(Client):
             """, self.hotkey)
     
     async def finish_evaluation(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
-        """Finish evaluation"""
+        """Finish evaluation and automatically look for next work"""
         from api.src.models.evaluation import Evaluation
         
-        evaluation = await Evaluation.get_by_id(evaluation_id)
-        if not evaluation or evaluation.validator_hotkey != self.hotkey:
-            return
-        
-        async with get_transaction() as conn:
-            agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-            if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
-                logger.warning(f"Validator {self.hotkey}: -> agent {evaluation.version_id} is not evaluating")
+        try:
+            evaluation = await Evaluation.get_by_id(evaluation_id)
+            if not evaluation or evaluation.validator_hotkey != self.hotkey:
+                logger.warning(f"Validator {self.hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}")
                 return
             
-            if errored:
-                await evaluation.error(conn, reason)
-            else:
-                await evaluation.finish(conn)
-        
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
-
-        self.set_available()
+            async with get_transaction() as conn:
+                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+                if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
+                    logger.warning(f"Validator {self.hotkey}: Agent {evaluation.version_id} not in evaluating status during finish")
+                    return
+                
+                if errored:
+                    await evaluation.error(conn, reason)
+                else:
+                    await evaluation.finish(conn)
+            
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws_manager = WebSocketManager.get_instance()
+            await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+            
+            logger.info(f"Validator {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+        finally:
+            # Single atomic reset and reassignment
+            async with Evaluation.get_lock():
+                self.set_available()
+                logger.info(f"Validator {self.hotkey}: Reset to available and looking for next evaluation")
+                await self._check_and_start_next_evaluation()
     
     async def send_set_weights(self, data: dict):
         """Send set weights message to validator"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
         await ws_manager.send_to_client(self, {"event": "set-weights", "data": data})
+    
+    async def _check_and_start_next_evaluation(self):
+        """Atomically check for and start next evaluation - MUST be called within lock"""
+        from api.src.models.evaluation import Evaluation
+        
+        Evaluation.assert_lock_held()
+        
+        if not self.is_available():
+            logger.info(f"Validator {self.hotkey} not available (status: {self.status})")
+            return
+        
+        # Check if validator has waiting work and get next evaluation atomically
+        if await Evaluation.has_waiting_for_validator(self):
+            evaluation_id = await self.get_next_evaluation()
+            if evaluation_id:
+                logger.info(f"Validator {self.hotkey} found next evaluation {evaluation_id} - automatically starting")
+                success = await self.start_evaluation_and_send(evaluation_id)
+                if success:
+                    logger.info(f"✅ Validator {self.hotkey} successfully auto-started next evaluation {evaluation_id}")
+                else:
+                    logger.warning(f"❌ Validator {self.hotkey} failed to auto-start evaluation {evaluation_id}")
+            else:
+                logger.warning(f"Validator {self.hotkey} has waiting work but no evaluation found - potential race condition")
+        else:
+            logger.info(f"Validator {self.hotkey} finished work - no more evaluations waiting in queue")
     
     @staticmethod
     async def get_connected() -> List['Validator']:
