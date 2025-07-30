@@ -220,6 +220,12 @@ class Evaluation:
     def get_lock():
         """Get the shared lock for evaluation operations"""
         return Evaluation._lock
+    
+    @staticmethod
+    def assert_lock_held():
+        """Debug assertion to ensure lock is held for critical operations"""
+        if not Evaluation._lock.locked():
+            raise AssertionError("Evaluation lock must be held for this operation")
 
     @staticmethod
     async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str) -> str:
@@ -329,14 +335,15 @@ class Evaluation:
 
     @staticmethod
     async def screen_next_awaiting_agent(screener: "Screener"):
-        """Atomically claim an awaiting agent for screening and create evaluation"""
+        """Atomically claim an awaiting agent for screening - MUST be called within lock"""
         from api.src.backend.entities import MinerAgent, AgentStatus
-
+        
+        Evaluation.assert_lock_held()
         logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey}")
 
-        # Atomically check availability and mark busy to prevent race conditions
-        if not screener.is_available():
-            logger.info(f"Screener {screener.hotkey} is not available (status: {screener.status})")
+        # Check availability (could be in "reserving" state from upload)
+        if screener.status not in ["available", "reserving"]:
+            logger.info(f"Screener {screener.hotkey} not available (status: {screener.status})")
             return
         
         async with get_transaction() as conn:
@@ -368,7 +375,7 @@ class Evaluation:
             )
 
             if not claimed_agent:
-                screener.set_available()  # Revert to available if no agent found
+                screener.set_available()  # Ensure available state is set
                 logger.info(f"No agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
                 return
 
@@ -385,11 +392,17 @@ class Evaluation:
         
             eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
 
-            screener.status = f"Screening agent {agent.agent_name} with evaluation {eval_id}"
-            screener.current_agent_name = agent.agent_name
-            screener.current_evaluation_id = eval_id
-
-            logger.info(f"WebSocket send to screener {screener.hotkey} for agent {agent.agent_name}: {'SUCCESS' if success else 'FAILED'}")
+            if success:
+                # Commit screener state changes
+                screener.status = f"Screening agent {agent.agent_name} with evaluation {eval_id}"
+                screener.current_agent_name = agent.agent_name
+                screener.current_evaluation_id = eval_id
+                screener.current_agent_hotkey = agent.miner_hotkey
+                logger.info(f"Screener {screener.hotkey} successfully assigned to {agent.agent_name}")
+            else:
+                # Reset screener on failure
+                screener.set_available()
+                logger.warning(f"Failed to send work to screener {screener.hotkey}")
 
     @staticmethod
     async def get_progress(evaluation_id: str) -> float:

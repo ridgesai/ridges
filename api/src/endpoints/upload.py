@@ -83,7 +83,8 @@ async def post_agent(
         check_agent_code(file_content)
 
         async with Evaluation.get_lock():
-            screener = await Screener.get_first_available()
+            # Atomic availability check + reservation
+            screener = await Screener.get_first_available_and_reserve()
             if not screener:
                 logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
                 raise HTTPException(
@@ -94,6 +95,8 @@ async def post_agent(
             async with get_transaction() as conn:
                 can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, miner_hotkey)
                 if not can_upload:
+                    # IMPORTANT: Release screener reservation on failure
+                    screener.set_available()
                     logger.error(f"Cannot upload agent for miner {miner_hotkey} - has running evaluations")
                     raise HTTPException(
                         status_code=409,
@@ -115,9 +118,14 @@ async def post_agent(
                     agent.version_num,
                 )
 
+                # Create evaluation and assign to screener (commits screener state)
                 eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
                 if not success:
-                    logger.warning(f"Failed to immediately assign agent {agent.version_id} to screener, will be picked up later")
+                    # If send fails, reset screener
+                    screener.set_available()
+                    logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+            
+            # Screener state is now committed, lock can be released
 
         # Schedule background agent summary generation
         logger.info(f"Scheduling agent summary generation for {agent.version_id}")

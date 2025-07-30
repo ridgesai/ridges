@@ -73,9 +73,10 @@ class Screener(Client):
     async def connect(self):
         """Handle screener connection"""
         from api.src.models.evaluation import Evaluation
-        self.set_available()
-        logger.info(f"Screener {self.hotkey} connected with status: {self.status}")
+        logger.info(f"Screener {self.hotkey} connected")
         async with Evaluation.get_lock():
+            self.set_available()
+            logger.info(f"Screener {self.hotkey} available with status: {self.status}")
             await Evaluation.screen_next_awaiting_agent(self)
     
     async def disconnect(self):
@@ -115,23 +116,42 @@ class Screener(Client):
                     
                 logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
         finally:
-            # Always reset screener and try to get next agent
-            logger.info(f"Screener {self.hotkey}: Resetting to available and looking for next agent")
-            self.set_available()
+            # Single atomic reset and reassignment
             async with Evaluation.get_lock():
+                self.set_available()
+                logger.info(f"Screener {self.hotkey}: Reset to available and looking for next agent")
                 await Evaluation.screen_next_awaiting_agent(self)
     
     @staticmethod
     async def get_first_available() -> Optional['Screener']:
-        """Get first available screener"""
+        """Read-only availability check - does NOT reserve screener"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
-        logger.debug(f"Looping through {len(ws_manager.clients)} clients to find an available screener...")
+        logger.debug(f"Checking {len(ws_manager.clients)} clients for available screener...")
         for client in ws_manager.clients.values():
             if client.get_type() == "screener" and client.status == "available":
-                logger.debug(f"Found an available screener: {client.hotkey}.")
+                logger.debug(f"Found available screener: {client.hotkey}")
                 return client
-        logger.warning(f"A screener was requested but all screeners are currently busy.")
+        logger.warning("No available screeners found")
+        return None
+    
+    @staticmethod
+    async def get_first_available_and_reserve() -> Optional['Screener']:
+        """Atomically find and reserve first available screener - MUST be called within Evaluation lock"""
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        
+        for client in ws_manager.clients.values():
+            if (client.get_type() == "screener" and 
+                client.status == "available" and
+                client.is_available()):
+                
+                # Immediately reserve to prevent race conditions
+                client.status = "reserving"
+                logger.info(f"Reserved screener {client.hotkey} for work assignment")
+                return client
+        
+        logger.warning("No available screeners to reserve")
         return None
     
     @staticmethod
@@ -149,7 +169,7 @@ class Screener(Client):
             
             agents = [MinerAgent(**agent) for agent in agent_data]
 
-        while screener := Screener.get_first_available():
+        while screener := await Screener.get_first_available():
             await screener.connect()
         
         logger.info(f"Reset {len(agents)} approved agents to awaiting_screening")
