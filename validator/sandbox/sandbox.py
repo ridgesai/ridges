@@ -408,7 +408,6 @@ class Sandbox:
                                 "time": datetime.now(timezone.utc).isoformat(),
                                 "line": line
                             })
-                            asyncio.run_coroutine_threadsafe(self.store_log_line(line), loop)
                         except RuntimeError:
                             # Event loop was closed between check and execution
                             break
