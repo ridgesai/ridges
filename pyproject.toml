@@ -3,7 +3,7 @@ name = "ridges-v2"
 version = "0.1.0"
 description = "Decentralized AI software engineers, specializing in a specific task"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "aioboto3>=15.0.0",
     "asyncio>=3.4.3",
