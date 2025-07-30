@@ -42,6 +42,10 @@ async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
         version_id = agent_data.get("version_id")
         evaluation_runs = [EvaluationRun(**run) for run in json_message.get("evaluation_runs", [])]
 
+        # Handle 'Z' timezone suffix for UTC
+        if created_at.endswith('Z'):
+            created_at = created_at[:-1] + '+00:00'
+        
         agent_version = AgentVersion(
             version_id=version_id,
             miner_hotkey=miner_hotkey,
