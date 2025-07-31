@@ -279,28 +279,45 @@ class MinerAgentScored(BaseModel):
         await conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
     
 class AgentStatus(Enum):
-    """States for miner agents - clear and unambiguous"""
-    awaiting_screening = "awaiting_screening"          # Just uploaded, needs screening
-    screening = "screening"                  # Currently being screened  
-    failed_screening = "failed_screening"              # Failed screening (score < 0.8)
-    waiting = "waiting"           # Passed screening, needs evaluation
-    evaluating = "evaluating"               # Currently being evaluated
-    scored = "scored"                       # All evaluations complete
-    replaced = "replaced"                   # Replaced by newer version
+    """States for miner agents - multi-stage screening flow"""
+    awaiting_screening_1 = "awaiting_screening_1"      # Just uploaded, needs stage 1 screening
+    screening_1 = "screening_1"                        # Currently being screened by stage 1
+    failed_screening_1 = "failed_screening_1"          # Failed stage 1 screening (score < 0.8)
+    awaiting_screening_2 = "awaiting_screening_2"      # Passed stage 1, needs stage 2 screening
+    screening_2 = "screening_2"                        # Currently being screened by stage 2
+    failed_screening_2 = "failed_screening_2"          # Failed stage 2 screening (score < 0.8)
+    waiting = "waiting"                                # Passed all screening, needs evaluation
+    evaluating = "evaluating"                          # Currently being evaluated
+    scored = "scored"                                  # All evaluations complete
+    replaced = "replaced"                              # Replaced by newer version
+    
+    # Legacy statuses for backward compatibility during transition
+    awaiting_screening = "awaiting_screening_1"        # Map to stage 1
+    screening = "screening_1"                          # Map to stage 1
+    failed_screening = "failed_screening_1"            # Map to stage 1 fail
+    evaluation = "evaluating"                          # Map to evaluating (legacy alias)
     
     @classmethod
     def from_string(cls, status: str) -> 'AgentStatus':
         """Map database status string to agent state enum"""
         mapping = {
-            "awaiting_screening": cls.awaiting_screening,
-            "screening": cls.screening,
-            "failed_screening": cls.failed_screening,
+            "awaiting_screening_1": cls.awaiting_screening_1,
+            "screening_1": cls.screening_1,
+            "failed_screening_1": cls.failed_screening_1,
+            "awaiting_screening_2": cls.awaiting_screening_2,
+            "screening_2": cls.screening_2,
+            "failed_screening_2": cls.failed_screening_2,
             "waiting": cls.waiting,
             "evaluating": cls.evaluating,
             "scored": cls.scored,
-            "replaced": cls.replaced
+            "replaced": cls.replaced,
+            # Legacy mappings for backward compatibility
+            "awaiting_screening": cls.awaiting_screening_1,
+            "screening": cls.screening_1,
+            "failed_screening": cls.failed_screening_1,
+            "evaluation": cls.evaluating  # Critical: existing agents might have this status
         }
-        return mapping.get(status, cls.awaiting_screening)
+        return mapping.get(status, cls.awaiting_screening_1)
 
 
 class EvaluationStatus(Enum):

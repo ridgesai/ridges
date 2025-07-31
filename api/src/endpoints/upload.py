@@ -71,7 +71,7 @@ async def post_agent(
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
             created_at=datetime.now(),
-            status=AgentStatus.awaiting_screening,
+            status=AgentStatus.awaiting_screening_1,
             ip_address=request.client.host if request.client else None,
         )
 
@@ -112,7 +112,7 @@ async def post_agent(
                 await conn.execute(
                     """
                     INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
-                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening', $5)
+                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                 """,
                     agent.version_id,
                     agent.miner_hotkey,
