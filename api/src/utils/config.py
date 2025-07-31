@@ -1,3 +1,4 @@
+import requests
 AGENT_RATE_LIMIT_SECONDS = 60 * 60 * 12
 PERMISSABLE_PACKAGES = [
     "numpy",
