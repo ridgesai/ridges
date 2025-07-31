@@ -39,7 +39,8 @@ PERMISSABLE_PACKAGES = [
     "concurrent.futures",
     "ast",
     "difflib",
-    "pydantic"
+    "pydantic",
+    "django"
 ]
 MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "agentica-org/DeepCoder-14B-Preview": 0.02,
