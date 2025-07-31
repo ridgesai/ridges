@@ -15,6 +15,7 @@ class Screener(Client):
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
     current_agent_hotkey: Optional[str] = None
+    screener_stage: int = 1  # 1 or 2, determines which screening stage this screener handles
     
     def get_type(self) -> str:
         return "screener"
@@ -55,8 +56,11 @@ class Screener(Client):
         async with get_transaction() as conn:
             agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
-            if not agent or agent_status != AgentStatus.screening:
-                logger.info(f"Screener {self.hotkey}: tried to start screening but agent is not in screening status")
+            
+            # Check if agent is in the appropriate screening status for this screener stage
+            expected_status = getattr(AgentStatus, f"screening_{self.screener_stage}")
+            if not agent or agent_status != expected_status:
+                logger.info(f"Stage {self.screener_stage} screener {self.hotkey}: tried to start screening but agent is not in screening_{self.screener_stage} status (current: {agent['status'] if agent else 'None'})")
                 return False
             agent_name = agent["agent_name"]
             agent_hotkey = agent["miner_hotkey"]
@@ -99,8 +103,9 @@ class Screener(Client):
             
             async with get_transaction() as conn:
                 agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-                if AgentStatus.from_string(agent_status) != AgentStatus.screening:
-                    logger.warning(f"Screener {self.hotkey}: Agent {evaluation.version_id} not in screening status during finish")
+                expected_status = getattr(AgentStatus, f"screening_{self.screener_stage}")
+                if AgentStatus.from_string(agent_status) != expected_status:
+                    logger.warning(f"Stage {self.screener_stage} screener {self.hotkey}: Agent {evaluation.version_id} not in screening_{self.screener_stage} status during finish (current: {agent_status})")
                     return
                 
                 if errored:
@@ -160,9 +165,9 @@ class Screener(Client):
         from api.src.socket.websocket_manager import WebSocketManager
         
         async with get_transaction() as conn:
-            # Reset approved agents to awaiting screening
+            # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
-                UPDATE miner_agents SET status = 'awaiting_screening'
+                UPDATE miner_agents SET status = 'awaiting_screening_1'
                 WHERE version_id IN (SELECT version_id FROM approved_version_ids) AND status != 'replaced'
                 RETURNING *
             """)
