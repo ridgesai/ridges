@@ -226,36 +226,26 @@ agent_evaluations AS (
         AND e.score IS NOT NULL
         AND e.score > 0
         AND e.validator_hotkey NOT LIKE 'i-0%'
+        AND e.validator_hotkey NOT IN ('5GuRsre3hqm6WKWRCqVxXdM4UtGs457nDhPo9F5wvJ16Ys62')
         AND e.set_id IS NOT NULL
-),
-filtered_scores AS (
-    -- Remove the lowest score for each agent version and set combination
-    SELECT 
-        ae.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY ae.version_id, ae.set_id 
-            ORDER BY ae.score ASC
-        ) as score_rank
-    FROM agent_evaluations ae
 )
 SELECT
-    fs.version_id,
-    fs.miner_hotkey,
-    fs.agent_name,
-    fs.version_num,
-    fs.created_at,
-    fs.status,
-    fs.agent_summary,
-    fs.set_id,
-    fs.approved,
-    COUNT(DISTINCT fs.validator_hotkey) AS validator_count,
-    AVG(fs.score) AS final_score
-FROM filtered_scores fs
-WHERE fs.set_id IS NOT NULL
-    AND fs.score_rank > 1  -- Exclude the lowest score (rank 1)
-GROUP BY fs.version_id, fs.miner_hotkey, fs.agent_name, fs.version_num, 
-         fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved
-HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
+    ae.version_id,
+    ae.miner_hotkey,
+    ae.agent_name,
+    ae.version_num,
+    ae.created_at,
+    ae.status,
+    ae.agent_summary,
+    ae.set_id,
+    ae.approved,
+    COUNT(DISTINCT ae.validator_hotkey) AS validator_count,
+    AVG(ae.score) AS final_score
+FROM agent_evaluations ae
+WHERE ae.set_id IS NOT NULL
+GROUP BY ae.version_id, ae.miner_hotkey, ae.agent_name, ae.version_num, 
+         ae.created_at, ae.status, ae.agent_summary, ae.set_id, ae.approved
+HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
