@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from api.src.models.screener import Screener
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -37,6 +37,7 @@ class ErrorResponse(BaseModel):
     detail: str = Field(..., description="Error message describing what went wrong")
 
 async def post_agent(
+    request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
     public_key: str = Form(..., description="Public key of the miner in hex format"),
     file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
@@ -71,6 +72,7 @@ async def post_agent(
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
             created_at=datetime.now(),
             status=AgentStatus.awaiting_screening,
+            ip_address=request.client.host if request.client else None,
         )
 
         if prod: await check_agent_banned(miner_hotkey=miner_hotkey)
@@ -109,13 +111,14 @@ async def post_agent(
 
                 await conn.execute(
                     """
-                    INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status)
-                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening')
+                    INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening', $5)
                 """,
                     agent.version_id,
                     agent.miner_hotkey,
                     agent.agent_name,
                     agent.version_num,
+                    agent.ip_address,
                 )
 
                 # Create evaluation and assign to screener (commits screener state)

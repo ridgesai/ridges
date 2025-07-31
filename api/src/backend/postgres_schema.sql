@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     version_num INT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
     status TEXT,
-    agent_summary TEXT
+    agent_summary TEXT,
+    ip_address TEXT
 );
 
 -- Add agent_summary column if it doesn't exist (for existing tables)
