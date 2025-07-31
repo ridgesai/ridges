@@ -41,6 +41,8 @@ PERMISSABLE_PACKAGES = [
     "difflib",
     "pydantic"
 ]
+
+# Fallback/default pricing.
 MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "agentica-org/DeepCoder-14B-Preview": 0.02,
                                 "deepseek-ai/DeepSeek-V3": 0.2722,
@@ -68,5 +70,18 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "zai-org/GLM-4.5-FP8": 0.2000,
                                 "zai-org/GLM-4.5-Air": 0.0000
 }
+# Update from the actual model list, ensuring all models/prices are up-to-date.
+try:
+    response = requests.get("https://llm.chutes.ai/v1/models", timeout=5)
+    if response.status_code == 200:
+        data = response.json()
+        for model in data.get("data", []):
+            model_id = model.get("id")
+            price_usd = model.get("price", {}).get("usd")
+            if model_id and price_usd is not None:
+                MODEL_PRICING[model_id] = price_usd
+except Exception:
+    pass
+
 EMBEDDING_PRICE_PER_SECOND = 0.0001
 SCREENING_THRESHOLD = 0.6
