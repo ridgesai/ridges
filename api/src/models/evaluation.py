@@ -264,15 +264,13 @@ class Evaluation:
         # For other cases, check remaining regular evaluations (non-screening)
         waiting_count = await conn.fetchval(
             """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'waiting' 
-               AND validator_hotkey NOT LIKE 'screener-1-%' 
-               AND validator_hotkey NOT LIKE 'screener-2-%' 
+               AND validator_hotkey NOT LIKE 'screener-%' 
                AND validator_hotkey NOT LIKE 'i-0%'""", 
             self.version_id
         )
         running_count = await conn.fetchval(
             """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'running' 
-               AND validator_hotkey NOT LIKE 'screener-1-%' 
-               AND validator_hotkey NOT LIKE 'screener-2-%' 
+               AND validator_hotkey NOT LIKE 'screener-%' 
                AND validator_hotkey NOT LIKE 'i-0%'""", 
             self.version_id
         )
@@ -598,7 +596,7 @@ class Evaluation:
                 """
                 SELECT evaluation_id, version_id FROM evaluations 
                 WHERE validator_hotkey = $1 AND status IN ('running', 'waiting') 
-                AND (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-0%')
+                AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
             """,
                 screener_hotkey,
             )
@@ -658,7 +656,7 @@ class Evaluation:
             # Cancel waiting screenings for all screener types
             waiting_screenings = await conn.fetch(
                 """SELECT evaluation_id FROM evaluations WHERE status = 'waiting' 
-                   AND (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-0%')"""
+                   AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')"""
             )
             for screening_row in waiting_screenings:
                 evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])

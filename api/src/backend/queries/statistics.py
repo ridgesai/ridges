@@ -157,6 +157,7 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
                 AND e.set_id = $1 
                 AND e.status = 'completed' 
                 AND e.score IS NOT NULL
+                AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
             WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
@@ -228,6 +229,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
                 AND e.set_id = $1 
                 AND e.status = 'completed' 
                 AND e.score IS NOT NULL
+                AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
             WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             AND e.score IS NOT NULL

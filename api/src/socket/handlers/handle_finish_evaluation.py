@@ -29,7 +29,8 @@ async def handle_finish_evaluation(
         logger.warning(f"Evaluation {evaluation_id} not found")
         return {"status": "error", "message": "Evaluation not found"}
     
-    is_screener_evaluation = evaluation.validator_hotkey.startswith("i-0")
+    is_screener_evaluation = (evaluation.validator_hotkey.startswith("screener-") or 
+                             evaluation.validator_hotkey.startswith("i-0"))
     is_screener_client = client.get_type() == "screener"
     
     # Validate client type matches evaluation type
