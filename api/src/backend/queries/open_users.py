@@ -31,3 +31,17 @@ async def create_open_user(conn: asyncpg.Connection, open_user: OpenUser) -> Non
         open_user.name,
         open_user.registered_at
     )
+
+@db_operation
+async def get_open_user_by_hotkey(conn: asyncpg.Connection, open_hotkey: str) -> Optional[OpenUser]:
+    result = await conn.fetchrow(
+        """
+            SELECT * FROM open_users WHERE open_hotkey = $1
+        """,
+        open_hotkey
+    )
+
+    if not result:
+        return None
+    
+    return OpenUser(**dict(result))
