@@ -224,11 +224,24 @@ class LocalSandboxManager:
             sandbox_created_at=datetime.now(timezone.utc)
         )
         
+        # Create sandbox directory structure that matches production
+        sandbox_id = f"sandbox_{evaluation_run.run_id}"
+        sandbox_dir = self.temp_dir / sandbox_id
+        sandbox_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create repo and src subdirectories to match production structure
+        repo_dir = sandbox_dir / "repo"
+        src_dir = sandbox_dir / "src"
+        repo_dir.mkdir(exist_ok=True)
+        src_dir.mkdir(exist_ok=True)
+        
         # Create sandbox
         sandbox = LocalSandbox(
             evaluation_run=evaluation_run,
             problem=problem,
             agent_path=agent_path,
+            sandbox_dir=sandbox_dir,
+            repo_dir=repo_dir,
             local_manager=self,
             verbose=self.verbose,
             log_buffer=log_buffer
@@ -279,25 +292,22 @@ class LocalSandboxManager:
 
 class LocalSandbox:
     """Local sandbox for testing agents without database dependencies"""
-    def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_path: Path, local_manager: LocalSandboxManager, verbose: bool = False, log_buffer: list = None):
+    def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_path: Path, sandbox_dir: Path, repo_dir: Path, local_manager: LocalSandboxManager, verbose: bool = False, log_buffer: list = None):
         self.evaluation_run = evaluation_run
         self.problem = problem
         self.agent_path = agent_path
+        self.sandbox_dir = sandbox_dir  # Main sandbox directory (matches production structure)
+        self.repo_dir = repo_dir        # Repository subdirectory (sandbox/repo/)
         self.local_manager = local_manager
         self.verbose = verbose
         self.container = None
-        self.repo_dir = None
         self._cancelled = asyncio.Event()
         self.log_buffer = log_buffer  # Set immediately from constructor
         self.container_logs = None  # Will store logs before container removal
         # Use the docker module from the manager
         self.docker_module = local_manager.docker_module
         
-        # Set up repo directory
-        self.repo_dir = self.local_manager.repos_dir / f"repo_{self.evaluation_run.run_id}"
-        self.repo_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Clone repository
+        # Clone repository into the repo subdirectory (matches production)
         clone_repo(
             self.repo_dir,
             problem.repo,
@@ -425,19 +435,18 @@ class LocalSandbox:
                 run_id=self.evaluation_run.run_id,
             )
             
-            # Write input file  
-            input_file = self.repo_dir / "input.json"
+            # Write input file to sandbox root (matches production structure)
+            input_file = self.sandbox_dir / "input.json"
             input_file.write_text(sandbox_input.model_dump_json())
             
-            # Copy agent file to sandbox
-            src_dir = self.repo_dir / "src"
-            src_dir.mkdir(exist_ok=True)
+            # Copy agent file to sandbox/src/ (matches production structure)
+            src_dir = self.sandbox_dir / "src"
             agent_dest = src_dir / "agent.py"
             shutil.copy2(self.agent_path, agent_dest)
             
-            # Copy the agent_runner.py from the sandbox module
+            # Copy the agent_runner.py to sandbox root (matches production structure)
             runner_src = Path(__file__).parent.parent / "sandbox" / "agent_runner.py"
-            runner_dest = self.repo_dir / "agent_runner.py"
+            runner_dest = self.sandbox_dir / "agent_runner.py"
             shutil.copy2(runner_src, runner_dest)
             
             # Get commit-specific image for this instance (same as production)
@@ -467,7 +476,7 @@ class LocalSandbox:
                 sandbox_image,
                 f"python agent_runner.py",
                 volumes={
-                    str(self.repo_dir): {"bind": SANDBOX_DIR, "mode": "rw"}
+                    str(self.sandbox_dir): {"bind": SANDBOX_DIR, "mode": "rw"}
                 },
                 working_dir=SANDBOX_DIR,
                 network=self.local_manager.network_name,
@@ -488,7 +497,7 @@ class LocalSandbox:
             await monitor_task
             
             # Read output
-            output_file = self.repo_dir / "output.json"
+            output_file = self.sandbox_dir / "output.json"
             if output_file.exists():
                 with open(output_file, 'r') as f:
                     output_data = json.load(f)
@@ -722,9 +731,9 @@ class LocalSandbox:
                 self.container.remove()
             except Exception:
                 pass
-        if self.repo_dir and self.repo_dir.exists():
+        if self.sandbox_dir and self.sandbox_dir.exists():
             try:
-                shutil.rmtree(self.repo_dir, ignore_errors=True)
+                shutil.rmtree(self.sandbox_dir, ignore_errors=True)
             except Exception:
                 pass
     async def cancel(self) -> None:
