@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
-from api.src.backend.entities import EvaluationRun, EvaluationRunLog, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores
+from api.src.backend.entities import EvaluationRun, EvaluationRunLog, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
@@ -16,7 +16,7 @@ from api.src.backend.queries.evaluation_runs import get_evaluation_run_logs, get
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
-from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators
+from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators, get_screener_queue_by_stage as db_get_screener_queue_by_stage
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 
 load_dotenv()
@@ -254,6 +254,17 @@ async def validator_queues():
     
     return queue_info
 
+async def screener_queues() -> ScreenerQueueByStage:
+    """Get screener queues by stage (stage 1 and stage 2)"""
+    try:
+        return await db_get_screener_queue_by_stage()
+    except Exception as e:
+        logger.error(f"Error getting screener queues: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving screener queues. Please try again later."
+        )
+
 router = APIRouter()
 
 routes = [
@@ -272,6 +283,7 @@ routes = [
     ("/queue-position-by-hotkey", get_queue_position),
     ("/inferences-by-run", inferences_for_run),
     ("/validator-queues", validator_queues),
+    ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity)
 ]

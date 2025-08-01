@@ -464,8 +464,32 @@ class EvaluationQueueItem(BaseModel):
     miner_hotkey: str
     agent_name: str
     created_at: datetime
+    screener_score: Optional[float]
 
 class ValidatorQueueInfo(BaseModel):
     validator_hotkey: str
     queue_size: int
     queue: list[EvaluationQueueItem]
+
+
+class ScreenerQueueAgent(BaseModel):
+    """Agent in screener queue"""
+    model_config = {
+        "arbitrary_types_allowed": True,
+        "json_encoders": {
+            UUID: str
+        }
+    }
+    
+    version_id: UUID
+    miner_hotkey: str
+    agent_name: str
+    version_num: int
+    created_at: datetime
+    status: str
+
+
+class ScreenerQueueByStage(BaseModel):
+    """Screener queue organized by stage"""
+    stage_1: list[ScreenerQueueAgent]
+    stage_2: list[ScreenerQueueAgent]
