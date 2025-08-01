@@ -14,6 +14,7 @@ load_dotenv()
 logger = get_logger(__name__)
 
 sign_in_password = os.getenv("OPEN_USER_SIGN_IN_PASSWORD")
+whitelist_password = os.getenv("WHITELIST_PASSWORD")
 
 async def open_user_sign_in(request: OpenUserSignInRequest):
     auth0_user_id = request.auth0_user_id
@@ -59,7 +60,11 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     logger.info(f"Open user created: {new_user.open_hotkey}")
     return {"success": True, "new_user": True, "message": "User successfully created", "user": new_user}
 
-async def add_email_to_whitelist(email: str):
+async def add_email_to_whitelist(email: str, password: str):
+    if password != whitelist_password:
+        logger.warning(f"Someone tried to add an email to the whitelist with an invalid password. email: {email}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid whitelist password. Fuck you.")
+
     try:
         await add_open_user_email_to_whitelist(email)
     except Exception as e:
