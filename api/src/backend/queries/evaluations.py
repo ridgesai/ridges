@@ -106,7 +106,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     for row in evaluation_rows:
         # Convert JSON objects to EvaluationRun objects
         evaluation_runs = []
-        for run_data in row[10]:  # evaluation_runs is at index 10
+        for run_data in row[11]:  # evaluation_runs is at index 11
             run_data = json.loads(run_data)
             evaluation_run = EvaluationRun(
                 run_id=run_data['run_id'],
@@ -232,7 +232,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         for row in evaluation_rows:
             # Convert JSON objects to EvaluationRunWithUsageDetails objects
             evaluation_runs = []
-            for run_data in row[10]:  # evaluation_runs is at index 10
+            for run_data in row[11]:  # evaluation_runs is at index 11
                 run_data = json.loads(run_data)
                 evaluation_run = EvaluationRunWithUsageDetails(
                     run_id=run_data['run_id'],
