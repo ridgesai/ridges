@@ -64,6 +64,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             e.started_at,
             e.finished_at,
             e.score,
+            e.screener_score,
             COALESCE(
                 array_agg(
                     json_build_object(
@@ -139,6 +140,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             started_at=row[7],
             finished_at=row[8],
             score=row[9],
+            screener_score=row[10],
             evaluation_runs=evaluation_runs
         )
         evaluations.append(hydrated_evaluation)
@@ -183,6 +185,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 e.started_at,
                 e.finished_at,
                 e.score,
+                e.screener_score,
                 COALESCE(
                     array_agg(
                         json_build_object(
@@ -267,6 +270,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 started_at=row[7],
                 finished_at=row[8],
                 score=row[9],
+                screener_score=row[10],
                 evaluation_runs=evaluation_runs
             )
             evaluations.append(hydrated_evaluation)

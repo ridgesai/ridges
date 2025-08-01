@@ -23,6 +23,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
+# Suppress ddtrace errors about failing to send traces
+logging.getLogger('ddtrace.internal.writer.writer').setLevel(logging.CRITICAL)
+
 root_logger = logging.getLogger()
 for handler in root_logger.handlers:
     if isinstance(handler, logging.StreamHandler):
