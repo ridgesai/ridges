@@ -300,7 +300,7 @@ routes = [
     ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
-    ("/agents--hotkey", get_agents_from_hotkey)
+    ("/agents-from-hotkey", get_agents_from_hotkey)
 ]
 
 for path, endpoint in routes:
