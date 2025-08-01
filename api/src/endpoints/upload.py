@@ -20,7 +20,7 @@ from api.src.backend.queries.open_users import get_open_user_by_hotkey
 
 logger = get_logger(__name__)
 ws = WebSocketManager.get_instance()
-open_agent_upload_password = os.getenv("OPEN_AGENT_UPLOAD_PASSWORD")
+open_user_password = os.getenv("OPEN_USER_PASSWORD")
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -158,7 +158,7 @@ async def post_open_agent(
 ) -> AgentUploadResponse:
     logger.info(f"Uploading open agent process beginning. Details: open_hotkey: {open_hotkey}, name: {name}, password: {password}")
     
-    if password != open_agent_upload_password:
+    if password != open_user_password:
         logger.error(f"Someone tried to upload an open agent with an invalid password. open_hotkey: {open_hotkey}, name: {name}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
     try:

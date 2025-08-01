@@ -68,3 +68,17 @@ async def add_open_user_email_to_whitelist(conn: asyncpg.Connection, email: str)
             ON CONFLICT (email) DO NOTHING
         """,
         email)
+
+@db_operation
+async def get_open_user_by_email(conn: asyncpg.Connection, email: str) -> Optional[OpenUser]:
+    result = await conn.fetchrow(
+        """
+            SELECT * FROM open_users WHERE email = $1
+        """,
+        email
+    )
+    
+    if not result:
+        return None
+    
+    return OpenUser(**dict(result))

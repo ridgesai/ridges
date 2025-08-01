@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, check_open_user_email_in_whitelist, create_open_user, add_open_user_email_to_whitelist
+from api.src.backend.queries.open_users import get_open_user, check_open_user_email_in_whitelist, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -13,8 +13,8 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
-sign_in_password = os.getenv("OPEN_USER_SIGN_IN_PASSWORD")
-whitelist_password = os.getenv("WHITELIST_PASSWORD")
+open_user_password = os.getenv("OPEN_USER_PASSWORD")
+print(open_user_password)
 
 async def open_user_sign_in(request: OpenUserSignInRequest):
     auth0_user_id = request.auth0_user_id
@@ -22,7 +22,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     name = request.name
     password = request.password
 
-    if password != sign_in_password:
+    if password != open_user_password:
         logger.warning(f"Someone tried to sign in with an invalid password. auth0_user_id: {auth0_user_id}, email: {email}, name: {name}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid sign in password. Fuck you.")
     
@@ -61,7 +61,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     return {"success": True, "new_user": True, "message": "User successfully created", "user": new_user}
 
 async def add_email_to_whitelist(email: str, password: str):
-    if password != whitelist_password:
+    if password != open_user_password:
         logger.warning(f"Someone tried to add an email to the whitelist with an invalid password. email: {email}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid whitelist password. Fuck you.")
 
@@ -73,11 +73,29 @@ async def add_email_to_whitelist(email: str, password: str):
     
     return {"success": True, "message": "Email added to whitelist", "email": email}
 
+async def get_user_by_email(email: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to get user by email with an invalid password. email: {email}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+
+    try:
+        user = await get_open_user_by_email(email)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        return {"success": True, "user": user}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting user by email {email}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+
 router = APIRouter()
 
 routes = [
     ("/sign-in", open_user_sign_in),
     ("/add-email-to-whitelist", add_email_to_whitelist),
+    ("/get-user-by-email", get_user_by_email),
 ]
 
 for path, endpoint in routes:
