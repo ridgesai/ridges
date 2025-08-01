@@ -24,17 +24,40 @@ class RunningEvaluation(BaseModel):
     agent_name: str
     miner_hotkey: str
     version_num: int
+    progress: float
 
 @db_operation
 async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[RunningEvaluation]:
     results = await conn.fetch("""
-        select e.version_id, e.validator_hotkey, e.started_at, a.agent_name, a.miner_hotkey, a.version_num
+        select 
+            e.evaluation_id,
+            e.version_id, 
+            e.validator_hotkey, 
+            e.started_at, 
+            a.agent_name, 
+            a.miner_hotkey, 
+            a.version_num,
+            COALESCE(AVG(
+                CASE r.status
+                    WHEN 'started' THEN 0.2
+                    WHEN 'sandbox_created' THEN 0.4
+                    WHEN 'patch_generated' THEN 0.6
+                    WHEN 'eval_started' THEN 0.8
+                    WHEN 'result_scored' THEN 1.0
+                    WHEN 'error' THEN 1.0
+                    ELSE 0.0
+                END
+            ), 0.0) as progress
         from evaluations e
         left join miner_agents a on a.version_id = e.version_id
-        where e.status = 'running';
+        left join evaluation_runs r on r.evaluation_id = e.evaluation_id 
+            and r.status not in ('cancelled')
+        where e.status = 'running'
+        group by e.evaluation_id, e.version_id, e.validator_hotkey, e.started_at, 
+                 a.agent_name, a.miner_hotkey, a.version_num;
     """)
 
-    return [RunningEvaluation(**dict(row)) for row in results]
+    return [RunningEvaluation(**{k: v for k, v in dict(row).items() if k != 'evaluation_id'}) for row in results]
 
 @db_operation
 async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[MinerAgentWithScores]:
