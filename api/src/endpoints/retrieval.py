@@ -9,7 +9,7 @@ from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, EvaluationRunLog, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
-from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id
+from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id, get_agents_by_hotkey
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
 from api.src.backend.queries.evaluation_runs import get_evaluation_run_logs, get_runs_for_evaluation as db_get_runs_for_evaluation, get_evaluation_run_logs as db_get_evaluation_run_logs
@@ -265,7 +265,7 @@ async def screener_queues() -> ScreenerQueueByStage:
             detail="Internal server error while retrieving screener queues. Please try again later."
         )
     
-async def get_agents_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
+async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
     """
     Returns a list of all agents for a given hotkey
     """
@@ -300,7 +300,7 @@ routes = [
     ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
-    ("/agents-by-hotkey", get_agents_by_hotkey)
+    ("/agents--hotkey", get_agents_from_hotkey)
 ]
 
 for path, endpoint in routes:
