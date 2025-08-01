@@ -115,6 +115,15 @@ CREATE TABLE IF NOT EXISTS weights_history (
     miner_weights JSONB NOT NULL
 );
 
+-- Open Users table
+CREATE TABLE IF NOT EXISTS open_users (
+    open_hotkey TEXT NOT NULL PRIMARY KEY,
+    auth0_user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL,
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated
