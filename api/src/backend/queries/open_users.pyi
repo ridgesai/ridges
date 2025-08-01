@@ -1,0 +1,3 @@
+from api.src.backend.entities import OpenUser
+
+async def get_open_user(auth0_user_id: str) -> OpenUser: ...
