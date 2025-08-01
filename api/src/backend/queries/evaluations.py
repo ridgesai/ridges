@@ -293,7 +293,8 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 created_at,
                 started_at,
                 finished_at,
-                score
+                score,
+                screener_score
             FROM evaluations 
             WHERE version_id = $1
             AND set_id = $2
@@ -314,7 +315,8 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 created_at,
                 started_at,
                 finished_at,
-                score
+                score,
+                screener_score
             FROM evaluations 
             WHERE version_id = $1
             AND set_id = $2
@@ -343,6 +345,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             started_at=evaluation_row[7],
             finished_at=evaluation_row[8],
             score=evaluation_row[9],
+            screener_score=evaluation_row[10],
             evaluation_runs=evaluation_runs
         )
 
