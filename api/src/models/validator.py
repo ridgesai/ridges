@@ -128,14 +128,26 @@ class Validator(Client):
                 
                 if errored:
                     await evaluation.error(conn, reason)
+                    notification_targets = None
                 else:
-                    await evaluation.finish(conn)
+                    notification_targets = await evaluation.finish(conn)
             
             from api.src.socket.websocket_manager import WebSocketManager
             ws_manager = WebSocketManager.get_instance()
             await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
             
             logger.info(f"Validator {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+            
+            # Handle notifications AFTER transaction commits
+            if notification_targets:
+                # Note: Validators typically don't trigger stage transitions, but handle any notifications
+                for validator in notification_targets.get("validators", []):
+                    async with Evaluation.get_lock():
+                        if validator.is_available():
+                            success = await validator.start_evaluation_and_send(evaluation_id)
+                            if success:
+                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
+                                
         finally:
             # Single atomic reset and reassignment
             async with Evaluation.get_lock():

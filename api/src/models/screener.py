@@ -126,8 +126,9 @@ class Screener(Client):
                 
                 if errored:
                     await evaluation.error(conn, reason)
+                    notification_targets = None
                 else:
-                    await evaluation.finish(conn)
+                    notification_targets = await evaluation.finish(conn)
 
                 from api.src.socket.websocket_manager import WebSocketManager
                 ws_manager = WebSocketManager.get_instance()
@@ -136,6 +137,26 @@ class Screener(Client):
                 self.set_available()
                     
                 logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+            
+            # Handle notifications AFTER transaction commits
+            if notification_targets:
+                # Notify stage 2 screener when stage 1 completes
+                if notification_targets.get("stage2_screener"):
+                    async with Evaluation.get_lock():
+                        await Evaluation.screen_next_awaiting_agent(notification_targets["stage2_screener"])
+                
+                # Notify validators with proper lock protection  
+                for validator in notification_targets.get("validators", []):
+                    async with Evaluation.get_lock():
+                        if validator.is_available():
+                            success = await validator.start_evaluation_and_send(evaluation_id)
+                            if success:
+                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
+                            else:
+                                logger.warning(f"Failed to assign evaluation {evaluation_id} to validator {validator.hotkey}")
+                        else:
+                            logger.info(f"Validator {validator.hotkey} not available for evaluation {evaluation_id}")
+                            
         finally:
             # Single atomic reset and reassignment
             async with Evaluation.get_lock():

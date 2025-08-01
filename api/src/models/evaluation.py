@@ -117,7 +117,7 @@ class Evaluation:
 
         # Store validators to notify after agent status update
         validators_to_notify = []
-        stage2_screeners_to_notify = []
+        stage2_screener_to_notify = None
 
         # If it's a screener, handle stage-specific logic
         if self.is_screening:
@@ -129,14 +129,15 @@ class Evaluation:
                 logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
                 
                 if stage == 1:
-                    # Stage 1 passed -> notify available stage 2 screeners
+                    # Stage 1 passed -> find ONE available stage 2 screener
                     from api.src.socket.websocket_manager import WebSocketManager
                     ws_manager = WebSocketManager.get_instance()
                     for client in ws_manager.clients.values():
                         if (client.get_type() == "screener" and 
                             client.stage == 2 and 
                             client.is_available()):
-                            stage2_screeners_to_notify.append(client)
+                            stage2_screener_to_notify = client
+                            break
                 elif stage == 2:
                     # Stage 2 passed -> notify validators
                     from api.src.models.validator import Validator
@@ -148,23 +149,11 @@ class Evaluation:
 
         await self._update_agent_status(conn)
 
-        # Notify stage 2 screeners when stage 1 completes
-        for screener in stage2_screeners_to_notify:
-            async with Evaluation.get_lock():
-                await Evaluation.screen_next_awaiting_agent(screener)
-
-        # Notify validators with proper lock protection in case they're available
-        for validator in validators_to_notify:
-            # Use lock protection for validator work assignment
-            async with Evaluation.get_lock():
-                if validator.is_available():
-                    success = await validator.start_evaluation_and_send(self.evaluation_id)
-                    if success:
-                        logger.info(f"Successfully assigned evaluation {self.evaluation_id} to validator {validator.hotkey}")
-                    else:
-                        logger.warning(f"Failed to assign evaluation {self.evaluation_id} to validator {validator.hotkey}")
-                else:
-                    logger.info(f"Validator {validator.hotkey} not available for evaluation {self.evaluation_id}")
+        # Return notification targets to be handled OUTSIDE this transaction  
+        return {
+            "stage2_screener": stage2_screener_to_notify,
+            "validators": validators_to_notify
+        }
 
     async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float, bool]:
         """Check inference success rate for this evaluation
@@ -429,21 +418,30 @@ class Evaluation:
                 for agent in awaiting_agents[:3]:  # Log first 3
                     logger.info(f"Awaiting stage {screener.stage} agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
 
-            # Atomically claim the next awaiting agent for this stage
-            claimed_agent = await conn.fetchrow(
-                """
-                UPDATE miner_agents 
-                SET status = 'claimed' 
-                WHERE version_id = (
-                    SELECT version_id FROM miner_agents 
-                    WHERE status = $1 
-                    ORDER BY created_at ASC 
-                    LIMIT 1
+            # Atomically claim the next awaiting agent for this stage using CTE with FOR UPDATE SKIP LOCKED
+            logger.debug(f"Stage {screener.stage} screener {screener.hotkey} attempting to claim agent with status '{target_status}'")
+            try:
+                claimed_agent = await conn.fetchrow(
+                    """
+                    WITH next_agent AS (
+                        SELECT version_id FROM miner_agents 
+                        WHERE status = $1 
+                        ORDER BY created_at ASC 
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                    )
+                    UPDATE miner_agents 
+                    SET status = $2
+                    FROM next_agent
+                    WHERE miner_agents.version_id = next_agent.version_id
+                    RETURNING miner_agents.version_id, miner_hotkey, agent_name, version_num, created_at
+                """,
+                    target_status,
+                    target_screening_status
                 )
-                RETURNING version_id, miner_hotkey, agent_name, version_num, created_at
-            """,
-                target_status
-            )
+            except Exception as e:
+                logger.warning(f"Database error while claiming agent for screener {screener.hotkey}: {e}")
+                claimed_agent = None
 
             if not claimed_agent:
                 screener.set_available()  # Ensure available state is set
@@ -458,7 +456,7 @@ class Evaluation:
                 agent_name=claimed_agent["agent_name"],
                 version_num=claimed_agent["version_num"],
                 created_at=claimed_agent["created_at"],
-                status=getattr(AgentStatus, target_screening_status),
+                status=target_screening_status,  # Already set to correct status in query
             )
         
             eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
@@ -654,7 +652,8 @@ class Evaluation:
                 evaluation = await Evaluation.get_by_id(stuck_eval["evaluation_id"])
                 if evaluation:
                     logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
-                    await evaluation.finish(conn)
+                    # During startup recovery, don't trigger notifications
+                    _ = await evaluation.finish(conn)
 
             # Cancel waiting screenings for all screener types
             waiting_screenings = await conn.fetch(
