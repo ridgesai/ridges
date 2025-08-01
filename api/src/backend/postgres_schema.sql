@@ -125,6 +125,10 @@ CREATE TABLE IF NOT EXISTS open_users (
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS open_user_email_whitelist (
+    email TEXT NOT NULL PRIMARY KEY
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated

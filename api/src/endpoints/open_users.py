@@ -5,8 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user
-from api.src.backend.queries.open_users import create_open_user
+from api.src.backend.queries.open_users import get_open_user, check_open_user_email_in_whitelist, create_open_user, add_open_user_email_to_whitelist
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -25,6 +24,15 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     if password != sign_in_password:
         logger.warning(f"Someone tried to sign in with an invalid password. auth0_user_id: {auth0_user_id}, email: {email}, name: {name}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid sign in password. Fuck you.")
+    
+    try:
+        is_email_in_whitelist = await check_open_user_email_in_whitelist(email)
+    except Exception as e:
+        logger.error(f"Error checking if email {email} is in whitelist: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+    if not is_email_in_whitelist:
+        raise HTTPException(status_code=401, detail="Email not in whitelist. Please contact us on Discord to get access to upload agents.")
 
     logger.info(f"Open user sign in process beginning for: {auth0_user_id}, {email}, {name}")
 
@@ -51,10 +59,20 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     logger.info(f"Open user created: {new_user.open_hotkey}")
     return {"success": True, "new_user": True, "message": "User successfully created", "user": new_user}
 
+async def add_email_to_whitelist(email: str):
+    try:
+        await add_open_user_email_to_whitelist(email)
+    except Exception as e:
+        logger.error(f"Error adding email {email} to whitelist: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+    return {"success": True, "message": "Email added to whitelist", "email": email}
+
 router = APIRouter()
 
 routes = [
     ("/sign-in", open_user_sign_in),
+    ("/add-email-to-whitelist", add_email_to_whitelist),
 ]
 
 for path, endpoint in routes:
