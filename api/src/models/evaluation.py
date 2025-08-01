@@ -558,7 +558,19 @@ class Evaluation:
             )
 
             for agent in agents:
-                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey)
+                # Look up screener_score from completed stage 2 screening if it exists
+                screener_score = await conn.fetchval(
+                    """
+                    SELECT score FROM evaluations 
+                    WHERE version_id = $1 
+                    AND validator_hotkey LIKE 'screener-2-%'
+                    AND status = 'completed'
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                    """,
+                    agent["version_id"]
+                )
+                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, screener_score)
 
         async with get_transaction() as conn:
             # Check if validator has waiting work
