@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
     logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, set_id, status, terminated_reason, created_at, started_at, finished_at, score  "
-        "FROM evaluations WHERE evaluation_id = $1",
+        "SELECT * FROM evaluations WHERE evaluation_id = $1",
         evaluation_id
     )
 
@@ -358,8 +357,8 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
             JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.validator_hotkey = $1
             AND e.status = 'waiting' 
-            -- AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
-            ORDER BY e.created_at ASC 
+            AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
+            ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC 
             LIMIT 1;
         """,
         validator_hotkey
@@ -426,7 +425,7 @@ async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length
     result = await conn.fetch(
         "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey = $1 "
-        "ORDER BY created_at DESC "
+        "ORDER BY screener_score DESC NULLS LAST, created_at ASC "
         "LIMIT $2",
         validator_hotkey,
         length

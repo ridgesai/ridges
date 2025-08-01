@@ -21,7 +21,7 @@ async def get_queue_for_all_validators(
                         'miner_hotkey', m.miner_hotkey,
                         'agent_name', m.agent_name,
                         'created_at', e.created_at
-                    ) ORDER BY e.created_at ASC
+                    ) ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
                 ) as queue_items
             FROM evaluations e
             JOIN miner_agents m ON e.version_id = m.version_id

@@ -85,13 +85,13 @@ async def post_agent(
         check_agent_code(file_content)
 
         async with Evaluation.get_lock():
-            # Atomic availability check + reservation
-            screener = await Screener.get_first_available_and_reserve()
+            # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
+            screener = await Screener.get_first_available_and_reserve(stage=1)
             if not screener:
-                logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
+                logger.error(f"No available stage 1 screener for agent upload from miner {miner_hotkey}")
                 raise HTTPException(
                     status_code=503,
-                    detail="No screeners available for agent evaluation. Please try again later."
+                    detail="No stage 1 screeners available for agent evaluation. Please try again later."
                 )
 
             async with get_transaction() as conn:

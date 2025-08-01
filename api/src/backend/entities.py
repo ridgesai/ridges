@@ -359,6 +359,7 @@ class Evaluation(BaseModel):
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
     score: Optional[float]
+    screener_score: Optional[float]
 
 class SandboxStatus(Enum):
     started = "started"

@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
-    score FLOAT
+    score FLOAT,
+    screener_score FLOAT
 );
 
 -- Evaluation Runs table

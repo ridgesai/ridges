@@ -101,7 +101,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
                 e.validator_hotkey,
                 ROW_NUMBER() OVER (                    --    ranked per validator
                     PARTITION BY e.validator_hotkey
-                    ORDER BY     e.created_at
+                    ORDER BY     e.screener_score DESC NULLS LAST, e.created_at
                 ) AS queue_position
             FROM   evaluations   e
             JOIN   miner_agents  ma ON ma.version_id = e.version_id

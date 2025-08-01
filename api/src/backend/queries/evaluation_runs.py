@@ -62,7 +62,7 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
     return evaluation_run
 
 @db_transaction
-async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> EvaluationRun:
+async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun):
     """
     Update an evaluation run. The evaluation score is automatically updated by a database trigger.
     """

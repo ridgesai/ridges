@@ -10,7 +10,7 @@ from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
-from api.src.utils.config import SCREENING_THRESHOLD
+from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class Evaluation:
         status: EvaluationStatus,
         terminated_reason: Optional[str] = None,
         score: Optional[float] = None,
+        screener_score: Optional[float] = None,
         created_at: Optional[datetime] = None,
         started_at: Optional[datetime] = None,
         finished_at: Optional[datetime] = None,
@@ -43,32 +44,27 @@ class Evaluation:
         self.started_at = started_at
         self.finished_at = finished_at
         self.score = score
-
+        self.screener_score = screener_score
     @property
     def is_screening(self) -> bool:
-        return (self.validator_hotkey.startswith("screener-1-") or 
-                self.validator_hotkey.startswith("screener-2-") or 
-                self.validator_hotkey.startswith("i-0"))  # Legacy support
+        return self.screener_stage is not None
     
     @property
     def screener_stage(self) -> Optional[int]:
-        """Get the screening stage for this evaluation (1 or 2), None if not a screening"""
-        if not self.is_screening:
-            return None
-        if self.validator_hotkey.startswith("screener-1-"):
-            return 1
-        elif self.validator_hotkey.startswith("screener-2-"):
-            return 2
-        elif self.validator_hotkey.startswith("i-0"):  # Legacy screeners are stage 1
-            return 1
-        return None
+        return Screener.get_stage(self.validator_hotkey)
 
     async def start(self, conn: asyncpg.Connection) -> List[EvaluationRun]:
         """Start evaluation"""
         await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
         self.status = EvaluationStatus.running
 
-        type = "screener" if self.is_screening else "validator"
+        match self.screener_stage:
+            case 1:
+                type = "screener-1"
+            case 2:
+                type = "screener-2"
+            case _:
+                type = "validator"
         max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
         swebench_instance_ids_data = await conn.fetch(
             "SELECT swebench_instance_id FROM evaluation_sets WHERE set_id = $1 AND type = $2", max_set_id, type
@@ -121,31 +117,43 @@ class Evaluation:
 
         # Store validators to notify after agent status update
         validators_to_notify = []
+        stage2_screeners_to_notify = []
 
         # If it's a screener, handle stage-specific logic
         if self.is_screening:
             stage = self.screener_stage
-            if self.score < SCREENING_THRESHOLD:
-                logger.info(f"Stage {stage} screening failed for agent {self.version_id} with score {self.score}")
+            threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
+            if self.score < threshold:
+                logger.info(f"Stage {stage} screening failed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
             else:
-                logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score}")
+                logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
                 
-                # Only create validator evaluations for stage 2 screenings that pass
-                if stage == 2:
+                if stage == 1:
+                    # Stage 1 passed -> notify available stage 2 screeners
+                    from api.src.socket.websocket_manager import WebSocketManager
+                    ws_manager = WebSocketManager.get_instance()
+                    for client in ws_manager.clients.values():
+                        if (client.get_type() == "screener" and 
+                            client.stage == 2 and 
+                            client.is_available()):
+                            stage2_screeners_to_notify.append(client)
+                elif stage == 2:
+                    # Stage 2 passed -> notify validators
                     from api.src.models.validator import Validator
 
                     # Create evaluation records but don't notify yet
                     validators_to_notify = await Validator.get_connected()
                     for validator in validators_to_notify:
-                        await self.create_for_validator(conn, self.version_id, validator.hotkey)
-                # Stage 1 screenings that pass will move to awaiting_screening_2 via _update_agent_status
+                        await self.create_for_validator(conn, self.version_id, validator.hotkey, self.score)
 
         await self._update_agent_status(conn)
 
-        # Notify validators with proper lock protection
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        
+        # Notify stage 2 screeners when stage 1 completes
+        for screener in stage2_screeners_to_notify:
+            async with Evaluation.get_lock():
+                await Evaluation.screen_next_awaiting_agent(screener)
+
+        # Notify validators with proper lock protection in case they're available
         for validator in validators_to_notify:
             # Use lock protection for validator work assignment
             async with Evaluation.get_lock():
@@ -211,7 +219,8 @@ class Evaluation:
         # Handle screening completion
         if self.is_screening and self.status == EvaluationStatus.completed:
             stage = self.screener_stage
-            if self.score is not None and self.score >= SCREENING_THRESHOLD:
+            threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
+            if self.score is not None and self.score >= threshold:
                 if stage == 1:
                     # Stage 1 passed -> move to stage 2
                     await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", self.version_id)
@@ -298,7 +307,7 @@ class Evaluation:
             raise AssertionError("Evaluation lock must be held for this operation")
 
     @staticmethod
-    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str) -> str:
+    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str, screener_score: Optional[float] = None) -> str:
         """Create evaluation for validator"""
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
@@ -321,13 +330,14 @@ class Evaluation:
         eval_id = str(uuid.uuid4())
         await conn.execute(
             """
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-            VALUES ($1, $2, $3, $4, 'waiting', NOW())
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+            VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
         """,
             eval_id,
             version_id,
             validator_hotkey,
             set_id,
+            screener_score,
         )
 
         return eval_id
@@ -340,21 +350,6 @@ class Evaluation:
         ws = WebSocketManager.get_instance()
 
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
-
-        # # Check if there's already a non-errored screening evaluation for this agent
-        # existing_screening = await conn.fetchval(
-        #     """
-        #     SELECT evaluation_id FROM evaluations
-        #     WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND set_id = $2
-        #     AND status NOT IN ('error', 'cancelled', 'replaced')
-        #     """,
-        #     agent.version_id,
-        #     set_id
-        # )
-
-        # if existing_screening:
-        #     logger.warning(f"Screening evaluation already exists for agent {agent.version_id}: {existing_screening}")
-        #     return False
 
         eval_id = str(uuid.uuid4())
 
@@ -409,7 +404,7 @@ class Evaluation:
         from api.src.backend.entities import MinerAgent, AgentStatus
         
         Evaluation.assert_lock_held()
-        logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey} (stage {screener.screener_stage})")
+        logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey} (stage {screener.stage})")
 
         # Check availability (could be in "reserving" state from upload)
         if screener.status not in ["available", "reserving"]:
@@ -417,8 +412,8 @@ class Evaluation:
             return
         
         # Determine which status to look for based on screener stage
-        target_status = f"awaiting_screening_{screener.screener_stage}"
-        target_screening_status = f"screening_{screener.screener_stage}"
+        target_status = f"awaiting_screening_{screener.stage}"
+        target_screening_status = f"screening_{screener.stage}"
         
         async with get_transaction() as conn:
             # First check if there are any agents awaiting this stage of screening
@@ -432,7 +427,7 @@ class Evaluation:
                     target_status
                 )
                 for agent in awaiting_agents[:3]:  # Log first 3
-                    logger.info(f"Awaiting stage {screener.screener_stage} agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
+                    logger.info(f"Awaiting stage {screener.stage} agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
 
             # Atomically claim the next awaiting agent for this stage
             claimed_agent = await conn.fetchrow(
@@ -452,10 +447,10 @@ class Evaluation:
 
             if not claimed_agent:
                 screener.set_available()  # Ensure available state is set
-                logger.info(f"No stage {screener.screener_stage} agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
+                logger.info(f"No stage {screener.stage} agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
                 return
 
-            logger.info(f"Stage {screener.screener_stage} screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
+            logger.info(f"Stage {screener.stage} screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
 
             agent = MinerAgent(
                 version_id=claimed_agent["version_id"],
@@ -470,15 +465,15 @@ class Evaluation:
 
             if success:
                 # Commit screener state changes
-                screener.status = f"Screening stage {screener.screener_stage} agent {agent.agent_name} with evaluation {eval_id}"
+                screener.status = f"Screening stage {screener.stage} agent {agent.agent_name} with evaluation {eval_id}"
                 screener.current_agent_name = agent.agent_name
                 screener.current_evaluation_id = eval_id
                 screener.current_agent_hotkey = agent.miner_hotkey
-                logger.info(f"Stage {screener.screener_stage} screener {screener.hotkey} successfully assigned to {agent.agent_name}")
+                logger.info(f"Stage {screener.stage} screener {screener.hotkey} successfully assigned to {agent.agent_name}")
             else:
                 # Reset screener on failure
                 screener.set_available()
-                logger.warning(f"Failed to send work to stage {screener.screener_stage} screener {screener.hotkey}")
+                logger.warning(f"Failed to send work to stage {screener.stage} screener {screener.hotkey}")
 
     @staticmethod
     async def get_progress(evaluation_id: str) -> float:

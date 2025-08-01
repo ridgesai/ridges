@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from fastapi.responses import StreamingResponse
+from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 
@@ -253,54 +254,6 @@ async def validator_queues():
     
     return queue_info
 
-async def get_evaluation_set(type: str = Query(...), evaluation_id: Optional[str] = None, set_id: Optional[int] = None):
-    """
-    Returns a list of swebench instance IDs for a given evaluation set and type.
-    Either evaluation_id or set_id must be provided. If neither is provided, uses max set_id.
-    """
-    # Validate type
-    if type not in ["validator", "screener"]:
-        raise HTTPException(
-            status_code=400,
-            detail="Type must be either 'validator' or 'screener'"
-        )
-
-    # Determine set_id
-    if set_id is None:
-        if evaluation_id is not None:
-            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-            if not evaluation:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Evaluation not found"
-                )
-            set_id = evaluation.set_id
-        else:
-            # Use max set_id as default
-            set_id = await get_latest_set_id()
-    
-    try:
-        instances = await get_evaluation_set_instances(set_id=set_id, eval_type=type)
-        
-        if not instances:
-            logger.warning(f"No instances found for set_id {set_id} and type {type}")
-            raise HTTPException(
-                status_code=404,
-                detail=f"No instances found for evaluation set {set_id} with type {type}"
-            )
-        
-        logger.info(f"Retrieved {len(instances)} instances for set_id {set_id}, type {type}")
-        return instances
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving instances for set_id {set_id}, type {type}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving evaluation set instances"
-        )
-
 router = APIRouter()
 
 routes = [
@@ -319,7 +272,6 @@ routes = [
     ("/queue-position-by-hotkey", get_queue_position),
     ("/inferences-by-run", inferences_for_run),
     ("/validator-queues", validator_queues),
-    ("/evaluation-set", get_evaluation_set),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity)
 ]

@@ -47,8 +47,8 @@ logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
 logger.info(f"Log level: {LOG_LEVEL}")
 
 validator_hotkey = None
-aws_instance_id = None
+screener_hotkey = None
 if SCREENER_MODE:
-    aws_instance_id = os.getenv("AWS_INSTANCE_ID")
+    screener_hotkey = os.getenv("SCREENER_HOTKEY")
 else:
     validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)

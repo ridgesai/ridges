@@ -57,4 +57,4 @@ async def handle_update_evaluation_run(
         
     except Exception as e:
         logger.error(f"Error updating evaluation run for {client.get_type()} {client.hotkey}: {str(e)}")
-        return {"status": "error", "message": f"Failed to upsert evaluation run: {str(e)}"} 
+        return {"status": "error", "message": f"Failed to update evaluation run: {str(e)}"} 
