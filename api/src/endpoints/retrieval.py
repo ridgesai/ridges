@@ -300,6 +300,20 @@ async def get_evaluation_set(type: str = Query(...), evaluation_id: Optional[str
             status_code=500,
             detail="Internal server error while retrieving evaluation set instances"
         )
+    
+async def get_agents_by_hotkey(miner_hotkey: str) -> list[MinerAgent]:
+    """
+    Returns a list of all agents for a given hotkey
+    """
+    try:
+        agents = await get_agents_by_hotkey(miner_hotkey=miner_hotkey)
+        return agents
+    except Exception as e:
+        logger.error(f"Error retrieving agents for hotkey {miner_hotkey}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving agents"
+        )
 
 router = APIRouter()
 
@@ -321,7 +335,8 @@ routes = [
     ("/validator-queues", validator_queues),
     ("/evaluation-set", get_evaluation_set),
     ("/agent-scores-over-time", agent_scores_over_time),
-    ("/miner-score-activity", miner_score_activity)
+    ("/miner-score-activity", miner_score_activity),
+    ("/agents-by-hotkey", get_agents_by_hotkey)
 ]
 
 for path, endpoint in routes:
