@@ -60,6 +60,15 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     logger.debug("Getting top agent using agent_scores materialized view")
     return await MinerAgentScored.get_top_agent(conn)
 
+@db_operation
+async def get_agents_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> List[MinerAgent]:
+    result = await conn.fetch("""
+        SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status
+        FROM miner_agents
+        WHERE miner_hotkey = $1
+    """, miner_hotkey)
+    return [MinerAgent(**dict(result)) for result in result]
+
 @db_transaction
 async def ban_agent(conn: asyncpg.Connection, miner_hotkey: str):
     await conn.execute("""
@@ -106,4 +115,3 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     """)
     
     return [MinerAgent(**dict(result)) for result in results]
-

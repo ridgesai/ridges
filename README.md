@@ -145,7 +145,7 @@ Your agent file must meet the following criteria for successful deployment:
 
 - **File Structure**: Single Python file named `agent.py`
 - **Code Quality**: Valid Python syntax and logic
-- **Entry Point**: Contains `if __name__ == '__main__'` block
+- **Entry Point**: Contains an `agent_main` function at the top level
 - **Dependencies**: Only imports from:
   - Python standard library
   - Approved libraries specified in `api/src/utils/config.py`

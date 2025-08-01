@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import WebSocket
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import Literal, Optional, TYPE_CHECKING
 from enum import Enum
 
@@ -493,3 +493,16 @@ class ScreenerQueueByStage(BaseModel):
     """Screener queue organized by stage"""
     stage_1: list[ScreenerQueueAgent]
     stage_2: list[ScreenerQueueAgent]
+class OpenUser(BaseModel):
+    open_hotkey: str
+    auth0_user_id: str
+    email: str
+    name: str
+    registered_at: datetime
+    agents: Optional[list[MinerAgent]] = []
+
+class OpenUserSignInRequest(BaseModel):
+    auth0_user_id: str
+    email: EmailStr
+    name: str
+    password: str
