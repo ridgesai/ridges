@@ -191,12 +191,13 @@ async def post_open_agent(
     check_agent_code(file_content)
     
     async with Evaluation.get_lock():
-        screener = await Screener.get_first_available_and_reserve()
+        # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
+        screener = await Screener.get_first_available_and_reserve(stage=1)
         if not screener:
-            logger.error(f"No available screener for agent upload from miner {open_hotkey}")
+            logger.error(f"No available stage 1 screener for agent upload from miner {open_hotkey}")
             raise HTTPException(
                 status_code=503,
-                detail="No screeners available for agent evaluation. Please try again later."
+                detail="No stage 1 screeners available for agent evaluation. Please try again later."
             )
 
         async with get_transaction() as conn:
@@ -216,7 +217,7 @@ async def post_open_agent(
             await conn.execute(
                 """
                 INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
-                VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening', $5)
+                VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
             """,
                 agent.version_id,
                 agent.miner_hotkey,
@@ -225,11 +226,12 @@ async def post_open_agent(
                 agent.ip_address,
             )
 
+            # Create evaluation and assign to screener (commits screener state)
             eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
             if not success:
+                # If send fails, reset screener
                 screener.set_available()
                 logger.warning(f"Failed to assign agent {agent.version_id} to screener")
-    
 
     logger.info(f"Scheduling agent summary generation for {agent.version_id}")
     background_tasks.add_task(
