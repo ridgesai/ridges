@@ -118,10 +118,10 @@ CREATE TABLE IF NOT EXISTS weights_history (
 -- Open Users table
 CREATE TABLE IF NOT EXISTS open_users (
     open_hotkey TEXT NOT NULL PRIMARY KEY,
-    auth0_user_id BIGINT NOT NULL,
+    auth0_user_id TEXT NOT NULL,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Trigger functions and triggers for automatic score updates

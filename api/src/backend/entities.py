@@ -451,3 +451,11 @@ class ValidatorQueueInfo(BaseModel):
     validator_hotkey: str
     queue_size: int
     queue: list[EvaluationQueueItem]
+
+class OpenUser(BaseModel):
+    open_hotkey: str
+    auth0_user_id: str
+    email: str
+    name: str
+    registered_at: datetime
+    agents: Optional[list[MinerAgent]] = []
