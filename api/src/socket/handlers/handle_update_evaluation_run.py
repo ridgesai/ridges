@@ -31,6 +31,11 @@ async def handle_update_evaluation_run(
     try:
         logger.info(f"{client.get_type().title()} {client.hotkey} sent an evaluation run. Updating evaluation run.")
         
+        # Defensive fix: Handle cases where response field is accidentally a list instead of string
+        if isinstance(evaluation_run_data.get("response"), list):
+            logger.warning(f"Response field is a list instead of string for {client.hotkey}, converting to string")
+            evaluation_run_data["response"] = "\n".join(str(item) for item in evaluation_run_data["response"])
+        
         # Convert to EvaluationRun object and store
         evaluation_run = EvaluationRun(**evaluation_run_data)
         await update_evaluation_run(evaluation_run)
