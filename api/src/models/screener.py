@@ -15,6 +15,23 @@ class Screener(Client):
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
     current_agent_hotkey: Optional[str] = None
+
+    @staticmethod
+    def get_stage(hotkey: str) -> Optional[int]:
+        """Determine screening stage based on hotkey"""
+        if hotkey.startswith("screener-1-"):
+            return 1
+        elif hotkey.startswith("screener-2-"):
+            return 2
+        elif hotkey.startswith("i-0"):  # Legacy screeners are stage 1
+            return 1
+        else:
+            return None
+
+    @property
+    def stage(self) -> Optional[int]:
+        """Get the screening stage for this screener"""
+        return self.get_stage(self.hotkey)
     
     def get_type(self) -> str:
         return "screener"
@@ -55,8 +72,11 @@ class Screener(Client):
         async with get_transaction() as conn:
             agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
-            if not agent or agent_status != AgentStatus.screening:
-                logger.info(f"Screener {self.hotkey}: tried to start screening but agent is not in screening status")
+            
+            # Check if agent is in the appropriate screening status for this screener stage
+            expected_status = getattr(AgentStatus, f"screening_{self.stage}")
+            if not agent or agent_status != expected_status:
+                logger.info(f"Stage {self.stage} screener {self.hotkey}: tried to start screening but agent is not in screening_{self.stage} status (current: {agent['status'] if agent else 'None'})")
                 return False
             agent_name = agent["agent_name"]
             agent_hotkey = agent["miner_hotkey"]
@@ -99,14 +119,16 @@ class Screener(Client):
             
             async with get_transaction() as conn:
                 agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-                if AgentStatus.from_string(agent_status) != AgentStatus.screening:
-                    logger.warning(f"Screener {self.hotkey}: Agent {evaluation.version_id} not in screening status during finish")
+                expected_status = getattr(AgentStatus, f"screening_{self.stage}")
+                if AgentStatus.from_string(agent_status) != expected_status:
+                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
                     return
                 
                 if errored:
                     await evaluation.error(conn, reason)
+                    notification_targets = None
                 else:
-                    await evaluation.finish(conn)
+                    notification_targets = await evaluation.finish(conn)
 
                 from api.src.socket.websocket_manager import WebSocketManager
                 ws_manager = WebSocketManager.get_instance()
@@ -115,6 +137,26 @@ class Screener(Client):
                 self.set_available()
                     
                 logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+            
+            # Handle notifications AFTER transaction commits
+            if notification_targets:
+                # Notify stage 2 screener when stage 1 completes
+                if notification_targets.get("stage2_screener"):
+                    async with Evaluation.get_lock():
+                        await Evaluation.screen_next_awaiting_agent(notification_targets["stage2_screener"])
+                
+                # Notify validators with proper lock protection  
+                for validator in notification_targets.get("validators", []):
+                    async with Evaluation.get_lock():
+                        if validator.is_available():
+                            success = await validator.start_evaluation_and_send(evaluation_id)
+                            if success:
+                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
+                            else:
+                                logger.warning(f"Failed to assign evaluation {evaluation_id} to validator {validator.hotkey}")
+                        else:
+                            logger.info(f"Validator {validator.hotkey} not available for evaluation {evaluation_id}")
+                            
         finally:
             # Single atomic reset and reassignment
             async with Evaluation.get_lock():
@@ -136,22 +178,23 @@ class Screener(Client):
         return None
     
     @staticmethod
-    async def get_first_available_and_reserve() -> Optional['Screener']:
-        """Atomically find and reserve first available screener - MUST be called within Evaluation lock"""
+    async def get_first_available_and_reserve(stage: int) -> Optional['Screener']:
+        """Atomically find and reserve first available screener for specific stage - MUST be called within Evaluation lock"""
         from api.src.socket.websocket_manager import WebSocketManager
         ws_manager = WebSocketManager.get_instance()
         
         for client in ws_manager.clients.values():
             if (client.get_type() == "screener" and 
                 client.status == "available" and
-                client.is_available()):
+                client.is_available() and
+                client.stage == stage):
                 
                 # Immediately reserve to prevent race conditions
                 client.status = "reserving"
-                logger.info(f"Reserved screener {client.hotkey} for work assignment")
+                logger.info(f"Reserved stage {stage} screener {client.hotkey} for work assignment")
                 return client
         
-        logger.warning("No available screeners to reserve")
+        logger.warning(f"No available stage {stage} screeners to reserve")
         return None
     
     @staticmethod
@@ -160,9 +203,9 @@ class Screener(Client):
         from api.src.socket.websocket_manager import WebSocketManager
         
         async with get_transaction() as conn:
-            # Reset approved agents to awaiting screening
+            # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
-                UPDATE miner_agents SET status = 'awaiting_screening'
+                UPDATE miner_agents SET status = 'awaiting_screening_1'
                 WHERE version_id IN (SELECT version_id FROM approved_version_ids) AND status != 'replaced'
                 RETURNING *
             """)

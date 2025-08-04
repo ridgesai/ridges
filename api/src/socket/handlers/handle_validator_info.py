@@ -40,7 +40,7 @@ async def handle_validator_info(
     old_client = ws_manager.clients[websocket]
     
     # Create appropriate client type based on hotkey
-    if hotkey.startswith("i-0"):
+    if hotkey.startswith("screener-1-") or hotkey.startswith("screener-2-") or hotkey.startswith("i-0"):  # Legacy i-0 support
         client = Screener(
             hotkey=hotkey,
             websocket=old_client.websocket,

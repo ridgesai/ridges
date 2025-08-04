@@ -5,7 +5,7 @@ import subprocess
 from loggers.logging_utils import get_logger
 from ddtrace import tracer
 
-from validator.config import aws_instance_id
+from validator.config import screener_hotkey
 
 logger = get_logger(__name__)
 
@@ -16,6 +16,6 @@ def get_screener_info():
     """Generate screener info"""
     return {
         "event": "validator-info",
-        "validator_hotkey": aws_instance_id,
+        "validator_hotkey": screener_hotkey,
         "version_commit_hash": VERSION_COMMIT_HASH,
     }

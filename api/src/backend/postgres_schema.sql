@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     created_at TIMESTAMPTZ NOT NULL,
     started_at TIMESTAMPTZ,
     finished_at TIMESTAMPTZ,
-    score FLOAT
+    score FLOAT,
+    screener_score FLOAT
 );
 
 -- Evaluation Runs table
@@ -115,6 +116,19 @@ CREATE TABLE IF NOT EXISTS weights_history (
     miner_weights JSONB NOT NULL
 );
 
+-- Open Users table
+CREATE TABLE IF NOT EXISTS open_users (
+    open_hotkey TEXT NOT NULL PRIMARY KEY,
+    auth0_user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL,
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS open_user_email_whitelist (
+    email TEXT NOT NULL PRIMARY KEY
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated
@@ -156,7 +170,7 @@ ON evaluations (version_id, set_id, created_at DESC);
 -- Composite index optimized for screener evaluations in CTE
 CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup 
 ON evaluations (version_id, set_id, validator_hotkey, created_at DESC) 
-WHERE validator_hotkey LIKE 'i-%';
+WHERE (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-%');
 
 -- Index for evaluation_id lookups (used in IN clause)
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
@@ -168,7 +182,7 @@ ON evaluations (validator_hotkey text_pattern_ops);
 -- Partial index for non-screener evaluations
 CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener 
 ON evaluations (version_id, set_id, created_at DESC) 
-WHERE validator_hotkey NOT LIKE 'i-%';
+WHERE (validator_hotkey NOT LIKE 'screener-1-%' AND validator_hotkey NOT LIKE 'screener-2-%' AND validator_hotkey NOT LIKE 'i-%');
 
 -- NEW INDICES FOR OPTIMIZED get_evaluations_with_usage_for_agent_version QUERY
 
@@ -225,6 +239,8 @@ agent_evaluations AS (
         AND e.status = 'completed' 
         AND e.score IS NOT NULL
         AND e.score > 0
+        AND e.validator_hotkey NOT LIKE 'screener-1-%'
+        AND e.validator_hotkey NOT LIKE 'screener-2-%'
         AND e.validator_hotkey NOT LIKE 'i-0%'
         AND e.set_id IS NOT NULL
 ),

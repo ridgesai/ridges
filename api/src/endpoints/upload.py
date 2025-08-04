@@ -16,9 +16,11 @@ from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent, AgentStatus
 from api.src.backend.db_manager import get_transaction
 from api.src.utils.agent_summary_generator import generate_and_store_agent_summary
+from api.src.backend.queries.open_users import get_open_user_by_hotkey
 
 logger = get_logger(__name__)
 ws = WebSocketManager.get_instance()
+open_user_password = os.getenv("OPEN_USER_PASSWORD")
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -71,7 +73,7 @@ async def post_agent(
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
             created_at=datetime.now(),
-            status=AgentStatus.awaiting_screening,
+            status=AgentStatus.awaiting_screening_1,
             ip_address=request.client.host if request.client else None,
         )
 
@@ -85,13 +87,13 @@ async def post_agent(
         check_agent_code(file_content)
 
         async with Evaluation.get_lock():
-            # Atomic availability check + reservation
-            screener = await Screener.get_first_available_and_reserve()
+            # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
+            screener = await Screener.get_first_available_and_reserve(stage=1)
             if not screener:
-                logger.error(f"No available screener for agent upload from miner {miner_hotkey}")
+                logger.error(f"No available stage 1 screener for agent upload from miner {miner_hotkey}")
                 raise HTTPException(
                     status_code=503,
-                    detail="No screeners available for agent evaluation. Please try again later."
+                    detail="No stage 1 screeners available for agent evaluation. Please try again later."
                 )
 
             async with get_transaction() as conn:
@@ -112,7 +114,7 @@ async def post_agent(
                 await conn.execute(
                     """
                     INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
-                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening', $5)
+                    VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                 """,
                     agent.version_id,
                     agent.miner_hotkey,
@@ -145,11 +147,111 @@ async def post_agent(
             status="success",
             message=f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}."
         )
+    
+async def post_open_agent(
+    request: Request,
+    agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
+    open_hotkey: str = Form(..., description="Open hotkey of the open user"),
+    name: str = Form(..., description="Name of the agent"),
+    password: str = Form(..., description="Password to upload an open user agent"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+) -> AgentUploadResponse:
+    logger.info(f"Uploading open agent process beginning. Details: open_hotkey: {open_hotkey}, name: {name}, password: {password}")
+    
+    if password != open_user_password:
+        logger.error(f"Someone tried to upload an open agent with an invalid password. open_hotkey: {open_hotkey}, name: {name}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    try:
+        user = await get_open_user_by_hotkey(open_hotkey)
+    except Exception as e:
+        logger.error(f"Error retrieving open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error while retrieving open user")
+    
+    if not user:
+        logger.error(f"Open user {open_hotkey} not found")
+        raise HTTPException(status_code=404, detail="Open user not found. Please register an account.")
+
+    check_valid_filename(agent_file.filename)
+    latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=open_hotkey)
+
+    agent = MinerAgent(
+        version_id=str(uuid.uuid4()),
+        miner_hotkey=open_hotkey,
+        agent_name=name if not latest_agent else latest_agent.agent_name,
+        version_num=latest_agent.version_num + 1 if latest_agent else 0,
+        created_at=datetime.now(),
+        status=AgentStatus.awaiting_screening,
+        ip_address=request.client.host if request.client else None,
+    )
+
+    if prod: await check_agent_banned(miner_hotkey=open_hotkey)
+    if prod and latest_agent: check_rate_limit(latest_agent)
+    file_content = await check_file_size(agent_file)
+    if prod: await check_code_similarity(file_content, open_hotkey)
+    check_agent_code(file_content)
+    
+    async with Evaluation.get_lock():
+        # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
+        screener = await Screener.get_first_available_and_reserve(stage=1)
+        if not screener:
+            logger.error(f"No available stage 1 screener for agent upload from miner {open_hotkey}")
+            raise HTTPException(
+                status_code=503,
+                detail="No stage 1 screeners available for agent evaluation. Please try again later."
+            )
+
+        async with get_transaction() as conn:
+            can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, open_hotkey)
+            if not can_upload:
+                screener.set_available()
+                logger.error(f"Cannot upload agent for miner {open_hotkey} - has running evaluations")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Cannot upload new agent while previous evaluations are still running. Please wait and try again."
+                )
+
+            await Evaluation.replace_old_agents(conn, open_hotkey)
+
+            await upload_agent_code_to_s3(agent.version_id, agent_file)
+
+            await conn.execute(
+                """
+                INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
+            """,
+                agent.version_id,
+                agent.miner_hotkey,
+                agent.agent_name,
+                agent.version_num,
+                agent.ip_address,
+            )
+
+            # Create evaluation and assign to screener (commits screener state)
+            eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
+            if not success:
+                # If send fails, reset screener
+                screener.set_available()
+                logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+
+    logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+    background_tasks.add_task(
+        generate_and_store_agent_summary,
+        agent.version_id,
+        run_id=f"upload-{agent.version_id}"
+    )
+
+    logger.info(f"Successfully uploaded agent {agent.version_id} for open user {open_hotkey}.")
+
+    return AgentUploadResponse(
+        status="success",
+        message=f"Successfully uploaded agent {agent.version_id} for open user {open_hotkey}."
+    )
 
 router = APIRouter()
 
 routes = [
     ("/agent", post_agent),
+    ("/open-agent", post_open_agent),
 ]
 
 for path, endpoint in routes:

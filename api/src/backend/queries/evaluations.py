@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_id: str) -> Evaluation:
     logger.debug(f"Attempting to get evaluation {evaluation_id} from the database.")
     result = await conn.fetchrow(
-        "SELECT evaluation_id, version_id, validator_hotkey, set_id, status, terminated_reason, created_at, started_at, finished_at, score  "
-        "FROM evaluations WHERE evaluation_id = $1",
+        "SELECT * FROM evaluations WHERE evaluation_id = $1",
         evaluation_id
     )
 
@@ -45,15 +44,6 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
 
     evaluation_rows = await conn.fetch("""
-        WITH latest_screener AS (
-            SELECT evaluation_id
-            FROM evaluations 
-            WHERE version_id = $1
-            AND set_id = $2
-            AND validator_hotkey LIKE 'i-%'
-            ORDER BY created_at DESC
-            LIMIT 1
-        )
         SELECT 
             e.evaluation_id,
             e.version_id,
@@ -65,6 +55,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             e.started_at,
             e.finished_at,
             e.score,
+            e.screener_score,
             COALESCE(
                 array_agg(
                     json_build_object(
@@ -95,8 +86,11 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         WHERE e.version_id = $1
         AND e.set_id = $2
         AND (
-            e.validator_hotkey NOT LIKE 'i-%'  -- Include all non-screener evaluations
-            OR e.evaluation_id IN (SELECT evaluation_id FROM latest_screener)  -- Include only the latest screener
+            (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+            OR (
+                (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+                AND e.status IN ('completed', 'running')  -- Only successful/running screener evaluations
+            )
         )
         GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
@@ -106,7 +100,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     for row in evaluation_rows:
         # Convert JSON objects to EvaluationRun objects
         evaluation_runs = []
-        for run_data in row[10]:  # evaluation_runs is at index 10
+        for run_data in row[11]:  # evaluation_runs is at index 11
             run_data = json.loads(run_data)
             evaluation_run = EvaluationRun(
                 run_id=run_data['run_id'],
@@ -140,6 +134,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             started_at=row[7],
             finished_at=row[8],
             score=row[9],
+            screener_score=row[10],
             evaluation_runs=evaluation_runs
         )
         evaluations.append(hydrated_evaluation)
@@ -154,16 +149,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
     if fast:
         # Fast path: single query with JSON aggregations
         evaluation_rows = await conn.fetch("""
-            WITH latest_screener AS (
-                SELECT evaluation_id
-                FROM evaluations 
-                WHERE version_id = $1
-                AND set_id = $2
-                AND validator_hotkey LIKE 'i-%'
-                ORDER BY created_at DESC
-                LIMIT 1
-            ),
-            inf AS (
+            WITH inf AS (
                 SELECT
                     run_id,
                     SUM(cost)          AS cost,
@@ -184,6 +170,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 e.started_at,
                 e.finished_at,
                 e.score,
+                e.screener_score,
                 COALESCE(
                     array_agg(
                         json_build_object(
@@ -219,8 +206,11 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             WHERE e.version_id = $1
             AND e.set_id = $2
             AND (
-                e.validator_hotkey NOT LIKE 'i-%'
-                OR e.evaluation_id IN (SELECT evaluation_id FROM latest_screener)
+                (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+                OR (
+                    (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+                    AND e.status IN ('completed', 'running')  -- Only successful/running screener evaluations
+                )
             )
             GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
             ORDER BY e.created_at DESC
@@ -230,7 +220,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         for row in evaluation_rows:
             # Convert JSON objects to EvaluationRunWithUsageDetails objects
             evaluation_runs = []
-            for run_data in row[10]:  # evaluation_runs is at index 10
+            for run_data in row[11]:  # evaluation_runs is at index 11
                 run_data = json.loads(run_data)
                 evaluation_run = EvaluationRunWithUsageDetails(
                     run_id=run_data['run_id'],
@@ -268,6 +258,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 started_at=row[7],
                 finished_at=row[8],
                 score=row[9],
+                screener_score=row[10],
                 evaluation_runs=evaluation_runs
             )
             evaluations.append(hydrated_evaluation)
@@ -290,11 +281,18 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 created_at,
                 started_at,
                 finished_at,
-                score
+                score,
+                screener_score
             FROM evaluations 
             WHERE version_id = $1
             AND set_id = $2
-            AND validator_hotkey NOT LIKE 'i-%'
+            AND (
+                (validator_hotkey NOT LIKE 'screener-%' AND validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+                OR (
+                    (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+                    AND status IN ('completed', 'running')  -- Only successful/running screener evaluations
+                )
+            )
         )
         
         UNION ALL
@@ -311,11 +309,13 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 created_at,
                 started_at,
                 finished_at,
-                score
+                score,
+                screener_score
             FROM evaluations 
             WHERE version_id = $1
             AND set_id = $2
-            AND validator_hotkey LIKE 'i-%'
+            AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
+            AND status NOT IN ('completed', 'running')  -- Only errored screener evaluations
             ORDER BY created_at DESC
             LIMIT 1
         )
@@ -340,6 +340,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             started_at=evaluation_row[7],
             finished_at=evaluation_row[8],
             score=evaluation_row[9],
+            screener_score=evaluation_row[10],
             evaluation_runs=evaluation_runs
         )
 
@@ -358,8 +359,8 @@ async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_
             JOIN miner_agents ma ON e.version_id = ma.version_id
             WHERE e.validator_hotkey = $1
             AND e.status = 'waiting' 
-            -- AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
-            ORDER BY e.created_at ASC 
+            AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_miners)
+            ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC 
             LIMIT 1;
         """,
         validator_hotkey
@@ -426,7 +427,7 @@ async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length
     result = await conn.fetch(
         "SELECT * "
         "FROM evaluations WHERE status = 'waiting' AND validator_hotkey = $1 "
-        "ORDER BY created_at DESC "
+        "ORDER BY screener_score DESC NULLS LAST, created_at ASC "
         "LIMIT $2",
         validator_hotkey,
         length

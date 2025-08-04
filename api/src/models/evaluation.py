@@ -10,7 +10,7 @@ from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
-from api.src.utils.config import SCREENING_THRESHOLD
+from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ class Evaluation:
         status: EvaluationStatus,
         terminated_reason: Optional[str] = None,
         score: Optional[float] = None,
+        screener_score: Optional[float] = None,
         created_at: Optional[datetime] = None,
         started_at: Optional[datetime] = None,
         finished_at: Optional[datetime] = None,
@@ -43,17 +44,27 @@ class Evaluation:
         self.started_at = started_at
         self.finished_at = finished_at
         self.score = score
-
+        self.screener_score = screener_score
     @property
     def is_screening(self) -> bool:
-        return self.validator_hotkey.startswith("i-0")
+        return self.screener_stage is not None
+    
+    @property
+    def screener_stage(self) -> Optional[int]:
+        return Screener.get_stage(self.validator_hotkey)
 
     async def start(self, conn: asyncpg.Connection) -> List[EvaluationRun]:
         """Start evaluation"""
         await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
         self.status = EvaluationStatus.running
 
-        type = "screener" if self.is_screening else "validator"
+        match self.screener_stage:
+            case 1:
+                type = "screener-1"
+            case 2:
+                type = "screener-2"
+            case _:
+                type = "validator"
         max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
         swebench_instance_ids_data = await conn.fetch(
             "SELECT swebench_instance_id FROM evaluation_sets WHERE set_id = $1 AND type = $2", max_set_id, type
@@ -106,37 +117,43 @@ class Evaluation:
 
         # Store validators to notify after agent status update
         validators_to_notify = []
+        stage2_screener_to_notify = None
 
-        # If it's a screener, create validator evaluations and notify
+        # If it's a screener, handle stage-specific logic
         if self.is_screening:
-            if self.score < SCREENING_THRESHOLD:
-                logger.info(f"Screening did not pass for agent {self.version_id} with score {self.score}")
+            stage = self.screener_stage
+            threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
+            if self.score < threshold:
+                logger.info(f"Stage {stage} screening failed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
             else:
-                logger.info(f"Screening passed for agent {self.version_id} with score {self.score}")
-                from api.src.models.validator import Validator
+                logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
+                
+                if stage == 1:
+                    # Stage 1 passed -> find ONE available stage 2 screener
+                    from api.src.socket.websocket_manager import WebSocketManager
+                    ws_manager = WebSocketManager.get_instance()
+                    for client in ws_manager.clients.values():
+                        if (client.get_type() == "screener" and 
+                            client.stage == 2 and 
+                            client.is_available()):
+                            stage2_screener_to_notify = client
+                            break
+                elif stage == 2:
+                    # Stage 2 passed -> notify validators
+                    from api.src.models.validator import Validator
 
-                # Create evaluation records but don't notify yet
-                validators_to_notify = await Validator.get_connected()
-                for validator in validators_to_notify:
-                    await self.create_for_validator(conn, self.version_id, validator.hotkey)
+                    # Create evaluation records but don't notify yet
+                    validators_to_notify = await Validator.get_connected()
+                    for validator in validators_to_notify:
+                        await self.create_for_validator(conn, self.version_id, validator.hotkey, self.score)
 
         await self._update_agent_status(conn)
 
-        # Notify validators with proper lock protection
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        
-        for validator in validators_to_notify:
-            # Use lock protection for validator work assignment
-            async with Evaluation.get_lock():
-                if validator.is_available():
-                    success = await validator.start_evaluation_and_send(self.evaluation_id)
-                    if success:
-                        logger.info(f"Successfully assigned evaluation {self.evaluation_id} to validator {validator.hotkey}")
-                    else:
-                        logger.warning(f"Failed to assign evaluation {self.evaluation_id} to validator {validator.hotkey}")
-                else:
-                    logger.info(f"Validator {validator.hotkey} not available for evaluation {self.evaluation_id}")
+        # Return notification targets to be handled OUTSIDE this transaction  
+        return {
+            "stage2_screener": stage2_screener_to_notify,
+            "validators": validators_to_notify
+        }
 
     async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float, bool]:
         """Check inference success rate for this evaluation
@@ -186,27 +203,57 @@ class Evaluation:
         await self._update_agent_status(conn)
 
     async def _update_agent_status(self, conn: asyncpg.Connection):
-        """Update agent status based on evaluation state"""
+        """Update agent status based on evaluation state - handles multi-stage screening"""
+        
         # Handle screening completion
         if self.is_screening and self.status == EvaluationStatus.completed:
-            if self.score is not None and self.score >= SCREENING_THRESHOLD:
-                await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
+            stage = self.screener_stage
+            threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
+            if self.score is not None and self.score >= threshold:
+                if stage == 1:
+                    # Stage 1 passed -> move to stage 2
+                    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", self.version_id)
+                elif stage == 2:
+                    # Stage 2 passed -> ready for validation
+                    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
             else:
-                await conn.execute("UPDATE miner_agents SET status = 'failed_screening' WHERE version_id = $1", self.version_id)
+                if stage == 1:
+                    # Stage 1 failed
+                    await conn.execute("UPDATE miner_agents SET status = 'failed_screening_1' WHERE version_id = $1", self.version_id)
+                elif stage == 2:
+                    # Stage 2 failed
+                    await conn.execute("UPDATE miner_agents SET status = 'failed_screening_2' WHERE version_id = $1", self.version_id)
             return
 
-        # Handle screening errors like disconnection - reset to awaiting_screening
+        # Handle screening errors like disconnection - reset to appropriate awaiting state
         if self.is_screening and self.status == EvaluationStatus.error:
-            await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE version_id = $1", self.version_id)
+            stage = self.screener_stage
+            if stage == 1:
+                await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE version_id = $1", self.version_id)
+            elif stage == 2:
+                await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", self.version_id)
             return
 
-        # Check for any screening evaluations (waiting OR running) - agent should be in screening state
-        screening_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND status IN ('waiting', 'running')",
+        # Check for any stage 1 screening evaluations (waiting OR running)
+        stage1_count = await conn.fetchval(
+            """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 
+               AND (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'i-0%') 
+               AND status IN ('waiting', 'running')""",
             self.version_id,
         )
-        if screening_count > 0:
-            await conn.execute("UPDATE miner_agents SET status = 'screening' WHERE version_id = $1", self.version_id)
+        if stage1_count > 0:
+            await conn.execute("UPDATE miner_agents SET status = 'screening_1' WHERE version_id = $1", self.version_id)
+            return
+
+        # Check for any stage 2 screening evaluations (waiting OR running)
+        stage2_count = await conn.fetchval(
+            """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 
+               AND validator_hotkey LIKE 'screener-2-%' 
+               AND status IN ('waiting', 'running')""",
+            self.version_id,
+        )
+        if stage2_count > 0:
+            await conn.execute("UPDATE miner_agents SET status = 'screening_2' WHERE version_id = $1", self.version_id)
             return
 
         # Handle evaluation status transitions for regular evaluations
@@ -216,10 +263,16 @@ class Evaluation:
 
         # For other cases, check remaining regular evaluations (non-screening)
         waiting_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'waiting' AND validator_hotkey NOT LIKE 'i-0%'", self.version_id
+            """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'waiting' 
+               AND validator_hotkey NOT LIKE 'screener-%' 
+               AND validator_hotkey NOT LIKE 'i-0%'""", 
+            self.version_id
         )
         running_count = await conn.fetchval(
-            "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'running' AND validator_hotkey NOT LIKE 'i-0%'", self.version_id
+            """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'running' 
+               AND validator_hotkey NOT LIKE 'screener-%' 
+               AND validator_hotkey NOT LIKE 'i-0%'""", 
+            self.version_id
         )
 
         if waiting_count > 0 and running_count == 0:
@@ -241,7 +294,7 @@ class Evaluation:
             raise AssertionError("Evaluation lock must be held for this operation")
 
     @staticmethod
-    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str) -> str:
+    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str, screener_score: Optional[float] = None) -> str:
         """Create evaluation for validator"""
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
@@ -264,13 +317,14 @@ class Evaluation:
         eval_id = str(uuid.uuid4())
         await conn.execute(
             """
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-            VALUES ($1, $2, $3, $4, 'waiting', NOW())
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+            VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
         """,
             eval_id,
             version_id,
             validator_hotkey,
             set_id,
+            screener_score,
         )
 
         return eval_id
@@ -283,21 +337,6 @@ class Evaluation:
         ws = WebSocketManager.get_instance()
 
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
-
-        # # Check if there's already a non-errored screening evaluation for this agent
-        # existing_screening = await conn.fetchval(
-        #     """
-        #     SELECT evaluation_id FROM evaluations
-        #     WHERE version_id = $1 AND validator_hotkey LIKE 'i-0%' AND set_id = $2
-        #     AND status NOT IN ('error', 'cancelled', 'replaced')
-        #     """,
-        #     agent.version_id,
-        #     set_id
-        # )
-
-        # if existing_screening:
-        #     logger.warning(f"Screening evaluation already exists for agent {agent.version_id}: {existing_screening}")
-        #     return False
 
         eval_id = str(uuid.uuid4())
 
@@ -352,47 +391,62 @@ class Evaluation:
         from api.src.backend.entities import MinerAgent, AgentStatus
         
         Evaluation.assert_lock_held()
-        logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey}")
+        logger.info(f"screen_next_awaiting_agent called for screener {screener.hotkey} (stage {screener.stage})")
 
         # Check availability (could be in "reserving" state from upload)
         if screener.status not in ["available", "reserving"]:
             logger.info(f"Screener {screener.hotkey} not available (status: {screener.status})")
             return
         
+        # Determine which status to look for based on screener stage
+        target_status = f"awaiting_screening_{screener.stage}"
+        target_screening_status = f"screening_{screener.stage}"
+        
         async with get_transaction() as conn:
-            # First check if there are any agents awaiting screening
-            awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE status = 'awaiting_screening'")
-            logger.info(f"Found {awaiting_count} agents with awaiting_screening status")
+            # First check if there are any agents awaiting this stage of screening
+            awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE status = $1", target_status)
+            logger.info(f"Found {awaiting_count} agents with {target_status} status")
 
             if awaiting_count > 0:
                 # Log the agents for debugging
                 awaiting_agents = await conn.fetch(
-                    "SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents WHERE status = 'awaiting_screening' ORDER BY created_at ASC"
+                    "SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents WHERE status = $1 ORDER BY created_at ASC",
+                    target_status
                 )
                 for agent in awaiting_agents[:3]:  # Log first 3
-                    logger.info(f"Awaiting agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
+                    logger.info(f"Awaiting stage {screener.stage} agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
 
-            # Atomically claim the next awaiting agent
-            claimed_agent = await conn.fetchrow(
-                """
-                UPDATE miner_agents 
-                SET status = 'claimed' 
-                WHERE version_id = (
-                    SELECT version_id FROM miner_agents 
-                    WHERE status = 'awaiting_screening' 
-                    ORDER BY created_at ASC 
-                    LIMIT 1
+            # Atomically claim the next awaiting agent for this stage using CTE with FOR UPDATE SKIP LOCKED
+            logger.debug(f"Stage {screener.stage} screener {screener.hotkey} attempting to claim agent with status '{target_status}'")
+            try:
+                claimed_agent = await conn.fetchrow(
+                    """
+                    WITH next_agent AS (
+                        SELECT version_id FROM miner_agents 
+                        WHERE status = $1 
+                        ORDER BY created_at ASC 
+                        FOR UPDATE SKIP LOCKED
+                        LIMIT 1
+                    )
+                    UPDATE miner_agents 
+                    SET status = $2
+                    FROM next_agent
+                    WHERE miner_agents.version_id = next_agent.version_id
+                    RETURNING miner_agents.version_id, miner_hotkey, agent_name, version_num, created_at
+                """,
+                    target_status,
+                    target_screening_status
                 )
-                RETURNING version_id, miner_hotkey, agent_name, version_num, created_at
-            """
-            )
+            except Exception as e:
+                logger.warning(f"Database error while claiming agent for screener {screener.hotkey}: {e}")
+                claimed_agent = None
 
             if not claimed_agent:
                 screener.set_available()  # Ensure available state is set
-                logger.info(f"No agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
+                logger.info(f"No stage {screener.stage} agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
                 return
 
-            logger.info(f"Screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
+            logger.info(f"Stage {screener.stage} screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
 
             agent = MinerAgent(
                 version_id=claimed_agent["version_id"],
@@ -400,22 +454,22 @@ class Evaluation:
                 agent_name=claimed_agent["agent_name"],
                 version_num=claimed_agent["version_num"],
                 created_at=claimed_agent["created_at"],
-                status=AgentStatus.screening,
+                status=target_screening_status,  # Already set to correct status in query
             )
         
             eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
 
             if success:
                 # Commit screener state changes
-                screener.status = f"Screening agent {agent.agent_name} with evaluation {eval_id}"
+                screener.status = f"Screening stage {screener.stage} agent {agent.agent_name} with evaluation {eval_id}"
                 screener.current_agent_name = agent.agent_name
                 screener.current_evaluation_id = eval_id
                 screener.current_agent_hotkey = agent.miner_hotkey
-                logger.info(f"Screener {screener.hotkey} successfully assigned to {agent.agent_name}")
+                logger.info(f"Stage {screener.stage} screener {screener.hotkey} successfully assigned to {agent.agent_name}")
             else:
                 # Reset screener on failure
                 screener.set_available()
-                logger.warning(f"Failed to send work to screener {screener.hotkey}")
+                logger.warning(f"Failed to send work to stage {screener.stage} screener {screener.hotkey}")
 
     @staticmethod
     async def get_progress(evaluation_id: str) -> float:
@@ -504,7 +558,19 @@ class Evaluation:
             )
 
             for agent in agents:
-                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey)
+                # Look up screener_score from completed stage 2 screening if it exists
+                screener_score = await conn.fetchval(
+                    """
+                    SELECT score FROM evaluations 
+                    WHERE version_id = $1 
+                    AND validator_hotkey LIKE 'screener-2-%'
+                    AND status = 'completed'
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                    """,
+                    agent["version_id"]
+                )
+                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, screener_score)
 
         async with get_transaction() as conn:
             # Check if validator has waiting work
@@ -537,11 +603,12 @@ class Evaluation:
     async def handle_screener_disconnection(screener_hotkey: str):
         """Atomically handle screener disconnection: error active evaluations and reset agents"""
         async with get_transaction() as conn:
-            # Get active screening evaluations
+            # Get active screening evaluations for all screener types
             active_screenings = await conn.fetch(
                 """
                 SELECT evaluation_id, version_id FROM evaluations 
-                WHERE validator_hotkey = $1 AND status IN ('running', 'waiting') AND validator_hotkey LIKE 'i-0%'
+                WHERE validator_hotkey = $1 AND status IN ('running', 'waiting') 
+                AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
             """,
                 screener_hotkey,
             )
@@ -553,11 +620,16 @@ class Evaluation:
 
     @staticmethod
     async def startup_recovery():
-        """Fix broken states from shutdown"""
+        """Fix broken states from shutdown - handles multi-stage screening"""
         async with get_transaction() as conn:
-            # Reset agent statuses
-            await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening' WHERE status = 'screening'")
+            # Reset agent statuses for multi-stage screening
+            await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening_1'")
+            await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE status = 'screening_2'")
             await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluating'")
+            
+            # Legacy status recovery for backward compatibility
+            await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening'")
+            await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluation'")  # Legacy alias
 
             # Reset running evaluations
             running_evals = await conn.fetch("SELECT evaluation_id FROM evaluations WHERE status = 'running'")
@@ -590,10 +662,14 @@ class Evaluation:
                 evaluation = await Evaluation.get_by_id(stuck_eval["evaluation_id"])
                 if evaluation:
                     logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
-                    await evaluation.finish(conn)
+                    # During startup recovery, don't trigger notifications
+                    _ = await evaluation.finish(conn)
 
-            # Cancel waiting screenings
-            waiting_screenings = await conn.fetch("SELECT evaluation_id FROM evaluations WHERE status = 'waiting' AND validator_hotkey LIKE 'i-0%'")
+            # Cancel waiting screenings for all screener types
+            waiting_screenings = await conn.fetch(
+                """SELECT evaluation_id FROM evaluations WHERE status = 'waiting' 
+                   AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')"""
+            )
             for screening_row in waiting_screenings:
                 evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
                 if evaluation:
@@ -604,4 +680,4 @@ class Evaluation:
                 "UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')"
             )
 
-            logger.info("Application startup recovery completed")
+            logger.info("Application startup recovery completed with multi-stage screening support")
