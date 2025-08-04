@@ -21,6 +21,55 @@ load_dotenv("api/.env")
 
 logger = get_logger(__name__)
 
+def clean_agent_summary_response(response: str) -> str:
+    """
+    Clean up agent summary response by removing thinking tags and extra content.
+    
+    Args:
+        response: Raw response from the model
+        
+    Returns:
+        Cleaned summary in the expected format
+    """
+    import re
+    
+    # Remove <think> tags and their content
+    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+    
+    # Remove any leading/trailing whitespace
+    response = response.strip()
+    
+    # Find the actual summary (lines starting with agent name or bullet points)
+    lines = response.split('\n')
+    summary_lines = []
+    
+    # Look for the start of the actual summary
+    found_summary_start = False
+    for line in lines:
+        line = line.strip()
+        if not line:
+            if found_summary_start:
+                summary_lines.append('')
+            continue
+            
+        # Check if this looks like a summary line
+        if (line and not line.startswith('Okay') and not line.startswith('Looking') and 
+            not line.startswith('For') and not line.startswith('Error') and 
+            not line.startswith('The code') and not line.startswith('Putting')):
+            found_summary_start = True
+            
+        if found_summary_start:
+            summary_lines.append(line)
+    
+    # Join and clean up
+    cleaned = '\n'.join(summary_lines).strip()
+    
+    # If we couldn't find a proper summary, return the original (might be clean already)
+    if not cleaned or len(cleaned) < 50:
+        return response
+        
+    return cleaned
+
 # Chutes configuration
 CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
 CHUTES_INFERENCE_URL = "https://llm.chutes.ai/v1/chat/completions"
@@ -107,8 +156,11 @@ async def call_chutes_direct(messages: list, *, model: str = "deepseek-ai/DeepSe
         if not response_text.strip():
             logger.error("Empty response from Chutes API")
             return None
-            
-        return response_text.strip()
+        
+        # Clean up response - remove thinking tags and extra content
+        cleaned_response = clean_agent_summary_response(response_text.strip())
+        
+        return cleaned_response
         
     except Exception as e:
         logger.error(f"Failed to call Chutes API for agent summary: {e}")
@@ -189,7 +241,13 @@ Simple Tool-Based Iterative Agent
 • Key Feature: Structured response format ensures consistent `next_thought` → `next_tool_name` → `next_tool_args` flow
 • Robustness: JSON parsing fallbacks and multi-model retry logic handle malformed responses and API failures
 
-Only provide the summary, no other text, or explanation of your thinking.
+CRITICAL: Only provide the summary in the exact format shown above. Do NOT include:
+- Any thinking process or reasoning (no <think> tags)
+- Explanations of your analysis
+- Additional commentary or meta-text
+- Any text before or after the summary
+
+Generate ONLY the structured summary exactly as shown in the examples above.
 ---
 
 Now analyze the following agent code and generate a summary:
@@ -246,10 +304,19 @@ async def generate_agent_summary(version_id: str, *, proxy_url: str = None, run_
             return None
             
         logger.info("Using Chutes API directly for summary generation")
+        # Try DeepSeek-V3 first (less verbose than R1), fallback to R1
         summary = await call_chutes_direct(
             messages=messages,
-            model="deepseek-ai/DeepSeek-R1"  # High-quality analysis model
+            model="deepseek-ai/DeepSeek-V3"  # Less verbose than R1
         )
+        
+        # If V3 fails, try R1 as fallback
+        if not summary:
+            logger.info("DeepSeek-V3 failed, trying DeepSeek-R1 as fallback")
+            summary = await call_chutes_direct(
+                messages=messages,
+                model="deepseek-ai/DeepSeek-R1"
+            )
             
         if not summary:
             logger.error(f"Empty summary generated for version {version_id}")
