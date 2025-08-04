@@ -3,8 +3,12 @@ Agent Summary Generator - Integrates with upload workflow to generate AI summari
 """
 import asyncio
 import os
-from typing import Optional, Dict, Any
+import json
+import random
+import httpx
+from typing import Optional, Dict, Any, List
 from uuid import UUID
+from dotenv import load_dotenv
 
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.queries.agents import get_agent_by_version_id
@@ -12,64 +16,103 @@ from api.src.endpoints.retrieval import get_agent_code
 from loggers.logging_utils import get_logger
 import asyncpg
 
-# Try to import anthropic for direct API calls
-try:
-    import anthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+# Load environment variables (safe to call multiple times)
+load_dotenv("api/.env")
 
 logger = get_logger(__name__)
 
-async def call_anthropic_direct(messages: list, *, model: str = "claude-sonnet-4-20250514") -> Optional[str]:
+# Chutes configuration
+CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
+CHUTES_INFERENCE_URL = "https://llm.chutes.ai/v1/chat/completions"
+
+async def call_chutes_direct(messages: list, *, model: str = "deepseek-ai/DeepSeek-R1") -> Optional[str]:
     """
-    Call Anthropic API directly for testing purposes.
+    Call Chutes API directly for agent summary generation.
     
     Args:
         messages: List of messages for the AI
-        model: Claude model to use
+        model: DeepSeek model to use
         
     Returns:
         AI response text or None if failed
     """
-    if not ANTHROPIC_AVAILABLE:
-        logger.error("Anthropic library not available")
+    if not CHUTES_API_KEY:
+        logger.error("CHUTES_API_KEY environment variable not set")
         return None
         
     try:
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if not api_key:
-            logger.error("ANTHROPIC_API_KEY environment variable not set")
+        # Convert messages to Chutes format
+        messages_dict = []
+        for msg in messages:
+            if msg:
+                messages_dict.append({"role": msg["role"], "content": msg["content"]})
+
+        headers = {
+            "Authorization": f"Bearer {CHUTES_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+        body = {
+            "model": model,
+            "messages": messages_dict,
+            "stream": True,
+            "max_tokens": 2000,
+            "temperature": 0.1,
+            "seed": random.randint(0, 2**32 - 1),
+        }
+
+        logger.debug(f"Chutes inference request for agent summary with model {model}")
+
+        response_text = ""
+        
+        async with httpx.AsyncClient(timeout=120) as client:
+            async with client.stream("POST", CHUTES_INFERENCE_URL, headers=headers, json=body) as response:
+
+                if response.status_code != 200:
+                    error_text = await response.aread()
+                    if isinstance(error_text, bytes):
+                        error_message = error_text.decode()
+                    else:
+                        error_message = str(error_text)
+                    logger.error(f"Chutes API request failed for agent summary: {response.status_code} - {error_message}")
+                    logger.error(f"Chutes request details: model={model}, messages_count={len(messages)}")
+                    return None
+
+                # Process streaming response
+                async for chunk in response.aiter_lines():
+                    if chunk:
+                        chunk_str = chunk.strip()
+                        if chunk_str.startswith("data: "):
+                            chunk_data = chunk_str[6:]  # Remove "data: " prefix
+
+                            if chunk_data == "[DONE]":
+                                break
+
+                            try:
+                                chunk_json = json.loads(chunk_data)
+                                if "choices" in chunk_json and len(chunk_json["choices"]) > 0:
+                                    choice = chunk_json["choices"][0]
+                                    if "delta" in choice and "content" in choice["delta"]:
+                                        content = choice["delta"]["content"]
+                                        if content:
+                                            response_text += content
+
+                            except json.JSONDecodeError:
+                                # Skip malformed JSON chunks
+                                continue
+
+        logger.debug(f"Chutes inference for agent summary completed")
+        
+        # Validate that we received actual content
+        if not response_text.strip():
+            logger.error("Empty response from Chutes API")
             return None
             
-        client = anthropic.AsyncAnthropic(api_key=api_key)
-        
-        # Convert messages to Anthropic format
-        system_message = ""
-        user_messages = []
-        
-        for msg in messages:
-            if msg["role"] == "system":
-                system_message = msg["content"]
-            else:
-                user_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
-        
-        # Call Anthropic API
-        response = await client.messages.create(
-            model=model,
-            max_tokens=2000,
-            temperature=0.1,
-            system=system_message,
-            messages=user_messages
-        )
-        
-        return response.content[0].text.strip()
+        return response_text.strip()
         
     except Exception as e:
-        logger.error(f"Failed to call Anthropic API: {e}")
+        logger.error(f"Failed to call Chutes API for agent summary: {e}")
+        logger.error(f"Chutes error context: model={model}, timeout=120s, messages_count={len(messages) if messages else 0}")
         return None
 
 
@@ -156,7 +199,7 @@ Now analyze the following agent code and generate a summary:
 
 async def generate_agent_summary(version_id: str, *, proxy_url: str = None, run_id: str) -> Optional[str]:
     """
-    Generate an AI summary for an agent version using Anthropic API.
+    Generate an AI summary for an agent version using Chutes API with DeepSeek R1.
     
     Args:
         version_id: UUID of the agent version
@@ -194,22 +237,18 @@ async def generate_agent_summary(version_id: str, *, proxy_url: str = None, run_
         # Call AI inference to generate summary
         logger.info(f"Calling AI inference to analyze agent code ({len(agent_code)} chars)")
         
-        # Use Anthropic API directly for summary generation
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY")
-        logger.info(f"Debug: ANTHROPIC_AVAILABLE={ANTHROPIC_AVAILABLE}, API_KEY={'SET' if anthropic_key else 'NOT_SET'}")
+        # Use Chutes API directly for summary generation
+        chutes_key = CHUTES_API_KEY
+        logger.info(f"Debug: CHUTES_API_KEY={'SET' if chutes_key else 'NOT_SET'}")
         
-        if not ANTHROPIC_AVAILABLE:
-            logger.error("Anthropic package not available - cannot generate summary")
+        if not chutes_key:
+            logger.error("Chutes API key not configured - cannot generate summary")
             return None
             
-        if not anthropic_key:
-            logger.error("Anthropic API key not configured - cannot generate summary")
-            return None
-            
-        logger.info("Using Anthropic API directly for summary generation")
-        summary = await call_anthropic_direct(
+        logger.info("Using Chutes API directly for summary generation")
+        summary = await call_chutes_direct(
             messages=messages,
-            model="claude-sonnet-4-20250514"  # High-quality analysis model
+            model="deepseek-ai/DeepSeek-R1"  # High-quality analysis model
         )
             
         if not summary:
@@ -260,6 +299,7 @@ async def generate_and_store_agent_summary(version_id: str, *, proxy_url: str = 
         True if successful, False otherwise
     """
     try:
+        logger.info(f"Starting background agent summary generation for version {version_id}")
         # Generate summary
         summary = await generate_agent_summary(
             version_id=version_id,
@@ -268,7 +308,7 @@ async def generate_and_store_agent_summary(version_id: str, *, proxy_url: str = 
         )
         
         if not summary:
-            logger.error(f"Could not generate summary for version {version_id}")
+            logger.error(f"Could not generate summary for version {version_id} - Chutes API may have failed")
             return False
             
         # Store in database
