@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
@@ -23,4 +24,4 @@ async def handle_heartbeat(
     if alleged_status != client.status:
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
-        await websocket.close() 
+        raise WebSocketDisconnect()
