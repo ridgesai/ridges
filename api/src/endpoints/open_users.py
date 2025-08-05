@@ -92,10 +92,10 @@ async def get_user_by_email(email: str, password: str):
 router = APIRouter()
 
 routes = [
-    ("/sign-in", open_user_sign_in),
-    ("/add-email-to-whitelist", add_email_to_whitelist),
-    ("/get-user-by-email", get_user_by_email),
+    ("/sign-in", open_user_sign_in, ["POST"]),
+    ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
+    ("/get-user-by-email", get_user_by_email, ["GET"]),
 ]
 
-for path, endpoint in routes:
-    router.add_api_route(path, endpoint, tags=["open-users"], methods=["POST"])
+for path, endpoint, methods in routes:
+    router.add_api_route(path, endpoint, tags=["open-users"], methods=methods)
