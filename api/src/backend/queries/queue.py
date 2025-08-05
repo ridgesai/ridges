@@ -27,6 +27,7 @@ async def get_queue_for_all_validators(
             FROM evaluations e
             JOIN miner_agents m ON e.version_id = m.version_id
             WHERE e.status = 'waiting'
+            AND m.miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
             GROUP BY e.validator_hotkey
             ORDER BY queue_size DESC;
         """,
