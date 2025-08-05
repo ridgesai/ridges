@@ -1,7 +1,5 @@
 import logging
-from typing import Optional, List
-from datetime import datetime
-from fastapi import WebSocket
+from typing import Literal, Optional, List
 
 from api.src.backend.entities import Client, AgentStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
@@ -10,11 +8,9 @@ from api.src.backend.queries.agents import get_agent_by_version_id
 logger = logging.getLogger(__name__)
 
 class Validator(Client):
-    """Validator model - manages evaluations atomically"""
-    
     hotkey: str
     version_commit_hash: Optional[str] = None
-    status: str = "available"
+    status: Literal["available", "evaluating"] = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
     current_agent_hotkey: Optional[str] = None
