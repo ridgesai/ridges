@@ -324,6 +324,18 @@ class LocalSandbox:
 
             test_patch = instance.get("test_patch")
             if test_patch:
+                # First, get the list of files that will be affected by the patch
+                affected_files = []
+                for line in test_patch.split('\n'):
+                    if line.startswith('--- a/') or line.startswith('+++ b/'):
+                        # Extract filename from patch header
+                        if line.startswith('--- a/'):
+                            filename = line[6:]  # Remove '--- a/' prefix
+                        else:  # '+++ b/'
+                            filename = line[6:]  # Remove '+++ b/' prefix
+                        if filename != '/dev/null' and filename not in affected_files:
+                            affected_files.append(filename)
+                
                 # Try applying with several strip levels; fall back to `patch` if needed
                 import tempfile, os, shlex, textwrap
                 with tempfile.NamedTemporaryFile("w", delete=False) as tmp:
@@ -379,7 +391,9 @@ class LocalSandbox:
                             text=True,
                         )
                     try:
-                        subprocess.run(["git", "add", "-A"], cwd=self.repo_dir, check=True)
+                        # Only add the specific files that were modified by the patch
+                        if affected_files:
+                            subprocess.run(["git", "add"] + affected_files, cwd=self.repo_dir, check=True)
                         subprocess.run([
                             "git",
                             "-c",

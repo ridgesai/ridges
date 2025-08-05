@@ -72,6 +72,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
             status
         FROM miner_agents 
         WHERE status = 'awaiting_screening_1'
+        AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
         ORDER BY created_at ASC
         """,
     )
@@ -88,6 +89,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
             status
         FROM miner_agents 
         WHERE status = 'awaiting_screening_2'
+        AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
         ORDER BY created_at ASC
         """,
     )
