@@ -1,13 +1,14 @@
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 
+from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
 from loggers.process_tracking import process_context
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
 from api.src.socket.handlers.handle_update_evaluation_run import handle_update_evaluation_run
-from api.src.socket.handlers.handle_evaluation_run_log import handle_evaluation_run_log, handle_evaluation_run_logs_batch
+from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
 
 logger = get_logger(__name__)
 
@@ -45,11 +46,8 @@ async def route_message(
     elif event == "update-evaluation-run":
         return await handle_update_evaluation_run(client, response_json)
     
-    elif event == "evaluation-run-log":
-        return await handle_evaluation_run_log(client, response_json)
-    
-    elif event == "evaluation-run-logs-batch":
-        return await handle_evaluation_run_logs_batch(client, response_json)
+    elif event == "evaluation-run-logs":
+        return await handle_evaluation_run_logs(client, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")

@@ -166,6 +166,8 @@ class Sandbox:
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
             )
+
+            self.manager._track_container(self.container)
             
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
@@ -308,7 +310,6 @@ class Sandbox:
     async def _wait_for_container_and_capture_logs(self) -> None:
         """Wait for container completion and capture logs via docker logs command"""
         run_id = self.evaluation_run.run_id
-        logger.info(f"🚀 MONITORING CONTAINER {self.container.id[:12]} (run_id: {run_id})")
         
         # Monitor container status until completion
         container_start_time = datetime.now(timezone.utc)
@@ -378,13 +379,10 @@ class Sandbox:
             
             logger.info(f"✅ Captured {len(container_logs)} characters of logs for {run_id}")
             
-            # Store logs in evaluation_run for database update
-            self.evaluation_run.logs = container_logs
-            
-            # Send logs via websocket for real-time monitoring (optional)
+            # Send logs seperately (so we don't have to send them every time we update)
             try:
                 await self.manager.websocket_app.send({
-                    "event": "evaluation-run-logs-complete",
+                    "event": "evaluation-run-logs",
                     "run_id": str(run_id),
                     "logs": container_logs  # Send complete logs, no truncation
                 })
@@ -515,10 +513,25 @@ class Sandbox:
     @tracer.wrap(resource="cleanup-sandbox")
     def cleanup(self) -> None:
         """Clean up sandbox resources"""
-        # Sandbox container has --rm (remove=True) so it will be removed automatically
+        if self.container:
+            self.manager._untrack_container(self.container)
+            
+        if self.container:
+            try:
+                self.container.remove(force=True)
+                logger.info(f"Force removed sandbox container {self.container.id}")
+            except Exception as e:
+                logger.warning(f"Failed to remove container {self.container.id}: {e}")
+                try:
+                    subprocess.run(["docker", "rm", "-f", self.container.id], timeout=10)
+                    logger.info(f"Removed container {self.container.id} via CLI fallback")
+                except Exception as cli_error:
+                    logger.error(f"CLI fallback also failed for container {self.container.id}: {cli_error}")
+        
         if self.repo_dir and self.repo_dir.exists():
             try:
                 shutil.rmtree(self.repo_dir, ignore_errors=True)
-            except Exception:
-                pass
+                logger.info(f"Cleaned up repository directory: {self.repo_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up repository directory {self.repo_dir}: {e}")
     
