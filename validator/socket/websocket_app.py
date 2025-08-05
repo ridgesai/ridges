@@ -27,12 +27,14 @@ class WebsocketApp:
     ws: Optional[websockets.ClientConnection]
     evaluation_task: Optional[asyncio.Task]
     sandbox_manager: Optional[Any]
+    heartbeat_task: Optional[asyncio.Task]
     _shutting_down: bool
     
     def __init__(self):
         self.ws = None
         self.evaluation_task = None
         self.sandbox_manager = None
+        self.heartbeat_task = None
         self._shutting_down = False
 
     @tracer.wrap(resource="send-websocket-message")
@@ -52,9 +54,7 @@ class WebsocketApp:
         try:
             logger.debug(f"Sending message: {message.get('event', str(message))}")
             await self.ws.send(json.dumps(message))
-            # Don't log evaluation-run-log messages, too noisy
-            if message.get('event') != 'evaluation-run-log':
-                logger.info(f"Message sent: {message.get('event')}")
+            logger.info(f"Message sent: {message.get('event')}")
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:
             logger.warning(f"Connection closed while sending - triggering shutdown: {e}")
             if not self._shutting_down:
@@ -99,6 +99,17 @@ class WebsocketApp:
         except Exception as e:
             logger.error(f"Error in force_cancel_all_tasks: {e}")
 
+    async def _send_heartbeat(self):
+        """Send periodic heartbeat messages to the platform."""
+        while self.ws:
+            await asyncio.sleep(30)
+            if self.ws:
+                status = "available"
+                if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
+                    status = "screening" if SCREENER_MODE else "evaluating"
+
+                await self.send({"event": "heartbeat", "status": status})
+
     @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
@@ -137,6 +148,9 @@ class WebsocketApp:
                     self._shutting_down = False  # Reset shutdown flag on new connection
                     logger.info(f"Connected to websocket: {websocket_url}")
                     await self.send(get_screener_info() if SCREENER_MODE else get_validator_info())
+                    
+                    # Start heartbeat task
+                    self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
                     
                     try:
                         while True:

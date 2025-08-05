@@ -83,7 +83,7 @@ class Screener(Client):
 
             await evaluation.start(conn)
             old_status = self.status
-            self.status = f"Screening agent {agent_name} with evaluation {evaluation_id}"
+            self.status = f"screening"
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = agent_name
             self.current_agent_hotkey = agent_hotkey
