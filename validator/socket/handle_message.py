@@ -32,6 +32,8 @@ async def handle_message(websocket_app, message: str):
             await handle_evaluation(websocket_app, json_message)
         case "set-weights":
             await handle_set_weights(websocket_app, json_message)
+        case "error":
+            logger.error(json_message.get("error"))
         case "authentication-failed":
             raise SystemExit(f"FATAL: {json_message.get('error')}")
         case _:

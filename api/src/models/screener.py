@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 from api.src.backend.entities import Client, AgentStatus, MinerAgent
 from api.src.backend.db_manager import get_transaction
@@ -11,7 +11,7 @@ class Screener(Client):
     
     hotkey: str
     version_commit_hash: Optional[str] = None
-    status: str = "available"
+    status: Literal["available", "screening"] = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
     current_agent_hotkey: Optional[str] = None

@@ -244,8 +244,7 @@ class Sandbox:
         repo_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Clone to cache if needed
-        if not cache_path.exists():
-            await asyncio.get_event_loop().run_in_executor(
+        await asyncio.get_event_loop().run_in_executor(
                 None, clone_repo, cache_path, repo_name, base_commit
             )
         
