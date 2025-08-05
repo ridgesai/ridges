@@ -410,7 +410,12 @@ class Evaluation:
             if awaiting_count > 0:
                 # Log the agents for debugging
                 awaiting_agents = await conn.fetch(
-                    "SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents WHERE status = $1 ORDER BY created_at ASC",
+                    """
+                    SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents 
+                    WHERE status = $1 
+                    AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
+                    ORDER BY created_at ASC
+                    """,
                     target_status
                 )
                 for agent in awaiting_agents[:3]:  # Log first 3
@@ -424,6 +429,7 @@ class Evaluation:
                     WITH next_agent AS (
                         SELECT version_id FROM miner_agents 
                         WHERE status = $1 
+                        AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
                         ORDER BY created_at ASC 
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
