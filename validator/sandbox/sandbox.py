@@ -251,6 +251,18 @@ class Sandbox:
 
             test_patch = instance.get("test_patch")
             if test_patch:
+                # First, get the list of files that will be affected by the patch
+                affected_files = []
+                for line in test_patch.split('\n'):
+                    if line.startswith('--- a/') or line.startswith('+++ b/'):
+                        # Extract filename from patch header
+                        if line.startswith('--- a/'):
+                            filename = line[6:]  # Remove '--- a/' prefix
+                        else:  # '+++ b/'
+                            filename = line[6:]  # Remove '+++ b/' prefix
+                        if filename != '/dev/null' and filename not in affected_files:
+                            affected_files.append(filename)
+                
                 proc = subprocess.run(
                     ["git", "apply", "--verbose", "--reject", "--unidiff-zero", "-"],
                     cwd=repo_path,
@@ -270,8 +282,11 @@ class Sandbox:
                     )
                 else:
                     logger.info("Successfully applied test_patch for %s", instance_id)
+                    logger.info("Affected files: %s", affected_files)
                     try:
-                        subprocess.run(["git", "add", "-A"], cwd=repo_path, check=True)
+                        # Only add the specific files that were modified by the patch
+                        if affected_files:
+                            subprocess.run(["git", "add"] + affected_files, cwd=repo_path, check=True)
                         subprocess.run([
                             "git",
                             "-c",
