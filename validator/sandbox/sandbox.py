@@ -293,7 +293,6 @@ class Sandbox:
     async def _wait_for_container_and_capture_logs(self) -> None:
         """Wait for container completion and capture logs via docker logs command"""
         run_id = self.evaluation_run.run_id
-        logger.info(f"🚀 MONITORING CONTAINER {self.container.id[:12]} (run_id: {run_id})")
         
         # Monitor container status until completion
         container_start_time = datetime.now(timezone.utc)
@@ -363,13 +362,10 @@ class Sandbox:
             
             logger.info(f"✅ Captured {len(container_logs)} characters of logs for {run_id}")
             
-            # Store logs in evaluation_run for database update
-            self.evaluation_run.logs = container_logs
-            
-            # Send logs via websocket for real-time monitoring (optional)
+            # Send logs seperately (so we don't have to send them every time we update)
             try:
                 await self.manager.websocket_app.send({
-                    "event": "evaluation-run-logs-complete",
+                    "event": "evaluation-run-logs",
                     "run_id": str(run_id),
                     "logs": container_logs  # Send complete logs, no truncation
                 })
