@@ -1,7 +1,9 @@
 import asyncio
 import shutil
+import signal
+import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, List, Optional, Set
 from datetime import datetime, timezone
 
 import docker
@@ -32,9 +34,10 @@ class TerminateTaskGroup(Exception):
 class SandboxManager:
     """Manages sandbox orchestration and Docker infrastructure"""
     
-    @tracer.wrap(resource="initialize-sandbox-manager")
     def __init__(self, websocket_app: "WebsocketApp"):
         self.websocket_app = websocket_app
+        self._container_ids: Set[str] = set()
+        self._cleanup_attempted = False
         
         try:
             self.docker = docker.from_env(max_pool_size=100)
@@ -49,6 +52,7 @@ class SandboxManager:
         # Setup infrastructure
         self._setup_network()
         self._setup_proxy()
+        self._setup_signal_handlers()
     
     @tracer.wrap(resource="setup-network-for-sandbox-manager")
     def _setup_network(self) -> None:
@@ -87,6 +91,52 @@ class SandboxManager:
         network = self.docker.networks.get(SANDBOX_NETWORK_NAME)
         network.connect(self.proxy_container)
     
+    def _setup_signal_handlers(self) -> None:
+        def signal_handler(signum):
+            logger.info(f"Received signal {signum}, performing sandbox cleanup")
+        
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+    
+    def _track_container(self, container: Container) -> None:
+        if container and hasattr(container, 'id'):
+            self._container_ids.add(container.id)
+            logger.debug(f"Tracking container {container.id}")
+    
+    def _untrack_container(self, container: Container) -> None:
+        if container and hasattr(container, 'id'):
+            self._container_ids.discard(container.id)
+            logger.debug(f"Untracking container {container.id}")
+    
+    def _force_kill_container(self, container_id: str) -> bool:
+        success = False
+        
+        try:
+            container = self.docker.containers.get(container_id)
+            container.kill()
+            container.remove(force=True)
+            success = True
+            logger.info(f"Force killed container {container_id} via Docker API")
+        except Exception as e:
+            logger.warning(f"Failed to kill container {container_id} via Docker API: {e}")
+        
+        if not success:
+            try:
+                result = subprocess.run(
+                    ["docker", "kill", container_id],
+                    capture_output=True, text=True, timeout=10
+                )
+                if result.returncode == 0:
+                    subprocess.run(["docker", "rm", "-f", container_id], timeout=10)
+                    success = True
+                    logger.info(f"Force killed container {container_id} via docker CLI")
+                else:
+                    logger.warning(f"docker kill failed for {container_id}: {result.stderr}")
+            except Exception as e:
+                logger.error(f"docker CLI kill failed for {container_id}: {e}")
+        
+        return success
+    
     @tracer.wrap(resource="create-sandbox")
     async def create_sandbox(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path) -> Sandbox:
         """Create a new sandbox for evaluation"""
@@ -99,19 +149,43 @@ class SandboxManager:
         await sandbox._send_update()
         return sandbox
     
-    async def _force_terminate_task_group(self) -> None:
+    def _force_terminate_task_group(self) -> None:
         """Used to force termination of a task group."""
         raise TerminateTaskGroup()
     
     def force_cancel_all_tasks(self) -> None:
-        """Immediately cancel all running sandbox tasks."""
+        if self._cleanup_attempted:
+            logger.debug("Cleanup already attempted, skipping")
+            return
+            
+        self._cleanup_attempted = True
+        logger.info("Force cancelling all sandbox tasks due to websocket disconnect")
+        
         # First, mark all sandboxes as cancelled to stop websocket communications
         for sandbox in self.sandboxes:
             sandbox.cancel()
         
+        containers_to_kill = list(self._container_ids)
+        for container_id in containers_to_kill:
+            self._force_kill_container(container_id)
+        
+        try:
+            containers = self.docker.containers.list(all=True)
+            for container in containers:
+                try:
+                    if (container.image and hasattr(container.image, 'tags') and 
+                        container.image.tags and 
+                        any(tag.startswith('sandbox-runner') for tag in container.image.tags)):
+                        container.kill()
+                        container.remove(force=True)
+                        logger.info(f"Force killed missed sandbox container {container.id}")
+                except Exception as e:
+                    logger.warning(f"Failed to kill missed container {container.id}: {e}")
+        except Exception as e:
+            logger.error(f"Failed to list containers for cleanup: {e}")
+        
+        # Cancel task group
         if self._task_group is not None:
-            # Get all tasks from the task group and cancel them directly
-            # This is more aggressive than raising an exception
             try:
                 # Access the internal task set to cancel all tasks immediately
                 if hasattr(self._task_group, '_tasks'):
@@ -122,10 +196,13 @@ class SandboxManager:
                 # Also create a termination task as backup
                 task = asyncio.create_task(self._force_terminate_task_group())
                 task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Failed to cancel task group: {e}")
                 # Fallback to original method if internal access fails
                 task = asyncio.create_task(self._force_terminate_task_group())
                 task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+        self.sandbox_manager = None
 
     @tracer.wrap(resource="run-all-sandboxes")
     async def run_all_sandboxes(self) -> None:
@@ -163,10 +240,14 @@ class SandboxManager:
     
     @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
-        """Clean up sandbox resources"""
+        logger.info("Starting sandbox manager cleanup")
+        
         # Terminate task group if running
         if force_cancel and self._task_group:
-            self._task_group.create_task(self._force_terminate_task_group())
+            try:
+                self._task_group.create_task(self._force_terminate_task_group())
+            except Exception as e:
+                logger.error(f"Failed to terminate task group: {e}")
         
         # Clean up sandboxes
         for sandbox in self.sandboxes:
@@ -176,7 +257,10 @@ class SandboxManager:
                 logger.warning(f"Error cleaning up sandbox: {e}")
         
         if force_cancel:
-            # Remove sandbox containers
+            containers_to_kill = list(self._container_ids)
+            for container_id in containers_to_kill:
+                self._force_kill_container(container_id)
+            
             try:
                 containers = self.docker.containers.list(all=True)
                 for container in containers:
@@ -185,27 +269,41 @@ class SandboxManager:
                             container.image.tags and 
                             any(tag.startswith('sandbox-runner') for tag in container.image.tags)):
                             container.remove(force=True)
-                    except Exception:
-                        pass
+                            logger.info(f"Removed sandbox container {container.id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove container {container.id}: {e}")
+                        try:
+                            subprocess.run(["docker", "rm", "-f", container.id], timeout=10)
+                            logger.info(f"Removed container {container.id} via CLI fallback")
+                        except Exception as cli_error:
+                            logger.error(f"CLI fallback also failed for container {container.id}: {cli_error}")
             except Exception as e:
-                logger.warning(f"Error cleaning up containers: {e}")
+                logger.warning(f"Error listing containers for cleanup: {e}")
             
             # Remove proxy container
             if self.proxy_container:
                 try:
                     self.proxy_container.remove(force=True)
-                except Exception:
-                    pass
+                    logger.info("Removed proxy container")
+                except Exception as e:
+                    logger.warning(f"Failed to remove proxy container: {e}")
+                    try:
+                        subprocess.run(["docker", "rm", "-f", PROXY_CONTAINER_NAME], timeout=10)
+                        logger.info("Removed proxy container via CLI fallback")
+                    except Exception as cli_error:
+                        logger.error(f"CLI fallback also failed for proxy container: {cli_error}")
             
             # Clean up directories
             for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
                 try:
                     if path.exists():
                         shutil.rmtree(path, ignore_errors=True)
-                except Exception:
-                    pass
+                        logger.info(f"Cleaned up directory: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up directory {path}: {e}")
             
             self.sandboxes.clear()
+            self._container_ids.clear()
         else:
             # Remove only completed sandboxes
             self.sandboxes = [s for s in self.sandboxes if hasattr(s, 'evaluation_run') and 
