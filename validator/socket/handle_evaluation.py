@@ -61,7 +61,7 @@ async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
         await websocket_app.evaluation_task
 
     except asyncio.CancelledError:
-        logger.info("Evaluation task was cancelled")
+        logger.info("Evaluation task was cancelled. Ensure you are running docker.")
     except Exception as e:
         logger.error(f"Error handling agent version: {e}")
         logger.exception("Full error traceback:")
