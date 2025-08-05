@@ -68,7 +68,7 @@ class Validator(Client):
             await ws_manager.send_to_all_non_validators("evaluation-started", message)
                 
             # Commit validator state changes
-            self.status = f"Evaluating agent {miner_agent.agent_name} with evaluation {evaluation_id}"
+            self.status = f"evaluating"
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = miner_agent.agent_name
             self.current_agent_hotkey = miner_agent.miner_hotkey

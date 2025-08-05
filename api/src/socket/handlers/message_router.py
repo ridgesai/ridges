@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional
 from fastapi import WebSocket
 
 from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
+from api.src.socket.handlers.handle_heartbeat import handle_heartbeat
 from loggers.process_tracking import process_context
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
@@ -48,6 +49,9 @@ async def route_message(
     
     elif event == "evaluation-run-logs":
         return await handle_evaluation_run_logs(client, response_json)
+    
+    elif event == "heartbeat":
+        return await handle_heartbeat(websocket, clients, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")
