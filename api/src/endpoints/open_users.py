@@ -14,7 +14,6 @@ load_dotenv()
 logger = get_logger(__name__)
 
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
-print(open_user_password)
 
 async def open_user_sign_in(request: OpenUserSignInRequest):
     auth0_user_id = request.auth0_user_id
