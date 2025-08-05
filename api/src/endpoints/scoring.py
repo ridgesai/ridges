@@ -4,13 +4,15 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 
+from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
+from api.src.backend.queries.evaluations import get_evaluations_by_version_id
 from api.src.backend.entities import MinerAgentScored
-from api.src.backend.db_manager import new_db
+from api.src.backend.db_manager import get_transaction, new_db
 
 load_dotenv()
 
@@ -113,6 +115,33 @@ async def refresh_scores():
     except Exception as e:
         logger.error(f"Error refreshing agent scores: {e}")
         raise HTTPException(status_code=500, detail="Error refreshing agent scores")
+
+async def re_evaluate_agent(password: str, version_id: str):
+    """Re-evaluate an agent by resetting all validator evaluations for a version_id back to waiting status"""
+    if password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    try:
+        async with get_transaction() as conn:
+            evaluations: list[Evaluation] = await get_evaluations_by_version_id(conn, version_id)
+            
+            # Filter to only validator evaluations (not screeners)
+            validator_evaluations: list[Evaluation] = [
+                eval for eval in evaluations 
+                if not (eval.validator_hotkey.startswith('screener-') or eval.validator_hotkey.startswith('i-0'))
+            ]
+            
+            for evaluation in validator_evaluations:
+                await evaluation.reset_to_waiting(conn)
+            
+            logger.info(f"Reset {len(validator_evaluations)} validator evaluations for version {version_id}")
+            return {
+                "message": f"Successfully reset {len(validator_evaluations)} validator evaluations for version {version_id}",
+            }
+            
+    except Exception as e:
+        logger.error(f"Error resetting validator evaluations for version {version_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error resetting validator evaluations")
     
 router = APIRouter()
 
@@ -122,7 +151,8 @@ routes = [
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
-    ("/refresh-scores", refresh_scores, ["POST"])
+    ("/refresh-scores", refresh_scores, ["POST"]),
+    ("/re-evaluate-agent", re_evaluate_agent, ["POST"])
 ]
 
 for path, endpoint, methods in routes:
