@@ -371,9 +371,9 @@ class Sandbox:
                 await self.manager.websocket_app.send({
                     "event": "evaluation-run-logs-complete",
                     "run_id": str(run_id),
-                    "logs": container_logs[:10000] + "..." if len(container_logs) > 10000 else container_logs  # Truncate for websocket
+                    "logs": container_logs  # Send complete logs, no truncation
                 })
-                logger.info(f"📤 Sent logs via websocket for {run_id}")
+                logger.info(f"📤 Sent complete logs via websocket for {run_id}")
             except Exception as e:
                 logger.warning(f"Failed to send logs via websocket for {run_id}: {e}")
                 
