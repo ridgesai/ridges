@@ -2,6 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
+from typing import List
 
 from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
@@ -44,15 +45,15 @@ async def weight_receiving_agent():
 
     return top_agent
 
-async def ban_agent(agent_id: str, ban_password: str):
+async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid ban password. Fuck you.")
 
     try:
-        await db_ban_agent(agent_id)
-        return {"message": "Agent banned successfully"}
+        await db_ban_agents(agent_ids, reason)
+        return {"message": "Agents banned successfully"}
     except Exception as e:
-        logger.error(f"Error banning agent {agent_id}: {e}")
+        logger.error(f"Error banning agents: {e}")
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
     
 

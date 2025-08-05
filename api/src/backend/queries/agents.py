@@ -70,11 +70,11 @@ async def get_agents_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> L
     return [MinerAgent(**dict(result)) for result in result]
 
 @db_transaction
-async def ban_agent(conn: asyncpg.Connection, miner_hotkey: str):
-    await conn.execute("""
-        INSERT INTO banned_hotkeys (miner_hotkey)
-        VALUES ($1)
-    """, miner_hotkey)
+async def ban_agents(conn: asyncpg.Connection, miner_hotkeys: List[str], reason: str):
+    await conn.executemany("""
+        INSERT INTO banned_hotkeys (miner_hotkey, banned_reason)
+        VALUES ($1, $2) ON CONFLICT (miner_hotkey) DO NOTHING
+    """, [(miner_hotkey, reason) for miner_hotkey in miner_hotkeys])
 
 @db_transaction
 async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
