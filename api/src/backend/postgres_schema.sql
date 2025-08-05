@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     patch_generated_at TIMESTAMPTZ,
     eval_started_at TIMESTAMPTZ,
     result_scored_at TIMESTAMPTZ,
-    cancelled_at TIMESTAMPTZ
+    cancelled_at TIMESTAMPTZ,
+    logs TEXT -- Complete Docker container logs for debugging and analysis
 );
 
 -- Evaluation Run Logs table

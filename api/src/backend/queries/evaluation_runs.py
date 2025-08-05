@@ -22,9 +22,9 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
             run_id, evaluation_id, swebench_instance_id, status, response, error,
             pass_to_fail_success, fail_to_pass_success, pass_to_pass_success, 
             fail_to_fail_success, solved, started_at, sandbox_created_at, 
-            patch_generated_at, eval_started_at, result_scored_at, cancelled_at
+            patch_generated_at, eval_started_at, result_scored_at, cancelled_at, logs
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (run_id) DO UPDATE 
         SET status = EXCLUDED.status,
             response = EXCLUDED.response,
@@ -38,7 +38,8 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
             patch_generated_at = EXCLUDED.patch_generated_at,
             eval_started_at = EXCLUDED.eval_started_at,
             result_scored_at = EXCLUDED.result_scored_at,
-            cancelled_at = EXCLUDED.cancelled_at
+            cancelled_at = EXCLUDED.cancelled_at,
+            logs = EXCLUDED.logs
     """,
         evaluation_run.run_id,
         evaluation_run.evaluation_id,
@@ -57,6 +58,7 @@ async def store_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evaluat
         evaluation_run.eval_started_at,
         evaluation_run.result_scored_at,
         evaluation_run.cancelled_at,
+        evaluation_run.logs,
     )
 
     return evaluation_run
@@ -82,8 +84,9 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
             patch_generated_at = $11,
             eval_started_at = $12,
             result_scored_at = $13,
-            cancelled_at = $14
-        WHERE run_id = $15
+            cancelled_at = $14,
+            logs = $15
+        WHERE run_id = $16
         """,
         evaluation_run.response,
         evaluation_run.error,
@@ -99,6 +102,7 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
         evaluation_run.eval_started_at,
         evaluation_run.result_scored_at,
         evaluation_run.cancelled_at,
+        evaluation_run.logs,
         evaluation_run.run_id,
     )
 
@@ -177,6 +181,7 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
                 e.eval_started_at,
                 e.result_scored_at,
                 e.cancelled_at,
+                e.logs,
                 i.cost,
                 i.total_tokens,
                 i.model,
@@ -209,10 +214,11 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
             eval_started_at=run_row[14],
             result_scored_at=run_row[15],
             cancelled_at=run_row[16],
-            cost=run_row[17],
-            total_tokens=run_row[18],
-            model=run_row[19],
-            num_inference_calls=run_row[20]
+            logs=run_row[17],
+            cost=run_row[18],
+            total_tokens=run_row[19],
+            model=run_row[20],
+            num_inference_calls=run_row[21]
         ) for run_row in run_rows
     ]
 
@@ -240,7 +246,8 @@ async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[Evalu
             patch_generated_at,
             eval_started_at,
             result_scored_at,
-            cancelled_at
+            cancelled_at,
+            logs
         FROM evaluation_runs 
         WHERE run_id = $1
         """,
@@ -254,57 +261,16 @@ async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[Evalu
 
     return run
 
-
-@db_transaction
-async def insert_evaluation_run_log(conn: asyncpg.Connection, run_id: str, log_line: str) -> None:
-    """Insert a log line for an evaluation run"""
-    await conn.execute(
-        """
-        INSERT INTO evaluation_run_logs (run_id, line)
-        VALUES ($1, $2)
-        """,
-        run_id, log_line
-    )
-
-@db_transaction
-async def insert_evaluation_run_logs_batch(conn: asyncpg.Connection, run_id: str, logs: list[dict]) -> None:
-    """Insert multiple log lines for an evaluation run in a single transaction"""
-    # Extract log data with explicit timestamps
-    log_data = []
-    for log_entry in logs:
-        line = log_entry.get("line", "")
-        timestamp = log_entry.get("time")
-        if line:  # Only insert non-empty lines
-            # Parse the ISO timestamp if provided, otherwise use current time
-            if timestamp:
-                try:
-                    parsed_timestamp = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    parsed_timestamp = datetime.now()
-            else:
-                parsed_timestamp = datetime.now()
-            log_data.append((run_id, line, parsed_timestamp))
-    
-    if log_data:
-        await conn.executemany(
-            """
-            INSERT INTO evaluation_run_logs (run_id, line, created_at)
-            VALUES ($1, $2, $3)
-            """,
-            log_data
-        )
-
 @db_operation
-async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> list[EvaluationRunLog]:
-    """Get all log lines for an evaluation run"""
-    log_rows = await conn.fetch(
+async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> str:
+    """Get logs for an evaluation run from the logs column"""
+    logs = await conn.fetchval(
         """
-        SELECT id, run_id, created_at, line
-        FROM evaluation_run_logs
+        SELECT logs
+        FROM evaluation_runs
         WHERE run_id = $1
-        ORDER BY created_at
         """,
         run_id
     )
-
-    return [EvaluationRunLog(**dict(log_row)) for log_row in log_rows]
+    
+    return logs or ""  # Return empty string if logs is NULL

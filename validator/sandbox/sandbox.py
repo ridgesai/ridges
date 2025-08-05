@@ -50,7 +50,6 @@ class Sandbox:
         self.container: Optional[Container] = None
         self.repo_dir: Optional[Path] = None
         self._cancelled = False
-        self.logs = []  # Store logs in memory until patch generation is complete
         
         # Validate agent directory
         if not (agent_dir / "agent.py").exists():
@@ -65,7 +64,7 @@ class Sandbox:
         """Run the complete sandbox evaluation pipeline"""
         
         try:
-            # Generate patch
+            # Generate patch (logs captured automatically)
             await self._generate_patch()
             
             # Evaluate patch if generated
@@ -153,7 +152,7 @@ class Sandbox:
                     raise SystemExit(f"Failed to pull default sandbox image {SANDBOX_DOCKER_IMAGE}: {e}")
 
             self.container = self.manager.docker.containers.run(
-                remove=True,
+                remove=False,  # Keep container for log capture, remove manually later
                 image=image_name,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
@@ -175,24 +174,11 @@ class Sandbox:
                 raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
             raise
         
-        # Start log streaming and monitoring in parallel
-        await asyncio.gather(
-            self._stream_and_monitor_container(),
-            return_exceptions=True
-        )
+        # Wait for container to complete and capture logs
+        await self._wait_for_container_and_capture_logs()
         
         # Process results
         try:
-
-            if self.logs:
-                try:
-                    await self.manager.websocket_app.send({
-                        "event": "evaluation-run-logs-batch",
-                        "run_id": str(self.evaluation_run.run_id),
-                        "logs": self.logs
-                    })
-                except Exception as e:
-                    logger.error(f"Failed to send logs for {self.evaluation_run.run_id}: {e}")
 
             logger.info(f"Checking output file: {output_file}")
             logger.info(f"Output file exists: {output_file.exists()}")
@@ -303,22 +289,20 @@ class Sandbox:
         
         return repo_path
     
-    @tracer.wrap(resource="stream-and-monitor-container")
-    async def _stream_and_monitor_container(self) -> None:
-        """Stream logs and monitor container in a clean, minimal way"""
+    @tracer.wrap(resource="wait-container-capture-logs")
+    async def _wait_for_container_and_capture_logs(self) -> None:
+        """Wait for container completion and capture logs via docker logs command"""
         run_id = self.evaluation_run.run_id
-        logger.info(f"🚀 STARTING LOG CAPTURE FOR CONTAINER {self.container.id[:12]} (run_id: {run_id})")
+        logger.info(f"🚀 MONITORING CONTAINER {self.container.id[:12]} (run_id: {run_id})")
         
-        # Start log streaming immediately
-        log_task = asyncio.create_task(self._capture_container_logs())
-        
-        # Monitor container status
+        # Monitor container status until completion
         container_start_time = datetime.now(timezone.utc)
         
         try:
             while True:
                 if self._cancelled:
                     logger.info(f"Container cancelled for {run_id}")
+                    self.container.kill()
                     break
                 
                 # Check container status
@@ -329,9 +313,9 @@ class Sandbox:
                     if status in ["exited", "dead", "removing"]:
                         try:
                             exit_code = self.container.attrs.get('State', {}).get('ExitCode', 'unknown')
-                            logger.info(f"Container {run_id} status: {status}, exit code: {exit_code} - stopping monitoring")
+                            logger.info(f"Container {run_id} status: {status}, exit code: {exit_code} - completed")
                         except:
-                            logger.info(f"Container {run_id} status: {status} - stopping monitoring")
+                            logger.info(f"Container {run_id} status: {status} - completed")
                         break
                         
                 except DockerNotFound:
@@ -352,87 +336,60 @@ class Sandbox:
                     break
                 
                 await asyncio.sleep(1)
-                
-        finally:
-            # Ensure log streaming stops
-            if not log_task.done():
-                log_task.cancel()
-                try:
-                    await log_task
-                except asyncio.CancelledError:
-                    pass
             
-    @tracer.wrap(resource="capture-container-logs")  
-    async def _capture_container_logs(self) -> None:
-        """Capture all container logs in real-time - FIXED THREADING"""
-        run_id = self.evaluation_run.run_id
-        
-        try:
-            # Get the current event loop to pass to the blocking thread
-            loop = asyncio.get_running_loop()
-            
-            await loop.run_in_executor(
-                None, self._read_logs_blocking, loop
-            )
-            
+            # Capture logs after container completion
+            await self._capture_container_logs_post_execution()
+                    
         except Exception as e:
-            logger.error(f"LOG CAPTURE ERROR for {run_id}: {e}")
-    
-    def _read_logs_blocking(self, loop) -> None:
-        """Read logs in blocking thread - FIXED EVENT LOOP"""
+            logger.error(f"Error in container monitoring for {run_id}: {e}")
+            
+    @tracer.wrap(resource="capture-logs-post-execution")
+    async def _capture_container_logs_post_execution(self) -> None:
+        """Capture complete container logs after execution using docker logs"""
         run_id = self.evaluation_run.run_id
         
         try:
-            # Get real-time log stream 
-            log_stream = self.container.logs(
-                stream=True,
-                follow=True, 
+            logger.info(f"📋 Capturing logs for container {run_id}...")
+            
+            # Get complete logs from container
+            logs_bytes = self.container.logs(
                 stdout=True,
                 stderr=True,
                 timestamps=False
             )
             
-            for raw_log_line in log_stream:
-                try:
-                    # Decode the log line (handle Docker's 8-byte header)
-                    if len(raw_log_line) >= 8 and raw_log_line[0] in [1, 2]:
-                        line = raw_log_line[8:].decode('utf-8', errors='ignore')
-                    else:
-                        line = raw_log_line.decode('utf-8', errors='ignore')
-                    
-                    # Check if event loop is still running before scheduling coroutine
-                    if not loop.is_closed():
-                        try:
-                            self.logs.append({
-                                "time": datetime.now(timezone.utc).isoformat(),
-                                "line": line
-                            })
-                        except RuntimeError:
-                            # Event loop was closed between check and execution
-                            break
-                    else:
-                        # Event loop is closed, stop processing
-                        break
-                        
-                except Exception as e:
-                    logger.error(f"Error processing log line for {run_id}: {e}")
-                    # If event loop is closed, stop processing
-                    if loop.is_closed():
-                        break
-                    
-                # Check if container stopped
-                try:
-                    self.container.reload()
-                    if self.container.status not in ["running", "created"]:
-                        logger.info(f"Container {run_id} stopped, ending log stream")
-                        break
-                except:
-                    break
-                    
+            # Decode logs to string
+            container_logs = logs_bytes.decode('utf-8', errors='ignore')
+            
+            logger.info(f"✅ Captured {len(container_logs)} characters of logs for {run_id}")
+            
+            # Store logs in evaluation_run for database update
+            self.evaluation_run.logs = container_logs
+            
+            # Send logs via websocket for real-time monitoring (optional)
+            try:
+                await self.manager.websocket_app.send({
+                    "event": "evaluation-run-logs-complete",
+                    "run_id": str(run_id),
+                    "logs": container_logs[:10000] + "..." if len(container_logs) > 10000 else container_logs  # Truncate for websocket
+                })
+                logger.info(f"📤 Sent logs via websocket for {run_id}")
+            except Exception as e:
+                logger.warning(f"Failed to send logs via websocket for {run_id}: {e}")
+                
         except Exception as e:
-            logger.error(f"Error in log stream for {run_id}: {e}")
+            logger.error(f"❌ Error capturing logs for {run_id}: {e}")
+            # Set error message as logs to avoid None
+            self.evaluation_run.logs = f"Error capturing logs: {e}"
+        
         finally:
-            logger.info(f"LOG STREAM ENDED for {run_id}")
+            # Clean up container after log capture
+            try:
+                logger.info(f"🧹 Cleaning up container {run_id}")
+                self.container.remove(force=True)
+                logger.info(f"✅ Container {run_id} removed successfully")
+            except Exception as e:
+                logger.warning(f"Failed to remove container {run_id}: {e}")
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:
