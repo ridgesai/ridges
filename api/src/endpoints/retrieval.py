@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
@@ -124,9 +124,10 @@ async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = No
     
     return evaluations
 
-async def get_evaluation_run_logs(run_id: str) -> str:
+async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
     try:
         logs = await db_get_evaluation_run_logs(run_id)
+        print(logs)
     except Exception as e:
         logger.error(f"Error retrieving logs for run {run_id}: {e}")
         raise HTTPException(
@@ -134,7 +135,7 @@ async def get_evaluation_run_logs(run_id: str) -> str:
             detail="Internal server error while retrieving logs for run. Please try again later."
         )
     
-    return logs
+    return PlainTextResponse(content=logs)
 
 async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
     try:
