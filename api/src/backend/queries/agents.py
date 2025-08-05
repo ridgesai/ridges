@@ -73,7 +73,7 @@ async def get_agents_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> L
 async def ban_agents(conn: asyncpg.Connection, miner_hotkeys: List[str], reason: str):
     await conn.executemany("""
         INSERT INTO banned_hotkeys (miner_hotkey, banned_reason)
-        VALUES ($1, $2) ON CONFLICT (miner_hotkey) DO NOTHING
+        VALUES ($1, $2)
     """, [(miner_hotkey, reason) for miner_hotkey in miner_hotkeys])
 
 @db_transaction
