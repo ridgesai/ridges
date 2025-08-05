@@ -10,7 +10,6 @@ from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
-from api.src.backend.queries.evaluations import get_evaluations_by_version_id
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db
 
@@ -122,15 +121,15 @@ async def re_evaluate_agent(password: str, version_id: str):
         raise HTTPException(status_code=401, detail="Invalid password")
 
     try:
-        evaluations: list[Evaluation] = await get_evaluations_by_version_id(version_id)
         async with get_transaction() as conn:
-            # Filter to only validator evaluations (not screeners)
-            validator_evaluations: list[Evaluation] = [
-                eval for eval in evaluations 
-                if not (eval.validator_hotkey.startswith('screener-') or eval.validator_hotkey.startswith('i-0'))
-            ]
+            validator_evaluations = await conn.fetch("""
+                SELECT * FROM evaluations WHERE version_id = $1
+                    AND validator_hotkey NOT LIKE 'screener-%'
+                    AND validator_hotkey NOT LIKE 'i-0%'
+            """, version_id)
             
-            for evaluation in validator_evaluations:
+            for evaluation_data in validator_evaluations:
+                evaluation = Evaluation(**evaluation_data)
                 await evaluation.reset_to_waiting(conn)
             
             logger.info(f"Reset {len(validator_evaluations)} validator evaluations for version {version_id}")
