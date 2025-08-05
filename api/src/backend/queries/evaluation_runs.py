@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 import asyncpg
-from api.src.backend.entities import EvaluationRun, EvaluationRunLog, EvaluationRunWithUsageDetails
+from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.db_manager import get_transaction
 from loggers.logging_utils import get_logger
@@ -84,9 +84,8 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
             patch_generated_at = $11,
             eval_started_at = $12,
             result_scored_at = $13,
-            cancelled_at = $14,
-            logs = $15
-        WHERE run_id = $16
+            cancelled_at = $14
+        WHERE run_id = $15
         """,
         evaluation_run.response,
         evaluation_run.error,
@@ -102,7 +101,6 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
         evaluation_run.eval_started_at,
         evaluation_run.result_scored_at,
         evaluation_run.cancelled_at,
-        evaluation_run.logs,
         evaluation_run.run_id,
     )
 
@@ -260,6 +258,15 @@ async def get_run_by_id(conn: asyncpg.Connection, run_id: str) -> Optional[Evalu
     run = EvaluationRun(**dict(run_row))
 
     return run
+
+@db_operation
+async def update_evaluation_run_logs(conn: asyncpg.Connection, run_id: str, logs: str):
+    """Update the logs for an evaluation run"""
+    await conn.execute(
+        """
+        UPDATE evaluation_runs SET logs = $1 WHERE run_id = $2
+        """,
+        logs, run_id)
 
 @db_operation
 async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> str:
