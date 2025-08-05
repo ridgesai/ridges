@@ -73,10 +73,8 @@ class WebsocketApp:
                 await asyncio.wait_for(cleanup_task, timeout=30.0)  # 30 second timeout
             except asyncio.TimeoutError:
                 logger.critical("Cleanup timeout - containers may still be running")
-                self.sandbox_manager._emergency_cleanup()
             except Exception as e:
                 logger.error(f"Error during cleanup: {e}")
-                self.sandbox_manager._emergency_cleanup()
             finally:
                 self.sandbox_manager = None
             
@@ -100,7 +98,6 @@ class WebsocketApp:
             self.sandbox_manager.force_cancel_all_tasks()
         except Exception as e:
             logger.error(f"Error in force_cancel_all_tasks: {e}")
-            self.sandbox_manager._emergency_cleanup()
 
     @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):
@@ -115,12 +112,8 @@ class WebsocketApp:
             await asyncio.wait_for(self.cancel_running_evaluation(), timeout=45.0)  # 45 second total timeout
         except asyncio.TimeoutError:
             logger.critical("Shutdown timeout - forcing emergency cleanup")
-            if self.sandbox_manager:
-                self.sandbox_manager._emergency_cleanup()
         except Exception as e:
             logger.error(f"Error during shutdown: {e}")
-            if self.sandbox_manager:
-                self.sandbox_manager._emergency_cleanup()
         
         # Close websocket connection
         if self.ws:

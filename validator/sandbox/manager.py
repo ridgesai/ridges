@@ -94,47 +94,9 @@ class SandboxManager:
     def _setup_signal_handlers(self) -> None:
         def signal_handler(signum):
             logger.info(f"Received signal {signum}, performing sandbox cleanup")
-            self._emergency_cleanup()
         
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
-    
-    def _emergency_cleanup(self) -> None:
-        logger.info("Cleanup of all sandbox containers")
-        
-        try:
-            result = subprocess.run(
-                ["docker", "kill", "$(docker ps -q --filter ancestor=sandbox-runner)"],
-                shell=True, capture_output=True, text=True, timeout=30
-            )
-            if result.returncode == 0:
-                logger.info("Killed sandbox containers via docker kill")
-            else:
-                logger.warning(f"Docker kill failed: {result.stderr}")
-        except Exception as e:
-            logger.error(f"Docker kill failed: {e}")
-        
-        try:
-            result = subprocess.run(
-                ["docker", "rm", "-f", "$(docker ps -aq --filter ancestor=sandbox-runner)"],
-                shell=True, capture_output=True, text=True, timeout=30
-            )
-            if result.returncode == 0:
-                logger.info("Removed sandbox containers via docker rm")
-            else:
-                logger.warning(f"Docker rm failed: {result.stderr}")
-        except Exception as e:
-            logger.error(f"Docker rm failed: {e}")
-        
-        try:
-            result = subprocess.run(
-                ["docker", "rm", "-f", PROXY_CONTAINER_NAME],
-                shell=True, capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0:
-                logger.info("Removed proxy container")
-        except Exception as e:
-            logger.error(f"Failed to remove proxy container: {e}")
     
     def _track_container(self, container: Container) -> None:
         if container and hasattr(container, 'id'):
@@ -186,31 +148,6 @@ class SandboxManager:
         sandbox.evaluation_run.sandbox_created_at = datetime.now(timezone.utc)
         await sandbox._send_update()
         return sandbox
-    
-    def _verify_cleanup(self) -> bool:
-        try:
-            containers = self.docker.containers.list(all=True)
-            sandbox_containers = []
-            
-            for container in containers:
-                try:
-                    if (container.image and hasattr(container.image, 'tags') and 
-                        container.image.tags and 
-                        any(tag.startswith('sandbox-runner') for tag in container.image.tags)):
-                        sandbox_containers.append(container.id)
-                except Exception:
-                    pass
-            
-            if sandbox_containers:
-                logger.error(f"Cleanup verification failed: {len(sandbox_containers)} sandbox containers still running: {sandbox_containers}")
-                return False
-            else:
-                logger.info("Cleanup verification successful: No sandbox containers found")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Cleanup verification failed: {e}")
-            return False
     
     def _force_terminate_task_group(self) -> None:
         """Used to force termination of a task group."""
@@ -367,10 +304,6 @@ class SandboxManager:
             
             self.sandboxes.clear()
             self._container_ids.clear()
-            
-            if not self._verify_cleanup():
-                logger.critical("CLEANUP VERIFICATION FAILED - containers may still be running!")
-                self._emergency_cleanup()
         else:
             # Remove only completed sandboxes
             self.sandboxes = [s for s in self.sandboxes if hasattr(s, 'evaluation_run') and 
