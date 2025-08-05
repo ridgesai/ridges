@@ -122,9 +122,8 @@ async def re_evaluate_agent(password: str, version_id: str):
         raise HTTPException(status_code=401, detail="Invalid password")
 
     try:
+        evaluations: list[Evaluation] = await get_evaluations_by_version_id(version_id)
         async with get_transaction() as conn:
-            evaluations: list[Evaluation] = await get_evaluations_by_version_id(conn, version_id)
-            
             # Filter to only validator evaluations (not screeners)
             validator_evaluations: list[Evaluation] = [
                 eval for eval in evaluations 
