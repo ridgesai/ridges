@@ -54,9 +54,7 @@ class WebsocketApp:
         try:
             logger.debug(f"Sending message: {message.get('event', str(message))}")
             await self.ws.send(json.dumps(message))
-            # Don't log evaluation-run-log messages, too noisy
-            if message.get('event') != 'evaluation-run-log':
-                logger.info(f"Message sent: {message.get('event')}")
+            logger.info(f"Message sent: {message.get('event')}")
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:
             logger.warning(f"Connection closed while sending - triggering shutdown: {e}")
             if not self._shutting_down:
@@ -104,7 +102,7 @@ class WebsocketApp:
     async def _send_heartbeat(self):
         """Send periodic heartbeat messages to the platform."""
         while self.ws:
-            await asyncio.sleep(3)
+            await asyncio.sleep(30)
             if self.ws:
                 status = "available"
                 if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
