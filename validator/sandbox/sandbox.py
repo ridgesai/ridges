@@ -167,6 +167,8 @@ class Sandbox:
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
             )
+
+            self.manager._track_container(self.container)
             
         except docker.errors.ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
@@ -544,10 +546,25 @@ class Sandbox:
     @tracer.wrap(resource="cleanup-sandbox")
     def cleanup(self) -> None:
         """Clean up sandbox resources"""
-        # Sandbox container has --rm (remove=True) so it will be removed automatically
+        if self.container:
+            self.manager._untrack_container(self.container)
+            
+        if self.container:
+            try:
+                self.container.remove(force=True)
+                logger.info(f"Force removed sandbox container {self.container.id}")
+            except Exception as e:
+                logger.warning(f"Failed to remove container {self.container.id}: {e}")
+                try:
+                    subprocess.run(["docker", "rm", "-f", self.container.id], timeout=10)
+                    logger.info(f"Removed container {self.container.id} via CLI fallback")
+                except Exception as cli_error:
+                    logger.error(f"CLI fallback also failed for container {self.container.id}: {cli_error}")
+        
         if self.repo_dir and self.repo_dir.exists():
             try:
                 shutil.rmtree(self.repo_dir, ignore_errors=True)
-            except Exception:
-                pass
+                logger.info(f"Cleaned up repository directory: {self.repo_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up repository directory {self.repo_dir}: {e}")
     
