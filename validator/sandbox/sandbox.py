@@ -211,7 +211,7 @@ class Sandbox:
             if result.get("success"):
                 output = result.get("output", {})
                 logger.info(f"Output section keys: {list(output.keys()) if isinstance(output, dict) else type(output)}")
-                patch = output.get("patch", "") if isinstance(output, dict) else ""
+                patch = str(output.get("patch", "")) if isinstance(output, dict) else ""
                 if patch:
                     self.evaluation_run.response = patch
                     self.evaluation_run.status = "patch_generated"
