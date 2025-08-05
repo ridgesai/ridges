@@ -78,7 +78,7 @@ try:
         data = response.json()
         for model in data.get("data", []):
             model_id = model.get("id")
-            price_usd = model.get("price", {}).get("usd")
+            price_usd = model.get("pricing", {}).get("completion")
             if model_id and price_usd is not None:
                 MODEL_PRICING[model_id] = price_usd
 except Exception:
