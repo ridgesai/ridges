@@ -8,7 +8,7 @@ from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
-from api.src.backend.queries.agents import get_top_agent, ban_agent as db_ban_agent, approve_agent_version
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import new_db
 
@@ -118,7 +118,7 @@ router = APIRouter()
 
 routes = [
     ("/check-top-agent", weight_receiving_agent, ["GET"]),
-    ("/ban-agent", ban_agent, ["POST"]),
+    ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
