@@ -348,32 +348,6 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
     
     return evaluations
 
-@db_transaction
-async def get_next_evaluation_for_validator(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[Evaluation]:
-    logger.debug(f"Fetching next evaluation from database for validator {validator_hotkey}.")
-
-    result = await conn.fetchrow(
-        """
-            SELECT e.*
-            FROM evaluations e
-            JOIN miner_agents ma ON e.version_id = ma.version_id
-            WHERE e.validator_hotkey = $1
-            AND e.status = 'waiting' 
-            AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-            ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC 
-            LIMIT 1;
-        """,
-        validator_hotkey
-    )
-
-    if not result:
-        logger.debug(f"No next evaluation found for validator {validator_hotkey}.")
-        return None
-
-    logger.debug(f"Found next evaluation for validator {validator_hotkey}: {dict(result)['evaluation_id']}.")
-
-    return Evaluation(**dict(result)) 
-
 @db_operation
 async def get_running_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
     result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'running'")

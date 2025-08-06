@@ -102,8 +102,10 @@ class Validator(Client):
                 SELECT e.evaluation_id FROM evaluations e
                 JOIN miner_agents ma ON e.version_id = ma.version_id
                 WHERE e.validator_hotkey = $1 AND e.status = 'waiting'
-                AND ma.status NOT IN ('screening', 'awaiting_screening')
-                ORDER BY e.created_at ASC LIMIT 1
+                AND ma.status NOT IN ('screening_1', 'screening_2', 'awaiting_screening_1', 'awaiting_screening_2')
+                AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
+                LIMIT 1
             """, self.hotkey)
     
     async def finish_evaluation(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
