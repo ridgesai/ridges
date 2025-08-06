@@ -101,7 +101,7 @@ class Validator(Client):
             return await conn.fetchval("""
                 SELECT e.evaluation_id FROM evaluations e
                 JOIN miner_agents ma ON e.version_id = ma.version_id
-                WHERE e.validator_hotkey = $1 AND e.status = 'waiting'
+                WHERE e.validator_hotkey = $1 AND e.status = 'waiting' AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ma.status NOT IN ('screening_1', 'screening_2', 'awaiting_screening_1', 'awaiting_screening_2')
                 AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
