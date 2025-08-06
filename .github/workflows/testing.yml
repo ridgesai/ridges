@@ -51,11 +51,12 @@ jobs:
     
     - name: Start Ridges API server
       run: |
-        cd api
-        uv run uvicorn src.main:app --host 0.0.0.0 --port 8000 &
-        echo $! > ../server.pid
+        export PYTHONPATH=$PWD:$PYTHONPATH
+        cd api/src
+        uv run python main.py &
+        echo $! > ../../server.pid
         # Wait for server to start
-        sleep 10
+        sleep 15
         curl -f http://localhost:8000/healthcheck || exit 1
     
     - name: Run all tests
