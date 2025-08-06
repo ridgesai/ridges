@@ -270,3 +270,16 @@ Version ID: {version_id}
         approval_version_id=version_id,  # For approval buttons
         channel="bot-testing"
     ) 
+
+async def notify_unregistered_top_miner(miner_hotkey: str):
+    if slack_bot_token is None:
+        logger.error("Attempted to send Slack notification but SLACK_BOT_TOKEN is not configured")
+
+    try:
+        client = WebClient(token=slack_bot_token)
+        client.chat_postMessage(
+            channel="slack-notifications",
+            text=f"WARNING: We just tried to set the weights for hotkey `{miner_hotkey}` but they are not registered on our subnet",
+        )
+    except Exception as e:
+        logger.error(f"Error sending Slack notification: {str(e)}")
