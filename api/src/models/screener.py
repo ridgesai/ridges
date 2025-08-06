@@ -212,8 +212,9 @@ class Screener(Client):
             
             agents = [MinerAgent(**agent) for agent in agent_data]
 
-        while screener := await Screener.get_first_available():
-            await screener.connect()
+        # TODO: Re-enable this when we have more screeners
+        # while screener := await Screener.get_first_available():
+        #     await screener.connect()
         
         logger.info(f"Reset {len(agents)} approved agents to awaiting_screening")
         return agents 
