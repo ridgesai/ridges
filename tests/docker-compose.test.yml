@@ -7,7 +7,7 @@ services:
       POSTGRES_DB: postgres
       POSTGRES_USER: test_user
       POSTGRES_PASSWORD: test_password
-      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
     ports:
       - "5433:5432"  # Different port to avoid conflicts with main database
     volumes:

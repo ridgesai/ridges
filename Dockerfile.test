@@ -1,0 +1,33 @@
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install uv
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml uv.lock ./
+COPY api/ ./api/
+COPY tests/ ./tests/
+COPY loggers/ ./loggers/
+COPY shared/ ./shared/
+
+# Install dependencies
+RUN uv sync
+
+# Install additional test dependencies
+RUN uv add coverage pytest-cov ruff mypy
+
+# Set environment for testing
+ENV PYTHONPATH=/app
+
+# Run all tests with coverage
+CMD ["uv", "run", "python", "-m", "pytest", "tests/", "-v", "--cov=api/src", "--cov-report=xml", "--cov-report=term"]

@@ -10,47 +10,39 @@ jobs:
   test-and-lint:
     runs-on: ubuntu-latest
     
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: postgres
-          POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_pass
-        ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-    
-    env:
-      POSTGRES_TEST_URL: postgresql://test_user:test_pass@localhost:5432/ridges_test
-      AWS_MASTER_USERNAME: test_user
-      AWS_MASTER_PASSWORD: test_pass
-      AWS_RDS_PLATFORM_ENDPOINT: localhost
-      AWS_RDS_PLATFORM_DB_NAME: postgres
-      PGPORT: 5432
-    
     steps:
     - uses: actions/checkout@v4
     
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - uses: astral-sh/setup-uv@v2
-    
-    - name: Install dependencies
+    - name: Build and run tests with Docker Compose
       run: |
-        uv sync
-        uv add coverage pytest-cov ruff mypy
-    
-    - name: Run all tests
-      run: |
-        uv run python -m pytest tests/ -v --cov=api/src --cov-report=xml
-    
-    - name: Lint and type check
-      run: |
-        uv run ruff check tests/ --fix || true
-        uv run mypy tests/test_miner_agent_flow.py --ignore-missing-imports || true
+        cd tests
+        docker-compose -f docker-compose.test.yml up -d
+        
+        # Wait for services to be ready
+        echo "Waiting for PostgreSQL to be ready..."
+        timeout 60s bash -c "until docker-compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U test_user -d postgres; do sleep 1; done"
+        
+        # Build and run test container
+        docker build -t ridges-test -f ../Dockerfile.test ..
+        docker run --rm \
+          --network tests_default \
+          -e POSTGRES_TEST_URL=postgresql://test_user:test_password@postgres-test:5432/postgres \
+          -e AWS_MASTER_USERNAME=test_user \
+          -e AWS_MASTER_PASSWORD=test_password \
+          -e AWS_RDS_PLATFORM_ENDPOINT=postgres-test \
+          -e AWS_RDS_PLATFORM_DB_NAME=postgres \
+          -e PGPORT=5432 \
+          -v ${{ github.workspace }}:/app \
+          ridges-test
+        
+        # Run linting in the same container
+        docker run --rm \
+          -v ${{ github.workspace }}:/app \
+          ridges-test \
+          bash -c "uv run ruff check tests/ --fix || true && uv run mypy tests/test_miner_agent_flow.py --ignore-missing-imports || true"
+        
+        # Cleanup
+        docker-compose -f docker-compose.test.yml down
     
     - uses: codecov/codecov-action@v3
       with:
