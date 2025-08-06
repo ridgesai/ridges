@@ -16,7 +16,7 @@ jobs:
         env:
           POSTGRES_DB: postgres
           POSTGRES_USER: test_user
-          POSTGRES_PASSWORD: test_password
+          POSTGRES_PASSWORD: test_pass
         ports:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
@@ -28,9 +28,9 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 3
     
     env:
-      POSTGRES_TEST_URL: postgresql://test_user:test_password@localhost:5432/postgres
+      POSTGRES_TEST_URL: postgresql://test_user:test_pass@localhost:5432/ridges_test
       AWS_MASTER_USERNAME: test_user
-      AWS_MASTER_PASSWORD: test_password
+      AWS_MASTER_PASSWORD: test_pass
       AWS_RDS_PLATFORM_ENDPOINT: localhost
       AWS_RDS_PLATFORM_DB_NAME: postgres
       PGPORT: 5432
