@@ -206,7 +206,9 @@ class Screener(Client):
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
                 UPDATE miner_agents SET status = 'awaiting_screening_1'
-                WHERE version_id IN (SELECT version_id FROM approved_version_ids) AND status != 'replaced'
+                WHERE version_id IN (SELECT version_id FROM approved_version_ids)
+                                          AND status != 'replaced'
+                AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 RETURNING *
             """)
             
