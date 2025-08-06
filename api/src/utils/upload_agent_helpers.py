@@ -52,7 +52,7 @@ async def check_agent_banned(miner_hotkey: str) -> None:
     if await check_if_agent_banned(miner_hotkey):
         logger.error(f"A miner attempted to upload an agent with a banned hotkey: {miner_hotkey}.")
         raise HTTPException(
-            status_code=400,
+            status_code=403,
             detail="Your miner hotkey has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord"
         )
     
