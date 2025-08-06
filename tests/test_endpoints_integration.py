@@ -104,16 +104,13 @@ async def db_setup():
     db_helper = DatabaseTestSetup(test_db_url)
     await db_helper.setup_test_database()
     
-    # Patch the DBManager to use test database
-    with patch.object(DBManager, '_get_database_url', return_value=test_db_url):
-        # Initialize the test database connection
-        db_manager = DBManager()
-        await db_manager.initialize()
-        
-        yield db_helper
-        
-        await db_manager.close()
+    # Use the existing global db instance that's already configured via environment variables
+    from backend.db_manager import new_db
+    await new_db.open()
     
+    yield db_helper
+    
+    await new_db.close()
     await db_helper.cleanup_test_database()
 
 
