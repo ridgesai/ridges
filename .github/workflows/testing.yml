@@ -1,0 +1,38 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ '*' ]
+  pull_request:
+    branches: [ '*' ]
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - uses: astral-sh/setup-uv@v2
+    
+    - name: Install dependencies
+      run: |
+        uv sync
+        uv add coverage pytest-cov ruff mypy
+    
+    - name: Run all tests
+      run: |
+        uv run python -m pytest tests/ -v --cov=api/src --cov-report=xml
+    
+    - name: Lint and type check
+      run: |
+        uv run ruff check tests/ --fix || true
+        uv run mypy tests/test_miner_agent_flow.py --ignore-missing-imports || true
+    
+    - uses: codecov/codecov-action@v3
+      with:
+        fail_ci_if_error: false
