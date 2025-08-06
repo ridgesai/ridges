@@ -18,14 +18,15 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 import pytest_asyncio
 
-# Mock environment variables for testing
-os.environ.update({
-    'AWS_MASTER_USERNAME': 'test_user',
-    'AWS_MASTER_PASSWORD': 'test_pass',
-    'AWS_RDS_PLATFORM_ENDPOINT': 'test_endpoint',
-    'AWS_RDS_PLATFORM_DB_NAME': 'test_db',
-    'POSTGRES_TEST_URL': 'postgresql://test_user:test_pass@localhost:5432/ridges_test'
-})
+# Only set environment variables if they're not already set (don't override GitHub Actions env vars)
+if not os.getenv('AWS_MASTER_USERNAME'):
+    os.environ.update({
+        'AWS_MASTER_USERNAME': 'test_user',
+        'AWS_MASTER_PASSWORD': 'test_pass',
+        'AWS_RDS_PLATFORM_ENDPOINT': 'localhost',
+        'AWS_RDS_PLATFORM_DB_NAME': 'postgres',
+        'POSTGRES_TEST_URL': 'postgresql://test_user:test_pass@localhost:5432/postgres'
+    })
 
 # Import after setting environment variables
 import sys
