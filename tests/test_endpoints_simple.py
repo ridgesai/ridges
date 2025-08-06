@@ -8,14 +8,15 @@ import uuid
 from unittest.mock import patch, AsyncMock, Mock
 from fastapi.testclient import TestClient
 
-# Mock environment variables
+# Only set environment variables if they're not already set (don't override GitHub Actions env vars)
 import os
-os.environ.update({
-    'AWS_MASTER_USERNAME': 'test_user',
-    'AWS_MASTER_PASSWORD': 'test_pass',
-    'AWS_RDS_PLATFORM_ENDPOINT': 'test_endpoint',
-    'AWS_RDS_PLATFORM_DB_NAME': 'test_db'
-})
+if not os.getenv('AWS_MASTER_USERNAME'):
+    os.environ.update({
+        'AWS_MASTER_USERNAME': 'test_user',
+        'AWS_MASTER_PASSWORD': 'test_pass',
+        'AWS_RDS_PLATFORM_ENDPOINT': 'localhost',
+        'AWS_RDS_PLATFORM_DB_NAME': 'postgres'
+    })
 
 # Import after setting environment variables
 import sys
