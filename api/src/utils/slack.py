@@ -278,7 +278,7 @@ async def notify_unregistered_top_miner(miner_hotkey: str):
     try:
         client = WebClient(token=slack_bot_token)
         client.chat_postMessage(
-            channel="slack-notifications",
+            channel="custom-notifications",
             text=f"WARNING: We just tried to set the weights for hotkey `{miner_hotkey}` but they are not registered on our subnet",
         )
     except Exception as e:
