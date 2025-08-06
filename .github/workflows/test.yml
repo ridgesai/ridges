@@ -1,0 +1,79 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ '*' ]  # Run on push to any branch
+  pull_request:
+    branches: [ '*' ]  # Run on PRs to any branch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      with:
+        version: "latest"
+    
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Run core logic tests
+      run: uv run python -m pytest tests/test_miner_agent_flow.py -v
+      
+    - name: Run SQLite integration tests
+      run: uv run python -m pytest tests/test_endpoints_sqlite.py -v
+      
+    - name: Generate coverage report
+      run: |
+        uv add coverage pytest-cov
+        uv run coverage run -m pytest tests/test_miner_agent_flow.py tests/test_endpoints_sqlite.py
+        uv run coverage report --show-missing
+        uv run coverage xml
+      
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      with:
+        version: "latest"
+        
+    - name: Install dependencies
+      run: uv sync
+    
+    - name: Run ruff linting
+      run: |
+        uv add ruff
+        uv run ruff check tests/ --fix
+      continue-on-error: true
+    
+    - name: Run mypy type checking
+      run: |
+        uv add mypy
+        uv run mypy tests/test_miner_agent_flow.py --ignore-missing-imports
+      continue-on-error: true
