@@ -28,7 +28,7 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 3
     
     env:
-      POSTGRES_TEST_URL: postgresql://test_user:test_pass@localhost:5432/ridges_test
+      POSTGRES_TEST_URL: postgresql://test_user:test_pass@localhost:5432/postgres
       AWS_MASTER_USERNAME: test_user
       AWS_MASTER_PASSWORD: test_pass
       AWS_RDS_PLATFORM_ENDPOINT: localhost
