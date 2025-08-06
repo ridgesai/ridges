@@ -8,6 +8,15 @@ from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
+def check_if_hotkey_is_registered(hotkey: str, pathname: str = "subnet_hotkeys_cache.json") -> bool:
+    try:
+        with open(pathname, 'r') as f:
+            data = json.load(f)
+            return hotkey in data["hotkeys"]
+    except Exception as e:
+        logger.error(f"Error checking if hotkey is registered: {e}")
+        return False
+
 def get_miner_hotkeys_on_subnet(netuid: int = 62, subtensor_url: str = "wss://entrypoint-finney.opentensor.ai:443") -> List[str]:
     substrate = None
 

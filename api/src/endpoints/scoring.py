@@ -12,6 +12,7 @@ from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db
+from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 
 load_dotenv()
 
@@ -23,6 +24,10 @@ async def tell_validators_to_set_weights():
     if not top_agent:
         logger.info("No top agent found, skipping weight update")
         return
+    
+    if not check_if_hotkey_is_registered(top_agent.miner_hotkey):
+        logger.info(f"Top agent {top_agent.miner_hotkey} not registered on subnet, skipping weight update")
+        raise HTTPException(status_code=400, detail="Miner hotkey not registered on subnet")
     
     for validator in await Validator.get_connected():
         await validator.send_set_weights(top_agent.model_dump(mode='json'))
