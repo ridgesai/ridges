@@ -1,0 +1,1 @@
+# Tests package for Ridges miner agent system
