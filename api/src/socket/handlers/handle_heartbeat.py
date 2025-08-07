@@ -17,6 +17,7 @@ async def handle_heartbeat(
     """
     Handle heartbeat message from a validator or screener.
     Severs the connection if the client is incorrect
+    If client is available, call connect to check and assign evaluations
     """
     client: Validator | Screener = clients[websocket]
 
