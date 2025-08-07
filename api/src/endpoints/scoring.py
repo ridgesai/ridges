@@ -147,6 +147,20 @@ async def re_evaluate_agent(password: str, version_id: str):
     except Exception as e:
         logger.error(f"Error resetting validator evaluations for version {version_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting validator evaluations")
+
+async def re_run_evaluation(password: str, evaluation_id: str):
+    """Re-run an evaluation by resetting it to waiting status"""
+    if password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    
+    try:
+        async with get_transaction() as conn:
+            evaluation = await Evaluation.get_by_id(evaluation_id)
+            await evaluation.reset_to_waiting(conn)
+            return {"message": f"Successfully reset evaluation {evaluation_id}"}
+    except Exception as e:
+        logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
 router = APIRouter()
 
@@ -157,7 +171,8 @@ routes = [
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
     ("/refresh-scores", refresh_scores, ["POST"]),
-    ("/re-evaluate-agent", re_evaluate_agent, ["POST"])
+    ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
+    ("/re-run-evaluation", re_run_evaluation, ["POST"])
 ]
 
 for path, endpoint, methods in routes:
