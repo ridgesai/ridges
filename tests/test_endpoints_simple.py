@@ -24,13 +24,23 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
 
 # Mock the lifespan to avoid database initialization
+@patch('api.src.backend.db_manager.new_db.acquire')
+@patch('api.src.backend.db_manager.new_db.pool', new_callable=Mock)
 @patch('api.src.main.new_db.open', new_callable=AsyncMock)
 @patch('api.src.main.new_db.close', new_callable=AsyncMock)
 @patch('api.src.main.fetch_and_store_commits', new_callable=AsyncMock)
 @patch('api.src.models.evaluation.Evaluation.startup_recovery', new_callable=AsyncMock)
 @patch('api.src.main.run_weight_setting_loop', new_callable=AsyncMock)
-def create_test_app(mock_weight_loop, mock_startup, mock_fetch, mock_close, mock_open):
+def create_test_app(mock_weight_loop, mock_startup, mock_fetch, mock_close, mock_open, mock_pool, mock_acquire):
     """Create test app with mocked dependencies"""
+    # Mock the connection pool to prevent "not initialized" errors
+    mock_pool.return_value = Mock()
+    
+    # Mock database acquire context manager
+    mock_conn = AsyncMock()
+    mock_acquire.return_value.__aenter__.return_value = mock_conn
+    mock_acquire.return_value.__aexit__.return_value = None
+    
     from main import app
     return app
 
@@ -301,8 +311,8 @@ class TestEndpointResponseStructure:
         
         response = client.get("/healthcheck")
         assert response.status_code == 200
-        result = response.json()
-        assert "status" in result
+        # Healthcheck returns a simple string "OK", not JSON
+        assert response.text == '"OK"'
 
 
 class TestWebSocketEndpoint:

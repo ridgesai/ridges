@@ -5,9 +5,8 @@ These tests focus on business logic without requiring a real database.
 
 import pytest
 import uuid
-import json
 from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 from fastapi.testclient import TestClient
 
 # Only set environment variables if they're not already set (don't override GitHub Actions env vars)
@@ -25,8 +24,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
 from main import app
-from backend.entities import MinerAgent, AgentStatus
-from fastapi import HTTPException
 
 # Create test client
 client = TestClient(app)
