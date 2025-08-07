@@ -11,7 +11,7 @@ class Screener(Client):
     
     hotkey: str
     version_commit_hash: Optional[str] = None
-    status: Literal["available", "screening"] = "available"
+    status: Literal["available", "reserving", "screening"] = "available"
     current_evaluation_id: Optional[str] = None
     current_agent_name: Optional[str] = None
     current_agent_hotkey: Optional[str] = None

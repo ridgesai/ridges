@@ -28,5 +28,10 @@ async def handle_heartbeat(
         # raise WebSocketDisconnect()
 
     if client.status == "available":
-        client.connect()
+        await client.connect()
+
+    if alleged_status == "available" and client.status == "reserving":
+        await client.connect()
             
+    if alleged_status == "screening":
+        client.status = "screening"

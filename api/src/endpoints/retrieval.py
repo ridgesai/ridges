@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
+from datetime import datetime
 
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
@@ -18,6 +19,8 @@ from api.src.backend.queries.statistics import get_top_agents as db_get_top_agen
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators, get_screener_queue_by_stage as db_get_screener_queue_by_stage
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
+from api.src.backend.entities import ProviderStatistics
+from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 
 load_dotenv()
 
@@ -279,6 +282,20 @@ async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
             status_code=500,
             detail="Internal server error while retrieving agents"
         )
+    
+async def get_inference_provider_statistics(start_time: datetime, end_time: datetime) -> list[ProviderStatistics]:
+    """
+    Returns statistics on inference provider performance
+    """
+    try:
+        provider_statistics = await db_get_inference_provider_statistics(start_time=start_time, end_time=end_time)
+        return provider_statistics
+    except Exception as e:
+        logger.error(f"Error retrieving inferences for last {start_time} to {end_time}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving inferences"
+        )
 
 router = APIRouter()
 
@@ -301,7 +318,8 @@ routes = [
     ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
-    ("/agents-from-hotkey", get_agents_from_hotkey)
+    ("/agents-from-hotkey", get_agents_from_hotkey),    
+    ("/inference-provider-statistics", get_inference_provider_statistics)
 ]
 
 for path, endpoint in routes:

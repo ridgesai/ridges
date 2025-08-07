@@ -4,8 +4,8 @@ import asyncio
 from typing import TYPE_CHECKING, List
 from ddtrace import tracer
 
-import httpx
 from swebench.harness.utils import load_swebench_dataset
+from validator.utils.http_client import get_shared_client
 
 from validator.config import RIDGES_API_URL
 from validator.sandbox.manager import SandboxManager
@@ -33,7 +33,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         agent_dir = AGENTS_BASE_DIR / agent_version.miner_hotkey / str(agent_version.version_num)
         agent_dir.mkdir(parents=True, exist_ok=True)
         agent_file = agent_dir / "agent.py"
-        async with httpx.AsyncClient(timeout=300) as client:
+        async with get_shared_client() as client:
             logger.info(f"Downloading agent code for version {agent_version.version_id}")
             response = await client.get(
                 f"{RIDGES_API_URL}/retrieval/agent-version-file",
