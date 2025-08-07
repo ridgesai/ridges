@@ -57,26 +57,19 @@ jobs:
     - name: Start the API server
       run: |
         echo "Starting API server..."
-        export PYTHONPATH=$PWD:$PYTHONPATH
         uv run python -m api.src.main --host 0.0.0.0 &
         SERVER_PID=$!
         echo "Server started with PID: $SERVER_PID"
+        sleep 15  # Wait for server to start
         
-        # Wait longer for server to start and check multiple times
-        for i in {1..30}; do
-          echo "Checking server status (attempt $i/30)..."
-          if curl -f http://localhost:8000/healthcheck > /dev/null 2>&1; then
-            echo "Server is responding!"
-            break
-          fi
-          sleep 2
-        done
-        
-        # Final check
-        echo "Final server status check..."
+        # Check if server is running
+        echo "Checking if server is running..."
         ps aux | grep python
         netstat -tlnp | grep 8000 || echo "Port 8000 not listening"
-        curl -v http://localhost:8000/healthcheck || echo "Server not responding"
+        
+        # Test if server responds
+        echo "Testing server response..."
+        curl -f http://localhost:8000/healthcheck || echo "Server not responding yet"
     
     - name: Test real API endpoints
       run: |
