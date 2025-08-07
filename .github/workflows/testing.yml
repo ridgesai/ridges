@@ -45,10 +45,10 @@ jobs:
         uv sync
         uv add coverage pytest-cov ruff mypy
     
-    - name: Run working tests
+    - name: Run all tests
       run: |
         cd tests
-        uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit -v --cov=api/src --cov-report=xml
+        uv run python -m pytest -v --cov=api/src --cov-report=xml
     
     - name: Lint and type check
       run: |

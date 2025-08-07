@@ -66,61 +66,54 @@ async def postgres_service():
         await conn.close()
     else:
         pytest.fail("PostgreSQL service did not become ready.")
-    yield
+    return True
 
 @pytest_asyncio.fixture(scope="session")
 async def db_setup(postgres_service):
     """Setup test database for the entire test session and initialize DBManager."""
     # Ensure postgres_service is up before proceeding
-    await postgres_service
+    # postgres_service is now a boolean indicating readiness
 
     test_db_url = os.getenv('POSTGRES_TEST_URL')
     if not test_db_url:
         pytest.skip("POSTGRES_TEST_URL not set for integration tests.")
 
-    # Connect to the default 'postgres' database to create/drop the test database
-    base_url = test_db_url.rsplit('/', 1)[0]
-    test_db_name = test_db_url.rsplit('/', 1)[1]
-
-    conn_to_default_db = await asyncpg.connect(f"{base_url}/postgres")
-    try:
-        # Terminate all other connections to the test database before dropping
-        await conn_to_default_db.execute(f"""
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{test_db_name}'
-              AND pid <> pg_backend_pid();
-        """)
-        await conn_to_default_db.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
-        await conn_to_default_db.execute(f"CREATE DATABASE {test_db_name}")
-    finally:
-        await conn_to_default_db.close()
-
     # Initialize the global new_db instance with the test database
     # This ensures all application code uses the test database
     await new_db.open()
     
-    yield # Tests run here
+    # Setup database schema for integration tests
+    async with new_db.acquire() as conn:
+        await setup_database_schema(conn)
+    
+    yield True # Tests run here
 
     # Cleanup after all tests in the session
     await new_db.close()
-    conn_to_default_db = await asyncpg.connect(f"{base_url}/postgres")
-    try:
-        await conn_to_default_db.execute(f"""
-            SELECT pg_terminate_backend(pg_stat_activity.pid)
-            FROM pg_stat_activity
-            WHERE pg_stat_activity.datname = '{test_db_name}'
-              AND pid <> pg_backend_pid();
-        """)
-        await conn_to_default_db.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
-    finally:
-        await conn_to_default_db.close()
+
+async def setup_database_schema(conn: asyncpg.Connection):
+    """Setup database schema for integration tests"""
+    # Read the actual production schema file
+    schema_path = os.path.join(os.path.dirname(__file__), '..', 'api', 'src', 'backend', 'postgres_schema.sql')
+    with open(schema_path, 'r') as f:
+        schema_sql = f.read()
+    
+    # Execute the production schema
+    await conn.execute(schema_sql)
+    
+    # Insert test evaluation sets for testing
+    await conn.execute("""
+        INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES 
+        (1, 'screener-1', 'test_instance_1'),
+        (1, 'screener-2', 'test_instance_2'), 
+        (1, 'validator', 'test_instance_3')
+        ON CONFLICT DO NOTHING
+    """)
 
 @pytest_asyncio.fixture
 async def db_conn(db_setup):
     """Provide a database connection for individual tests."""
-    # Ensure db_setup is complete before providing a connection
-    await db_setup
+    # db_setup is now a boolean indicating readiness
     async with new_db.acquire() as conn:
         yield conn
 

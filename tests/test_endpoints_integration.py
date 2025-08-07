@@ -38,20 +38,8 @@ class DatabaseTestSetup:
         self.pool: Optional[asyncpg.Pool] = None
         
     async def setup_test_database(self):
-        """Create test database and tables"""
-        # Connect to postgres database to create test database
-        base_url = self.test_db_url.rsplit('/', 1)[0]
-        test_db_name = self.test_db_url.rsplit('/', 1)[1]
-        
-        conn = await asyncpg.connect(f"{base_url}/postgres")
-        try:
-            # Drop and recreate test database
-            await conn.execute(f"DROP DATABASE IF EXISTS {test_db_name}")
-            await conn.execute(f"CREATE DATABASE {test_db_name}")
-        finally:
-            await conn.close()
-            
-        # Connect to test database and create tables
+        """Setup test database schema and data"""
+        # Connect to the existing database (don't drop/recreate)
         self.pool = await asyncpg.create_pool(self.test_db_url)
         async with self.pool.acquire() as conn:
             await self._create_schema(conn)
@@ -81,41 +69,14 @@ class DatabaseTestSetup:
         if self.pool:
             await self.pool.close()
             
-    async def get_connection(self):
+    def get_connection(self):
         """Get database connection for tests"""
         if not self.pool:
             raise RuntimeError("Test database not initialized")
         return self.pool.acquire()
 
 
-@pytest_asyncio.fixture(scope="session")
-async def db_setup():
-    """Setup test database for the entire test session"""
-    test_db_url = os.getenv('POSTGRES_TEST_URL')
-    if not test_db_url:
-        pytest.skip("No POSTGRES_TEST_URL provided for integration tests")
-        
-    db_helper = DatabaseTestSetup(test_db_url)
-    await db_helper.setup_test_database()
-    
-    # Use the existing global db instance that's already configured via environment variables
-    from backend.db_manager import new_db
-    await new_db.open()
-    
-    yield db_helper
-    
-    await new_db.close()
-    await db_helper.cleanup_test_database()
 
-
-@pytest_asyncio.fixture
-async def db_conn(db_setup):
-    """Provide database connection for individual tests"""
-    async with db_setup.get_connection() as conn:
-        # Start transaction for test isolation
-        async with conn.transaction():
-            yield conn
-            # Transaction automatically rolls back after test
 
 
 @pytest_asyncio.fixture
@@ -479,32 +440,32 @@ class TestSystemStatusEndpoints:
     """Test system status endpoints with database integration"""
     
     @pytest.mark.asyncio
-    async def test_health_check(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
+    async def test_health_check(self, async_client: AsyncClient, db_setup):
         """Test comprehensive health check"""
         
-        # Insert some test data to ensure database is working
-        agent_id = uuid.uuid4()
-        await db_conn.execute("""
-            INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status)
-            VALUES ($1, 'health_miner', 'health_agent', 1, NOW(), 'scored')
-        """, agent_id)
+        # Test basic health check
+        response = await async_client.get("/healthcheck")
+        assert response.status_code == 200
+        assert response.text == '"OK"'
         
-        response = await async_client.get("/health")
-        
+        # Test health check results endpoint
+        response = await async_client.get("/healthcheck-results")
         assert response.status_code == 200
         result = response.json()
-        assert result["status"] == "ok"
+        assert "database_status" in result
+        assert "api_status" in result
 
     @pytest.mark.asyncio
-    async def test_status_endpoint(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
+    async def test_status_endpoint(self, async_client: AsyncClient, db_setup):
         """Test detailed system status"""
         
-        response = await async_client.get("/status")
+        # Test healthcheck-results endpoint as the status endpoint
+        response = await async_client.get("/healthcheck-results")
         
         assert response.status_code == 200
         result = response.json()
-        assert "database" in result
-        assert "timestamp" in result
+        assert "database_status" in result
+        assert "api_status" in result
 
 
 if __name__ == "__main__":
