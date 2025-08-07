@@ -136,6 +136,10 @@ class WebsocketApp:
                 logger.error(f"Error closing websocket: {e}")
             finally:
                 self.ws = None
+        
+        # Clean up shared HTTP client
+        from validator.utils.http_client import cleanup_shared_client
+        await cleanup_shared_client()
             
         logger.info("WebsocketApp shutdown complete")
 
