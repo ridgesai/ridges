@@ -43,7 +43,7 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync
-        uv add coverage pytest-cov ruff mypy
+        uv add coverage pytest-cov ruff mypy requests websocket-client
     
     - name: Debug environment
       run: |
@@ -54,7 +54,49 @@ jobs:
         echo "POSTGRES_TEST_URL: $POSTGRES_TEST_URL"
         echo "AWS_MASTER_USERNAME: $AWS_MASTER_USERNAME"
     
-    - name: Run working tests
+    - name: Start the API server
+      run: |
+        echo "Starting API server..."
+        uv run python -m api.src.main --host 0.0.0.0 &
+        SERVER_PID=$!
+        echo "Server started with PID: $SERVER_PID"
+        sleep 15  # Wait for server to start
+        
+        # Check if server is running
+        echo "Checking if server is running..."
+        ps aux | grep python
+        netstat -tlnp | grep 8000 || echo "Port 8000 not listening"
+        
+        # Test if server responds
+        echo "Testing server response..."
+        curl -f http://localhost:8000/healthcheck || echo "Server not responding yet"
+    
+    - name: Test real API endpoints
+      run: |
+        echo "Testing real API endpoints..."
+        
+        # Test healthcheck endpoint
+        echo "Testing /healthcheck..."
+        curl -f http://localhost:8000/healthcheck || echo "Healthcheck failed"
+        
+        # Test healthcheck-results endpoint
+        echo "Testing /healthcheck-results..."
+        curl -f http://localhost:8000/healthcheck-results || echo "Healthcheck-results failed"
+        
+        # Test that server is responding
+        echo "Testing server response..."
+        curl -f http://localhost:8000/ || echo "Root endpoint failed"
+        
+        echo "Real API tests completed"
+    
+    - name: Run real API integration tests
+      run: |
+        cd tests
+        # Set the server URL for integration tests
+        export API_BASE_URL="http://localhost:8000"
+        uv run python -m pytest test_real_api.py -v --cov=api/src --cov-report=xml --no-cov-on-fail
+    
+    - name: Run unit tests
       run: |
         cd tests
         uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml --no-cov-on-fail
