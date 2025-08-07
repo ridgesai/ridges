@@ -1,12 +1,28 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from typing import List
 
-router = APIRouter()
+from api.src.backend.queries.healthcheck import get_healthcheck_results
+from loggers.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 async def healthcheck():
     return "OK"
 
+async def healthcheck_results(limit: int = 30) -> List[dict]:
+    try:
+        healthcheck_results = await get_healthcheck_results(limit)
+    except Exception as e:
+        logger.error(f"Error getting healthcheck results: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get healthcheck results")
+    
+    return healthcheck_results
+
+router = APIRouter()
+
 routes = [
     ("/healthcheck", healthcheck),
+    ("/healthcheck-results", healthcheck_results),
 ]
 
 for path, endpoint in routes:

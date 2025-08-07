@@ -1,0 +1,3 @@
+from typing import List
+
+async def get_healthcheck_results(limit: int = 30) -> List[dict]: ...
