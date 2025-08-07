@@ -81,7 +81,7 @@ jobs:
         
         # Test healthcheck-results endpoint
         echo "Testing /healthcheck-results..."
-        curl -f http://localhost:8000/healthcheck-results || echo "Healthcheck-results failed"
+        curl -f http://localhost:8000/healthcheck-results | jq . || echo "Healthcheck-results failed"
         
         # Test that server is responding
         echo "Testing server response..."
