@@ -110,11 +110,17 @@ jobs:
                   with:
                     fail_ci_if_error: false
                 
-                - name: Notify deployment webhook on success
-                  if: success() && github.ref == 'refs/heads/main'
-                  run: |
-                    echo "Tests passed successfully on main branch, notifying deployment webhook..."
-                    curl -X POST \
-                      -H "Content-Type: application/json" \
-                      -H "X-Hub-Signature: ${{ secrets.DEPLOY_KEY }}" \
-                      http://52.22.35.122:3141/hooks/update-platform
+
+  deploy:
+    needs: test-and-lint
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Notify deployment webhook
+      run: |
+        echo "Tests passed successfully on main branch, notifying deployment webhook..."
+        curl -X POST \
+          -H "Content-Type: application/json" \
+          -H "X-Hub-Signature: ${{ secrets.DEPLOY_KEY }}" \
+          http://52.22.35.122:3141/hooks/update-platform
