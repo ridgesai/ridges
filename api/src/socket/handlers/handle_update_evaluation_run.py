@@ -40,6 +40,13 @@ async def handle_update_evaluation_run(
         evaluation_run = EvaluationRun(**evaluation_run_data)
         await update_evaluation_run(evaluation_run)
         
+        # Update screener status from "reserving" to "screening" on first evaluation run update
+        if client.get_type() == "screener" and client.status == "reserving":
+            old_status = client.status
+            client.status = "screening"
+            client.current_evaluation_id = evaluation_run.evaluation_id
+            logger.info(f"Screener {client.hotkey}: {old_status} -> screening (first evaluation run update)")
+        
         # Broadcast update to connected clients
         from api.src.socket.websocket_manager import WebSocketManager
         ws = WebSocketManager.get_instance()
@@ -61,5 +68,5 @@ async def handle_update_evaluation_run(
         return {"status": "success", "message": "Evaluation run stored successfully", "run_id": str(evaluation_run.run_id)}
         
     except Exception as e:
-        logger.error(f"Error updating evaluation run for {client.get_type()} {client.hotkey}: {str(e)}", exc_info=True)
+        logger.error(f"Error updating evaluation run for {client.get_type()} {client.hotkey}: {str(e)}")
         return {"status": "error", "message": f"Failed to update evaluation run: {str(e)}"} 
