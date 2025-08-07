@@ -23,26 +23,21 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
 
-# Mock the lifespan to avoid database initialization
-@patch('api.src.backend.db_manager.new_db.acquire')
-@patch('api.src.backend.db_manager.new_db.pool', new_callable=Mock)
-@patch('api.src.main.new_db.open', new_callable=AsyncMock)
-@patch('api.src.main.new_db.close', new_callable=AsyncMock)
-@patch('api.src.main.fetch_and_store_commits', new_callable=AsyncMock)
-@patch('api.src.models.evaluation.Evaluation.startup_recovery', new_callable=AsyncMock)
-@patch('api.src.main.run_weight_setting_loop', new_callable=AsyncMock)
-def create_test_app(mock_weight_loop, mock_startup, mock_fetch, mock_close, mock_open, mock_pool, mock_acquire):
-    """Create test app with mocked dependencies"""
-    # Mock the connection pool to prevent "not initialized" errors
-    mock_pool.return_value = Mock()
-    
-    # Mock database acquire context manager
-    mock_conn = AsyncMock()
-    mock_acquire.return_value.__aenter__.return_value = mock_conn
-    mock_acquire.return_value.__aexit__.return_value = None
-    
-    from main import app
-    return app
+def create_test_app():
+    """Create a test app with mocked database manager."""
+    with patch('api.src.backend.db_manager.new_db') as mock_db:
+        # Mock the acquire method to return a mock connection
+        mock_conn = AsyncMock()
+        mock_conn_context = AsyncMock()
+        mock_conn_context.__aenter__.return_value = mock_conn
+        mock_conn_context.__aexit__.return_value = None
+        mock_db.acquire.return_value = mock_conn_context
+        
+        # Mock the pool attribute
+        mock_db.pool = Mock()
+        
+        from main import app
+        return app
 
 
 class TestHealthcheckEndpoints:
@@ -101,19 +96,13 @@ class TestUploadEndpoints:
 class TestRetrievalEndpoints:
     """Test retrieval endpoints"""
     
-    @patch('api.src.backend.entities.MinerAgentScored.get_24_hour_statistics')
-    @patch('api.src.backend.db_manager.get_db_connection')
-    def test_network_stats_endpoint(self, mock_get_connection, mock_get_stats):
+    @patch('api.src.backend.queries.statistics.get_24_hour_statistics')
+    def test_network_stats_endpoint(self, mock_get_stats):
         """Test network stats endpoint"""
         app = create_test_app()
         client = TestClient(app)
         
-        # Mock database connection and stats
-        mock_conn = AsyncMock()
-        mock_connection_context = AsyncMock()
-        mock_connection_context.__aenter__.return_value = mock_conn
-        mock_get_connection.return_value = mock_connection_context
-        
+        # Mock the statistics function directly
         mock_get_stats.return_value = {
             "number_of_agents": 100,
             "agent_iterations_last_24_hours": 20,
@@ -126,18 +115,11 @@ class TestRetrievalEndpoints:
         result = response.json()
         assert "number_of_agents" in result
 
-    @patch('api.src.backend.entities.MinerAgentScored.get_top_agents')
-    @patch('api.src.backend.db_manager.get_db_connection')
-    def test_top_agents_endpoint(self, mock_get_connection, mock_get_top_agents):
+    @patch('api.src.backend.queries.statistics.get_top_agents')
+    def test_top_agents_endpoint(self, mock_get_top_agents):
         """Test top agents endpoint"""
         app = create_test_app()
         client = TestClient(app)
-        
-        # Mock database connection
-        mock_conn = AsyncMock()
-        mock_connection_context = AsyncMock()
-        mock_connection_context.__aenter__.return_value = mock_conn
-        mock_get_connection.return_value = mock_connection_context
         
         # Mock top agents data
         mock_agent = Mock()
@@ -146,7 +128,7 @@ class TestRetrievalEndpoints:
         mock_agent.agent_name = "test_agent"
         mock_agent.score = 0.85
         mock_agent.approved = True
-        
+    
         mock_get_top_agents.return_value = [mock_agent]
         
         response = client.get("/retrieval/top-agents")
@@ -180,17 +162,10 @@ class TestScoringEndpoints:
     """Test scoring endpoints"""
     
     @patch('api.src.backend.entities.MinerAgentScored.get_top_agent')
-    @patch('api.src.backend.db_manager.get_db_connection')
-    def test_check_top_agent_endpoint(self, mock_get_connection, mock_get_top_agent):
+    def test_check_top_agent_endpoint(self, mock_get_top_agent):
         """Test check top agent endpoint"""
         app = create_test_app()
         client = TestClient(app)
-        
-        # Mock database connection
-        mock_conn = AsyncMock()
-        mock_connection_context = AsyncMock()
-        mock_connection_context.__aenter__.return_value = mock_conn
-        mock_get_connection.return_value = mock_connection_context
         
         # Mock top agent
         mock_top_agent = Mock()
@@ -240,18 +215,14 @@ class TestOpenUsersEndpoints:
 class TestAgentSummariesEndpoints:
     """Test agent summaries endpoints"""
     
-    @patch('api.src.backend.db_manager.get_db_connection')
-    def test_agent_summary_endpoint_not_found(self, mock_get_connection):
+    @patch('api.src.backend.queries.statistics.get_agent_summary_by_hotkey')
+    def test_agent_summary_endpoint_not_found(self, mock_get_agent_summary):
         """Test agent summary endpoint with non-existent ID"""
         app = create_test_app()
         client = TestClient(app)
         
-        # Mock database connection
-        mock_conn = AsyncMock()
-        mock_connection_context = AsyncMock()
-        mock_connection_context.__aenter__.return_value = mock_conn
-        mock_get_connection.return_value = mock_connection_context
-        mock_conn.fetchrow.return_value = None  # Agent not found
+        # Mock agent summary to return None (not found)
+        mock_get_agent_summary.return_value = None
         
         fake_uuid = uuid.uuid4()
         response = client.get(f"/agent-summaries/agent-summary/{fake_uuid}")
