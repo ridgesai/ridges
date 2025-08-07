@@ -5,8 +5,7 @@ from fiber.chain.models import Node
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 from loggers.logging_utils import get_logger
 from validator.config import (
-    NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS,
-    MAX_MINERS
+    NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS
 )
 import random
 from ddtrace import tracer
