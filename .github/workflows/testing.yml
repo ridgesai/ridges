@@ -7,7 +7,7 @@ on:
     branches: [ '*' ]
 
 jobs:
-  test-and-lint:
+  test:
     runs-on: ubuntu-latest
     
     services:
@@ -57,26 +57,19 @@ jobs:
     - name: Start the API server
       run: |
         echo "Starting API server..."
-        export PYTHONPATH=$PWD:$PYTHONPATH
         uv run python -m api.src.main --host 0.0.0.0 &
         SERVER_PID=$!
         echo "Server started with PID: $SERVER_PID"
+        sleep 15  # Wait for server to start
         
-        # Wait longer for server to start and check multiple times
-        for i in {1..30}; do
-          echo "Checking server status (attempt $i/30)..."
-          if curl -f http://localhost:8000/healthcheck > /dev/null 2>&1; then
-            echo "Server is responding!"
-            break
-          fi
-          sleep 2
-        done
-        
-        # Final check
-        echo "Final server status check..."
+        # Check if server is running
+        echo "Checking if server is running..."
         ps aux | grep python
         netstat -tlnp | grep 8000 || echo "Port 8000 not listening"
-        curl -v http://localhost:8000/healthcheck || echo "Server not responding"
+        
+        # Test if server responds
+        echo "Testing server response..."
+        curl -f http://localhost:8000/healthcheck || echo "Server not responding yet"
     
     - name: Test real API endpoints
       run: |
@@ -108,20 +101,42 @@ jobs:
         cd tests
         uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml --no-cov-on-fail
     
-    - name: Lint and type check
-      run: |
-        uv run ruff check tests/ --fix || true
-        uv run mypy tests/test_miner_agent_flow.py --ignore-missing-imports || true
     
-                    - uses: codecov/codecov-action@v3
-                  with:
-                    fail_ci_if_error: false
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - uses: astral-sh/setup-uv@v2
+    
+    - name: Install dependencies
+      run: |
+        uv sync
+    
+    - name: Type check
+      continue-on-error: true
+      run: |
+        uvx ty check
+    
+    - uses: codecov/codecov-action@v3
+      with:
+        fail_ci_if_error: false
                 
-                - name: Notify deployment webhook on success
-                  if: success() && github.ref == 'refs/heads/main'
-                  run: |
-                    echo "Tests passed successfully on main branch, notifying deployment webhook..."
-                    curl -X POST \
-                      -H "Content-Type: application/json" \
-                      -H "X-Hub-Signature: ${{ secrets.DEPLOY_KEY }}" \
-                      http://52.22.35.122:3141/hooks/update-platform
+
+  deploy:
+    needs: [test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Notify deployment webhook
+      run: |
+        echo "Tests passed successfully on main branch, notifying deployment webhook..."
+        curl -X POST \
+          -H "X-Hub-Signature: ${{ secrets.DEPLOY_KEY }}" \
+          http://52.22.35.122:3141/hooks/update-platform
