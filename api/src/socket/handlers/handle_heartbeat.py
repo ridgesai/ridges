@@ -25,3 +25,7 @@ async def handle_heartbeat(
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
         # raise WebSocketDisconnect()
+
+    if client.status == "available":
+        client.connect()
+            
