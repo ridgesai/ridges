@@ -12,17 +12,18 @@ from typing import Optional
 # Base URL for the running API server
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
 
-def wait_for_server(max_retries: int = 30, delay: float = 1.0) -> bool:
+def wait_for_server(max_retries: int = 60, delay: float = 2.0) -> bool:
     """Wait for the API server to be ready."""
     for i in range(max_retries):
         try:
-            response = requests.get(f"{API_BASE_URL}/healthcheck", timeout=5)
+            response = requests.get(f"{API_BASE_URL}/healthcheck", timeout=10)
             if response.status_code == 200:
                 print(f"Server is ready after {i+1} attempts")
                 return True
-        except requests.exceptions.RequestException:
-            pass
+        except requests.exceptions.RequestException as e:
+            print(f"Attempt {i+1}: Server not ready yet: {e}")
         time.sleep(delay)
+    print(f"Server failed to start after {max_retries} attempts")
     return False
 
 class TestRealAPIEndpoints:
