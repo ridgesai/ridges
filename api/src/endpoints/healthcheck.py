@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List
 
 from api.src.backend.queries.healthcheck import get_healthcheck_results
+from api.src.socket.server_helpers import SERVER_COMMIT_HASH
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -18,11 +19,15 @@ async def healthcheck_results(limit: int = 30) -> List[dict]:
     
     return healthcheck_results
 
+async def version():
+    return SERVER_COMMIT_HASH
+
 router = APIRouter()
 
 routes = [
     ("/healthcheck", healthcheck),
     ("/healthcheck-results", healthcheck_results),
+    ("/version", version),
 ]
 
 for path, endpoint in routes:

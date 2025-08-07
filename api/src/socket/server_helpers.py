@@ -1,11 +1,14 @@
 import os
 import json
+from asyncio import subprocess
 import httpx
 from pathlib import Path
 
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
+
+SERVER_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
 # Path for storing commits cache file
 COMMITS_CACHE_FILE = Path("api/.commits_cache.json")
