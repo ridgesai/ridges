@@ -119,12 +119,13 @@ jobs:
         uv sync
     
     - name: Type check
+      continue-on-error: true
       run: |
-        uvx ty check || true
+        uvx ty check
     
-                    - uses: codecov/codecov-action@v3
-                  with:
-                    fail_ci_if_error: false
+    - uses: codecov/codecov-action@v3
+      with:
+        fail_ci_if_error: false
                 
 
   deploy:
