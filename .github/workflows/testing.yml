@@ -137,6 +137,5 @@ jobs:
       run: |
         echo "Tests passed successfully on main branch, notifying deployment webhook..."
         curl -X POST \
-          -H "Content-Type: application/json" \
           -H "X-Hub-Signature: ${{ secrets.DEPLOY_KEY }}" \
           http://52.22.35.122:3141/hooks/update-platform
