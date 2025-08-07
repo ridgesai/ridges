@@ -118,8 +118,19 @@ CREATE TABLE IF NOT EXISTS open_users (
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Open User Email Whitelist table
 CREATE TABLE IF NOT EXISTS open_user_email_whitelist (
     email TEXT NOT NULL PRIMARY KEY
+);
+
+-- Platform Status Checks table
+CREATE TABLE IF NOT EXISTS platform_status_checks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    checked_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    status TEXT NOT NULL,
+    response_time_ms INT NOT NULL,
+    response TEXT,
+    error TEXT
 );
 
 -- Trigger functions and triggers for automatic score updates
