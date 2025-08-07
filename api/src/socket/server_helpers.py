@@ -1,6 +1,6 @@
 import os
 import json
-from asyncio import subprocess
+import subprocess
 import httpx
 from pathlib import Path
 
