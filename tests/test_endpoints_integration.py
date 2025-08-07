@@ -4,17 +4,12 @@ Tests the complete flow from HTTP requests through to database operations.
 """
 
 import pytest
-import asyncio
 import asyncpg
 import os
-import json
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Dict, Any, Optional
-from unittest.mock import patch, AsyncMock
+from typing import Optional
+from unittest.mock import patch
 
-from fastapi.testclient import TestClient
 from httpx import AsyncClient
 import pytest_asyncio
 
@@ -33,8 +28,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
 from main import app
-from backend.db_manager import DBManager
-from backend.entities import AgentStatus, MinerAgent
 
 
 class DatabaseTestSetup:

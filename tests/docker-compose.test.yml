@@ -6,10 +6,10 @@ services:
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: test_user
-      POSTGRES_PASSWORD: test_password
-      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      POSTGRES_PASSWORD: test_pass
+      POSTGRES_INITDB_ARGS: "--auth-host=trust"
     ports:
-      - "5433:5432"  # Different port to avoid conflicts with main database
+      - "5432:5432"  # Same port as GitHub Actions
     volumes:
       - postgres_test_data:/var/lib/postgresql/data
       - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql

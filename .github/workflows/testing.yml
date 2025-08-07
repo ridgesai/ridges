@@ -49,26 +49,10 @@ jobs:
         uv sync
         uv add coverage pytest-cov ruff mypy
     
-    - name: Start Ridges API server
-      run: |
-        export PYTHONPATH=$PWD:$PYTHONPATH
-        cd api/src
-        uv run python main.py &
-        echo $! > ../../server.pid
-        # Wait for server to start
-        sleep 15
-        curl -f http://localhost:8000/healthcheck || exit 1
-    
     - name: Run all tests
       run: |
-        uv run python -m pytest tests/ -v --cov=api/src --cov-report=xml
-    
-    - name: Stop server
-      run: |
-        if [ -f server.pid ]; then
-          kill $(cat server.pid) || true
-          rm server.pid
-        fi
+        cd tests
+        uv run python -m pytest
     
     - name: Lint and type check
       run: |

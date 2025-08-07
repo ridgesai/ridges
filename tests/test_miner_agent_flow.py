@@ -6,8 +6,7 @@ Tests core status transitions and business logic with proper mocking.
 import pytest
 import uuid
 from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from typing import Optional, List
+from unittest.mock import Mock, AsyncMock, patch
 
 # Mock environment variables before importing modules
 import os
@@ -25,11 +24,10 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 from backend.entities import (
     AgentStatus, EvaluationStatus, SandboxStatus,
     MinerAgent, MinerAgentWithScores, MinerAgentScored,
-    Evaluation as EvaluationEntity, EvaluationRun
+    EvaluationRun
 )
 from models.screener import Screener
 from models.evaluation import Evaluation
-from models.validator import Validator
 
 
 class TestAgentStatus:
