@@ -45,10 +45,19 @@ jobs:
         uv sync
         uv add coverage pytest-cov ruff mypy
     
+    - name: Debug environment
+      run: |
+        echo "Current directory: $(pwd)"
+        echo "Files in tests directory:"
+        ls -la tests/
+        echo "Environment variables:"
+        echo "POSTGRES_TEST_URL: $POSTGRES_TEST_URL"
+        echo "AWS_MASTER_USERNAME: $AWS_MASTER_USERNAME"
+    
     - name: Run working tests
       run: |
         cd tests
-        uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml
+        uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml --no-cov-on-fail
     
     - name: Lint and type check
       run: |
