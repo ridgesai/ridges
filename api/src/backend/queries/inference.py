@@ -21,7 +21,8 @@ async def get_inference_provider_statistics(conn: asyncpg.Connection, start_time
                 WHEN COUNT(*) > 0 THEN 
                     (COUNT(CASE WHEN status_code != 200 THEN 1 END)::float / COUNT(*)::float) * 100
                 ELSE 0 
-            END as error_rate
+            END as error_rate,
+            SUM(total_tokens) as total_tokens
         FROM inferences 
         WHERE created_at >= $1 
         AND created_at <= $2 

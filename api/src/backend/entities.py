@@ -470,6 +470,7 @@ class ProviderStatistics(BaseModel):
     total_requests: int
     successful_requests: int
     failed_requests: int
+    total_tokens: Optional[int] = None
 
 class EvaluationQueueItem(BaseModel):
     model_config = {
