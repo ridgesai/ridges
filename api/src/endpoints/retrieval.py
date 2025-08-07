@@ -18,6 +18,8 @@ from api.src.backend.queries.statistics import get_top_agents as db_get_top_agen
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
 from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators, get_screener_queue_by_stage as db_get_screener_queue_by_stage
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
+from api.src.backend.entities import InferenceSummary
+from api.src.backend.queries.inference import get_inferences as db_get_inferences
 
 load_dotenv()
 
@@ -279,6 +281,20 @@ async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
             status_code=500,
             detail="Internal server error while retrieving agents"
         )
+    
+async def get_inferences(since_hours: int = 10) -> list[InferenceSummary]:
+    """
+    Returns a list of all inferences for the last X hours
+    """
+    try:
+        inferences = await db_get_inferences(since_hours=since_hours)
+        return inferences
+    except Exception as e:
+        logger.error(f"Error retrieving inferences for last {since_hours} hours: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving inferences"
+        )
 
 router = APIRouter()
 
@@ -301,7 +317,8 @@ routes = [
     ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
-    ("/agents-from-hotkey", get_agents_from_hotkey)
+    ("/agents-from-hotkey", get_agents_from_hotkey),    
+    ("/inferences", get_inferences)
 ]
 
 for path, endpoint in routes:

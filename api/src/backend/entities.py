@@ -447,6 +447,17 @@ class Inference(BaseModel):
     created_at: datetime
     finished_at: Optional[datetime]
 
+class InferenceSummary(BaseModel):
+    """Simplified inference model with only essential fields"""
+    temperature: Optional[float] = None
+    model: Optional[str] = None
+    cost: Optional[float] = None
+    total_tokens: Optional[int] = None
+    created_at: datetime
+    finished_at: Optional[datetime] = None
+    provider: Optional[str] = None
+    status_code: Optional[int] = None
+
 class EvaluationQueueItem(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True,
