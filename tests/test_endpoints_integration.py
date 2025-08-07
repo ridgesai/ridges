@@ -27,7 +27,7 @@ if not os.getenv('AWS_MASTER_USERNAME'):
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
-from main import app
+from api.src.main import app
 
 
 class DatabaseTestSetup:

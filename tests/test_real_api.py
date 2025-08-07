@@ -8,6 +8,7 @@ import requests
 import os
 import time
 from typing import Optional
+from requests.exceptions import RequestException
 
 # Base URL for the running API server
 API_BASE_URL = os.getenv('API_BASE_URL', 'http://localhost:8000')
@@ -20,7 +21,7 @@ def wait_for_server(max_retries: int = 30, delay: float = 1.0) -> bool:
             if response.status_code == 200:
                 print(f"Server is ready after {i+1} attempts")
                 return True
-        except requests.exceptions.RequestException:
+        except RequestException:
             pass
         time.sleep(delay)
     return False

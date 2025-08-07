@@ -36,7 +36,7 @@ def create_test_app():
         # Mock the pool attribute
         mock_db.pool = Mock()
         
-        from main import app
+        from api.src.main import app
         return app
 
 

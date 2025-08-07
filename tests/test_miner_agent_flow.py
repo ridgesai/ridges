@@ -21,13 +21,13 @@ os.environ.update({
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
-from backend.entities import (
+from api.src.backend.entities import (
     AgentStatus, EvaluationStatus, SandboxStatus,
     MinerAgent, MinerAgentWithScores, MinerAgentScored,
     EvaluationRun
 )
-from models.screener import Screener
-from models.evaluation import Evaluation
+from api.src.models.screener import Screener
+from api.src.models.evaluation import Evaluation
 
 
 class TestAgentStatus:
@@ -195,12 +195,14 @@ class TestScreener:
             # Test stage 1 reservation
             screener = await Screener.get_first_available_and_reserve(1)
             assert screener == mock_screener1
-            assert screener.status == "reserving"
+            if screener is not None:
+                assert screener.status == "reserving"
             
             # Test stage 2 reservation
             screener = await Screener.get_first_available_and_reserve(2)  
             assert screener == mock_screener2
-            assert screener.status == "reserving"
+            if screener is not None:
+                assert screener.status == "reserving"
             
             # Test no available screeners for stage 3
             screener = await Screener.get_first_available_and_reserve(3)

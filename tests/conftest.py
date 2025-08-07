@@ -79,7 +79,7 @@ async def db_setup(postgres_service):
         pytest.skip("POSTGRES_TEST_URL not set for integration tests.")
 
     # Import lazily to avoid issues in unit tests
-    from backend.db_manager import new_db
+    from api.src.backend.db_manager import new_db
 
     # Initialize the global new_db instance with the test database
     # This ensures all application code uses the test database
@@ -117,7 +117,7 @@ async def setup_database_schema(conn: asyncpg.Connection):
 async def db_conn(db_setup):
     """Provide a database connection for individual tests."""
     # db_setup is now a boolean indicating readiness
-    from backend.db_manager import new_db
+    from api.src.backend.db_manager import new_db
     async with new_db.acquire() as conn:
         yield conn
 
@@ -125,7 +125,7 @@ async def db_conn(db_setup):
 async def async_client():
     """Provide an asynchronous test client for FastAPI endpoints."""
     # For unit tests, we don't need a real server, just the app
-    from main import app
+    from api.src.main import app
     async with AsyncClient(app=app, base_url="http://testserver") as client:
         yield client
 
