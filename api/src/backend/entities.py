@@ -458,6 +458,19 @@ class InferenceSummary(BaseModel):
     provider: Optional[str] = None
     status_code: Optional[int] = None
 
+class ProviderStatistics(BaseModel):
+    """Summary statistics by provider for inference performance"""
+    provider: str
+    avg_time_taken: Optional[float] = None
+    median_time_taken: Optional[float] = None
+    p95_time_taken: Optional[float] = None
+    max_time_taken: Optional[float] = None
+    min_time_taken: Optional[float] = None
+    error_rate: Optional[float] = None
+    total_requests: int
+    successful_requests: int
+    failed_requests: int
+
 class EvaluationQueueItem(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True,

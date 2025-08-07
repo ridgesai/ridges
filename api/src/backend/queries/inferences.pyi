@@ -1,4 +1,6 @@
 from typing import List
-from api.src.backend.entities import InferenceSummary
+from datetime import datetime
 
-async def get_inferences(since_hours: int = 10) -> List[InferenceSummary]: ...
+from api.src.backend.entities import ProviderStatistics
+
+async def get_inference_provider_statistics(start_time: datetime, end_time: datetime) -> List[ProviderStatistics]: ...
