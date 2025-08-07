@@ -467,7 +467,7 @@ class Evaluation:
 
             if success:
                 # Commit screener state changes
-                screener.status = f"Screening stage {screener.stage} agent {agent.agent_name} with evaluation {eval_id}"
+                screener.status = "screening"
                 screener.current_agent_name = agent.agent_name
                 screener.current_evaluation_id = eval_id
                 screener.current_agent_hotkey = agent.miner_hotkey

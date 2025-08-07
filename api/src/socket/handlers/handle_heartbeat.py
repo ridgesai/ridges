@@ -29,4 +29,9 @@ async def handle_heartbeat(
 
     if client.status == "available":
         client.connect()
+
+    if alleged_status == "available" and client.status == "reserving":
+        client.connect()
             
+    if alleged_status == "screening":
+        client.status = "screening"
