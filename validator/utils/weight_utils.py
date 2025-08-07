@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from fiber import SubstrateInterface
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
@@ -136,7 +136,7 @@ def process_weights_for_netuid(
         weights: np.ndarray,
         netuid: int,
         substrate: SubstrateInterface,
-        nodes: List = None,
+        nodes: Optional[List] = None,
         exclude_quantile: int = 0,
 ) -> Tuple[List[int], List[float]]:
     """
