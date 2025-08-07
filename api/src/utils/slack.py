@@ -5,6 +5,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from dotenv import load_dotenv
+from typing import Optional
 
 # Load environment variables
 load_dotenv()
@@ -96,7 +97,7 @@ if app:
 
 
 
-def send_slack_notification(message: str = None, channel: str = "bot-testing", blocks: list = None, color: str = None, approval_version_id: str = None):
+def send_slack_notification(message: Optional[str] = None, channel: str = "bot-testing", blocks: Optional[list] = None, color: Optional[str] = None, approval_version_id: Optional[str] = None):
     """Send a notification to Slack as a markdown string or blocks with optional colored sidebar and approval buttons"""
     
     # Check if Slack is configured - if not, log and return success (for local development)
@@ -204,7 +205,7 @@ Ready for evaluation! ✨
     return send_slack_notification(message.strip(), color="good")
 
 
-def send_evaluation_notification(agent_name: str, miner_hotkey: str, version_num: int, status: str, score: float = None):
+def send_evaluation_notification(agent_name: str, miner_hotkey: str, version_num: int, status: str, score: Optional[float] = None):
     """Send a notification when an evaluation completes."""
     
     short_hotkey = f"{miner_hotkey[:8]}...{miner_hotkey[-8:]}"
