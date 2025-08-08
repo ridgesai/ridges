@@ -123,6 +123,13 @@ CREATE TABLE IF NOT EXISTS open_user_email_whitelist (
     email TEXT NOT NULL PRIMARY KEY
 );
 
+-- Treasury hotkeys
+CREATE TABLE IF NOT EXISTS treasury_wallets (
+    hotkey TEXT NOT NULL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    active BOOLEAN NOT NULL DEFAULT FALSE
+);
+
 -- Platform Status Checks table
 CREATE TABLE IF NOT EXISTS platform_status_checks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

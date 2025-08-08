@@ -15,6 +15,8 @@ import pytest_asyncio
 
 # Set environment variables for testing
 import os
+
+from api.src.endpoints.scoring import get_treasury_hotkey
 if not os.getenv('AWS_MASTER_USERNAME'):
     os.environ.update({
         'AWS_MASTER_USERNAME': 'test_user',
@@ -344,6 +346,182 @@ class TestWeightsSetting:
         assert len(weights) == 0
         assert agent_data["miner_hotkey"] not in weights
     
+    @pytest.mark.asyncio
+    async def test_weights_open_miners_excluded(self, async_client: AsyncClient, db_connection: asyncpg.Connection):
+        """Test that miners with hotkeys beginning with 'open-' are never included in weights"""
+        
+        # Ensure database is clean first
+        await self._clean_database(db_connection)
+        
+        # Setup treasury wallet for testing
+        treasury_hotkey = await self._setup_treasury_wallet(db_connection)
+        
+        # Setup: Create a regular approved agent and an approved agent with 'open-' hotkey
+        regular_agent = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="regular_hotkey",
+            agent_name="Regular Agent",
+            score=0.80,
+            approved=True
+        )
+        
+        open_agent = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="open-test_miner_123",
+            agent_name="Open Miner Agent",
+            score=0.95,  # Higher score than regular agent
+            approved=True
+        )
+        
+        # Refresh materialized view
+        await db_connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+        
+        # Call the weights endpoint
+        response = await async_client.get("/scoring/weights")
+        assert response.status_code == 200
+        
+        weights = response.json()
+        
+        # Treasury should get the top weight since open agent has highest score
+        # Regular agent should get dust weight  
+        # Open agent should be excluded entirely
+        expected_dust_weight = 1/65535
+        expected_treasury_weight = 1.0 - expected_dust_weight
+        
+        assert len(weights) == 2, "Should have treasury and regular agent"
+        assert treasury_hotkey in weights, "Treasury should get top weight when open miner has highest score"
+        assert regular_agent["miner_hotkey"] in weights, "Regular agent should get dust weight"
+        assert open_agent["miner_hotkey"] not in weights, "Agents with hotkeys beginning with 'open-' should never receive weights"
+        
+        # Verify weight distribution
+        assert abs(weights[treasury_hotkey] - expected_treasury_weight) < 0.0001, "Treasury should get the top weight"
+        assert weights[regular_agent["miner_hotkey"]] == expected_dust_weight, "Regular agent should get dust weight"
+    
+    @pytest.mark.asyncio
+    async def test_weights_open_miner_top_goes_to_treasury(self, async_client: AsyncClient, db_connection: asyncpg.Connection):
+        """Test that when an open miner is the actual top agent (highest score), weight goes to treasury hotkey instead"""
+        
+        # Ensure database is clean first
+        await self._clean_database(db_connection)
+        
+        # Setup treasury wallet for testing
+        treasury_hotkey = await self._setup_treasury_wallet(db_connection)
+        
+        # Setup: Create a regular approved agent and an approved agent with 'open-' hotkey that has higher score
+        regular_agent = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="regular_hotkey",
+            agent_name="Regular Agent",
+            score=0.80,
+            approved=True
+        )
+        
+        open_top_agent = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="open-top_miner_456",
+            agent_name="Open Top Miner Agent",
+            score=0.95,  # Highest score - IS the top agent, but weight should go to treasury
+            approved=True
+        )
+        
+        # Refresh materialized view
+        await db_connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+        
+        # Call the weights endpoint
+        response = await async_client.get("/scoring/weights")
+        assert response.status_code == 200
+        
+        weights = response.json()
+        
+        # The open miner IS the top agent (highest score), but treasury should get the weight instead
+        # Regular agent should have dust weight
+        # Open miner should not be present at all
+        expected_dust_weight = 1/65535
+        expected_treasury_weight = 1.0 - expected_dust_weight
+        
+        assert len(weights) == 2, "Should have treasury and regular agent"
+        assert treasury_hotkey in weights, "Treasury hotkey should receive the weight when the actual top agent is an open miner"
+        assert regular_agent["miner_hotkey"] in weights, "Regular agent should still get dust weight"
+        assert open_top_agent["miner_hotkey"] not in weights, "Open miner should never receive weights, even when it's the top agent"
+        
+        # Verify weight distribution - treasury gets the weight that would have gone to the open top agent
+        assert abs(weights[treasury_hotkey] - expected_treasury_weight) < 0.0001, "Treasury should get the weight that would have gone to the open top agent"
+        assert weights[regular_agent["miner_hotkey"]] == expected_dust_weight, "Regular agent should get dust weight"
+    
+    @pytest.mark.asyncio 
+    async def test_weights_multiple_open_miners_no_dust_weight(self, async_client: AsyncClient, db_connection: asyncpg.Connection):
+        """Test that multiple open miners never receive any weight, not even dust weight"""
+        
+        # Ensure database is clean first
+        await self._clean_database(db_connection)
+        
+        # Setup treasury wallet for testing
+        treasury_hotkey = await self._setup_treasury_wallet(db_connection)
+        
+        # Setup: Create multiple agents including several open miners
+        regular_agent1 = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="regular_hotkey_1",
+            agent_name="Regular Agent 1",
+            score=0.70,
+            approved=True
+        )
+        
+        regular_agent2 = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="regular_hotkey_2", 
+            agent_name="Regular Agent 2",
+            score=0.75,  # Highest regular agent - should be top
+            approved=True
+        )
+        
+        open_agent1 = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="open-miner_1",
+            agent_name="Open Miner 1",
+            score=0.85,  # Higher than regulars
+            approved=True
+        )
+        
+        open_agent2 = await self._create_approved_agent_with_evaluations(
+            db_connection,
+            miner_hotkey="open-miner_2",
+            agent_name="Open Miner 2", 
+            score=0.90,  # Highest overall
+            approved=True
+        )
+        
+        # Refresh materialized view
+        await db_connection.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+        
+        # Call the weights endpoint
+        response = await async_client.get("/scoring/weights")
+        assert response.status_code == 200
+        
+        weights = response.json()
+        
+        # Treasury should get the top weight because open_agent2 (score 0.90) is the actual top agent
+        # Regular agents should get dust weight
+        # Open miners should not be present at all
+        expected_dust_weight = 1/65535
+        expected_treasury_weight = 1.0 - (2 * expected_dust_weight)  # 2 regular agents get dust, treasury gets the rest
+        
+        assert len(weights) == 3, "Should have treasury + 2 regular agents, no open miners"
+        assert treasury_hotkey in weights, "Treasury should get the top weight since open_agent2 is the actual top agent"
+        assert regular_agent1["miner_hotkey"] in weights
+        assert regular_agent2["miner_hotkey"] in weights
+        assert open_agent1["miner_hotkey"] not in weights, "Open miners should never receive weights"
+        assert open_agent2["miner_hotkey"] not in weights, "Open miners should never receive weights, even when they're the top agent"
+        
+        # Verify weight distribution - treasury gets the top weight that would have gone to open_agent2
+        assert weights[regular_agent1["miner_hotkey"]] == expected_dust_weight
+        assert weights[regular_agent2["miner_hotkey"]] == expected_dust_weight
+        assert abs(weights[treasury_hotkey] - expected_treasury_weight) < 0.0001, "Treasury should get the weight that would have gone to the open top agent"
+        
+        # Verify total weights sum to 1.0
+        total_weight = sum(weights.values())
+        assert abs(total_weight - 1.0) < 0.0001
+    
     # Helper methods for test setup
     
     async def _clean_database(self, conn: asyncpg.Connection):
@@ -353,7 +531,17 @@ class TestWeightsSetting:
         await conn.execute("DELETE FROM approved_version_ids")
         await conn.execute("DELETE FROM miner_agents")
         await conn.execute("DELETE FROM evaluation_sets")
+        await conn.execute("DELETE FROM treasury_wallets")
         await conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+    
+    async def _setup_treasury_wallet(self, conn: asyncpg.Connection, coldkey: str = "test_treasury_coldkey", hotkey: str = "test_treasury_hotkey"):
+        """Setup a treasury wallet for testing"""
+        await conn.execute("""
+            INSERT INTO treasury_wallets (coldkey, hotkey, active)
+            VALUES ($1, $2, TRUE)
+            ON CONFLICT (coldkey, hotkey) DO UPDATE SET active = TRUE
+        """, coldkey, hotkey)
+        return hotkey
     
     async def _create_approved_agent_with_evaluations(
         self, 

@@ -15,6 +15,8 @@ from api.src.backend.db_manager import get_transaction, new_db, get_db_connectio
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner
 
+SUBNET_TREASURY_HOTKEY = "5Ggwefhasiodhfsdf"
+
 load_dotenv()
 
 logger = get_logger(__name__)
@@ -53,6 +55,18 @@ async def weight_receiving_agent():
 
     return top_agent
 
+async def get_treasury_hotkey():
+    """
+    Returns the most recently created active treasury hotkey.
+    Later, return the wallet with the least funs to mitigate risk of large wallets
+    """
+    async with get_db_connection() as conn:
+        treasury_hotkey_data = await conn.fetch("""
+            SELECT hotkey FROM treasury_wallets WHERE active = TRUE ORDER BY created_at DESC LIMIT 1
+        """)
+        treasury_hotkey = treasury_hotkey_data[0]["hotkey"]
+        return treasury_hotkey
+
 async def weights() -> Dict[str, float]:
     """
     Returns a dictionary of miner hotkeys to weights
@@ -63,14 +77,22 @@ async def weights() -> Dict[str, float]:
         approved_agent_hotkeys_data = await conn.fetch("""
             SELECT DISTINCT miner_hotkey FROM approved_version_ids
             LEFT JOIN miner_agents ma on ma.version_id = approved_version_ids.version_id
+            WHERE ma.miner_hotkey NOT LIKE 'open-%'
         """)
         approved_agent_hotkeys = [row["miner_hotkey"] for row in approved_agent_hotkeys_data]
 
     weights = {hotkey: DUST_WEIGHT for hotkey in approved_agent_hotkeys} 
 
     top_agent = await get_top_agent()
-    if top_agent is not None:
-        weight_left = 1.0 - DUST_WEIGHT * len(approved_agent_hotkeys)
+
+    if top_agent is None:
+        return weights
+
+    weight_left = 1.0 - DUST_WEIGHT * len(approved_agent_hotkeys)
+    if top_agent.miner_hotkey.startswith("open-"):
+        treasury_hotkey = await get_treasury_hotkey()
+        weights[treasury_hotkey] = weight_left
+    else:
         weights[top_agent.miner_hotkey] = weight_left
 
     return weights
