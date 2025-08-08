@@ -82,3 +82,14 @@ async def get_open_user_by_email(conn: asyncpg.Connection, email: str) -> Option
         return None
     
     return OpenUser(**dict(result))
+
+@db_operation
+async def update_open_user_bittensor_hotkey(conn: asyncpg.Connection, open_hotkey: str, bittensor_hotkey: str) -> None:
+    await conn.execute(
+        """
+            INSERT INTO open_user_bittensor_hotkeys (open_hotkey, bittensor_hotkey)
+            VALUES ($1, $2)
+        """,
+        open_hotkey,
+        bittensor_hotkey
+    )

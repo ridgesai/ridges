@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, check_open_user_email_in_whitelist, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email
+from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -43,6 +43,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
 
     try:
         await create_open_user(new_user)
+        await db_update_open_user_bittensor_hotkey(new_user.open_hotkey, None)
     except Exception as e:
         logger.error(f"Error creating open user: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
