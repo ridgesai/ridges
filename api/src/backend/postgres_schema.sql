@@ -148,6 +148,13 @@ CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
     set_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Top agents table
+CREATE TABLE IF NOT EXISTS top_agents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated
@@ -338,3 +345,56 @@ CREATE TRIGGER tr_refresh_agent_scores_banned
     AFTER INSERT OR DELETE ON banned_hotkeys
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
+
+-- Trigger function to update top_agents when an evaluation is marked as completed
+CREATE OR REPLACE FUNCTION set_top_agent_on_completed_evaluation()
+RETURNS TRIGGER AS $$
+DECLARE
+    latest_set_id INT;
+    latest_top_version UUID;
+    current_top_version UUID;
+BEGIN
+    -- Only act when status is set to completed
+    IF NEW.status <> 'completed' THEN
+        RETURN NEW;
+    END IF;
+
+    -- Determine the latest set_id
+    SELECT MAX(set_id) INTO latest_set_id FROM evaluation_sets;
+    IF latest_set_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- Get the current top agent from the materialized view for the latest set
+    SELECT version_id INTO latest_top_version
+    FROM agent_scores
+    WHERE set_id = latest_set_id
+    ORDER BY final_score DESC, created_at ASC
+    LIMIT 1;
+
+    IF latest_top_version IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    -- Fetch the most recent entry from top_agents
+    SELECT version_id INTO current_top_version
+    FROM top_agents
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    -- Insert a new top agent entry only if it differs from the current one
+    IF current_top_version IS DISTINCT FROM latest_top_version THEN
+        INSERT INTO top_agents (version_id) VALUES (latest_top_version);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to invoke the above function when an evaluation completes
+DROP TRIGGER IF EXISTS tr_set_top_agent_on_completed_evaluation ON evaluations;
+CREATE TRIGGER tr_set_top_agent_on_completed_evaluation
+    AFTER UPDATE OF status ON evaluations
+    FOR EACH ROW
+    WHEN (NEW.status = 'completed')
+    EXECUTE FUNCTION set_top_agent_on_completed_evaluation();
