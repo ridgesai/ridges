@@ -534,13 +534,13 @@ class TestWeightsSetting:
         await conn.execute("DELETE FROM treasury_wallets")
         await conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
     
-    async def _setup_treasury_wallet(self, conn: asyncpg.Connection, coldkey: str = "test_treasury_coldkey", hotkey: str = "test_treasury_hotkey"):
+    async def _setup_treasury_wallet(self, conn: asyncpg.Connection, hotkey: str = "test_treasury_hotkey"):
         """Setup a treasury wallet for testing"""
         await conn.execute("""
-            INSERT INTO treasury_wallets (coldkey, hotkey, active)
-            VALUES ($1, $2, TRUE)
+            INSERT INTO treasury_wallets (coldkey, active)
+            VALUES ($1, TRUE)
             ON CONFLICT (coldkey, hotkey) DO UPDATE SET active = TRUE
-        """, coldkey, hotkey)
+        """, hotkey)
         return hotkey
     
     async def _create_approved_agent_with_evaluations(
