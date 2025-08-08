@@ -101,6 +101,11 @@ jobs:
         cd tests
         uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml --no-cov-on-fail
     
+    - name: Run weights function integration tests
+      run: |
+        cd tests
+        uv run python -m pytest test_weights_setting.py -v --cov=api/src --cov-report=xml --no-cov-on-fail
+    
     
   lint:
     runs-on: ubuntu-latest
