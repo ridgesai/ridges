@@ -80,6 +80,18 @@ async def get_user_by_email(email: str, password: str):
     except Exception as e:
         logger.error(f"Error getting user by email {email}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+async def update_bittensor_hotkey(open_hotkey: str, bittensor_hotkey: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to update bittensor hotkey with an invalid password. open_hotkey: {open_hotkey}, bittensor_hotkey: {bittensor_hotkey}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        await db_update_open_user_bittensor_hotkey(open_hotkey, bittensor_hotkey)
+        return {"success": True, "message": "Bittensor hotkey updated"}
+    except Exception as e:
+        logger.error(f"Error updating bittensor hotkey for open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
 router = APIRouter()
 
@@ -87,6 +99,7 @@ routes = [
     ("/sign-in", open_user_sign_in, ["POST"]),
     ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
     ("/get-user-by-email", get_user_by_email, ["GET"]),
+    ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
 ]
 
 for path, endpoint, methods in routes:
