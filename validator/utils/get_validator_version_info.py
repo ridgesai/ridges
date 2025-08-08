@@ -14,6 +14,13 @@ VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).deco
 @tracer.wrap(resource="get-validator-info")
 def get_validator_info():
     """Generate validator info with cryptographic proof of hotkey ownership."""
+    if validator_hotkey is None:
+        logger.error("Validator hotkey is not configured")
+        return {
+            "event": "validator-info",
+            "error": "Validator hotkey not configured"
+        }
+    
     # Create a message that includes timestamp, hotkey, and version
     timestamp = int(time.time())
     message = f"validator-auth:{validator_hotkey.ss58_address}:{VERSION_COMMIT_HASH}:{timestamp}"
