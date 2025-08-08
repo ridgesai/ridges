@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, check_open_user_email_in_whitelist, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email
+from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -43,6 +43,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
 
     try:
         await create_open_user(new_user)
+        await db_update_open_user_bittensor_hotkey(new_user.open_hotkey, None)
     except Exception as e:
         logger.error(f"Error creating open user: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
@@ -79,6 +80,18 @@ async def get_user_by_email(email: str, password: str):
     except Exception as e:
         logger.error(f"Error getting user by email {email}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+async def update_bittensor_hotkey(open_hotkey: str, bittensor_hotkey: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to update bittensor hotkey with an invalid password. open_hotkey: {open_hotkey}, bittensor_hotkey: {bittensor_hotkey}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        await db_update_open_user_bittensor_hotkey(open_hotkey, bittensor_hotkey)
+        return {"success": True, "message": "Bittensor hotkey updated"}
+    except Exception as e:
+        logger.error(f"Error updating bittensor hotkey for open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
 router = APIRouter()
 
@@ -86,6 +99,7 @@ routes = [
     ("/sign-in", open_user_sign_in, ["POST"]),
     ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
     ("/get-user-by-email", get_user_by_email, ["GET"]),
+    ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
 ]
 
 for path, endpoint, methods in routes:

@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS open_users (
     auth0_user_id TEXT NOT NULL,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Open User Email Whitelist table
@@ -133,8 +133,9 @@ CREATE TABLE IF NOT EXISTS platform_status_checks (
     error TEXT
 );
 
+-- Open User Bittensor Hotkeys table
 CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
-    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     open_hotkey TEXT NOT NULL REFERENCES open_users(open_hotkey),
     bittensor_hotkey TEXT,
     set_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
