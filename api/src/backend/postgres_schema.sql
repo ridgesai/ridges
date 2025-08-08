@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS open_users (
     auth0_user_id TEXT NOT NULL,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    bittensor_hotkey TEXT
 );
 
 -- Open User Email Whitelist table
