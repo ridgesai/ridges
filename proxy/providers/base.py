@@ -3,7 +3,7 @@ Base inference provider interface that all providers must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Union, Dict, Any
+from typing import List, Union, Dict, Any, Optional
 from uuid import UUID
 
 from proxy.models import GPTMessage
@@ -15,10 +15,10 @@ class InferenceProvider(ABC):
     @abstractmethod
     async def inference(
         self,
-        run_id: UUID = None,
-        messages: List[GPTMessage] = None,
-        temperature: float = None,
-        model: str = None,
+        run_id: Optional[UUID] = None,
+        messages: Optional[List[GPTMessage]] = None,
+        temperature: Optional[float] = None,
+        model: Optional[str] = None,
     ) -> tuple[str, int]:
         """
         Perform inference with the given parameters.
