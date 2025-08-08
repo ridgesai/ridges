@@ -16,7 +16,6 @@ import pytest_asyncio
 # Set environment variables for testing
 import os
 
-from api.src.endpoints.scoring import get_treasury_hotkey
 if not os.getenv('AWS_MASTER_USERNAME'):
     os.environ.update({
         'AWS_MASTER_USERNAME': 'test_user',
@@ -30,10 +29,6 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'api', 'src'))
 
 from api.src.main import app
-
-
-
-
 
 @pytest_asyncio.fixture
 async def db_connection():
@@ -537,9 +532,9 @@ class TestWeightsSetting:
     async def _setup_treasury_wallet(self, conn: asyncpg.Connection, hotkey: str = "test_treasury_hotkey"):
         """Setup a treasury wallet for testing"""
         await conn.execute("""
-            INSERT INTO treasury_wallets (coldkey, active)
+            INSERT INTO treasury_wallets (hotkey, active)
             VALUES ($1, TRUE)
-            ON CONFLICT (coldkey, hotkey) DO UPDATE SET active = TRUE
+            ON CONFLICT (hotkey) DO UPDATE SET active = TRUE
         """, hotkey)
         return hotkey
     
