@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey
+from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -73,6 +73,9 @@ async def get_user_by_email(email: str, password: str):
         user = await get_open_user_by_email(email)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+        
+        bittensor_hotkey = await db_get_open_user_bittensor_hotkey(user.open_hotkey)
+        user.bittensor_hotkey = bittensor_hotkey
         
         return {"success": True, "user": user}
     except HTTPException:

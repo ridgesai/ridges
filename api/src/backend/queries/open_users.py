@@ -93,3 +93,19 @@ async def update_open_user_bittensor_hotkey(conn: asyncpg.Connection, open_hotke
         open_hotkey,
         bittensor_hotkey
     )
+
+@db_operation
+async def get_open_user_bittensor_hotkey(conn: asyncpg.Connection, open_hotkey: str) -> Optional[str]:
+    result = await conn.fetchrow(
+        """
+            SELECT bittensor_hotkey FROM open_user_bittensor_hotkeys WHERE open_hotkey = $1
+            ORDER BY set_at DESC
+            LIMIT 1
+        """,
+        open_hotkey
+    )
+
+    if not result:
+        return None
+    
+    return result["bittensor_hotkey"]
