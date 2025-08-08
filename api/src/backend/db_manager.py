@@ -78,12 +78,11 @@ DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
 DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
 DB_PORT = os.getenv("PGPORT", "5432")
 
-if not all([DB_USER, DB_PASS, DB_HOST, DB_NAME]):
-    raise RuntimeError(
-        "Missing one or more required environment variables: "
-        "AWS_MASTER_USERNAME, AWS_MASTER_PASSWORD, "
-        "AWS_RDS_PLATFORM_ENDPOINT, AWS_RDS_PLATFORM_DB_NAME"
-    )
+# Ensure all environment variables are present
+assert DB_USER is not None, "DB_USER environment variable is required"
+assert DB_PASS is not None, "DB_PASS environment variable is required"
+assert DB_HOST is not None, "DB_HOST environment variable is required"
+assert DB_NAME is not None, "DB_NAME environment variable is required"
 
 new_db = DBManager(
     user=DB_USER,
