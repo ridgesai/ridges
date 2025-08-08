@@ -141,6 +141,13 @@ CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
     set_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Top agents table
+CREATE TABLE IF NOT EXISTS top_agents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated
