@@ -116,7 +116,6 @@ CREATE TABLE IF NOT EXISTS open_users (
     email TEXT NOT NULL,
     name TEXT NOT NULL,
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    bittensor_hotkey TEXT
 );
 
 -- Open User Email Whitelist table
@@ -132,6 +131,13 @@ CREATE TABLE IF NOT EXISTS platform_status_checks (
     response_time_ms INT,
     response TEXT,
     error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
+    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    open_hotkey TEXT NOT NULL REFERENCES open_users(open_hotkey),
+    bittensor_hotkey TEXT,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Trigger functions and triggers for automatic score updates
