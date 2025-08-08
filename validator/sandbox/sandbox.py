@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Optional, Dict, Any
 from ddtrace import tracer
 
 import docker
-from docker.errors import NotFound as DockerNotFound
+from docker.errors import ImageNotFound, APIError
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
 from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, run_instance
@@ -169,9 +169,9 @@ class Sandbox:
 
             self.manager._track_container(self.container)
             
-        except docker.errors.ImageNotFound:
+        except ImageNotFound:
             raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
-        except docker.errors.APIError as e:
+        except APIError as e:
             if "No such image" in str(e):
                 raise SystemExit(f"No docker image for {SANDBOX_DOCKER_IMAGE}. Run `./ridges.py validator run` to build the images")
             raise
@@ -334,9 +334,6 @@ class Sandbox:
                             logger.info(f"Container {run_id} status: {status} - completed")
                         break
                         
-                except DockerNotFound:
-                    logger.info(f"Container {run_id} auto-removed - evaluation completed")
-                    break
                 except Exception as e:
                     logger.warning(f"Container status check failed for {run_id}: {e}")
                     break
@@ -402,7 +399,7 @@ class Sandbox:
                 self.container.remove(force=True)
                 logger.info(f"✅ Container {run_id} removed successfully")
             except Exception as e:
-                logger.warning(f"Failed to remove container {run_id}: {e}")
+                logger.warning(f"Failed to remove container {self.container.id}: {e}")
     
     @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:

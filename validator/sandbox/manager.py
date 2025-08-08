@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 
 import docker
 from docker.models.containers import Container
+from docker.errors import NotFound, ImageNotFound, APIError
 from ddtrace import tracer
 
 from validator.config import RIDGES_PROXY_URL
@@ -60,14 +61,14 @@ class SandboxManager:
         # Create network
         try:
             self.docker.networks.get(SANDBOX_NETWORK_NAME)
-        except docker.errors.NotFound:
+        except NotFound:
             self.docker.networks.create(SANDBOX_NETWORK_NAME, driver="bridge", internal=True)
         
         # Remove existing proxy
         try:
             existing = self.docker.containers.get(PROXY_CONTAINER_NAME)
             existing.remove(force=True)
-        except docker.errors.NotFound:
+        except NotFound:
             pass
     
     @tracer.wrap(resource="setup-proxy-for-sandbox-manager")
@@ -80,9 +81,9 @@ class SandboxManager:
                 detach=True,
                 environment={"RIDGES_PROXY_URL": RIDGES_PROXY_URL},
             )
-        except docker.errors.ImageNotFound:
+        except ImageNotFound:
             raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}")
-        except docker.errors.APIError as e:
+        except APIError as e:
             if "No such image" in str(e):
                 raise SystemExit(f"No docker image for {PROXY_DOCKER_IMAGE}")
             raise
