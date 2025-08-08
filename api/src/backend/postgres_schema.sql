@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS platform_status_checks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     checked_at TIMESTAMP WITH TIME ZONE NOT NULL,
     status TEXT NOT NULL,
-    response_time_ms INT NOT NULL,
+    response_time_ms INT,
     response TEXT,
     error TEXT
 );
