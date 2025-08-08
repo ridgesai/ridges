@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS open_users (
     auth0_user_id TEXT NOT NULL,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
-    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    bittensor_hotkey TEXT
 );
 
 -- Open User Email Whitelist table
@@ -128,7 +129,7 @@ CREATE TABLE IF NOT EXISTS platform_status_checks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     checked_at TIMESTAMP WITH TIME ZONE NOT NULL,
     status TEXT NOT NULL,
-    response_time_ms INT NOT NULL,
+    response_time_ms INT,
     response TEXT,
     error TEXT
 );

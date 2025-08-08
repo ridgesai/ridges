@@ -24,15 +24,6 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     if password != open_user_password:
         logger.warning(f"Someone tried to sign in with an invalid password. auth0_user_id: {auth0_user_id}, email: {email}, name: {name}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid sign in password. Fuck you.")
-    
-    try:
-        is_email_in_whitelist = await check_open_user_email_in_whitelist(email)
-    except Exception as e:
-        logger.error(f"Error checking if email {email} is in whitelist: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
-    if not is_email_in_whitelist:
-        raise HTTPException(status_code=401, detail="Email not in whitelist. Please contact us on Discord to get access to upload agents.")
 
     logger.info(f"Open user sign in process beginning for: {auth0_user_id}, {email}, {name}")
 

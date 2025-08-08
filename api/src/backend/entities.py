@@ -446,6 +446,8 @@ class Inference(BaseModel):
     total_tokens: int
     created_at: datetime
     finished_at: Optional[datetime]
+    provider: Optional[str] = None
+    status_code: Optional[int] = None
 
 class InferenceSummary(BaseModel):
     """Simplified inference model with only essential fields"""
