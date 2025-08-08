@@ -1,5 +1,8 @@
+import httpx
 from loggers.logging_utils import get_logger
-from validator.tasks.set_weights import set_weights
+from validator.tasks.set_weights import set_weights_from_mapping
+from validator.utils.http_client import get_shared_client
+from validator.config import RIDGES_API_URL
 from ddtrace import tracer
 
 logger = get_logger(__name__)
@@ -7,40 +10,27 @@ logger = get_logger(__name__)
 @tracer.wrap(resource="handle-set-weights")
 async def handle_set_weights(websocket_app, json_message):
     """Handle a `set-weights` websocket event.
-
-    Expected payload::
-
-        {
-            "event": "set-weights",
-            "data": {
-                "miner_hotkey": "<MINER_HOTKEY>",
-                "version_id": "<VERSION_UUID>",  # for logging
-                "avg_score": 0.32                  # for logging
-            }
-        }
-
-    Only the ``miner_hotkey`` field is mandatory.  The function resolves the miner's UID
-    on-chain and sets the validator's weights accordingly (all weight to that miner
-    subject to chain constraints).
+    
+    Fetches weights from the API endpoint and sets them on chain
     """
-
-    # Preferred: payload under "data".
-    payload = json_message.get("data", {}) if isinstance(json_message.get("data", {}), dict) else {}
-    hotkey = payload.get("miner_hotkey")
-
-    if hotkey is None:
-        logger.error("Received set-weights event without a 'hotkey' field – ignoring")
-        return
-
-    version_id = payload.get("version_id") or json_message.get("version_id")
-    avg_score = payload.get("avg_score") or json_message.get("avg_score")
-
-    logger.info(
-        f"Received set-weights event – hotkey={hotkey}, version_id={version_id}, avg_score={avg_score}"
-    )
+    logger.info("Received set-weights event – fetching weights from API")
 
     try:
-        await set_weights(best_miner_hotkey=hotkey)
-        logger.info(f"Successfully processed set-weights event for hotkey {hotkey}")
+        # Fetch weights from the API endpoint
+        async with get_shared_client() as client:
+            response = await client.get(f"{RIDGES_API_URL}/scoring/weights")
+            response.raise_for_status()
+            weights_mapping = response.json()
+        
+        logger.info(f"Retrieved weights mapping with {len(weights_mapping)} hotkeys")
+        
+        # Set weights on chain according to the mapping
+        await set_weights_from_mapping(weights_mapping)
+        logger.info("Successfully processed set-weights event")
+        
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error fetching weights: {e.response.status_code} - {e.response.text}")
+    except httpx.RequestError as e:
+        logger.error(f"Request error fetching weights: {e}")
     except Exception as e:
-        logger.error(f"Failed to process set-weights event for hotkey {hotkey}: {e}") 
+        logger.error(f"Failed to process set-weights event: {e}") 

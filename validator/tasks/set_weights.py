@@ -80,21 +80,18 @@ def query_version_key(substrate: SubstrateInterface) -> int | None:
     return version_key_query.value
 
 
-@tracer.wrap(resource="set-weights")
-async def set_weights(best_miner_hotkey: str | None = None):
-    """Set all validator weight to the miner identified by ``best_miner_hotkey``.
-
-    The function **must** receive a hotkey.  If none is provided the call is
-    aborted (no on-chain transaction is submitted).
+@tracer.wrap(resource="set-weights-from-mapping")
+async def set_weights_from_mapping(weights_mapping: dict[str, float]):
+    """Set validator weights according to a mapping of hotkey to weight.
+    
+    Args:
+        weights_mapping: Dictionary mapping hotkey strings to float weights
     """
     try:
         keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
         substrate = interface.get_substrate(SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS)
 
         validator_node_id = query_node_id(substrate)
-        # version_key = query_version_key(substrate)
-        # if version_key is None:
-        #     # Fallback to static config value if on-chain query fails
         version_key = VERSION_KEY
 
         logger.info(f"Validator node ID: {validator_node_id}, Version key: {version_key}")
@@ -104,23 +101,19 @@ async def set_weights(best_miner_hotkey: str | None = None):
             return
 
         nodes = get_nodes_for_netuid(substrate, NETUID)
-
-        if best_miner_hotkey is None:
-            logger.error("best_miner_hotkey must be provided for set_weights – aborting")
-            return
-
         scores = np.zeros(len(nodes), dtype=np.float32)
 
-        # Locate the node matching the provided hotkey (case-sensitive).
+        # Create mapping from hotkey to node index
         hotkey_to_idx = {node.hotkey: idx for idx, node in enumerate(nodes)}
 
-        target_idx = hotkey_to_idx.get(best_miner_hotkey)
-
-        if target_idx is None:
-            logger.error(f"Hotkey {best_miner_hotkey} not found among active nodes – aborting weight update")
-            return
-
-        scores[target_idx] = 1.0
+        # Set scores according to the weights mapping
+        for hotkey, weight in weights_mapping.items():
+            target_idx = hotkey_to_idx.get(hotkey)
+            if target_idx is not None:
+                scores[target_idx] = weight
+                logger.info(f"Setting weight {weight} for hotkey {hotkey}")
+            else:
+                logger.warning(f"Hotkey {hotkey} not found among active nodes – skipping")
 
         # Calculate the weights using L1 normalization
         raw_weights = normalize(scores, p=1, dim=0)
@@ -142,9 +135,7 @@ async def set_weights(best_miner_hotkey: str | None = None):
             logger.error(f"Failed to process weights with exception: {e}")
             return
 
-        logger.info(
-            f"Setting weights exclusively for hotkey {best_miner_hotkey} (uid={node_ids[0] if node_ids else 'N/A'})"
-        )
+        logger.info(f"Setting weights for {len(weights_mapping)} hotkeys")
 
         # Log the exact vector that will be submitted to the chain
         logger.info(f"Submitting weight vector: {list(zip(node_ids, node_weights))}")
