@@ -2,7 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List
+from typing import Dict, List
 
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
@@ -11,7 +11,7 @@ from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgentScored
-from api.src.backend.db_manager import get_transaction, new_db
+from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner
 
@@ -49,9 +49,31 @@ async def weight_receiving_agent():
     The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
     This will be deprecated shortly in favor of validators posting weight themselves
     ''' 
-    top_agent: TopAgentHotkey = await get_top_agent()
+    top_agent = await get_top_agent()
 
     return top_agent
+
+async def weights() -> Dict[str, float]:
+    """
+    Returns a dictionary of miner hotkeys to weights
+    """
+    DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
+
+    async with get_db_connection() as conn:
+        approved_agent_hotkeys_data = await conn.fetch("""
+            SELECT DISTINCT miner_hotkey FROM approved_version_ids
+            LEFT JOIN miner_agents ma on ma.version_id = approved_version_ids.version_id
+        """)
+        approved_agent_hotkeys = [row["miner_hotkey"] for row in approved_agent_hotkeys_data]
+
+    weights = {hotkey: DUST_WEIGHT for hotkey in approved_agent_hotkeys} 
+
+    top_agent = await get_top_agent()
+    if top_agent is not None:
+        weight_left = 1.0 - DUST_WEIGHT * len(approved_agent_hotkeys)
+        weights[top_agent.miner_hotkey] = weight_left
+
+    return weights
 
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -166,6 +188,7 @@ router = APIRouter()
 
 routes = [
     ("/check-top-agent", weight_receiving_agent, ["GET"]),
+    ("/weights", weights, ["GET"]),
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
