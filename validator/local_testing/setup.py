@@ -36,6 +36,7 @@ def setup_local_testing_environment():
     # Check Docker is available and running
     try:
         import docker
+        from docker.errors import DockerException, ImageNotFound, APIError
     except ImportError:
         console.print("Docker Python library not found", style="bold red")
         console.print("Install with: pip install docker", style="yellow")
@@ -45,7 +46,7 @@ def setup_local_testing_environment():
         client = docker.from_env()
         client.ping()
         console.print("Docker is running", style="green")
-    except docker.errors.DockerException as e:
+    except DockerException as e:
         console.print("Docker is not running or accessible", style="bold red")
         console.print("Please ensure Docker is:", style="yellow")
         console.print("  • Installed (https://docs.docker.com/get-docker/)", style="yellow")
@@ -79,12 +80,12 @@ def setup_local_testing_environment():
         try:
             client.images.get(image)
             console.print(f"Image {image} already exists", style="green")
-        except docker.errors.ImageNotFound:
+        except ImageNotFound:
             console.print(f"Pulling {image}...", style="yellow")
             try:
                 client.images.pull(image)
                 console.print(f"Successfully pulled {image}", style="green")
-            except docker.errors.APIError as e:
+            except APIError as e:
                 console.print(f"Failed to pull {image}", style="red")
                 console.print("This might be due to:", style="yellow")
                 console.print("  • Network connectivity issues", style="yellow")
@@ -102,12 +103,12 @@ def setup_local_testing_environment():
         try:
             client.images.get(image)
             console.print(f"Image {image} already exists", style="green")
-        except docker.errors.ImageNotFound:
+        except ImageNotFound:
             console.print(f"Pulling {image}...", style="yellow")
             try:
                 client.images.pull(image)
                 console.print(f"Successfully pulled {image}", style="green")
-            except docker.errors.APIError as e:
+            except APIError as e:
                 console.print(f"Failed to pull {image} (non-fatal): {e}", style="dim red")
                 # Don't raise error - these are optional for better testing experience
             except Exception as e:
