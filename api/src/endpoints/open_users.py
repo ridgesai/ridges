@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 import secrets
 import string
@@ -84,7 +85,7 @@ async def get_user_by_email(email: str, password: str):
         logger.error(f"Error getting user by email {email}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
     
-async def update_bittensor_hotkey(open_hotkey: str, bittensor_hotkey: str, password: str):
+async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hotkey: Optional[str] = None):
     if password != open_user_password:
         logger.warning(f"Someone tried to update bittensor hotkey with an invalid password. open_hotkey: {open_hotkey}, bittensor_hotkey: {bittensor_hotkey}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
