@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown"""
     # Startup
     logger.info("Starting proxy server...")
-    if ENV != 'dev':
+    if ENV != 'dev' and db_manager is not None:
         await db_manager.open()
         logger.info("Database connection established")
     else:
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("Shutting down proxy server...")
-    if ENV != 'dev':
+    if ENV != 'dev' and db_manager is not None:
         await db_manager.close()
         logger.info("Database connection closed")
     else:
@@ -161,10 +161,10 @@ async def inference_endpoint(request: InferenceRequest):
             temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
             model = request.model if request.model is not None else DEFAULT_MODEL
             inference_result = await inference_manager.inference(
-                run_uuid,
-                request.messages,
-                temperature,
-                model
+                run_id=run_uuid,
+                messages=request.messages,
+                temperature=temperature,
+                model=model
             )
         else:
             # In dev mode or when run_id is None, skip all run_id operations
@@ -172,10 +172,10 @@ async def inference_endpoint(request: InferenceRequest):
             temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
             model = request.model if request.model is not None else DEFAULT_MODEL
             inference_result = await inference_manager.inference(
-                None,
-                request.messages,
-                temperature,
-                model
+                run_id=None,
+                messages=request.messages,
+                temperature=temperature,
+                model=model
             )
         
         # Truncate and log the first 200 chars of the response to avoid log spam
