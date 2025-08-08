@@ -1,4 +1,3 @@
-from typing import Optional
 from api.src.backend.entities import ValidatorQueueInfo, ScreenerQueueByStage
 
 async def get_queue_for_all_validators() -> list[ValidatorQueueInfo]: ...
