@@ -1,5 +1,5 @@
 from typing import Optional
-from api.src.backend.entities import EvaluationRun, EvaluationRunLog, EvaluationRunWithUsageDetails
+from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
 
 
 async def store_evaluation_run(evaluation_run: EvaluationRun) -> EvaluationRun: ...
