@@ -129,7 +129,7 @@ async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -
             (SELECT message->>'content' FROM jsonb_array_elements(messages) WITH ORDINALITY AS t(message, index) 
              WHERE message->>'role' = 'user' 
              ORDER BY index DESC LIMIT 1) as message, 
-            temperature, model, cost, response, total_tokens, created_at, finished_at 
+            temperature, model, cost, response, total_tokens, created_at, finished_at, provider, status_code
         from inferences 
         where run_id = $1;
     """, run_id)
