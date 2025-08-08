@@ -17,7 +17,7 @@ from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info
 
 
-websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws"
+websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws" if RIDGES_API_URL else None
 
 logger = get_logger(__name__)
 
@@ -147,6 +147,8 @@ class WebsocketApp:
     async def start(self):
         while True:
             try:
+                if websocket_url is None:
+                    raise RuntimeError("WebSocket URL is not configured")
                 async with websockets.connect(websocket_url, ping_timeout=None) as ws:
                     self.ws = ws
                     self._shutting_down = False  # Reset shutdown flag on new connection
