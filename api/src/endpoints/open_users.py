@@ -1,4 +1,5 @@
 from typing import Optional
+from bittensor_wallet.utils import is_valid_ss58_address
 from fastapi import APIRouter, HTTPException
 import secrets
 import string
@@ -89,7 +90,9 @@ async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hot
     if password != open_user_password:
         logger.warning(f"Someone tried to update bittensor hotkey with an invalid password. open_hotkey: {open_hotkey}, bittensor_hotkey: {bittensor_hotkey}, password: {password}")
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
-    
+
+    if bittensor_hotkey and not is_valid_ss58_address(bittensor_hotkey):
+        raise HTTPException(status_code=400, detail="Invalid bittensor hotkey. Please provide a valid SS58 address.")
     try:
         await db_update_open_user_bittensor_hotkey(open_hotkey, bittensor_hotkey)
         return {"success": True, "message": "Bittensor hotkey updated"}
