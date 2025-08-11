@@ -82,7 +82,8 @@ class DatabaseTestSetup:
 @pytest_asyncio.fixture
 async def async_client():
     """Async HTTP client for testing FastAPI endpoints"""
-    async with AsyncClient(app=app, base_url="http://testserver") as client:
+    from httpx import ASGITransport
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
         yield client
 
 

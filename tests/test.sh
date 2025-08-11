@@ -188,23 +188,23 @@ cd "$TESTS_DIR"
 # First, run unit tests that don't require database
 print_status "Running unit tests that don't require database..."
 cd "$TESTS_DIR"
-uv run python -m pytest test_endpoints_unit.py::TestSystemStatusEndpointsUnit -v
+uv run python -m pytest test_endpoints_unit.py::TestSystemStatusEndpointsUnit -v -W ignore::PendingDeprecationWarning
 
 # Run simple tests that don't require database
 print_status "Running simple tests..."
-uv run python -m pytest test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v
+uv run python -m pytest test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v -W ignore::PendingDeprecationWarning
 
 # Run weights function tests
 print_status "Running weights function tests..."
-uv run python -m pytest test_weights_setting.py -v
+uv run python -m pytest test_weights_setting.py -v -W ignore::PendingDeprecationWarning
 
 # Run miner agent flow tests
 print_status "Running miner agent flow tests..."
-uv run python -m pytest test_miner_agent_flow.py -v
+uv run python -m pytest test_miner_agent_flow.py -v -W ignore::PendingDeprecationWarning
 
 # Run real API tests (these require the API server)
 print_status "Running real API integration tests..."
-uv run python -m pytest test_real_api.py -v
+uv run python -m pytest test_real_api.py -v -W ignore::PendingDeprecationWarning
 
 # For now, skip the problematic integration tests and run a subset that works
 print_status "Running basic tests with coverage..."
@@ -220,7 +220,8 @@ uv run python -m pytest \
     --cov-report=html \
     -v \
     --tb=short \
-    --disable-warnings
+    --disable-warnings \
+    -W ignore::PendingDeprecationWarning
 
 print_success "All tests completed successfully!"
 

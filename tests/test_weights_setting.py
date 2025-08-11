@@ -66,7 +66,8 @@ async def initialized_app():
 @pytest_asyncio.fixture
 async def async_client(initialized_app):
     """Async HTTP client for testing FastAPI endpoints"""
-    async with AsyncClient(app=initialized_app, base_url="http://testserver") as client:
+    from httpx import ASGITransport
+    async with AsyncClient(transport=ASGITransport(app=initialized_app), base_url="http://testserver") as client:
         yield client
 
 
