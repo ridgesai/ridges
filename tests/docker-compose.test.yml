@@ -21,18 +21,5 @@ services:
       retries: 5
     restart: unless-stopped
 
-  redis-test:
-    image: redis:7-alpine
-    ports:
-      - "6380:6379"  # Different port to avoid conflicts
-    tmpfs:
-      - /data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    restart: unless-stopped
-
 volumes:
   postgres_test_data:
