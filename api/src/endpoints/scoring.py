@@ -13,7 +13,7 @@ from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_a
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
-from api.src.utils.slack import notify_unregistered_top_miner
+from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
 
 load_dotenv()
 
@@ -56,6 +56,11 @@ async def get_treasury_hotkey():
         if not treasury_hotkey_data:
             raise ValueError("No active treasury wallets found in database")
         treasury_hotkey = treasury_hotkey_data[0]["hotkey"]
+
+        if not check_if_hotkey_is_registered(treasury_hotkey):
+            logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
+            await notify_unregistered_treasury_hotkey(treasury_hotkey)
+        
         return treasury_hotkey
 
 async def weights() -> Dict[str, float]:

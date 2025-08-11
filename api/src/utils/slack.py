@@ -284,3 +284,16 @@ async def notify_unregistered_top_miner(miner_hotkey: str):
         )
     except Exception as e:
         logger.error(f"Error sending Slack notification: {str(e)}")
+
+async def notify_unregistered_treasury_hotkey(treasury_hotkey: str):
+    if slack_bot_token is None:
+        logger.error("Attempted to send Slack notification but SLACK_BOT_TOKEN is not configured")
+
+    try:
+        client = WebClient(token=slack_bot_token)
+        client.chat_postMessage(
+            channel="custom-notifications",
+            text=f"WARNING: `{treasury_hotkey}` is not a registered hotkey on our subnet",
+        )
+    except Exception as e:
+        logger.error(f"Error sending Slack notification: {str(e)}")
