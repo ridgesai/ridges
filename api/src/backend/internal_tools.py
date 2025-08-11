@@ -5,8 +5,10 @@ import atexit
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
-
+from dotenv import load_dotenv
 import asyncpg
+
+load_dotenv()
 
 class InternalTools:
 
