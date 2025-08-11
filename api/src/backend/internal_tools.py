@@ -5,6 +5,7 @@ import atexit
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
+from datetime import datetime
 
 import asyncpg
 
@@ -113,4 +114,43 @@ class InternalTools:
 
         async with self.acquire() as conn:
             value = await conn.fetchval(query, miner_hotkeys, float(hours))
+            return float(value or 0.0)
+
+    async def get_emission_alpha_for_hotkeys_during_periods(
+        self,
+        periods: list[tuple[datetime, datetime]],
+        miner_hotkeys: list[str],
+    ) -> float:
+        if not miner_hotkeys or not periods:
+            return 0.0
+
+        valid_periods: list[tuple[datetime, datetime]] = [
+            (start, end) for start, end in periods if start is not None and end is not None and start < end
+        ]
+        if not valid_periods:
+            return 0.0
+
+        starts = [p[0] for p in valid_periods]
+        ends = [p[1] for p in valid_periods]
+
+        query = (
+            """
+            WITH period_bounds AS (
+                SELECT s AS start_at, e AS end_at
+                FROM unnest($2::timestamp[], $3::timestamp[]) AS t(s, e)
+            )
+            SELECT COALESCE(SUM(es.emission_alpha)::double precision, 0.0) AS total_alpha
+            FROM emission_snapshots AS es
+            WHERE es.hotkey = ANY($1::text[])
+              AND EXISTS (
+                SELECT 1
+                FROM period_bounds pb
+                WHERE es.occured_at >= pb.start_at
+                  AND es.occured_at < pb.end_at
+              );
+            """
+        )
+
+        async with self.acquire() as conn:
+            value = await conn.fetchval(query, miner_hotkeys, starts, ends)
             return float(value or 0.0)
