@@ -22,6 +22,7 @@ from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
+from api.src.backend.queries.scores import get_treasury_hotkeys
 
 load_dotenv()
 
@@ -304,7 +305,7 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str, hours: float) -> dict
     Returns the emission alpha for a given hotkey
     """
     try:
-        amount = await internal_tools.get_emission_alpha_for_hotkey(miner_hotkey=miner_hotkey, hours=hours)
+        amount = await internal_tools.get_emission_alpha_for_hotkeys(miner_hotkeys=[miner_hotkey], hours=hours)
         return {"amount": amount, "hours": hours, "miner_hotkey": miner_hotkey}
     except Exception as e:
         logger.error(f"Error retrieving emission alpha for hotkey {miner_hotkey}: {e}")

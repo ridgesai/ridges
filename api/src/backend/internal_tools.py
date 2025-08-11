@@ -97,16 +97,20 @@ class InternalTools:
         async with self._pool.acquire() as con:
             yield con
 
-    async def get_emission_alpha_for_hotkey(self, miner_hotkey: str, hours: float) -> float:
+
+    async def get_emission_alpha_for_hotkeys(self, miner_hotkeys: list[str], hours: float) -> float:
+        if not miner_hotkeys:
+            return 0.0
+
         query = (
             """
             SELECT COALESCE(SUM(es.emission_alpha)::double precision, 0.0) AS total_alpha
             FROM emission_snapshots AS es
-            WHERE es.hotkey = $1
+            WHERE es.hotkey = ANY($1::text[])
               AND es.occured_at >= NOW() - make_interval(secs => ($2::double precision) * 3600);
             """
         )
 
         async with self.acquire() as conn:
-            value = await conn.fetchval(query, miner_hotkey, float(hours))
+            value = await conn.fetchval(query, miner_hotkeys, float(hours))
             return float(value or 0.0)
