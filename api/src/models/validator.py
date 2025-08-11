@@ -153,12 +153,6 @@ class Validator(Client):
                 logger.info(f"Validator {self.hotkey}: Reset to available and looking for next evaluation")
                 await self._check_and_start_next_evaluation()
     
-    async def send_set_weights(self, data: dict):
-        """Send set weights message to validator"""
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        await ws_manager.send_to_client(self, {"event": "set-weights", "data": data})
-    
     async def _check_and_start_next_evaluation(self):
         """Atomically check for and start next evaluation - MUST be called within lock"""
         from api.src.models.evaluation import Evaluation
@@ -170,19 +164,21 @@ class Validator(Client):
             return
         
         # Check if validator has waiting work and get next evaluation atomically
-        if await Evaluation.has_waiting_for_validator(self):
-            evaluation_id = await self.get_next_evaluation()
-            if evaluation_id:
-                logger.info(f"Validator {self.hotkey} found next evaluation {evaluation_id} - automatically starting")
-                success = await self.start_evaluation_and_send(evaluation_id)
-                if success:
-                    logger.info(f"✅ Validator {self.hotkey} successfully auto-started next evaluation {evaluation_id}")
-                else:
-                    logger.warning(f"❌ Validator {self.hotkey} failed to auto-start evaluation {evaluation_id}")
-            else:
-                logger.warning(f"Validator {self.hotkey} has waiting work but no evaluation found - potential race condition")
+        if not await Evaluation.has_waiting_for_validator(self):
+            logger.info(f"Validator {self.hotkey} has no waiting work in queue")
+            return
+        
+        evaluation_id = await self.get_next_evaluation()
+        if not evaluation_id:
+            logger.warning(f"Validator {self.hotkey} has waiting work but no evaluation found - potential race condition")
+            return
+        
+        logger.info(f"Validator {self.hotkey} found next evaluation {evaluation_id} - automatically starting")
+        success = await self.start_evaluation_and_send(evaluation_id)
+        if success:
+            logger.info(f"✅ Validator {self.hotkey} successfully auto-started next evaluation {evaluation_id}")
         else:
-            logger.info(f"Validator {self.hotkey} finished work - no more evaluations waiting in queue")
+            logger.warning(f"❌ Validator {self.hotkey} failed to auto-start evaluation {evaluation_id}")
     
     @staticmethod
     async def get_connected() -> List['Validator']:

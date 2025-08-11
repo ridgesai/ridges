@@ -15,28 +15,17 @@ from api.src.backend.db_manager import get_transaction, new_db, get_db_connectio
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner
 
-SUBNET_TREASURY_HOTKEY = "5Ggwefhasiodhfsdf"
-
 load_dotenv()
 
 logger = get_logger(__name__)
 
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
-    top_agent = await weight_receiving_agent()
-    if not top_agent:
-        logger.info("No top agent found, skipping weight update")
-        return
-    
-    if not check_if_hotkey_is_registered(top_agent.miner_hotkey):
-        logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet, skipping weight update")
-        await notify_unregistered_top_miner(top_agent.miner_hotkey)
-        raise HTTPException(status_code=400, detail="Miner hotkey not registered on subnet")
-    
-    for validator in await Validator.get_connected():
-        await validator.send_set_weights(top_agent.model_dump(mode='json'))
 
-    logger.info(f"Sent updated top agent to all validators: {top_agent.miner_hotkey}")
+    for validator in await Validator.get_connected():
+        await validator.websocket.send_json({"event": "set-weights"})
+
+    logger.info(f"Sent weight setting event to all validators")
 
 async def run_weight_setting_loop(minutes: int):
     while True:
@@ -90,10 +79,14 @@ async def weights() -> Dict[str, float]:
 
     weight_left = 1.0 - DUST_WEIGHT * len(approved_agent_hotkeys)
     if top_agent.miner_hotkey.startswith("open-"):
-        treasury_hotkey = await get_treasury_hotkey()
-        weights[treasury_hotkey] = weight_left
+        weights[await get_treasury_hotkey()] = weight_left
     else:
-        weights[top_agent.miner_hotkey] = weight_left
+        if check_if_hotkey_is_registered(top_agent.miner_hotkey):
+            weights[top_agent.miner_hotkey] = weight_left
+        else:
+            logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet")
+            await notify_unregistered_top_miner(top_agent.miner_hotkey)
+            weights[await get_treasury_hotkey()] = weight_left
 
     return weights
 
