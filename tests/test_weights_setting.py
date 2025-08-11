@@ -93,6 +93,12 @@ async def setup_database_schema(conn: asyncpg.Connection):
 class TestWeightsSetting:
     """Test the weights function with various database states"""
     
+    @pytest.fixture(autouse=True)
+    def mock_check_registered(self):
+        """Mock check_if_hotkey_is_registered to always return True for testing"""
+        with patch('api.src.endpoints.scoring.check_if_hotkey_is_registered', return_value=True):
+            yield
+    
     @pytest.mark.asyncio
     async def test_weights_empty_database(self, async_client: AsyncClient, db_connection: asyncpg.Connection):
         """Test weights function with empty database - should return empty dict"""
@@ -531,10 +537,12 @@ class TestWeightsSetting:
     
     async def _setup_treasury_wallet(self, conn: asyncpg.Connection, hotkey: str = "test_treasury_hotkey"):
         """Setup a treasury wallet for testing"""
+        # First try to delete any existing record to avoid conflicts
+        await conn.execute("DELETE FROM treasury_wallets WHERE hotkey = $1", hotkey)
+        # Then insert the new record using the standard schema
         await conn.execute("""
             INSERT INTO treasury_wallets (hotkey, active)
             VALUES ($1, TRUE)
-            ON CONFLICT (hotkey) DO UPDATE SET active = TRUE
         """, hotkey)
         return hotkey
     

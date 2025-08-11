@@ -53,6 +53,8 @@ async def get_treasury_hotkey():
         treasury_hotkey_data = await conn.fetch("""
             SELECT hotkey FROM treasury_wallets WHERE active = TRUE ORDER BY created_at DESC LIMIT 1
         """)
+        if not treasury_hotkey_data:
+            raise ValueError("No active treasury wallets found in database")
         treasury_hotkey = treasury_hotkey_data[0]["hotkey"]
         return treasury_hotkey
 
