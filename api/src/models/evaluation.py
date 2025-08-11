@@ -8,9 +8,11 @@ import asyncio
 from api.src.backend.entities import EvaluationRun, MinerAgent, SandboxStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
+from api.src.backend.queries.agents import get_top_agent
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
+from api.src.utils.config import PRUNE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +123,7 @@ class Evaluation:
 
         # If it's a screener, handle stage-specific logic
         if self.is_screening:
+            
             stage = self.screener_stage
             threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
             if self.score < threshold:
@@ -133,19 +136,36 @@ class Evaluation:
                     from api.src.socket.websocket_manager import WebSocketManager
                     ws_manager = WebSocketManager.get_instance()
                     for client in ws_manager.clients.values():
-                        if (client.get_type() == "screener" and 
-                            client.stage == 2 and 
-                            client.is_available()):
-                            stage2_screener_to_notify = client
+                        if client.get_type() != "screener":
+                            continue
+                        screener: Screener = client
+                        
+                        if screener.stage == 2 and screener.is_available():
+                            stage2_screener_to_notify = screener
                             break
                 elif stage == 2:
-                    # Stage 2 passed -> notify validators
+                    # Stage 2 passed -> check if we should prune immediately
+                    top_agent = await get_top_agent()
+                    
+                    if top_agent and self.score < top_agent.avg_score * PRUNE_THRESHOLD:
+                        # Score is too low, prune miner agent and don't create evaluations
+                        await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
+                        logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with score {self.score:.3f} (threshold: {top_agent.avg_score * PRUNE_THRESHOLD:.3f})")
+                        return {
+                            "stage2_screener": None,
+                            "validators": []
+                        }
+                    
+                    # Score is acceptable -> notify validators
                     from api.src.models.validator import Validator
 
                     # Create evaluation records but don't notify yet
                     validators_to_notify = await Validator.get_connected()
                     for validator in validators_to_notify:
                         await self.create_for_validator(conn, self.version_id, validator.hotkey, self.score)
+                    
+                    # Prune low-scoring evaluations after creating validator evaluations
+                    await Evaluation.prune_low_waiting(conn)
 
         await self._update_agent_status(conn)
 
@@ -274,10 +294,16 @@ class Evaluation:
                AND validator_hotkey NOT LIKE 'i-0%'""", 
             self.version_id
         )
+        completed_count = await conn.fetchval(
+            """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status IN ('completed', 'pruned') 
+               AND validator_hotkey NOT LIKE 'screener-%' 
+               AND validator_hotkey NOT LIKE 'i-0%'""", 
+            self.version_id
+        )
 
         if waiting_count > 0 and running_count == 0:
             await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
-        elif waiting_count == 0 and running_count == 0:
+        elif waiting_count == 0 and running_count == 0 and completed_count > 0:
             await conn.execute("UPDATE miner_agents SET status = 'scored' WHERE version_id = $1", self.version_id)
         else:
             await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE version_id = $1", self.version_id)
@@ -687,3 +713,57 @@ class Evaluation:
             )
 
             logger.info("Application startup recovery completed with multi-stage screening support")
+
+    @staticmethod
+    async def prune_low_waiting(conn: asyncpg.Connection):
+        """Prune evaluations that aren't close enough to the top agent final validation score"""
+        # Get the top agent final validation score for the current set
+        top_agent = await get_top_agent()
+        
+        if not top_agent:
+            logger.info("No completed evaluations with final validation scores found for pruning")
+            return
+        
+        # Calculate the threshold (configurable lower-than-top final validation score)
+        threshold = top_agent.avg_score * PRUNE_THRESHOLD
+        
+        # Get current set_id for the query
+        max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+        
+        # Find evaluations that are more than 20% lower than the top final validation score
+        # We need to get the final validation scores from the agent_scores materialized view
+        low_score_evaluations = await conn.fetch("""
+            SELECT e.evaluation_id, e.version_id, e.validator_hotkey, ass.final_score
+            FROM evaluations e
+            JOIN miner_agents ma ON e.version_id = ma.version_id
+            JOIN agent_scores ass ON e.version_id = ass.version_id AND e.set_id = ass.set_id
+            WHERE e.set_id = $1 
+            AND e.status = 'waiting'
+            AND ass.final_score IS NOT NULL
+            AND ass.final_score < $2
+            AND ma.status NOT IN ('pruned', 'replaced')
+        """, max_set_id, threshold)
+        
+        if not low_score_evaluations:
+            logger.info(f"No evaluations found below threshold {threshold:.3f} (top final validation score: {top_agent.avg_score:.3f})")
+            return
+        
+        # Get unique version_ids to prune
+        version_ids_to_prune = list(set(eval['version_id'] for eval in low_score_evaluations))
+        
+        # Update evaluations to pruned status
+        await conn.execute("""
+            UPDATE evaluations 
+            SET status = 'pruned', finished_at = NOW() 
+            WHERE evaluation_id = ANY($1)
+        """, [eval['evaluation_id'] for eval in low_score_evaluations])
+        
+        # Update miner_agents to pruned status
+        await conn.execute("""
+            UPDATE miner_agents 
+            SET status = 'pruned' 
+            WHERE version_id = ANY($1)
+        """, version_ids_to_prune)
+        
+        logger.info(f"Pruned {len(low_score_evaluations)} evaluations and {len(version_ids_to_prune)} agents below threshold {threshold:.3f} (top final validation score: {top_agent.avg_score:.3f})")
+
