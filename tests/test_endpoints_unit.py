@@ -38,11 +38,9 @@ client = TestClient(create_test_app())
 class TestUploadEndpointsUnit:
     """Unit tests for upload endpoints with mocked dependencies"""
     
-    @patch('api.src.endpoints.upload.get_registration_count')
-    @patch('api.src.endpoints.upload.upload_agent_file_to_s3')
-    @patch('api.src.endpoints.upload.generate_agent_summary.delay')
+    @patch('api.src.utils.s3.S3Manager.upload_file_object')
+    @patch('api.src.utils.agent_summary_generator.generate_agent_summary')
     @patch('api.src.utils.upload_agent_helpers.check_code_similarity')
-    @patch('api.src.utils.upload_agent_helpers.validate_agent_code')
     @patch('api.src.backend.db_manager.get_transaction')
     def test_upload_agent_success_mocked(
         self, mock_get_transaction, mock_validate_code, mock_check_similarity,

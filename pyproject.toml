@@ -30,6 +30,7 @@ dependencies = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",
+    "pytest-postgresql>=7.0.2",
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",

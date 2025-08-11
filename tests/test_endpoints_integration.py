@@ -94,11 +94,9 @@ class TestUploadEndpoints:
         """Test successful agent upload flow"""
         
         # Mock external dependencies
-        with patch('api.src.endpoints.upload.get_registration_count', return_value=100), \
-             patch('api.src.endpoints.upload.upload_agent_file_to_s3', return_value="s3://test-bucket/test-agent.py"), \
-             patch('api.src.endpoints.upload.generate_agent_summary.delay'), \
-             patch('api.src.utils.upload_agent_helpers.check_code_similarity', return_value=0.3), \
-             patch('api.src.utils.upload_agent_helpers.validate_agent_code', return_value=True):
+        with patch('api.src.utils.s3.S3Manager.upload_file_object', return_value="s3://test-bucket/test-agent.py"), \
+             patch('api.src.utils.agent_summary_generator.generate_agent_summary'), \
+             patch('api.src.utils.upload_agent_helpers.check_code_similarity', return_value=0.3):
             
             # Create test agent data
             agent_data = {

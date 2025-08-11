@@ -24,6 +24,8 @@ os.environ.setdefault('AWS_RDS_PLATFORM_DB_NAME', 'postgres')
 os.environ.setdefault('PGPORT', '5432')
 os.environ.setdefault('POSTGRES_TEST_URL', 'postgresql://test_user:test_pass@localhost:5432/postgres')
 
+# Database initialization will be handled by fixtures
+
 # Import after setting environment variables and path
 # Only import these if we're running integration tests
 # For unit tests, we'll import them lazily when needed
@@ -48,7 +50,7 @@ async def postgres_service():
     print("\nWaiting for PostgreSQL service to be ready...")
     # Use a direct connection check to ensure it's truly ready for connections
     conn = None
-    for _ in range(30): # Try for 30 seconds
+    for _ in range(60): # Try for 60 seconds (increased timeout)
         try:
             conn = await asyncpg.connect(
                 user=os.getenv('POSTGRES_USER', 'test_user'),
@@ -60,8 +62,8 @@ async def postgres_service():
             print("PostgreSQL service is ready.")
             break
         except (asyncpg.exceptions.PostgresError, OSError) as e:
-            print(f"PostgreSQL not ready yet: {e}. Retrying...")
-            await asyncio.sleep(1)
+            print(f"PostgreSQL not ready yet: {e}. Retrying... ({_+1}/60)")
+            await asyncio.sleep(2)  # Increased sleep time
     if conn:
         await conn.close()
     else:
@@ -83,16 +85,42 @@ async def db_setup(postgres_service):
 
     # Initialize the global new_db instance with the test database
     # This ensures all application code uses the test database
-    await new_db.open()
+    try:
+        await new_db.open()
+        print("Database connection pool opened successfully")
+    except Exception as e:
+        print(f"Error opening database connection pool: {e}")
+        pytest.fail(f"Failed to initialize database connection pool: {e}")
     
     # Setup database schema for integration tests
-    async with new_db.acquire() as conn:
-        await setup_database_schema(conn)
+    try:
+        async with new_db.acquire() as conn:
+            await setup_database_schema(conn)
+        print("Database schema setup completed")
+    except Exception as e:
+        print(f"Error setting up database schema: {e}")
+        pytest.fail(f"Failed to setup database schema: {e}")
     
     yield True # Tests run here
 
     # Cleanup after all tests in the session
-    await new_db.close()
+    try:
+        await new_db.close()
+        print("Database connection pool closed successfully")
+    except Exception as e:
+        print(f"Error closing database connection pool: {e}")
+
+@pytest_asyncio.fixture(scope="function")
+async def db_conn(db_setup):
+    """Provide a database connection for each test function."""
+    from api.src.backend.db_manager import new_db
+    
+    # Ensure the connection pool is initialized
+    if not new_db.pool:
+        await new_db.open()
+    
+    async with new_db.acquire() as conn:
+        yield conn
 
 async def setup_database_schema(conn: asyncpg.Connection):
     """Setup database schema for integration tests"""
