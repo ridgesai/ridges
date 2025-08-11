@@ -34,6 +34,7 @@ async def get_treasury_hotkeys(conn: asyncpg.Connection) -> list[str]:
     """
     Returns a list of all treasury hotkeys
     """
-    return await conn.fetch("""
+    rows = await conn.fetch("""
         SELECT hotkey FROM treasury_wallets WHERE active = TRUE
     """)
+    return [r["hotkey"] for r in rows]

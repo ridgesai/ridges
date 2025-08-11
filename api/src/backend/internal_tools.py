@@ -5,12 +5,9 @@ import atexit
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
-from dotenv import load_dotenv
 import asyncpg
-
-load_dotenv()
 
 class InternalTools:
 
@@ -133,8 +130,14 @@ class InternalTools:
         if not valid_periods:
             return 0.0
 
-        starts = [p[0] for p in valid_periods]
-        ends = [p[1] for p in valid_periods]
+        def _to_naive_utc(dt: datetime) -> datetime:
+            # Convert aware datetimes to naive UTC; leave naive as-is (assumed UTC)
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
+        starts = [_to_naive_utc(p[0]) for p in valid_periods]
+        ends = [_to_naive_utc(p[1]) for p in valid_periods]
 
         query = (
             """
