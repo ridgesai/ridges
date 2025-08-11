@@ -21,6 +21,16 @@ jobs:
           - 5432:5432
         options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
       
+      postgres-internal:
+        image: postgres:15
+        env:
+          POSTGRES_DB: internal_tools
+          POSTGRES_USER: internal_user
+          POSTGRES_PASSWORD: internal_pass
+        ports:
+          - 5433:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      
 
     
     env:
@@ -30,6 +40,11 @@ jobs:
       AWS_RDS_PLATFORM_ENDPOINT: localhost
       AWS_RDS_PLATFORM_DB_NAME: postgres
       PGPORT: 5432
+      DB_USER_INT: internal_user
+      DB_PASS_INT: internal_pass
+      DB_HOST_INT: localhost
+      DB_PORT_INT: 5433
+      DB_NAME_INT: internal_tools
     
     steps:
     - uses: actions/checkout@v4
@@ -53,6 +68,10 @@ jobs:
         echo "Environment variables:"
         echo "POSTGRES_TEST_URL: $POSTGRES_TEST_URL"
         echo "AWS_MASTER_USERNAME: $AWS_MASTER_USERNAME"
+        echo "DB_USER_INT: $DB_USER_INT"
+        echo "DB_HOST_INT: $DB_HOST_INT"
+        echo "DB_PORT_INT: $DB_PORT_INT"
+        echo "DB_NAME_INT: $DB_NAME_INT"
     
     - name: Start the API server
       run: |
