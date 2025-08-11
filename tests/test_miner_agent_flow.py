@@ -1000,6 +1000,103 @@ class TestAgentLifecycleFlow:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_prune_low_waiting_by_screener_score_integration(self):
+        """Test that prune_low_waiting prunes evaluations with low screener scores."""
+        from api.src.models.evaluation import Evaluation
+        from api.src.utils.config import PRUNE_THRESHOLD
+        import os
+        import uuid
+        
+        # Create a direct database connection for this test to avoid event loop conflicts
+        db_conn = await asyncpg.connect(
+            user=os.getenv('AWS_MASTER_USERNAME'),
+            password=os.getenv('AWS_MASTER_PASSWORD'),
+            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
+            port=int(os.getenv('PGPORT', '5432')),
+            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+        )
+        
+        try:
+            # Reset relevant tables
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys RESTART IDENTITY CASCADE")
+            
+            # Add evaluation set for current set_id
+            set_id = 1
+            await db_conn.execute(
+                "INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES ($1, 'validator', 'test-instance') ON CONFLICT DO NOTHING",
+                set_id
+            )
+
+            # Create top agent with high validation scores for threshold calculation
+            top_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
+                top_version,
+            )
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute(
+                """
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
+                VALUES ($1,$2,'validator-1',$3,'completed',NOW(),NOW(),0.90),
+                       ($4,$2,'validator-2',$3,'completed',NOW(),NOW(),0.90),
+                       ($5,$2,'validator-5',$3,'completed',NOW(),NOW(),0.89)
+                """,
+                str(uuid.uuid4()), top_version, set_id, str(uuid.uuid4()), str(uuid.uuid4())
+            )
+
+            # Create agent with good screener score (above threshold)
+            good_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_good','good_agent',1,NOW(),'waiting')",
+                good_version,
+            )
+            good_eval_id = str(uuid.uuid4())
+            # Good screener score (0.8) which is above PRUNE_THRESHOLD * top_score (0.75 * 0.9 = 0.675)
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-3',$3,'waiting',NOW(),0.8)",
+                good_eval_id, good_version, set_id
+            )
+
+            # Create agent with low screener score (below threshold)
+            low_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_low','low_agent',1,NOW(),'waiting')",
+                low_version,
+            )
+            low_eval_id = str(uuid.uuid4())
+            # Low screener score (0.5) which is below PRUNE_THRESHOLD * top_score (0.75 * 0.9 = 0.675)
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-4',$3,'waiting',NOW(),0.5)",
+                low_eval_id, low_version, set_id
+            )
+
+            # Refresh materialized view to ensure top agent is available
+            await db_conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+
+            # Call prune_low_waiting
+            await Evaluation.prune_low_waiting(db_conn)
+
+            # Check that low scoring evaluation was pruned
+            low_status = await db_conn.fetchval("SELECT status FROM evaluations WHERE evaluation_id = $1", low_eval_id)
+            assert low_status == 'pruned', f"Expected low scoring evaluation to be pruned, but status is {low_status}"
+            
+            # Check that low scoring agent was pruned
+            low_agent_status = await db_conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", low_version)
+            assert low_agent_status == 'pruned', f"Expected low scoring agent to be pruned, but status is {low_agent_status}"
+
+            # Check that good scoring evaluation remains waiting
+            good_status = await db_conn.fetchval("SELECT status FROM evaluations WHERE evaluation_id = $1", good_eval_id)
+            assert good_status == 'waiting', f"Expected good scoring evaluation to remain waiting, but status is {good_status}"
+            
+            # Check that good scoring agent remains waiting
+            good_agent_status = await db_conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", good_version)
+            assert good_agent_status == 'waiting', f"Expected good scoring agent to remain waiting, but status is {good_agent_status}"
+
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_screener2_immediate_prune_integration(self):
         """Screener-2 finish prunes agent below threshold and does not create validator evaluations."""
         from api.src.models.evaluation import Evaluation
