@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
+from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
@@ -21,12 +21,14 @@ from api.src.backend.queries.queue import get_queue_for_all_validators as db_get
 from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances, get_latest_set_id
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
+from api.src.backend.internal_tools import InternalTools
 
 load_dotenv()
 
 logger = get_logger(__name__)
 
 s3_manager = S3Manager()
+internal_tools = InternalTools()
 
 async def get_agent_code(version_id: str, return_as_text: bool = False):
     agent_version = await get_agent_by_version_id(version_id=version_id)
@@ -296,6 +298,20 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             status_code=500,
             detail="Internal server error while retrieving inferences"
         )
+    
+async def get_emission_alpha_for_hotkey(miner_hotkey: str, hours: float) -> dict[str, Any]:
+    """
+    Returns the emission alpha for a given hotkey
+    """
+    try:
+        amount = await internal_tools.get_emission_alpha_for_hotkey(miner_hotkey=miner_hotkey, hours=hours)
+        return {"amount": amount, "hours": hours, "miner_hotkey": miner_hotkey}
+    except Exception as e:
+        logger.error(f"Error retrieving emission alpha for hotkey {miner_hotkey}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving emission alpha"
+        )
 
 router = APIRouter()
 
@@ -319,7 +335,8 @@ routes = [
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
     ("/agents-from-hotkey", get_agents_from_hotkey),    
-    ("/inference-provider-statistics", get_inference_provider_statistics)
+    ("/inference-provider-statistics", get_inference_provider_statistics),
+    ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey)
 ]
 
 for path, endpoint in routes:
