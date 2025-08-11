@@ -28,3 +28,12 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
         logger.debug(f"No high score detected for version {version_id}: {result['reason']}")
     
     return result
+
+@db_operation
+async def get_treasury_hotkeys(conn: asyncpg.Connection) -> list[str]:
+    """
+    Returns a list of all treasury hotkeys
+    """
+    return await conn.fetch("""
+        SELECT hotkey FROM treasury_wallets WHERE active = TRUE
+    """)
