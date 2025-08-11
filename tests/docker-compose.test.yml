@@ -21,5 +21,28 @@ services:
       retries: 5
     restart: unless-stopped
 
+  postgres-internal-test:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: internal_tools
+      POSTGRES_USER: internal_user
+      POSTGRES_PASSWORD: internal_pass
+      POSTGRES_INITDB_ARGS: "--auth-host=trust"
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - postgres_internal_test_data:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U internal_user -d internal_tools"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   postgres_test_data:
+  postgres_internal_test_data:

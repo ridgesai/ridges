@@ -76,6 +76,11 @@ export AWS_RDS_PLATFORM_ENDPOINT="localhost"
 export AWS_RDS_PLATFORM_DB_NAME="postgres"
 export PGPORT="5432"
 export API_BASE_URL="http://localhost:8000"
+export DB_USER_INT="internal_user"
+export DB_PASS_INT="internal_pass"
+export DB_HOST_INT="localhost"
+export DB_PORT_INT="5433"
+export DB_NAME_INT="internal_tools"
 
 print_status "Starting test environment setup..."
 print_status "Project root: $PROJECT_ROOT"
@@ -112,30 +117,48 @@ cd "$PROJECT_ROOT"
 uv sync
 uv add coverage pytest-cov ruff mypy requests websocket-client pytest-asyncio asyncpg httpx pytest-postgresql
 
-# Start PostgreSQL database
-print_status "Starting PostgreSQL database..."
+# Start PostgreSQL databases
+print_status "Starting PostgreSQL databases..."
 cd "$TESTS_DIR"
 STOP_CONTAINERS="true"
-docker-compose -f docker-compose.test.yml up -d postgres-test
+docker-compose -f docker-compose.test.yml up -d postgres-test postgres-internal-test
 
-# Wait for PostgreSQL to be ready
-print_status "Waiting for PostgreSQL to be ready..."
+# Wait for main PostgreSQL to be ready
+print_status "Waiting for main PostgreSQL to be ready..."
 for i in {1..30}; do
     if docker-compose -f docker-compose.test.yml exec -T postgres-test pg_isready -U test_user -d postgres &>/dev/null; then
-        print_success "PostgreSQL is ready"
+        print_success "Main PostgreSQL is ready"
         break
     fi
     if [ $i -eq 30 ]; then
-        print_error "PostgreSQL failed to start within 30 seconds"
+        print_error "Main PostgreSQL failed to start within 30 seconds"
         exit 1
     fi
-    print_status "Waiting for PostgreSQL... ($i/30)"
+    print_status "Waiting for main PostgreSQL... ($i/30)"
     sleep 1
 done
 
-# Initialize database schema
-print_status "Initializing database schema..."
+# Wait for internal tools PostgreSQL to be ready
+print_status "Waiting for internal tools PostgreSQL to be ready..."
+for i in {1..30}; do
+    if docker-compose -f docker-compose.test.yml exec -T postgres-internal-test pg_isready -U internal_user -d internal_tools &>/dev/null; then
+        print_success "Internal tools PostgreSQL is ready"
+        break
+    fi
+    if [ $i -eq 30 ]; then
+        print_error "Internal tools PostgreSQL failed to start within 30 seconds"
+        exit 1
+    fi
+    print_status "Waiting for internal tools PostgreSQL... ($i/30)"
+    sleep 1
+done
+
+# Initialize database schemas
+print_status "Initializing main database schema..."
 docker-compose -f docker-compose.test.yml exec -T postgres-test psql -U test_user -d postgres -f /docker-entrypoint-initdb.d/init-test-db.sql
+
+print_status "Initializing internal tools database schema..."
+docker-compose -f docker-compose.test.yml exec -T postgres-internal-test psql -U internal_user -d internal_tools -f /docker-entrypoint-initdb.d/init-test-db.sql
 
 # Set up environment for API server
 print_status "Setting up environment for API server..."
@@ -164,6 +187,11 @@ export AWS_RDS_PLATFORM_ENDPOINT="localhost"
 export AWS_RDS_PLATFORM_DB_NAME="postgres"
 export PGPORT="5432"
 export API_BASE_URL="http://localhost:8000"
+export DB_USER_INT="internal_user"
+export DB_PASS_INT="internal_pass"
+export DB_HOST_INT="localhost"
+export DB_PORT_INT="5433"
+export DB_NAME_INT="internal_tools"
 
 # Start the API server
 print_status "Starting API server..."
@@ -173,16 +201,16 @@ print_status "API server started with PID: $SERVER_PID"
 
 # Wait for server to start
 print_status "Waiting for API server to be ready..."
-for i in {1..30}; do
+for i in {1..10}; do
     if curl -f http://localhost:8000/healthcheck &>/dev/null; then
         print_success "API server is ready"
         break
     fi
-    if [ $i -eq 30 ]; then
-        print_error "API server failed to start within 30 seconds"
+    if [ $i -eq 10 ]; then
+        print_error "API server failed to start within 10 seconds"
         exit 1
     fi
-    print_status "Waiting for API server... ($i/30)"
+    print_status "Waiting for API server... ($i/10)"
     sleep 1
 done
 
