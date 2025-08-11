@@ -712,6 +712,9 @@ class Evaluation:
                 "UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')"
             )
 
+            # Prune low-scoring evaluations that should not continue waiting
+            await Evaluation.prune_low_waiting(conn)
+
             logger.info("Application startup recovery completed with multi-stage screening support")
 
     @staticmethod
