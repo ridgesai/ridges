@@ -11,7 +11,7 @@ from .chutes_provider import ChutesProvider
 from .targon_provider import TargonProvider
 
 from proxy.models import GPTMessage
-from proxy.config import ENV, MODEL_PRICING
+from proxy.config import ENV
 from proxy.database import create_inference, update_inference
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class InferenceManager:
         available_models = []
         for provider in self.providers:
             if provider.is_available():
-                for model_name in MODEL_PRICING.keys():
+                for model_name in ChutesProvider.model_pricing.keys():
                     if provider.supports_model(model_name):
                         available_models.append(model_name)
         

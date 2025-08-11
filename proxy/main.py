@@ -1,4 +1,6 @@
 from dotenv import load_dotenv
+
+from proxy.providers.chutes_provider import ChutesProvider
 load_dotenv("proxy/.env")
 
 import os
@@ -34,6 +36,9 @@ async def lifespan(app: FastAPI):
         logger.info("Database connection established")
     else:
         logger.info("Running in dev mode - skipping database connection")
+    
+    # Load model pricing
+    await ChutesProvider.load_model_pricing()
     
     yield
     
