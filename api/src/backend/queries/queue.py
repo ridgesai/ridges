@@ -29,6 +29,7 @@ async def get_queue_for_all_validators(
             WHERE e.status = 'waiting'
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND m.miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
+            AND m.status NOT IN ('pruned', 'replaced')
             GROUP BY e.validator_hotkey
             ORDER BY queue_size DESC;
         """,
@@ -75,6 +76,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
         FROM miner_agents 
         WHERE status = 'awaiting_screening_1'
         AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
+        AND status NOT IN ('pruned', 'replaced')
         ORDER BY created_at ASC
         """,
     )
@@ -92,6 +94,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
         FROM miner_agents 
         WHERE status = 'awaiting_screening_2'
         AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
+        AND status NOT IN ('pruned', 'replaced')
         ORDER BY created_at ASC
         """,
     )
