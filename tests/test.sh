@@ -34,10 +34,22 @@ cleanup() {
     print_status "Cleaning up..."
     
     # Stop the API server if it's running
-    if [ ! -z "$SERVER_PID" ]; then
-        print_status "Stopping API server (PID: $SERVER_PID)..."
-        kill $SERVER_PID 2>/dev/null || true
-    fi
+if [ ! -z "$SERVER_PID" ]; then
+    print_status "Stopping API server (PID: $SERVER_PID)..."
+    # Send SIGTERM for graceful shutdown
+    kill -TERM $SERVER_PID 2>/dev/null || true
+    # Wait up to 5 seconds for graceful shutdown
+    for i in {1..5}; do
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    # Force kill if still running
+    kill -KILL $SERVER_PID 2>/dev/null || true
+    # Wait for final termination
+    wait $SERVER_PID 2>/dev/null || true
+fi
     
     # Stop Docker containers
     if [ "$STOP_CONTAINERS" = "true" ]; then
