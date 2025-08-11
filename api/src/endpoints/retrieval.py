@@ -134,7 +134,6 @@ async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = No
 async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
     try:
         logs = await db_get_evaluation_run_logs(run_id)
-        print(logs)
     except Exception as e:
         logger.error(f"Error retrieving logs for run {run_id}: {e}")
         raise HTTPException(

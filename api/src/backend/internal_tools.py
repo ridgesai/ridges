@@ -7,7 +7,10 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime
 
+from dotenv import load_dotenv
 import asyncpg
+
+load_dotenv()
 
 class InternalTools:
 

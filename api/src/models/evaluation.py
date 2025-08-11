@@ -5,10 +5,9 @@ from typing import List, Optional, Tuple
 import asyncpg
 import asyncio
 
-from api.src.backend.entities import EvaluationRun, MinerAgent, SandboxStatus
+from api.src.backend.entities import EvaluationRun, MinerAgent, MinerAgentScored, SandboxStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
-from api.src.backend.queries.agents import get_top_agent
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -145,7 +144,7 @@ class Evaluation:
                             break
                 elif stage == 2:
                     # Stage 2 passed -> check if we should prune immediately
-                    top_agent = await get_top_agent()
+                    top_agent = await MinerAgentScored.get_top_agent(conn)
                     
                     if top_agent and self.score < top_agent.avg_score * PRUNE_THRESHOLD:
                         # Score is too low, prune miner agent and don't create evaluations
@@ -721,7 +720,7 @@ class Evaluation:
     async def prune_low_waiting(conn: asyncpg.Connection):
         """Prune evaluations that aren't close enough to the top agent final validation score"""
         # Get the top agent final validation score for the current set
-        top_agent = await get_top_agent()
+        top_agent = await MinerAgentScored.get_top_agent(conn)
         
         if not top_agent:
             logger.info("No completed evaluations with final validation scores found for pruning")
@@ -733,22 +732,21 @@ class Evaluation:
         # Get current set_id for the query
         max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
         
-        # Find evaluations that are more than 20% lower than the top final validation score
-        # We need to get the final validation scores from the agent_scores materialized view
+        # Find evaluations with low screener scores that should be pruned
+        # We prune based on screener_score being below screening thresholds
         low_score_evaluations = await conn.fetch("""
-            SELECT e.evaluation_id, e.version_id, e.validator_hotkey, ass.final_score
+            SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.screener_score
             FROM evaluations e
             JOIN miner_agents ma ON e.version_id = ma.version_id
-            JOIN agent_scores ass ON e.version_id = ass.version_id AND e.set_id = ass.set_id
             WHERE e.set_id = $1 
             AND e.status = 'waiting'
-            AND ass.final_score IS NOT NULL
-            AND ass.final_score < $2
+            AND e.screener_score IS NOT NULL
+            AND e.screener_score < $2
             AND ma.status NOT IN ('pruned', 'replaced')
         """, max_set_id, threshold)
         
         if not low_score_evaluations:
-            logger.info(f"No evaluations found below threshold {threshold:.3f} (top final validation score: {top_agent.avg_score:.3f})")
+            logger.info(f"No evaluations found with screener_score below threshold {threshold}")
             return
         
         # Get unique version_ids to prune
@@ -768,5 +766,5 @@ class Evaluation:
             WHERE version_id = ANY($1)
         """, version_ids_to_prune)
         
-        logger.info(f"Pruned {len(low_score_evaluations)} evaluations and {len(version_ids_to_prune)} agents below threshold {threshold:.3f} (top final validation score: {top_agent.avg_score:.3f})")
+        logger.info(f"Pruned {len(low_score_evaluations)} evaluations and {len(version_ids_to_prune)} agents with screener_score below threshold {threshold}")
 
