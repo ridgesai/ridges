@@ -19,12 +19,6 @@ from validator.config import (
     VERSION_KEY,
 )
 
-@tracer.wrap(resource="normalize")
-def normalize(x: np.ndarray, p: int = 2, dim: int = 0) -> np.ndarray:
-    """Normalize array using L-p norm"""
-    norm = np.linalg.norm(x, ord=p, axis=dim, keepdims=True)
-    return x / np.clip(norm, 1e-12, None)
-
 logger = get_logger(__name__)
 
 @tracer.wrap(resource="set-weights-with-timeout")
@@ -115,17 +109,17 @@ async def set_weights_from_mapping(weights_mapping: dict[str, float]):
             else:
                 logger.warning(f"Hotkey {hotkey} not found among active nodes – skipping")
 
-        # Calculate the weights using L1 normalization
-        raw_weights = normalize(scores, p=1, dim=0)
-
         # Create uids array
         uids = np.array([node.node_id for node in nodes])
         
+        if abs(sum(scores) - 1.0) > 1e-6:
+            logger.warning(f"Sum of weights is not 1.0: {sum(scores)}")
+
         # Process weights using the centralized function
         try:
             node_ids, node_weights = process_weights_for_netuid(
                 uids=uids,
-                weights=raw_weights,
+                weights=scores,
                 netuid=NETUID,
                 substrate=substrate,
                 nodes=nodes,
@@ -139,6 +133,7 @@ async def set_weights_from_mapping(weights_mapping: dict[str, float]):
 
         # Log the exact vector that will be submitted to the chain
         logger.info(f"Submitting weight vector: {list(zip(node_ids, node_weights))}")
+
 
         success = await _set_weights_with_timeout(
             substrate=substrate,
