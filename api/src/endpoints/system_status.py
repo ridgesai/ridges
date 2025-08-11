@@ -127,7 +127,8 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE status = 'waiting') as waiting_agents,
                     COUNT(*) FILTER (WHERE status = 'evaluating') as evaluating_agents,
                     COUNT(*) FILTER (WHERE status = 'scored') as scored_agents,
-                    COUNT(*) FILTER (WHERE status = 'replaced') as replaced_agents
+                    COUNT(*) FILTER (WHERE status = 'replaced') as replaced_agents,
+                    COUNT(*) FILTER (WHERE status = 'pruned') as pruned_agents
                 FROM miner_agents
                 WHERE created_at >= NOW() - INTERVAL '24 hours'
             """)
@@ -139,6 +140,7 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE status = 'waiting') as waiting_evaluations,
                     COUNT(*) FILTER (WHERE status = 'running') as running_evaluations,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_evaluations,
+                    COUNT(*) FILTER (WHERE status = 'pruned') as pruned_evaluations,
                     COUNT(*) FILTER (WHERE status = 'error') as failed_evaluations,
                     COUNT(*) FILTER (WHERE status = 'replaced') as replaced_evaluations
                 FROM evaluations

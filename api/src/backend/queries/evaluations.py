@@ -89,7 +89,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
             OR (
                 (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                AND e.status IN ('completed', 'running')  -- Only successful/running screener evaluations
+                AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
             )
         )
         GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
@@ -209,7 +209,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
                 OR (
                     (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                    AND e.status IN ('completed', 'running')  -- Only successful/running screener evaluations
+                    AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
                 )
             )
             GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
@@ -290,7 +290,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 (validator_hotkey NOT LIKE 'screener-%' AND validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
                 OR (
                     (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                    AND status IN ('completed', 'running')  -- Only successful/running screener evaluations
+                    AND status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
                 )
             )
         )

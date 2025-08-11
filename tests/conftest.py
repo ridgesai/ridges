@@ -141,13 +141,7 @@ async def setup_database_schema(conn: asyncpg.Connection):
         ON CONFLICT DO NOTHING
     """)
 
-@pytest_asyncio.fixture
-async def db_conn(db_setup):
-    """Provide a database connection for individual tests."""
-    # db_setup is now a boolean indicating readiness
-    from api.src.backend.db_manager import new_db
-    async with new_db.acquire() as conn:
-        yield conn
+
 
 @pytest_asyncio.fixture
 async def async_client():

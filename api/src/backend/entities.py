@@ -280,6 +280,7 @@ class AgentStatus(Enum):
     evaluating = "evaluating"                          # Currently being evaluated
     scored = "scored"                                  # All evaluations complete
     replaced = "replaced"                              # Replaced by newer version
+    pruned = "pruned"                                  # Pruned due to low score compared to top agent
     
     # Legacy statuses for backward compatibility during transition
     awaiting_screening = "awaiting_screening_1"        # Map to stage 1
@@ -301,6 +302,7 @@ class AgentStatus(Enum):
             "evaluating": cls.evaluating,
             "scored": cls.scored,
             "replaced": cls.replaced,
+            "pruned": cls.pruned,
             # Legacy mappings for backward compatibility
             "awaiting_screening": cls.awaiting_screening_1,
             "screening": cls.screening_1,
@@ -317,6 +319,7 @@ class EvaluationStatus(Enum):
     error = "error"
     completed = "completed"
     cancelled = "cancelled"
+    pruned = "pruned"
 
     @classmethod
     def from_string(cls, status: str) -> 'EvaluationStatus':
@@ -328,6 +331,7 @@ class EvaluationStatus(Enum):
             "replaced": cls.replaced,
             "completed": cls.completed,
             "cancelled": cls.cancelled,
+            "pruned": cls.pruned,
         }
         return mapping.get(status, cls.error)
 
