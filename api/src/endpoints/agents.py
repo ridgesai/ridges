@@ -456,48 +456,54 @@ async def get_validator_progress(version_id: str) -> list[Dict[str, Any]]:
 
 @db_operation
 async def get_agent_final_score_data(conn: asyncpg.Connection, version_id: str) -> Dict[str, Any]:
-    """Get the final score for a completed agent version"""
+    """Get the final score for a completed agent version using the materialized view"""
     
-    # Query to get the final score for a specific version
-    # This should get the average score from all validator evaluations
-    # where the agent has completed the full pipeline
+    # Query the agent_scores materialized view which contains precomputed final scores
     result = await conn.fetchrow("""
         SELECT 
-            AVG(e.score) as final_score,
-            MAX(e.finished_at) as completed_at
-        FROM evaluations e
-        INNER JOIN miner_agents av ON e.version_id = av.version_id
-        WHERE e.version_id = $1 
-            AND e.status = 'result_scored'
-            AND e.score IS NOT NULL
-            AND e.set_id IS NULL  -- Only main validator evaluations, not screening
-        GROUP BY e.version_id
-        HAVING COUNT(e.evaluation_id) >= 3  -- Ensure enough evaluations for valid score
+            as.version_id,
+            as.miner_hotkey,
+            as.agent_name,
+            as.version_num,
+            as.created_at,
+            as.status,
+            as.agent_summary,
+            as.set_id,
+            as.approved,
+            as.validator_count,
+            as.final_score as score
+        FROM agent_scores as
+        WHERE as.version_id = $1
     """, version_id)
     
     if not result:
-        # Try alternative query if no main evaluations found
-        # Maybe the agent only has screening scores
-        result = await conn.fetchrow("""
-            SELECT 
-                AVG(e.score) as final_score,
-                MAX(e.finished_at) as completed_at
-            FROM evaluations e
-            WHERE e.version_id = $1 
-                AND e.status = 'result_scored'
-                AND e.score IS NOT NULL
-            GROUP BY e.version_id
-        """, version_id)
-        
-        if not result:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"No final score found for agent version {version_id}"
-            )
+        raise HTTPException(
+            status_code=404, 
+            detail=f"No final score found for agent version {version_id}. Agent may not have enough validator evaluations (need 2+) or scores may not be computed yet."
+        )
+    
+    # Get the latest completion timestamp from evaluations for this version
+    completion_result = await conn.fetchrow("""
+        SELECT MAX(e.finished_at) as completed_at
+        FROM evaluations e
+        WHERE e.version_id = $1 
+            AND e.status = 'completed'
+            AND e.score IS NOT NULL
+    """, version_id)
     
     return {
-        "score": float(result["final_score"]),
-        "completed_at": result["completed_at"].isoformat() if result["completed_at"] else None
+        "version_id": str(result["version_id"]),
+        "miner_hotkey": result["miner_hotkey"],
+        "agent_name": result["agent_name"],
+        "version_num": result["version_num"],
+        "created_at": result["created_at"].isoformat(),
+        "status": result["status"],
+        "agent_summary": result["agent_summary"],
+        "set_id": result["set_id"],
+        "approved": result["approved"],
+        "validator_count": result["validator_count"],
+        "score": float(result["score"]),
+        "completed_at": completion_result["completed_at"].isoformat() if completion_result and completion_result["completed_at"] else None
     }
 
 async def get_agent_final_score(version_id: str) -> Dict[str, Any]:
