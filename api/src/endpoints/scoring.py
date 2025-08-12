@@ -228,7 +228,7 @@ async def store_treasury_transaction(extrinsic_link: str, fee_alpha: int, versio
             amount_alpha=extrinsic_details["alpha_amount"],
             fee_alpha=fee_alpha,
             version_id=version_id,
-            occured_at=extrinsic_details["occured_at"],
+            occurred_at=extrinsic_details["occurred_at"],
             staker_hotkey=extrinsic_details["staker_hotkey"],
             extrinsic_code=extrinsic_code
         )
