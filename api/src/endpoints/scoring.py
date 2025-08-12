@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List
 
+from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
@@ -96,6 +97,12 @@ async def weights() -> Dict[str, float]:
             weights[await get_treasury_hotkey()] = weight_left
 
     return weights
+
+async def get_screener_thresholds():
+    """
+    Returns the screener thresholds
+    """
+    return {"screener_1": SCREENING_1_THRESHOLD, "screener_2": SCREENING_2_THRESHOLD}
 
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -211,6 +218,7 @@ router = APIRouter()
 routes = [
     ("/check-top-agent", weight_receiving_agent, ["GET"]),
     ("/weights", weights, ["GET"]),
+    ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
