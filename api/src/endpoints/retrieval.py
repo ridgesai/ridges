@@ -131,6 +131,51 @@ async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = No
     
     return evaluations
 
+async def get_screening_evaluations(version_id: str, stage: int = Query(description="Screening stage (1 or 2)"), set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
+    """Get screening evaluations for an agent version filtered by stage"""
+    try:
+        # Validate stage parameter
+        if stage not in [1, 2]:
+            raise HTTPException(
+                status_code=400,
+                detail="Stage must be 1 or 2"
+            )
+        
+        # If no set_id provided, use the latest set_id
+        if set_id is None:
+            set_id = await get_latest_set_id()
+        
+        evaluations = await get_evaluations_for_agent_version(version_id, set_id)
+        
+        # Filter to only screening evaluations (screener- or i-0 prefixed validator hotkeys)
+        screening_evaluations = [
+            eval for eval in evaluations 
+            if eval.validator_hotkey.startswith('screener-') or eval.validator_hotkey.startswith('i-0')
+        ]
+        
+        # Filter by stage
+        # Stage 1: screener-1 or similar patterns
+        # Stage 2: screener-2 or similar patterns
+        stage_filtered = []
+        for eval in screening_evaluations:
+            hotkey = eval.validator_hotkey
+            if stage == 1 and ('screener-1' in hotkey or 'stage-1' in hotkey or (hotkey.startswith('i-0') and '1' in hotkey)):
+                stage_filtered.append(eval)
+            elif stage == 2 and ('screener-2' in hotkey or 'stage-2' in hotkey or (hotkey.startswith('i-0') and '2' in hotkey)):
+                stage_filtered.append(eval)
+        screening_evaluations = stage_filtered
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving screening evaluations for version {version_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving screening evaluations. Please try again later."
+        )
+    
+    return screening_evaluations
+
 async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
     try:
         logs = await db_get_evaluation_run_logs(run_id)
@@ -326,6 +371,7 @@ routes = [
     ("/queue-info", get_queue_info), 
     ("/evaluations", get_evaluations),
     ("/evaluations-with-usage", get_evaluations_with_usage),
+    ("/screening-evaluations", get_screening_evaluations),
     ("/evaluation-run-logs", get_evaluation_run_logs),
     ("/runs-for-evaluation", get_runs_for_evaluation), 
     ("/latest-agent", get_latest_agent),
