@@ -2,7 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, List
+from typing import Dict, List, Optional
 import uuid
 
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -220,18 +220,20 @@ async def re_run_evaluation(password: str, evaluation_id: str):
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
-async def store_treasury_transaction(dispersion_extrinsic_code: str, fee_extrinsic_code: str, version_id: str, password: str):
+async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
     if password != treasury_transaction_password:
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
 
     try:
         dispersion_extrinsic_code = dispersion_extrinsic_code.strip()
-        fee_extrinsic_code = fee_extrinsic_code.strip()
+        if fee_extrinsic_code:
+            fee_extrinsic_code = fee_extrinsic_code.strip()
 
         dispersion_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(dispersion_extrinsic_code)
-        fee_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(fee_extrinsic_code)
+        if fee_extrinsic_code:
+            fee_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(fee_extrinsic_code)
 
-        if dispersion_extrinsic_details is None or fee_extrinsic_details is None:
+        if dispersion_extrinsic_details is None or (fee_extrinsic_code and fee_extrinsic_details is None):
             raise HTTPException(status_code=400, detail="Invalid extrinsic code(s)")
         
         group_transaction_id = uuid.uuid4()
@@ -248,22 +250,24 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, fee_extrins
             extrinsic_code=dispersion_extrinsic_code
         )
 
-        fee_transaction = TreasuryTransaction(
-            group_transaction_id=group_transaction_id,
-            sender_coldkey=fee_extrinsic_details["sender_coldkey"],
-            destination_coldkey=fee_extrinsic_details["destination_coldkey"],
-            amount_alpha=fee_extrinsic_details["alpha_amount"],
-            fee=True,
-            version_id=version_id,
-            occurred_at=fee_extrinsic_details["occurred_at"],
-            staker_hotkey=fee_extrinsic_details["staker_hotkey"],
-            extrinsic_code=fee_extrinsic_code
-        )
+        if fee_extrinsic_code:
+            fee_transaction = TreasuryTransaction(
+                group_transaction_id=group_transaction_id,
+                sender_coldkey=fee_extrinsic_details["sender_coldkey"],
+                destination_coldkey=fee_extrinsic_details["destination_coldkey"],
+                amount_alpha=fee_extrinsic_details["alpha_amount"],
+                fee=True,
+                version_id=version_id,
+                occurred_at=fee_extrinsic_details["occurred_at"],
+                staker_hotkey=fee_extrinsic_details["staker_hotkey"],
+                extrinsic_code=fee_extrinsic_code
+            )
 
         await db_store_treasury_transaction(dispersion_transaction)
-        await db_store_treasury_transaction(fee_transaction)
+        if fee_extrinsic_code:
+            await db_store_treasury_transaction(fee_transaction)
         
-        return {"message": "Successfully stored treasury transaction", "treasury_transactions": [dispersion_transaction.model_dump(mode='json'), fee_transaction.model_dump(mode='json')]}
+        return {"message": "Successfully stored treasury transaction", "treasury_transactions": [dispersion_transaction.model_dump(mode='json')]}
         
     except Exception as e:
         logger.error(f"Error storing treasury transaction: {e}")
