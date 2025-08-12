@@ -122,7 +122,6 @@ class Evaluation:
 
         # If it's a screener, handle stage-specific logic
         if self.is_screening:
-            
             stage = self.screener_stage
             threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
             if self.score < threshold:
@@ -144,9 +143,15 @@ class Evaluation:
                             break
                 elif stage == 2:
                     # Stage 2 passed -> check if we should prune immediately
+                    stage_1_score = await conn.fetchval("""SELECT score FROM evaluations
+                                                        WHERE version_id = $1 AND validator_hotkey LIKE 'screener-1-%'
+                                                        AND status = 'completed'
+                                                        ORDER BY created_at DESC
+                                                        LIMIT 1""", self.version_id)
+                    combined_screener_score = (stage_1_score + self.score) / 2
                     top_agent = await MinerAgentScored.get_top_agent(conn)
                     
-                    if top_agent and self.score < top_agent.avg_score * PRUNE_THRESHOLD:
+                    if top_agent and combined_screener_score < top_agent.avg_score * PRUNE_THRESHOLD:
                         # Score is too low, prune miner agent and don't create evaluations
                         await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
                         logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with score {self.score:.3f} (threshold: {top_agent.avg_score * PRUNE_THRESHOLD:.3f})")
@@ -161,7 +166,7 @@ class Evaluation:
                     # Create evaluation records but don't notify yet
                     validators_to_notify = await Validator.get_connected()
                     for validator in validators_to_notify:
-                        await self.create_for_validator(conn, self.version_id, validator.hotkey, self.score)
+                        await self.create_for_validator(conn, self.version_id, validator.hotkey, combined_screener_score)
                     
                     # Prune low-scoring evaluations after creating validator evaluations
                     await Evaluation.prune_low_waiting(conn)

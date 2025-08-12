@@ -901,7 +901,7 @@ class TestAgentLifecycleFlow:
         
         try:
             # Reset relevant tables
-            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys RESTART IDENTITY CASCADE")
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys, top_agents RESTART IDENTITY CASCADE")
 
             set_id = 1
             # Top agent (approved) with completed validator evals (score 0.90)
@@ -1018,7 +1018,7 @@ class TestAgentLifecycleFlow:
         
         try:
             # Reset relevant tables
-            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys RESTART IDENTITY CASCADE")
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys, top_agents RESTART IDENTITY CASCADE")
             
             # Add evaluation set for current set_id
             set_id = 1
@@ -1051,10 +1051,13 @@ class TestAgentLifecycleFlow:
                 good_version,
             )
             good_eval_id = str(uuid.uuid4())
-            # Good screener score (0.8) which is above PRUNE_THRESHOLD * top_score (0.75 * 0.9 = 0.675)
+            # Calculate good screener score dynamically - should be above threshold
+            top_agent_score = 0.9  # Match the top agent score from this test
+            threshold = top_agent_score * PRUNE_THRESHOLD
+            good_screener_score = threshold + 0.05  # 5% buffer above threshold
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-3',$3,'waiting',NOW(),0.8)",
-                good_eval_id, good_version, set_id
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-3',$3,'waiting',NOW(),$4)",
+                good_eval_id, good_version, set_id, good_screener_score
             )
 
             # Create agent with low screener score (below threshold)
@@ -1064,13 +1067,15 @@ class TestAgentLifecycleFlow:
                 low_version,
             )
             low_eval_id = str(uuid.uuid4())
-            # Low screener score (0.5) which is below PRUNE_THRESHOLD * top_score (0.75 * 0.9 = 0.675)
+            # Calculate low screener score dynamically - should be below threshold  
+            low_screener_score = threshold - 0.1  # 10% below threshold
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-4',$3,'waiting',NOW(),0.5)",
-                low_eval_id, low_version, set_id
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-4',$3,'waiting',NOW(),$4)",
+                low_eval_id, low_version, set_id, low_screener_score
             )
 
-            # Refresh materialized view to ensure top agent is available
+            # Ensure the top agent is properly set up and refresh materialized view
+            await db_conn.execute("UPDATE miner_agents SET status = 'scored' WHERE version_id = $1", top_version)
             await db_conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
 
             # Call prune_low_waiting
@@ -1115,7 +1120,7 @@ class TestAgentLifecycleFlow:
         
         try:
             # Reset tables
-            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys RESTART IDENTITY CASCADE")
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys, top_agents RESTART IDENTITY CASCADE")
 
             set_id = 1
             # Create a top agent (approved) with final score 0.90
@@ -1185,6 +1190,306 @@ class TestAgentLifecycleFlow:
                 low_version,
             )
             assert count_validator == 0
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_screener_stage2_combined_score_and_validator_creation(self):
+        """Test finished screener stage 2 evaluation with combined score calculation and validator evaluation creation"""
+        from api.src.models.evaluation import Evaluation
+        from api.src.models.validator import Validator
+        from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD, PRUNE_THRESHOLD
+        import os
+        
+        # Create a direct database connection for this test
+        db_conn = await asyncpg.connect(
+            user=os.getenv('AWS_MASTER_USERNAME'),
+            password=os.getenv('AWS_MASTER_PASSWORD'),
+            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
+            port=int(os.getenv('PGPORT', '5432')),
+            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+        )
+        
+        try:
+            # Reset relevant tables
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys, top_agents RESTART IDENTITY CASCADE")
+            
+            set_id = 1
+            # Add evaluation sets for current set_id
+            await db_conn.execute(
+                "INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES ($1, 'screener-1', 'test-instance-1'), ($1, 'screener-2', 'test-instance-2'), ($1, 'validator', 'test-instance-3') ON CONFLICT DO NOTHING",
+                set_id
+            )
+
+            # Create top agent for threshold calculation
+            top_agent_score = 0.90
+            top_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
+                top_version,
+            )
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            # Need at least 2 validator evaluations for materialized view
+            await db_conn.execute(
+                """
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
+                VALUES ($1,$2,'validator-1',$3,'completed',NOW(),NOW(),$4),
+                       ($5,$2,'validator-2',$3,'completed',NOW(),NOW(),$6),
+                       ($7,$2,'validator-3',$3,'completed',NOW(),NOW(),$8)
+                """,
+                str(uuid.uuid4()), top_version, set_id, top_agent_score, 
+                str(uuid.uuid4()), top_agent_score,
+                str(uuid.uuid4()), top_agent_score
+            )
+
+            # Create test agent that will go through both screening stages
+            test_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'test_miner','test_agent',1,NOW(),'awaiting_screening_1')",
+                test_version,
+            )
+
+            # Calculate dynamic scores based on top agent and thresholds
+            top_agent_score = 0.90
+            threshold = top_agent_score * PRUNE_THRESHOLD
+            # Set combined score to be just above threshold to ensure it passes
+            target_combined_score = threshold + 0.05  # 5% buffer above threshold
+            stage1_score = target_combined_score  # Use same score for both stages for simplicity
+            stage2_score = target_combined_score
+
+            # 1. Create and complete stage 1 screening evaluation with passing score
+            stage1_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW(),$4)",
+                stage1_eval_id, test_version, set_id, stage1_score
+            )
+
+            # Update agent status to awaiting_screening_2 (simulating stage 1 completion)
+            await db_conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", test_version)
+
+            # 2. Create stage 2 screening evaluation with passing score
+            stage2_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, score) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW(),$4)",
+                stage2_eval_id, test_version, set_id, stage2_score
+            )
+
+            # Create the Evaluation object and simulate finishing
+            stage2_eval = Evaluation(
+                evaluation_id=stage2_eval_id,
+                version_id=test_version,
+                validator_hotkey='screener-2-test',
+                set_id=set_id,
+                status=EvaluationStatus.waiting,
+                score=stage2_score,
+            )
+
+            # Mock connected validators for testing
+            mock_validators = [
+                Mock(hotkey="validator-1"),
+                Mock(hotkey="validator-2"),
+                Mock(hotkey="validator-3")
+            ]
+            
+            with patch.object(Validator, 'get_connected', return_value=mock_validators):
+                # Finish the stage 2 evaluation (this should calculate combined score and create validator evaluations)
+                result = await stage2_eval.finish(db_conn)
+
+            # 3. Verify combined score calculation
+            expected_combined_score = (stage1_score + stage2_score) / 2
+            
+            # Check that validator evaluations were created with the combined screener score
+            validator_evaluations = await db_conn.fetch(
+                """
+                SELECT evaluation_id, validator_hotkey, screener_score, status
+                FROM evaluations 
+                WHERE version_id = $1 
+                AND validator_hotkey NOT LIKE 'screener-%'
+                ORDER BY validator_hotkey
+                """,
+                test_version
+            )
+
+            # 4. Verify all expected validator evaluations were created
+            assert len(validator_evaluations) == 3, f"Expected 3 validator evaluations, got {len(validator_evaluations)}"
+            
+            for eval_row in validator_evaluations:
+                assert eval_row['screener_score'] == expected_combined_score, f"Expected combined score {expected_combined_score}, got {eval_row['screener_score']}"
+                assert eval_row['status'] == 'waiting', f"Expected evaluation status 'waiting', got {eval_row['status']}"
+                assert eval_row['validator_hotkey'] in ['validator-1', 'validator-2', 'validator-3'], f"Unexpected validator hotkey {eval_row['validator_hotkey']}"
+
+            # 5. Verify agent status was updated to 'waiting' after stage 2 completion
+            agent_status = await db_conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", test_version)
+            assert agent_status == 'waiting', f"Expected agent status 'waiting', got {agent_status}"
+
+            # 6. Verify stage 2 evaluation was marked as completed
+            stage2_status = await db_conn.fetchval("SELECT status FROM evaluations WHERE evaluation_id = $1", stage2_eval_id)
+            assert stage2_status == 'completed', f"Expected stage 2 evaluation status 'completed', got {stage2_status}"
+
+            # 7. Test the combined score is calculated correctly in database queries
+            # Verify we can retrieve the combined score from validator evaluations
+            retrieved_screener_scores = await db_conn.fetch(
+                """
+                SELECT screener_score FROM evaluations 
+                WHERE version_id = $1 
+                AND validator_hotkey NOT LIKE 'screener-%'
+                """,
+                test_version
+            )
+            
+            for score_row in retrieved_screener_scores:
+                assert score_row['screener_score'] == expected_combined_score, f"Retrieved screener score doesn't match expected combined score"
+
+            # 8. Verify no pruning occurred (scores are acceptable)
+            pruned_evaluations = await db_conn.fetchval(
+                "SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = 'pruned'",
+                test_version
+            )
+            assert pruned_evaluations == 0, "No evaluations should be pruned with acceptable scores"
+
+            agent_status_final = await db_conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", test_version)
+            assert agent_status_final != 'pruned', "Agent should not be pruned with acceptable combined score"
+
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_screener_stage2_low_combined_score_immediate_prune(self):
+        """Test that stage 2 completion with low combined score immediately prunes agent and doesn't create validator evaluations"""
+        from api.src.models.evaluation import Evaluation
+        from api.src.models.validator import Validator
+        from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD, PRUNE_THRESHOLD
+        import os
+        
+        # Create a direct database connection for this test
+        db_conn = await asyncpg.connect(
+            user=os.getenv('AWS_MASTER_USERNAME'),
+            password=os.getenv('AWS_MASTER_PASSWORD'),
+            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
+            port=int(os.getenv('PGPORT', '5432')),
+            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+        )
+        
+        try:
+            # Reset relevant tables
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents, approved_version_ids, banned_hotkeys, top_agents RESTART IDENTITY CASCADE")
+            
+            set_id = 1
+            # Add evaluation sets for current set_id
+            await db_conn.execute(
+                "INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES ($1, 'screener-1', 'test-instance-1'), ($1, 'screener-2', 'test-instance-2'), ($1, 'validator', 'test-instance-3') ON CONFLICT DO NOTHING",
+                set_id
+            )
+
+            # Create top agent for threshold calculation (high score)
+            top_agent_score = 0.95
+            top_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
+                top_version,
+            )
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            # Need at least 2 validator evaluations for materialized view
+            await db_conn.execute(
+                """
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
+                VALUES ($1,$2,'validator-1',$3,'completed',NOW(),NOW(),$4),
+                       ($5,$2,'validator-2',$3,'completed',NOW(),NOW(),$6),
+                       ($7,$2,'validator-3',$3,'completed',NOW(),NOW(),$8)
+                """,
+                str(uuid.uuid4()), top_version, set_id, top_agent_score, 
+                str(uuid.uuid4()), top_agent_score,
+                str(uuid.uuid4()), top_agent_score
+            )
+
+            # Create test agent with low combined score
+            test_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'test_miner_low','low_agent',1,NOW(),'awaiting_screening_1')",
+                test_version,
+            )
+
+            # Calculate dynamic scores based on top agent and thresholds  
+            top_agent_score = 0.95
+            threshold = top_agent_score * PRUNE_THRESHOLD
+            # Set combined score to be below threshold to ensure it gets pruned
+            target_combined_score = threshold - 0.1  # 10% below threshold
+            # Use different stage scores that average to the target combined score
+            stage1_score = max(target_combined_score + 0.05, SCREENING_1_THRESHOLD + 0.05)  # Ensure above screening threshold
+            stage2_score = max(2 * target_combined_score - stage1_score, SCREENING_2_THRESHOLD + 0.05)  # Ensure above screening threshold
+
+            # 1. Create and complete stage 1 screening evaluation with passing score
+            stage1_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW(),$4)",
+                stage1_eval_id, test_version, set_id, stage1_score
+            )
+
+            # Update agent status to awaiting_screening_2
+            await db_conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", test_version)
+
+            # 2. Create stage 2 screening evaluation with low score
+            stage2_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, score) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW(),$4)",
+                stage2_eval_id, test_version, set_id, stage2_score
+            )
+
+            # Verify our calculation: combined score should be below threshold for pruning
+            expected_combined_score = (stage1_score + stage2_score) / 2
+            assert expected_combined_score < threshold, f"Test setup error: combined score {expected_combined_score} should be < threshold {threshold}"
+
+            # Create the Evaluation object and simulate finishing
+            stage2_eval = Evaluation(
+                evaluation_id=stage2_eval_id,
+                version_id=test_version,
+                validator_hotkey='screener-2-test',
+                set_id=set_id,
+                status=EvaluationStatus.waiting,
+                score=stage2_score,
+            )
+
+            # Mock connected validators (should not be used since agent gets pruned)
+            mock_validators = [
+                Mock(hotkey="validator-1"),
+                Mock(hotkey="validator-2"),
+                Mock(hotkey="validator-3")
+            ]
+            
+            with patch.object(Validator, 'get_connected', return_value=mock_validators):
+                # Ensure the top agent is properly set up and refresh materialized view
+                await db_conn.execute("UPDATE miner_agents SET status = 'scored' WHERE version_id = $1", top_version)
+                await db_conn.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+                
+                # Finish the stage 2 evaluation (this should prune immediately)
+                result = await stage2_eval.finish(db_conn)
+
+            # 3. Verify agent was pruned immediately
+            agent_status = await db_conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", test_version)
+            assert agent_status == 'pruned', f"Expected agent status 'pruned', got {agent_status}"
+
+            # 4. Verify stage 2 evaluation was marked as completed
+            stage2_status = await db_conn.fetchval("SELECT status FROM evaluations WHERE evaluation_id = $1", stage2_eval_id)
+            assert stage2_status == 'completed', f"Expected stage 2 evaluation status 'completed', got {stage2_status}"
+
+            # 5. Verify NO validator evaluations were created (agent was pruned)
+            validator_evaluations = await db_conn.fetch(
+                """
+                SELECT evaluation_id FROM evaluations 
+                WHERE version_id = $1 
+                AND validator_hotkey NOT LIKE 'screener-%'
+                """,
+                test_version
+            )
+            assert len(validator_evaluations) == 0, f"Expected 0 validator evaluations for pruned agent, got {len(validator_evaluations)}"
+
+            # 6. Verify the return value indicates no validators to notify
+            assert result is not None, "finish() should return notification targets"
+            if isinstance(result, dict):
+                assert result.get("validators", []) == [], "No validators should be notified for pruned agent"
+
         finally:
             await db_conn.close()
 
