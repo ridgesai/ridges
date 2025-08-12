@@ -395,8 +395,7 @@ async def get_validator_progress_for_agent(conn: asyncpg.Connection, version_id:
             e.status,
             e.started_at,
             e.finished_at as completed_at,
-            e.score,
-
+            e.score
         FROM evaluations e
         WHERE e.version_id = $1 
             AND e.set_id IS NULL  -- Only main validator evaluations, not screening
