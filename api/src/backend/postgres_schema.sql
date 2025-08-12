@@ -157,14 +157,15 @@ CREATE TABLE IF NOT EXISTS top_agents (
 
 CREATE TABLE IF NOT EXISTS treasury_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_transaction_id UUID NOT NULL,
     sender_coldkey TEXT NOT NULL,
     destination_coldkey TEXT NOT NULL,
     staker_hotkey TEXT NOT NULL,
     amount_alpha_rao BIGINT NOT NULL,
-    fee_alpha_rao BIGINT NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    extrinsic_code TEXT NOT NULL UNIQUE
+    extrinsic_code TEXT NOT NULL UNIQUE,
+    fee BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Trigger functions and triggers for automatic score updates
