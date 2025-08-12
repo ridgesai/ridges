@@ -99,18 +99,6 @@ async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hot
     except Exception as e:
         logger.error(f"Error updating bittensor hotkey for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
-async def get_emission_dispersed_to_open_user(open_hotkey: str, password: str):
-    if password != open_user_password:
-        logger.warning(f"Someone tried to get emission earned by open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
-        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
-    
-    try:
-        emission_dispersed = await db_get_emission_dispersed_to_open_user(open_hotkey)
-        return {"success": True, "emission_dispersed": emission_dispersed, "open_hotkey": open_hotkey}
-    except Exception as e:
-        logger.error(f"Error getting emission dispersed to open user {open_hotkey}: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
 async def get_treasury_transactions_for_open_user(open_hotkey: str, password: str):
     if password != open_user_password:
@@ -131,7 +119,6 @@ routes = [
     ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
     ("/get-user-by-email", get_user_by_email, ["GET"]),
     ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
-    ("/get-emission-dispersed-to-open-user", get_emission_dispersed_to_open_user, ["GET"]),
     ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),
 ]
 
