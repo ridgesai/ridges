@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS treasury_transactions (
     amount_alpha FLOAT NOT NULL,
     fee_alpha FLOAT NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
-    occured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    extrinsic_code TEXT NOT NULL UNIQUE
 );
 
 -- Trigger functions and triggers for automatic score updates

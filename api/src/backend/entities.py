@@ -502,4 +502,5 @@ class TreasuryTransaction(BaseModel):
     fee_alpha: float
     occured_at: datetime
     version_id: UUID
+    extrinsic_code: str
 

@@ -218,12 +218,9 @@ async def store_treasury_transaction(extrinsic_link: str, fee_alpha: int, versio
 
     try:
         extrinsic_code = extrinsic_link.strip().rsplit('/', 1)[-1].strip()
-        print(extrinsic_code)
         extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(extrinsic_code)
         if extrinsic_details is None:
             raise HTTPException(status_code=400, detail="Invalid extrinsic link")
-        
-        print(extrinsic_details)
         
         treasury_transaction = TreasuryTransaction(
             sender_coldkey=extrinsic_details["sender_coldkey"],
@@ -232,10 +229,9 @@ async def store_treasury_transaction(extrinsic_link: str, fee_alpha: int, versio
             fee_alpha=fee_alpha,
             version_id=version_id,
             occured_at=extrinsic_details["occured_at"],
-            staker_hotkey=extrinsic_details["staker_hotkey"]
+            staker_hotkey=extrinsic_details["staker_hotkey"],
+            extrinsic_code=extrinsic_code
         )
-
-        print(treasury_transaction)
 
         await db_store_treasury_transaction(treasury_transaction)
         
