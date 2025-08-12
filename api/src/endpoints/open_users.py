@@ -7,8 +7,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey
-from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user
+from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from loggers.logging_utils import get_logger
 
@@ -113,6 +112,18 @@ async def get_emission_dispersed_to_open_user(open_hotkey: str, password: str):
         logger.error(f"Error getting emission dispersed to open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
+async def get_treasury_transactions_for_open_user(open_hotkey: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to get treasury transactions for open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        treasury_transactions = await db_get_treasury_transactions_for_open_user(open_hotkey)
+        return {"success": True, "treasury_transactions": treasury_transactions, "open_hotkey": open_hotkey}
+    except Exception as e:
+        logger.error(f"Error getting treasury transactions for open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+
 router = APIRouter()
 
 routes = [
@@ -121,6 +132,7 @@ routes = [
     ("/get-user-by-email", get_user_by_email, ["GET"]),
     ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
     ("/get-emission-dispersed-to-open-user", get_emission_dispersed_to_open_user, ["GET"]),
+    ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),
 ]
 
 for path, endpoint, methods in routes:
