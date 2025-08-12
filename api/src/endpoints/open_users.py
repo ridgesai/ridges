@@ -7,8 +7,10 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey
+from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user, get_open_agent_periods_on_top as db_get_open_agent_periods_on_top
+from api.src.backend.queries.scores import get_treasury_hotkeys as db_get_treasury_hotkeys
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
+from api.src.backend.internal_tools import InternalTools
 from loggers.logging_utils import get_logger
 
 load_dotenv()
@@ -16,6 +18,7 @@ load_dotenv()
 logger = get_logger(__name__)
 
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
+internal_tools = InternalTools()
 
 async def open_user_sign_in(request: OpenUserSignInRequest):
     auth0_user_id = request.auth0_user_id
@@ -100,6 +103,36 @@ async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hot
         logger.error(f"Error updating bittensor hotkey for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
+async def get_treasury_transactions_for_open_user(open_hotkey: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to get treasury transactions for open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        treasury_transactions = await db_get_treasury_transactions_for_open_user(open_hotkey)
+        return {"success": True, "treasury_transactions": treasury_transactions, "open_hotkey": open_hotkey}
+    except Exception as e:
+        logger.error(f"Error getting treasury transactions for open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+async def get_pending_emission_for_open_user(open_hotkey: str, password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to get pending emission for open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        periods_on_top = await db_get_open_agent_periods_on_top(miner_hotkey=open_hotkey)
+        if not periods_on_top:
+            return {"success": True, "pending_emission": 0, "open_hotkey": open_hotkey}
+        
+        treasury_hotkeys = await db_get_treasury_hotkeys()
+        gross_emission = await internal_tools.get_emission_alpha_for_hotkeys_during_periods(miner_hotkeys=treasury_hotkeys, periods=periods_on_top)
+        emission_dispersed = await db_get_emission_dispersed_to_open_user(open_hotkey)
+        return {"success": True, "pending_emission": gross_emission - emission_dispersed, "open_hotkey": open_hotkey}
+    except Exception as e:
+        logger.error(f"Error getting pending emission for open user {open_hotkey}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+
 router = APIRouter()
 
 routes = [
@@ -107,6 +140,8 @@ routes = [
     ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
     ("/get-user-by-email", get_user_by_email, ["GET"]),
     ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
+    ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),
+    ("/get-pending-emission-for-open-user", get_pending_emission_for_open_user, ["GET"]),
 ]
 
 for path, endpoint, methods in routes:

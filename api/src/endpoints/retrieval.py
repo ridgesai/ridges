@@ -23,7 +23,7 @@ from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_open_agent_periods_on_top
-from api.src.backend.queries.scores import get_treasury_hotkeys
+from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user
 
 load_dotenv()
 
@@ -345,20 +345,17 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             detail="Internal server error while retrieving inferences"
         )
     
-async def get_emission_alpha_for_hotkey(miner_hotkey: str, hours: float) -> dict[str, Any]:
+async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
     Returns the emission alpha for a given hotkey
     """
     try:
         amount = 0
         if miner_hotkey.startswith("open-"):
-            open_agent_periods_on_top = await get_open_agent_periods_on_top(miner_hotkey=miner_hotkey, hours=hours)
-            if open_agent_periods_on_top:
-                treasury_hotkeys = await get_treasury_hotkeys()
-                amount = await internal_tools.get_emission_alpha_for_hotkeys_during_periods(miner_hotkeys=treasury_hotkeys, periods=open_agent_periods_on_top)
+            amount = await db_get_emission_dispersed_to_open_user(miner_hotkey)
         else:
-            amount = await internal_tools.get_emission_alpha_for_hotkeys(miner_hotkeys=[miner_hotkey], hours=hours)
-        return {"amount": amount, "hours": hours, "miner_hotkey": miner_hotkey}
+            amount = await internal_tools.get_emission_alpha_for_hotkeys(miner_hotkeys=[miner_hotkey])
+        return {"amount": amount, "miner_hotkey": miner_hotkey}
     except Exception as e:
         logger.error(f"Error retrieving emission alpha for hotkey {miner_hotkey}: {e}")
         raise HTTPException(

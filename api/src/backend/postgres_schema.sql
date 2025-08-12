@@ -157,14 +157,15 @@ CREATE TABLE IF NOT EXISTS top_agents (
 
 CREATE TABLE IF NOT EXISTS treasury_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_transaction_id UUID NOT NULL,
     sender_coldkey TEXT NOT NULL,
     destination_coldkey TEXT NOT NULL,
     staker_hotkey TEXT NOT NULL,
     amount_alpha_rao BIGINT NOT NULL,
-    fee_alpha_rao BIGINT NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    extrinsic_code TEXT NOT NULL UNIQUE
+    extrinsic_code TEXT NOT NULL UNIQUE,
+    fee BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 -- Trigger functions and triggers for automatic score updates
@@ -238,6 +239,14 @@ WHERE status != 'cancelled';
 -- General index for evaluation_runs foreign key if it doesn't exist
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
+
+-- Speeds up filtering to the miner’s version_ids
+CREATE INDEX IF NOT EXISTS idx_miner_agents_miner_hotkey_version
+ON miner_agents (miner_hotkey, version_id);
+
+-- Speeds up the join lookup from tt to ma
+CREATE INDEX IF NOT EXISTS idx_treasury_transactions_version
+ON treasury_transactions (version_id);
 
 -- Drop and recreate materialized view to ensure clean state for concurrent refresh
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
