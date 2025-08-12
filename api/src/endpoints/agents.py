@@ -471,7 +471,7 @@ async def get_agent_final_score_data(conn: asyncpg.Connection, version_id: str) 
             ass.set_id,
             ass.approved,
             ass.validator_count,
-            as.final_score as score
+            ass.final_score as score
         FROM agent_scores ass
         WHERE ass.version_id = $1
     """, version_id)
