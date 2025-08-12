@@ -239,6 +239,14 @@ WHERE status != 'cancelled';
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
 
+-- Speeds up filtering to the miner’s version_ids
+CREATE INDEX IF NOT EXISTS idx_miner_agents_miner_hotkey_version
+ON miner_agents (miner_hotkey, version_id);
+
+-- Speeds up the join lookup from tt to ma
+CREATE INDEX IF NOT EXISTS idx_treasury_transactions_version
+ON treasury_transactions (version_id);
+
 -- Drop and recreate materialized view to ensure clean state for concurrent refresh
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
 
