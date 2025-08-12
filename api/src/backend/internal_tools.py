@@ -99,13 +99,13 @@ class InternalTools:
             yield con
 
 
-    async def get_emission_alpha_for_hotkeys(self, miner_hotkeys: list[str], hours: float) -> float:
+    async def get_emission_alpha_for_hotkeys(self, miner_hotkeys: list[str], hours: float) -> int:
         if not miner_hotkeys:
-            return 0.0
+            return 0
 
         query = (
             """
-            SELECT COALESCE(SUM(es.emission_alpha)::double precision, 0.0) AS total_alpha
+            SELECT COALESCE(SUM(es.emission_alpha_rao), 0) AS total_alpha
             FROM emission_snapshots AS es
             WHERE es.hotkey = ANY($1::text[])
               AND es.occured_at >= NOW() - make_interval(secs => ($2::double precision) * 3600);
@@ -114,21 +114,21 @@ class InternalTools:
 
         async with self.acquire() as conn:
             value = await conn.fetchval(query, miner_hotkeys, float(hours))
-            return float(value or 0.0)
+            return int(value or 0)
 
     async def get_emission_alpha_for_hotkeys_during_periods(
         self,
         periods: list[tuple[datetime, datetime]],
         miner_hotkeys: list[str],
-    ) -> float:
+    ) -> int:
         if not miner_hotkeys or not periods:
-            return 0.0
+            return 0
 
         valid_periods: list[tuple[datetime, datetime]] = [
             (start, end) for start, end in periods if start is not None and end is not None and start < end
         ]
         if not valid_periods:
-            return 0.0
+            return 0
 
         def _to_naive_utc(dt: datetime) -> datetime:
             # Convert aware datetimes to naive UTC; leave naive as-is (assumed UTC)
@@ -145,7 +145,7 @@ class InternalTools:
                 SELECT s AS start_at, e AS end_at
                 FROM unnest($2::timestamp[], $3::timestamp[]) AS t(s, e)
             )
-            SELECT COALESCE(SUM(es.emission_alpha)::double precision, 0.0) AS total_alpha
+            SELECT COALESCE(SUM(es.emission_alpha_rao), 0) AS total_alpha
             FROM emission_snapshots AS es
             WHERE es.hotkey = ANY($1::text[])
               AND EXISTS (
@@ -159,7 +159,7 @@ class InternalTools:
 
         async with self.acquire() as conn:
             value = await conn.fetchval(query, miner_hotkeys, starts, ends)
-            return float(value or 0.0)
+            return int(value or 0)
 
     async def get_transfer_stake_extrinsic_details(self, event_code: str) -> Optional[dict[str, Any]]:
         query = (
