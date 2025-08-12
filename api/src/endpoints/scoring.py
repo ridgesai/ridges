@@ -102,7 +102,7 @@ async def get_screener_thresholds():
     """
     Returns the screener thresholds
     """
-    return {"screener_1": SCREENING_1_THRESHOLD, "screener_2": SCREENING_2_THRESHOLD}
+    return {"stage_1_threshold": SCREENING_1_THRESHOLD, "stage_2_threshold": SCREENING_2_THRESHOLD}
 
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
