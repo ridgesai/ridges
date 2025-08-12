@@ -155,6 +155,18 @@ CREATE TABLE IF NOT EXISTS top_agents (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS treasury_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_coldkey TEXT NOT NULL,
+    destination_coldkey TEXT NOT NULL,
+    staker_hotkey TEXT NOT NULL,
+    amount_alpha FLOAT NOT NULL,
+    fee_alpha FLOAT NOT NULL,
+    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    extrinsic_code TEXT NOT NULL UNIQUE
+);
+
 -- Trigger functions and triggers for automatic score updates
 
 -- Function to update evaluation score when evaluation runs are updated

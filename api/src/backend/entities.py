@@ -493,3 +493,14 @@ class OpenUserSignInRequest(BaseModel):
     email: EmailStr
     name: str
     password: str
+
+class TreasuryTransaction(BaseModel):
+    sender_coldkey: str
+    destination_coldkey: str
+    staker_hotkey: str
+    amount_alpha: float
+    fee_alpha: float
+    occured_at: datetime
+    version_id: UUID
+    extrinsic_code: str
+

@@ -14,10 +14,16 @@ from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
+from api.src.backend.internal_tools import InternalTools
+from api.src.backend.entities import TreasuryTransaction
+from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
 
 load_dotenv()
 
 logger = get_logger(__name__)
+treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
+
+internal_tools = InternalTools()
 
 async def tell_validators_to_set_weights():
     """Tell validators to set their weights."""
@@ -206,6 +212,35 @@ async def re_run_evaluation(password: str, evaluation_id: str):
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
+async def store_treasury_transaction(extrinsic_link: str, fee_alpha: int, version_id: str, password: str):
+    if password != treasury_transaction_password:
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+
+    try:
+        extrinsic_code = extrinsic_link.strip().rsplit('/', 1)[-1].strip()
+        extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(extrinsic_code)
+        if extrinsic_details is None:
+            raise HTTPException(status_code=400, detail="Invalid extrinsic link")
+        
+        treasury_transaction = TreasuryTransaction(
+            sender_coldkey=extrinsic_details["sender_coldkey"],
+            destination_coldkey=extrinsic_details["destination_coldkey"],
+            amount_alpha=extrinsic_details["alpha_amount"],
+            fee_alpha=fee_alpha,
+            version_id=version_id,
+            occured_at=extrinsic_details["occured_at"],
+            staker_hotkey=extrinsic_details["staker_hotkey"],
+            extrinsic_code=extrinsic_code
+        )
+
+        await db_store_treasury_transaction(treasury_transaction)
+        
+        return {"message": "Successfully stored treasury transaction", "treasury_transaction": treasury_transaction.model_dump(mode='json')}
+        
+    except Exception as e:
+        logger.error(f"Error storing treasury transaction: {e}")
+        raise HTTPException(status_code=500, detail="Error storing treasury transaction")
+
 router = APIRouter()
 
 routes = [
@@ -217,7 +252,8 @@ routes = [
     ("/re-eval-approved", re_eval_approved, ["POST"]),
     ("/refresh-scores", refresh_scores, ["POST"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
-    ("/re-run-evaluation", re_run_evaluation, ["POST"])
+    ("/re-run-evaluation", re_run_evaluation, ["POST"]),
+    ("/store-treasury-transaction", store_treasury_transaction, ["POST"])
 ]
 
 for path, endpoint, methods in routes:
