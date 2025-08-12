@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import OpenUser, TreasuryTransaction
+from api.src.backend.entities import OpenUser
 
 @db_operation
 async def get_open_user(conn: asyncpg.Connection, auth0_user_id: str) -> Optional[OpenUser]:
@@ -152,7 +152,7 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
     return int(total) if total is not None else 0
 
 @db_operation
-async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open_hotkey: str) -> list[TreasuryTransaction]:
+async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open_hotkey: str) -> list[dict]:
     rows = await conn.fetch(
         """
         SELECT 
@@ -160,7 +160,6 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             tt.destination_coldkey,
             tt.staker_hotkey,
             tt.amount_alpha_rao,
-            tt.fee_alpha_rao,
             tt.occurred_at,
             tt.version_id,
             tt.extrinsic_code
@@ -174,15 +173,14 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
     )
 
     return [
-        TreasuryTransaction(
-            sender_coldkey=row["sender_coldkey"],
-            destination_coldkey=row["destination_coldkey"],
-            staker_hotkey=row["staker_hotkey"],
-            amount_alpha=row["amount_alpha_rao"],
-            fee_alpha=row["fee_alpha_rao"],
-            occurred_at=row["occurred_at"],
-            version_id=row["version_id"],
-            extrinsic_code=row["extrinsic_code"],
-        )
+        {
+            "sender_coldkey": str(row["sender_coldkey"]),
+            "destination_coldkey": str(row["destination_coldkey"]),
+            "staker_hotkey": str(row["staker_hotkey"]),
+            "amount_alpha": int(row["amount_alpha_rao"]) if row["amount_alpha_rao"] is not None else 0,
+            "occurred_at": str(row["occurred_at"]),
+            "version_id": str(row["version_id"]),
+            "extrinsic_code": str(row["extrinsic_code"]),
+        }
         for row in rows
     ]
