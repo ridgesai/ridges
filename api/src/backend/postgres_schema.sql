@@ -160,8 +160,8 @@ CREATE TABLE IF NOT EXISTS treasury_transactions (
     sender_coldkey TEXT NOT NULL,
     destination_coldkey TEXT NOT NULL,
     staker_hotkey TEXT NOT NULL,
-    amount_alpha FLOAT NOT NULL,
-    fee_alpha FLOAT NOT NULL,
+    amount_alpha_rao BIGINT NOT NULL,
+    fee_alpha_rao BIGINT NOT NULL,
     version_id UUID NOT NULL REFERENCES miner_agents(version_id),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     extrinsic_code TEXT NOT NULL UNIQUE

@@ -167,7 +167,7 @@ class InternalTools:
             SELECT
               occured_at,
               raw_extrinsic->>'address' AS sender_coldkey,
-              (jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "alpha_amount").value') #>> '{}')::numeric / 1e9 AS alpha_amount,
+              (jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "alpha_amount").value') #>> '{}')::numeric AS alpha_amount,
               jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "destination_coldkey").value') #>> '{}' AS destination_coldkey,
               jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "hotkey").value') #>> '{}' AS staker_hotkey
             FROM extrinsics
@@ -184,9 +184,9 @@ class InternalTools:
 
             alpha_val = row["alpha_amount"]
             return {
-                "occured_at": datetime.fromisoformat(str(row["occured_at"])),
+                "occurred_at": datetime.fromisoformat(str(row["occured_at"])),
                 "sender_coldkey": str(row["sender_coldkey"]),
-                "alpha_amount": float(alpha_val),
+                "alpha_amount": int(alpha_val),
                 "destination_coldkey": str(row["destination_coldkey"]),
                 "staker_hotkey": str(row["staker_hotkey"]),
             }
