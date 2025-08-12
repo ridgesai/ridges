@@ -45,6 +45,6 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
     Stores a treasury transaction in the database.
     """
     await conn.execute("""
-        INSERT INTO treasury_transactions (sender_coldkey, destination_coldkey, staker_hotkey, amount_rao, fee_rao, occured_at, version_id)
+        INSERT INTO treasury_transactions (sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha, fee_alpha, occured_at, version_id)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
-    """, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_rao, transaction.fee_rao, transaction.occured_at, transaction.version_id)
+    """, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.fee_alpha, transaction.occured_at, transaction.version_id)

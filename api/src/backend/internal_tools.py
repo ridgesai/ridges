@@ -184,9 +184,9 @@ class InternalTools:
 
             alpha_val = row["alpha_amount"]
             return {
-                "occured_at": datetime.fromisoformat(row["occured_at"]),
+                "occured_at": datetime.fromisoformat(str(row["occured_at"])),
                 "sender_coldkey": str(row["sender_coldkey"]),
-                "alpha_amount": int(alpha_val),
+                "alpha_amount": float(alpha_val),
                 "destination_coldkey": str(row["destination_coldkey"]),
                 "staker_hotkey": str(row["staker_hotkey"]),
             }

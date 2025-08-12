@@ -498,8 +498,8 @@ class TreasuryTransaction(BaseModel):
     sender_coldkey: str
     destination_coldkey: str
     staker_hotkey: str
-    amount_rao: int
-    fee_rao: int
+    amount_alpha: float
+    fee_alpha: float
     occured_at: datetime
     version_id: UUID
 
