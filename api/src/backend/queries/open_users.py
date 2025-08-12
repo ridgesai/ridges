@@ -144,3 +144,23 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
     )
 
     return [(row["period_start"], row["period_end"]) for row in rows]
+
+@db_operation
+async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hotkey: str) -> int:
+    total = await conn.fetchval(
+        """
+        SELECT COALESCE(SUM(tt.amount_alpha_rao), 0)
+        FROM treasury_transactions tt
+        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        WHERE ma.miner_hotkey = (
+            SELECT oubh.bittensor_hotkey
+            FROM open_user_bittensor_hotkeys oubh
+            WHERE oubh.open_hotkey = $1
+            ORDER BY oubh.set_at DESC
+            LIMIT 1
+        )
+        """,
+        open_hotkey,
+    )
+
+    return int(total) if total is not None else 0
