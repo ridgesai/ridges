@@ -113,7 +113,7 @@ async def get_open_user_bittensor_hotkey(conn: asyncpg.Connection, open_hotkey: 
 
 
 @db_operation
-async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: str, hours: float) -> list[tuple[datetime, datetime]]:
+async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: str) -> list[tuple[datetime, datetime]]:
     rows = await conn.fetch(
         """
         WITH ranked_top AS (
@@ -123,24 +123,15 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
                 ma.miner_hotkey AS miner_hotkey
             FROM top_agents ta
             INNER JOIN miner_agents ma ON ma.version_id = ta.version_id
-        ),
-        win AS (
-            SELECT
-                NOW() - make_interval(secs => ($2::double precision) * 3600) AS window_start,
-                NOW() AS window_end
         )
         SELECT 
-            GREATEST(r.start_at, w.window_start) AS period_start,
-            LEAST(COALESCE(r.next_at, w.window_end), w.window_end) AS period_end
+            r.start_at AS period_start,
+            COALESCE(r.next_at, NOW()) AS period_end
         FROM ranked_top r
-        CROSS JOIN win w
         WHERE r.miner_hotkey = $1
-          AND COALESCE(r.next_at, w.window_end) > w.window_start
-          AND r.start_at < w.window_end
         ORDER BY period_start ASC
         """,
         miner_hotkey,
-        float(hours),
     )
 
     return [(row["period_start"], row["period_end"]) for row in rows]
