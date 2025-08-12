@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 from api.src.backend.db_manager import db_operation
-from api.src.backend.entities import OpenUser
+from api.src.backend.entities import OpenUser, TreasuryTransaction
 
 @db_operation
 async def get_open_user(conn: asyncpg.Connection, auth0_user_id: str) -> Optional[OpenUser]:
@@ -158,3 +158,38 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
     )
 
     return int(total) if total is not None else 0
+
+@db_operation
+async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open_hotkey: str) -> list[TreasuryTransaction]:
+    rows = await conn.fetch(
+        """
+        SELECT 
+            tt.sender_coldkey,
+            tt.destination_coldkey,
+            tt.staker_hotkey,
+            tt.amount_alpha_rao,
+            tt.fee_alpha_rao,
+            tt.occurred_at,
+            tt.version_id,
+            tt.extrinsic_code
+        FROM treasury_transactions tt
+        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        WHERE ma.miner_hotkey = $1
+        ORDER BY tt.occurred_at DESC
+        """,
+        open_hotkey,
+    )
+
+    return [
+        TreasuryTransaction(
+            sender_coldkey=row["sender_coldkey"],
+            destination_coldkey=row["destination_coldkey"],
+            staker_hotkey=row["staker_hotkey"],
+            amount_alpha=row["amount_alpha_rao"],
+            fee_alpha=row["fee_alpha_rao"],
+            occurred_at=row["occurred_at"],
+            version_id=row["version_id"],
+            extrinsic_code=row["extrinsic_code"],
+        )
+        for row in rows
+    ]
