@@ -4,7 +4,7 @@ import os
 import atexit
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime, timezone
 
 import asyncpg
@@ -160,3 +160,33 @@ class InternalTools:
         async with self.acquire() as conn:
             value = await conn.fetchval(query, miner_hotkeys, starts, ends)
             return float(value or 0.0)
+
+    async def get_transfer_stake_extrinsic_details(self, event_code: str) -> Optional[dict[str, Any]]:
+        query = (
+            """
+            SELECT
+              occured_at,
+              raw_extrinsic->>'address' AS sender_coldkey,
+              (jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "alpha_amount").value') #>> '{}')::numeric / 1e9 AS alpha_amount,
+              jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "destination_coldkey").value') #>> '{}' AS destination_coldkey,
+              jsonb_path_query_first(raw_extrinsic, '$.call.call_args[*] ? (@.name == "hotkey").value') #>> '{}' AS staker_hotkey
+            FROM extrinsics
+            WHERE extrinsic_code = $1
+            ORDER BY occured_at DESC
+            LIMIT 1;
+            """
+        )
+
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(query, event_code)
+            if not row:
+                return None
+
+            alpha_val = row["alpha_amount"]
+            return {
+                "occured_at": datetime.fromisoformat(row["occured_at"]),
+                "sender_coldkey": str(row["sender_coldkey"]),
+                "alpha_amount": int(alpha_val),
+                "destination_coldkey": str(row["destination_coldkey"]),
+                "staker_hotkey": str(row["staker_hotkey"]),
+            }
