@@ -461,19 +461,19 @@ async def get_agent_final_score_data(conn: asyncpg.Connection, version_id: str) 
     # Query the agent_scores materialized view which contains precomputed final scores
     result = await conn.fetchrow("""
         SELECT 
-            as.version_id,
-            as.miner_hotkey,
-            as.agent_name,
-            as.version_num,
-            as.created_at,
-            as.status,
-            as.agent_summary,
-            as.set_id,
-            as.approved,
-            as.validator_count,
+            ass.version_id,
+            ass.miner_hotkey,
+            ass.agent_name,
+            ass.version_num,
+            ass.created_at,
+            ass.status,
+            ass.agent_summary,
+            ass.set_id,
+            ass.approved,
+            ass.validator_count,
             as.final_score as score
-        FROM agent_scores as
-        WHERE as.version_id = $1
+        FROM agent_scores ass
+        WHERE ass.version_id = $1
     """, version_id)
     
     if not result:
