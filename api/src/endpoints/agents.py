@@ -384,12 +384,142 @@ async def get_agent_flow_state(version_id: str) -> Dict[str, Any]:
         logger.error(f"Error retrieving flow for {version_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+@db_operation
+async def get_validator_progress_for_agent(conn: asyncpg.Connection, version_id: str) -> list[Dict[str, Any]]:
+    """Get detailed progress information for each validator evaluating a specific agent version"""
+    
+    # Query to get validator evaluation details
+    results = await conn.fetch("""
+        SELECT 
+            e.validator_hotkey,
+            e.status,
+            e.started_at,
+            e.finished_at as completed_at,
+            e.score,
+
+        FROM evaluations e
+        WHERE e.version_id = $1 
+            AND e.set_id IS NULL  -- Only main validator evaluations, not screening
+            AND e.validator_hotkey NOT LIKE 'screener-%'  -- Exclude screener evaluations
+            AND e.validator_hotkey NOT LIKE 'i-0%'  -- Exclude any AWS instance screeners
+        ORDER BY e.started_at ASC  -- Order by when evaluation started
+    """, version_id)
+    
+    validators = []
+    for row in results:
+        # Determine status and progress based on evaluation state
+        if row["status"] == "result_scored" and row["score"] is not None:
+            status = "completed"
+            progress = 1.0
+        elif row["status"] == "eval_started":
+            status = "running"
+            progress = 0.8
+        elif row["status"] == "patch_generated":
+            status = "running"
+            progress = 0.6
+        elif row["status"] == "sandbox_created":
+            status = "running"
+            progress = 0.4
+        elif row["status"] == "started":
+            status = "running"
+            progress = 0.2
+        elif row["status"] == "failed":
+            status = "failed"
+            progress = 0.0
+        else:
+            status = "pending"
+            progress = 0.0
+        
+        # Create a friendly validator name from the hotkey
+        validator_name = f"Validator {row['validator_hotkey'][:8]}..."
+        
+        validator_info = {
+            "validator_hotkey": row["validator_hotkey"],
+            "validator_name": validator_name,
+            "status": status,
+            "progress": progress,
+            "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+            "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
+            "score": float(row["score"]) if row["score"] is not None else None
+        }
+        validators.append(validator_info)
+    
+    return validators
+
+async def get_validator_progress(version_id: str) -> list[Dict[str, Any]]:
+    """Get detailed progress information for each validator evaluating a specific agent version"""
+    try:
+        validators = await get_validator_progress_for_agent(version_id)
+        return validators
+    except Exception as e:
+        logger.error(f"Error fetching validator progress for {version_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch validator progress")
+
+@db_operation
+async def get_agent_final_score_data(conn: asyncpg.Connection, version_id: str) -> Dict[str, Any]:
+    """Get the final score for a completed agent version"""
+    
+    # Query to get the final score for a specific version
+    # This should get the average score from all validator evaluations
+    # where the agent has completed the full pipeline
+    result = await conn.fetchrow("""
+        SELECT 
+            AVG(e.score) as final_score,
+            MAX(e.finished_at) as completed_at
+        FROM evaluations e
+        INNER JOIN miner_agents av ON e.version_id = av.version_id
+        WHERE e.version_id = $1 
+            AND e.status = 'result_scored'
+            AND e.score IS NOT NULL
+            AND e.set_id IS NULL  -- Only main validator evaluations, not screening
+        GROUP BY e.version_id
+        HAVING COUNT(e.evaluation_id) >= 3  -- Ensure enough evaluations for valid score
+    """, version_id)
+    
+    if not result:
+        # Try alternative query if no main evaluations found
+        # Maybe the agent only has screening scores
+        result = await conn.fetchrow("""
+            SELECT 
+                AVG(e.score) as final_score,
+                MAX(e.finished_at) as completed_at
+            FROM evaluations e
+            WHERE e.version_id = $1 
+                AND e.status = 'result_scored'
+                AND e.score IS NOT NULL
+            GROUP BY e.version_id
+        """, version_id)
+        
+        if not result:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No final score found for agent version {version_id}"
+            )
+    
+    return {
+        "score": float(result["final_score"]),
+        "completed_at": result["completed_at"].isoformat() if result["completed_at"] else None
+    }
+
+async def get_agent_final_score(version_id: str) -> Dict[str, Any]:
+    """Get the final score for a completed agent version"""
+    try:
+        score_data = await get_agent_final_score_data(version_id)
+        return score_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching final score for {version_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agent final score")
+
 routes = [
     ("/{version_id}", get_agent_status),
     ("/{version_id}/inferences", get_agent_inferences),
     ("/{version_id}/inference-stats", get_agent_inference_stats),
     ("/{version_id}/progress", get_agent_progress),
     ("/{version_id}/flow", get_agent_flow_state),
+    ("/{version_id}/validator-progress", get_validator_progress),
+    ("/{version_id}/final-score", get_agent_final_score),
 ]
 
 for path, endpoint in routes:
