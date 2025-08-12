@@ -531,6 +531,7 @@ class TestWeightsSetting:
         await conn.execute("DELETE FROM evaluation_runs")
         await conn.execute("DELETE FROM evaluations")
         await conn.execute("DELETE FROM approved_version_ids")
+        await conn.execute("DELETE FROM top_agents")  # Delete top_agents before miner_agents due to foreign key
         await conn.execute("DELETE FROM miner_agents")
         await conn.execute("DELETE FROM evaluation_sets")
         await conn.execute("DELETE FROM treasury_wallets")
