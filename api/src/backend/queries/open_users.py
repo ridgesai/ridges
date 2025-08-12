@@ -152,13 +152,7 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
         SELECT COALESCE(SUM(tt.amount_alpha_rao), 0)
         FROM treasury_transactions tt
         INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
-        WHERE ma.miner_hotkey = (
-            SELECT oubh.bittensor_hotkey
-            FROM open_user_bittensor_hotkeys oubh
-            WHERE oubh.open_hotkey = $1
-            ORDER BY oubh.set_at DESC
-            LIMIT 1
-        )
+        WHERE ma.miner_hotkey = $1
         """,
         open_hotkey,
     )
