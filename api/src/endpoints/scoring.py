@@ -85,7 +85,14 @@ async def weights() -> Dict[str, float]:
         """)
         approved_agent_hotkeys = [row["miner_hotkey"] for row in approved_agent_hotkeys_data]
 
-    weights = {hotkey: DUST_WEIGHT for hotkey in approved_agent_hotkeys} 
+        treasury_hotkeys_data = await conn.fetch("""
+            SELECT hotkey FROM treasury_wallets WHERE active = TRUE
+        """)
+        treasury_hotkeys = [row["hotkey"] for row in treasury_hotkeys_data]
+
+        dust_hotkeys = approved_agent_hotkeys + treasury_hotkeys
+
+    weights = {hotkey: DUST_WEIGHT for hotkey in dust_hotkeys} 
 
     top_agent = await get_top_agent()
 
