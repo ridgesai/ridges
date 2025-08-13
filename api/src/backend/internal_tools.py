@@ -129,7 +129,6 @@ class InternalTools:
             return 0
 
         def _to_naive_utc(dt: datetime) -> datetime:
-            # Convert aware datetimes to naive UTC; leave naive as-is (assumed UTC)
             if dt.tzinfo is not None:
                 return dt.astimezone(timezone.utc).replace(tzinfo=None)
             return dt

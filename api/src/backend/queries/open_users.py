@@ -116,19 +116,66 @@ async def get_open_user_bittensor_hotkey(conn: asyncpg.Connection, open_hotkey: 
 async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: str) -> list[tuple[datetime, datetime]]:
     rows = await conn.fetch(
         """
-        WITH ranked_top AS (
+        WITH top_intervals AS (
             SELECT
-                ta.created_at AS start_at,
-                LEAD(ta.created_at) OVER (ORDER BY ta.created_at) AS next_at,
-                ma.miner_hotkey AS miner_hotkey
+                ta.version_id,
+                ta.created_at AS span_start,
+                LEAD(ta.created_at) OVER (ORDER BY ta.created_at, ta.id) AS span_end
             FROM top_agents ta
-            INNER JOIN miner_agents ma ON ma.version_id = ta.version_id
+        ),
+        events_top AS (
+            SELECT
+                ti.version_id,
+                ti.span_start AS event_time
+            FROM top_intervals ti
+            JOIN approved_version_ids avi
+                ON avi.version_id = ti.version_id
+               AND avi.approved_at <= ti.span_start
+        ),
+        events_approval AS (
+            SELECT
+                ti.version_id,
+                avi.approved_at AS event_time
+            FROM top_intervals ti
+            JOIN approved_version_ids avi
+                ON avi.version_id = ti.version_id
+               AND avi.approved_at > ti.span_start
+               AND avi.approved_at < COALESCE(ti.span_end, NOW())
+        ),
+        events AS (
+            SELECT DISTINCT version_id, event_time FROM (
+                SELECT * FROM events_top
+                UNION ALL
+                SELECT * FROM events_approval
+            ) x
+        ),
+        ordered AS (
+            SELECT
+                version_id,
+                event_time,
+                LAG(version_id) OVER (ORDER BY event_time) AS prev_version_id
+            FROM events
+        ),
+        change_points AS (
+            SELECT version_id, event_time
+            FROM ordered
+            WHERE prev_version_id IS DISTINCT FROM version_id OR prev_version_id IS NULL
+        ),
+        spans AS (
+            SELECT
+                version_id,
+                event_time AS top_start_at,
+                LEAD(event_time) OVER (ORDER BY event_time) AS top_end_at
+            FROM change_points
         )
-        SELECT 
-            r.start_at AS period_start,
-            COALESCE(r.next_at, NOW()) AS period_end
-        FROM ranked_top r
-        WHERE r.miner_hotkey = $1
+        SELECT
+            s.top_start_at AS period_start,
+            COALESCE(s.top_end_at, NOW()) AS period_end
+        FROM spans s
+        JOIN miner_agents ma ON ma.version_id = s.version_id
+        JOIN approved_version_ids avi ON avi.version_id = s.version_id
+        WHERE ma.miner_hotkey = $1
+          AND s.top_start_at >= avi.approved_at
         ORDER BY period_start ASC
         """,
         miner_hotkey,
