@@ -12,7 +12,7 @@ from api.src.utils.auth import verify_request
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
-from api.src.backend.entities import MinerAgentScored
+from api.src.backend.entities import MinerAgent, MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
@@ -150,10 +150,26 @@ async def re_eval_approved(approval_password: str):
     try:
         logger.info("Starting re-evaluation of approved agents")
         
-        # Use screener to handle the entire re-evaluation flow
-        from api.src.models.screener import Screener
+        # Mark old agents as scored
+        async with get_transaction() as conn:
+            await conn.execute("""
+                UPDATE miner_agents SET status = 'scored'
+                WHERE status in ('awaiting_screening_1', 'awaiting_screening_2', 'screening_1', 'screening_2', 'waiting')
+            """)
         
-        agents_to_re_evaluate = await Screener.re_evaluate_approved_agents()
+        # Reset approved agents to awaiting stage 1 screening
+        async with get_transaction() as conn:
+            # Reset approved agents to awaiting stage 1 screening
+            agent_data = await conn.fetch("""
+                UPDATE miner_agents SET status = 'awaiting_screening_1'
+                WHERE version_id IN (SELECT version_id FROM approved_version_ids)
+                                          AND status != 'replaced'
+                AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                RETURNING *
+            """)
+            
+            agents_to_re_evaluate = [MinerAgent(**agent) for agent in agent_data]
+            logger.info(f"Reset {len(agents_to_re_evaluate)} approved agents to awaiting_screening")
         
         if not agents_to_re_evaluate:
             logger.info("No approved agents found for re-evaluation")
