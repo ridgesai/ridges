@@ -191,7 +191,6 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
         FROM treasury_transactions tt
         INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
         WHERE ma.miner_hotkey = $1
-          AND tt.fee = FALSE
         """,
         open_hotkey,
     )
@@ -209,11 +208,11 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             tt.amount_alpha_rao,
             tt.occurred_at,
             tt.version_id,
-            tt.extrinsic_code
+            tt.extrinsic_code,
+            tt.fee
         FROM treasury_transactions tt
         INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
         WHERE ma.miner_hotkey = $1
-          AND tt.fee = FALSE
         ORDER BY tt.occurred_at DESC
         """,
         open_hotkey,
