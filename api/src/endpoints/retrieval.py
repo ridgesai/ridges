@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
@@ -25,6 +25,7 @@ from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_open_agent_periods_on_top
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user
 from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
+from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
 load_dotenv()
 
@@ -376,6 +377,23 @@ async def get_approved_version_ids() -> list[str]:
             status_code=500,
             detail="Internal server error while retrieving approved version IDs"
         )
+    
+async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
+    """
+    Returns the time until the next upload for a given hotkey
+    """
+    try:
+        latest_agent = await db_get_latest_agent(miner_hotkey=miner_hotkey)
+        if not latest_agent:
+            return {"time_until_next_upload": 0}
+        time_until_next_upload = AGENT_RATE_LIMIT_SECONDS - (datetime.now() - latest_agent.created_at).total_seconds()
+        return {"time_until_next_upload": time_until_next_upload, "last_upload_at": latest_agent.created_at.isoformat(), "next_upload_at": (latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)).isoformat()}
+    except Exception as e:
+        logger.error(f"Error retrieving time until next upload for hotkey {miner_hotkey}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving time until next upload"
+        )
 
 router = APIRouter()
 
@@ -401,7 +419,9 @@ routes = [
     ("/miner-score-activity", miner_score_activity),
     ("/agents-from-hotkey", get_agents_from_hotkey),    
     ("/inference-provider-statistics", get_inference_provider_statistics),
-    ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey)
+    ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
+    ("/approved-version-ids", get_approved_version_ids),
+    ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey)
 ]
 
 for path, endpoint in routes:
