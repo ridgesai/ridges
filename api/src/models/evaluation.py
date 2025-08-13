@@ -594,8 +594,19 @@ class Evaluation:
             )
 
             for agent in agents:
-                # Look up screener_score from completed stage 2 screening if it exists
-                screener_score = await conn.fetchval(
+                # Calculate combined screener score from both stage 1 and stage 2
+                stage_1_score = await conn.fetchval(
+                    """
+                    SELECT score FROM evaluations 
+                    WHERE version_id = $1 
+                    AND validator_hotkey LIKE 'screener-1-%'
+                    AND status = 'completed'
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                    """,
+                    agent["version_id"]
+                )
+                stage_2_score = await conn.fetchval(
                     """
                     SELECT score FROM evaluations 
                     WHERE version_id = $1 
@@ -606,7 +617,13 @@ class Evaluation:
                     """,
                     agent["version_id"]
                 )
-                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, screener_score)
+                
+                # Calculate combined score if both stages are complete
+                combined_screener_score = None
+                if stage_1_score is not None and stage_2_score is not None:
+                    combined_screener_score = (stage_1_score + stage_2_score) / 2
+                
+                await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, combined_screener_score)
 
         async with get_transaction() as conn:
             # Check if validator has waiting work
