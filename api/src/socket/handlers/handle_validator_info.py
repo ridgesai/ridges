@@ -59,4 +59,15 @@ async def handle_validator_info(
     
     logger.debug(f"Populated the WebSocket's client dictionary with the following information: hotkey: {client.hotkey}, version_commit_hash: {client.version_commit_hash}")
 
+    # Send validator-connected event to all non-validators before calling connect()
+    from datetime import datetime, timezone
+    await ws_manager.send_to_all_non_validators("validator-connected", {
+        "type": client.get_type(),
+        "validator_hotkey": client.hotkey if client.get_type() == "validator" else None,
+        "screener_hotkey": client.hotkey if client.get_type() == "screener" else None,
+        "status": client.status,
+        "connected_at": datetime.now(timezone.utc).isoformat(),
+        "ip_address": client.ip_address
+    })
+
     await client.connect()

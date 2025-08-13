@@ -62,7 +62,9 @@ class WebSocketManager:
             logger.warning(f"Client with hotkey {client_hotkey} disconnected from platform socket. Total clients connected: {len(self.clients)}. Resetting any running evaluations for this client.")
 
             try:
-                await self.send_to_all_non_validators("validator-disconnected", { "validator_hotkey": client_hotkey })
+                # Only send disconnection event if we have a valid hotkey
+                if client_hotkey:
+                    await self.send_to_all_non_validators("validator-disconnected", { "validator_hotkey": client_hotkey })
                 
                 if client.get_type() == "screener":
                     logger.info(f"Screener {client_hotkey} disconnected. Handling screening disconnect.")
