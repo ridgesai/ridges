@@ -55,15 +55,6 @@ class SandboxManager:
         self._setup_proxy()
         self._setup_signal_handlers()
 
-        # Clean up directories on startup
-        for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
-            try:
-                if path.exists():
-                    shutil.rmtree(path, ignore_errors=True)
-                    logger.info(f"Cleaned up directory: {path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up directory {path}: {e}")
-    
     @tracer.wrap(resource="setup-network-for-sandbox-manager")
     def _setup_network(self) -> None:
         """Setup Docker network and proxy container"""
@@ -267,13 +258,14 @@ class SandboxManager:
                 logger.warning(f"Error cleaning up sandbox: {e}")
         
         # Clean up directories
-        for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
-            try:
-                if path.exists():
-                    shutil.rmtree(path, ignore_errors=True)
-                    logger.info(f"Cleaned up directory: {path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up directory {path}: {e}")
+        # TODO: 
+        # for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
+        #     try:
+        #         if path.exists():
+        #             shutil.rmtree(path, ignore_errors=True)
+        #             logger.info(f"Cleaned up directory: {path}")
+        #     except Exception as e:
+        #         logger.warning(f"Failed to clean up directory {path}: {e}")
         
         if force_cancel:
             containers_to_kill = list(self._container_ids)
