@@ -227,6 +227,7 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             "occurred_at": str(row["occurred_at"]),
             "version_id": str(row["version_id"]),
             "extrinsic_code": str(row["extrinsic_code"]),
+            "fee": bool(row["fee"])
         }
         for row in rows
     ]
