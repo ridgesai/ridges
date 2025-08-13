@@ -83,7 +83,8 @@ async def post_agent(
         if prod: check_signature(public_key, file_info, signature)
         if prod: await check_hotkey_registered(miner_hotkey)
         file_content = await check_file_size(agent_file)
-        if prod: await check_code_similarity(file_content, miner_hotkey)
+        # TODO: Uncomment this when embedding similarity check is done
+        # if prod: await check_code_similarity(file_content, miner_hotkey)
         check_agent_code(file_content)
 
         async with Evaluation.get_lock():
@@ -187,7 +188,8 @@ async def post_open_agent(
     if prod: await check_agent_banned(miner_hotkey=open_hotkey)
     if prod and latest_agent: check_rate_limit(latest_agent)
     file_content = await check_file_size(agent_file)
-    if prod: await check_code_similarity(file_content, open_hotkey)
+    # TODO: Uncomment this when embedding similarity check is done
+    # if prod: await check_code_similarity(file_content, open_hotkey)
     check_agent_code(file_content)
     
     async with Evaluation.get_lock():
