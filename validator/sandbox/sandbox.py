@@ -531,4 +531,13 @@ class Sandbox:
                 logger.info(f"Cleaned up repository directory: {self.repo_dir}")
             except Exception as e:
                 logger.warning(f"Failed to clean up repository directory {self.repo_dir}: {e}")
+        
+        # Clean up IO directory if it exists
+        io_dir = self.agent_dir / f"io-{self.evaluation_run.run_id}"
+        if io_dir.exists():
+            try:
+                shutil.rmtree(io_dir, ignore_errors=True)
+                logger.info(f"Cleaned up IO directory: {io_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up IO directory {io_dir}: {e}")
     

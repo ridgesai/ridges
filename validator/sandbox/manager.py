@@ -257,6 +257,15 @@ class SandboxManager:
             except Exception as e:
                 logger.warning(f"Error cleaning up sandbox: {e}")
         
+        # Clean up directories
+        for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
+            try:
+                if path.exists():
+                    shutil.rmtree(path, ignore_errors=True)
+                    logger.info(f"Cleaned up directory: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up directory {path}: {e}")
+        
         if force_cancel:
             containers_to_kill = list(self._container_ids)
             for container_id in containers_to_kill:
@@ -293,15 +302,6 @@ class SandboxManager:
                         logger.info("Removed proxy container via CLI fallback")
                     except Exception as cli_error:
                         logger.error(f"CLI fallback also failed for proxy container: {cli_error}")
-            
-            # Clean up directories
-            for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
-                try:
-                    if path.exists():
-                        shutil.rmtree(path, ignore_errors=True)
-                        logger.info(f"Cleaned up directory: {path}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up directory {path}: {e}")
             
             self.sandboxes.clear()
             self._container_ids.clear()
