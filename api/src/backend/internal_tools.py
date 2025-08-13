@@ -129,7 +129,6 @@ class InternalTools:
             return 0
 
         def _to_naive_utc(dt: datetime) -> datetime:
-            # Convert aware datetimes to naive UTC; leave naive as-is (assumed UTC)
             if dt.tzinfo is not None:
                 return dt.astimezone(timezone.utc).replace(tzinfo=None)
             return dt
@@ -139,19 +138,49 @@ class InternalTools:
 
         query = (
             """
-            WITH period_bounds AS (
+            WITH input_hotkeys AS (
+                SELECT unnest($1::text[]) AS hotkey
+            ),
+            period_bounds AS (
                 SELECT s AS start_at, e AS end_at
                 FROM unnest($2::timestamp[], $3::timestamp[]) AS t(s, e)
+            ),
+            hotkey_periods AS (
+                SELECT ih.hotkey, pb.start_at, pb.end_at
+                FROM input_hotkeys ih
+                CROSS JOIN period_bounds pb
+            ),
+            bounds AS (
+                SELECT
+                    hp.hotkey,
+                    (
+                        SELECT MIN(es1.occured_at)
+                        FROM emission_snapshots es1
+                        WHERE es1.hotkey = hp.hotkey
+                          AND es1.occured_at > hp.start_at
+                    ) AS start_cut,
+                    (
+                        SELECT MIN(es2.occured_at)
+                        FROM emission_snapshots es2
+                        WHERE es2.hotkey = hp.hotkey
+                          AND es2.occured_at > hp.end_at
+                    ) AS end_cut
+                FROM hotkey_periods hp
+            ),
+            valid_bounds AS (
+                SELECT hotkey, start_cut, end_cut
+                FROM bounds
+                WHERE start_cut IS NOT NULL
+                  AND end_cut IS NOT NULL
+                  AND start_cut < end_cut
             )
             SELECT COALESCE(SUM(es.emission_alpha_rao), 0) AS total_alpha
             FROM emission_snapshots AS es
-            WHERE es.hotkey = ANY($1::text[])
-              AND EXISTS (
-                SELECT 1
-                FROM period_bounds pb
-                WHERE es.occured_at >= pb.start_at
-                  AND es.occured_at < pb.end_at
-              );
+            INNER JOIN valid_bounds vb
+              ON es.hotkey = vb.hotkey
+             AND es.occured_at >= vb.start_cut
+             AND es.occured_at < vb.end_cut
+            WHERE es.hotkey = ANY($1::text[]);
             """
         )
 
