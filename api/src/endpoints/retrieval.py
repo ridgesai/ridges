@@ -24,6 +24,7 @@ from api.src.backend.queries.inference import get_inference_provider_statistics 
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_open_agent_periods_on_top
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user
+from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
 
 load_dotenv()
 
@@ -361,6 +362,19 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving emission alpha"
+        )
+    
+async def get_approved_version_ids() -> list[str]:
+    """
+    Returns a list of all approved version IDs
+    """
+    try:
+        return await db_get_all_approved_version_ids()
+    except Exception as e:
+        logger.error(f"Error retrieving approved version IDs: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving approved version IDs"
         )
 
 router = APIRouter()

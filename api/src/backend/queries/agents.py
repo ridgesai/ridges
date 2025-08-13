@@ -115,3 +115,10 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     """)
     
     return [MinerAgent(**dict(result)) for result in results]
+
+@db_operation
+async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
+    """
+    Get all approved version IDs
+    """
+    return await conn.fetch("SELECT version_id FROM approved_version_ids")
