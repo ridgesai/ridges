@@ -98,7 +98,8 @@ CREATE TABLE IF NOT EXISTS inferences (
 );
 
 CREATE TABLE IF NOT EXISTS approved_version_ids (
-    version_id UUID PRIMARY KEY REFERENCES miner_agents(version_id)
+    version_id UUID PRIMARY KEY REFERENCES miner_agents(version_id),
+    approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Weights History table
