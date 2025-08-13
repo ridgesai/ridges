@@ -21,6 +21,35 @@ class Validator(Client):
     def is_available(self) -> bool:
         return self.status == "available"
     
+    def _broadcast_status_change(self) -> None:
+        """Broadcast status change to dashboard clients"""
+        try:
+            import asyncio
+            from api.src.socket.websocket_manager import WebSocketManager
+            
+            # Create a task to send the status update
+            loop = asyncio.get_event_loop()
+            loop.create_task(self._async_broadcast_status_change())
+        except Exception as e:
+            logger.warning(f"Failed to broadcast status change for validator {self.hotkey}: {e}")
+    
+    async def _async_broadcast_status_change(self) -> None:
+        """Async method to broadcast status change"""
+        try:
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws_manager = WebSocketManager.get_instance()
+            
+            await ws_manager.send_to_all_non_validators("validator-status-changed", {
+                "type": "validator",
+                "validator_hotkey": self.hotkey,
+                "status": self.status,
+                "evaluating_id": self.current_evaluation_id,
+                "evaluating_agent_hotkey": self.current_agent_hotkey,
+                "evaluating_agent_name": self.current_agent_name
+            })
+        except Exception as e:
+            logger.error(f"Failed to send status change broadcast for validator {self.hotkey}: {e}")
+    
     def set_available(self) -> None:
         """Set validator to available state"""
         old_status = getattr(self, 'status', None)
@@ -29,6 +58,10 @@ class Validator(Client):
         self.current_agent_name = None
         self.current_agent_hotkey = None
         logger.info(f"Validator {self.hotkey}: {old_status} -> available")
+        
+        # Broadcast status change if status actually changed
+        if old_status != self.status and old_status is not None:
+            self._broadcast_status_change()
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
         """Start evaluation and send to validator"""
@@ -68,12 +101,15 @@ class Validator(Client):
             await ws_manager.send_to_all_non_validators("evaluation-started", message)
                 
             # Commit validator state changes
+            old_status = self.status
             self.status = f"evaluating"
             self.current_evaluation_id = evaluation_id
             self.current_agent_name = miner_agent.agent_name
             self.current_agent_hotkey = miner_agent.miner_hotkey
             logger.info(f"Validator {self.hotkey} successfully started evaluating {miner_agent.agent_name}")
 
+            # Broadcast status change
+            self._broadcast_status_change()
             return True
             
         except Exception as e:

@@ -502,6 +502,9 @@ class Evaluation:
                 screener.current_evaluation_id = eval_id
                 screener.current_agent_hotkey = agent.miner_hotkey
                 logger.info(f"Stage {screener.stage} screener {screener.hotkey} successfully assigned to {agent.agent_name}")
+                
+                # Broadcast status change to dashboard
+                screener._broadcast_status_change()
             else:
                 # Reset screener on failure
                 screener.set_available()

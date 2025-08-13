@@ -53,6 +53,23 @@ async def handle_finish_evaluation(
             await validator.finish_evaluation(evaluation_id, errored, reason)
             action = "Evaluation"
         
+        # Broadcast evaluation completion
+        try:
+            from api.src.socket.websocket_manager import WebSocketManager
+            from datetime import datetime
+            
+            await WebSocketManager.get_instance().send_to_all_non_validators(
+                "evaluation_completed",
+                {
+                    "version_id": str(evaluation.version_id),
+                    "miner_hotkey": evaluation.miner_hotkey,
+                    "evaluation_id": str(evaluation_id),
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast evaluation completion: {e}")
+        
         logger.info(f"{action} {evaluation_id} finished successfully by {client.get_type()} {client.hotkey}")
         return {"status": "success", "message": f"{action} finished successfully"}
             
