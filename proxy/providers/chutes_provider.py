@@ -5,6 +5,7 @@ Chutes provider for inference requests.
 import json
 import logging
 import random
+import httpx
 from typing import List
 from uuid import UUID
 
@@ -15,17 +16,60 @@ from proxy.models import GPTMessage
 from proxy.config import (
     CHUTES_API_KEY,
     CHUTES_INFERENCE_URL,
-    MODEL_PRICING,
 )
 
 logger = logging.getLogger(__name__)
 
+CHUTES_ALLOWED_MODELS = [
+    "deepseek-ai/DeepSeek-V3-0324",
+    "agentica-org/DeepCoder-14B-Preview",
+    "deepseek-ai/DeepSeek-V3",
+    "deepseek-ai/DeepSeek-R1",
+    "deepseek-ai/DeepSeek-R1-0528",
+    "NousResearch/DeepHermes-3-Mistral-24B-Preview",
+    "NousResearch/DeepHermes-3-Llama-3-8B-Preview",
+    "chutesai/Llama-4-Maverick-17B-128E-Instruct-FP8",
+    "Qwen/Qwen3-32B",
+    "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "Qwen/QwQ-32B",
+    "chutesai/Mistral-Small-3.2-24B-Instruct-2506",
+    "unsloth/gemma-3-27b-it",
+    "agentica-org/DeepCoder-14B-Preview",
+    "THUDM/GLM-Z1-32B-0414",
+    "ArliAI/QwQ-32B-ArliAI-RpR-v1",
+    "Qwen/Qwen3-30B-A3B",
+    "hutesai/Devstral-Small-2505",
+    "chutesai/Mistral-Small-3.1-24B-Instruct-2503",
+    "chutesai/Llama-4-Scout-17B-16E-Instruct",
+    "shisa-ai/shisa-v2-llama3.3-70b",
+    "moonshotai/Kimi-Dev-72B",
+    "moonshotai/Kimi-K2-Instruct",
+    "all-hands/openhands-lm-32b-v0.1",
+    "zai-org/GLM-4.5-FP8",
+    "zai-org/GLM-4.5-Air",
+]
 
 class ChutesProvider(InferenceProvider):
     """Provider for Chutes API inference"""
+    model_pricing = {}
     
     def __init__(self):
         self.api_key = CHUTES_API_KEY
+    
+    @staticmethod
+    async def load_model_pricing():
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get("https://llm.chutes.ai/v1/models")
+                response.raise_for_status()
+
+                for model in response.json().get("data", []):
+                    model_id = model.get("id")
+                    price_usd = model.get("pricing", {}).get("completion")
+                    if model_id and price_usd is not None:
+                        ChutesProvider.model_pricing[model_id] = price_usd
+        except Exception as e:
+            logger.error(f"Error loading model pricing: {e}")
         
     @property
     def name(self) -> str:
@@ -34,16 +78,19 @@ class ChutesProvider(InferenceProvider):
     def is_available(self) -> bool:
         """Check if Chutes provider is available"""
         return bool(self.api_key)
-    
+
     def supports_model(self, model: str) -> bool:
         """Check if model is supported by Chutes (supports all models in pricing)"""
-        return model in MODEL_PRICING
+        return model in ChutesProvider.model_pricing
+    
+    def allowed(self, model: str) -> bool:
+        return model in CHUTES_ALLOWED_MODELS
     
     def get_pricing(self, model: str) -> float:
         """Get Chutes pricing for the model"""
         if not self.supports_model(model):
             raise KeyError(f"Model {model} not supported by Chutes provider")
-        return MODEL_PRICING[model]
+        return ChutesProvider.model_pricing[model]
     
     async def inference(
         self,
@@ -59,6 +106,9 @@ class ChutesProvider(InferenceProvider):
             
         if not self.supports_model(model):
             raise ValueError(f"Model {model} not supported by Chutes provider")
+        
+        if not self.allowed(model):
+            raise ValueError(f"Model {model} not allowed")
         
         # Convert messages to dict format
         messages_dict = []

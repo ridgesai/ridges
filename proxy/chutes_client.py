@@ -12,7 +12,6 @@ from proxy.config import (
     CHUTES_EMBEDDING_URL,
     CHUTES_INFERENCE_URL,
     EMBEDDING_PRICE_PER_SECOND,
-    MODEL_PRICING,
     DEFAULT_MODEL,
     ENV,
 )
@@ -23,6 +22,7 @@ from proxy.database import (
     create_inference,
     update_inference,
 )
+from proxy.providers.chutes_provider import ChutesProvider
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +108,10 @@ class ChutesClient:
         """Get inference response for messages"""
 
         # Validate model
-        if model not in MODEL_PRICING:
+        if model not in ChutesProvider.model_pricing:
             logger.warning(f"Unsupported model requested for run {run_id}: {model}")
             return {
-                "error": f"Model {model} not supported. Please use one of the following models: {list(MODEL_PRICING.keys())}"
+                "error": f"Model {model} not supported. Please use one of the following models: {list(ChutesProvider.model_pricing.keys())}"
             }
 
         # Convert messages to dict format for database storage
@@ -192,7 +192,7 @@ class ChutesClient:
                                     continue
 
             # Calculate cost based on tokens
-            cost = (total_tokens / 1_000_000) * MODEL_PRICING[model]
+            cost = (total_tokens / 1_000_000) * ChutesProvider.model_pricing[model]
 
             # Update inference record with cost and response (skip in dev mode)
             if ENV != 'dev' and inference_id:
