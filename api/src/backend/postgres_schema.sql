@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
 -- Top agents table
 CREATE TABLE IF NOT EXISTS top_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+    version_id UUID REFERENCES miner_agents(version_id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -375,6 +375,7 @@ DECLARE
     latest_set_id INT;
     latest_top_version UUID;
     current_top_version UUID;
+    has_current BOOLEAN;
 BEGIN
     -- Only act when status is set to completed
     IF NEW.status <> 'completed' THEN
@@ -394,18 +395,15 @@ BEGIN
     ORDER BY final_score DESC, created_at ASC
     LIMIT 1;
 
-    IF latest_top_version IS NULL THEN
-        RETURN NEW;
-    END IF;
-
     -- Fetch the most recent entry from top_agents
     SELECT version_id INTO current_top_version
     FROM top_agents
     ORDER BY created_at DESC
     LIMIT 1;
+    has_current := FOUND;
 
-    -- Insert a new top agent entry only if it differs from the current one
-    IF current_top_version IS DISTINCT FROM latest_top_version THEN
+    -- Insert a new top agent entry if there is no previous entry or if it differs
+    IF NOT has_current OR current_top_version IS DISTINCT FROM latest_top_version THEN
         INSERT INTO top_agents (version_id) VALUES (latest_top_version);
     END IF;
 

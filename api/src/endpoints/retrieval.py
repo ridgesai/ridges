@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from api.src.utils.auth import verify_request
 from api.src.utils.s3 import S3Manager
@@ -386,7 +386,7 @@ async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, 
         latest_agent = await db_get_latest_agent(miner_hotkey=miner_hotkey)
         if not latest_agent:
             return {"time_until_next_upload": 0}
-        time_until_next_upload = AGENT_RATE_LIMIT_SECONDS - (datetime.now() - latest_agent.created_at).total_seconds()
+        time_until_next_upload = AGENT_RATE_LIMIT_SECONDS - (datetime.now(timezone.utc) - latest_agent.created_at).total_seconds()
         return {"time_until_next_upload": time_until_next_upload, "last_upload_at": latest_agent.created_at.isoformat(), "next_upload_at": (latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)).isoformat()}
     except Exception as e:
         logger.error(f"Error retrieving time until next upload for hotkey {miner_hotkey}: {e}")
