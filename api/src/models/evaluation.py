@@ -143,15 +143,10 @@ class Evaluation:
                             break
                 elif stage == 2:
                     # Stage 2 passed -> check if we should prune immediately
-                    stage_1_score = await conn.fetchval("""SELECT score FROM evaluations
-                                                        WHERE version_id = $1 AND validator_hotkey LIKE 'screener-1-%'
-                                                        AND status = 'completed'
-                                                        ORDER BY created_at DESC
-                                                        LIMIT 1""", self.version_id)
-                    combined_screener_score = (stage_1_score + self.score) / 2
+                    combined_screener_score = await Screener.get_combined_screener_score(conn, self.version_id)
                     top_agent = await MinerAgentScored.get_top_agent(conn)
                     
-                    if top_agent and combined_screener_score < top_agent.avg_score * PRUNE_THRESHOLD:
+                    if top_agent and combined_screener_score is not None and combined_screener_score < top_agent.avg_score * PRUNE_THRESHOLD:
                         # Score is too low, prune miner agent and don't create evaluations
                         await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
                         logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with score {self.score:.3f} (threshold: {top_agent.avg_score * PRUNE_THRESHOLD:.3f})")
@@ -597,35 +592,7 @@ class Evaluation:
             )
 
             for agent in agents:
-                # Calculate combined screener score from both stage 1 and stage 2
-                stage_1_score = await conn.fetchval(
-                    """
-                    SELECT score FROM evaluations 
-                    WHERE version_id = $1 
-                    AND validator_hotkey LIKE 'screener-1-%'
-                    AND status = 'completed'
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                    """,
-                    agent["version_id"]
-                )
-                stage_2_score = await conn.fetchval(
-                    """
-                    SELECT score FROM evaluations 
-                    WHERE version_id = $1 
-                    AND validator_hotkey LIKE 'screener-2-%'
-                    AND status = 'completed'
-                    ORDER BY created_at DESC 
-                    LIMIT 1
-                    """,
-                    agent["version_id"]
-                )
-                
-                # Calculate combined score if both stages are complete
-                combined_screener_score = None
-                if stage_1_score is not None and stage_2_score is not None:
-                    combined_screener_score = (stage_1_score + stage_2_score) / 2
-                
+                combined_screener_score = await Screener.get_combined_screener_score(conn, agent["version_id"])
                 await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, combined_screener_score)
 
         async with get_transaction() as conn:

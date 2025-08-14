@@ -201,6 +201,127 @@ class TestScreener:
             screener = await Screener.get_first_available_and_reserve(3)
             assert screener is None
 
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_combined_screener_score_calculation(self):
+        """Test that get_combined_screener_score calculates the correct score from evaluation runs"""
+        import os
+        import uuid
+        
+        # Create a direct database connection for this test
+        db_conn = await asyncpg.connect(
+            user=os.getenv('AWS_MASTER_USERNAME'),
+            password=os.getenv('AWS_MASTER_PASSWORD'),
+            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
+            port=int(os.getenv('PGPORT', '5432')),
+            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+        )
+        
+        try:
+            # Reset relevant tables
+            await db_conn.execute("TRUNCATE evaluation_runs, evaluations, miner_agents RESTART IDENTITY CASCADE")
+            
+            set_id = 1
+            test_version = str(uuid.uuid4())
+            
+            # Add evaluation sets for current set_id
+            await db_conn.execute(
+                "INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES ($1, 'screener-1', 'test-instance-1'), ($1, 'screener-2', 'test-instance-2') ON CONFLICT DO NOTHING",
+                set_id
+            )
+            
+            # Create test agent
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'test_miner','test_agent',1,NOW(),'awaiting_screening_1')",
+                test_version,
+            )
+            
+            # Create stage 1 evaluation with known results
+            stage1_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW())",
+                stage1_eval_id, test_version, set_id
+            )
+            
+            # Create stage 1 evaluation runs: 7 out of 10 questions solved
+            stage1_solved = 7
+            stage1_total = 10
+            for i in range(stage1_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage1_solved  # First 7 are solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage1_eval_id, f"stage1-test-{i+1}", solved
+                )
+            
+            # Create stage 2 evaluation with known results
+            stage2_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at) VALUES ($1,$2,'screener-2-test',$3,'completed',NOW(),NOW())",
+                stage2_eval_id, test_version, set_id
+            )
+            
+            # Create stage 2 evaluation runs: 3 out of 5 questions solved
+            stage2_solved = 3
+            stage2_total = 5
+            for i in range(stage2_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage2_solved  # First 3 are solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage2_eval_id, f"stage2-test-{i+1}", solved
+                )
+            
+            # Test the combined screener score calculation
+            combined_score = await Screener.get_combined_screener_score(db_conn, test_version)
+            
+            # Calculate expected combined score: (7 + 3) / (10 + 5) = 10/15 = 2/3 ≈ 0.6667
+            expected_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
+            
+            # Verify the calculation is correct
+            assert combined_score is not None, "Combined score should not be None when both stages are completed"
+            assert abs(combined_score - expected_score) < 0.0001, f"Expected combined score {expected_score}, got {combined_score}"
+            
+            # Verify the specific calculation: 10 solved out of 15 total
+            assert abs(combined_score - (10/15)) < 0.0001, f"Expected 10/15 = {10/15}, got {combined_score}"
+            
+            # Test edge case: only stage 1 completed (should return None)
+            incomplete_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'incomplete_miner','incomplete_agent',1,NOW(),'awaiting_screening_2')",
+                incomplete_version,
+            )
+            
+            incomplete_eval_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW())",
+                incomplete_eval_id, incomplete_version, set_id
+            )
+            
+            # Add some runs for the incomplete case
+            for i in range(3):
+                run_id = str(uuid.uuid4())
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, incomplete_eval_id, f"incomplete-test-{i+1}", True
+                )
+            
+            incomplete_score = await Screener.get_combined_screener_score(db_conn, incomplete_version)
+            assert incomplete_score is None, "Combined score should be None when only one stage is completed"
+            
+            # Test edge case: no evaluations (should return None)
+            no_eval_version = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'no_eval_miner','no_eval_agent',1,NOW(),'awaiting_screening_1')",
+                no_eval_version,
+            )
+            
+            no_eval_score = await Screener.get_combined_screener_score(db_conn, no_eval_version)
+            assert no_eval_score is None, "Combined score should be None when no evaluations exist"
+            
+        finally:
+            await db_conn.close()
+
 
 class TestEvaluationStatus:
     """Test EvaluationStatus enum and transitions"""
@@ -1253,27 +1374,54 @@ class TestAgentLifecycleFlow:
             # Calculate dynamic scores based on top agent and thresholds
             top_agent_score = 0.90
             threshold = top_agent_score * PRUNE_THRESHOLD
-            # Set combined score to be just above threshold to ensure it passes
-            target_combined_score = threshold + 0.05  # 5% buffer above threshold
-            stage1_score = target_combined_score  # Use same score for both stages for simplicity
-            stage2_score = target_combined_score
+            
+            # Create evaluation runs to test the new combined score calculation
+            # Stage 1: 4 out of 5 questions solved (80%)
+            stage1_solved = 4
+            stage1_total = 5
+            # Stage 2: 5 out of 5 questions solved (100%)
+            stage2_solved = 5
+            stage2_total = 5
+            # Combined: 9 out of 10 questions solved (90%)
+            expected_combined_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
+            
+            # Ensure combined score is above threshold
+            assert expected_combined_score > threshold, f"Test setup error: combined score {expected_combined_score} should be > threshold {threshold}"
 
-            # 1. Create and complete stage 1 screening evaluation with passing score
+            # 1. Create and complete stage 1 screening evaluation
             stage1_eval_id = str(uuid.uuid4())
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW(),$4)",
-                stage1_eval_id, test_version, set_id, stage1_score
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW())",
+                stage1_eval_id, test_version, set_id
             )
+            
+            # Create evaluation runs for stage 1 (4 solved, 1 not solved)
+            for i in range(stage1_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage1_solved  # First 4 are solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage1_eval_id, f"stage1-instance-{i+1}", solved
+                )
 
             # Update agent status to awaiting_screening_2 (simulating stage 1 completion)
             await db_conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", test_version)
 
-            # 2. Create stage 2 screening evaluation with passing score
+            # 2. Create stage 2 screening evaluation
             stage2_eval_id = str(uuid.uuid4())
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, score) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW(),$4)",
-                stage2_eval_id, test_version, set_id, stage2_score
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW())",
+                stage2_eval_id, test_version, set_id
             )
+            
+            # Create evaluation runs for stage 2 (5 solved, 0 not solved)
+            for i in range(stage2_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage2_solved  # All 5 are solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage2_eval_id, f"stage2-instance-{i+1}", solved
+                )
 
             # Create the Evaluation object and simulate finishing
             stage2_eval = Evaluation(
@@ -1282,7 +1430,6 @@ class TestAgentLifecycleFlow:
                 validator_hotkey='screener-2-test',
                 set_id=set_id,
                 status=EvaluationStatus.waiting,
-                score=stage2_score,
             )
 
             # Mock connected validators for testing
@@ -1296,8 +1443,7 @@ class TestAgentLifecycleFlow:
                 # Finish the stage 2 evaluation (this should calculate combined score and create validator evaluations)
                 result = await stage2_eval.finish(db_conn)
 
-            # 3. Verify combined score calculation
-            expected_combined_score = (stage1_score + stage2_score) / 2
+            # 3. Verify combined score calculation matches the new method
             
             # Check that validator evaluations were created with the combined screener score
             validator_evaluations = await db_conn.fetch(
@@ -1315,7 +1461,7 @@ class TestAgentLifecycleFlow:
             assert len(validator_evaluations) == 3, f"Expected 3 validator evaluations, got {len(validator_evaluations)}"
             
             for eval_row in validator_evaluations:
-                assert eval_row['screener_score'] == expected_combined_score, f"Expected combined score {expected_combined_score}, got {eval_row['screener_score']}"
+                assert abs(eval_row['screener_score'] - expected_combined_score) < 0.001, f"Expected combined score {expected_combined_score}, got {eval_row['screener_score']}"
                 assert eval_row['status'] == 'waiting', f"Expected evaluation status 'waiting', got {eval_row['status']}"
                 assert eval_row['validator_hotkey'] in ['validator-1', 'validator-2', 'validator-3'], f"Unexpected validator hotkey {eval_row['validator_hotkey']}"
 
@@ -1339,7 +1485,7 @@ class TestAgentLifecycleFlow:
             )
             
             for score_row in retrieved_screener_scores:
-                assert score_row['screener_score'] == expected_combined_score, f"Retrieved screener score doesn't match expected combined score"
+                assert abs(score_row['screener_score'] - expected_combined_score) < 0.001, f"Retrieved screener score {score_row['screener_score']} doesn't match expected combined score {expected_combined_score}"
 
             # 8. Verify no pruning occurred (scores are acceptable)
             pruned_evaluations = await db_conn.fetchval(
@@ -1414,32 +1560,54 @@ class TestAgentLifecycleFlow:
             # Calculate dynamic scores based on top agent and thresholds  
             top_agent_score = 0.95
             threshold = top_agent_score * PRUNE_THRESHOLD
-            # Set combined score to be below threshold to ensure it gets pruned
-            target_combined_score = threshold - 0.1  # 10% below threshold
-            # Use different stage scores that average to the target combined score
-            stage1_score = max(target_combined_score + 0.05, SCREENING_1_THRESHOLD + 0.05)  # Ensure above screening threshold
-            stage2_score = max(2 * target_combined_score - stage1_score, SCREENING_2_THRESHOLD + 0.05)  # Ensure above screening threshold
+            
+            # Create evaluation runs to test the new combined score calculation with low score
+            # Stage 1: 1 out of 5 questions solved (20%) 
+            stage1_solved = 1
+            stage1_total = 5
+            # Stage 2: 1 out of 4 questions solved (25%)
+            stage2_solved = 1
+            stage2_total = 4
+            # Combined: 2 out of 9 questions solved (22.2%)
+            expected_combined_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
+            
+            # Ensure combined score is below threshold for pruning
+            assert expected_combined_score < threshold, f"Test setup error: combined score {expected_combined_score} should be < threshold {threshold}"
 
-            # 1. Create and complete stage 1 screening evaluation with passing score
+            # 1. Create and complete stage 1 screening evaluation
             stage1_eval_id = str(uuid.uuid4())
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW(),$4)",
-                stage1_eval_id, test_version, set_id, stage1_score
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at) VALUES ($1,$2,'screener-1-test',$3,'completed',NOW(),NOW())",
+                stage1_eval_id, test_version, set_id
             )
+            
+            # Create evaluation runs for stage 1 (1 solved, 4 not solved)
+            for i in range(stage1_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage1_solved  # Only first one is solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage1_eval_id, f"stage1-low-instance-{i+1}", solved
+                )
 
             # Update agent status to awaiting_screening_2
             await db_conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", test_version)
 
-            # 2. Create stage 2 screening evaluation with low score
+            # 2. Create stage 2 screening evaluation
             stage2_eval_id = str(uuid.uuid4())
             await db_conn.execute(
-                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, score) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW(),$4)",
-                stage2_eval_id, test_version, set_id, stage2_score
+                "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at) VALUES ($1,$2,'screener-2-test',$3,'waiting',NOW())",
+                stage2_eval_id, test_version, set_id
             )
-
-            # Verify our calculation: combined score should be below threshold for pruning
-            expected_combined_score = (stage1_score + stage2_score) / 2
-            assert expected_combined_score < threshold, f"Test setup error: combined score {expected_combined_score} should be < threshold {threshold}"
+            
+            # Create evaluation runs for stage 2 (1 solved, 3 not solved)
+            for i in range(stage2_total):
+                run_id = str(uuid.uuid4())
+                solved = i < stage2_solved  # Only first one is solved
+                await db_conn.execute(
+                    "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, solved, status, started_at) VALUES ($1,$2,$3,$4,'result_scored',NOW())",
+                    run_id, stage2_eval_id, f"stage2-low-instance-{i+1}", solved
+                )
 
             # Create the Evaluation object and simulate finishing
             stage2_eval = Evaluation(
@@ -1448,7 +1616,6 @@ class TestAgentLifecycleFlow:
                 validator_hotkey='screener-2-test',
                 set_id=set_id,
                 status=EvaluationStatus.waiting,
-                score=stage2_score,
             )
 
             # Mock connected validators (should not be used since agent gets pruned)
