@@ -40,6 +40,7 @@ MODEL_PRICING: Dict[str, float] = {
     "all-hands/openhands-lm-32b-v0.1": 0.0246,
     "zai-org/GLM-4.5-FP8": 0.2000,
     "zai-org/GLM-4.5-Air": 0.0000,
+    "rayonlabs/Gradients-Instruct-8B": 0.02
 }
 
 # Models that support Targon fallback
