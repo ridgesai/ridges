@@ -140,7 +140,7 @@ async def trigger_weight_set():
 async def approve_version(version_id: str, approval_password: str, timestamp_utc: Optional[datetime] = None):
     """Approve a version ID for weight consideration"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid approval password")
+        raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
     
     agent = await db_get_agent_by_version_id(version_id)
     if not agent:
