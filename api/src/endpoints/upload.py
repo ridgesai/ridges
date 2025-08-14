@@ -9,7 +9,7 @@ from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_valid_filename, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3
+from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
@@ -51,7 +51,7 @@ async def post_agent(
     Upload a new agent version for evaluation
     
     This endpoint allows miners to upload their agent code for evaluation. The agent must:
-    - Be a Python file named 'agent.py'
+    - Be a Python file
     - Be under 1MB in size
     - Pass static code safety checks
     - Pass similarity validation to prevent copying
@@ -64,7 +64,7 @@ async def post_agent(
 
         miner_hotkey = get_miner_hotkey(file_info)
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
-        check_valid_filename(agent_file.filename)
+        check_if_python_file(agent_file.filename)
         latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
 
         agent = MinerAgent(
@@ -172,7 +172,7 @@ async def post_open_agent(
         logger.error(f"Open user {open_hotkey} not found")
         raise HTTPException(status_code=404, detail="Open user not found. Please register an account.")
 
-    check_valid_filename(agent_file.filename)
+    check_if_python_file(agent_file.filename)
     latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=open_hotkey)
 
     agent = MinerAgent(
