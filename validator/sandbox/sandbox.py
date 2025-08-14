@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -162,6 +163,7 @@ class Sandbox:
                     "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy",
                     "PYTHONUNBUFFERED": "1"  # Ensure Python output is not buffered
                 },
+                user=f"{os.getuid()}:{os.getgid()}",  # Run container as host user:group
                 detach=True,
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
