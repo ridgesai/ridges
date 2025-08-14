@@ -159,11 +159,18 @@ class InternalTools:
                         WHERE es1.hotkey = hp.hotkey
                           AND es1.occured_at > hp.start_at
                     ) AS start_cut,
-                    (
-                        SELECT MIN(es2.occured_at)
-                        FROM emission_snapshots es2
-                        WHERE es2.hotkey = hp.hotkey
-                          AND es2.occured_at > hp.end_at
+                    COALESCE(
+                        (
+                            SELECT MIN(es2.occured_at)
+                            FROM emission_snapshots es2
+                            WHERE es2.hotkey = hp.hotkey
+                              AND es2.occured_at > hp.end_at
+                        ),
+                        (
+                            SELECT MAX(es3.occured_at) + INTERVAL '1 microsecond'
+                            FROM emission_snapshots es3
+                            WHERE es3.hotkey = hp.hotkey
+                        )
                     ) AS end_cut
                 FROM hotkey_periods hp
             ),
