@@ -157,6 +157,7 @@ class Sandbox:
                 image=image_name,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
+                tmpfs={"/sandbox": "rw,size=100m"},  # Make /sandbox writable
                 working_dir=SANDBOX_DIR,
                 environment={
                     "AI_PROXY_URL": "http://sandbox-proxy",
