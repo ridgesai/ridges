@@ -1,5 +1,5 @@
+from datetime import datetime, timezone
 from typing import Optional, List
-
 import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
@@ -77,15 +77,23 @@ async def ban_agents(conn: asyncpg.Connection, miner_hotkeys: List[str], reason:
     """, [(miner_hotkey, reason) for miner_hotkey in miner_hotkeys])
 
 @db_transaction
-async def approve_agent_version(conn: asyncpg.Connection, version_id: str):
+async def approve_agent_version(conn: asyncpg.Connection, version_id: str, approved_at: Optional[datetime] = None):
     """
     Approve an agent version as a valid, non decoding agent solution
     """
+    if approved_at:
+        if approved_at.tzinfo is None:
+            approved_at = approved_at.replace(tzinfo=timezone.utc)
+        else:
+            approved_at = approved_at.astimezone(timezone.utc)
+    else:
+        approved_at = datetime.now(timezone.utc)
+        
     await conn.execute("""
-        INSERT INTO approved_version_ids (version_id)
-        VALUES ($1)
-        ON CONFLICT (version_id) DO NOTHING
-    """, version_id)
+        INSERT INTO approved_version_ids (version_id, approved_at)
+        VALUES ($1, $2)
+        ON CONFLICT (version_id) DO UPDATE SET approved_at = $2
+    """, version_id, approved_at)
     
     # Update the top agents cache after approval
     try:

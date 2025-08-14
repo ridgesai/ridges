@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
@@ -13,6 +14,8 @@ from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgent, MinerAgentScored
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id
+from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
@@ -134,14 +137,27 @@ async def trigger_weight_set():
     await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
-async def approve_version(version_id: str, approval_password: str):
+async def approve_version(version_id: str, approval_password: str, timestamp_utc: Optional[datetime] = None):
     """Approve a version ID for weight consideration"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid approval password. fucker")
+        raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
+    
+    agent = await db_get_agent_by_version_id(version_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
 
+    if timestamp_utc is not None:
+        if timestamp_utc.tzinfo is None:
+            timestamp_utc = timestamp_utc.replace(tzinfo=timezone.utc)
+        else:
+            timestamp_utc = timestamp_utc.astimezone(timezone.utc)
+
+    if timestamp_utc and timestamp_utc < agent.created_at:
+        raise HTTPException(status_code=400, detail="Timestamp is before agent creation")
+    
     try:
-        await approve_agent_version(version_id)
-        return {"message": f"Successfully approved {version_id}"}
+        await approve_agent_version(version_id, timestamp_utc)
+        return {"message": f"Successfully approved {version_id} for timestamp {timestamp_utc}"}
     except Exception as e:
         logger.error(f"Error approving version {version_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
