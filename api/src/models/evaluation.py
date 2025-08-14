@@ -146,10 +146,10 @@ class Evaluation:
                     combined_screener_score = await Screener.get_combined_screener_score(conn, self.version_id)
                     top_agent = await MinerAgentScored.get_top_agent(conn)
                     
-                    if top_agent and combined_screener_score is not None and combined_screener_score < top_agent.avg_score * PRUNE_THRESHOLD:
+                    if top_agent and combined_screener_score is not None and (top_agent.avg_score - combined_screener_score) > PRUNE_THRESHOLD:
                         # Score is too low, prune miner agent and don't create evaluations
                         await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
-                        logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with score {self.score:.3f} (threshold: {top_agent.avg_score * PRUNE_THRESHOLD:.3f})")
+                        logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with combined score {combined_screener_score:.3f} (threshold: {top_agent.avg_score - PRUNE_THRESHOLD:.3f})")
                         return {
                             "stage2_screener": None,
                             "validators": []
@@ -719,7 +719,7 @@ class Evaluation:
             return
         
         # Calculate the threshold (configurable lower-than-top final validation score)
-        threshold = top_agent.avg_score * PRUNE_THRESHOLD
+        threshold = top_agent.avg_score - PRUNE_THRESHOLD
         
         # Get current set_id for the query
         max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")

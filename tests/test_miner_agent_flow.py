@@ -1070,7 +1070,7 @@ class TestAgentLifecycleFlow:
             
             if top_agent:
                 # Calculate the threshold
-                threshold = top_agent.avg_score * PRUNE_THRESHOLD
+                threshold = top_agent.avg_score - PRUNE_THRESHOLD
                 
                 # Get current set_id for the query - for tests, the set_id is 1
                 max_set_id = 1
@@ -1174,7 +1174,7 @@ class TestAgentLifecycleFlow:
             good_eval_id = str(uuid.uuid4())
             # Calculate good screener score dynamically - should be above threshold
             top_agent_score = 0.9  # Match the top agent score from this test
-            threshold = top_agent_score * PRUNE_THRESHOLD
+            threshold = top_agent_score - PRUNE_THRESHOLD
             good_screener_score = threshold + 0.05  # 5% buffer above threshold
             await db_conn.execute(
                 "INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score) VALUES ($1,$2,'validator-3',$3,'waiting',NOW(),$4)",
@@ -1293,7 +1293,7 @@ class TestAgentLifecycleFlow:
             
             top_agent = await MinerAgentScored.get_top_agent(db_conn)
             
-            if top_agent and low_score < top_agent.avg_score * PRUNE_THRESHOLD:
+            if top_agent and (top_agent.avg_score - low_score) > PRUNE_THRESHOLD:
                 # Score is too low, prune miner agent 
                 await db_conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", low_version)
             else:
@@ -1373,7 +1373,7 @@ class TestAgentLifecycleFlow:
 
             # Calculate dynamic scores based on top agent and thresholds
             top_agent_score = 0.90
-            threshold = top_agent_score * PRUNE_THRESHOLD
+            threshold = top_agent_score - PRUNE_THRESHOLD
             
             # Create evaluation runs to test the new combined score calculation
             # Stage 1: 4 out of 5 questions solved (80%)
@@ -1385,8 +1385,8 @@ class TestAgentLifecycleFlow:
             # Combined: 9 out of 10 questions solved (90%)
             expected_combined_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
             
-            # Ensure combined score is above threshold
-            assert expected_combined_score > threshold, f"Test setup error: combined score {expected_combined_score} should be > threshold {threshold}"
+            # Ensure combined score is above threshold (score gap should be <= PRUNE_THRESHOLD)
+            assert (top_agent_score - expected_combined_score) <= PRUNE_THRESHOLD, f"Test setup error: score gap {top_agent_score - expected_combined_score} should be <= PRUNE_THRESHOLD {PRUNE_THRESHOLD}"
 
             # 1. Create and complete stage 1 screening evaluation
             stage1_eval_id = str(uuid.uuid4())
@@ -1559,7 +1559,7 @@ class TestAgentLifecycleFlow:
 
             # Calculate dynamic scores based on top agent and thresholds  
             top_agent_score = 0.95
-            threshold = top_agent_score * PRUNE_THRESHOLD
+            threshold = top_agent_score - PRUNE_THRESHOLD
             
             # Create evaluation runs to test the new combined score calculation with low score
             # Stage 1: 1 out of 5 questions solved (20%) 
@@ -1572,7 +1572,7 @@ class TestAgentLifecycleFlow:
             expected_combined_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
             
             # Ensure combined score is below threshold for pruning
-            assert expected_combined_score < threshold, f"Test setup error: combined score {expected_combined_score} should be < threshold {threshold}"
+            assert (top_agent_score - expected_combined_score) > PRUNE_THRESHOLD, f"Test setup error: score gap {top_agent_score - expected_combined_score} should be > PRUNE_THRESHOLD {PRUNE_THRESHOLD}"
 
             # 1. Create and complete stage 1 screening evaluation
             stage1_eval_id = str(uuid.uuid4())
