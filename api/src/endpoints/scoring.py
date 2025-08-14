@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
 import uuid
 
-from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
+from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
@@ -117,6 +117,12 @@ async def get_screener_thresholds():
     Returns the screener thresholds
     """
     return {"stage_1_threshold": SCREENING_1_THRESHOLD, "stage_2_threshold": SCREENING_2_THRESHOLD}
+
+async def get_prune_threshold():
+    """
+    Returns the prune threshold
+    """
+    return {"prune_threshold": PRUNE_THRESHOLD}
 
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -302,6 +308,7 @@ routes = [
     ("/check-top-agent", weight_receiving_agent, ["GET"]),
     ("/weights", weights, ["GET"]),
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
+    ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
