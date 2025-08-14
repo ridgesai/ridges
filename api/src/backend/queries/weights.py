@@ -13,43 +13,18 @@ logger = logging.getLogger(__name__)
 @db_transaction
 async def store_weights(conn: asyncpg.Connection, miner_weights: dict, time_since_last_update=None) -> int:
     """
-    Store miner weights in the weights_history table. Return 1 if successful, 0 if not.
+    Store miner weights - deprecated function, now returns success without storing.
     """
-    try:
-        await conn.execute("""
-            INSERT INTO weights_history (timestamp, time_since_last_update, miner_weights)
-            VALUES ($1, $2, $3)
-        """, datetime.now(timezone.utc), time_since_last_update, json.dumps(miner_weights))
-        
-        logger.info(f"Weights stored successfully with {len(miner_weights)} miners")
-        return 1
-    except Exception as e:
-        logger.error(f"Error storing weights: {str(e)}")
-        return 0
+    logger.info(f"Weights storage deprecated - skipping storage of {len(miner_weights)} miners")
+    return 1
 
 @db_operation
 async def get_latest_weights(conn: asyncpg.Connection) -> Optional[dict]:
     """
-    Get the most recent weights from the weights_history table. Return None if not found.
+    Get the most recent weights - deprecated function, now returns None.
     """
-    try:
-        row = await conn.fetchrow("""
-            SELECT miner_weights, timestamp, time_since_last_update
-            FROM weights_history 
-            ORDER BY timestamp DESC 
-            LIMIT 1
-        """)
-        
-        if row:
-            return {
-                'weights': json.loads(row['miner_weights']),
-                'timestamp': row['timestamp'],
-                'time_since_last_update': row['time_since_last_update']
-            }
-        return None
-    except Exception as e:
-        logger.error(f"Error getting latest weights: {str(e)}")
-        return None
+    logger.info("Latest weights deprecated - returning None")
+    return None
 
 def weights_are_different(current_weights: dict, stored_weights: dict) -> bool:
     """
@@ -93,36 +68,8 @@ def weights_are_different(current_weights: dict, stored_weights: dict) -> bool:
 @db_operation
 async def get_weights_history_last_24h_with_prior(conn: asyncpg.Connection) -> List[WeightsData]:
     """
-    Returns all rows from weights_history with timestamp >= NOW() - INTERVAL '24 hours',
-    plus the single row that immediately precedes that window (for continuity).
-    Returns a list of WeightsData models.
+    Returns weights history - deprecated function, now returns empty list.
     """
-    try:
-        rows = await conn.fetch("""
-            (
-                SELECT id, timestamp, time_since_last_update, miner_weights
-                FROM weights_history
-                WHERE timestamp < NOW() - INTERVAL '24 hours'
-                ORDER BY timestamp DESC
-                LIMIT 1
-            )
-            UNION ALL
-            (
-                SELECT id, timestamp, time_since_last_update, miner_weights
-                FROM weights_history
-                WHERE timestamp >= NOW() - INTERVAL '24 hours'
-                ORDER BY timestamp ASC
-            )
-            ORDER BY timestamp ASC
-        """)
-        
-        return [WeightsData(
-            id=str(row['id']),
-            timestamp=row['timestamp'],
-            time_since_last_update=row['time_since_last_update'],
-            miner_weights=json.loads(row['miner_weights'])
-        ) for row in rows]
-    except Exception as e:
-        logger.error(f"Error fetching weights_history for last 24h with prior: {str(e)}")
-        return []
+    logger.info("Weights history deprecated - returning empty list")
+    return []
 
