@@ -382,11 +382,6 @@ class TestAuthenticationEndpoints:
     async def test_open_user_signin(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
         """Test open user sign in and registration"""
         
-        # Add email to whitelist
-        await db_conn.execute("""
-            INSERT INTO open_user_email_whitelist (email) VALUES ('test@example.com')
-        """)
-        
         signin_data = {
             "auth0_user_id": "auth0|test123",
             "email": "test@example.com",
@@ -408,22 +403,6 @@ class TestAuthenticationEndpoints:
         assert user is not None
         assert user["name"] == "Test User"
         assert user["auth0_user_id"] == "auth0|test123"
-
-    @pytest.mark.asyncio
-    async def test_open_user_signin_not_whitelisted(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
-        """Test open user sign in rejection for non-whitelisted email"""
-        
-        signin_data = {
-            "auth0_user_id": "auth0|test456",
-            "email": "notwhitelisted@example.com", 
-            "name": "Not Whitelisted User",
-            "password": "secure_password_123"
-        }
-        
-        response = await async_client.post("/open-users/sign-in", json=signin_data)
-        
-        assert response.status_code == 403
-        assert "not whitelisted" in response.json()["detail"].lower()
 
 
 class TestAgentSummaryEndpoints:

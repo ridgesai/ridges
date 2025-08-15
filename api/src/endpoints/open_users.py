@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, create_open_user, add_open_user_email_to_whitelist, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user, get_open_agent_periods_on_top as db_get_open_agent_periods_on_top
+from api.src.backend.queries.open_users import get_open_user, create_open_user, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user, get_open_agent_periods_on_top as db_get_open_agent_periods_on_top
 from api.src.backend.queries.scores import get_treasury_hotkeys as db_get_treasury_hotkeys
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from api.src.backend.internal_tools import InternalTools
@@ -56,18 +56,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     logger.info(f"Open user created: {new_user.open_hotkey}")
     return {"success": True, "new_user": True, "message": "User successfully created", "user": new_user}
 
-async def add_email_to_whitelist(email: str, password: str):
-    if password != open_user_password:
-        logger.warning(f"Someone tried to add an email to the whitelist with an invalid password. email: {email}, password: {password}")
-        raise HTTPException(status_code=401, detail="Invalid whitelist password. Fuck you.")
 
-    try:
-        await add_open_user_email_to_whitelist(email)
-    except Exception as e:
-        logger.error(f"Error adding email {email} to whitelist: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
-    return {"success": True, "message": "Email added to whitelist", "email": email}
 
 async def get_user_by_email(email: str, password: str):
     if password != open_user_password:
@@ -137,7 +126,6 @@ router = APIRouter()
 
 routes = [
     ("/sign-in", open_user_sign_in, ["POST"]),
-    ("/add-email-to-whitelist", add_email_to_whitelist, ["POST"]),
     ("/get-user-by-email", get_user_by_email, ["GET"]),
     ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
     ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),

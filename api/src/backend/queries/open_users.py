@@ -47,28 +47,7 @@ async def get_open_user_by_hotkey(conn: asyncpg.Connection, open_hotkey: str) ->
     
     return OpenUser(**dict(result))
 
-@db_operation
-async def check_open_user_email_in_whitelist(conn: asyncpg.Connection, email: str) -> bool:
-    result = await conn.fetchrow(
-        """
-            SELECT email FROM open_user_email_whitelist WHERE email = $1
-        """,
-        email
-    )
-    
-    if not result:
-        return False
-    
-    return True
 
-@db_operation
-async def add_open_user_email_to_whitelist(conn: asyncpg.Connection, email: str) -> None:
-    await conn.execute(
-        """
-            INSERT INTO open_user_email_whitelist (email) VALUES ($1)
-            ON CONFLICT (email) DO NOTHING
-        """,
-        email)
 
 @db_operation
 async def get_open_user_by_email(conn: asyncpg.Connection, email: str) -> Optional[OpenUser]:
