@@ -98,8 +98,11 @@ CREATE TABLE IF NOT EXISTS inferences (
 );
 
 CREATE TABLE IF NOT EXISTS approved_version_ids (
-    version_id UUID PRIMARY KEY REFERENCES miner_agents(version_id),
-    approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id UUID REFERENCES miner_agents(version_id),
+    set_id INT NOT NULL,
+    approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (version_id, set_id)
 );
 
 -- Prevent accidental deletes from approved_version_ids table
