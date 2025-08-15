@@ -236,7 +236,7 @@ async def get_running_evaluations() -> list[RunningEvaluation]:
 
     return evaluations
 
-async def get_top_agents(num_agents: int = 3) -> list[MinerAgentWithScores]:
+async def get_top_agents(num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list[MinerAgentWithScores]:
     """
     Gets a list of current high score agents
     """
@@ -246,7 +246,7 @@ async def get_top_agents(num_agents: int = 3) -> list[MinerAgentWithScores]:
             detail="Must provide a fixed number of agents"
         )
     
-    top_agents = await db_get_top_agents(num_agents=num_agents)
+    top_agents = await db_get_top_agents(num_agents=num_agents, search_term=search_term, filter_for_open_user=filter_for_open_user, filter_for_registered_user=filter_for_registered_user, filter_for_approved=filter_for_approved)
 
     return top_agents
 

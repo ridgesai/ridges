@@ -60,11 +60,11 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
     return [RunningEvaluation(**{k: v for k, v in dict(row).items() if k != 'evaluation_id'}) for row in results]
 
 @db_operation
-async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3) -> list[MinerAgentWithScores]:
+async def get_top_agents(conn: asyncpg.Connection, num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list[MinerAgentWithScores]:
     """Get top agents using the agent_scores materialized view"""
     from api.src.backend.entities import MinerAgentScored
     
-    return await MinerAgentScored.get_top_agents(conn, num_agents)
+    return await MinerAgentScored.get_top_agents(conn, num_agents, search_term, filter_for_open_user, filter_for_registered_user, filter_for_approved)
 
 @db_operation
 async def get_agent_summary_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> list[MinerAgentWithScores]:
