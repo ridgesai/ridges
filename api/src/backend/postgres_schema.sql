@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS miner_agents (
     created_at TIMESTAMPTZ NOT NULL,
     status TEXT,
     agent_summary TEXT,
-    ip_address TEXT
+    ip_address TEXT,
+    innovation DOUBLE PRECISION
 );
 
 -- Add agent_summary column if it doesn't exist (for existing tables)

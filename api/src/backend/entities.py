@@ -21,6 +21,7 @@ class MinerAgent(BaseModel):
     status: str
     agent_summary: Optional[str] = None
     ip_address: Optional[str] = None
+    innovation_score: Optional[float] = None
 
 class AgentWithHydratedCode(MinerAgent):
     code: str
