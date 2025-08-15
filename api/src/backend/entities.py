@@ -174,7 +174,7 @@ class MinerAgentScored(BaseModel):
             param_idx = len(params) + 1
             like_param = f"%{search_term}%"
             where_clauses.append(
-                f"(CAST(version_id AS TEXT) LIKE ${param_idx} OR agent_name LIKE ${param_idx} OR miner_hotkey LIKE ${param_idx})"
+                f"(CAST(version_id AS TEXT) ILIKE ${param_idx} OR agent_name ILIKE ${param_idx} OR miner_hotkey ILIKE ${param_idx})"
             )
             params.append(like_param)
 
