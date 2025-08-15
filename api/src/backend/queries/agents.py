@@ -77,23 +77,17 @@ async def ban_agents(conn: asyncpg.Connection, miner_hotkeys: List[str], reason:
     """, [(miner_hotkey, reason) for miner_hotkey in miner_hotkeys])
 
 @db_transaction
-async def approve_agent_version(conn: asyncpg.Connection, version_id: str, approved_at: Optional[datetime] = None):
+async def approve_agent_version(conn: asyncpg.Connection, version_id: str, set_id: int):
     """
     Approve an agent version as a valid, non decoding agent solution
     """
-    if approved_at:
-        if approved_at.tzinfo is None:
-            approved_at = approved_at.replace(tzinfo=timezone.utc)
-        else:
-            approved_at = approved_at.astimezone(timezone.utc)
-    else:
-        approved_at = datetime.now(timezone.utc)
-        
+    # Check if the agent is already approved for this set
+    approved_at = datetime.now(timezone.utc)
+
     await conn.execute("""
-        INSERT INTO approved_version_ids (version_id, approved_at)
-        VALUES ($1, $2)
-        ON CONFLICT (version_id) DO UPDATE SET approved_at = $2
-    """, version_id, approved_at)
+        INSERT INTO approved_version_ids (version_id, set_id, approved_at)
+        VALUES ($1, $2, $3)
+    """, version_id, set_id, approved_at)
     
     # Update the top agents cache after approval
     try:

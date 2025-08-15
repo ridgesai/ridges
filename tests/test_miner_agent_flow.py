@@ -1031,7 +1031,7 @@ class TestAgentLifecycleFlow:
                 "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
                 top_version,
             )
-            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1) ON CONFLICT DO NOTHING", top_version)
             await db_conn.execute(
                 """
                 INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
@@ -1154,7 +1154,7 @@ class TestAgentLifecycleFlow:
                 "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
                 top_version,
             )
-            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1) ON CONFLICT DO NOTHING", top_version)
             await db_conn.execute(
                 """
                 INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
@@ -1250,7 +1250,7 @@ class TestAgentLifecycleFlow:
                 "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top',1,NOW(),'scored')",
                 top_version,
             )
-            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1) ON CONFLICT DO NOTHING", top_version)
             await db_conn.execute(
                 """
                 INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, finished_at, score)
@@ -1350,7 +1350,7 @@ class TestAgentLifecycleFlow:
                 "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
                 top_version,
             )
-            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1) ON CONFLICT DO NOTHING", top_version)
             # Need at least 2 validator evaluations for materialized view
             await db_conn.execute(
                 """
@@ -1536,7 +1536,7 @@ class TestAgentLifecycleFlow:
                 "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1,'miner_top','top_agent',1,NOW(),'scored')",
                 top_version,
             )
-            await db_conn.execute("INSERT INTO approved_version_ids (version_id) VALUES ($1) ON CONFLICT DO NOTHING", top_version)
+            await db_conn.execute("INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1) ON CONFLICT DO NOTHING", top_version)
             # Need at least 2 validator evaluations for materialized view
             await db_conn.execute(
                 """

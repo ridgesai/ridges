@@ -143,7 +143,7 @@ async def trigger_weight_set():
     await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
-async def approve_version(version_id: str, approval_password: str, timestamp_utc: Optional[datetime] = None):
+async def approve_version(version_id: str, set_id: int, approval_password: str):
     """Approve a version ID for weight consideration"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
@@ -151,21 +151,12 @@ async def approve_version(version_id: str, approval_password: str, timestamp_utc
     agent = await db_get_agent_by_version_id(version_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-
-    if timestamp_utc is not None:
-        if timestamp_utc.tzinfo is None:
-            timestamp_utc = timestamp_utc.replace(tzinfo=timezone.utc)
-        else:
-            timestamp_utc = timestamp_utc.astimezone(timezone.utc)
-
-    if timestamp_utc and timestamp_utc < agent.created_at:
-        raise HTTPException(status_code=400, detail="Timestamp is before agent creation")
     
     try:
-        await approve_agent_version(version_id, timestamp_utc)
-        return {"message": f"Successfully approved {version_id} for timestamp {timestamp_utc}"}
+        await approve_agent_version(version_id, set_id)
+        return {"message": f"Successfully approved {version_id} for set {set_id}"}
     except Exception as e:
-        logger.error(f"Error approving version {version_id}: {e}")
+        logger.error(f"Error approving version {version_id} for set {set_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
 async def re_eval_approved(approval_password: str):

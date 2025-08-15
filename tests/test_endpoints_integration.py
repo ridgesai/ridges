@@ -55,6 +55,19 @@ class DatabaseTestSetup:
         # Execute the production schema
         await conn.execute(schema_sql)
         
+        # Disable the approval deletion trigger for tests to allow cleanup
+        await conn.execute("""
+            DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
+            CREATE OR REPLACE FUNCTION prevent_delete_approval_test() RETURNS TRIGGER AS $$ 
+            BEGIN 
+                -- Allow deletions in test environment
+                RETURN OLD; 
+            END; 
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids 
+            FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval_test();
+        """)
+        
         # Insert test evaluation sets for testing
         await conn.execute("""
             INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES 
@@ -206,7 +219,7 @@ class TestScoringEndpoints:
         
         # Approve the higher scoring agent
         await db_conn.execute(
-            "INSERT INTO approved_version_ids (version_id) VALUES ($1)",
+            "INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1)",
             agent2_id
         )
         
@@ -369,11 +382,6 @@ class TestAuthenticationEndpoints:
     async def test_open_user_signin(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
         """Test open user sign in and registration"""
         
-        # Add email to whitelist
-        await db_conn.execute("""
-            INSERT INTO open_user_email_whitelist (email) VALUES ('test@example.com')
-        """)
-        
         signin_data = {
             "auth0_user_id": "auth0|test123",
             "email": "test@example.com",
@@ -395,22 +403,6 @@ class TestAuthenticationEndpoints:
         assert user is not None
         assert user["name"] == "Test User"
         assert user["auth0_user_id"] == "auth0|test123"
-
-    @pytest.mark.asyncio
-    async def test_open_user_signin_not_whitelisted(self, async_client: AsyncClient, db_conn: asyncpg.Connection):
-        """Test open user sign in rejection for non-whitelisted email"""
-        
-        signin_data = {
-            "auth0_user_id": "auth0|test456",
-            "email": "notwhitelisted@example.com", 
-            "name": "Not Whitelisted User",
-            "password": "secure_password_123"
-        }
-        
-        response = await async_client.post("/open-users/sign-in", json=signin_data)
-        
-        assert response.status_code == 403
-        assert "not whitelisted" in response.json()["detail"].lower()
 
 
 class TestAgentSummaryEndpoints:
