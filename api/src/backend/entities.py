@@ -153,25 +153,56 @@ class MinerAgentScored(BaseModel):
         )
     
     @staticmethod
-    async def get_top_agents(conn, num_agents: int = 3) -> list:
-        """Get top agents using the agent_scores materialized view - returns ALL agents regardless of approval status"""
-        # Get the maximum set_id
+    async def get_top_agents(conn, num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list:
+
         max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
         if not max_set_id_result or max_set_id_result['max_set_id'] is None:
             return []
         
         max_set_id = max_set_id_result['max_set_id']
-        
-        results = await conn.fetch("""
+
+        max_approved_set_id: Optional[int] = None
+        if filter_for_approved:
+            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_version_ids")
+            if max_approved_set_id is None:
+                return []
+
+        where_clauses: list[str] = ["set_id = $1"]
+        params: list = [max_set_id]
+
+        if search_term is not None and len(search_term) > 0:
+            param_idx = len(params) + 1
+            like_param = f"%{search_term}%"
+            where_clauses.append(
+                f"(CAST(version_id AS TEXT) LIKE ${param_idx} OR agent_name LIKE ${param_idx} OR miner_hotkey LIKE ${param_idx})"
+            )
+            params.append(like_param)
+
+        if filter_for_open_user:
+            where_clauses.append("miner_hotkey LIKE 'open-%'")
+
+        if filter_for_registered_user:
+            where_clauses.append("miner_hotkey NOT LIKE 'open-%'")
+
+        if filter_for_approved and max_approved_set_id is not None:
+            param_idx = len(params) + 1
+            where_clauses.append(
+                f"version_id IN (SELECT version_id FROM approved_version_ids WHERE set_id = ${param_idx})"
+            )
+            params.append(max_approved_set_id)
+
+        query = f"""
             SELECT 
                 version_id, miner_hotkey, agent_name, version_num,
                 created_at, status, agent_summary, set_id,
                 approved, validator_count, final_score as score
             FROM agent_scores
-            WHERE set_id = $1
+            WHERE {' AND '.join(where_clauses)}
             ORDER BY final_score DESC, created_at ASC
-            LIMIT $2
-        """, max_set_id, num_agents)
+            LIMIT ${len(params) + 1}
+        """
+
+        results = await conn.fetch(query, *params, num_agents)
 
         return [MinerAgentWithScores(**dict(row)) for row in results]
     
