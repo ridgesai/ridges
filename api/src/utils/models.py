@@ -120,12 +120,6 @@ class AgentVersionDetails(BaseModel):
     agent_version: AgentVersionNew
     execution: ExecutionNew
 
-class WeightsData(BaseModel):
-    id: str
-    timestamp: datetime
-    time_since_last_update: Optional[timedelta]
-    miner_weights: dict
-
 class QueueInfo(BaseModel):
     validator_hotkey: str
     place_in_queue: int
