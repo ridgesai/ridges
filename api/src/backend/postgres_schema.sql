@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS approved_version_ids (
 
 -- Prevent accidental deletes from approved_version_ids table
 CREATE OR REPLACE FUNCTION prevent_delete_approval() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Forbidden:Unapproving agents can lead to messing up treasury-owing financial data'; END; $$ LANGUAGE plpgsql;
-CREATE TRIGGER IF NOT EXISTS no_delete_approval_trigger BEFORE DELETE ON approved_version_ids FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
+DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
+CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
 
 -- Weights History table
 CREATE TABLE IF NOT EXISTS weights_history (
@@ -425,3 +426,86 @@ CREATE TRIGGER tr_set_top_agent_on_completed_evaluation
     FOR EACH ROW
     WHEN (NEW.status = 'completed')
     EXECUTE FUNCTION set_top_agent_on_completed_evaluation();
+
+-- Approved Top Agents History
+-- Table to store history of the approved top agent for the latest set_id
+CREATE TABLE IF NOT EXISTS approved_top_agents_history (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id UUID REFERENCES miner_agents(version_id),
+    top_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    set_id INT NOT NULL
+);
+
+-- Trigger function to (re)compute the current approved top agent for the latest set
+CREATE OR REPLACE FUNCTION set_approved_top_agent_if_changed()
+RETURNS TRIGGER AS $$
+DECLARE
+    latest_set_id_from_sets INT;
+    latest_set_id_from_evals INT;
+    latest_set_id INT;
+    latest_top_version UUID;
+    last_record_set_id INT;
+    last_record_version UUID;
+    has_current BOOLEAN;
+BEGIN
+    -- Determine the latest set_id using both evaluation_sets and evaluations as a fallback
+    SELECT MAX(set_id) INTO latest_set_id_from_sets FROM evaluation_sets;
+    SELECT MAX(set_id) INTO latest_set_id_from_evals FROM evaluations;
+
+    IF latest_set_id_from_sets IS NULL AND latest_set_id_from_evals IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    latest_set_id := GREATEST(COALESCE(latest_set_id_from_sets, 0), COALESCE(latest_set_id_from_evals, 0));
+
+    -- Identify the top approved agent for the latest set_id
+    SELECT a.version_id INTO latest_top_version
+    FROM agent_scores a
+    WHERE a.set_id = latest_set_id
+      AND a.version_id IN (
+          SELECT version_id FROM approved_version_ids WHERE set_id = latest_set_id
+      )
+    ORDER BY a.final_score DESC, a.created_at ASC
+    LIMIT 1;
+
+    -- Get the most recent history entry
+    SELECT set_id, version_id INTO last_record_set_id, last_record_version
+    FROM approved_top_agents_history
+    ORDER BY top_at DESC
+    LIMIT 1;
+    has_current := FOUND;
+
+    -- Insert a new history entry if this is the first, the latest set changed, or the top agent changed
+    IF NOT has_current
+       OR last_record_set_id IS DISTINCT FROM latest_set_id
+       OR last_record_version IS DISTINCT FROM latest_top_version THEN
+        INSERT INTO approved_top_agents_history (version_id, set_id)
+        VALUES (latest_top_version, latest_set_id);
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Triggers to keep approved_top_agents_history up to date
+-- 1) When an evaluation completes (same as top_agents)
+DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_completed_evaluation ON evaluations;
+CREATE TRIGGER tr_set_approved_top_agent_on_completed_evaluation
+    AFTER UPDATE OF status ON evaluations
+    FOR EACH ROW
+    WHEN (NEW.status = 'completed')
+    EXECUTE FUNCTION set_approved_top_agent_if_changed();
+
+-- 2) When an agent is approved for a set
+DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_approval ON approved_version_ids;
+CREATE TRIGGER tr_set_approved_top_agent_on_approval
+    AFTER INSERT ON approved_version_ids
+    FOR EACH ROW
+    EXECUTE FUNCTION set_approved_top_agent_if_changed();
+
+-- 3) When a new evaluation is created (to detect an increased max set_id promptly)
+DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_eval_insert ON evaluations;
+CREATE TRIGGER tr_set_approved_top_agent_on_eval_insert
+    AFTER INSERT ON evaluations
+    FOR EACH ROW
+    EXECUTE FUNCTION set_approved_top_agent_if_changed();
