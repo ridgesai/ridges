@@ -589,7 +589,7 @@ class TestWeightsSetting:
         # Approve agent if requested
         if approved:
             await conn.execute("""
-                INSERT INTO approved_version_ids (version_id) VALUES ($1)
+                INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1)
             """, version_id)
         
         # Create evaluations with 3 different validators with slightly different scores

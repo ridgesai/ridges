@@ -219,7 +219,7 @@ class TestScoringEndpoints:
         
         # Approve the higher scoring agent
         await db_conn.execute(
-            "INSERT INTO approved_version_ids (version_id) VALUES ($1)",
+            "INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, 1)",
             agent2_id
         )
         
