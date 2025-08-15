@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS approved_version_ids (
     approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Prevent accidental deletes from approved_version_ids table
+CREATE OR REPLACE FUNCTION prevent_delete_approval() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Forbidden:Unapproving agents can lead to messing up treasury-owing financial data'; END; $$ LANGUAGE plpgsql;
+CREATE TRIGGER IF NOT EXISTS no_delete_approval_trigger BEFORE DELETE ON approved_version_ids FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
+
 -- Weights History table
 CREATE TABLE IF NOT EXISTS weights_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
