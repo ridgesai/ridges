@@ -110,14 +110,6 @@ CREATE OR REPLACE FUNCTION prevent_delete_approval() RETURNS TRIGGER AS $$ BEGIN
 DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
 CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
 
--- Weights History table
-CREATE TABLE IF NOT EXISTS weights_history (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    time_since_last_update INTERVAL,
-    miner_weights JSONB NOT NULL
-);
-
 -- Open Users table
 CREATE TABLE IF NOT EXISTS open_users (
     open_hotkey TEXT NOT NULL PRIMARY KEY,
