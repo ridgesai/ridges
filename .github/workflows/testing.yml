@@ -58,7 +58,7 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync
-        uv add coverage pytest-cov ruff mypy requests websocket-client
+        uv add ruff mypy requests websocket-client pytest-asyncio asyncpg httpx pytest-postgresql
     
     - name: Debug environment
       run: |
@@ -108,22 +108,46 @@ jobs:
         
         echo "Real API tests completed"
     
+    - name: Run unit tests that don't require database
+      run: |
+        cd tests
+        uv run python -m pytest test_endpoints_unit.py::TestSystemStatusEndpointsUnit -v -W ignore::PendingDeprecationWarning
+    
+    - name: Run simple tests
+      run: |
+        cd tests
+        uv run python -m pytest test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v -W ignore::PendingDeprecationWarning
+    
+    - name: Run weights function tests
+      run: |
+        cd tests
+        uv run python -m pytest test_weights_setting.py -v -W ignore::PendingDeprecationWarning
+    
+    - name: Run miner agent flow tests
+      run: |
+        cd tests
+        uv run python -m pytest test_miner_agent_flow.py -v -W ignore::PendingDeprecationWarning
+    
     - name: Run real API integration tests
       run: |
         cd tests
-        # Set the server URL for integration tests
         export API_BASE_URL="http://localhost:8000"
-        uv run python -m pytest test_real_api.py -v --cov=api/src --cov-report=xml --no-cov-on-fail
+        uv run python -m pytest test_real_api.py -v -W ignore::PendingDeprecationWarning
     
-    - name: Run unit tests
+    - name: Run comprehensive tests
       run: |
         cd tests
-        uv run python -m pytest test_miner_agent_flow.py test_endpoints_unit.py::TestSystemStatusEndpointsUnit test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure -v --cov=api/src --cov-report=xml --no-cov-on-fail
-    
-    - name: Run weights function integration tests
-      run: |
-        cd tests
-        uv run python -m pytest test_weights_setting.py -v --cov=api/src --cov-report=xml --no-cov-on-fail
+        export API_BASE_URL="http://localhost:8000"
+        uv run python -m pytest \
+          test_endpoints_unit.py::TestSystemStatusEndpointsUnit \
+          test_endpoints_simple.py::TestEndpointResponseStructure::test_healthcheck_response_structure \
+          test_weights_setting.py \
+          test_miner_agent_flow.py \
+          test_real_api.py \
+          -v \
+          --tb=short \
+          --disable-warnings \
+          -W ignore::PendingDeprecationWarning
     
     
   lint:
@@ -146,10 +170,6 @@ jobs:
       continue-on-error: true
       run: |
         uvx ty check
-    
-    - uses: codecov/codecov-action@v3
-      with:
-        fail_ci_if_error: false
                 
 
   deploy:
