@@ -34,17 +34,17 @@ def get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Miner hotkey successfully extracted: {miner_hotkey}.")
     return miner_hotkey
 
-def check_valid_filename(filename: str) -> bool:
-    logger.debug(f"Checking if filename is valid...")
+def check_if_python_file(filename: str) -> bool:
+    logger.debug(f"Checking if the file is a python file...")
 
-    if filename != "agent.py":
+    if not filename.endswith(".py"):
         logger.error(f"A miner attempted to upload an agent with an invalid filename: {filename}.")
         raise HTTPException(
             status_code=400,
-            detail="File must be a python file named agent.py"
+            detail="File must be a python file"
         )
     
-    logger.debug(f"Filename is valid: {filename}.")
+    logger.debug(f"The file is a python file.")
 
 async def check_agent_banned(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is banned...")
