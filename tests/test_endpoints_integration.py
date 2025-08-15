@@ -55,6 +55,19 @@ class DatabaseTestSetup:
         # Execute the production schema
         await conn.execute(schema_sql)
         
+        # Disable the approval deletion trigger for tests to allow cleanup
+        await conn.execute("""
+            DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
+            CREATE OR REPLACE FUNCTION prevent_delete_approval_test() RETURNS TRIGGER AS $$ 
+            BEGIN 
+                -- Allow deletions in test environment
+                RETURN OLD; 
+            END; 
+            $$ LANGUAGE plpgsql;
+            CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids 
+            FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval_test();
+        """)
+        
         # Insert test evaluation sets for testing
         await conn.execute("""
             INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES 

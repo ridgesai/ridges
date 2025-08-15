@@ -81,6 +81,19 @@ async def setup_database_schema(conn: asyncpg.Connection):
     # Execute the production schema
     await conn.execute(schema_sql)
     
+    # Disable the approval deletion trigger for tests to allow cleanup
+    await conn.execute("""
+        DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
+        CREATE OR REPLACE FUNCTION prevent_delete_approval_test() RETURNS TRIGGER AS $$ 
+        BEGIN 
+            -- Allow deletions in test environment
+            RETURN OLD; 
+        END; 
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids 
+        FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval_test();
+    """)
+    
     # Insert test evaluation sets for testing
     await conn.execute("""
         INSERT INTO evaluation_sets (set_id, type, swebench_instance_id) VALUES 
@@ -531,6 +544,7 @@ class TestWeightsSetting:
         await conn.execute("DELETE FROM evaluation_runs")
         await conn.execute("DELETE FROM evaluations")
         await conn.execute("DELETE FROM approved_version_ids")
+        await conn.execute("DELETE FROM approved_top_agents_history")  # Delete history before miner_agents due to foreign key
         await conn.execute("DELETE FROM top_agents")  # Delete top_agents before miner_agents due to foreign key
         await conn.execute("DELETE FROM miner_agents")
         await conn.execute("DELETE FROM evaluation_sets")

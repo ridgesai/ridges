@@ -164,6 +164,9 @@ CREATE TABLE IF NOT EXISTS top_agents (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Ensure version_id is nullable to allow recording periods with no top agent
+ALTER TABLE top_agents ALTER COLUMN version_id DROP NOT NULL;
+
 CREATE TABLE IF NOT EXISTS treasury_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     group_transaction_id UUID NOT NULL,
@@ -411,6 +414,7 @@ BEGIN
     has_current := FOUND;
 
     -- Insert a new top agent entry if there is no previous entry or if it differs
+    -- Note: latest_top_version can be NULL if no agents qualify, which is valid
     IF NOT has_current OR current_top_version IS DISTINCT FROM latest_top_version THEN
         INSERT INTO top_agents (version_id) VALUES (latest_top_version);
     END IF;
@@ -476,6 +480,7 @@ BEGIN
     has_current := FOUND;
 
     -- Insert a new history entry if this is the first, the latest set changed, or the top agent changed
+    -- Note: latest_top_version can be NULL if no approved agents qualify, which is valid
     IF NOT has_current
        OR last_record_set_id IS DISTINCT FROM latest_set_id
        OR last_record_version IS DISTINCT FROM latest_top_version THEN
