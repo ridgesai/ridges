@@ -81,7 +81,6 @@ async def handle_update_evaluation_run(
                     "evaluation_progress",
                     {
                         "version_id": str(eval_data.version_id),
-                        "miner_hotkey": eval_data.miner_hotkey,
                         "evaluation_id": str(evaluation_run.evaluation_id),
                         "run_id": str(evaluation_run.run_id),
                         "status": evaluation_run.status,
