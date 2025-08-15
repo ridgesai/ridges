@@ -90,7 +90,9 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "all-hands/openhands-lm-32b-v0.1": 0.0246,
                                 "sarvamai/sarvam-m": 0.0224,
                                 "zai-org/GLM-4.5-FP8": 0.2000,
-                                "zai-org/GLM-4.5-Air": 0.0000
+                                "zai-org/GLM-4.5-Air": 0.0000,
+                                "rayonlabs/Gradients-Instruct-8B": 0.02,
+                                "openai/gpt-oss-120b": 0.2904,
 }
 EMBEDDING_PRICE_PER_SECOND = 0.0001
 SCREENING_1_THRESHOLD = 0.6

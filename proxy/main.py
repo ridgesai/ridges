@@ -106,9 +106,9 @@ async def embedding_endpoint(request: EmbeddingRequest):
 async def inference_endpoint(request: InferenceRequest):
     """Proxy endpoint for chutes inference with database validation"""
 
-    # Switch Kimi to Deepseek temporarily until more capacity
-    if request.model in ["moonshotai/Kimi-K2-Instruct", "moonshotai/Kimi-Dev-72B"]:
-        request.model = "deepseek-ai/DeepSeek-V3-0324"
+    # # Switch Kimi to Deepseek temporarily until more capacity
+    # if request.model in ["moonshotai/Kimi-K2-Instruct", "moonshotai/Kimi-Dev-72B"]:
+    #     request.model = "deepseek-ai/DeepSeek-V3-0324"
 
     try:
         # Log only the last incoming message to avoid flooding the console
