@@ -112,10 +112,6 @@ CREATE TABLE IF NOT EXISTS open_users (
     registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Open User Email Whitelist table
-CREATE TABLE IF NOT EXISTS open_user_email_whitelist (
-    email TEXT NOT NULL PRIMARY KEY
-);
 
 -- Treasury hotkeys
 CREATE TABLE IF NOT EXISTS treasury_wallets (

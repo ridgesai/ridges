@@ -359,9 +359,8 @@ class TestAuthenticationEndpointsUnit:
         mock_transaction.__aenter__.return_value = mock_conn
         mock_get_transaction.return_value = mock_transaction
         
-        # Mock email whitelist check and user creation
+        # Mock user creation
         mock_conn.fetchval.side_effect = [
-            "test@example.com",  # Email is whitelisted
             None  # User doesn't exist yet
         ]
         mock_conn.execute.return_value = None
@@ -380,30 +379,7 @@ class TestAuthenticationEndpointsUnit:
         assert "open_hotkey" in result
         assert result["message"] == "User registered successfully"
 
-    @patch('api.src.backend.db_manager.get_transaction')
-    def test_open_user_signin_not_whitelisted_mocked(self, mock_get_transaction):
-        """Test sign in rejection for non-whitelisted email"""
-        
-        # Mock database transaction
-        mock_conn = AsyncMock()
-        mock_transaction = AsyncMock()
-        mock_transaction.__aenter__.return_value = mock_conn
-        mock_get_transaction.return_value = mock_transaction
-        
-        # Mock email not in whitelist
-        mock_conn.fetchval.return_value = None
-        
-        signin_data = {
-            "auth0_user_id": "auth0|test456",
-            "email": "notwhitelisted@example.com",
-            "name": "Not Whitelisted User", 
-            "password": "secure_password_123"
-        }
-        
-        response = client.post("/open-users/sign-in", json=signin_data)
-        
-        assert response.status_code == 403
-        assert "not whitelisted" in response.json()["detail"].lower()
+
 
 
 class TestAgentSummaryEndpointsUnit:
