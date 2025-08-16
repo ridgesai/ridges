@@ -95,6 +95,6 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "openai/gpt-oss-120b": 0.2904,
 }
 EMBEDDING_PRICE_PER_SECOND = 0.0001
-SCREENING_1_THRESHOLD = 0.6
-SCREENING_2_THRESHOLD = 0.2
+SCREENING_1_THRESHOLD = 0.8
+SCREENING_2_THRESHOLD = 0.4
 PRUNE_THRESHOLD = 0.1 # Must be within 10 percentage points of the final score
