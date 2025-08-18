@@ -303,9 +303,70 @@ class Evaluation:
         if waiting_count > 0 and running_count == 0:
             await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE version_id = $1", self.version_id)
         elif waiting_count == 0 and running_count == 0 and completed_count > 0:
+            # Calculate and update innovation score for this agent before setting status to 'scored'
+            await self._update_innovation_score(conn)
             await conn.execute("UPDATE miner_agents SET status = 'scored' WHERE version_id = $1", self.version_id)
         else:
             await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE version_id = $1", self.version_id)
+
+    async def _update_innovation_score(self, conn: asyncpg.Connection):
+        """Calculate and update innovation score for this evaluation's agent"""
+        try:
+            # Calculate innovation score for this specific agent
+            innovation_score = await conn.fetchval("""
+                WITH agent_runs AS (
+                    -- Get all result_scored runs for this agent
+                    SELECT
+                        r.swebench_instance_id,
+                        r.solved,
+                        r.started_at,
+                        r.run_id
+                    FROM evaluation_runs r
+                    JOIN evaluations e ON e.evaluation_id = r.evaluation_id
+                    WHERE e.version_id = $1
+                      AND r.status = 'result_scored'
+                ),
+                runs_with_prior AS (
+                    -- Calculate prior solved ratio for each run using window functions
+                    SELECT
+                        swebench_instance_id,
+                        solved,
+                        started_at,
+                        run_id,
+                        -- Calculate average solve rate for this instance before this run
+                        COALESCE(
+                            AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END) 
+                            OVER (
+                                PARTITION BY swebench_instance_id 
+                                ORDER BY started_at 
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                            ), 0.0
+                        ) AS prior_solved_ratio
+                    FROM agent_runs
+                )
+                SELECT
+                    COALESCE(
+                        AVG((CASE WHEN solved THEN 1.0 ELSE 0.0 END) - prior_solved_ratio), 0.0
+                    ) AS innovation_score
+                FROM runs_with_prior
+            """, self.version_id)
+            
+            # Update the miner_agents table with the calculated innovation score
+            await conn.execute(
+                "UPDATE miner_agents SET innovation = $1 WHERE version_id = $2",
+                innovation_score or 0.0,
+                self.version_id
+            )
+            
+            logger.info(f"Updated innovation score for agent {self.version_id}: {innovation_score:.6f}")
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate innovation score for agent {self.version_id}: {e}")
+            # Set innovation score to 0.0 on error to ensure the field is populated
+            await conn.execute(
+                "UPDATE miner_agents SET innovation = 0.0 WHERE version_id = $1",
+                self.version_id
+            )
 
     @staticmethod
     def get_lock():

@@ -45,6 +45,7 @@ class MinerAgentScored(BaseModel):
     agent_summary: Optional[str] = None
     set_id: int
     approved: bool
+    approved_at: Optional[datetime] = None
     validator_count: int
     final_score: float
     
@@ -82,7 +83,7 @@ class MinerAgentScored(BaseModel):
         max_approved_result = await conn.fetchrow("""
             SELECT MAX(ass.final_score) as max_score
             FROM agent_scores ass
-            WHERE ass.approved = true AND ass.set_id = $1
+            WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
         """, current_set_id)
         
         max_approved_score = max_approved_result['max_score'] if max_approved_result else None
@@ -124,7 +125,7 @@ class MinerAgentScored(BaseModel):
         current_leader = await conn.fetchrow("""
             SELECT ass.version_id, ass.miner_hotkey, ass.final_score, ass.created_at
             FROM agent_scores ass
-            WHERE ass.approved = true AND ass.set_id = $1
+            WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
             ORDER BY ass.final_score DESC, ass.created_at ASC
             LIMIT 1
         """, max_set_id)
@@ -139,7 +140,7 @@ class MinerAgentScored(BaseModel):
         challenger = await conn.fetchrow("""
             SELECT ass.version_id, ass.miner_hotkey, ass.final_score
             FROM agent_scores ass
-            WHERE ass.approved = true AND ass.set_id = $2 AND ass.final_score >= $1
+            WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $2 AND ass.final_score >= $1
             ORDER BY ass.final_score DESC, ass.created_at ASC
             LIMIT 1
         """, required_score, max_set_id)
@@ -164,7 +165,7 @@ class MinerAgentScored(BaseModel):
 
         max_approved_set_id: Optional[int] = None
         if filter_for_approved:
-            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_version_ids")
+            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_version_ids WHERE approved_at <= NOW()")
             if max_approved_set_id is None:
                 return []
 
@@ -188,7 +189,7 @@ class MinerAgentScored(BaseModel):
         if filter_for_approved and max_approved_set_id is not None:
             param_idx = len(params) + 1
             where_clauses.append(
-                f"version_id IN (SELECT version_id FROM approved_version_ids WHERE set_id = ${param_idx})"
+                f"version_id IN (SELECT version_id FROM approved_version_ids WHERE set_id = ${param_idx} AND approved_at <= NOW())"
             )
             params.append(max_approved_set_id)
 
@@ -446,9 +447,9 @@ class Inference(BaseModel):
     message: str
     temperature: float
     model: str
-    cost: float
-    response: str
-    total_tokens: int
+    cost: Optional[float] = None
+    response: Optional[str] = None
+    total_tokens: Optional[int] = None
     created_at: datetime
     finished_at: Optional[datetime]
     provider: Optional[str] = None
