@@ -22,8 +22,7 @@ from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
-from api.src.backend.queries.open_users import get_open_agent_periods_on_top
-from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user
+from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions
 from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
@@ -394,6 +393,19 @@ async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, 
             status_code=500,
             detail="Internal server error while retrieving time until next upload"
         )
+    
+async def get_all_transactions(open_hotkey: str) -> list[dict]:
+    """
+    Returns all transactions for a given open hotkey
+    """
+    try:
+        return await db_get_all_transactions(open_hotkey)
+    except Exception as e:
+        logger.error(f"Error retrieving all transactions for open user {open_hotkey}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving all transactions"
+        )
 
 router = APIRouter()
 
@@ -421,7 +433,8 @@ routes = [
     ("/inference-provider-statistics", get_inference_provider_statistics),
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
     ("/approved-version-ids", get_approved_version_ids),
-    ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey)
+    ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
+    ("/all-transactions", get_all_transactions)
 ]
 
 for path, endpoint in routes:
