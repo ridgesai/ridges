@@ -224,3 +224,19 @@ class InternalTools:
                 "destination_coldkey": str(row["destination_coldkey"]),
                 "staker_hotkey": str(row["staker_hotkey"]),
             }
+
+async def get_emission_alpha_for_hotkeys(self, miner_hotkeys: list[str]) -> int:
+    if not miner_hotkeys:
+        return 0
+
+    query = (
+        """
+        SELECT COALESCE(SUM(es.emission_alpha_rao), 0) AS total_alpha
+        FROM emission_snapshots AS es
+        WHERE es.hotkey = ANY($1::text[]);
+        """
+    )
+
+    async with self.acquire() as conn:
+        value = await conn.fetchval(query, miner_hotkeys)
+        return int(value or 0)
