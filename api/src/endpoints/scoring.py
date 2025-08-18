@@ -22,6 +22,7 @@ from api.src.utils.slack import notify_unregistered_top_miner, notify_unregister
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
+from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
 
 load_dotenv()
 
@@ -308,6 +309,16 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id:
     except Exception as e:
         logger.error(f"Error storing treasury transaction: {e}")
         raise HTTPException(status_code=500, detail="Error storing treasury transaction")
+    
+async def get_threshold_function():
+    """
+    Returns the threshold function
+    """
+    try:
+        return {"threshold_function": await db_generate_threshold_function()}
+    except Exception as e:
+        logger.error(f"Error generating threshold function: {e}")
+        raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
 router = APIRouter()
 
@@ -323,7 +334,8 @@ routes = [
     ("/refresh-scores", refresh_scores, ["POST"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
-    ("/store-treasury-transaction", store_treasury_transaction, ["POST"])
+    ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
+    ("/threshold-function", get_threshold_function, ["GET"])
 ]
 
 for path, endpoint, methods in routes:
