@@ -456,7 +456,7 @@ BEGIN
     FROM agent_scores a
     WHERE a.set_id = latest_set_id
       AND a.version_id IN (
-          SELECT version_id FROM approved_version_ids WHERE set_id = latest_set_id
+          SELECT version_id FROM approved_version_ids WHERE set_id = latest_set_id AND approved_at <= NOW()
       )
     ORDER BY a.final_score DESC, a.created_at ASC
     LIMIT 1;

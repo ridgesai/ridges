@@ -32,7 +32,7 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
     results = await conn.fetch("""
         SELECT ass.version_id, ass.final_score
         FROM agent_scores ass
-        WHERE ass.approved = true AND ass.set_id = $1
+        WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
         ORDER BY ass.final_score DESC
         LIMIT $2
     """, max_set_id, num_agents)
@@ -261,7 +261,7 @@ async def test_update():
                     ass.final_score as computed_score,
                     ass.validator_count as num_scores_used
                 FROM agent_scores ass
-                WHERE ass.approved = true AND ass.set_id = $1
+                WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
                 ORDER BY ass.final_score DESC
                 LIMIT 5
             """, max_set_id)
