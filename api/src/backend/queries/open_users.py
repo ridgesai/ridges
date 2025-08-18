@@ -212,7 +212,7 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
     ]
 
 @db_operation
-async def get_all_transactions(conn: asyncpg.Connection) -> list[tuple[tuple, tuple]]:
+async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
     rows = await conn.fetch(
         """
         SELECT 
@@ -236,24 +236,20 @@ async def get_all_transactions(conn: asyncpg.Connection) -> list[tuple[tuple, tu
     )
 
     return [
-        (
-            (
-                str(row["sender_coldkey"]),
-                str(row["destination_coldkey"]),
-                str(row["staker_hotkey"]),
-                int(row["amount_alpha_rao"]),
-                str(row["transaction_version_id"]),
-                str(row["occurred_at"]),
-                str(row["extrinsic_code"]),
-                bool(row["fee"]),
-            ),
-            (
-                str(row["agent_version_id"]),
-                str(row["miner_hotkey"]),
-                str(row["agent_name"]),
-                int(row["version_num"]),
-                str(row["created_at"]),
-            ),
-        )
+        {
+            "sender_coldkey": str(row["sender_coldkey"]),
+            "destination_coldkey": str(row["destination_coldkey"]),
+            "staker_hotkey": str(row["staker_hotkey"]),
+            "amount_alpha": int(row["amount_alpha_rao"]),
+            "transaction_version_id": str(row["transaction_version_id"]),
+            "occurred_at": str(row["occurred_at"]),
+            "extrinsic_code": str(row["extrinsic_code"]),
+            "fee": bool(row["fee"]),
+            "agent_version_id": str(row["agent_version_id"]),
+            "miner_hotkey": str(row["miner_hotkey"]),
+            "agent_name": str(row["agent_name"]),
+            "version_num": int(row["version_num"]),
+            "created_at": str(row["created_at"]),
+        }
         for row in rows
     ]

@@ -394,14 +394,14 @@ async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, 
             detail="Internal server error while retrieving time until next upload"
         )
     
-async def get_all_transactions(open_hotkey: str) -> list[dict]:
+async def get_all_transactions() -> list[dict]:
     """
     Returns all transactions for a given open hotkey
     """
     try:
-        return await db_get_all_transactions(open_hotkey)
+        return await db_get_all_transactions()
     except Exception as e:
-        logger.error(f"Error retrieving all transactions for open user {open_hotkey}: {e}")
+        logger.error(f"Error retrieving all transactions: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving all transactions"
