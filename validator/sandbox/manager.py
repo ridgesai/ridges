@@ -257,15 +257,13 @@ class SandboxManager:
             except Exception as e:
                 logger.warning(f"Error cleaning up sandbox: {e}")
         
-        # Clean up directories
-        # TODO: 
-        # for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
-        #     try:
-        #         if path.exists():
-        #             shutil.rmtree(path, ignore_errors=True)
-        #             logger.info(f"Cleaned up directory: {path}")
-        #     except Exception as e:
-        #         logger.warning(f"Failed to clean up directory {path}: {e}")
+        for path in [AGENTS_BASE_DIR, REPOS_BASE_DIR]:
+            try:
+                if path.exists():
+                    shutil.rmtree(path, ignore_errors=True)
+                    logger.info(f"Cleaned up directory: {path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up directory {path}: {e}")
         
         if force_cancel:
             containers_to_kill = list(self._container_ids)
