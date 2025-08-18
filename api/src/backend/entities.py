@@ -446,9 +446,9 @@ class Inference(BaseModel):
     message: str
     temperature: float
     model: str
-    cost: float
-    response: str
-    total_tokens: int
+    cost: Optional[float] = None
+    response: Optional[str] = None
+    total_tokens: Optional[int] = None
     created_at: datetime
     finished_at: Optional[datetime]
     provider: Optional[str] = None
