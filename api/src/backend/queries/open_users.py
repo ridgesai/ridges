@@ -270,3 +270,14 @@ async def get_all_treasury_hotkeys(conn: asyncpg.Connection) -> list[dict]:
         }
         for row in rows
     ]
+
+@db_operation
+async def get_total_dispersed_by_treasury_hotkeys(conn: asyncpg.Connection) -> int:
+    total = await conn.fetchval(
+        """
+        SELECT COALESCE(SUM(amount_alpha_rao), 0)
+        FROM treasury_transactions
+        """,
+    )
+
+    return int(total) if total is not None else 0
