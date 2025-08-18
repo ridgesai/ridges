@@ -241,22 +241,6 @@ class SandboxManager:
     
     @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
-        """
-        Previously, docker sandboxes were creating files in their repo_dir, causing cleanup to fail silently
-        when there were permission issues (docker runs as root).
-
-        We now run the docker container as the host user with a tempfs using the current uid:gid,
-        so the automated cleanup can delete the sandbox directories when it's done.
-
-        To delete files from before, you'll have to `sudo rm -rf ridges/validator/repos`
-
-        This could take a while, so it's nice to see progress:
-        ```sh
-        sudo apt install pv
-        cd ridges/validator/repos
-        ls repos | while read dir; do sudo rm -rf "repos/$dir" && echo "$dir"; done | pv -l -s $(ls repos | wc -l) > /dev/null
-        ```
-        """
         logger.info("Starting sandbox manager cleanup")
         
         # Terminate task group if running
