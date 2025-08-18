@@ -253,3 +253,20 @@ async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
         }
         for row in rows
     ]
+
+@db_operation
+async def get_all_treasury_hotkeys(conn: asyncpg.Connection) -> list[dict]:
+    rows = await conn.fetch(
+        """
+        SELECT hotkey, active, created_at FROM treasury_wallets WHERE active = TRUE
+        """
+    )
+
+    return [
+        {
+            "hotkey": str(row["hotkey"]),
+            "active": bool(row["active"]),
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
