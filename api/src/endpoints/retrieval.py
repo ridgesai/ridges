@@ -22,7 +22,7 @@ from api.src.backend.queries.evaluation_sets import get_evaluation_set_instances
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
-from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions
+from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
 from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
@@ -407,6 +407,19 @@ async def get_all_transactions() -> list[dict]:
             detail="Internal server error while retrieving all transactions"
         )
 
+async def get_all_treasury_hotkeys() -> list[dict]:
+    """
+    Returns all treasury hotkeys
+    """
+    try:
+        return await db_get_all_treasury_hotkeys()
+    except Exception as e:
+        logger.error(f"Error retrieving all treasury hotkeys: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving all treasury hotkeys"
+        )
+
 router = APIRouter()
 
 routes = [
@@ -434,7 +447,8 @@ routes = [
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
     ("/approved-version-ids", get_approved_version_ids),
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
-    ("/all-transactions", get_all_transactions)
+    ("/all-transactions", get_all_transactions),
+    ("/all-treasury-hotkeys", get_all_treasury_hotkeys)
 ]
 
 for path, endpoint in routes:
