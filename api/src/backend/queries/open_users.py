@@ -210,3 +210,46 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
         }
         for row in rows
     ]
+
+@db_operation
+async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
+    rows = await conn.fetch(
+        """
+        SELECT 
+            tt.sender_coldkey,
+            tt.destination_coldkey,
+            tt.staker_hotkey,
+            tt.amount_alpha_rao,
+            tt.version_id AS transaction_version_id,
+            tt.occurred_at,
+            tt.extrinsic_code,
+            tt.fee,
+            ma.version_id AS agent_version_id,
+            ma.miner_hotkey,
+            ma.agent_name,
+            ma.version_num,
+            ma.created_at
+        FROM treasury_transactions tt
+        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        ORDER BY tt.occurred_at DESC
+        """,
+    )
+
+    return [
+        {
+            "sender_coldkey": str(row["sender_coldkey"]),
+            "destination_coldkey": str(row["destination_coldkey"]),
+            "staker_hotkey": str(row["staker_hotkey"]),
+            "amount_alpha": int(row["amount_alpha_rao"]),
+            "transaction_version_id": str(row["transaction_version_id"]),
+            "occurred_at": str(row["occurred_at"]),
+            "extrinsic_code": str(row["extrinsic_code"]),
+            "fee": bool(row["fee"]),
+            "agent_version_id": str(row["agent_version_id"]),
+            "miner_hotkey": str(row["miner_hotkey"]),
+            "agent_name": str(row["agent_name"]),
+            "version_num": int(row["version_num"]),
+            "created_at": str(row["created_at"]),
+        }
+        for row in rows
+    ]
