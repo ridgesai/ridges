@@ -241,6 +241,11 @@ WHERE status != 'cancelled';
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
 
+-- Optimized index for innovation score calculations
+CREATE INDEX IF NOT EXISTS idx_evaluation_runs_innovation_fast
+ON evaluation_runs (swebench_instance_id, started_at, solved, run_id)
+WHERE status = 'result_scored' AND solved = true;
+
 -- Speeds up filtering to the miner’s version_ids
 CREATE INDEX IF NOT EXISTS idx_miner_agents_miner_hotkey_version
 ON miner_agents (miner_hotkey, version_id);
@@ -280,7 +285,8 @@ agent_evaluations AS (
         e.set_id,
         e.score,
         e.validator_hotkey,
-        (avi.version_id IS NOT NULL) as approved
+        (avi.version_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
+        avi.approved_at
     FROM all_agents aa
     LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id
     INNER JOIN evaluations e ON aa.version_id = e.version_id
@@ -312,13 +318,14 @@ SELECT
     fs.agent_summary,
     fs.set_id,
     fs.approved,
+    fs.approved_at,
     COUNT(DISTINCT fs.validator_hotkey) AS validator_count,
     AVG(fs.score) AS final_score
 FROM filtered_scores fs
 WHERE fs.set_id IS NOT NULL
     AND fs.score_rank > 1  -- Exclude the lowest score (rank 1)
 GROUP BY fs.version_id, fs.miner_hotkey, fs.agent_name, fs.version_num, 
-         fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved
+         fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved, fs.approved_at
 HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
