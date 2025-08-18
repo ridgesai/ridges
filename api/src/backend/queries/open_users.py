@@ -210,3 +210,50 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
         }
         for row in rows
     ]
+
+@db_operation
+async def get_all_transactions(conn: asyncpg.Connection) -> list[tuple[tuple, tuple]]:
+    rows = await conn.fetch(
+        """
+        SELECT 
+            tt.sender_coldkey,
+            tt.destination_coldkey,
+            tt.staker_hotkey,
+            tt.amount_alpha_rao,
+            tt.version_id AS transaction_version_id,
+            tt.occurred_at,
+            tt.extrinsic_code,
+            tt.fee,
+            ma.version_id AS agent_version_id,
+            ma.miner_hotkey,
+            ma.agent_name,
+            ma.version_num,
+            ma.created_at
+        FROM treasury_transactions tt
+        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        ORDER BY tt.occurred_at DESC
+        """,
+    )
+
+    return [
+        (
+            (
+                str(row["sender_coldkey"]),
+                str(row["destination_coldkey"]),
+                str(row["staker_hotkey"]),
+                int(row["amount_alpha_rao"]),
+                str(row["transaction_version_id"]),
+                str(row["occurred_at"]),
+                str(row["extrinsic_code"]),
+                bool(row["fee"]),
+            ),
+            (
+                str(row["agent_version_id"]),
+                str(row["miner_hotkey"]),
+                str(row["agent_name"]),
+                int(row["version_num"]),
+                str(row["created_at"]),
+            ),
+        )
+        for row in rows
+    ]
