@@ -157,15 +157,14 @@ class Sandbox:
                 image=image_name,
                 network=SANDBOX_NETWORK_NAME,
                 volumes=volumes,
-                tmpfs={"/sandbox": "rw,size=100m"},  # Make /sandbox writable
+                tmpfs={"/sandbox": f"rw,size=100m,uid={os.getuid()},gid={os.getgid()}"},  # Make /sandbox writable with correct ownership
                 working_dir=SANDBOX_DIR,
                 environment={
                     "AI_PROXY_URL": "http://sandbox-proxy",
                     "AI_EMBEDDING_PROXY_URL": "http://sandbox-proxy",
                     "PYTHONUNBUFFERED": "1"  # Ensure Python output is not buffered
                 },
-                # TODO: Need to figure out how to make the permissions work for agent to write, and host to delete
-                # user=f"{os.getuid()}:{os.getgid()}",  # Run container as host user:group
+                user=f"{os.getuid()}:{os.getgid()}",  # Run container as host user:group to prevent permission issues
                 detach=True,
                 # Add CPU and memory limits to prevent resource exhaustion
                 mem_limit=f"{SANDBOX_MAX_RAM_USAGE}m",
@@ -221,7 +220,8 @@ class Sandbox:
             raise
         finally:
             # Clean up IO directory after processing results
-            shutil.rmtree(io_dir, ignore_errors=True)
+            if io_dir.exists():
+                shutil.rmtree(io_dir)
     
     @tracer.wrap(resource="setup-repository")
     async def _setup_repository(self, repo_name: str, base_commit: str) -> Path:
@@ -240,7 +240,7 @@ class Sandbox:
         
         # Copy from cache
         if repo_path.exists():
-            shutil.rmtree(repo_path, ignore_errors=True)
+            shutil.rmtree(repo_path)
         shutil.copytree(cache_path, repo_path)
 
         try:
@@ -530,18 +530,12 @@ class Sandbox:
                     logger.error(f"CLI fallback also failed for container {self.container.id}: {cli_error}")
         
         if self.repo_dir and self.repo_dir.exists():
-            try:
-                shutil.rmtree(self.repo_dir, ignore_errors=True)
-                logger.info(f"Cleaned up repository directory: {self.repo_dir}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up repository directory {self.repo_dir}: {e}")
+            shutil.rmtree(self.repo_dir)
+            logger.info(f"Cleaned up repository directory: {self.repo_dir}")
         
         # Clean up IO directory if it exists
         io_dir = self.agent_dir / f"io-{self.evaluation_run.run_id}"
         if io_dir.exists():
-            try:
-                shutil.rmtree(io_dir, ignore_errors=True)
-                logger.info(f"Cleaned up IO directory: {io_dir}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up IO directory {io_dir}: {e}")
+            shutil.rmtree(io_dir)
+            logger.info(f"Cleaned up IO directory: {io_dir}")
     
