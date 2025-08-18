@@ -447,7 +447,8 @@ routes = [
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
     ("/approved-version-ids", get_approved_version_ids),
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
-    ("/all-transactions", get_all_transactions)
+    ("/all-transactions", get_all_transactions),
+    ("/all-treasury-hotkeys", get_all_treasury_hotkeys)
 ]
 
 for path, endpoint in routes:
