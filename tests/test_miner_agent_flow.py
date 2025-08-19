@@ -210,11 +210,11 @@ class TestScreener:
         
         # Create a direct database connection for this test
         db_conn = await asyncpg.connect(
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            port=int(os.getenv('PGPORT', '5432')),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
         )
         
         try:
@@ -1013,11 +1013,11 @@ class TestAgentLifecycleFlow:
         
         # Create a direct database connection for this test to avoid event loop conflicts
         db_conn = await asyncpg.connect(
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            port=int(os.getenv('PGPORT', '5432')),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
         )
         
         try:
@@ -1130,11 +1130,11 @@ class TestAgentLifecycleFlow:
         
         # Create a direct database connection for this test to avoid event loop conflicts
         db_conn = await asyncpg.connect(
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            port=int(os.getenv('PGPORT', '5432')),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
         )
         
         try:
@@ -1232,11 +1232,11 @@ class TestAgentLifecycleFlow:
         
         # Create a direct database connection for this test to avoid event loop conflicts
         db_conn = await asyncpg.connect(
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            port=int(os.getenv('PGPORT', '5432')),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
         )
         
         try:
@@ -1325,11 +1325,11 @@ class TestAgentLifecycleFlow:
         
         # Create a direct database connection for this test
         db_conn = await asyncpg.connect(
-            user=os.getenv('AWS_MASTER_USERNAME'),
-            password=os.getenv('AWS_MASTER_PASSWORD'),
-            host=os.getenv('AWS_RDS_PLATFORM_ENDPOINT'),
-            port=int(os.getenv('PGPORT', '5432')),
-            database=os.getenv('AWS_RDS_PLATFORM_DB_NAME')
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
         )
         
         try:
@@ -1598,6 +1598,210 @@ class TestScoreCalculation:
         await MinerAgentScored.refresh_materialized_view(mock_conn)
         
         mock_conn.execute.assert_called_once_with("REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores")
+
+
+class TestGetAgentStatus:
+    """Test get_agent_status endpoint for approved and banned fields"""
+    
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_agent_status_approved_not_banned(self):
+        """Test agent status: approved but not banned"""
+        import uuid
+        import asyncpg
+        import httpx
+        
+        # Connect directly to the test database (same as server)
+        db_conn = await asyncpg.connect(
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
+        )
+        
+        try:
+            # Clean up tables
+            await db_conn.execute("DELETE FROM approved_version_ids WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = 'test_approved_not_banned')")
+            await db_conn.execute("DELETE FROM banned_hotkeys WHERE miner_hotkey = 'test_approved_not_banned'")
+            await db_conn.execute("DELETE FROM miner_agents WHERE miner_hotkey = 'test_approved_not_banned'")
+            
+            # Create test agent
+            version_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1, $2, $3, $4, NOW(), $5)",
+                version_id, 'test_approved_not_banned', 'test_agent', 1, 'scored'
+            )
+            
+            # Add to approved list
+            await db_conn.execute(
+                "INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, $2)",
+                version_id, 1
+            )
+            
+            # Test via HTTP request to the running API server
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://localhost:8000/agents/{version_id}")
+                assert response.status_code == 200
+                status = response.json()
+            
+            # Verify results
+            assert status['approved'] is True, "Agent should be approved"
+            assert status['banned'] is False, "Agent should not be banned"
+            assert status['version_id'] == version_id
+            assert status['miner_hotkey'] == 'test_approved_not_banned'
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_agent_status_not_approved_not_banned(self):
+        """Test agent status: not approved and not banned"""
+        import uuid
+        import asyncpg
+        import httpx
+        
+        # Connect directly to the test database (same as server)
+        db_conn = await asyncpg.connect(
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
+        )
+        
+        try:
+            # Clean up tables
+            await db_conn.execute("DELETE FROM approved_version_ids WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = 'test_not_approved_not_banned')")
+            await db_conn.execute("DELETE FROM banned_hotkeys WHERE miner_hotkey = 'test_not_approved_not_banned'")
+            await db_conn.execute("DELETE FROM miner_agents WHERE miner_hotkey = 'test_not_approved_not_banned'")
+            
+            # Create test agent (but don't approve or ban)
+            version_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1, $2, $3, $4, NOW(), $5)",
+                version_id, 'test_not_approved_not_banned', 'test_agent', 1, 'waiting'
+            )
+            
+            # Test via HTTP request to the running API server
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://localhost:8000/agents/{version_id}")
+                assert response.status_code == 200
+                status = response.json()
+            
+            # Verify results
+            assert status['approved'] is False, "Agent should not be approved"
+            assert status['banned'] is False, "Agent should not be banned"
+            assert status['version_id'] == version_id
+            assert status['miner_hotkey'] == 'test_not_approved_not_banned'
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_agent_status_approved_and_banned(self):
+        """Test agent status: approved but also banned"""
+        import uuid
+        import asyncpg
+        import httpx
+        
+        # Connect directly to the test database (same as server)
+        db_conn = await asyncpg.connect(
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
+        )
+        
+        try:
+            # Clean up tables
+            await db_conn.execute("DELETE FROM approved_version_ids WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = 'test_approved_and_banned')")
+            await db_conn.execute("DELETE FROM banned_hotkeys WHERE miner_hotkey = 'test_approved_and_banned'")
+            await db_conn.execute("DELETE FROM miner_agents WHERE miner_hotkey = 'test_approved_and_banned'")
+            
+            # Create test agent
+            version_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1, $2, $3, $4, NOW(), $5)",
+                version_id, 'test_approved_and_banned', 'test_agent', 1, 'scored'
+            )
+            
+            # Add to approved list
+            await db_conn.execute(
+                "INSERT INTO approved_version_ids (version_id, set_id) VALUES ($1, $2)",
+                version_id, 1
+            )
+            
+            # Add to banned list
+            await db_conn.execute(
+                "INSERT INTO banned_hotkeys (miner_hotkey, banned_reason) VALUES ($1, $2)",
+                'test_approved_and_banned', 'Test ban reason'
+            )
+            
+            # Test via HTTP request to the running API server
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://localhost:8000/agents/{version_id}")
+                assert response.status_code == 200
+                status = response.json()
+            
+            # Verify results
+            assert status['approved'] is True, "Agent should be approved"
+            assert status['banned'] is True, "Agent should be banned"
+            assert status['version_id'] == version_id
+            assert status['miner_hotkey'] == 'test_approved_and_banned'
+        finally:
+            await db_conn.close()
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
+    async def test_agent_status_not_approved_but_banned(self):
+        """Test agent status: not approved but is banned"""
+        import uuid
+        import asyncpg
+        import httpx
+        
+        # Connect directly to the test database (same as server)
+        db_conn = await asyncpg.connect(
+            user='test_user',
+            password='test_pass',
+            host='localhost',
+            port=5432,
+            database='postgres'
+        )
+        
+        try:
+            # Clean up tables
+            await db_conn.execute("DELETE FROM approved_version_ids WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = 'test_not_approved_but_banned')")
+            await db_conn.execute("DELETE FROM banned_hotkeys WHERE miner_hotkey = 'test_not_approved_but_banned'")
+            await db_conn.execute("DELETE FROM miner_agents WHERE miner_hotkey = 'test_not_approved_but_banned'")
+            
+            # Create test agent
+            version_id = str(uuid.uuid4())
+            await db_conn.execute(
+                "INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status) VALUES ($1, $2, $3, $4, NOW(), $5)",
+                version_id, 'test_not_approved_but_banned', 'test_agent', 1, 'waiting'
+            )
+            
+            # Add to banned list (but not approved)
+            await db_conn.execute(
+                "INSERT INTO banned_hotkeys (miner_hotkey, banned_reason) VALUES ($1, $2)",
+                'test_not_approved_but_banned', 'Test ban reason'
+            )
+            
+            # Test via HTTP request to the running API server
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"http://localhost:8000/agents/{version_id}")
+                assert response.status_code == 200
+                status = response.json()
+            
+            # Verify results
+            assert status['approved'] is False, "Agent should not be approved"
+            assert status['banned'] is True, "Agent should be banned"
+            assert status['version_id'] == version_id
+            assert status['miner_hotkey'] == 'test_not_approved_but_banned'
+        finally:
+            await db_conn.close()
 
 
 if __name__ == "__main__":

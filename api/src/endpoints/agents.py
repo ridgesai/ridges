@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Tuple
 from datetime import datetime
 
 from api.src.utils.auth import verify_request
 from api.src.backend.entities import MinerAgent, Inference
-from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.agents import get_agent_approved_banned, get_agent_by_version_id
 from api.src.backend.queries.statistics import get_inference_details_for_run
 from api.src.backend.db_manager import db_operation
 
@@ -231,6 +231,7 @@ async def get_agent_status(version_id: str) -> Dict[str, Any]:
     """Get miner agent status and metadata"""
     try:
         agent = await get_agent_by_version(version_id)
+        approved, banned = await get_agent_approved_banned(version_id, agent.miner_hotkey)
         
         # Get queue position if waiting
         queue_position = None
@@ -252,7 +253,9 @@ async def get_agent_status(version_id: str) -> Dict[str, Any]:
             'status': agent.status,
             'agent_summary': agent.agent_summary,
             'ip_address': agent.ip_address,
-            'queue_position': queue_position
+            'queue_position': queue_position,
+            'approved': approved,
+            'banned': banned,
         }
     except HTTPException:
         raise

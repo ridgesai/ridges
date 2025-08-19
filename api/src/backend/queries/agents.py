@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
@@ -34,6 +34,13 @@ async def get_agent_by_version_id(conn: asyncpg.Connection, version_id: str) -> 
         return None
 
     return MinerAgent(**dict(result))
+
+@db_operation
+async def get_agent_approved_banned(conn: asyncpg.Connection, version_id: str, miner_hotkey: str) -> Tuple[bool, bool]:
+    """Get approved and banned status from database"""
+    approved = await conn.fetchval("""SELECT id from approved_version_ids where version_id = $1 AND approved_at <= NOW()""", version_id)
+    banned = await conn.fetchval("""SELECT miner_hotkey from banned_hotkeys where miner_hotkey = $1""", miner_hotkey)
+    return approved is not None, banned is not None
 
 @db_operation
 async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
