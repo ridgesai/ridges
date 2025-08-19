@@ -97,4 +97,4 @@ MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
 EMBEDDING_PRICE_PER_SECOND = 0.0001
 SCREENING_1_THRESHOLD = 0.8
 SCREENING_2_THRESHOLD = 0.4
-PRUNE_THRESHOLD = 0.1 # Must be within 10 percentage points of the final score
+PRUNE_THRESHOLD = 0.05 # Must be within 5 percentage points of the final score
