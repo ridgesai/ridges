@@ -129,4 +129,4 @@ async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
     Get all approved version IDs
     """
     data = await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
-    return [row["version_id"] for row in data]
+    return [str(row["version_id"]) for row in data]
