@@ -23,6 +23,8 @@ from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
+from api.src.backend.queries.scores import evaluate_agent_for_threshold_approval, calculate_threshold_decay_time
+from api.src.utils.threshold_scheduler import threshold_scheduler
 
 load_dotenv()
 
@@ -145,7 +147,7 @@ async def trigger_weight_set():
     return {"message": "Successfully triggered weight update"}
 
 async def approve_version(version_id: str, set_id: int, approval_password: str, approved_at: Optional[str] = None):
-    """Approve a version ID for weight consideration
+    """Approve a version ID for weight consideration (manual override)
     
     Args:
         version_id: The agent version to approve
@@ -179,6 +181,70 @@ async def approve_version(version_id: str, set_id: int, approval_password: str, 
     except Exception as e:
         logger.error(f"Error approving version {version_id} for set {set_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
+
+async def evaluate_agent_threshold(version_id: str, set_id: int, approval_password: str):
+    """Evaluate an agent using threshold scoring for automatic approval
+    
+    Args:
+        version_id: The agent version to evaluate
+        set_id: The evaluation set ID
+        approval_password: Password for approval
+    """
+    if approval_password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid approval password")
+    
+    agent = await db_get_agent_by_version_id(version_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    try:
+        from uuid import UUID
+        result = await evaluate_agent_for_threshold_approval(UUID(version_id), set_id)
+        
+        if result['action'] == 'approve_now':
+            # Approve immediately and add to top agents history
+            await approve_agent_version(version_id, set_id, None)
+            
+            async with get_transaction() as conn:
+                await conn.execute("""
+                    INSERT INTO approved_top_agents_history (version_id, set_id, top_at)
+                    VALUES ($1, $2, NOW())
+                """, UUID(version_id), set_id)
+            
+            return {
+                "message": f"Agent {version_id} approved immediately",
+                "action": "approve_now",
+                "reason": result['reason']
+            }
+            
+        elif result['action'] == 'approve_future':
+            # Schedule future approval
+            threshold_scheduler.schedule_future_approval(
+                UUID(version_id), 
+                set_id, 
+                result['future_approval_time']
+            )
+            
+            # Store the future approval in approved_version_ids with future timestamp
+            await approve_agent_version(version_id, set_id, result['future_approval_time'])
+            
+            return {
+                "message": f"Agent {version_id} scheduled for approval at {result['future_approval_time']}",
+                "action": "approve_future", 
+                "approval_time": result['future_approval_time'].isoformat(),
+                "reason": result['reason']
+            }
+            
+        else:  # reject
+            return {
+                "message": f"Agent {version_id} not approved",
+                "action": "reject",
+                "reason": result['reason']
+            }
+            
+    except Exception as e:
+        logger.error(f"Error evaluating agent {version_id} for threshold approval: {e}")
+        raise HTTPException(status_code=500, detail="Failed to evaluate agent due to internal server error")
 
 async def re_eval_approved(approval_password: str):
     """
@@ -340,6 +406,16 @@ async def get_threshold_function():
         logger.error(f"Error generating threshold function: {e}")
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
+async def calculate_decay_time(target_score: float, set_id: int):
+    """
+    Calculate when the threshold will decay to a target score
+    """
+    try:
+        return await calculate_threshold_decay_time(target_score, set_id)
+    except Exception as e:
+        logger.error(f"Error calculating threshold decay time: {e}")
+        raise HTTPException(status_code=500, detail="Error calculating threshold decay time")
+
 async def prune_agent(version_id: str, approval_password: str):
     """Prune a specific agent by setting its status to pruned and pruning all its evaluations"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
@@ -389,6 +465,7 @@ routes = [
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
+    ("/evaluate-agent-threshold", evaluate_agent_threshold, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
     ("/refresh-scores", refresh_scores, ["POST"]),
@@ -396,6 +473,7 @@ routes = [
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
     ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
+    ("/calculate-decay-time", calculate_decay_time, ["GET"]),
     ("/prune-agent", prune_agent, ["POST"])
 ]
 

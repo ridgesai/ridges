@@ -50,6 +50,153 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
     """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.version_id, transaction.extrinsic_code, transaction.fee)
 
 @db_operation
+async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, version_id: UUID, set_id: int) -> dict:
+    """
+    Evaluate an agent for threshold-based approval.
+    
+    Returns dict with:
+    - action: 'approve_now' | 'approve_future' | 'reject'
+    - future_approval_time: datetime if action is 'approve_future'
+    - reason: explanation of the decision
+    """
+    from datetime import datetime, timedelta
+    import math
+    
+    # Get agent's score
+    agent_result = await conn.fetchrow("""
+        SELECT final_score FROM agent_scores 
+        WHERE version_id = $1 AND set_id = $2
+    """, version_id, set_id)
+    
+    if not agent_result:
+        return {"action": "reject", "reason": "Agent not found or no valid score"}
+    
+    agent_score = agent_result['final_score']
+    
+    # Get threshold function parameters
+    threshold_data = await generate_threshold_function()
+    current_time = datetime.utcnow()
+    
+    # Calculate current threshold value
+    if threshold_data['epoch_0_time']:
+        epoch_minutes = (current_time - threshold_data['epoch_0_time']).total_seconds() / 60
+        epochs_passed = epoch_minutes / threshold_data['epoch_length_minutes']
+    else:
+        epochs_passed = 0
+    
+    # Parse threshold function: "floor + (t0 - floor) * Math.exp(-k * x)"
+    threshold_func = threshold_data['threshold_function']
+    parts = threshold_func.split(' + (')
+    floor = float(parts[0])
+    # Extract t0 (first number after opening parenthesis)
+    t0_part = parts[1].split(' - ')[0]
+    t0 = float(t0_part)
+    k_part = parts[1].split('* Math.exp(-')[1].split(' * x)')[0]
+    k = float(k_part)
+    
+    current_threshold = floor + (t0 - floor) * math.exp(-k * epochs_passed)
+    
+    # Get current top score (not necessarily approved), excluding the agent being evaluated
+    top_score_result = await conn.fetchrow("""
+        SELECT MAX(final_score) as top_score FROM agent_scores 
+        WHERE set_id = $1 AND version_id != $2
+    """, set_id, version_id)
+    top_score = top_score_result['top_score'] if top_score_result else 0.0
+    
+    if agent_score >= current_threshold:
+        return {
+            "action": "approve_now",
+            "reason": f"Score {agent_score:.4f} exceeds current threshold {current_threshold:.4f}"
+        }
+    elif agent_score > top_score:
+        # Calculate when threshold will decay to agent's score
+        if k == 0 or t0 <= floor:
+            return {"action": "reject", "reason": "Threshold will never decay to agent score"}
+        
+        # Solve: agent_score = floor + (t0 - floor) * exp(-k * x)
+        # x = -ln((agent_score - floor) / (t0 - floor)) / k
+        if agent_score <= floor:
+            return {"action": "reject", "reason": "Agent score below threshold floor"}
+        
+        ratio = (agent_score - floor) / (t0 - floor)
+        if ratio <= 0:
+            return {"action": "reject", "reason": "Invalid threshold calculation"}
+        
+        future_epochs = -math.log(ratio) / k
+        future_minutes = future_epochs * threshold_data['epoch_length_minutes']
+        future_approval_time = threshold_data['epoch_0_time'] + timedelta(minutes=future_minutes)
+        
+        return {
+            "action": "approve_future", 
+            "future_approval_time": future_approval_time,
+            "reason": f"Score {agent_score:.4f} > top score {top_score:.4f} but < threshold {current_threshold:.4f}"
+        }
+    else:
+        return {
+            "action": "reject",
+            "reason": f"Score {agent_score:.4f} not competitive (top: {top_score:.4f}, threshold: {current_threshold:.4f})"
+        }
+
+@db_operation
+async def calculate_threshold_decay_time(conn: asyncpg.Connection, target_score: float, set_id: int) -> dict:
+    """
+    Calculate when the threshold will decay to a target score.
+    
+    Returns dict with:
+    - future_time: datetime when threshold equals target_score
+    - valid: bool indicating if calculation is valid
+    - reason: explanation if not valid
+    """
+    from datetime import datetime, timedelta
+    import math
+    
+    try:
+        # Get threshold function parameters
+        threshold_data = await generate_threshold_function()
+        
+        if not threshold_data['epoch_0_time']:
+            return {"valid": False, "reason": "No epoch 0 time available"}
+        
+        # Parse threshold function
+        threshold_func = threshold_data['threshold_function']
+        parts = threshold_func.split(' + (')
+        floor = float(parts[0])
+        remaining = parts[1].split(' - ')[1].split(') * Math.exp(-')[0]
+        t0 = float(remaining)
+        k_part = parts[1].split('* Math.exp(-')[1].split(' * x)')[0]
+        k = float(k_part)
+        
+        # Check if target score is achievable
+        if target_score <= floor:
+            return {"valid": False, "reason": "Target score below threshold floor"}
+        
+        if target_score >= t0:
+            return {"valid": False, "reason": "Target score above initial threshold"}
+        
+        if k <= 0:
+            return {"valid": False, "reason": "Invalid decay rate"}
+        
+        # Solve: target_score = floor + (t0 - floor) * exp(-k * x)
+        # x = -ln((target_score - floor) / (t0 - floor)) / k
+        ratio = (target_score - floor) / (t0 - floor)
+        if ratio <= 0 or ratio > 1:
+            return {"valid": False, "reason": "Invalid threshold calculation"}
+        
+        future_epochs = -math.log(ratio) / k
+        future_minutes = future_epochs * threshold_data['epoch_length_minutes']
+        future_time = threshold_data['epoch_0_time'] + timedelta(minutes=future_minutes)
+        
+        return {
+            "valid": True,
+            "future_time": future_time,
+            "epochs": future_epochs,
+            "minutes": future_minutes
+        }
+        
+    except Exception as e:
+        return {"valid": False, "reason": f"Calculation error: {str(e)}"}
+
+@db_operation
 async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     """
     Build a JavaScript-compatible threshold function string using parameters from the DB
@@ -118,14 +265,21 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
         if innovation_row and innovation_row["innovation"] is not None:
             INNOVATION_SCALE = float(innovation_row["innovation"])
 
-    delta = max(0.0, CURR_SCORE - PREV_SCORE)
-    scaling_factor = 1.0 + FRONTIER_WEIGHT * PREV_SCORE
-    threshold_boost = IMPROVEMENT_WEIGHT * delta * scaling_factor
-    innovation_boost = INNOVATION_WEIGHT * INNOVATION_SCALE
-    t0 = min(1.0, max(0.0, CURR_SCORE + threshold_boost + innovation_boost))
+    # Handle case when there are no approved agents - set reasonable defaults
+    if current_top_approved_score == 0.0 and len(history_rows) == 0:
+        # No approved agents yet - set a high initial threshold
+        floor = 0.0
+        t0 = 0.85  # Start with a high threshold for first approvals
+        k_effective = DECAY_PER_EPOCH
+    else:
+        delta = max(0.0, CURR_SCORE - PREV_SCORE)
+        scaling_factor = 1.0 + FRONTIER_WEIGHT * PREV_SCORE
+        threshold_boost = IMPROVEMENT_WEIGHT * delta * scaling_factor
+        innovation_boost = INNOVATION_WEIGHT * INNOVATION_SCALE
+        t0 = min(1.0, max(0.0, CURR_SCORE + threshold_boost + innovation_boost))
 
-    k_effective = DECAY_PER_EPOCH * max(0.1, 1.0 - FRONTIER_WEIGHT * CURR_SCORE)
-    floor = CURR_SCORE
+        k_effective = DECAY_PER_EPOCH * max(0.1, 1.0 - FRONTIER_WEIGHT * CURR_SCORE)
+        floor = CURR_SCORE
 
     # Get epoch 0 time (when the current top approved agent became approved)
     epoch_0_result = await conn.fetchrow("""
