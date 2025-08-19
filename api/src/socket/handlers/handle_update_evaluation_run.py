@@ -83,7 +83,7 @@ async def handle_update_evaluation_run(
                         "version_id": str(eval_data.version_id),
                         "evaluation_id": str(evaluation_run.evaluation_id),
                         "run_id": str(evaluation_run.run_id),
-                        "status": evaluation_run.status,
+                        "status": evaluation_run.status.value,
                         "timestamp": datetime.now().isoformat()
                     }
                 )
@@ -99,6 +99,9 @@ async def handle_update_evaluation_run(
         
         # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump(mode='json')
+        # Ensure enum is converted to string for JSON serialization
+        if 'status' in broadcast_data:
+            broadcast_data['status'] = evaluation_run.status.value
         broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
         broadcast_data["progress"] = await Evaluation.get_progress(evaluation_run.evaluation_id)
         broadcast_data["validator_status"] = validator_status  # Include computed validator status

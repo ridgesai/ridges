@@ -97,7 +97,8 @@ class WebSocketManager:
                 non_validators += 1
                 try:
                     await websocket.send_text(json.dumps({"event": event, "data": data}))
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Error sending message to non-validator client: {e}")
                     # Connection is dead - mark for cleanup
                     dead_connections.append(websocket)
         
