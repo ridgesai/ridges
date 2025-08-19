@@ -137,64 +137,7 @@ async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, versio
             "reason": f"Score {agent_score:.4f} not competitive (top: {top_score:.4f}, threshold: {current_threshold:.4f})"
         }
 
-@db_operation
-async def calculate_threshold_decay_time(conn: asyncpg.Connection, target_score: float, set_id: int) -> dict:
-    """
-    Calculate when the threshold will decay to a target score.
-    
-    Returns dict with:
-    - future_time: datetime when threshold equals target_score
-    - valid: bool indicating if calculation is valid
-    - reason: explanation if not valid
-    """
-    from datetime import datetime, timedelta
-    import math
-    
-    try:
-        # Get threshold function parameters
-        threshold_data = await generate_threshold_function()
-        
-        if not threshold_data['epoch_0_time']:
-            return {"valid": False, "reason": "No epoch 0 time available"}
-        
-        # Parse threshold function
-        threshold_func = threshold_data['threshold_function']
-        parts = threshold_func.split(' + (')
-        floor = float(parts[0])
-        remaining = parts[1].split(' - ')[1].split(') * Math.exp(-')[0]
-        t0 = float(remaining)
-        k_part = parts[1].split('* Math.exp(-')[1].split(' * x)')[0]
-        k = float(k_part)
-        
-        # Check if target score is achievable
-        if target_score <= floor:
-            return {"valid": False, "reason": "Target score below threshold floor"}
-        
-        if target_score >= t0:
-            return {"valid": False, "reason": "Target score above initial threshold"}
-        
-        if k <= 0:
-            return {"valid": False, "reason": "Invalid decay rate"}
-        
-        # Solve: target_score = floor + (t0 - floor) * exp(-k * x)
-        # x = -ln((target_score - floor) / (t0 - floor)) / k
-        ratio = (target_score - floor) / (t0 - floor)
-        if ratio <= 0 or ratio > 1:
-            return {"valid": False, "reason": "Invalid threshold calculation"}
-        
-        future_epochs = -math.log(ratio) / k
-        future_minutes = future_epochs * threshold_data['epoch_length_minutes']
-        future_time = threshold_data['epoch_0_time'] + timedelta(minutes=future_minutes)
-        
-        return {
-            "valid": True,
-            "future_time": future_time,
-            "epochs": future_epochs,
-            "minutes": future_minutes
-        }
-        
-    except Exception as e:
-        return {"valid": False, "reason": f"Calculation error: {str(e)}"}
+
 
 @db_operation
 async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
