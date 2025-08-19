@@ -50,9 +50,10 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
     """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.version_id, transaction.extrinsic_code, transaction.fee)
 
 @db_operation
-async def generate_threshold_function(conn: asyncpg.Connection) -> str:
+async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     """
     Build a JavaScript-compatible threshold function string using parameters from the DB
+    Returns dict with threshold function and additional metadata
     """
     try:
         INNOVATION_WEIGHT = await conn.fetchval("SELECT value FROM threshold_config WHERE key = 'innovation_weight'")
@@ -65,6 +66,26 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> str:
         DECAY_PER_EPOCH = 0.05
         FRONTIER_WEIGHT = 0.84
         IMPROVEMENT_WEIGHT = 0.30
+
+    # Get the maximum set_id
+    max_set_id_result = await conn.fetchrow("SELECT MAX(set_id) as max_set_id FROM evaluation_sets")
+    max_set_id = max_set_id_result['max_set_id'] if max_set_id_result else 0
+
+    # Get current top score (highest score overall in latest set)
+    current_top_score_result = await conn.fetchrow("""
+        SELECT MAX(final_score) as top_score
+        FROM agent_scores
+        WHERE set_id = $1
+    """, max_set_id)
+    current_top_score = float(current_top_score_result['top_score'] or 0.0)
+
+    # Get current top approved score (highest score among approved agents in latest set)
+    current_top_approved_score_result = await conn.fetchrow("""
+        SELECT MAX(final_score) as top_approved_score
+        FROM agent_scores
+        WHERE set_id = $1 AND approved = true AND approved_at <= NOW()
+    """, max_set_id)
+    current_top_approved_score = float(current_top_approved_score_result['top_approved_score'] or 0.0)
 
     history_rows = await conn.fetch(
         """
@@ -106,4 +127,26 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> str:
     k_effective = DECAY_PER_EPOCH * max(0.1, 1.0 - FRONTIER_WEIGHT * CURR_SCORE)
     floor = CURR_SCORE
 
-    return f"{floor:.6f} + ({t0:.6f} - {floor:.6f}) * Math.exp(-{k_effective:.6f} * x)"
+    # Get epoch 0 time (when the current top approved agent became approved)
+    epoch_0_result = await conn.fetchrow("""
+        SELECT avi.approved_at as epoch_0_time
+        FROM agent_scores a
+        JOIN approved_version_ids avi ON a.version_id = avi.version_id AND a.set_id = avi.set_id
+        WHERE a.set_id = $1 AND a.approved = true AND avi.approved_at <= NOW()
+        ORDER BY a.final_score DESC, a.created_at ASC
+        LIMIT 1
+    """, max_set_id)
+    epoch_0_time = epoch_0_result['epoch_0_time'] if epoch_0_result else None
+
+    # Epoch length in minutes (based on weight setting loop interval from main.py)
+    epoch_length_minutes = 30
+
+    threshold_function = f"{floor:.6f} + ({t0:.6f} - {floor:.6f}) * Math.exp(-{k_effective:.6f} * x)"
+
+    return {
+        "threshold_function": threshold_function,
+        "current_top_score": current_top_score,
+        "current_top_approved_score": current_top_approved_score,
+        "epoch_0_time": epoch_0_time,
+        "epoch_length_minutes": epoch_length_minutes
+    }

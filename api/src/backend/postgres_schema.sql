@@ -1,3 +1,18 @@
+-- Threshold configuration table
+CREATE TABLE IF NOT EXISTS threshold_config (
+    key TEXT PRIMARY KEY NOT NULL,
+    value DOUBLE PRECISION NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Insert default threshold configuration values
+INSERT INTO threshold_config (key, value) VALUES 
+('innovation_weight', 0.25),
+('decay_per_epoch', 0.05),
+('frontier_scale', 0.84),
+('improvement_weight', 0.30)
+ON CONFLICT (key) DO NOTHING;
+
 -- Agent Versions table
 CREATE TABLE IF NOT EXISTS miner_agents (
     version_id UUID PRIMARY KEY NOT NULL,
@@ -289,7 +304,6 @@ agent_evaluations AS (
         (avi.version_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
         avi.approved_at
     FROM all_agents aa
-    LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id
     INNER JOIN evaluations e ON aa.version_id = e.version_id
         AND e.status = 'completed' 
         AND e.score IS NOT NULL
@@ -298,6 +312,7 @@ agent_evaluations AS (
         AND e.validator_hotkey NOT LIKE 'screener-2-%'
         AND e.validator_hotkey NOT LIKE 'i-0%'
         AND e.set_id IS NOT NULL
+    LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id AND e.set_id = avi.set_id
 ),
 filtered_scores AS (
     -- Remove the lowest score for each agent version and set combination

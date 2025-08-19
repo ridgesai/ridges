@@ -332,10 +332,10 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id:
     
 async def get_threshold_function():
     """
-    Returns the threshold function
+    Returns the threshold function with additional metadata
     """
     try:
-        return {"threshold_function": await db_generate_threshold_function()}
+        return await db_generate_threshold_function()
     except Exception as e:
         logger.error(f"Error generating threshold function: {e}")
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
