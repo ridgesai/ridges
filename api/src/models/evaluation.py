@@ -310,10 +310,10 @@ class Evaluation:
             await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE version_id = $1", self.version_id)
 
     async def _update_innovation_score(self, conn: asyncpg.Connection):
-        """Calculate and update innovation score for this evaluation's agent"""
+        """Calculate and update innovation score for this evaluation's agent in one atomic query"""
         try:
-            # Calculate innovation score for this specific agent
-            innovation_score = await conn.fetchval("""
+            # Single atomic query that calculates and updates innovation score
+            updated_rows = await conn.execute("""
                 WITH agent_runs AS (
                     -- Get all result_scored runs for this agent
                     SELECT
@@ -343,28 +343,26 @@ class Evaluation:
                             ), 0.0
                         ) AS prior_solved_ratio
                     FROM agent_runs
+                ),
+                innovation_calculation AS (
+                    SELECT
+                        COALESCE(
+                            AVG((CASE WHEN solved THEN 1.0 ELSE 0.0 END) - prior_solved_ratio), 0.0
+                        ) AS innovation_score
+                    FROM runs_with_prior
                 )
-                SELECT
-                    COALESCE(
-                        AVG((CASE WHEN solved THEN 1.0 ELSE 0.0 END) - prior_solved_ratio), 0.0
-                    ) AS innovation_score
-                FROM runs_with_prior
+                UPDATE miner_agents 
+                SET innovation = (SELECT innovation_score FROM innovation_calculation)
+                WHERE version_id = $1
             """, self.version_id)
             
-            # Update the miner_agents table with the calculated innovation score
-            await conn.execute(
-                "UPDATE miner_agents SET innovation = $1 WHERE version_id = $2",
-                innovation_score or 0.0,
-                self.version_id
-            )
-            
-            logger.info(f"Updated innovation score for agent {self.version_id}: {innovation_score:.6f}")
+            logger.info(f"Updated innovation score for agent {self.version_id} (affected {updated_rows} rows)")
             
         except Exception as e:
             logger.error(f"Failed to calculate innovation score for agent {self.version_id}: {e}")
-            # Set innovation score to 0.0 on error to ensure the field is populated
+            # Set innovation score to NULL on error to indicate calculation failure
             await conn.execute(
-                "UPDATE miner_agents SET innovation = 0.0 WHERE version_id = $1",
+                "UPDATE miner_agents SET innovation = NULL WHERE version_id = $1",
                 self.version_id
             )
 
