@@ -360,7 +360,8 @@ async def prune_agent(version_id: str, approval_password: str):
                 UPDATE evaluations 
                 SET status = 'pruned', finished_at = NOW() 
                 WHERE version_id = $1 
-                AND status IN ('waiting', 'running', 'error')
+                AND status IN ('waiting', 'running', 'error', 'completed')
+                AND validator_hotkey NOT LIKE 'screener-%'
                 RETURNING (SELECT COUNT(*) FROM evaluations WHERE version_id = $1)
             """, version_id)
             
