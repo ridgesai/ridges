@@ -35,6 +35,10 @@ async def lifespan(app: FastAPI):
     from api.src.models.evaluation import Evaluation
     await Evaluation.startup_recovery()
     
+    # Recover threshold-based approvals
+    from api.src.utils.threshold_scheduler import threshold_scheduler
+    await threshold_scheduler.recover_pending_approvals()
+    
     asyncio.create_task(run_weight_setting_loop(30))
     yield
 

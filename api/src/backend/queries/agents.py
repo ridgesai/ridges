@@ -36,11 +36,11 @@ async def get_agent_by_version_id(conn: asyncpg.Connection, version_id: str) -> 
     return MinerAgent(**dict(result))
 
 @db_operation
-async def get_agent_approved_banned(conn: asyncpg.Connection, version_id: str, miner_hotkey: str) -> Tuple[bool, bool]:
+async def get_agent_approved_banned(conn: asyncpg.Connection, version_id: str, miner_hotkey: str) -> Tuple[Optional[datetime], bool]:
     """Get approved and banned status from database"""
-    approved = await conn.fetchval("""SELECT id from approved_version_ids where version_id = $1 AND approved_at <= NOW()""", version_id)
+    approved_at = await conn.fetchval("""SELECT approved_at from approved_version_ids where version_id = $1""", version_id)
     banned = await conn.fetchval("""SELECT miner_hotkey from banned_hotkeys where miner_hotkey = $1""", miner_hotkey)
-    return approved is not None, banned is not None
+    return approved_at, banned is not None
 
 @db_operation
 async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> bool:

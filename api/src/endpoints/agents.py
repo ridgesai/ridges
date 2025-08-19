@@ -231,7 +231,7 @@ async def get_agent_status(version_id: str) -> Dict[str, Any]:
     """Get miner agent status and metadata"""
     try:
         agent = await get_agent_by_version(version_id)
-        approved, banned = await get_agent_approved_banned(version_id, agent.miner_hotkey)
+        approved_at, banned = await get_agent_approved_banned(version_id, agent.miner_hotkey)
         
         # Get queue position if waiting
         queue_position = None
@@ -254,7 +254,7 @@ async def get_agent_status(version_id: str) -> Dict[str, Any]:
             'agent_summary': agent.agent_summary,
             'ip_address': agent.ip_address,
             'queue_position': queue_position,
-            'approved': approved,
+            'approved_at': approved_at,
             'banned': banned,
         }
     except HTTPException:

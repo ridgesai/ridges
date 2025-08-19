@@ -1646,7 +1646,7 @@ class TestGetAgentStatus:
                 status = response.json()
             
             # Verify results
-            assert status['approved'] is True, "Agent should be approved"
+            assert status['approved_at'] is not None, "Agent should be approved"
             assert status['banned'] is False, "Agent should not be banned"
             assert status['version_id'] == version_id
             assert status['miner_hotkey'] == 'test_approved_not_banned'
@@ -1690,7 +1690,7 @@ class TestGetAgentStatus:
                 status = response.json()
             
             # Verify results
-            assert status['approved'] is False, "Agent should not be approved"
+            assert status['approved_at'] is None, "Agent should not be approved"
             assert status['banned'] is False, "Agent should not be banned"
             assert status['version_id'] == version_id
             assert status['miner_hotkey'] == 'test_not_approved_not_banned'
@@ -1746,7 +1746,7 @@ class TestGetAgentStatus:
                 status = response.json()
             
             # Verify results
-            assert status['approved'] is True, "Agent should be approved"
+            assert status['approved_at'] is not None, "Agent should be approved"
             assert status['banned'] is True, "Agent should be banned"
             assert status['version_id'] == version_id
             assert status['miner_hotkey'] == 'test_approved_and_banned'
@@ -1796,7 +1796,7 @@ class TestGetAgentStatus:
                 status = response.json()
             
             # Verify results
-            assert status['approved'] is False, "Agent should not be approved"
+            assert status['approved_at'] is None, "Agent should not be approved"
             assert status['banned'] is True, "Agent should be banned"
             assert status['version_id'] == version_id
             assert status['miner_hotkey'] == 'test_not_approved_but_banned'
