@@ -340,6 +340,45 @@ async def get_threshold_function():
         logger.error(f"Error generating threshold function: {e}")
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
+async def prune_agent(version_id: str, approval_password: str):
+    """Prune a specific agent by setting its status to pruned and pruning all its evaluations"""
+    if approval_password != os.getenv("APPROVAL_PASSWORD"):
+        raise HTTPException(status_code=401, detail="Invalid approval password")
+    
+    try:
+        async with get_transaction() as conn:
+            # Check if agent exists
+            agent = await conn.fetchrow("SELECT * FROM miner_agents WHERE version_id = $1", version_id)
+            if not agent:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            
+            # Update agent status to pruned
+            await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", version_id)
+            
+            # Update all evaluations for this agent to pruned status
+            evaluation_count = await conn.fetchval("""
+                UPDATE evaluations 
+                SET status = 'pruned', finished_at = NOW() 
+                WHERE version_id = $1 
+                AND status IN ('waiting', 'running', 'error')
+                RETURNING (SELECT COUNT(*) FROM evaluations WHERE version_id = $1)
+            """, version_id)
+            
+            logger.info(f"Pruned agent {version_id} ({agent['agent_name']}) and {evaluation_count or 0} evaluations")
+            
+            return {
+                "message": f"Successfully pruned agent {version_id}",
+                "agent_name": agent['agent_name'],
+                "miner_hotkey": agent['miner_hotkey'],
+                "evaluations_pruned": evaluation_count or 0
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error pruning agent {version_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to prune agent due to internal server error")
+
 router = APIRouter()
 
 routes = [
@@ -355,7 +394,8 @@ routes = [
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
     ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
-    ("/threshold-function", get_threshold_function, ["GET"])
+    ("/threshold-function", get_threshold_function, ["GET"]),
+    ("/prune-agent", prune_agent, ["POST"])
 ]
 
 for path, endpoint, methods in routes:
