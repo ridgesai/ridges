@@ -22,6 +22,7 @@ from api.src.utils.slack import notify_unregistered_top_miner, notify_unregister
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
+from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
 
 load_dotenv()
 
@@ -84,7 +85,7 @@ async def weights() -> Dict[str, float]:
         approved_agent_hotkeys_data = await conn.fetch("""
             SELECT DISTINCT miner_hotkey FROM approved_version_ids
             LEFT JOIN miner_agents ma on ma.version_id = approved_version_ids.version_id
-            WHERE ma.miner_hotkey NOT LIKE 'open-%'
+            WHERE ma.miner_hotkey NOT LIKE 'open-%' AND approved_version_ids.approved_at <= NOW()
         """)
         approved_agent_hotkeys = [row["miner_hotkey"] for row in approved_agent_hotkeys_data]
 
@@ -143,8 +144,15 @@ async def trigger_weight_set():
     await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
-async def approve_version(version_id: str, set_id: int, approval_password: str):
-    """Approve a version ID for weight consideration"""
+async def approve_version(version_id: str, set_id: int, approval_password: str, approved_at: Optional[str] = None):
+    """Approve a version ID for weight consideration
+    
+    Args:
+        version_id: The agent version to approve
+        set_id: The evaluation set ID  
+        approval_password: Password for approval
+        approved_at: ISO datetime string when approval takes effect (optional, defaults to now)
+    """
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
     
@@ -152,9 +160,22 @@ async def approve_version(version_id: str, set_id: int, approval_password: str):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
+    # Parse the approved_at datetime if provided
+    approval_datetime = None
+    if approved_at:
+        try:
+            from datetime import datetime
+            approval_datetime = datetime.fromisoformat(approved_at.replace('Z', '+00:00'))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid approved_at format. Use ISO 8601 format (e.g., '2024-01-15T10:30:00Z')")
+    
     try:
-        await approve_agent_version(version_id, set_id)
-        return {"message": f"Successfully approved {version_id} for set {set_id}"}
+        await approve_agent_version(version_id, set_id, approval_datetime)
+        
+        if approval_datetime and approval_datetime > datetime.now(timezone.utc):
+            return {"message": f"Successfully scheduled approval of {version_id} for set {set_id} at {approved_at}"}
+        else:
+            return {"message": f"Successfully approved {version_id} for set {set_id}"}
     except Exception as e:
         logger.error(f"Error approving version {version_id} for set {set_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
@@ -182,7 +203,7 @@ async def re_eval_approved(approval_password: str):
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
                 UPDATE miner_agents SET status = 'awaiting_screening_1'
-                WHERE version_id IN (SELECT version_id FROM approved_version_ids)
+                WHERE version_id IN (SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 RETURNING *
@@ -308,6 +329,16 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id:
     except Exception as e:
         logger.error(f"Error storing treasury transaction: {e}")
         raise HTTPException(status_code=500, detail="Error storing treasury transaction")
+    
+async def get_threshold_function():
+    """
+    Returns the threshold function
+    """
+    try:
+        return {"threshold_function": await db_generate_threshold_function()}
+    except Exception as e:
+        logger.error(f"Error generating threshold function: {e}")
+        raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
 router = APIRouter()
 
@@ -323,7 +354,8 @@ routes = [
     ("/refresh-scores", refresh_scores, ["POST"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
-    ("/store-treasury-transaction", store_treasury_transaction, ["POST"])
+    ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
+    ("/threshold-function", get_threshold_function, ["GET"])
 ]
 
 for path, endpoint, methods in routes:

@@ -48,3 +48,62 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
         INSERT INTO treasury_transactions (group_transaction_id, sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha_rao, occurred_at, version_id, extrinsic_code, fee)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.version_id, transaction.extrinsic_code, transaction.fee)
+
+@db_operation
+async def generate_threshold_function(conn: asyncpg.Connection) -> str:
+    """
+    Build a JavaScript-compatible threshold function string using parameters from the DB
+    """
+    try:
+        INNOVATION_WEIGHT = await conn.fetchval("SELECT value FROM threshold_config WHERE key = 'innovation_weight'")
+        DECAY_PER_EPOCH = await conn.fetchval("SELECT value FROM threshold_config WHERE key = 'decay_per_epoch'")
+        FRONTIER_WEIGHT = await conn.fetchval("SELECT value FROM threshold_config WHERE key = 'frontier_scale'")
+        IMPROVEMENT_WEIGHT = await conn.fetchval("SELECT value FROM threshold_config WHERE key = 'improvement_weight'")
+    except Exception:
+        logger.error("Error fetching threshold config values from the database. Using default values.")
+        INNOVATION_WEIGHT = 0.25
+        DECAY_PER_EPOCH = 0.05
+        FRONTIER_WEIGHT = 0.84
+        IMPROVEMENT_WEIGHT = 0.30
+
+    history_rows = await conn.fetch(
+        """
+        SELECT h.version_id, h.set_id, s.final_score
+        FROM approved_top_agents_history h
+        LEFT JOIN agent_scores s
+          ON s.version_id = h.version_id AND s.set_id = h.set_id
+        WHERE h.version_id IS NOT NULL
+        ORDER BY h.top_at DESC
+        LIMIT 2
+        """
+    )
+
+    CURR_SCORE = 0.0
+    PREV_SCORE = 0.0
+    latest_version_id = None
+
+    if len(history_rows) >= 1:
+        latest_version_id = history_rows[0]["version_id"]
+        CURR_SCORE = float(history_rows[0]["final_score"] or 0.0)
+    if len(history_rows) >= 2:
+        PREV_SCORE = float(history_rows[1]["final_score"] or 0.0)
+
+    INNOVATION_SCALE = 0.0
+    if latest_version_id is not None:
+        innovation_row = await conn.fetchrow(
+            "SELECT innovation FROM miner_agents WHERE version_id = $1",
+            latest_version_id,
+        )
+        if innovation_row and innovation_row["innovation"] is not None:
+            INNOVATION_SCALE = float(innovation_row["innovation"])
+
+    delta = max(0.0, CURR_SCORE - PREV_SCORE)
+    scaling_factor = 1.0 + FRONTIER_WEIGHT * PREV_SCORE
+    threshold_boost = IMPROVEMENT_WEIGHT * delta * scaling_factor
+    innovation_boost = INNOVATION_WEIGHT * INNOVATION_SCALE
+    t0 = min(1.0, max(0.0, CURR_SCORE + threshold_boost + innovation_boost))
+
+    k_effective = DECAY_PER_EPOCH * max(0.1, 1.0 - FRONTIER_WEIGHT * CURR_SCORE)
+    floor = CURR_SCORE
+
+    return f"{floor:.6f} + ({t0:.6f} - {floor:.6f}) * Math.exp(-{k_effective:.6f} * x)"

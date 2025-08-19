@@ -77,26 +77,31 @@ async def ban_agents(conn: asyncpg.Connection, miner_hotkeys: List[str], reason:
     """, [(miner_hotkey, reason) for miner_hotkey in miner_hotkeys])
 
 @db_transaction
-async def approve_agent_version(conn: asyncpg.Connection, version_id: str, set_id: int):
+async def approve_agent_version(conn: asyncpg.Connection, version_id: str, set_id: int, approved_at: Optional[datetime] = None):
     """
     Approve an agent version as a valid, non decoding agent solution
+    Args:
+        version_id: The agent version to approve
+        set_id: The evaluation set ID
+        approved_at: When the approval takes effect (defaults to now)
     """
-    # Check if the agent is already approved for this set
-    approved_at = datetime.now(timezone.utc)
+    if approved_at is None:
+        approved_at = datetime.now(timezone.utc)
 
     await conn.execute("""
         INSERT INTO approved_version_ids (version_id, set_id, approved_at)
         VALUES ($1, $2, $3)
     """, version_id, set_id, approved_at)
     
-    # Update the top agents cache after approval
-    try:
-        from api.src.utils.top_agents_manager import update_top_agents_cache
-        await update_top_agents_cache()
-        logger.info(f"Top agents cache updated after approving {version_id}")
-    except Exception as e:
-        logger.error(f"Failed to update top agents cache after approval: {e}")
-        # Don't fail the approval if cache update fails
+    # Update the top agents cache after approval (only if effective immediately)
+    if approved_at <= datetime.now(timezone.utc):
+        try:
+            from api.src.utils.top_agents_manager import update_top_agents_cache
+            await update_top_agents_cache()
+            logger.info(f"Top agents cache updated after approving {version_id}")
+        except Exception as e:
+            logger.error(f"Failed to update top agents cache after approval: {e}")
+            # Don't fail the approval if cache update fails
 
 @db_transaction
 async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) -> List[MinerAgent]:
@@ -111,7 +116,7 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
         SELECT version_id, miner_hotkey, agent_name, version_num, created_at, status
         FROM miner_agents 
         WHERE version_id IN (
-            SELECT version_id FROM approved_version_ids
+            SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()
         )
         AND status = 'awaiting_screening'
     """)
@@ -123,4 +128,4 @@ async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
     """
     Get all approved version IDs
     """
-    return await conn.fetch("SELECT version_id FROM approved_version_ids")
+    return await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
