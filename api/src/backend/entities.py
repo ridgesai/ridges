@@ -507,11 +507,11 @@ class ScreenerQueueAgent(BaseModel):
     created_at: datetime
     status: str
 
-
 class ScreenerQueueByStage(BaseModel):
     """Screener queue organized by stage"""
     stage_1: list[ScreenerQueueAgent]
     stage_2: list[ScreenerQueueAgent]
+
 class OpenUser(BaseModel):
     open_hotkey: str
     auth0_user_id: str
@@ -520,6 +520,7 @@ class OpenUser(BaseModel):
     registered_at: datetime
     agents: Optional[list[MinerAgent]] = []
     bittensor_hotkey: Optional[str] = None
+    admin: int
 
 class OpenUserSignInRequest(BaseModel):
     auth0_user_id: str
