@@ -520,7 +520,7 @@ class OpenUser(BaseModel):
     registered_at: datetime
     agents: Optional[list[MinerAgent]] = []
     bittensor_hotkey: Optional[str] = None
-    admin: int
+    admin: Optional[int] = 7
 
 class OpenUserSignInRequest(BaseModel):
     auth0_user_id: str
