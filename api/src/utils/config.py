@@ -1,4 +1,4 @@
-AGENT_RATE_LIMIT_SECONDS = 60 * 60 * 12
+AGENT_RATE_LIMIT_SECONDS = 60 * 60 * 18 # 18 hours
 PERMISSABLE_PACKAGES = [
     "aiohttp",
     "ast",
