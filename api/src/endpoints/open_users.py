@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 
-from api.src.backend.queries.open_users import get_open_user, create_open_user, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user, get_open_agent_periods_on_top as db_get_open_agent_periods_on_top
+from api.src.backend.queries.open_users import get_open_user, create_open_user, get_open_user_by_email, update_open_user_bittensor_hotkey as db_update_open_user_bittensor_hotkey, get_open_user_bittensor_hotkey as db_get_open_user_bittensor_hotkey, get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_treasury_transactions_for_open_user as db_get_treasury_transactions_for_open_user, get_open_agent_periods_on_top as db_get_open_agent_periods_on_top, get_periods_on_top_map as db_get_periods_on_top_map, get_total_payouts_by_version_ids as db_get_total_payouts_by_version_ids
 from api.src.backend.queries.scores import get_treasury_hotkeys as db_get_treasury_hotkeys
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from api.src.backend.internal_tools import InternalTools
@@ -121,6 +121,22 @@ async def get_pending_emission_for_open_user(open_hotkey: str, password: str):
     except Exception as e:
         logger.error(f"Error getting pending emission for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
+    
+async def get_all_pending_payouts(password: str):
+    if password != open_user_password:
+        logger.warning(f"Someone tried to get all pending payouts with an invalid password. password: {password}")
+        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+    
+    try:
+        periods_on_top_map = await db_get_periods_on_top_map()
+        treasury_hotkeys = await db_get_treasury_hotkeys()
+        gross_emissions = await internal_tools.get_emission_alpha_map_for_hotkeys_during_periods(miner_hotkeys=treasury_hotkeys, periods_map=periods_on_top_map)
+        payouts = await db_get_total_payouts_by_version_ids(version_ids=list(gross_emissions.keys()))
+        pending_payouts = {version_id: gross_emissions.get(version_id, 0) - payouts.get(version_id, 0) for version_id in gross_emissions.keys()}
+        return {"success": True, "pending_payouts": pending_payouts}
+    except Exception as e:
+        logger.error(f"Error getting all pending payouts: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
 router = APIRouter()
 
@@ -130,6 +146,7 @@ routes = [
     ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
     ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),
     ("/get-pending-emission-for-open-user", get_pending_emission_for_open_user, ["GET"]),
+    ("/get-all-pending-payouts", get_all_pending_payouts, ["GET"]),
 ]
 
 for path, endpoint, methods in routes:

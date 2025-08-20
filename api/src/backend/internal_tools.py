@@ -195,6 +195,111 @@ class InternalTools:
             value = await conn.fetchval(query, miner_hotkeys, starts, ends)
             return int(value or 0)
 
+    async def get_emission_alpha_map_for_hotkeys_during_periods(
+        self,
+        periods_map: dict[str, list[tuple[datetime, datetime]]],
+        miner_hotkeys: list[str],
+    ) -> dict[str, int]:
+        result: dict[str, int] = {key: 0 for key in periods_map.keys()}
+
+        if not miner_hotkeys or not periods_map:
+            return result
+
+        flat_keys: list[str] = []
+        flat_starts: list[datetime] = []
+        flat_ends: list[datetime] = []
+
+        def _to_naive_utc(dt: datetime) -> datetime:
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
+        for key, periods in periods_map.items():
+            if not periods:
+                continue
+            for start, end in periods:
+                if start is None or end is None or start >= end:
+                    continue
+                flat_keys.append(key)
+                flat_starts.append(_to_naive_utc(start))
+                flat_ends.append(_to_naive_utc(end))
+
+        if not flat_keys:
+            return result
+
+        query = (
+            """
+            WITH input_hotkeys AS (
+                SELECT unnest($1::text[]) AS hotkey
+            ),
+            input_periods AS (
+                SELECT t.key, t.start_at, t.end_at
+                FROM unnest($2::text[], $3::timestamp[], $4::timestamp[]) AS t(key, start_at, end_at)
+            ),
+            valid_input AS (
+                SELECT key, start_at, end_at
+                FROM input_periods
+                WHERE start_at IS NOT NULL
+                  AND end_at IS NOT NULL
+                  AND start_at < end_at
+            ),
+            hotkey_periods AS (
+                SELECT ih.hotkey, vi.key, vi.start_at, vi.end_at
+                FROM input_hotkeys ih
+                CROSS JOIN valid_input vi
+            ),
+            bounds AS (
+                SELECT
+                    hp.hotkey,
+                    hp.key,
+                    (
+                        SELECT MIN(es1.occured_at)
+                        FROM emission_snapshots es1
+                        WHERE es1.hotkey = hp.hotkey
+                          AND es1.occured_at > hp.start_at
+                    ) AS start_cut,
+                    COALESCE(
+                        (
+                            SELECT MIN(es2.occured_at)
+                            FROM emission_snapshots es2
+                            WHERE es2.hotkey = hp.hotkey
+                              AND es2.occured_at > hp.end_at
+                        ),
+                        (
+                            SELECT MAX(es3.occured_at) + INTERVAL '1 microsecond'
+                            FROM emission_snapshots es3
+                            WHERE es3.hotkey = hp.hotkey
+                        )
+                    ) AS end_cut
+                FROM hotkey_periods hp
+            ),
+            valid_bounds AS (
+                SELECT hotkey, key, start_cut, end_cut
+                FROM bounds
+                WHERE start_cut IS NOT NULL
+                  AND end_cut IS NOT NULL
+                  AND start_cut < end_cut
+            )
+            SELECT vb.key, COALESCE(SUM(es.emission_alpha_rao), 0) AS total_alpha
+            FROM emission_snapshots AS es
+            INNER JOIN valid_bounds vb
+              ON es.hotkey = vb.hotkey
+             AND es.occured_at >= vb.start_cut
+             AND es.occured_at < vb.end_cut
+            WHERE es.hotkey = ANY($1::text[])
+            GROUP BY vb.key
+            """
+        )
+
+        async with self.acquire() as conn:
+            rows = await conn.fetch(query, miner_hotkeys, flat_keys, flat_starts, flat_ends)
+
+        for row in rows:
+            key = str(row["key"])
+            result[key] = int(row["total_alpha"]) if row["total_alpha"] is not None else 0
+
+        return result
+
     async def get_transfer_stake_extrinsic_details(self, event_code: str) -> Optional[dict[str, Any]]:
         query = (
             """
