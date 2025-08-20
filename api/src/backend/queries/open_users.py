@@ -116,6 +116,34 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
     return [(row["period_start"], row["period_end"]) for row in rows]
 
 @db_operation
+async def get_periods_on_top_map(conn: asyncpg.Connection) -> dict[str, list[tuple[datetime, datetime]]]:
+    rows = await conn.fetch(
+        """
+        WITH ordered AS (
+            SELECT
+                ath.version_id,
+                ath.top_at AS period_start,
+                LEAD(ath.top_at) OVER (ORDER BY ath.top_at) AS period_end
+            FROM approved_top_agents_history ath
+            WHERE ath.version_id IS NOT NULL
+        )
+        SELECT
+            o.version_id,
+            o.period_start,
+            COALESCE(o.period_end, NOW()) AS period_end
+        FROM ordered o
+        ORDER BY o.period_start ASC
+        """,
+    )
+
+    periods_map: dict[str, list[tuple[datetime, datetime]]] = {}
+    for row in rows:
+        version_id = str(row["version_id"])
+        periods_map.setdefault(version_id, []).append((row["period_start"], row["period_end"]))
+
+    return periods_map
+
+@db_operation
 async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hotkey: str) -> int:
     total = await conn.fetchval(
         """
