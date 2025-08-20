@@ -262,3 +262,21 @@ async def get_total_dispersed_by_treasury_hotkeys(conn: asyncpg.Connection) -> i
     )
 
     return int(total) if total is not None else 0
+
+@db_operation
+async def get_total_payouts_by_version_ids(conn: asyncpg.Connection, version_ids: list[str]) -> dict[str, int]:
+    if not version_ids:
+        return {}
+
+    rows = await conn.fetch(
+        """
+        SELECT version_id, COALESCE(SUM(amount_alpha_rao), 0) AS total_amount
+        FROM treasury_transactions
+        WHERE version_id = ANY($1::uuid[])
+        GROUP BY version_id
+        """,
+        version_ids,
+    )
+
+    totals = {str(row["version_id"]): int(row["total_amount"]) for row in rows}
+    return {vid: totals.get(vid, 0) for vid in version_ids}
