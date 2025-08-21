@@ -219,7 +219,7 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
         delta = max(0.0, CURR_SCORE - PREV_SCORE)
         scaling_factor = 1.0 + FRONTIER_WEIGHT * PREV_SCORE
         threshold_boost = IMPROVEMENT_WEIGHT * delta * scaling_factor
-        innovation_boost = INNOVATION_WEIGHT * INNOVATION_SCALE
+        innovation_boost = max(0.0, INNOVATION_WEIGHT * INNOVATION_SCALE)
         t0 = min(1.0, max(0.0, CURR_SCORE + threshold_boost + innovation_boost))
 
         k_effective = DECAY_PER_EPOCH * max(0.1, 1.0 - FRONTIER_WEIGHT * CURR_SCORE)
