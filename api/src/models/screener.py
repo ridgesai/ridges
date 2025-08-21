@@ -188,9 +188,13 @@ class Screener(Client):
         from api.src.models.evaluation import Evaluation
         logger.info(f"Screener {self.hotkey} connected")
         async with Evaluation.get_lock():
-            self.set_available()
-            logger.info(f"Screener {self.hotkey} available with status: {self.status}")
-            await Evaluation.screen_next_awaiting_agent(self)
+            # Only set available if not currently screening
+            if self.status != "screening":
+                self.set_available()
+                logger.info(f"Screener {self.hotkey} available with status: {self.status}")
+                await Evaluation.screen_next_awaiting_agent(self)
+            else:
+                logger.info(f"Screener {self.hotkey} reconnected but still screening - not assigning new work")
     
     async def disconnect(self):
         """Handle screener disconnection"""
