@@ -113,6 +113,12 @@ CREATE TABLE IF NOT EXISTS inferences (
     status_code INT
 );
 
+-- Performance optimization indices for inferences queries
+CREATE INDEX IF NOT EXISTS idx_inferences_created_provider_range
+ON inferences (created_at, provider)
+INCLUDE (finished_at, status_code, total_tokens)
+WHERE finished_at IS NOT NULL AND provider IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS approved_version_ids (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     version_id UUID REFERENCES miner_agents(version_id),
