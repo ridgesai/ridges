@@ -418,6 +418,20 @@ class Evaluation:
         """Create screening evaluation"""
         from api.src.socket.websocket_manager import WebSocketManager
 
+        # Safety check: Ensure screener doesn't already have a running evaluation
+        existing_evaluation = await conn.fetchrow(
+            """
+            SELECT evaluation_id, status FROM evaluations 
+            WHERE validator_hotkey = $1 AND status = 'running'
+            LIMIT 1
+            """,
+            screener.hotkey
+        )
+        
+        if existing_evaluation:
+            logger.error(f"CRITICAL: Screener {screener.hotkey} already has running evaluation {existing_evaluation['evaluation_id']} - refusing to create duplicate screening")
+            return "", False
+
         ws = WebSocketManager.get_instance()
 
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
