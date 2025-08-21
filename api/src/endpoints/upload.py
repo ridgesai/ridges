@@ -101,8 +101,6 @@ async def post_agent(
             # if prod: await check_code_similarity(file_content, miner_hotkey)
             check_agent_code(file_content)
 
-            raise HTTPException(status_code=503, detail="Platform currently down for maintenance for several hours")
-
             async with Evaluation.get_lock():
                 # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
                 screener = await Screener.get_first_available_and_reserve(stage=1)
@@ -261,8 +259,6 @@ async def post_open_agent(
         # if prod: await check_code_similarity(file_content, open_hotkey)
         check_agent_code(file_content)
 
-        raise HTTPException(status_code=503, detail="Platform currently down for maintenance for several hours")
-        
         async with Evaluation.get_lock():
             # Atomic availability check + reservation - only allow uploads if stage 1 screeners are available
             screener = await Screener.get_first_available_and_reserve(stage=1)
