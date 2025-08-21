@@ -253,22 +253,22 @@ class Evaluation:
                 await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE version_id = $1", self.version_id)
             return
 
-        # Check for any stage 1 screening evaluations (waiting OR running)
+        # Check for any stage 1 screening evaluations (only running - waiting evaluations don't mean agent is actively being screened)
         stage1_count = await conn.fetchval(
             """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 
                AND (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'i-0%') 
-               AND status IN ('waiting', 'running')""",
+               AND status = 'running'""",
             self.version_id,
         )
         if stage1_count > 0:
             await conn.execute("UPDATE miner_agents SET status = 'screening_1' WHERE version_id = $1", self.version_id)
             return
 
-        # Check for any stage 2 screening evaluations (waiting OR running)
+        # Check for any stage 2 screening evaluations (only running - waiting evaluations don't mean agent is actively being screened)
         stage2_count = await conn.fetchval(
             """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 
                AND validator_hotkey LIKE 'screener-2-%' 
-               AND status IN ('waiting', 'running')""",
+               AND status = 'running'""",
             self.version_id,
         )
         if stage2_count > 0:
