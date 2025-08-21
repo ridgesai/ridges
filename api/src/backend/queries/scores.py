@@ -1,3 +1,4 @@
+from datetime import timezone
 import logging
 from uuid import UUID
 import asyncpg
@@ -50,7 +51,7 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
     """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.version_id, transaction.extrinsic_code, transaction.fee)
 
 @db_operation
-async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, version_id: UUID, set_id: int) -> dict:
+async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, version_id: str, set_id: int) -> dict:
     """
     Evaluate an agent for threshold-based approval.
     
@@ -75,7 +76,7 @@ async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, versio
     
     # Get threshold function parameters
     threshold_data = await generate_threshold_function()
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     
     # Calculate current threshold value
     if threshold_data['epoch_0_time']:

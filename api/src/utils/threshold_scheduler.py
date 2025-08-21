@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Set
-from uuid import UUID
 from loggers.logging_utils import get_logger
 from api.src.backend.db_manager import get_transaction
 
@@ -14,7 +13,7 @@ class ThresholdScheduler:
         self._scheduled_tasks: Dict[str, asyncio.Task] = {}
         self._pending_approvals: Set[str] = set()
     
-    def schedule_future_approval(self, version_id: UUID, set_id: int, approval_time: datetime) -> None:
+    def schedule_future_approval(self, version_id: str, set_id: int, approval_time: datetime) -> None:
         """Schedule an agent for future approval when threshold decays to their score"""
         task_key = f"{version_id}_{set_id}"
         
@@ -38,7 +37,7 @@ class ThresholdScheduler:
         
         logger.info(f"Scheduled approval for {version_id} on set {set_id} in {delay_seconds:.0f} seconds")
     
-    async def _approve_agent_delayed(self, version_id: UUID, set_id: int, delay_seconds: float) -> None:
+    async def _approve_agent_delayed(self, version_id: str, set_id: int, delay_seconds: float) -> None:
         """Wait for delay then approve the agent"""
         task_key = f"{version_id}_{set_id}"
         
@@ -55,7 +54,7 @@ class ThresholdScheduler:
             self._scheduled_tasks.pop(task_key, None)
             self._pending_approvals.discard(task_key)
     
-    async def _approve_agent_now(self, version_id: UUID, set_id: int) -> None:
+    async def _approve_agent_now(self, version_id: str, set_id: int) -> None:
         """Approve agent and insert into top_approved_agents_history"""
         from api.src.backend.queries.agents import approve_agent_version
         
@@ -75,7 +74,7 @@ class ThresholdScheduler:
         except Exception as e:
             logger.error(f"Failed to approve agent {version_id} for set {set_id}: {e}")
     
-    def cancel_scheduled_approval(self, version_id: UUID, set_id: int) -> bool:
+    def cancel_scheduled_approval(self, version_id: str, set_id: int) -> bool:
         """Cancel a scheduled approval if it exists"""
         task_key = f"{version_id}_{set_id}"
         

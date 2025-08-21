@@ -162,10 +162,8 @@ async def approve_version(version_id: str, set_id: int, approval_password: str):
         raise HTTPException(status_code=404, detail="Agent not found")
     
     try:
-        from uuid import UUID
-        
         # Use threshold scoring logic to determine approval action
-        result = await evaluate_agent_for_threshold_approval(UUID(version_id), set_id)
+        result = await evaluate_agent_for_threshold_approval(version_id, set_id)
         
         if result['action'] == 'approve_now':
             # Approve immediately and add to top agents history
@@ -175,7 +173,7 @@ async def approve_version(version_id: str, set_id: int, approval_password: str):
                 await conn.execute("""
                     INSERT INTO approved_top_agents_history (version_id, set_id, top_at)
                     VALUES ($1, $2, NOW())
-                """, UUID(version_id), set_id)
+                """, version_id, set_id)
             
             return {
                 "message": f"Agent {version_id} approved immediately - {result['reason']}",
@@ -185,7 +183,7 @@ async def approve_version(version_id: str, set_id: int, approval_password: str):
         elif result['action'] == 'approve_future':
             # Schedule future approval
             threshold_scheduler.schedule_future_approval(
-                UUID(version_id), 
+                version_id, 
                 set_id, 
                 result['future_approval_time']
             )
