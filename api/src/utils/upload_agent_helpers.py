@@ -214,6 +214,7 @@ async def record_upload_attempt(upload_type: str, success: bool, **kwargs) -> No
                 kwargs.get('file_size_bytes'), kwargs.get('ip_address'), kwargs.get('error_type'),
                 kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('version_id')
             )
+        logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
     except Exception as e:
         logger.error(f"Failed to record upload attempt: {e}")
 
