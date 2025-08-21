@@ -247,6 +247,9 @@ print_status "Running real API integration tests..."
 uv run python -m pytest test_real_api.py -v -W ignore::PendingDeprecationWarning
 
 # For now, skip the problematic integration tests and run a subset that works
+print_status "Running upload tracking tests..."
+uv run python -m pytest test_upload_tracking.py -v --tb=short --disable-warnings
+
 print_status "Running comprehensive tests..."
 uv run python -m pytest \
     test_endpoints_unit.py::TestSystemStatusEndpointsUnit \
@@ -254,6 +257,7 @@ uv run python -m pytest \
     test_weights_setting.py \
     test_miner_agent_flow.py \
     test_real_api.py \
+    test_upload_tracking.py \
     -v \
     --tb=short \
     --disable-warnings \

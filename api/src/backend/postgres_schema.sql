@@ -532,3 +532,21 @@ CREATE TRIGGER tr_set_approved_top_agent_on_eval_insert
     AFTER INSERT ON evaluations
     FOR EACH ROW
     EXECUTE FUNCTION set_approved_top_agent_if_changed();
+
+-- Upload Attempts table to track all upload attempts
+CREATE TABLE IF NOT EXISTS upload_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    upload_type TEXT NOT NULL, -- 'agent' or 'open-agent'
+    hotkey TEXT,
+    agent_name TEXT,
+    filename TEXT,
+    file_size_bytes BIGINT,
+    ip_address TEXT,
+    success BOOLEAN NOT NULL,
+    error_type TEXT,
+    error_message TEXT,
+    ban_reason TEXT,
+    http_status_code INT,
+    version_id UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
