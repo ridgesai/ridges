@@ -9,7 +9,7 @@ from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
 from api.src.utils.auth import verify_request
-from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3
+from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3, track_upload
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
@@ -38,6 +38,7 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     detail: str = Field(..., description="Error message describing what went wrong")
 
+@track_upload("agent")
 async def post_agent(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
@@ -149,6 +150,7 @@ async def post_agent(
             message=f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}."
         )
     
+@track_upload("open-agent")
 async def post_open_agent(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),

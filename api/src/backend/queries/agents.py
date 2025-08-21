@@ -57,6 +57,14 @@ async def check_if_agent_banned(conn: asyncpg.Connection, miner_hotkey: str) -> 
     return False
 
 @db_operation
+async def get_ban_reason(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[str]:
+    """Get the ban reason for a given miner hotkey"""
+    return await conn.fetchval("""
+        SELECT banned_reason FROM banned_hotkeys
+        WHERE miner_hotkey = $1
+    """, miner_hotkey)
+
+@db_operation
 async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
     """
     Gets the top approved agent using the agent_scores materialized view.
