@@ -218,27 +218,4 @@ async def record_upload_attempt(upload_type: str, success: bool, **kwargs) -> No
     except Exception as e:
         logger.error(f"Failed to record upload attempt: {e}")
 
-def track_upload(upload_type: str):
-    def decorator(func):
-        async def wrapper(*args, **kwargs):
-            request, agent_file = args[0], args[1]
-            hotkey = get_miner_hotkey(kwargs.get('file_info', '')) if upload_type == 'agent' else kwargs.get('open_hotkey')
-            data = {'hotkey': hotkey, 'agent_name': kwargs.get('name'), 'filename': agent_file.filename, 
-                   'ip_address': getattr(request.client, 'host', None)}
-            
-            try:
-                agent_file.file.seek(0, 2); data['file_size_bytes'] = agent_file.file.tell(); agent_file.file.seek(0)
-                result = await func(*args, **kwargs)
-                await record_upload_attempt(upload_type, True, **data, version_id=result.message.split()[-1][:-1])
-                return result
-            except HTTPException as e:
-                from api.src.backend.queries.agents import get_ban_reason
-                error_type = 'banned' if e.status_code == 403 and 'banned' in e.detail.lower() else 'rate_limit' if e.status_code == 429 else 'validation_error'
-                ban_reason = await get_ban_reason(hotkey) if error_type == 'banned' and hotkey else None
-                await record_upload_attempt(upload_type, False, **data, error_type=error_type, error_message=e.detail, ban_reason=ban_reason, http_status_code=e.status_code)
-                raise
-            except Exception as e:
-                await record_upload_attempt(upload_type, False, **data, error_type='internal_error', error_message=str(e), http_status_code=500)
-                raise
-        return wrapper
-    return decorator
+
