@@ -287,12 +287,9 @@ class Screener(Client):
                 client.stage == stage):
                 
                 # Immediately reserve to prevent race conditions
-                old_status = client.status
                 client.status = "reserving"
                 logger.info(f"Reserved stage {stage} screener {client.hotkey} for work assignment")
                 
-                # Broadcast status change
-                client._broadcast_status_change()
                 return client
         
         logger.warning(f"No available stage {stage} screeners to reserve")

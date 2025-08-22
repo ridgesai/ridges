@@ -142,8 +142,11 @@ async def post_agent(
                     eval_id, success = await Evaluation.create_screening_and_send(conn, agent, screener)
                     if not success:
                         # If send fails, reset screener
-                        screener.set_available()
-                        logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+                        if screener.status == 'reserving':
+                            screener.set_available()
+                            logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+                        else:
+                            logger.warning(f"Failed to assign agent {agent.version_id} to screener - screener is not running")
                 
                 # Screener state is now committed, lock can be released
 
