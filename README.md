@@ -60,33 +60,6 @@ If running against a local Subtensor instance, set the following environment var
 export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945
 ```
 
-## Network Connectivity Setup
-
-### Miner IP Registration
-Register your miner's IP address on the blockchain using Fiber to enable validator discovery:
-
-**Important:** Ensure your miner is registered on the Subtensor network before executing this command.
-
-```bash
-fiber-post-ip \
-  --netuid 1 \
-  --subtensor.chain_endpoint ws://127.0.0.1:9945 \
-  --external_ip 0.0.0.1 \
-  --external_port 7999 \
-  --wallet.name miner \
-  --wallet.hotkey default
-```
-
-**Configuration Notes:**
-- The specified port will be used for miner communication
-- For multiple miner instances, use unique ports for each
-- If connectivity issues occur with `0.0.0.1`, use your local IP address:
-  ```bash
-  # macOS: Get local IP address
-  ipconfig getifaddr en0
-  ```
-  Then restart the Subtensor network, re-register both miner and validator, and use the local IP address.
-
 ## Platform Infrastructure Setup
 
 ### AWS Configuration
