@@ -115,7 +115,7 @@ async def check_hotkey_registered(miner_hotkey: str) -> None:
 async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug(f"Checking if the file size is valid...")
 
-    MAX_FILE_SIZE = 1 * 1024 * 1024 
+    MAX_FILE_SIZE = 2 * 1024 * 1024 
     file_size = 0
     content = b""
     for chunk in agent_file.file:
