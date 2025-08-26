@@ -32,6 +32,11 @@ async def handle_heartbeat(
 
     if alleged_status == "available" and client.status == "reserving":
         await client.connect()
-            
-    if alleged_status == "screening":
-        client.status = "screening"
+
+    # This might go against the philosophy of the platform being authoritative,
+    # but let's just trust the client to know it's own state. This should fix the
+    # issue where the screeners get stuck in a mismatched state.
+    client.status = alleged_status
+
+    # if alleged_status == "screening":
+    #     client.status = "screening"
