@@ -36,7 +36,11 @@ async def handle_heartbeat(
     # This might go against the philosophy of the platform being authoritative,
     # but let's just trust the client to know it's own state. This should fix the
     # issue where the screeners get stuck in a mismatched state.
-    client.status = alleged_status
+    # client.status = alleged_status
+
+    if client.status == "screening" and client.current_evaluation_id is None:
+        logger.warning(f"Client {client.hotkey} status mismatch: Platform has marked it as screening, but has no evaluation ID. Additionally, the client believes it is {alleged_status}")
+        # client.status = "available";
 
     # if alleged_status == "screening":
     #     client.status = "screening"
