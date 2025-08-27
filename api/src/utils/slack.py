@@ -297,3 +297,18 @@ async def notify_unregistered_treasury_hotkey(treasury_hotkey: str):
         )
     except Exception as e:
         logger.error(f"Error sending Slack notification: {str(e)}")
+
+
+
+async def send_slack_message(text: str, channel: str = "slack-messages"):
+    if slack_bot_token is None:
+        return
+
+    try:
+        client = WebClient(token=slack_bot_token)
+        client.chat_postMessage(
+            channel=channel,
+            text=text,
+        )
+    except Exception as e:
+        logger.error(f"Error in send_slack_message(): {str(e)}")

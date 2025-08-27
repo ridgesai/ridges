@@ -374,6 +374,22 @@ async def get_running_evaluation_by_validator_hotkey(conn: asyncpg.Connection, v
     return Evaluation(**dict(result)) 
 
 @db_operation
+async def does_validator_have_running_evaluation(
+    conn: asyncpg.Connection, 
+    validator_hotkey: str
+) -> bool:
+    return await conn.fetchval(
+        """
+        SELECT EXISTS(
+            SELECT 1
+            FROM evaluations
+            WHERE (status = 'running' AND validator_hotkey = $1)
+        );
+        """,
+        validator_hotkey
+    )
+
+@db_operation
 async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """

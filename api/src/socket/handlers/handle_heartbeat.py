@@ -6,6 +6,8 @@ from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
+from api.src.backend.queries.evaluations import does_validator_have_running_evaluation
+from api.src.utils.slack import send_slack_message
 
 logger = get_logger(__name__)
 
@@ -33,14 +35,11 @@ async def handle_heartbeat(
     if alleged_status == "available" and client.status == "reserving":
         await client.connect()
 
-    # This might go against the philosophy of the platform being authoritative,
-    # but let's just trust the client to know it's own state. This should fix the
-    # issue where the screeners get stuck in a mismatched state.
-    # client.status = alleged_status
 
-    if client.status == "screening" and client.current_evaluation_id is None:
-        logger.warning(f"Client {client.hotkey} status mismatch: Platform has marked it as screening, but has no evaluation ID. Additionally, the client believes it is {alleged_status}")
-        # client.status = "available";
 
-    # if alleged_status == "screening":
-    #     client.status = "screening"
+    # Perform sanity checks regarding the validator/screener's state, and send a Slack message if a sanity check fails
+    has_running_evaluation = await does_validator_have_running_evaluation(client.hotkey)
+    if (client.status == "screening" or client.status == "evaluating") and has_running_evaluation == False:
+        await send_slack_message(f"Client {client.hotkey} is supposedly {client.status}, but has no running evaluation")
+    elif client.status == "available" and has_running_evaluation == True:
+        await send_slack_message(f"Client {client.hotkey} is supposedly available, but has a running evaluation")
