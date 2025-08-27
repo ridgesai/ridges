@@ -12,6 +12,7 @@ from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.config import PRUNE_THRESHOLD
+from api.src.utils.slack import send_slack_message
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,8 @@ class Evaluation:
                     # Create evaluation records but don't notify yet
                     validators_to_notify = await Validator.get_connected()
                     for validator in validators_to_notify:
+                        if (combined_screener_score is None):
+                            await send_slack_message(f"Screener score is None when creating evaluation for validator {validator.hotkey}, version {self.version_id}")
                         await self.create_for_validator(conn, self.version_id, validator.hotkey, combined_screener_score)
                     
                     # Prune low-scoring evaluations after creating validator evaluations
@@ -380,6 +383,12 @@ class Evaluation:
     @staticmethod
     async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str, screener_score: Optional[float] = None) -> str:
         """Create evaluation for validator"""
+
+        # We should always have a screener score when creating an evaluation for a validator
+        if screener_score is None:
+            await send_slack_message(f"Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}")
+            await send_slack_message(f"If the combined screener score was calculated right now, it would be {Screener.get_combined_screener_score(conn, version_id)}")
+
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
         # Check if evaluation already exists for this combination
@@ -395,6 +404,8 @@ class Evaluation:
 
         if existing_eval_id:
             logger.debug(f"Evaluation already exists for version {version_id}, validator {validator_hotkey}, set {set_id}")
+            if screener_score is None:
+                await send_slack_message(f"Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}, and the evaluation already exists {existing_eval_id}")
             return str(existing_eval_id)
 
         # Create new evaluation
@@ -410,6 +421,9 @@ class Evaluation:
             set_id,
             screener_score,
         )
+
+        if screener_score is None:
+            await send_slack_message(f"Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}, the created evaluation is {eval_id}")
 
         return eval_id
 
@@ -666,6 +680,8 @@ class Evaluation:
 
             for agent in agents:
                 combined_screener_score = await Screener.get_combined_screener_score(conn, agent["version_id"])
+                if (combined_screener_score is None):
+                    await send_slack_message(f"Screener score is None when creating evaluation for validator {validator.hotkey}, version {agent["version_id"]}")
                 await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, combined_screener_score)
 
         async with get_transaction() as conn:
