@@ -539,3 +539,9 @@ class TreasuryTransaction(BaseModel):
     extrinsic_code: str
     fee: bool
 
+class QuestionSolveRateStats(BaseModel):
+    swebench_instance_id: str
+    solved_percentage: float
+    total_runs: int
+    solved_runs: int
+    not_solved_runs: int
