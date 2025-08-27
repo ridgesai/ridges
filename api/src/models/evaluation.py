@@ -681,7 +681,7 @@ class Evaluation:
             for agent in agents:
                 combined_screener_score = await Screener.get_combined_screener_score(conn, agent["version_id"])
                 if (combined_screener_score is None):
-                    await send_slack_message(f"Screener score is None when creating evaluation for validator {validator.hotkey}, version {agent["version_id"]}")
+                    await send_slack_message(f"Screener score is None when creating evaluation for validator {validator.hotkey}, version {agent['version_id']}")
                 await Evaluation.create_for_validator(conn, agent["version_id"], validator.hotkey, combined_screener_score)
 
         async with get_transaction() as conn:
