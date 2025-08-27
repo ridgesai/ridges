@@ -10,7 +10,6 @@ from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENI
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request
-from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgent, MinerAgentScored

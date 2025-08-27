@@ -20,6 +20,7 @@ from api.src.endpoints.agent_summaries import router as agent_summaries_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
+from api.src.endpoints.benchmarks import router as benchmarks_router
 
 logger = get_logger(__name__)
 
@@ -62,6 +63,7 @@ app.include_router(scoring_router, prefix="/scoring")
 app.include_router(agent_summaries_router, prefix="/agent-summaries")
 app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
+app.include_router(benchmarks_router, prefix="/benchmarks")
 app.include_router(healthcheck_router)
 
 @app.websocket("/ws")
