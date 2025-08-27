@@ -203,7 +203,7 @@ async def post_agent(
             **upload_data
         )
         raise
-    
+
 async def post_open_agent(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
@@ -212,6 +212,11 @@ async def post_open_agent(
     password: str = Form(..., description="Password to upload an open user agent"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> AgentUploadResponse:
+    return AgentUploadResponse(
+        status="error",
+        message=f"Dashboard uploads are temporarily paused"
+    )
+
     # Extract upload attempt data for tracking
     agent_file.file.seek(0, 2)
     file_size_bytes = agent_file.file.tell()
