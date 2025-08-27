@@ -386,8 +386,9 @@ class Evaluation:
 
         # We should always have a screener score when creating an evaluation for a validator
         if screener_score is None:
+            combined_screener_score = await Screener.get_combined_screener_score(conn, version_id)
             await send_slack_message(f"Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}")
-            await send_slack_message(f"If the combined screener score was calculated right now, it would be {Screener.get_combined_screener_score(conn, version_id)}")
+            await send_slack_message(f"If the combined screener score was calculated right now, it would be {combined_screener_score}")
 
         set_id = await conn.fetchval("SELECT MAX(set_id) from evaluation_sets")
 
