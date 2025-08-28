@@ -6,7 +6,7 @@ from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
-from api.src.backend.queries.evaluations import does_validator_have_running_evaluation
+from api.src.backend.queries.evaluations import does_validator_have_running_evaluation, get_running_evaluation_by_validator_hotkey, get_agent_name_from_version_id, get_miner_hotkey_from_version_id
 from api.src.utils.slack import send_slack_message
 
 logger = get_logger(__name__)
@@ -43,3 +43,10 @@ async def handle_heartbeat(
         await send_slack_message(f"Client {client.hotkey} is supposedly {client.status}, but has no running evaluation")
     elif client.status == "available" and has_running_evaluation == True:
         await send_slack_message(f"Client {client.hotkey} is supposedly available, but has a running evaluation")
+        # Fix it until the actual cause is determined
+        client.status = "screening"
+        current_eval = await get_running_evaluation_by_validator_hotkey(client.hotkey)
+        client.current_evaluation_id = current_eval.evaluation_id;
+        client.current_agent_name = await get_agent_name_from_version_id(current_eval.version_id)
+        client.current_agent_hotkey = await get_miner_hotkey_from_version_id(current_eval.version_id)
+        await send_slack_message(f"Repaired client {client.hotkey} status to {client.status} (current_eval: {current_eval.evaluation_id}, current_agent_name: {client.current_agent_name}, current_agent_hotkey: {client.current_agent_hotkey})")
