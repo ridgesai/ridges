@@ -385,7 +385,7 @@ class Evaluation:
             raise AssertionError("Evaluation lock must be held for this operation")
 
     @staticmethod
-    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str, screener_score: Optional[float] = None) -> str:
+    async def create_for_validator(conn: asyncpg.Connection, version_id: str, validator_hotkey: str, screener_score: Optional[float] = None) -> Optional[str]:
         """Create evaluation for validator"""
 
         # We should always have a screener score when creating an evaluation for a validator
@@ -416,25 +416,26 @@ class Evaluation:
                 await send_slack_message(f"444 Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}, and the evaluation already exists {existing_eval_id}")
             return str(existing_eval_id)
 
-        # Create new evaluation
-        eval_id = str(uuid.uuid4())
-        await conn.execute(
-            """
-            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
-            VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
-        """,
-            eval_id,
-            version_id,
-            validator_hotkey,
-            set_id,
-            screener_score,
-        )
 
         if screener_score is None:
-            await send_slack_message(f"555 Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}, the created evaluation is {eval_id}")
+            await send_slack_message(f"555 Screener score is None when creating evaluation for validator {validator_hotkey}, version {version_id}. AS SUCH, DID NOT CREATE THE EVALUATION!")
             await send_slack_message("========================================================")
-
-        return eval_id
+            return None
+        else:
+            # Create new evaluation
+            eval_id = str(uuid.uuid4())
+            await conn.execute(
+                """
+                INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+                VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
+            """,
+                eval_id,
+                version_id,
+                validator_hotkey,
+                set_id,
+                screener_score,
+            )
+            return eval_id
 
     @staticmethod
     async def create_screening_and_send(conn: asyncpg.Connection, agent: 'MinerAgent', screener: 'Screener') -> Tuple[str, bool]:
