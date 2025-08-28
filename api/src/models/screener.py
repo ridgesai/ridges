@@ -30,8 +30,14 @@ class Screener(Client):
             return None
 
     @staticmethod
-    async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> Optional[float]:
-        """Calculate combined screener score as (questions solved by both) / (questions asked by both)"""
+    async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> tuple[Optional[float], Optional[str]]:
+        """Calculate combined screener score as (questions solved by both) / (questions asked by both)
+        
+        Returns:
+            tuple[Optional[float], Optional[str]]: (score, error_message)
+            - score: The calculated score, or None if calculation failed
+            - error_message: None if successful, error description if failed
+        """
         # Get evaluation IDs for both screener stages
         stage_1_eval_id = await conn.fetchval(
             """
@@ -58,7 +64,12 @@ class Screener(Client):
         )
         
         if not stage_1_eval_id or not stage_2_eval_id:
-            return None
+            missing = []
+            if not stage_1_eval_id:
+                missing.append("stage-1")
+            if not stage_2_eval_id:
+                missing.append("stage-2")
+            return None, f"Missing completed screener evaluation(s): {', '.join(missing)}"
             
         # Get solved count and total count for both evaluations
         results = await conn.fetch(
@@ -74,16 +85,16 @@ class Screener(Client):
         )
         
         if not results or len(results) == 0:
-            return None
+            return None, f"No evaluation runs found for screener evaluations {stage_1_eval_id} and {stage_2_eval_id}"
             
         result = results[0]
         solved_count = result['solved_count'] or 0
         total_count = result['total_count'] or 0
         
         if total_count == 0:
-            return None
+            return None, f"No evaluation runs to calculate score from (total_count=0)"
             
-        return solved_count / total_count
+        return solved_count / total_count, None
 
     @property
     def stage(self) -> Optional[int]:

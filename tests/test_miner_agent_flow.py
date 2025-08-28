@@ -273,13 +273,14 @@ class TestScreener:
                 )
             
             # Test the combined screener score calculation
-            combined_score = await Screener.get_combined_screener_score(db_conn, test_version)
+            combined_score, score_error = await Screener.get_combined_screener_score(db_conn, test_version)
             
             # Calculate expected combined score: (7 + 3) / (10 + 5) = 10/15 = 2/3 ≈ 0.6667
             expected_score = (stage1_solved + stage2_solved) / (stage1_total + stage2_total)
             
             # Verify the calculation is correct
             assert combined_score is not None, "Combined score should not be None when both stages are completed"
+            assert score_error is None, f"Should not have error, but got: {score_error}"
             assert abs(combined_score - expected_score) < 0.0001, f"Expected combined score {expected_score}, got {combined_score}"
             
             # Verify the specific calculation: 10 solved out of 15 total
@@ -306,8 +307,9 @@ class TestScreener:
                     run_id, incomplete_eval_id, f"incomplete-test-{i+1}", True
                 )
             
-            incomplete_score = await Screener.get_combined_screener_score(db_conn, incomplete_version)
+            incomplete_score, incomplete_error = await Screener.get_combined_screener_score(db_conn, incomplete_version)
             assert incomplete_score is None, "Combined score should be None when only one stage is completed"
+            assert incomplete_error is not None, "Should have error message when incomplete"
             
             # Test edge case: no evaluations (should return None)
             no_eval_version = str(uuid.uuid4())
@@ -316,8 +318,9 @@ class TestScreener:
                 no_eval_version,
             )
             
-            no_eval_score = await Screener.get_combined_screener_score(db_conn, no_eval_version)
+            no_eval_score, no_eval_error = await Screener.get_combined_screener_score(db_conn, no_eval_version)
             assert no_eval_score is None, "Combined score should be None when no evaluations exist"
+            assert no_eval_error is not None, "Should have error message when no evaluations exist"
             
         finally:
             await db_conn.close()
