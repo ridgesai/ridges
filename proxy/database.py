@@ -81,7 +81,7 @@ def db_operation(func):
     async def wrapper(*args, **kwargs):
         if ENV == 'dev':
             # In dev mode, skip database operations
-            logger.debug(f"Skipping database operation {func.__name__} in dev mode")
+            # logger.debug(f"Skipping database operation {func.__name__} in dev mode")
             return None
         async with db_manager.acquire() as conn:
             try:
@@ -110,7 +110,7 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, run_id: str) -> Opt
         )
         
     except Exception as e:
-        logger.error(f"Error fetching evaluation run {run_id}: {e}")
+        logger.error(f"Error in get_evaluation_run_by_id(run_id={run_id}): {e}")
         raise
 
 @db_operation
@@ -126,7 +126,7 @@ async def create_embedding(conn: asyncpg.Connection, run_id: UUID, input_text: s
         return row['id']
         
     except Exception as e:
-        logger.error(f"Error creating embedding for run {run_id}: {e}")
+        logger.error(f"Error in create_embedding(run_id={run_id}, ...): {e}")
         raise
 
 @db_operation
@@ -144,7 +144,7 @@ async def update_embedding(conn: asyncpg.Connection, embedding_id: UUID, cost: f
         """, cost, response_json, embedding_id)
         
     except Exception as e:
-        logger.error(f"Error updating embedding {embedding_id}: {e}")
+        logger.error(f"Error in update_embedding(embedding_id={embedding_id}, ...): {e}")
         raise
 
 @db_operation
@@ -165,7 +165,7 @@ async def create_inference(conn: asyncpg.Connection, run_id: UUID, messages: Lis
         return row['id']
         
     except Exception as e:
-        logger.error(f"Error creating inference for run {run_id}: {e}")
+        logger.error(f"Error in create_inference(run_id={run_id}, ...): {e}")
         raise
 
 @db_operation
@@ -200,7 +200,7 @@ async def update_inference(conn: asyncpg.Connection, inference_id: UUID, cost: f
             """, cost, response, total_tokens, inference_id)
         
     except Exception as e:
-        logger.error(f"Error updating inference {inference_id}: {e}")
+        logger.error(f"Error in update_inference(inference_id={inference_id}, ...): {e}")
         raise
 
 @db_operation
@@ -216,7 +216,7 @@ async def get_total_inference_cost(conn: asyncpg.Connection, run_id: UUID) -> fl
         return row['total_cost'] if row['total_cost'] is not None else 0.0
         
     except Exception as e:
-        logger.error(f"Error getting total cost for run {run_id}: {e}")
+        logger.error(f"Error in get_total_inference_cost(run_id={run_id}): {e}")
         raise
 
 @db_operation
@@ -232,5 +232,5 @@ async def get_total_embedding_cost(conn: asyncpg.Connection, run_id: UUID) -> fl
         return row['total_cost'] if row['total_cost'] is not None else 0.0
         
     except Exception as e:
-        logger.error(f"Error getting total cost for run {run_id}: {e}")
+        logger.error(f"Error in get_total_embedding_cost(run_id={run_id}): {e}")
         raise

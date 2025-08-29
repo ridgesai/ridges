@@ -81,7 +81,7 @@ class ChutesProvider(InferenceProvider):
             "seed": random.randint(0, 2**32 - 1),
         }
 
-        logger.debug(f"Chutes inference request for run {run_id} with model {model}")
+        # logger.debug(f"Chutes inference request for run {run_id} with model {model}")
 
         response_text = ""
         
@@ -122,12 +122,14 @@ class ChutesProvider(InferenceProvider):
                                 # Skip malformed JSON chunks
                                 continue
 
-        logger.debug(f"Chutes inference for run {run_id} completed")
+        # logger.debug(f"Chutes inference for run {run_id} completed")
         
         # Validate that we received actual content
         if not response_text.strip():
+            # Don't care too much about empty responses for now
             error_msg = f"Chutes API returned empty response for model {model}. This may indicate API issues or malformed streaming response."
-            logger.error(f"Empty response for run {run_id}: {error_msg}")
+            # logger.error(f"Empty response for run {run_id}: {error_msg}")
+            
             return error_msg, 200  # Status was 200 but response was empty
         
         return response_text, 200 
