@@ -202,7 +202,7 @@ async def inference_endpoint(request: InferenceRequest):
         return inference_result
         
     except HTTPException:
-        logger.error(f"HTTPException in inference endpoint")
+        # logger.error(f"HTTPException in inference endpoint")
         raise
     except Exception as e:
         # More detailed error logging for debugging
