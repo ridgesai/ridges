@@ -96,7 +96,19 @@ async def embedding_endpoint(request: EmbeddingRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing embedding request for run_id {request.run_id}: {e}")
+        # More detailed error logging for debugging
+        import traceback
+        error_details = {
+            'exception_type': type(e).__name__,
+            'exception_str': str(e),
+            'exception_repr': repr(e),
+            'run_id': getattr(request, 'run_id', 'unknown'),
+            'input_length': len(getattr(request, 'input', '')) if hasattr(request, 'input') else 'unknown',
+            'env': ENV
+        }
+        logger.error(f"Error processing embedding request: {error_details}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        
         raise HTTPException(
             status_code=500,
             detail="Failed to get embedding due to internal server error. Please try again later."
@@ -197,7 +209,19 @@ async def inference_endpoint(request: InferenceRequest):
         logger.error(f"HTTPException in inference endpoint")
         raise
     except Exception as e:
-        logger.error(f"Error processing inference request for run_id {request.run_id}: {e}")
+        # More detailed error logging for debugging
+        import traceback
+        error_details = {
+            'exception_type': type(e).__name__,
+            'exception_str': str(e),
+            'exception_repr': repr(e),
+            'run_id': getattr(request, 'run_id', 'unknown'),
+            'model': getattr(request, 'model', 'unknown'),
+            'env': ENV
+        }
+        logger.error(f"Error processing inference request: {error_details}")
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        
         raise HTTPException(
             status_code=500,
             detail="Failed to get inference due to internal server error. Please try again later."
