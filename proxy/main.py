@@ -74,7 +74,12 @@ async def embedding_endpoint(request: EmbeddingRequest):
             
             if CHECK_COST_LIMITS:
                 # Check cost limits at FastAPI level
-                run_uuid = UUID(request.run_id)
+                try:
+                    run_uuid = UUID(request.run_id)
+                except ValueError:
+                    logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
+                    raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
+                
                 current_cost = await get_total_embedding_cost(run_uuid)
                 if current_cost > MAX_COST_PER_RUN:
                     logger.warning(f"Embedding request for run_id {request.run_id} -- (current_cost = ${current_cost:.6f}) > (max cost = ${MAX_COST_PER_RUN})")
@@ -139,7 +144,12 @@ async def inference_endpoint(request: InferenceRequest):
         if ENV != 'dev' and request.run_id:
             # logger.info(f"Taking production path with run_id validation")
             # Get evaluation run from database
-            run_uuid = UUID(request.run_id)
+            try:
+                run_uuid = UUID(request.run_id)
+            except ValueError:
+                logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
+                raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
+            
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
             
             if not evaluation_run:
