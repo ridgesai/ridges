@@ -77,7 +77,7 @@ async def embedding_endpoint(request: EmbeddingRequest):
                 try:
                     run_uuid = UUID(request.run_id)
                 except ValueError:
-                    logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
+                    # logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
                     raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
                 
                 current_cost = await get_total_embedding_cost(run_uuid)
@@ -147,7 +147,7 @@ async def inference_endpoint(request: InferenceRequest):
             try:
                 run_uuid = UUID(request.run_id)
             except ValueError:
-                logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
+                # logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
