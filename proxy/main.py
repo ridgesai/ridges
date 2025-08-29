@@ -66,7 +66,7 @@ async def embedding_endpoint(request: EmbeddingRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                # logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -148,7 +148,7 @@ async def inference_endpoint(request: InferenceRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                # logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
