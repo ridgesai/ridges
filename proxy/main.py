@@ -56,7 +56,12 @@ async def health_check():
 async def embedding_endpoint(request: EmbeddingRequest):
     """Proxy endpoint for chutes embedding with database validation"""
     try:
-        if ENV != 'dev' and request.run_id:
+        if ENV != 'dev':
+            # Production mode - run_id is required
+            if not request.run_id:
+                logger.warning(f"Embedding request attempted with None run_id in production mode")
+                raise HTTPException(status_code=400, detail="run_id is required in production mode")
+            
             # Get evaluation run from database
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
             
@@ -72,14 +77,15 @@ async def embedding_endpoint(request: EmbeddingRequest):
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
                 )
             
+            # Convert run_id to UUID (needed for database operations)
+            try:
+                run_uuid = UUID(request.run_id)
+            except ValueError:
+                # logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
+                raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
+            
             if CHECK_COST_LIMITS:
                 # Check cost limits at FastAPI level
-                try:
-                    run_uuid = UUID(request.run_id)
-                except ValueError:
-                    # logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
-                    raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
-                
                 current_cost = await get_total_embedding_cost(run_uuid)
                 if current_cost > MAX_COST_PER_RUN:
                     logger.warning(f"Embedding request for run_id {request.run_id} -- (current_cost = ${current_cost:.6f}) > (max cost = ${MAX_COST_PER_RUN})")
@@ -91,8 +97,7 @@ async def embedding_endpoint(request: EmbeddingRequest):
             # Get embedding from chutes
             embedding_result = await chutes_client.embed(run_uuid, request.input)
         else:
-            # In dev mode or when run_id is None, skip all run_id operations
-            # TODO: remove this
+            # Dev mode - run_id is optional
             # logger.info(f"Dev mode or no run_id: skipping run_id validation for embedding request")
             embedding_result = await chutes_client.embed(None, request.input)
         
@@ -141,8 +146,12 @@ async def inference_endpoint(request: InferenceRequest):
         #         request.run_id,
         #     )
         
-        if ENV != 'dev' and request.run_id:
-            # logger.info(f"Taking production path with run_id validation")
+        if ENV != 'dev':
+            # Production mode - run_id is required
+            if not request.run_id:
+                logger.warning(f"Inference request attempted with None run_id in production mode")
+                raise HTTPException(status_code=400, detail="run_id is required in production mode")
+            
             # Get evaluation run from database
             try:
                 run_uuid = UUID(request.run_id)
@@ -183,9 +192,7 @@ async def inference_endpoint(request: InferenceRequest):
                 model=model
             )
         else:
-            # TODO: should not be allowed to make inference requests without a run_id in prod
-
-            # In dev mode or when run_id is None, skip all run_id operations
+            # Dev mode - run_id is optional
             # logger.info(f"Taking dev path - ENV: {ENV}, run_id: {request.run_id}")
             temperature = request.temperature if request.temperature is not None else DEFAULT_TEMPERATURE
             model = request.model if request.model is not None else DEFAULT_MODEL
