@@ -74,4 +74,4 @@ async def websocket_endpoint(websocket: WebSocket):
 send_slack_message(f"From main.py")
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None)
+    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None, ws_max_size=32 * 1024 * 1024)

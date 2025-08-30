@@ -149,7 +149,7 @@ class WebsocketApp:
             try:
                 if websocket_url is None:
                     raise RuntimeError("WebSocket URL is not configured")
-                async with websockets.connect(websocket_url, ping_timeout=None) as ws:
+                async with websockets.connect(websocket_url, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
                     self.ws = ws
                     self._shutting_down = False  # Reset shutdown flag on new connection
                     logger.info(f"Connected to websocket: {websocket_url}")
