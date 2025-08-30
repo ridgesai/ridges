@@ -741,7 +741,7 @@ class Evaluation:
             for screening_row in active_screenings:
                 evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
                 if evaluation:
-                    await evaluation.error(conn, "Disconnected from screener")
+                    await evaluation.error(conn, "Disconnected from screener (error code 1)")
 
     @staticmethod
     async def startup_recovery():
@@ -762,7 +762,7 @@ class Evaluation:
                 evaluation = await Evaluation.get_by_id(eval_row["evaluation_id"])
                 if evaluation:
                     if evaluation.is_screening:
-                        await evaluation.error(conn, "Disconnected from screener")
+                        await evaluation.error(conn, "Disconnected from screener (error code 2)")
                     else:
                         await evaluation.reset_to_waiting(conn)
 
@@ -798,7 +798,7 @@ class Evaluation:
             for screening_row in waiting_screenings:
                 evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
                 if evaluation:
-                    await evaluation.error(conn, "Disconnected from screener")
+                    await evaluation.error(conn, "Disconnected from screener (error code 3)")
 
             # Cancel dangling evaluation runs
             await conn.execute(
