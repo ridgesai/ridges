@@ -94,7 +94,11 @@ class InferenceManager:
 
         # Try primary provider first
         # logger.debug(f"Trying {primary_provider.name} for model {model}")
-        response_text, status_code = await primary_provider.inference(run_id, messages, temperature, model)
+        try:
+            response_text, status_code = await primary_provider.inference(run_id, messages, temperature, model)
+        except Exception as e:
+            logger.error(f"{primary_provider.name} inference failed for run {run_id} (model: {model}): {type(e).__name__}: {e}")
+            raise
         
         # Calculate cost and tokens
         if status_code == 200:
