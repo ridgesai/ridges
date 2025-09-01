@@ -95,7 +95,7 @@ class ChutesProvider(InferenceProvider):
                     else:
                         error_message = str(error_text)
                     logger.error(
-                        f"Chutes API request failed for run {run_id}: {response.status_code} - {error_message}"
+                        f"Chutes API request failed for run {run_id} (model: {model}): {response.status_code} - {error_message}"
                     )
                     return error_message, response.status_code
 
