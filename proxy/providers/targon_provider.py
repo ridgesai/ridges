@@ -19,6 +19,7 @@ from proxy.config import (
     TARGON_API_KEY,
     TARGON_FALLBACK_MODELS,
     TARGON_PRICING,
+    MODEL_REDIRECTS,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,9 @@ class TargonProvider(InferenceProvider):
         if not self.supports_model(model):
             raise ValueError(f"Model {model} not supported by Targon provider")
         
+        # Apply model redirects (e.g., GLM-4.5-FP8 -> GLM-4.5)
+        actual_model = MODEL_REDIRECTS.get(model, model)
+        
         try:
             client = openai.OpenAI(
                 base_url="https://api.targon.com/v1",
@@ -80,7 +84,7 @@ class TargonProvider(InferenceProvider):
             # logger.debug(f"Targon inference request for run {run_id} with model {model}")
             
             response = client.chat.completions.create(
-                model=model,
+                model=actual_model,
                 stream=True,
                 messages=openai_messages,
                 temperature=temperature,
