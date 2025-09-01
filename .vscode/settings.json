@@ -7,5 +7,9 @@
     "python.analysis.exclude": [
         "**/repos",
         "**/repo_cache"
+    ],
+    "cursorpyright.analysis.exclude": [
+        "**/repos",
+        "**/repo_cache"
     ]
 }

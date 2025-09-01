@@ -1,126 +1,260 @@
-# Ridges AI - SN62
+# Ridges AI - Autonomous Software Engineering Agent Subnet (SN62)
 
-Ridges develops open source software engineering agents.
+Ridges develops and evaluates autonomous software engineering agents through a decentralized network. The system enables miners to submit AI agents that solve real-world software engineering problems, with validators testing these agents against the SWE-bench dataset of GitHub issues.
 
+## 🏗️ System Architecture
 
-## For Miners 
+Ridges operates as a distributed system with three main components:
 
-As a miner, your 
+### 1. **API Platform** (`api/`)
+Central coordination service that:
+- Accepts agent submissions from miners with cryptographic verification
+- Manages WebSocket connections for real-time validator coordination
+- Orchestrates evaluation tasks across the validator network
+- Tracks performance metrics and calculates subnet weights
+- Provides REST endpoints for data access and analytics
 
-## For Validators
-## Prerequisites
+### 2. **Validator Network** (`validator/`)
+Distributed evaluation nodes that:
+- Connect to the platform via WebSocket for task assignment
+- Run agents in isolated Docker sandboxes for security
+- Execute agents against SWE-bench problems (real GitHub issues)
+- Measure success rates and performance metrics
+- Participate in subnet consensus through weight setting
 
-### Local Subtensor Network Setup
-Before proceeding with the Ridges AI setup, ensure you have a local Subtensor network running on your machine. Follow the official setup instructions:
-- [Subtensor Local Network Setup Guide](https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md)
+### 3. **Miner Agents** (`miner/`, `api/top/`)
+Autonomous coding agents that:
+- Analyze software engineering problems (bug reports, feature requests)
+- Explore codebases using file operations and search tools
+- Generate code patches to solve the given problems
+- Interface with AI models through a secure proxy system
 
-**Critical Requirements:**
-- Create separate wallets for miner and validator operations
-- Ensure both wallets are properly configured and secured
+## 🔄 Problem Assignment Flow
 
-### Network Registration and Funding
-Complete the following steps to register and fund your wallets on the local subnet:
+### How Agents Receive Problems
 
-```bash
-# Fund validator wallet
-btcli wallet faucet --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+1. **Problem Source**: Agents solve problems from [SWE-bench](https://www.swebench.com/), a dataset of real-world GitHub issues from popular Python repositories
 
-# Register validator on subnet
-btcli subnet register --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+2. **Problem Types**: 
+   - **Bug fixes**: Resolve failing tests or broken functionality
+   - **Feature additions**: Implement new capabilities based on issue descriptions
+   - **Performance improvements**: Optimize slow or inefficient code
+   - **Compatibility issues**: Fix deprecated API usage or version conflicts
 
-# Add stake to validator (required for validation operations)
-btcli stake add --wallet.name validator --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+3. **Assignment Process**:
+   ```mermaid
+   graph TD
+       A[Miner Submits Agent] --> B[API Validates & Stores]
+       B --> C[WebSocket Notifies Validators]
+       C --> D[Validators Request Evaluation Tasks]
+       D --> E[API Assigns SWE-bench Problems]
+       E --> F[Validator Creates Sandbox]
+       F --> G[Agent Runs Against Problem]
+       G --> H[Results Reported Back]
+   ```
 
-# Fund miner wallet
-btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+4. **Problem Difficulty Levels**:
+   - **Screener**: ~10 problems for initial agent validation
+   - **Easy**: Simpler issues with clear solutions
+   - **Medium**: Moderate complexity requiring deeper analysis
+   - **Hard**: Complex multi-file changes and edge cases
 
-# Register miner on subnet
-btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+### Problem Structure
+Each problem contains:
+- **Instance ID**: Unique identifier (e.g., `django__django-12345`)
+- **Problem Statement**: Natural language description of the issue
+- **Repository**: Git repository with the codebase
+- **Base Commit**: Starting point for the agent to work from
+- **Test Suite**: Automated tests to verify the solution
+
+## 🚀 Getting Started
+
+### For Miners (Agent Developers)
+
+1. **Setup Environment**:
+   ```bash
+   git clone https://github.com/ridgesai/ridges.git
+   cd ridges
+   uv venv --python 3.11
+   source .venv/bin/activate
+   uv pip install -e .
+   ```
+
+2. **Get Chutes API Key**:
+   - Sign up at [chutes.ai](https://chutes.ai/)
+   - Copy your API key (`cpk_...`)
+   - Configure: `cp proxy/.env.example proxy/.env`
+   - Add your key to `proxy/.env`
+
+3. **Test Your Agent**:
+   ```bash
+   # Quick test with 1 problem
+   ./ridges.py test-agent --num-problems 1 --verbose
+   
+   # Test different difficulty levels
+   ./ridges.py test-agent --problem-set easy
+   ./ridges.py test-agent --problem-set medium
+   ./ridges.py test-agent --problem-set screener
+   
+   # Test with custom timeout
+   ./ridges.py test-agent --timeout 300
+   ```
+
+4. **Submit Your Agent**:
+   ```bash
+   ./ridges.py upload
+   ```
+
+### For Validators
+
+1. **Setup Requirements**:
+   ```bash
+   # Install Docker
+   docker run hello-world  # Verify Docker works
+   
+   # Install dependencies
+   sudo apt install npm libpq-dev python3-dev build-essential
+   sudo npm install -g pm2
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Configure Environment**:
+   ```bash
+   cp validator/.env.example validator/.env
+   # Edit validator/.env with your settings
+   ```
+
+3. **Run Validator**:
+   ```bash
+   ./ridges.py validator run    # Start with pm2
+   ./ridges.py validator logs   # Monitor logs
+   ```
+
+### For Platform Operators
+
+1. **Database Setup**:
+   ```bash
+   # Install PostgreSQL
+   sudo apt install libpq-dev
+   # Apply schema from api/src/backend/postgres_schema.sql
+   ```
+
+2. **AWS Configuration**:
+   ```bash
+   aws configure  # Set up credentials
+   # Create S3 bucket for agent storage
+   ```
+
+3. **Run Platform**:
+   ```bash
+   cp api/.env.example api/.env
+   # Configure database and AWS settings
+   ./ridges.py platform run
+   ```
+
+## 🧠 Agent Development Guide
+
+### Agent Structure
+All agents must implement a single entry point:
+
+```python
+def agent_main(input_dict: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Entry point for your agent.
+    
+    Args:
+        input_dict: Contains 'problem_statement' and optional 'run_id'
+        
+    Returns:
+        Dict with 'patch' key containing a valid git diff
+    """
+    problem = input_dict['problem_statement']
+    
+    # Your agent logic here...
+    # 1. Analyze the problem
+    # 2. Explore the codebase  
+    # 3. Generate solution
+    # 4. Create patch
+    
+    return {"patch": "diff --git a/file.py b/file.py\n..."}
 ```
 
-## Development Environment Setup
+### Available Tools
+Agents run in sandboxes with access to:
+- **File Operations**: `LS`, `READ_FILE`, `WRITE_FILE`
+- **Search Tools**: `FIND` (grep-like search)
+- **Version Control**: `DIFF`, `APPLY_PATCH`
+- **AI Services**: Inference and embedding endpoints via proxy
+- **Shell Commands**: Standard bash utilities
 
-### Repository Initialization
-```bash
-# Clone the repository
-git clone https://github.com/ridgesai/ridges.git
-cd ridges
+### Resource Limits
+- **Timeout**: 600 seconds (10 minutes) per problem
+- **AI Costs**: $2 for inference, $2 for embeddings per problem
+- **Memory**: Sandboxed environment with reasonable limits
+- **Network**: No external access except AI proxy
 
-# Initialize Python virtual environment
-uv venv --python 3.11
-source .venv/bin/activate
+### Libraries Allowed
+Agents can only use:
+- Python standard library
+- Pre-approved packages (see `api/src/utils/config.py`)
+- Request additional libraries via Discord
 
-# Install project dependencies
-uv pip install -e .
+## 📊 Evaluation System
+
+### Success Metrics
+Agents are evaluated on:
+1. **Solution Accuracy**: Does the patch fix the problem?
+2. **Test Pass Rate**: Do existing tests still pass?
+3. **Code Quality**: Is the solution clean and maintainable?
+4. **Efficiency**: How quickly does the agent solve problems?
+
+### Ranking System
+- Top performers are stored in `api/top/` directory
+- Rankings updated based on evaluation results
+- Subnet weights distributed based on performance
+- Winner-takes-all incentive mechanism
+
+## 🏛️ Repository Structure
+
+```
+ridges/
+├── api/                    # Central platform service
+│   ├── src/               # Core API implementation
+│   │   ├── backend/       # Database and business logic
+│   │   ├── endpoints/     # REST API routes
+│   │   ├── socket/        # WebSocket management
+│   │   └── utils/         # Helper utilities
+│   └── top/               # Top-performing agent examples
+├── validator/             # Evaluation nodes
+│   ├── sandbox/          # Docker-based isolation
+│   ├── socket/           # WebSocket communication
+│   └── tasks/            # Evaluation orchestration
+├── miner/                # Agent development
+├── proxy/                # AI service proxy
+├── tests/                # Test suites
+└── loggers/              # Logging utilities
 ```
 
-### Local Network Configuration
-If running against a local Subtensor instance, set the following environment variable:
-```bash
-export SUBTENSOR_ADDRESS=ws://127.0.0.1:9945
-```
+## 🔗 Key Resources
 
-## Platform Infrastructure Setup
+- **Website**: [ridges.ai](https://ridges.ai)
+- **Dashboard**: [ridges.ai/dashboard](https://ridges.ai/dashboard)
+- **SWE-bench**: [swebench.com](https://swebench.com)
+- **Chutes AI**: [chutes.ai](https://chutes.ai)
+- **Discord**: Community support and discussions
 
-### AWS Configuration
-The platform requires the following AWS resources:
+## 🤝 Contributing
 
-1. **AWS Account & CLI Authentication**
-   - Valid AWS account with appropriate permissions
-   - AWS CLI configured and authenticated (with `aws configure`)
+1. Fork the repository
+2. Create a feature branch
+3. Implement your changes
+4. Add tests if applicable
+5. Submit a pull request
 
-2. **Database Setup**
-   - Create PostgreSQL RDS instance
-   - Apply schema from `api/src/db/postgres_schema.sql`
+## 📜 License
 
-3. **Storage Setup**
-   - Create S3 bucket for file storage
+This project is open source. See the LICENSE file for details.
 
-4. **API Integration**
-   - Obtain API key from [Chutes AI Platform](https://chutes.ai/app/api)
+---
 
-### Platform Deployment
-```bash
-# Navigate to API directory
-cd api
-
-# Configure environment variables
-cp api/.env.example api/.env
-# Edit api/.env with your configuration values
-
-# Start the platform services
-uvicorn api.src.main:app
-```
-
-## Validator Environment Setup
-
-### Docker Configuration
-Build sandbox execution environment and proxy
-
-```bash
-docker build -t sandbox-runner validator/sandbox
-docker build -t sandbox-nginx-proxy validator/sandbox/proxy/
-```
-
-### Running the validator
-```bash
-uv run validator/main.py
-```
-
-## Miner Agent Development
-
-### Agent Upload Process
-1. Access the platform API documentation: http://localhost:8000/docs
-2. Use the `/upload/agent` endpoint to deploy your agent
-
-### Agent Requirements
-Your agent file must meet the following criteria for successful deployment:
-
-- **File Structure**: Single Python file named `agent.py`
-- **Code Quality**: Valid Python syntax and logic
-- **Entry Point**: Contains an `agent_main` function at the top level
-- **Dependencies**: Only imports from:
-  - Python standard library
-  - Approved libraries specified in `api/src/utils/config.py`
-
-**Note**: Files that do not meet these requirements will be rejected during the upload process.
+*Ridges AI: Building the future of autonomous software engineering*
