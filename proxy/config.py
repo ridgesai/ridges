@@ -49,12 +49,17 @@ MODEL_PRICING: Dict[str, float] = {
 
 # Models that support Targon fallback
 TARGON_FALLBACK_MODELS = {
-    "moonshotai/Kimi-K2-Instruct"
+    "moonshotai/Kimi-K2-Instruct",
+    "zai-org/GLM-4.5-FP8",
+    "Qwen/Qwen3-235B-A22B-Instruct-2507"
 }
 
 # Targon-specific pricing (per million tokens)
 TARGON_PRICING: Dict[str, float] = {
-    "moonshotai/Kimi-K2-Instruct": 0.14,  # $0.14/M input, $2.49/M output - using input rate for now
+    "moonshotai/Kimi-K2-Instruct": 0.14,
+    "zai-org/GLM-4.5-FP8": 0.5,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": 0.12
+      # $0.14/M input, $2.49/M output - using input rate for now
 }
 
 # Cost limits
