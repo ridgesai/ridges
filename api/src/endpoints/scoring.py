@@ -9,7 +9,7 @@ import uuid
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
-from api.src.utils.auth import verify_request
+from api.src.utils.auth import verify_request, verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgent, MinerAgentScored
@@ -406,11 +406,17 @@ async def prune_agent(version_ids: str, approval_password: str):
 
 router = APIRouter()
 
-routes = [
+# Public scoring endpoints (read-only data)
+public_routes = [
     ("/check-top-agent", weight_receiving_agent, ["GET"]),
     ("/weights", weights, ["GET"]),
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/prune-threshold", get_prune_threshold, ["GET"]),
+    ("/threshold-function", get_threshold_function, ["GET"]),
+]
+
+# Protected scoring endpoints (admin functions)
+protected_routes = [
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
@@ -419,11 +425,21 @@ routes = [
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
     ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
-    ("/threshold-function", get_threshold_function, ["GET"]),
     ("/prune-agent", prune_agent, ["POST"])
 ]
 
-for path, endpoint, methods in routes:
+# Add public routes
+for path, endpoint, methods in public_routes:
+    router.add_api_route(
+        path,
+        endpoint,
+        tags=["scoring"],
+        dependencies=[Depends(verify_request_public)],
+        methods=methods
+    )
+
+# Add protected routes
+for path, endpoint, methods in protected_routes:
     router.add_api_route(
         path,
         endpoint,
