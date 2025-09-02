@@ -50,5 +50,11 @@ validator_hotkey = None
 screener_hotkey = None
 if SCREENER_MODE:
     screener_hotkey = os.getenv("SCREENER_HOTKEY")
+    # Check for screener password
+    screener_password = os.getenv("SCREENER_PASSWORD")
+    if not screener_password:
+        logger.warning("WARNING: Screener mode is enabled but SCREENER_PASSWORD is not set!")
+        logger.warning("WARNING: The screener will not be able to authenticate with the proxy for inference/embedding requests!")
+        logger.warning("WARNING: Please set SCREENER_PASSWORD environment variable.")
 else:
     validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)

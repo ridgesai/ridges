@@ -10,6 +10,9 @@ CHUTES_INFERENCE_URL = "https://llm.chutes.ai/v1/chat/completions"
 # Targon API configuration (for fallback)
 TARGON_API_KEY = os.getenv("TARGON_API_KEY", "")
 
+# Authentication configuration
+SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD", "")
+
 # Pricing configuration
 EMBEDDING_PRICE_PER_SECOND = 0.0001
 

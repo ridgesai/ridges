@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
-from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE
+from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE, SCREENER_PASSWORD
 from proxy.database import db_manager, get_evaluation_run_by_id, get_total_inference_cost, get_total_embedding_cost
 from proxy.chutes_client import ChutesClient
 from proxy.providers import InferenceManager
@@ -25,11 +25,56 @@ logger = get_logger(__name__)
 chutes_client = ChutesClient()  # For embeddings
 inference_manager = InferenceManager()  # For inference
 
+
+def check_screener_auth(http_request: Request, endpoint_type: str) -> None:
+    """
+    Check screener authentication for endpoints.
+    
+    Args:
+        http_request: FastAPI Request object
+        endpoint_type: Either "embedding" or "inference" for logging
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    if not SCREENER_PASSWORD:  # Skip auth if password not configured
+        return
+        
+    auth_header = http_request.headers.get("authorization") or http_request.headers.get("Authorization")
+    client_ip = get_client_ip(http_request)
+    
+    if not auth_header:
+        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+        logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {client_ip}")
+        raise HTTPException(status_code=401, detail="Authorization header required")
+    
+    # Check Bearer token format
+    if not auth_header.startswith("Bearer "):
+        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+        logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {client_ip}")
+        raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
+    
+    # Extract and validate token
+    token = auth_header[7:]  # Remove "Bearer " prefix
+    if token != SCREENER_PASSWORD:
+        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+        logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {client_ip}")
+        raise HTTPException(status_code=401, detail="Invalid screener password")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown"""
     # Startup
     logger.info("Starting proxy server...")
+    
+    # Check for screener password configuration
+    if not SCREENER_PASSWORD:
+        logger.warning("WARNING: SCREENER_PASSWORD is not set!")
+        logger.warning("WARNING: Unauthorized inference and embedding requests can be made to this proxy!")
+        logger.warning("WARNING: Please set SCREENER_PASSWORD environment variable for security.")
+    else:
+        logger.info("Screener password authentication is enabled")
+    
     if ENV != 'dev' and db_manager is not None:
         await db_manager.open()
         logger.info("Database connection established")
@@ -89,6 +134,10 @@ async def error_stats():
 @app.post("/agents/embedding")
 async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
     """Proxy endpoint for chutes embedding with database validation"""
+    
+    # Check screener authentication
+    check_screener_auth(http_request, "embedding")
+    
     try:
         if ENV != 'dev':
             # Production mode - run_id is required
@@ -159,6 +208,9 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
 @app.post("/agents/inference")
 async def inference_endpoint(request: InferenceRequest, http_request: Request):
     """Proxy endpoint for chutes inference with database validation"""
+
+    # Check screener authentication
+    check_screener_auth(http_request, "inference")
 
     # # Switch Kimi to Deepseek temporarily until more capacity
     # if request.model in ["moonshotai/Kimi-K2-Instruct", "moonshotai/Kimi-Dev-72B"]:

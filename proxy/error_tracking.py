@@ -21,6 +21,9 @@ class BadRequestErrorCode(IntEnum):
     # External API errors
     CHUTES_INFERENCE_BAD_REQUEST = 3001
     CHUTES_EMBEDDING_BAD_REQUEST = 3002
+    
+    # Authentication errors
+    INVALID_SCREENER_PASSWORD = 4001
 
 
 # Thread-safe tracking of IP + error code combinations
