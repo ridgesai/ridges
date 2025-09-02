@@ -23,11 +23,8 @@ async def verify_request_ip_whitelist(
         )
     
     if not WHITELISTED_VALIDATOR_IPS:
-        logger.warning("WHITELISTED_VALIDATOR_IPS is empty - no IPs are whitelisted!")
-        raise HTTPException(
-            status_code=403,
-            detail="No whitelisted IPs configured"
-        )
+        # Empty whitelist = allow all IPs (warning logged at startup)
+        return True
     
     if client_ip not in WHITELISTED_VALIDATOR_IPS:
         logger.warning(f"Request from non-whitelisted IP: {client_ip}. Whitelisted IPs: {WHITELISTED_VALIDATOR_IPS}")

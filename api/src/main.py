@@ -23,12 +23,23 @@ from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.utils.slack import send_slack_message
+from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
+    
+    # Check IP whitelist configuration at startup
+    if not WHITELISTED_VALIDATOR_IPS:
+        logger.warning("⚠️" * 5)
+        logger.warning("⚠️  WHITELISTED_VALIDATOR_IPS is empty - allowing ALL IPs to access protected endpoints!")
+        logger.warning("⚠️  This is a SECURITY RISK for production environments!")
+        logger.warning("⚠️  Set WHITELISTED_VALIDATOR_IPS environment variable to restrict access.")
+        logger.warning("⚠️" * 5)
+    else:
+        logger.info(f"✅ IP whitelist configured with {len(WHITELISTED_VALIDATOR_IPS)} whitelisted IPs")
     
     # Fetch and cache GitHub commits at startup
     logger.info("Fetching and caching GitHub commits...")
