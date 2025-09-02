@@ -12,6 +12,12 @@ TARGON_API_KEY = os.getenv("TARGON_API_KEY", "")
 
 # Authentication configuration
 SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD", "")
+WHITELISTED_VALIDATOR_IPS_RAW = os.getenv("WHITELISTED_VALIDATOR_IPS", "")
+
+# Parse whitelisted IPs once at startup
+WHITELISTED_VALIDATOR_IPS = set()
+if WHITELISTED_VALIDATOR_IPS_RAW.strip():
+    WHITELISTED_VALIDATOR_IPS = {ip.strip() for ip in WHITELISTED_VALIDATOR_IPS_RAW.split(",") if ip.strip()}
 
 # Pricing configuration
 EMBEDDING_PRICE_PER_SECOND = 0.0001

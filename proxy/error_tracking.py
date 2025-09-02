@@ -24,6 +24,7 @@ class BadRequestErrorCode(IntEnum):
     
     # Authentication errors
     INVALID_SCREENER_PASSWORD = 4001
+    UNAUTHORIZED_IP_ADDRESS = 4002
 
 
 # Thread-safe tracking of IP + error code combinations

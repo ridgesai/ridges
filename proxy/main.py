@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
-from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE, SCREENER_PASSWORD
+from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE, SCREENER_PASSWORD, WHITELISTED_VALIDATOR_IPS
 from proxy.database import db_manager, get_evaluation_run_by_id, get_total_inference_cost, get_total_embedding_cost
 from proxy.chutes_client import ChutesClient
 from proxy.providers import InferenceManager
@@ -26,9 +26,9 @@ chutes_client = ChutesClient()  # For embeddings
 inference_manager = InferenceManager()  # For inference
 
 
-def check_screener_auth(http_request: Request, endpoint_type: str) -> None:
+def check_request_auth(http_request: Request, endpoint_type: str) -> None:
     """
-    Check screener authentication for endpoints.
+    Check request authentication for endpoints using IP whitelist or screener password.
     
     Args:
         http_request: FastAPI Request object
@@ -37,29 +37,42 @@ def check_screener_auth(http_request: Request, endpoint_type: str) -> None:
     Raises:
         HTTPException: If authentication fails
     """
-    if not SCREENER_PASSWORD:  # Skip auth if password not configured
-        return
-        
-    auth_header = http_request.headers.get("authorization") or http_request.headers.get("Authorization")
     client_ip = get_client_ip(http_request)
     
-    if not auth_header:
-        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-        logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {client_ip}")
-        raise HTTPException(status_code=401, detail="Authorization header required")
+    # First check: IP whitelist (if configured)
+    if WHITELISTED_VALIDATOR_IPS and client_ip in WHITELISTED_VALIDATOR_IPS:
+        # IP is whitelisted, allow through
+        return
     
-    # Check Bearer token format
-    if not auth_header.startswith("Bearer "):
-        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-        logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {client_ip}")
-        raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
+    # Second check: Screener password (if configured)
+    if SCREENER_PASSWORD:
+        auth_header = http_request.headers.get("authorization") or http_request.headers.get("Authorization")
+        
+        if not auth_header:
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {client_ip}")
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        # Check Bearer token format
+        if not auth_header.startswith("Bearer "):
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {client_ip}")
+            raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
+        
+        # Extract and validate token
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        if token == SCREENER_PASSWORD:
+            # Valid password, allow through
+            return
+        else:
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {client_ip}")
+            raise HTTPException(status_code=401, detail="Invalid screener password")
     
-    # Extract and validate token
-    token = auth_header[7:]  # Remove "Bearer " prefix
-    if token != SCREENER_PASSWORD:
-        track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-        logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {client_ip}")
-        raise HTTPException(status_code=401, detail="Invalid screener password")
+    # Neither IP whitelist nor password configured/valid - unauthorized
+    track_400_error(client_ip, BadRequestErrorCode.UNAUTHORIZED_IP_ADDRESS)
+    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {client_ip} - not whitelisted and no valid authentication")
+    raise HTTPException(status_code=401, detail="Unauthorized: IP not whitelisted and no valid authentication provided")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -67,13 +80,18 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting proxy server...")
     
-    # Check for screener password configuration
-    if not SCREENER_PASSWORD:
-        logger.warning("WARNING: SCREENER_PASSWORD is not set!")
-        logger.warning("WARNING: Unauthorized inference and embedding requests can be made to this proxy!")
-        logger.warning("WARNING: Please set SCREENER_PASSWORD environment variable for security.")
+    # Check authentication configuration
+    if not SCREENER_PASSWORD and not WHITELISTED_VALIDATOR_IPS:
+        logger.warning("WARNING: Neither SCREENER_PASSWORD nor WHITELISTED_VALIDATOR_IPS is set!")
+        logger.warning("WARNING: All inference and embedding requests will be rejected!")
+        logger.warning("WARNING: Please set SCREENER_PASSWORD or WHITELISTED_VALIDATOR_IPS environment variables.")
     else:
-        logger.info("Screener password authentication is enabled")
+        auth_methods = []
+        if SCREENER_PASSWORD:
+            auth_methods.append("screener password")
+        if WHITELISTED_VALIDATOR_IPS:
+            auth_methods.append(f"IP whitelist ({len(WHITELISTED_VALIDATOR_IPS)} IPs)")
+        logger.info(f"Authentication enabled: {', '.join(auth_methods)}")
     
     if ENV != 'dev' and db_manager is not None:
         await db_manager.open()
@@ -135,8 +153,8 @@ async def error_stats():
 async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
     """Proxy endpoint for chutes embedding with database validation"""
     
-    # Check screener authentication
-    check_screener_auth(http_request, "embedding")
+    # Check request authentication
+    check_request_auth(http_request, "embedding")
     
     try:
         if ENV != 'dev':
@@ -209,8 +227,8 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
 async def inference_endpoint(request: InferenceRequest, http_request: Request):
     """Proxy endpoint for chutes inference with database validation"""
 
-    # Check screener authentication
-    check_screener_auth(http_request, "inference")
+    # Check request authentication
+    check_request_auth(http_request, "inference")
 
     # # Switch Kimi to Deepseek temporarily until more capacity
     # if request.model in ["moonshotai/Kimi-K2-Instruct", "moonshotai/Kimi-Dev-72B"]:
