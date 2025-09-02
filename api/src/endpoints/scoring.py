@@ -413,13 +413,13 @@ public_routes = [
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
+    ("/trigger-weight-update", trigger_weight_set, ["POST"])
 ]
 
 # Protected scoring endpoints (admin functions)
 protected_routes = [
     ("/ban-agents", ban_agents, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
-    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
     ("/refresh-scores", refresh_scores, ["POST"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
