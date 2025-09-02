@@ -74,7 +74,7 @@ def get_error_stats(client_ip: Optional[str] = None,
 
 def get_client_ip(request: Request) -> str:
     """
-    Extract client IP from FastAPI request, handling proxies.
+    Extract client IP from FastAPI request.
     
     Args:
         request: FastAPI Request object
@@ -82,23 +82,10 @@ def get_client_ip(request: Request) -> str:
     Returns:
         Client IP address as string
     """
-    # Check for forwarded headers first (for proxies/load balancers)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # X-Forwarded-For can contain multiple IPs, take the first one
-        return forwarded_for.split(",")[0].strip()
-    
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
-    
-    # Debugging: Log what we're seeing
-    import logging
-    logger = logging.getLogger(__name__)
-    direct_ip = request.client.host if request.client else "unknown"
-    logger.debug(f"IP extraction - X-Forwarded-For: {forwarded_for}, X-Real-IP: {real_ip}, Direct: {direct_ip}")
-    
-    # Fall back to direct client IP
+
+    # NOTE: If we add Cloudflare we need to look at X-Forwarded-For or X-Real-IP or similar
+
+    # Always use direct client IP
     if request.client:
         return request.client.host
     

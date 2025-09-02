@@ -37,11 +37,6 @@ def check_request_auth(http_request: Request, endpoint_type: str) -> None:
     Raises:
         HTTPException: If authentication fails
     """
-    # Debug: Log all IP-related headers
-    logger.debug(f"Headers: X-Forwarded-For={http_request.headers.get('X-Forwarded-For')}, "
-                f"X-Real-IP={http_request.headers.get('X-Real-IP')}, "
-                f"request.client.host={http_request.client.host if http_request.client else None}")
-    
     client_ip = get_client_ip(http_request)
     
     # First check: IP whitelist (if configured)
