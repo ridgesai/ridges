@@ -4,12 +4,13 @@ System Status Endpoint
 Provides real-time status information about the evaluation system.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 import logging
 
 from api.src.backend.db_manager import get_db_connection
+from api.src.utils.auth import verify_request_public
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class SystemStatusResponse(BaseModel):
     system_metrics: Dict
 
 
-@router.get("/health", response_model=Dict)
+@router.get("/health", response_model=Dict, dependencies=[Depends(verify_request_public)])
 async def get_health_status():
     """
     Get current health status of the evaluation system.
@@ -44,7 +45,7 @@ async def get_health_status():
         raise HTTPException(status_code=500, detail="Health check failed")
 
 
-@router.get("/status", response_model=SystemStatusResponse)
+@router.get("/status", response_model=SystemStatusResponse, dependencies=[Depends(verify_request_public)])
 async def get_system_status():
     """
     Get comprehensive system status including metrics.
@@ -73,7 +74,7 @@ async def get_system_status():
         raise HTTPException(status_code=500, detail="System status check failed")
 
 
-@router.post("/health-check", response_model=Dict)
+@router.post("/health-check", response_model=Dict, dependencies=[Depends(verify_request_public)])
 async def run_manual_health_check():
     """
     Run a manual health check and return results.

@@ -6,7 +6,7 @@ from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
-from api.src.utils.auth import verify_request
+from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
@@ -475,6 +475,6 @@ for path, endpoint in routes:
         path,
         endpoint,
         tags=["retrieval"],
-        dependencies=[Depends(verify_request)],
+        dependencies=[Depends(verify_request_public)],
         methods=["GET"]
     )

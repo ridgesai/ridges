@@ -98,3 +98,12 @@ EMBEDDING_PRICE_PER_SECOND = 0.0001
 SCREENING_1_THRESHOLD = 0.8
 SCREENING_2_THRESHOLD = 0.4
 PRUNE_THRESHOLD = 0.05 # Must be within 5 percentage points of the final score
+
+# Authentication configuration
+import os
+WHITELISTED_VALIDATOR_IPS_RAW = os.getenv("WHITELISTED_VALIDATOR_IPS", "")
+
+# Parse whitelisted IPs once at startup
+WHITELISTED_VALIDATOR_IPS = set()
+if WHITELISTED_VALIDATOR_IPS_RAW.strip():
+    WHITELISTED_VALIDATOR_IPS = {ip.strip() for ip in WHITELISTED_VALIDATOR_IPS_RAW.split(",") if ip.strip()}
