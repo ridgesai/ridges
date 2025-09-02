@@ -92,6 +92,12 @@ def get_client_ip(request: Request) -> str:
     if real_ip:
         return real_ip.strip()
     
+    # Debugging: Log what we're seeing
+    import logging
+    logger = logging.getLogger(__name__)
+    direct_ip = request.client.host if request.client else "unknown"
+    logger.debug(f"IP extraction - X-Forwarded-For: {forwarded_for}, X-Real-IP: {real_ip}, Direct: {direct_ip}")
+    
     # Fall back to direct client IP
     if request.client:
         return request.client.host
