@@ -12,12 +12,19 @@ TARGON_API_KEY = os.getenv("TARGON_API_KEY", "")
 
 # Authentication configuration
 SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD", "")
-WHITELISTED_VALIDATOR_IPS_RAW = os.getenv("WHITELISTED_VALIDATOR_IPS", "")
+
+def load_whitelist():
+    """Load IP whitelist from JSON file"""
+    import json
+    try:
+        with open('whitelist.json', 'r') as f:
+            data = json.load(f)
+            return set(data.get('whitelist', []))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
 
 # Parse whitelisted IPs once at startup
-WHITELISTED_VALIDATOR_IPS = set()
-if WHITELISTED_VALIDATOR_IPS_RAW.strip():
-    WHITELISTED_VALIDATOR_IPS = {ip.strip() for ip in WHITELISTED_VALIDATOR_IPS_RAW.split(",") if ip.strip()}
+WHITELISTED_VALIDATOR_IPS = load_whitelist()
 
 # Pricing configuration
 EMBEDDING_PRICE_PER_SECOND = 0.0001

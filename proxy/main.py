@@ -25,8 +25,9 @@ logger = get_logger(__name__)
 def load_ip_names():
     """Load IP name mappings from local JSON file"""
     try:
-        with open('proxy/ip_names.json', 'r') as f:
-            return json.load(f)
+        with open('whitelist.json', 'r') as f:
+            data = json.load(f)
+            return data.get('names', {})
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 

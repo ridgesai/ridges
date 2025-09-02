@@ -34,9 +34,9 @@ async def lifespan(app: FastAPI):
     # Check IP whitelist configuration at startup
     if not WHITELISTED_VALIDATOR_IPS:
         logger.warning("⚠️" * 5)
-        logger.warning("⚠️  WHITELISTED_VALIDATOR_IPS is empty - allowing ALL IPs to access protected endpoints!")
+        logger.warning("⚠️  IP whitelist is empty - allowing ALL IPs to access protected endpoints!")
         logger.warning("⚠️  This is a SECURITY RISK for production environments!")
-        logger.warning("⚠️  Set WHITELISTED_VALIDATOR_IPS environment variable to restrict access.")
+        logger.warning("⚠️  Add IPs to 'whitelist' array in whitelist.json to restrict access.")
         logger.warning("⚠️" * 5)
     else:
         logger.info(f"✅ IP whitelist configured with {len(WHITELISTED_VALIDATOR_IPS)} whitelisted IPs")
