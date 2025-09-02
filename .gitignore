@@ -44,3 +44,6 @@ conversation.jsonc
 # Platform cache
 subnet_hotkeys_cache.json
 .commits_cache.json
+
+# IP name mappings (local config)
+proxy/ip_names.json

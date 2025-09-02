@@ -15,11 +15,22 @@ from proxy.chutes_client import ChutesClient
 from proxy.providers import InferenceManager
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
 from proxy.error_tracking import track_400_error, get_client_ip, BadRequestErrorCode, get_error_stats, get_top_error_sources
+import json
 
 
 CHECK_COST_LIMITS = False
 
 logger = get_logger(__name__)
+
+def load_ip_names():
+    """Load IP name mappings from local JSON file"""
+    try:
+        with open('proxy/ip_names.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+IP_NAMES = load_ip_names()
 
 # Global client instances
 chutes_client = ChutesClient()  # For embeddings
@@ -125,18 +136,23 @@ async def error_stats():
     # Convert error codes to readable names
     error_code_names = {code.value: code.name for code in BadRequestErrorCode}
     
-    # Format stats for readability
+    # Format stats for readability, sorted by count descending
     formatted_stats = {}
-    for (ip, code), count in stats.items():
+    sorted_stats = sorted(stats.items(), key=lambda x: x[1], reverse=True)
+    for (ip, code), count in sorted_stats:
         error_name = error_code_names.get(code, f"UNKNOWN_{code}")
-        key = f"{ip}:{error_name}"
+        ip_name = IP_NAMES.get(ip)
+        ip_display = f"{ip}({ip_name})" if ip_name else ip
+        key = f"{ip_display}:{error_name}"
         formatted_stats[key] = count
     
     formatted_top = []
     for ip, code, count in top_sources:
         error_name = error_code_names.get(code, f"UNKNOWN_{code}")
+        ip_name = IP_NAMES.get(ip)
+        ip_display = f"{ip}({ip_name})" if ip_name else ip
         formatted_top.append({
-            "ip": ip,
+            "ip": ip_display,
             "error_code": code,
             "error_name": error_name,
             "count": count
