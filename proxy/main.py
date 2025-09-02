@@ -71,7 +71,7 @@ async def embedding_endpoint(request: EmbeddingRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                # logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -81,7 +81,7 @@ async def embedding_endpoint(request: EmbeddingRequest):
             try:
                 run_uuid = UUID(request.run_id)
             except ValueError:
-                # logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
+                logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             if CHECK_COST_LIMITS:
@@ -156,7 +156,7 @@ async def inference_endpoint(request: InferenceRequest):
             try:
                 run_uuid = UUID(request.run_id)
             except ValueError:
-                # logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
+                logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
@@ -167,7 +167,7 @@ async def inference_endpoint(request: InferenceRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                # logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -224,7 +224,7 @@ async def inference_endpoint(request: InferenceRequest):
     except Exception as e:
         # More detailed error logging for debugging
         import traceback
-        logger.error(f"Inference request for run_id {request.run_id} -- error: {traceback.format_exc()}")
+        logger.error(f"Inference request for run_id {request.run_id} (model: {request.model}) -- error: {traceback.format_exc()}")
         
         raise HTTPException(
             status_code=500,
