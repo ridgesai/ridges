@@ -380,12 +380,19 @@ class Sandbox:
             
             logger.info(f"✅ Captured {len(container_logs)} characters of logs for {run_id}")
             
+            # Truncate logs if theyre too large
+            MAX_LOG_SIZE = 500000  # 500KB
+            if len(container_logs) > MAX_LOG_SIZE:
+                truncated_size = len(container_logs)
+                container_logs = f"... [TRUNCATED: {truncated_size - MAX_LOG_SIZE} characters removed from beginning] ...\n\n" + container_logs[-MAX_LOG_SIZE:]
+                logger.info(f"Truncated logs from {truncated_size} to {len(container_logs)} characters for {run_id}")
+            
             # Send logs seperately (so we don't have to send them every time we update)
             try:
                 await self.manager.websocket_app.send({
                     "event": "evaluation-run-logs",
                     "run_id": str(run_id),
-                    "logs": container_logs  # Send complete logs, no truncation
+                    "logs": container_logs  # Send logs (truncated if > 500KB)
                 })
                 logger.info(f"📤 Sent complete logs via websocket for {run_id}")
             except Exception as e:
