@@ -15,7 +15,6 @@ dependencies = [
     "ddtrace>=3.10.1",
     "dotenv>=0.9.9",
     "email-validator>=2.2.0",
-    "fastapi-utils>=0.8.0",
     "fiber[full]",
     "gitpython>=3.1.44",
     "greenlet>=3.1.0",
