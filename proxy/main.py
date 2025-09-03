@@ -33,6 +33,11 @@ def load_ip_names():
 
 IP_NAMES = load_ip_names()
 
+def format_ip_with_name(ip: str) -> str:
+    """Format IP address with name from whitelist if available"""
+    ip_name = IP_NAMES.get(ip)
+    return f"{ip}({ip_name})" if ip_name else ip
+
 # Global client instances
 chutes_client = ChutesClient()  # For embeddings
 inference_manager = InferenceManager()  # For inference
@@ -62,13 +67,13 @@ def check_request_auth(http_request: Request, endpoint_type: str) -> None:
         
         if not auth_header:
             track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-            logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {client_ip}")
+            logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Authorization header required")
         
         # Check Bearer token format
         if not auth_header.startswith("Bearer "):
             track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-            logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {client_ip}")
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
         
         # Extract and validate token
@@ -78,12 +83,12 @@ def check_request_auth(http_request: Request, endpoint_type: str) -> None:
             return
         else:
             track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
-            logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {client_ip}")
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Invalid screener password")
     
     # Neither IP whitelist nor password configured/valid - unauthorized
     track_400_error(client_ip, BadRequestErrorCode.UNAUTHORIZED_IP_ADDRESS)
-    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {client_ip} - not whitelisted and no valid authentication")
+    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {format_ip_with_name(client_ip)} - not whitelisted and no valid authentication")
     raise HTTPException(status_code=401, detail="Unauthorized: IP not whitelisted and no valid authentication provided")
 
 @asynccontextmanager
@@ -179,7 +184,7 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             if not request.run_id:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_MISSING_RUN_ID)
-                logger.warning(f"Embedding request attempted with None run_id in production mode from IP {client_ip}")
+                logger.warning(f"Embedding request attempted with None run_id in production mode from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="run_id is required in production mode")
             
             # Get evaluation run from database
@@ -193,7 +198,7 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             if evaluation_run.status != SandboxStatus.sandbox_created:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_WRONG_STATUS)
-                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {client_ip}")
+                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -205,7 +210,7 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             except ValueError:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_INVALID_UUID)
-                logger.warning(f"Embedding request with invalid UUID format: {request.run_id} from IP {client_ip}")
+                logger.warning(f"Embedding request with invalid UUID format: {request.run_id} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             if CHECK_COST_LIMITS:
@@ -278,7 +283,7 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
             if not request.run_id:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.INFERENCE_MISSING_RUN_ID)
-                logger.warning(f"Inference request attempted with None run_id in production mode from IP {client_ip}")
+                logger.warning(f"Inference request attempted with None run_id in production mode from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="run_id is required in production mode")
             
             # Get evaluation run from database
@@ -287,7 +292,7 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
             except ValueError:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.INFERENCE_INVALID_UUID)
-                logger.warning(f"Inference request with invalid UUID format: {request.run_id} from IP {client_ip}")
+                logger.warning(f"Inference request with invalid UUID format: {request.run_id} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
@@ -300,7 +305,7 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
             if evaluation_run.status != SandboxStatus.sandbox_created:
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.INFERENCE_WRONG_STATUS)
-                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {client_ip}")
+                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
