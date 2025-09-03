@@ -83,8 +83,8 @@ async def get_connected_validators():
     Returns a list of all connected validators and screener validators
     """
     try:
-        # Always include system metrics
-        validators = await WebSocketManager.get_instance().get_clients(include_system_metrics=True)
+        # Get validators with their individual system metrics
+        validators = await WebSocketManager.get_instance().get_clients()
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
         raise HTTPException(

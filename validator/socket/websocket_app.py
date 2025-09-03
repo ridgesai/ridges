@@ -15,6 +15,7 @@ from loggers.logging_utils import get_logger
 from validator.config import RIDGES_API_URL, SCREENER_MODE
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info
+from validator.utils.system_metrics import get_system_metrics
 
 
 websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws" if RIDGES_API_URL else None
@@ -100,7 +101,7 @@ class WebsocketApp:
             logger.error(f"Error in force_cancel_all_tasks: {e}")
 
     async def _send_heartbeat(self):
-        """Send periodic heartbeat messages to the platform."""
+        """Send periodic heartbeat messages with system metrics to the platform."""
         while self.ws:
             await asyncio.sleep(30)
             if self.ws:
@@ -108,7 +109,23 @@ class WebsocketApp:
                 if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
                     status = "screening" if SCREENER_MODE else "evaluating"
 
-                await self.send({"event": "heartbeat", "status": status})
+                # Collect system metrics
+                try:
+                    system_metrics = await get_system_metrics()
+                    
+                    # Send heartbeat with system metrics
+                    await self.send({
+                        "event": "heartbeat", 
+                        "status": status,
+                        **system_metrics  # Include cpu_percent, ram_percent, disk_percent, containers
+                    })
+                    
+                    logger.debug(f"Sent heartbeat with metrics: {system_metrics}")
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to collect system metrics, sending heartbeat without them: {e}")
+                    # Fallback to heartbeat without metrics
+                    await self.send({"event": "heartbeat", "status": status})
 
     @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):

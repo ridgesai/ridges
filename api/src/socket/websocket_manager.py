@@ -9,7 +9,7 @@ from api.src.models.validator import Validator
 from api.src.models.screener import Screener
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
-from api.src.utils.system_metrics import get_system_metrics_fast
+
 
 logger = get_logger(__name__)
 
@@ -111,40 +111,9 @@ class WebSocketManager:
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
-    async def broadcast_system_metrics_update(self):
-        """Broadcast system metrics update to all non-validator clients"""
-        try:
-            system_metrics = await get_system_metrics_fast()
-            
-            # Get current validators/screeners with updated metrics
-            clients_data = await self.get_clients(include_system_metrics=True)
-            
-            await self.send_to_all_non_validators("system-metrics-update", {
-                "system_metrics": system_metrics,
-                "validators": clients_data,
-                "timestamp": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error broadcasting system metrics update: {e}")
-
-    async def get_clients(self, include_system_metrics: bool = False):
+    async def get_clients(self):
         """Get list of connected validators and screeners"""
         clients_list = []
-        
-        # Get system metrics once if requested (shared across all clients)
-        system_metrics = None
-        if include_system_metrics:
-            try:
-                system_metrics = await get_system_metrics_fast()
-            except Exception as e:
-                logger.warning(f"Failed to collect system metrics: {e}")
-                system_metrics = {
-                    "cpu_percent": None,
-                    "ram_percent": None,
-                    "disk_percent": None,
-                    "containers": None
-                }
         
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
@@ -167,14 +136,13 @@ class WebSocketManager:
                         "progress": await Evaluation.get_progress(validator.current_evaluation_id) if validator.current_evaluation_id else 0
                     }
                     
-                    # Add system metrics if requested
-                    if include_system_metrics and system_metrics:
-                        validator_data.update({
-                            "cpu_percent": system_metrics["cpu_percent"],
-                            "ram_percent": system_metrics["ram_percent"],
-                            "disk_percent": system_metrics["disk_percent"],
-                            "containers": system_metrics["containers"]
-                        })
+                    # Always include system metrics from the validator's stored data
+                    validator_data.update({
+                        "cpu_percent": validator.cpu_percent,
+                        "ram_percent": validator.ram_percent,
+                        "disk_percent": validator.disk_percent,
+                        "containers": validator.containers
+                    })
                     
                     clients_list.append(validator_data)
                     
@@ -195,14 +163,13 @@ class WebSocketManager:
                         "progress": await Evaluation.get_progress(screener.screening_id) if screener.screening_id else 0
                     }
                     
-                    # Add system metrics if requested
-                    if include_system_metrics and system_metrics:
-                        screener_data.update({
-                            "cpu_percent": system_metrics["cpu_percent"],
-                            "ram_percent": system_metrics["ram_percent"],
-                            "disk_percent": system_metrics["disk_percent"],
-                            "containers": system_metrics["containers"]
-                        })
+                    # Always include system metrics from the screener's stored data  
+                    screener_data.update({
+                        "cpu_percent": screener.cpu_percent,
+                        "ram_percent": screener.ram_percent,
+                        "disk_percent": screener.disk_percent,
+                        "containers": screener.containers
+                    })
                     
                     clients_list.append(screener_data)
                     

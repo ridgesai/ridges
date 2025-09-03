@@ -10,6 +10,7 @@ from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
 from api.src.socket.handlers.handle_update_evaluation_run import handle_update_evaluation_run
 from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
+from api.src.socket.handlers.handle_system_metrics import handle_system_metrics
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
@@ -84,6 +85,9 @@ async def route_message(
     
     elif event == "heartbeat":
         return await handle_heartbeat(websocket, clients, response_json)
+    
+    elif event == "system-metrics":
+        return await handle_system_metrics(client, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")
