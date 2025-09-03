@@ -43,7 +43,7 @@ async def tell_validators_to_set_weights():
 async def run_weight_setting_loop(minutes: int):
     while True:
         await tell_validators_to_set_weights()
-        await asyncio.sleep(minutes * 60)
+        await asyncio.sleep(minutes * 20)
 
 ## Actual endpoints ##
 
