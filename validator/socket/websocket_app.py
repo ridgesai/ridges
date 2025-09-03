@@ -111,19 +111,26 @@ class WebsocketApp:
 
                 # Collect system metrics
                 try:
+                    logger.debug("Collecting system metrics...")
                     system_metrics = await get_system_metrics()
+                    logger.debug(f"Raw system metrics collected: {system_metrics}")
                     
-                    # Send heartbeat with system metrics
-                    await self.send({
-                        "event": "heartbeat", 
-                        "status": status,
-                        **system_metrics  # Include cpu_percent, ram_percent, disk_percent, containers
-                    })
+                    # Only include metrics that aren't None
+                    metrics_to_send = {k: v for k, v in system_metrics.items() if v is not None}
+                    logger.debug(f"Non-null metrics to send: {metrics_to_send}")
                     
-                    logger.debug(f"Sent heartbeat with metrics: {system_metrics}")
+                    # Build heartbeat message
+                    heartbeat_msg = {"event": "heartbeat", "status": status}
+                    if metrics_to_send:
+                        heartbeat_msg.update(metrics_to_send)
+                        logger.info(f"📊 Sending heartbeat WITH metrics: {metrics_to_send}")
+                    else:
+                        logger.warning("📊 Sending heartbeat WITHOUT metrics (all None or psutil unavailable)")
+                    
+                    await self.send(heartbeat_msg)
                     
                 except Exception as e:
-                    logger.warning(f"Failed to collect system metrics, sending heartbeat without them: {e}")
+                    logger.error(f"❌ Failed to collect system metrics, sending heartbeat without them: {e}")
                     # Fallback to heartbeat without metrics
                     await self.send({"event": "heartbeat", "status": status})
 

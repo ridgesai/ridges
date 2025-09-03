@@ -438,6 +438,11 @@ class Client(BaseModel):
     def get_type(self) -> str:
         """Return the type of client"""
         return "client"
+    
+    def update_system_metrics(self, cpu_percent: Optional[float], ram_percent: Optional[float], 
+                            disk_percent: Optional[float], containers: Optional[int]) -> None:
+        """Update system metrics for this client - implemented by subclasses"""
+        pass
 
 class Inference(BaseModel):
     model_config = { "arbitrary_types_allowed": True }

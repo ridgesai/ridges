@@ -39,10 +39,12 @@ async def handle_heartbeat(
             containers = response_json.get("containers")
             
             client.update_system_metrics(cpu_percent, ram_percent, disk_percent, containers)
-            logger.debug(f"Updated system metrics for {client.get_type()} {client.hotkey}")
+            logger.info(f"✅ Updated system metrics for {client.get_type()} {client.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}%, Disk={disk_percent}%, Containers={containers}")
             
         except Exception as e:
-            logger.warning(f"Failed to update system metrics for {client.hotkey}: {e}")
+            logger.warning(f"❌ Failed to update system metrics for {client.hotkey}: {e}")
+    else:
+        logger.debug(f"No system metrics in heartbeat from {client.hotkey} (old validator version)")
 
     if client.status == "available":
         await client.connect()
