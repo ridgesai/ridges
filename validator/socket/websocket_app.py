@@ -103,7 +103,7 @@ class WebsocketApp:
     async def _send_heartbeat(self):
         """Send periodic heartbeat messages with system metrics to the platform."""
         while self.ws:
-            await asyncio.sleep(30)
+            await asyncio.sleep(2.5)
             if self.ws:
                 status = "available"
                 if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
