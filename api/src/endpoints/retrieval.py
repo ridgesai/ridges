@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 
 from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
-from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id, get_agents_by_hotkey
@@ -79,20 +78,13 @@ async def get_agent_code(version_id: str, return_as_text: bool = False):
     }
     return StreamingResponse(file_generator(), media_type='application/octet-stream', headers=headers)
 
-async def get_connected_validators(
-    request: Request,
-    include_system_metrics: bool = Query(default=False, description="Include system metrics (CPU, RAM, disk, containers)")
-):
+async def get_connected_validators():
     """
     Returns a list of all connected validators and screener validators
     """
     try:
-        # Check if request is from whitelisted IP (likely admin)
-        client_ip = request.client.host if request.client else None
-        is_admin_request = include_system_metrics or (client_ip and client_ip in WHITELISTED_VALIDATOR_IPS)
-        
-        # Get validators with optional system metrics for admin users
-        validators = await WebSocketManager.get_instance().get_clients(include_system_metrics=is_admin_request)
+        # Always include system metrics
+        validators = await WebSocketManager.get_instance().get_clients(include_system_metrics=True)
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
         raise HTTPException(
