@@ -97,8 +97,18 @@ class SandboxManager:
         network.connect(self.proxy_container)
     
     def _setup_signal_handlers(self) -> None:
-        def signal_handler(signum):
-            logger.info(f"Received signal {signum}, performing sandbox cleanup")
+        def signal_handler(signum, frame):
+            logger.info(f"🛑 Received signal {signum}, performing emergency sandbox cleanup")
+            try:
+                # Force cleanup of all containers immediately
+                self.cleanup(force_cancel=True)
+                logger.info("✅ Emergency cleanup complete")
+            except Exception as e:
+                logger.error(f"❌ Error during emergency cleanup: {e}")
+            finally:
+                # Exit after cleanup
+                import sys
+                sys.exit(0)
         
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
