@@ -9,6 +9,7 @@ from api.src.models.validator import Validator
 from api.src.models.screener import Screener
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
+from api.src.utils.system_metrics import get_system_metrics_fast
 
 logger = get_logger(__name__)
 
@@ -110,9 +111,41 @@ class WebSocketManager:
         
         logger.info(f"Platform socket broadcasted {event} to {non_validators} non-validator clients")
 
-    async def get_clients(self):
+    async def broadcast_system_metrics_update(self):
+        """Broadcast system metrics update to all non-validator clients"""
+        try:
+            system_metrics = await get_system_metrics_fast()
+            
+            # Get current validators/screeners with updated metrics
+            clients_data = await self.get_clients(include_system_metrics=True)
+            
+            await self.send_to_all_non_validators("system-metrics-update", {
+                "system_metrics": system_metrics,
+                "validators": clients_data,
+                "timestamp": __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error broadcasting system metrics update: {e}")
+
+    async def get_clients(self, include_system_metrics: bool = False):
         """Get list of connected validators and screeners"""
         clients_list = []
+        
+        # Get system metrics once if requested (shared across all clients)
+        system_metrics = None
+        if include_system_metrics:
+            try:
+                system_metrics = await get_system_metrics_fast()
+            except Exception as e:
+                logger.warning(f"Failed to collect system metrics: {e}")
+                system_metrics = {
+                    "cpu_percent": None,
+                    "ram_percent": None,
+                    "disk_percent": None,
+                    "containers": None
+                }
+        
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for client in clients_snapshot.values():
@@ -120,7 +153,7 @@ class WebSocketManager:
                 case "validator":
                     validator: Validator = client
                     relative_version_num = await get_relative_version_num(validator.version_commit_hash)
-                    clients_list.append({
+                    validator_data = {
                         "type": "validator",
                         "validator_hotkey": validator.hotkey,  
                         "relative_version_num": relative_version_num,
@@ -132,11 +165,23 @@ class WebSocketManager:
                         "evaluating_agent_hotkey": validator.current_agent_hotkey,
                         "evaluating_agent_name": validator.current_agent_name,
                         "progress": await Evaluation.get_progress(validator.current_evaluation_id) if validator.current_evaluation_id else 0
-                    })
+                    }
+                    
+                    # Add system metrics if requested
+                    if include_system_metrics and system_metrics:
+                        validator_data.update({
+                            "cpu_percent": system_metrics["cpu_percent"],
+                            "ram_percent": system_metrics["ram_percent"],
+                            "disk_percent": system_metrics["disk_percent"],
+                            "containers": system_metrics["containers"]
+                        })
+                    
+                    clients_list.append(validator_data)
+                    
                 case "screener":
                     screener: Screener = client
                     relative_version_num = await get_relative_version_num(screener.version_commit_hash)
-                    clients_list.append({
+                    screener_data = {
                         "type": "screener",
                         "screener_hotkey": screener.hotkey,
                         "relative_version_num": relative_version_num,
@@ -148,7 +193,19 @@ class WebSocketManager:
                         "screening_agent_hotkey": screener.screening_agent_hotkey,
                         "screening_agent_name": screener.screening_agent_name,
                         "progress": await Evaluation.get_progress(screener.screening_id) if screener.screening_id else 0
-                    })
+                    }
+                    
+                    # Add system metrics if requested
+                    if include_system_metrics and system_metrics:
+                        screener_data.update({
+                            "cpu_percent": system_metrics["cpu_percent"],
+                            "ram_percent": system_metrics["ram_percent"],
+                            "disk_percent": system_metrics["disk_percent"],
+                            "containers": system_metrics["containers"]
+                        })
+                    
+                    clients_list.append(screener_data)
+                    
                 case _:
                     continue
 

@@ -26,6 +26,7 @@ dependencies = [
     "numpy>=2.2.6",
     "openai>=1.82.0",
     "pandas>=2.2.0",
+    "psutil>=7.0.0",
     "pydantic>=2.9.2",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
