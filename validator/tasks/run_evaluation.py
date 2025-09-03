@@ -24,7 +24,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
     """Run evaluation for a specific agent version"""
     logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")
 
-    sandbox_manager = SandboxManager(websocket_app)
+    sandbox_manager = SandboxManager(websocket_app, evaluation_id)
     websocket_app.sandbox_manager = sandbox_manager  # Store reference for cancellation
     errored = False
 
@@ -60,11 +60,17 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
             problem = problems[evaluation_run.swebench_instance_id]
             await sandbox_manager.create_sandbox(evaluation_run, problem, agent_dir)
 
+        # Start monitoring for platform-side cancellations
+        sandbox_manager.start_cancellation_monitoring()
+        
         await sandbox_manager.run_all_sandboxes()
         logger.info(f"Evaluation {evaluation_id} completed successfully")
     except asyncio.CancelledError:
         logger.info(f"Evaluation {evaluation_id} was cancelled")
-        errored = True
+        # Only treat as error if not cancelled by platform
+        errored = not sandbox_manager._cancelled_by_platform
+        if sandbox_manager._cancelled_by_platform:
+            logger.info(f"Evaluation {evaluation_id} was cancelled by platform - this is normal")
         raise  # Re-raise CancelledError so it can be handled by the websocket app
     except Exception as e:
         logger.error(f"Error during evaluation: {e}", exc_info=True)

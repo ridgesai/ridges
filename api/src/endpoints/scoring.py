@@ -404,6 +404,39 @@ async def prune_agent(version_ids: str, approval_password: str):
         logger.error(f"Error pruning agent {version_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to prune agent due to internal server error")
 
+async def check_evaluation_status(evaluation_id: str):
+    """Check if an evaluation has been cancelled or is still active"""
+    
+    try:
+        async with get_db_connection() as conn:
+            # Check evaluation status
+            result = await conn.fetchrow(
+                "SELECT status, finished_at FROM evaluations WHERE evaluation_id = $1", 
+                uuid.UUID(evaluation_id)
+            )
+            
+            if not result:
+                raise HTTPException(status_code=404, detail="Evaluation not found")
+            
+            status = result['status']
+            finished_at = result['finished_at']
+            
+            # If evaluation is cancelled, replaced, pruned, or error, it should be stopped
+            should_stop = status in ['cancelled', 'replaced', 'pruned', 'error']
+            
+            return {
+                "evaluation_id": evaluation_id,
+                "status": status,
+                "should_stop": should_stop,
+                "finished_at": finished_at.isoformat() if finished_at else None
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking evaluation status {evaluation_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to check evaluation status")
+
 router = APIRouter()
 
 # Public scoring endpoints (read-only data)
@@ -413,7 +446,8 @@ public_routes = [
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
-    ("/trigger-weight-update", trigger_weight_set, ["POST"])
+    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
+    ("/check-evaluation-status", check_evaluation_status, ["GET"])
 ]
 
 # Protected scoring endpoints (admin functions)
