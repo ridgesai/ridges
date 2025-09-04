@@ -447,7 +447,8 @@ public_routes = [
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
     ("/trigger-weight-update", trigger_weight_set, ["POST"]),
-    ("/check-evaluation-status", check_evaluation_status, ["GET"])
+    ("/check-evaluation-status", check_evaluation_status, ["GET"]),
+    ("/re-evaluate-agent", re_evaluate_agent, ["POST"])
 ]
 
 # Protected scoring endpoints (admin functions)
@@ -456,7 +457,6 @@ protected_routes = [
     ("/approve-version", approve_version, ["POST"]),
     ("/re-eval-approved", re_eval_approved, ["POST"]),
     ("/refresh-scores", refresh_scores, ["POST"]),
-    ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
     ("/store-treasury-transaction", store_treasury_transaction, ["POST"]),
     ("/prune-agent", prune_agent, ["POST"])
