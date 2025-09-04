@@ -31,15 +31,17 @@ async def handle_heartbeat(
         # raise WebSocketDisconnect()
 
     # Process system metrics if included in heartbeat
-    if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers"]):
+    if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
         try:
             cpu_percent = response_json.get("cpu_percent")
             ram_percent = response_json.get("ram_percent")
+            ram_total_gb = response_json.get("ram_total_gb")
             disk_percent = response_json.get("disk_percent")
+            disk_total_gb = response_json.get("disk_total_gb")
             containers = response_json.get("containers")
             
-            client.update_system_metrics(cpu_percent, ram_percent, disk_percent, containers)
-            logger.info(f"✅ Updated system metrics for {client.get_type()} {client.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}%, Disk={disk_percent}%, Containers={containers}")
+            client.update_system_metrics(cpu_percent, ram_percent, disk_percent, containers, ram_total_gb, disk_total_gb)
+            logger.info(f"✅ Updated system metrics for {client.get_type()} {client.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}% ({ram_total_gb}GB), Disk={disk_percent}% ({disk_total_gb}GB), Containers={containers}")
             
         except Exception as e:
             logger.warning(f"❌ Failed to update system metrics for {client.hotkey}: {e}")

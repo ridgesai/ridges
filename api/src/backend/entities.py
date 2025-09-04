@@ -440,7 +440,8 @@ class Client(BaseModel):
         return "client"
     
     def update_system_metrics(self, cpu_percent: Optional[float], ram_percent: Optional[float], 
-                            disk_percent: Optional[float], containers: Optional[int]) -> None:
+                            disk_percent: Optional[float], containers: Optional[int],
+                            ram_total_gb: Optional[float] = None, disk_total_gb: Optional[float] = None) -> None:
         """Update system metrics for this client - implemented by subclasses"""
         pass
 

@@ -20,7 +20,9 @@ class Screener(Client):
     # System metrics
     cpu_percent: Optional[float] = None
     ram_percent: Optional[float] = None
+    ram_total_gb: Optional[float] = None
     disk_percent: Optional[float] = None
+    disk_total_gb: Optional[float] = None
     containers: Optional[int] = None
 
     @staticmethod
@@ -114,13 +116,16 @@ class Screener(Client):
         return self.status == "available"
     
     def update_system_metrics(self, cpu_percent: Optional[float], ram_percent: Optional[float], 
-                            disk_percent: Optional[float], containers: Optional[int]) -> None:
+                            disk_percent: Optional[float], containers: Optional[int],
+                            ram_total_gb: Optional[float] = None, disk_total_gb: Optional[float] = None) -> None:
         """Update system metrics for this screener"""
         self.cpu_percent = cpu_percent
         self.ram_percent = ram_percent
+        self.ram_total_gb = ram_total_gb
         self.disk_percent = disk_percent
+        self.disk_total_gb = disk_total_gb
         self.containers = containers
-        logger.debug(f"Updated system metrics for screener {self.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}%, Disk={disk_percent}%, Containers={containers}")
+        logger.debug(f"Updated system metrics for screener {self.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}% ({ram_total_gb}GB), Disk={disk_percent}% ({disk_total_gb}GB), Containers={containers}")
     
     def _broadcast_status_change(self) -> None:
         """Broadcast status change to dashboard clients"""
