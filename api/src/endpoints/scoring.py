@@ -264,26 +264,35 @@ async def refresh_scores():
         logger.error(f"Error refreshing agent scores: {e}")
         raise HTTPException(status_code=500, detail="Error refreshing agent scores")
 
-async def re_evaluate_agent(password: str, version_id: str):
+async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_and_validators: bool = False):
     """Re-evaluate an agent by resetting all validator evaluations for a version_id back to waiting status"""
     if password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid password")
 
     try:
         async with get_transaction() as conn:
-            validator_evaluations = await conn.fetch("""
-                SELECT * FROM evaluations WHERE version_id = $1
-                    AND validator_hotkey NOT LIKE 'screener-%'
-                    AND validator_hotkey NOT LIKE 'i-0%'
-            """, version_id)
+            # Build query conditionally based on re_eval_screeners_and_validators parameter
+            if re_eval_screeners_and_validators:
+                # Include all evaluations (screeners and validators)
+                query = "SELECT * FROM evaluations WHERE version_id = $1"
+                validator_evaluations = await conn.fetch(query, version_id)
+            else:
+                # Exclude screener and validator evaluations (original behavior)
+                query = """
+                    SELECT * FROM evaluations WHERE version_id = $1
+                        AND validator_hotkey NOT LIKE 'screener-%'
+                        AND validator_hotkey NOT LIKE 'i-0%'
+                """
+                validator_evaluations = await conn.fetch(query, version_id)
             
             for evaluation_data in validator_evaluations:
                 evaluation = Evaluation(**evaluation_data)
                 await evaluation.reset_to_waiting(conn)
             
-            logger.info(f"Reset {len(validator_evaluations)} validator evaluations for version {version_id}")
+            evaluation_type = "all" if re_eval_screeners_and_validators else "validator"
+            logger.info(f"Reset {len(validator_evaluations)} {evaluation_type} evaluations for version {version_id}")
             return {
-                "message": f"Successfully reset {len(validator_evaluations)} validator evaluations for version {version_id}",
+                "message": f"Successfully reset {len(validator_evaluations)} {evaluation_type} evaluations for version {version_id}",
             }
             
     except Exception as e:
