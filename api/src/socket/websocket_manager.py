@@ -140,7 +140,9 @@ class WebSocketManager:
                     validator_data.update({
                         "cpu_percent": validator.cpu_percent,
                         "ram_percent": validator.ram_percent,
+                        "ram_total_gb": validator.ram_total_gb,
                         "disk_percent": validator.disk_percent,
+                        "disk_total_gb": validator.disk_total_gb,
                         "containers": validator.containers
                     })
                     
@@ -167,7 +169,9 @@ class WebSocketManager:
                     screener_data.update({
                         "cpu_percent": screener.cpu_percent,
                         "ram_percent": screener.ram_percent,
+                        "ram_total_gb": screener.ram_total_gb,
                         "disk_percent": screener.disk_percent,
+                        "disk_total_gb": screener.disk_total_gb,
                         "containers": screener.containers
                     })
                     
