@@ -8,7 +8,7 @@ from typing import Optional
 from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
-from api.src.utils.auth import verify_request
+from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3, record_upload_attempt
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.socket.websocket_manager import WebSocketManager
@@ -374,7 +374,7 @@ for path, endpoint in routes:
         path,
         endpoint,
         tags=["upload"],
-        dependencies=[Depends(verify_request)],
+        dependencies=[Depends(verify_request_public)],
         methods=["POST"],
         response_model=AgentUploadResponse,
         responses={

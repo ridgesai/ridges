@@ -6,7 +6,7 @@ from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
-from api.src.utils.auth import verify_request
+from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
@@ -14,6 +14,7 @@ from api.src.backend.queries.agents import get_latest_agent as db_get_latest_age
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
 from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as db_get_runs_for_evaluation, get_evaluation_run_logs as db_get_evaluation_run_logs
+from api.src.backend.queries.bench_evaluation_runs import get_runs_for_benchmark_evaluation as db_get_runs_for_benchmark_evaluation
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
@@ -83,6 +84,7 @@ async def get_connected_validators():
     Returns a list of all connected validators and screener validators
     """
     try:
+        # Get validators with their individual system metrics
         validators = await WebSocketManager.get_instance().get_clients()
     except Exception as e:
         logger.error(f"Error retrieving connected validators: {e}")
@@ -198,6 +200,25 @@ async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving runs for evaluation. Please try again later."
+        )
+    
+    return runs
+
+async def get_top_benchmark_agent_evaluations() -> list[EvaluationRun]:
+    """
+    Get evaluation runs for top benchmark agents from the bench_evaluation_runs table.
+    Uses a hardcoded evaluation_id for fetching the specific benchmark evaluation data.
+    """
+    # TODO: Replace with actual evaluation_id when provided
+    hardcoded_evaluation_id = "0501b200-0b4f-48ed-a163-cc0a5691b34f"
+    
+    try:
+        runs = await db_get_runs_for_benchmark_evaluation(hardcoded_evaluation_id)
+    except Exception as e:
+        logger.error(f"Error retrieving benchmark evaluation runs for evaluation {hardcoded_evaluation_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving benchmark evaluation runs. Please try again later."
         )
     
     return runs
@@ -448,7 +469,8 @@ routes = [
     ("/evaluations-with-usage", get_evaluations_with_usage),
     ("/screening-evaluations", get_screening_evaluations),
     ("/evaluation-run-logs", get_evaluation_run_logs),
-    ("/runs-for-evaluation", get_runs_for_evaluation), 
+    ("/runs-for-evaluation", get_runs_for_evaluation),
+    ("/top-benchmark-agent-evaluations", get_top_benchmark_agent_evaluations), 
     ("/latest-agent", get_latest_agent),
     ("/network-stats", get_network_stats),
     ("/running-evaluations", get_running_evaluations),
@@ -475,6 +497,6 @@ for path, endpoint in routes:
         path,
         endpoint,
         tags=["retrieval"],
-        dependencies=[Depends(verify_request)],
+        dependencies=[Depends(verify_request_public)],
         methods=["GET"]
     )

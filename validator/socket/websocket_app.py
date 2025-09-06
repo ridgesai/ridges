@@ -15,6 +15,7 @@ from loggers.logging_utils import get_logger
 from validator.config import RIDGES_API_URL, SCREENER_MODE
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info
+from validator.utils.system_metrics import get_system_metrics
 
 
 websocket_url = RIDGES_API_URL.replace("http", "ws", 1) + "/ws" if RIDGES_API_URL else None
@@ -100,15 +101,38 @@ class WebsocketApp:
             logger.error(f"Error in force_cancel_all_tasks: {e}")
 
     async def _send_heartbeat(self):
-        """Send periodic heartbeat messages to the platform."""
+        """Send periodic heartbeat messages with system metrics to the platform."""
         while self.ws:
-            await asyncio.sleep(30)
+            await asyncio.sleep(2.5)
             if self.ws:
                 status = "available"
                 if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
                     status = "screening" if SCREENER_MODE else "evaluating"
 
-                await self.send({"event": "heartbeat", "status": status})
+                # Collect system metrics
+                try:
+                    logger.debug("Collecting system metrics...")
+                    system_metrics = await get_system_metrics()
+                    logger.debug(f"Raw system metrics collected: {system_metrics}")
+                    
+                    # Only include metrics that aren't None
+                    metrics_to_send = {k: v for k, v in system_metrics.items() if v is not None}
+                    logger.debug(f"Non-null metrics to send: {metrics_to_send}")
+                    
+                    # Build heartbeat message
+                    heartbeat_msg = {"event": "heartbeat", "status": status}
+                    if metrics_to_send:
+                        heartbeat_msg.update(metrics_to_send)
+                        logger.info(f"📊 Sending heartbeat WITH metrics: {metrics_to_send}")
+                    else:
+                        logger.warning("📊 Sending heartbeat WITHOUT metrics (all None or psutil unavailable)")
+                    
+                    await self.send(heartbeat_msg)
+                    
+                except Exception as e:
+                    logger.error(f"❌ Failed to collect system metrics, sending heartbeat without them: {e}")
+                    # Fallback to heartbeat without metrics
+                    await self.send({"event": "heartbeat", "status": status})
 
     @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):

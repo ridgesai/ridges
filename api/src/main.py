@@ -16,18 +16,30 @@ from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.endpoints.healthcheck import router as healthcheck_router
+from api.src.endpoints.system_status import router as system_status_router
 from api.src.endpoints.agent_summaries import router as agent_summaries_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.utils.slack import send_slack_message
+from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
+    
+    # Check IP whitelist configuration at startup
+    if not WHITELISTED_VALIDATOR_IPS:
+        logger.warning("⚠️" * 5)
+        logger.warning("⚠️  IP whitelist is empty - allowing ALL IPs to access protected endpoints!")
+        logger.warning("⚠️  This is a SECURITY RISK for production environments!")
+        logger.warning("⚠️  Add IPs to 'whitelist' array in whitelist.json to restrict access.")
+        logger.warning("⚠️" * 5)
+    else:
+        logger.info(f"✅ IP whitelist configured with {len(WHITELISTED_VALIDATOR_IPS)} whitelisted IPs")
     
     # Fetch and cache GitHub commits at startup
     logger.info("Fetching and caching GitHub commits...")
@@ -41,7 +53,9 @@ async def lifespan(app: FastAPI):
     from api.src.utils.threshold_scheduler import threshold_scheduler
     await threshold_scheduler.recover_pending_approvals()
     
+    # Start background tasks
     asyncio.create_task(run_weight_setting_loop(30))
+    
     yield
 
     await new_db.close()
@@ -65,6 +79,7 @@ app.include_router(agent_summaries_router, prefix="/agent-summaries")
 app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(benchmarks_router, prefix="/benchmarks")
+app.include_router(system_status_router, prefix="/system")
 app.include_router(healthcheck_router)
 
 @app.websocket("/ws")

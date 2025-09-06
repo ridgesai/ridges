@@ -10,6 +10,22 @@ CHUTES_INFERENCE_URL = "https://llm.chutes.ai/v1/chat/completions"
 # Targon API configuration (for fallback)
 TARGON_API_KEY = os.getenv("TARGON_API_KEY", "")
 
+# Authentication configuration
+SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD", "")
+
+def load_whitelist():
+    """Load IP whitelist from JSON file"""
+    import json
+    try:
+        with open('whitelist.json', 'r') as f:
+            data = json.load(f)
+            return set(data.get('whitelist', []))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return set()
+
+# Parse whitelisted IPs once at startup
+WHITELISTED_VALIDATOR_IPS = load_whitelist()
+
 # Pricing configuration
 EMBEDDING_PRICE_PER_SECOND = 0.0001
 

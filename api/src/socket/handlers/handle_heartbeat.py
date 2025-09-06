@@ -20,6 +20,7 @@ async def handle_heartbeat(
     Handle heartbeat message from a validator or screener.
     Severs the connection if the client is incorrect
     If client is available, call connect to check and assign evaluations
+    Also processes system metrics sent with the heartbeat.
     """
     client: Validator | Screener = clients[websocket]
 
@@ -28,6 +29,24 @@ async def handle_heartbeat(
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
         # raise WebSocketDisconnect()
+
+    # Process system metrics if included in heartbeat
+    if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
+        try:
+            cpu_percent = response_json.get("cpu_percent")
+            ram_percent = response_json.get("ram_percent")
+            ram_total_gb = response_json.get("ram_total_gb")
+            disk_percent = response_json.get("disk_percent")
+            disk_total_gb = response_json.get("disk_total_gb")
+            containers = response_json.get("containers")
+            
+            client.update_system_metrics(cpu_percent, ram_percent, disk_percent, containers, ram_total_gb, disk_total_gb)
+            logger.info(f"✅ Updated system metrics for {client.get_type()} {client.hotkey}: CPU={cpu_percent}%, RAM={ram_percent}% ({ram_total_gb}GB), Disk={disk_percent}% ({disk_total_gb}GB), Containers={containers}")
+            
+        except Exception as e:
+            logger.warning(f"❌ Failed to update system metrics for {client.hotkey}: {e}")
+    else:
+        logger.debug(f"No system metrics in heartbeat from {client.hotkey} (old validator version)")
 
     if client.status == "available":
         await client.connect()

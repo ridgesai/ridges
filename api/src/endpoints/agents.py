@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional, Any, Dict, Tuple
 from datetime import datetime
 
-from api.src.utils.auth import verify_request
+from api.src.utils.auth import verify_request_public
 from api.src.backend.entities import MinerAgent, Inference
 from api.src.backend.queries.agents import get_agent_approved_banned, get_agent_by_version_id
 from api.src.backend.queries.statistics import get_inference_details_for_run
@@ -535,6 +535,6 @@ for path, endpoint in routes:
         path,
         endpoint,
         tags=["agents"],
-        dependencies=[Depends(verify_request)],
+        dependencies=[Depends(verify_request_public)],
         methods=["GET"]
     )

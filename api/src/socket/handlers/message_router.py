@@ -10,8 +10,31 @@ from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation
 from api.src.socket.handlers.handle_update_evaluation_run import handle_update_evaluation_run
 from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
+from api.src.socket.handlers.handle_system_metrics import handle_system_metrics
+from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
+
+def check_websocket_ip_auth(websocket: WebSocket, event: str) -> bool:
+    """Check if WebSocket request from IP is authorized for protected events"""
+    
+    # Get client IP
+    client_ip = websocket.client.host if websocket.client else None
+    if not client_ip:
+        logger.warning(f"WebSocket {event} received without client IP information")
+        return False
+    
+    # If no whitelist configured, allow all (with startup warning already shown)
+    if not WHITELISTED_VALIDATOR_IPS:
+        return True
+    
+    # Check IP whitelist
+    if client_ip not in WHITELISTED_VALIDATOR_IPS:
+        logger.warning(f"WebSocket {event} from non-whitelisted IP: {client_ip}")
+        return False
+    
+    logger.debug(f"WebSocket {event} from whitelisted IP: {client_ip}")
+    return True
 
 async def route_message(
     websocket: WebSocket,
@@ -25,6 +48,10 @@ async def route_message(
     client = clients.get(websocket) if clients else None
     
     if event == "validator-info":
+        # Check IP whitelist for validator authentication
+        if not check_websocket_ip_auth(websocket, event):
+            return {"error": "Access denied: IP not whitelisted"}
+            
         # Special case - validator-info needs the clients dict for authentication
         with process_context("handle-validator-info") as process_id:
             logger.debug(f"Platform received validator-info from a client with hotkey {hotkey}. Beginning process handle-validator-info with process ID: {process_id}.")
@@ -36,6 +63,12 @@ async def route_message(
     if not client or not hasattr(client, 'hotkey'):
         logger.warning(f"Received {event} from unauthenticated client")
         return {"error": "Not authenticated"}
+    
+    # Check IP whitelist for all validator/screener operations
+    protected_events = {"get-next-evaluation", "update-evaluation-run", "evaluation-run-logs", "heartbeat"}
+    if event in protected_events:
+        if not check_websocket_ip_auth(websocket, event):
+            return {"error": "Access denied: IP not whitelisted"}
     
     if event == "get-next-evaluation":
         with process_context("handle-get-next-evaluation") as process_id:
@@ -52,6 +85,9 @@ async def route_message(
     
     elif event == "heartbeat":
         return await handle_heartbeat(websocket, clients, response_json)
+    
+    elif event == "system-metrics":
+        return await handle_system_metrics(client, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")

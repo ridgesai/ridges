@@ -11,7 +11,7 @@ from docker.models.containers import Container
 from docker.errors import NotFound, ImageNotFound, APIError
 from ddtrace import tracer
 
-from validator.config import RIDGES_PROXY_URL
+from validator.config import RIDGES_PROXY_URL, RIDGES_API_URL
 from validator.sandbox.constants import (
     AGENTS_BASE_DIR,
     PROXY_CONTAINER_NAME,
@@ -21,6 +21,7 @@ from validator.sandbox.constants import (
 )
 from validator.sandbox.schema import EvaluationRun, SwebenchProblem
 from validator.sandbox.sandbox import Sandbox
+from validator.utils.http_client import get_shared_client
 from loggers.logging_utils import get_logger
 
 if TYPE_CHECKING:
@@ -35,10 +36,13 @@ class TerminateTaskGroup(Exception):
 class SandboxManager:
     """Manages sandbox orchestration and Docker infrastructure"""
     
-    def __init__(self, websocket_app: "WebsocketApp"):
+    def __init__(self, websocket_app: "WebsocketApp", evaluation_id: Optional[str] = None):
         self.websocket_app = websocket_app
+        self.evaluation_id = evaluation_id
         self._container_ids: Set[str] = set()
         self._cleanup_attempted = False
+        self._cancellation_check_task: Optional[asyncio.Task] = None
+        self._cancelled_by_platform = False
         
         try:
             self.docker = docker.from_env(max_pool_size=100)
@@ -93,8 +97,18 @@ class SandboxManager:
         network.connect(self.proxy_container)
     
     def _setup_signal_handlers(self) -> None:
-        def signal_handler(signum):
-            logger.info(f"Received signal {signum}, performing sandbox cleanup")
+        def signal_handler(signum, frame):
+            logger.info(f"🛑 Received signal {signum}, performing emergency sandbox cleanup")
+            try:
+                # Force cleanup of all containers immediately
+                self.cleanup(force_cancel=True)
+                logger.info("✅ Emergency cleanup complete")
+            except Exception as e:
+                logger.error(f"❌ Error during emergency cleanup: {e}")
+            finally:
+                # Exit after cleanup
+                import sys
+                sys.exit(0)
         
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
@@ -153,6 +167,65 @@ class SandboxManager:
     def _force_terminate_task_group(self) -> None:
         """Used to force termination of a task group."""
         raise TerminateTaskGroup()
+    
+    async def _check_evaluation_cancelled(self) -> bool:
+        """Check if evaluation has been cancelled by the platform"""
+        if not self.evaluation_id:
+            return False
+            
+        try:
+            async with get_shared_client() as client:
+                response = await client.get(
+                    f"{RIDGES_API_URL}/scoring/check-evaluation-status",
+                    params={"evaluation_id": self.evaluation_id}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    return data.get("should_stop", False)
+                elif response.status_code == 404:
+                    # Evaluation not found - consider it cancelled
+                    logger.warning(f"Evaluation {self.evaluation_id} not found - treating as cancelled")
+                    return True
+                else:
+                    logger.warning(f"Failed to check evaluation status: {response.status_code}")
+                    return False
+        except Exception as e:
+            logger.warning(f"Error checking evaluation status: {e}")
+            return False
+    
+    async def _periodic_cancellation_check(self) -> None:
+        """Periodically check if evaluation has been cancelled by platform"""
+        if not self.evaluation_id:
+            return
+            
+        logger.info(f"Starting periodic cancellation check for evaluation {self.evaluation_id}")
+        
+        try:
+            while True:
+                await asyncio.sleep(30)  # Check every 30 seconds
+                
+                if self._cleanup_attempted:
+                    logger.debug("Cleanup already attempted, stopping cancellation check")
+                    break
+                    
+                is_cancelled = await self._check_evaluation_cancelled()
+                if is_cancelled:
+                    logger.info(f"Evaluation {self.evaluation_id} was cancelled by platform - initiating graceful shutdown")
+                    self._cancelled_by_platform = True
+                    self.force_cancel_all_tasks()
+                    break
+                    
+        except asyncio.CancelledError:
+            logger.info("Cancellation check task was cancelled")
+            raise
+        except Exception as e:
+            logger.error(f"Error in periodic cancellation check: {e}")
+    
+    def start_cancellation_monitoring(self) -> None:
+        """Start the background task to monitor evaluation cancellation"""
+        if self.evaluation_id and not self._cancellation_check_task:
+            self._cancellation_check_task = asyncio.create_task(self._periodic_cancellation_check())
+            logger.info(f"Started cancellation monitoring for evaluation {self.evaluation_id}")
     
     def force_cancel_all_tasks(self) -> None:
         if self._cleanup_attempted:
@@ -242,6 +315,12 @@ class SandboxManager:
     @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
         logger.info("Starting sandbox manager cleanup")
+        
+        # Cancel cancellation check task
+        if self._cancellation_check_task and not self._cancellation_check_task.done():
+            logger.info("Cancelling evaluation status monitoring task")
+            self._cancellation_check_task.cancel()
+            self._cancellation_check_task = None
         
         # Terminate task group if running
         if force_cancel and self._task_group:

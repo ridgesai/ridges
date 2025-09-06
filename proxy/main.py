@@ -8,27 +8,108 @@ import uvicorn
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import FastAPI, HTTPException
-from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE
+from fastapi import FastAPI, HTTPException, Request
+from proxy.config import ENV, SERVER_HOST, SERVER_PORT, LOG_LEVEL, MAX_COST_PER_RUN, DEFAULT_MODEL, DEFAULT_TEMPERATURE, SCREENER_PASSWORD, WHITELISTED_VALIDATOR_IPS
 from proxy.database import db_manager, get_evaluation_run_by_id, get_total_inference_cost, get_total_embedding_cost
 from proxy.chutes_client import ChutesClient
 from proxy.providers import InferenceManager
 from proxy.models import EmbeddingRequest, InferenceRequest, SandboxStatus
+from proxy.error_tracking import track_400_error, get_client_ip, BadRequestErrorCode, get_error_stats, get_top_error_sources
+import json
 
 
 CHECK_COST_LIMITS = False
 
 logger = get_logger(__name__)
 
+def load_ip_names():
+    """Load IP name mappings from local JSON file"""
+    try:
+        with open('whitelist.json', 'r') as f:
+            data = json.load(f)
+            return data.get('names', {})
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+IP_NAMES = load_ip_names()
+
+def format_ip_with_name(ip: str) -> str:
+    """Format IP address with name from whitelist if available"""
+    ip_name = IP_NAMES.get(ip)
+    return f"{ip}({ip_name})" if ip_name else ip
+
 # Global client instances
 chutes_client = ChutesClient()  # For embeddings
 inference_manager = InferenceManager()  # For inference
+
+
+def check_request_auth(http_request: Request, endpoint_type: str) -> None:
+    """
+    Check request authentication for endpoints using IP whitelist or screener password.
+    
+    Args:
+        http_request: FastAPI Request object
+        endpoint_type: Either "embedding" or "inference" for logging
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    client_ip = get_client_ip(http_request)
+    
+    # First check: IP whitelist (if configured)
+    if WHITELISTED_VALIDATOR_IPS and client_ip in WHITELISTED_VALIDATOR_IPS:
+        # IP is whitelisted, allow through
+        return
+    
+    # Second check: Screener password (if configured)
+    if SCREENER_PASSWORD:
+        auth_header = http_request.headers.get("authorization") or http_request.headers.get("Authorization")
+        
+        if not auth_header:
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {format_ip_with_name(client_ip)}")
+            raise HTTPException(status_code=401, detail="Authorization header required")
+        
+        # Check Bearer token format
+        if not auth_header.startswith("Bearer "):
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {format_ip_with_name(client_ip)}")
+            raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
+        
+        # Extract and validate token
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        if token == SCREENER_PASSWORD:
+            # Valid password, allow through
+            return
+        else:
+            track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
+            logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {format_ip_with_name(client_ip)}")
+            raise HTTPException(status_code=401, detail="Invalid screener password")
+    
+    # Neither IP whitelist nor password configured/valid - unauthorized
+    track_400_error(client_ip, BadRequestErrorCode.UNAUTHORIZED_IP_ADDRESS)
+    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {format_ip_with_name(client_ip)} - not whitelisted and no valid authentication")
+    raise HTTPException(status_code=401, detail="Unauthorized: IP not whitelisted and no valid authentication provided")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan - startup and shutdown"""
     # Startup
     logger.info("Starting proxy server...")
+    
+    # Check authentication configuration
+    if not SCREENER_PASSWORD and not WHITELISTED_VALIDATOR_IPS:
+        logger.warning("WARNING: Neither SCREENER_PASSWORD nor WHITELISTED_VALIDATOR_IPS is set!")
+        logger.warning("WARNING: All inference and embedding requests will be rejected!")
+        logger.warning("WARNING: Please set SCREENER_PASSWORD or WHITELISTED_VALIDATOR_IPS environment variables.")
+    else:
+        auth_methods = []
+        if SCREENER_PASSWORD:
+            auth_methods.append("screener password")
+        if WHITELISTED_VALIDATOR_IPS:
+            auth_methods.append(f"IP whitelist ({len(WHITELISTED_VALIDATOR_IPS)} IPs)")
+        logger.info(f"Authentication enabled: {', '.join(auth_methods)}")
+    
     if ENV != 'dev' and db_manager is not None:
         await db_manager.open()
         logger.info("Database connection established")
@@ -52,14 +133,58 @@ async def health_check():
     """Health check endpoint"""
     return "OK"
 
+@app.get("/error-stats")
+async def error_stats():
+    """Get 400 error statistics"""
+    stats = get_error_stats()
+    top_sources = get_top_error_sources()
+    
+    # Convert error codes to readable names
+    error_code_names = {code.value: code.name for code in BadRequestErrorCode}
+    
+    # Format stats for readability, sorted by count descending
+    formatted_stats = {}
+    sorted_stats = sorted(stats.items(), key=lambda x: x[1], reverse=True)
+    for (ip, code), count in sorted_stats:
+        error_name = error_code_names.get(code, f"UNKNOWN_{code}")
+        ip_name = IP_NAMES.get(ip)
+        ip_display = f"{ip}({ip_name})" if ip_name else ip
+        key = f"{ip_display}:{error_name}"
+        formatted_stats[key] = count
+    
+    formatted_top = []
+    for ip, code, count in top_sources:
+        error_name = error_code_names.get(code, f"UNKNOWN_{code}")
+        ip_name = IP_NAMES.get(ip)
+        ip_display = f"{ip}({ip_name})" if ip_name else ip
+        formatted_top.append({
+            "ip": ip_display,
+            "error_code": code,
+            "error_name": error_name,
+            "count": count
+        })
+    
+    return {
+        "total_errors": sum(stats.values()),
+        "unique_ip_error_combinations": len(stats),
+        "all_stats": formatted_stats,
+        "top_10_sources": formatted_top
+    }
+
 @app.post("/agents/embedding")
-async def embedding_endpoint(request: EmbeddingRequest):
+async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
     """Proxy endpoint for chutes embedding with database validation"""
+    
+    # Check request authentication
+    check_request_auth(http_request, "embedding")
+    
     try:
         if ENV != 'dev':
             # Production mode - run_id is required
             if not request.run_id:
-                logger.warning(f"Embedding request attempted with None run_id in production mode")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_MISSING_RUN_ID)
+                logger.warning(f"Embedding request attempted with None run_id in production mode from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="run_id is required in production mode")
             
             # Get evaluation run from database
@@ -71,7 +196,9 @@ async def embedding_endpoint(request: EmbeddingRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                # logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_WRONG_STATUS)
+                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400, 
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -81,7 +208,9 @@ async def embedding_endpoint(request: EmbeddingRequest):
             try:
                 run_uuid = UUID(request.run_id)
             except ValueError:
-                # logger.warning(f"Embedding request with invalid UUID format: {request.run_id}")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_INVALID_UUID)
+                logger.warning(f"Embedding request with invalid UUID format: {request.run_id} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             if CHECK_COST_LIMITS:
@@ -117,8 +246,11 @@ async def embedding_endpoint(request: EmbeddingRequest):
         )
 
 @app.post("/agents/inference")
-async def inference_endpoint(request: InferenceRequest):
+async def inference_endpoint(request: InferenceRequest, http_request: Request):
     """Proxy endpoint for chutes inference with database validation"""
+
+    # Check request authentication
+    check_request_auth(http_request, "inference")
 
     # # Switch Kimi to Deepseek temporarily until more capacity
     # if request.model in ["moonshotai/Kimi-K2-Instruct", "moonshotai/Kimi-Dev-72B"]:
@@ -149,14 +281,18 @@ async def inference_endpoint(request: InferenceRequest):
         if ENV != 'dev':
             # Production mode - run_id is required
             if not request.run_id:
-                logger.warning(f"Inference request attempted with None run_id in production mode")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.INFERENCE_MISSING_RUN_ID)
+                logger.warning(f"Inference request attempted with None run_id in production mode from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="run_id is required in production mode")
             
             # Get evaluation run from database
             try:
                 run_uuid = UUID(request.run_id)
             except ValueError:
-                # logger.warning(f"Inference request with invalid UUID format: {request.run_id}")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.INFERENCE_INVALID_UUID)
+                logger.warning(f"Inference request with invalid UUID format: {request.run_id} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(status_code=400, detail="Invalid run_id format. Must be a valid UUID.")
             
             evaluation_run = await get_evaluation_run_by_id(request.run_id)
@@ -167,7 +303,9 @@ async def inference_endpoint(request: InferenceRequest):
             
             # Check if evaluation run is in the correct state
             if evaluation_run.status != SandboxStatus.sandbox_created:
-                # logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status}")
+                client_ip = get_client_ip(http_request)
+                track_400_error(client_ip, BadRequestErrorCode.INFERENCE_WRONG_STATUS)
+                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
@@ -224,7 +362,7 @@ async def inference_endpoint(request: InferenceRequest):
     except Exception as e:
         # More detailed error logging for debugging
         import traceback
-        logger.error(f"Inference request for run_id {request.run_id} -- error: {traceback.format_exc()}")
+        logger.error(f"Inference request for run_id {request.run_id} (model: {request.model}) -- error: {traceback.format_exc()}")
         
         raise HTTPException(
             status_code=500,

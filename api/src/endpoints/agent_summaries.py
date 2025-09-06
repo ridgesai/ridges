@@ -1,6 +1,6 @@
 import os
 import asyncio
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
@@ -14,6 +14,7 @@ from api.src.utils.agent_summary_generator import (
 )
 from api.src.backend.db_manager import get_transaction
 from api.src.backend.entities import MinerAgent
+from api.src.utils.auth import verify_request_public
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -277,7 +278,7 @@ async def get_summary_status(
         logger.error(f"Error getting summary status: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get summary status: {str(e)}")
 
-@router.get("/agent-summary/{version_id}", response_model=AdminResponse)
+@router.get("/agent-summary/{version_id}", response_model=AdminResponse, dependencies=[Depends(verify_request_public)])
 async def get_agent_summary_endpoint(
     version_id: str
 ) -> AdminResponse:

@@ -10,6 +10,7 @@ from api.src.models.screener import Screener
 from api.src.socket.handlers.message_router import route_message
 from api.src.socket.server_helpers import get_relative_version_num
 
+
 logger = get_logger(__name__)
 
 class WebSocketManager:
@@ -113,6 +114,7 @@ class WebSocketManager:
     async def get_clients(self):
         """Get list of connected validators and screeners"""
         clients_list = []
+        
         # Create a snapshot to avoid "dictionary changed size during iteration" error
         clients_snapshot = dict(self.clients)
         for client in clients_snapshot.values():
@@ -120,7 +122,7 @@ class WebSocketManager:
                 case "validator":
                     validator: Validator = client
                     relative_version_num = await get_relative_version_num(validator.version_commit_hash)
-                    clients_list.append({
+                    validator_data = {
                         "type": "validator",
                         "validator_hotkey": validator.hotkey,  
                         "relative_version_num": relative_version_num,
@@ -132,11 +134,24 @@ class WebSocketManager:
                         "evaluating_agent_hotkey": validator.current_agent_hotkey,
                         "evaluating_agent_name": validator.current_agent_name,
                         "progress": await Evaluation.get_progress(validator.current_evaluation_id) if validator.current_evaluation_id else 0
+                    }
+                    
+                    # Always include system metrics from the validator's stored data
+                    validator_data.update({
+                        "cpu_percent": validator.cpu_percent,
+                        "ram_percent": validator.ram_percent,
+                        "ram_total_gb": validator.ram_total_gb,
+                        "disk_percent": validator.disk_percent,
+                        "disk_total_gb": validator.disk_total_gb,
+                        "containers": validator.containers
                     })
+                    
+                    clients_list.append(validator_data)
+                    
                 case "screener":
                     screener: Screener = client
                     relative_version_num = await get_relative_version_num(screener.version_commit_hash)
-                    clients_list.append({
+                    screener_data = {
                         "type": "screener",
                         "screener_hotkey": screener.hotkey,
                         "relative_version_num": relative_version_num,
@@ -148,7 +163,20 @@ class WebSocketManager:
                         "screening_agent_hotkey": screener.screening_agent_hotkey,
                         "screening_agent_name": screener.screening_agent_name,
                         "progress": await Evaluation.get_progress(screener.screening_id) if screener.screening_id else 0
+                    }
+                    
+                    # Always include system metrics from the screener's stored data  
+                    screener_data.update({
+                        "cpu_percent": screener.cpu_percent,
+                        "ram_percent": screener.ram_percent,
+                        "ram_total_gb": screener.ram_total_gb,
+                        "disk_percent": screener.disk_percent,
+                        "disk_total_gb": screener.disk_total_gb,
+                        "containers": screener.containers
                     })
+                    
+                    clients_list.append(screener_data)
+                    
                 case _:
                     continue
 
