@@ -1,0 +1,1462 @@
+Wed Sep  3 00:26:32 UTC 2025: Starting upload retry script
+Wed Sep  3 00:26:32 UTC 2025: Will retry every 7 minutes until successful
+Wed Sep  3 00:26:32 UTC 2025: Attempt #1 - Starting upload...
+Wed Sep  3 00:26:33 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 00:26:33.026[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 00:26:33 UTC 2025: Exit code: 0
+Wed Sep  3 00:26:34 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 00:26:34 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 00:33:34 UTC 2025: Attempt #2 - Starting upload...
+Wed Sep  3 00:33:35 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 00:33:34.535[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 00:33:35 UTC 2025: Exit code: 0
+Wed Sep  3 00:33:35 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 00:33:35 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 00:40:35 UTC 2025: Attempt #3 - Starting upload...
+Wed Sep  3 00:40:36 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 00:40:35.724[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 00:40:36 UTC 2025: Exit code: 0
+Wed Sep  3 00:40:36 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 00:40:36 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 00:47:36 UTC 2025: Attempt #4 - Starting upload...
+Wed Sep  3 00:47:37 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 00:47:36.867[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 00:47:37 UTC 2025: Exit code: 0
+Wed Sep  3 00:47:37 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 00:47:37 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 00:54:37 UTC 2025: Attempt #5 - Starting upload...
+Wed Sep  3 00:54:39 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 00:54:37.975[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 00:54:39 UTC 2025: Exit code: 0
+Wed Sep  3 00:54:39 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 00:54:39 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:01:39 UTC 2025: Attempt #6 - Starting upload...
+Wed Sep  3 01:01:40 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:01:40.314[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:01:40 UTC 2025: Exit code: 0
+Wed Sep  3 01:01:40 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:01:40 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:08:40 UTC 2025: Attempt #7 - Starting upload...
+Wed Sep  3 01:08:41 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:08:41.399[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:08:41 UTC 2025: Exit code: 0
+Wed Sep  3 01:08:41 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:08:41 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:15:41 UTC 2025: Attempt #8 - Starting upload...
+Wed Sep  3 01:15:43 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:15:42.484[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:15:43 UTC 2025: Exit code: 0
+Wed Sep  3 01:15:43 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:15:43 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:22:43 UTC 2025: Attempt #9 - Starting upload...
+Wed Sep  3 01:22:44 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:22:43.755[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:22:44 UTC 2025: Exit code: 0
+Wed Sep  3 01:22:44 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:22:44 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:29:44 UTC 2025: Attempt #10 - Starting upload...
+Wed Sep  3 01:29:45 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:29:44.929[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:29:45 UTC 2025: Exit code: 0
+Wed Sep  3 01:29:45 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:29:45 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:36:45 UTC 2025: Attempt #11 - Starting upload...
+Wed Sep  3 01:36:46 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:36:46.115[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:36:46 UTC 2025: Exit code: 0
+Wed Sep  3 01:36:46 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:36:46 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:43:46 UTC 2025: Attempt #12 - Starting upload...
+Wed Sep  3 01:43:47 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:43:47.244[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:43:47 UTC 2025: Exit code: 0
+Wed Sep  3 01:43:47 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:43:47 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:50:47 UTC 2025: Attempt #13 - Starting upload...
+Wed Sep  3 01:50:49 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:50:48.475[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:50:49 UTC 2025: Exit code: 0
+Wed Sep  3 01:50:49 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:50:49 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 01:57:49 UTC 2025: Attempt #14 - Starting upload...
+Wed Sep  3 01:57:50 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 01:57:49.675[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 01:57:50 UTC 2025: Exit code: 0
+Wed Sep  3 01:57:50 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 01:57:50 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:04:50 UTC 2025: Attempt #15 - Starting upload...
+Wed Sep  3 02:04:51 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:04:50.850[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:04:51 UTC 2025: Exit code: 0
+Wed Sep  3 02:04:51 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:04:51 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:11:51 UTC 2025: Attempt #16 - Starting upload...
+Wed Sep  3 02:11:52 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:11:51.934[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:11:52 UTC 2025: Exit code: 0
+Wed Sep  3 02:11:52 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:11:52 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:18:52 UTC 2025: Attempt #17 - Starting upload...
+Wed Sep  3 02:18:58 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:18:53.062[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:18:58 UTC 2025: Exit code: 0
+Wed Sep  3 02:18:58 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:18:58 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:25:58 UTC 2025: Attempt #18 - Starting upload...
+Wed Sep  3 02:25:59 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:25:58.924[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:25:59 UTC 2025: Exit code: 0
+Wed Sep  3 02:25:59 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:25:59 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:32:59 UTC 2025: Attempt #19 - Starting upload...
+Wed Sep  3 02:33:00 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:33:00.086[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:33:00 UTC 2025: Exit code: 0
+Wed Sep  3 02:33:00 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:33:00 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:40:00 UTC 2025: Attempt #20 - Starting upload...
+Wed Sep  3 02:40:02 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:40:01.490[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:40:02 UTC 2025: Exit code: 0
+Wed Sep  3 02:40:02 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:40:02 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:47:02 UTC 2025: Attempt #21 - Starting upload...
+Wed Sep  3 02:47:04 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:47:03.186[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:47:04 UTC 2025: Exit code: 0
+Wed Sep  3 02:47:04 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:47:04 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 02:54:04 UTC 2025: Attempt #22 - Starting upload...
+Wed Sep  3 02:54:08 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 02:54:05.193[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 02:54:08 UTC 2025: Exit code: 0
+Wed Sep  3 02:54:08 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 02:54:08 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:01:08 UTC 2025: Attempt #23 - Starting upload...
+Wed Sep  3 03:01:09 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:01:09.173[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:01:09 UTC 2025: Exit code: 0
+Wed Sep  3 03:01:09 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:01:09 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:08:09 UTC 2025: Attempt #24 - Starting upload...
+Wed Sep  3 03:08:11 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:08:10.351[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:08:11 UTC 2025: Exit code: 0
+Wed Sep  3 03:08:11 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:08:11 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:15:11 UTC 2025: Attempt #25 - Starting upload...
+Wed Sep  3 03:15:12 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:15:11.728[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:15:12 UTC 2025: Exit code: 0
+Wed Sep  3 03:15:12 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:15:12 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:22:12 UTC 2025: Attempt #26 - Starting upload...
+Wed Sep  3 03:22:13 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:22:12.856[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:22:13 UTC 2025: Exit code: 0
+Wed Sep  3 03:22:13 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:22:13 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:29:13 UTC 2025: Attempt #27 - Starting upload...
+Wed Sep  3 03:29:15 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:29:14.135[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:29:15 UTC 2025: Exit code: 0
+Wed Sep  3 03:29:15 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:29:15 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:36:15 UTC 2025: Attempt #28 - Starting upload...
+Wed Sep  3 03:36:16 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:36:15.617[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:36:16 UTC 2025: Exit code: 0
+Wed Sep  3 03:36:16 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:36:16 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:43:16 UTC 2025: Attempt #29 - Starting upload...
+Wed Sep  3 03:43:17 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:43:16.816[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:43:17 UTC 2025: Exit code: 0
+Wed Sep  3 03:43:17 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:43:17 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:50:17 UTC 2025: Attempt #30 - Starting upload...
+Wed Sep  3 03:50:18 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:50:17.923[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:50:18 UTC 2025: Exit code: 0
+Wed Sep  3 03:50:18 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:50:18 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 03:57:18 UTC 2025: Attempt #31 - Starting upload...
+Wed Sep  3 03:57:19 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 03:57:19.131[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 03:57:19 UTC 2025: Exit code: 0
+Wed Sep  3 03:57:19 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 03:57:19 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:04:19 UTC 2025: Attempt #32 - Starting upload...
+Wed Sep  3 04:04:21 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:04:20.442[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:04:21 UTC 2025: Exit code: 0
+Wed Sep  3 04:04:21 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:04:21 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:11:21 UTC 2025: Attempt #33 - Starting upload...
+Wed Sep  3 04:11:22 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:11:21.533[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:11:22 UTC 2025: Exit code: 0
+Wed Sep  3 04:11:22 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:11:22 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:18:22 UTC 2025: Attempt #34 - Starting upload...
+Wed Sep  3 04:18:23 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:18:23.025[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:18:23 UTC 2025: Exit code: 0
+Wed Sep  3 04:18:23 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:18:23 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:25:23 UTC 2025: Attempt #35 - Starting upload...
+Wed Sep  3 04:25:24 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:25:24.132[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:25:24 UTC 2025: Exit code: 0
+Wed Sep  3 04:25:24 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:25:24 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:32:24 UTC 2025: Attempt #36 - Starting upload...
+Wed Sep  3 04:32:26 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:32:25.451[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:32:26 UTC 2025: Exit code: 0
+Wed Sep  3 04:32:26 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:32:26 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:39:26 UTC 2025: Attempt #37 - Starting upload...
+Wed Sep  3 04:39:27 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:39:27.148[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:39:27 UTC 2025: Exit code: 0
+Wed Sep  3 04:39:27 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:39:27 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:46:27 UTC 2025: Attempt #38 - Starting upload...
+Wed Sep  3 04:46:28 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:46:28.264[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:46:28 UTC 2025: Exit code: 0
+Wed Sep  3 04:46:28 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:46:28 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 04:53:28 UTC 2025: Attempt #39 - Starting upload...
+Wed Sep  3 04:53:30 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 04:53:29.508[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 04:53:30 UTC 2025: Exit code: 0
+Wed Sep  3 04:53:30 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 04:53:30 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:00:30 UTC 2025: Attempt #40 - Starting upload...
+Wed Sep  3 05:00:31 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:00:30.724[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:00:31 UTC 2025: Exit code: 0
+Wed Sep  3 05:00:31 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:00:31 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:07:31 UTC 2025: Attempt #41 - Starting upload...
+Wed Sep  3 05:07:32 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:07:31.925[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:07:32 UTC 2025: Exit code: 0
+Wed Sep  3 05:07:32 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:07:32 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:14:32 UTC 2025: Attempt #42 - Starting upload...
+Wed Sep  3 05:14:33 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:14:33.057[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:14:33 UTC 2025: Exit code: 0
+Wed Sep  3 05:14:33 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:14:33 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:21:33 UTC 2025: Attempt #43 - Starting upload...
+Wed Sep  3 05:21:35 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:21:34.152[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:21:35 UTC 2025: Exit code: 0
+Wed Sep  3 05:21:35 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:21:35 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:28:35 UTC 2025: Attempt #44 - Starting upload...
+Wed Sep  3 05:28:36 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:28:35.540[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:28:36 UTC 2025: Exit code: 0
+Wed Sep  3 05:28:36 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:28:36 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:35:36 UTC 2025: Attempt #45 - Starting upload...
+Wed Sep  3 05:35:37 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:35:37.201[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:35:37 UTC 2025: Exit code: 0
+Wed Sep  3 05:35:37 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:35:37 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:42:37 UTC 2025: Attempt #46 - Starting upload...
+Wed Sep  3 05:42:38 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:42:38.310[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:42:38 UTC 2025: Exit code: 0
+Wed Sep  3 05:42:38 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:42:38 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:49:38 UTC 2025: Attempt #47 - Starting upload...
+Wed Sep  3 05:49:40 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:49:39.417[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:49:40 UTC 2025: Exit code: 0
+Wed Sep  3 05:49:40 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:49:40 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 05:56:40 UTC 2025: Attempt #48 - Starting upload...
+Wed Sep  3 05:56:41 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 05:56:40.621[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 05:56:41 UTC 2025: Exit code: 0
+Wed Sep  3 05:56:41 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 05:56:41 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:03:41 UTC 2025: Attempt #49 - Starting upload...
+Wed Sep  3 06:03:42 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:03:41.801[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:03:42 UTC 2025: Exit code: 0
+Wed Sep  3 06:03:42 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:03:42 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:10:42 UTC 2025: Attempt #50 - Starting upload...
+Wed Sep  3 06:10:43 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:10:43.085[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:10:43 UTC 2025: Exit code: 0
+Wed Sep  3 06:10:43 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:10:43 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:17:43 UTC 2025: Attempt #51 - Starting upload...
+Wed Sep  3 06:17:44 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:17:44.311[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:17:44 UTC 2025: Exit code: 0
+Wed Sep  3 06:17:44 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:17:44 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:24:44 UTC 2025: Attempt #52 - Starting upload...
+Wed Sep  3 06:24:46 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:24:45.474[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:24:46 UTC 2025: Exit code: 0
+Wed Sep  3 06:24:46 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:24:46 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:31:46 UTC 2025: Attempt #53 - Starting upload...
+Wed Sep  3 06:31:48 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:31:46.621[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:31:48 UTC 2025: Exit code: 0
+Wed Sep  3 06:31:48 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:31:48 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:38:48 UTC 2025: Attempt #54 - Starting upload...
+Wed Sep  3 06:38:49 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:38:48.547[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:38:49 UTC 2025: Exit code: 0
+Wed Sep  3 06:38:49 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:38:49 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:45:49 UTC 2025: Attempt #55 - Starting upload...
+Wed Sep  3 06:45:51 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:45:50.190[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:45:51 UTC 2025: Exit code: 0
+Wed Sep  3 06:45:51 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:45:51 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:52:51 UTC 2025: Attempt #56 - Starting upload...
+Wed Sep  3 06:52:52 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:52:51.642[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:52:52 UTC 2025: Exit code: 0
+Wed Sep  3 06:52:52 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:52:52 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 06:59:52 UTC 2025: Attempt #57 - Starting upload...
+Wed Sep  3 06:59:53 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 06:59:53.314[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 06:59:53 UTC 2025: Exit code: 0
+Wed Sep  3 06:59:53 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 06:59:53 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:06:53 UTC 2025: Attempt #58 - Starting upload...
+Wed Sep  3 07:06:55 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:06:54.529[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:06:55 UTC 2025: Exit code: 0
+Wed Sep  3 07:06:55 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:06:55 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:13:55 UTC 2025: Attempt #59 - Starting upload...
+Wed Sep  3 07:13:56 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:13:55.692[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:13:56 UTC 2025: Exit code: 0
+Wed Sep  3 07:13:56 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:13:56 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:20:56 UTC 2025: Attempt #60 - Starting upload...
+Wed Sep  3 07:20:58 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:20:56.981[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:20:58 UTC 2025: Exit code: 0
+Wed Sep  3 07:20:58 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:20:58 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:27:58 UTC 2025: Attempt #61 - Starting upload...
+Wed Sep  3 07:27:59 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:27:58.556[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:27:59 UTC 2025: Exit code: 0
+Wed Sep  3 07:27:59 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:27:59 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:34:59 UTC 2025: Attempt #62 - Starting upload...
+Wed Sep  3 07:35:00 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:34:59.630[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:35:00 UTC 2025: Exit code: 0
+Wed Sep  3 07:35:00 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:35:00 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:42:00 UTC 2025: Attempt #63 - Starting upload...
+Wed Sep  3 07:42:02 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:42:01.109[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:42:02 UTC 2025: Exit code: 0
+Wed Sep  3 07:42:02 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:42:02 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:49:02 UTC 2025: Attempt #64 - Starting upload...
+Wed Sep  3 07:49:05 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:49:03.543[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:49:05 UTC 2025: Exit code: 0
+Wed Sep  3 07:49:05 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:49:05 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 07:56:05 UTC 2025: Attempt #65 - Starting upload...
+Wed Sep  3 07:56:06 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 07:56:05.846[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 07:56:06 UTC 2025: Exit code: 0
+Wed Sep  3 07:56:06 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 07:56:06 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:03:06 UTC 2025: Attempt #66 - Starting upload...
+Wed Sep  3 08:03:08 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:03:07.112[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:03:08 UTC 2025: Exit code: 0
+Wed Sep  3 08:03:08 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:03:08 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:10:08 UTC 2025: Attempt #67 - Starting upload...
+Wed Sep  3 08:10:10 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:10:09.321[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:10:10 UTC 2025: Exit code: 0
+Wed Sep  3 08:10:10 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:10:10 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:17:10 UTC 2025: Attempt #68 - Starting upload...
+Wed Sep  3 08:17:11 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:17:10.803[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:17:11 UTC 2025: Exit code: 0
+Wed Sep  3 08:17:11 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:17:11 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:24:11 UTC 2025: Attempt #69 - Starting upload...
+Wed Sep  3 08:24:14 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:24:11.969[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:24:14 UTC 2025: Exit code: 0
+Wed Sep  3 08:24:14 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:24:14 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:31:14 UTC 2025: Attempt #70 - Starting upload...
+Wed Sep  3 08:31:15 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:31:14.770[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:31:15 UTC 2025: Exit code: 0
+Wed Sep  3 08:31:15 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:31:15 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:38:15 UTC 2025: Attempt #71 - Starting upload...
+Wed Sep  3 08:38:16 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:38:16.040[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:38:16 UTC 2025: Exit code: 0
+Wed Sep  3 08:38:16 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:38:16 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:45:16 UTC 2025: Attempt #72 - Starting upload...
+Wed Sep  3 08:45:18 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:45:17.154[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:45:18 UTC 2025: Exit code: 0
+Wed Sep  3 08:45:18 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:45:18 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:52:18 UTC 2025: Attempt #73 - Starting upload...
+Wed Sep  3 08:52:19 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:52:18.648[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:52:19 UTC 2025: Exit code: 0
+Wed Sep  3 08:52:19 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:52:19 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 08:59:19 UTC 2025: Attempt #74 - Starting upload...
+Wed Sep  3 08:59:20 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 08:59:19.782[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 08:59:20 UTC 2025: Exit code: 0
+Wed Sep  3 08:59:20 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 08:59:20 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:06:20 UTC 2025: Attempt #75 - Starting upload...
+Wed Sep  3 09:06:21 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:06:21.005[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:06:21 UTC 2025: Exit code: 0
+Wed Sep  3 09:06:21 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:06:21 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:13:21 UTC 2025: Attempt #76 - Starting upload...
+Wed Sep  3 09:13:22 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:13:22.098[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:13:22 UTC 2025: Exit code: 0
+Wed Sep  3 09:13:22 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:13:22 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:20:22 UTC 2025: Attempt #77 - Starting upload...
+Wed Sep  3 09:20:24 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:20:23.387[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:20:24 UTC 2025: Exit code: 0
+Wed Sep  3 09:20:24 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:20:24 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:27:24 UTC 2025: Attempt #78 - Starting upload...
+Wed Sep  3 09:27:25 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:27:24.746[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:27:25 UTC 2025: Exit code: 0
+Wed Sep  3 09:27:25 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:27:25 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:34:25 UTC 2025: Attempt #79 - Starting upload...
+Wed Sep  3 09:34:26 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:34:25.966[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:34:26 UTC 2025: Exit code: 0
+Wed Sep  3 09:34:26 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:34:26 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:41:26 UTC 2025: Attempt #80 - Starting upload...
+Wed Sep  3 09:41:28 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:41:27.258[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:41:28 UTC 2025: Exit code: 0
+Wed Sep  3 09:41:28 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:41:28 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:48:28 UTC 2025: Attempt #81 - Starting upload...
+Wed Sep  3 09:48:29 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:48:28.839[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:48:29 UTC 2025: Exit code: 0
+Wed Sep  3 09:48:29 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:48:29 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 09:55:29 UTC 2025: Attempt #82 - Starting upload...
+Wed Sep  3 09:55:30 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 09:55:29.994[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 09:55:30 UTC 2025: Exit code: 0
+Wed Sep  3 09:55:30 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 09:55:30 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:02:30 UTC 2025: Attempt #83 - Starting upload...
+Wed Sep  3 10:02:32 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:02:31.322[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:02:32 UTC 2025: Exit code: 0
+Wed Sep  3 10:02:32 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:02:32 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:09:32 UTC 2025: Attempt #84 - Starting upload...
+Wed Sep  3 10:09:33 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:09:32.550[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:09:33 UTC 2025: Exit code: 0
+Wed Sep  3 10:09:33 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:09:33 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:16:33 UTC 2025: Attempt #85 - Starting upload...
+Wed Sep  3 10:16:35 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:16:33.906[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:16:35 UTC 2025: Exit code: 0
+Wed Sep  3 10:16:35 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:16:35 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:23:35 UTC 2025: Attempt #86 - Starting upload...
+Wed Sep  3 10:23:36 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:23:36.118[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:23:36 UTC 2025: Exit code: 0
+Wed Sep  3 10:23:36 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:23:36 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:30:36 UTC 2025: Attempt #87 - Starting upload...
+Wed Sep  3 10:30:38 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:30:37.266[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:30:38 UTC 2025: Exit code: 0
+Wed Sep  3 10:30:38 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:30:38 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:37:38 UTC 2025: Attempt #88 - Starting upload...
+Wed Sep  3 10:37:40 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:37:39.182[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:37:40 UTC 2025: Exit code: 0
+Wed Sep  3 10:37:40 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:37:40 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:44:40 UTC 2025: Attempt #89 - Starting upload...
+Wed Sep  3 10:44:42 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:44:41.440[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:44:42 UTC 2025: Exit code: 0
+Wed Sep  3 10:44:42 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:44:42 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:51:42 UTC 2025: Attempt #90 - Starting upload...
+Wed Sep  3 10:51:43 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:51:42.520[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:51:43 UTC 2025: Exit code: 0
+Wed Sep  3 10:51:43 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:51:43 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 10:58:43 UTC 2025: Attempt #91 - Starting upload...
+Wed Sep  3 10:58:45 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 10:58:44.248[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 10:58:45 UTC 2025: Exit code: 0
+Wed Sep  3 10:58:45 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 10:58:45 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 11:05:45 UTC 2025: Attempt #92 - Starting upload...
+Wed Sep  3 11:06:02 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:05:45.853[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 11:06:02 UTC 2025: Exit code: 0
+Wed Sep  3 11:06:02 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 11:06:02 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 11:13:02 UTC 2025: Attempt #93 - Starting upload...
+Wed Sep  3 11:13:03 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:13:03.011[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 11:13:03 UTC 2025: Exit code: 0
+Wed Sep  3 11:13:03 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 11:13:03 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 11:20:03 UTC 2025: Attempt #94 - Starting upload...
+Wed Sep  3 11:20:05 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:20:04.435[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 11:20:05 UTC 2025: Exit code: 0
+Wed Sep  3 11:20:05 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 11:20:05 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 11:27:05 UTC 2025: Attempt #95 - Starting upload...
+Wed Sep  3 11:27:06 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:27:05.657[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: 💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Wed Sep  3 11:27:06 UTC 2025: Exit code: 0
+Wed Sep  3 11:27:06 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Wed Sep  3 11:27:06 UTC 2025: Waiting 420 seconds before next attempt...
+Wed Sep  3 11:34:06 UTC 2025: Attempt #96 - Starting upload...
+Wed Sep  3 11:34:10 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:34:06.822[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: ╭───────────────────────────────── ✨ Success ─────────────────────────────────╮
+│ 🎉 Upload Complete                                                           │
+│ Miner 'novus-agent' uploaded successfully!                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Wed Sep  3 11:34:10 UTC 2025: Exit code: 0
+Wed Sep  3 11:34:10 UTC 2025: ✅ Upload successful! Exiting retry loop.
+Wed Sep  3 11:34:10 UTC 2025: Final successful output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-03 11:34:06.822[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+Enter a name for your miner agent: ╭───────────────────────────────── ✨ Success ─────────────────────────────────╮
+│ 🎉 Upload Complete                                                           │
+│ Miner 'novus-agent' uploaded successfully!                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Wed Sep  3 11:34:10 UTC 2025: Upload retry script completed successfully!
+Thu Sep  4 15:54:45 UTC 2025: Starting upload retry script
+Thu Sep  4 15:54:45 UTC 2025: Will retry every 7 minutes until successful
+Thu Sep  4 15:54:45 UTC 2025: Attempt #1 - Starting upload...
+Thu Sep  4 15:54:46 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 15:54:45.963[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 15:54:46 UTC 2025: Exit code: 0
+Thu Sep  4 15:54:46 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 7 minutes...
+Thu Sep  4 15:54:46 UTC 2025: Waiting 420 seconds before next attempt...
+Thu Sep  4 16:46:08 UTC 2025: Starting upload retry script
+Thu Sep  4 16:46:08 UTC 2025: Will retry every 1 minute until successful
+Thu Sep  4 16:46:08 UTC 2025: Attempt #1 - Starting upload...
+Thu Sep  4 16:46:09 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:46:09.272[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:46:09 UTC 2025: Exit code: 0
+Thu Sep  4 16:46:09 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:46:09 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:47:09 UTC 2025: Attempt #2 - Starting upload...
+Thu Sep  4 16:47:11 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:47:10.460[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:47:11 UTC 2025: Exit code: 0
+Thu Sep  4 16:47:11 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:47:11 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:48:11 UTC 2025: Attempt #3 - Starting upload...
+Thu Sep  4 16:48:12 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:48:11.615[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:48:12 UTC 2025: Exit code: 0
+Thu Sep  4 16:48:12 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:48:12 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:49:12 UTC 2025: Attempt #4 - Starting upload...
+Thu Sep  4 16:49:13 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:49:13.028[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:49:13 UTC 2025: Exit code: 0
+Thu Sep  4 16:49:13 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:49:13 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:50:13 UTC 2025: Attempt #5 - Starting upload...
+Thu Sep  4 16:50:15 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:50:14.358[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:50:15 UTC 2025: Exit code: 0
+Thu Sep  4 16:50:15 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:50:15 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:51:15 UTC 2025: Attempt #6 - Starting upload...
+Thu Sep  4 16:51:16 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:51:15.691[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:51:16 UTC 2025: Exit code: 0
+Thu Sep  4 16:51:16 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:51:16 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:52:16 UTC 2025: Attempt #7 - Starting upload...
+Thu Sep  4 16:52:17 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:52:17.282[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:52:17 UTC 2025: Exit code: 0
+Thu Sep  4 16:52:17 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:52:17 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:53:17 UTC 2025: Attempt #8 - Starting upload...
+Thu Sep  4 16:53:19 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:53:18.544[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:53:19 UTC 2025: Exit code: 0
+Thu Sep  4 16:53:19 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:53:19 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:54:19 UTC 2025: Attempt #9 - Starting upload...
+Thu Sep  4 16:54:20 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:54:19.752[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:54:20 UTC 2025: Exit code: 0
+Thu Sep  4 16:54:20 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:54:20 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:55:20 UTC 2025: Attempt #10 - Starting upload...
+Thu Sep  4 16:55:21 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:55:20.965[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:55:21 UTC 2025: Exit code: 0
+Thu Sep  4 16:55:21 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:55:21 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:56:21 UTC 2025: Attempt #11 - Starting upload...
+Thu Sep  4 16:56:22 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:56:22.318[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:56:22 UTC 2025: Exit code: 0
+Thu Sep  4 16:56:22 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:56:22 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:57:22 UTC 2025: Attempt #12 - Starting upload...
+Thu Sep  4 16:57:30 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:57:23.533[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+💥 Upload failed: No stage 1 screeners available for agent evaluation. Please 
+try again later.
+Thu Sep  4 16:57:30 UTC 2025: Exit code: 0
+Thu Sep  4 16:57:30 UTC 2025: ❌ Upload failed or screeners unavailable. Will retry in 1 minute...
+Thu Sep  4 16:57:30 UTC 2025: Waiting 60 seconds before next attempt...
+Thu Sep  4 16:58:30 UTC 2025: Attempt #13 - Starting upload...
+Thu Sep  4 16:58:38 UTC 2025: Upload output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:58:31.072[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+╭───────────────────────────────── ✨ Success ─────────────────────────────────╮
+│ 🎉 Upload Complete                                                           │
+│ Miner 'novus-agent' uploaded successfully!                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Thu Sep  4 16:58:38 UTC 2025: Exit code: 0
+Thu Sep  4 16:58:38 UTC 2025: ✅ Upload successful! Exiting retry loop.
+Thu Sep  4 16:58:38 UTC 2025: Final successful output:
+╭───────────────────────────────── 🚀 Upload ──────────────────────────────────╮
+│  Uploading Agent                                                             │
+│ File: miner/agent.py                                                         │
+│ API: https://platform.ridges.ai                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+[34m[1m2025-09-04 16:58:31.072[0m | [37m[1m[32m[1mINFO[0m[0m | [34m[1mchain_utils[0m:[34m[1mload_hotkey_keypair[0m:[34m[1m54[0m - [37m[1mLoaded keypair from /root/.bittensor/wallets/ridges-submission/hotkeys/default[0m
+╭───────────────────────────────── ✨ Success ─────────────────────────────────╮
+│ 🎉 Upload Complete                                                           │
+│ Miner 'novus-agent' uploaded successfully!                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Thu Sep  4 16:58:38 UTC 2025: Upload retry script completed successfully!

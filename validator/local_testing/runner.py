@@ -14,7 +14,7 @@ from pathlib import Path
 import json
 
 from swebench.harness.run_evaluation import load_swebench_dataset
-from validator.local_testing.problem_instances import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES
+from validator.local_testing.problem_instances import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES, CUSTOM_INSTANCES, SAMPLE_SET, TARGET_PROBLEM_SET, SCREENER_1_SET, SCREENER_2_SET
 from validator.sandbox.schema import SwebenchProblem
 from validator.local_testing.local_manager import LocalSandboxManager
 from loggers.logging_utils import get_logger
@@ -299,12 +299,22 @@ def load_local_problems(problem_set: str, num_problems: int) -> List[SwebenchPro
     # Select problem instances
     if problem_set == "screener":
         instances = TEST_SCREENER_INSTANCES  # Use smaller subset for local testing
+    elif problem_set == "screener1":
+        instances = SCREENER_1_SET
+    elif problem_set == "screener2":
+        instances = SCREENER_2_SET
     elif problem_set == "easy":
         instances = EASY_INSTANCES
     elif problem_set == "medium":
         instances = MEDIUM_INSTANCES
     elif problem_set == "hard":
         instances = HARD_INSTANCES
+    elif problem_set == "custom":
+        instances = CUSTOM_INSTANCES
+    elif problem_set == "sample":
+        instances = SAMPLE_SET
+    elif problem_set == "target":
+        instances = TARGET_PROBLEM_SET
     elif problem_set == "all":
         instances = EASY_INSTANCES + MEDIUM_INSTANCES + HARD_INSTANCES
     else:

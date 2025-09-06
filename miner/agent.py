@@ -1,5 +1,3 @@
-# For the success and development of Ridges 
-
 from __future__ import annotations
 import ast
 import json
@@ -24,9 +22,6 @@ import concurrent.futures
 import threading
 from collections import defaultdict
 
-REJECTION_FEEDBACK_PROMPT = f"ERROR: Reject tool call - this exact tool call with same arguments was already attempted {{consecutive_rejections}} times. You're trying the same tool {{next_tool_name}} with identical arguments. This suggests you may be stuck in a loop. Please try a different approach:\n" \
-    "1. Update the arguments or use a different tool entirely\n" \
-    "2. Think differently, and try to use a different approach to solve the problem\n"
 
 TEST_PATCH_FIND_SYSTEM_PROMPT_TEMPLATE_V0 = textwrap.dedent("""
 # 🧠 Test Function Finder
@@ -35,7 +30,6 @@ You are a code analysis expert tasked with identifying test functions that direc
 **🔍 Step-by-Step Process**
 1. **Problem Analysis** 
    - Parse the problem statement Carefully
-   - Read "Hints" carefully if it exists. It will helpful for solving problems.   
    - Identify affected functions/classes
    - Note expected input/output behaviors
 
@@ -67,6 +61,12 @@ You are a code analysis expert tasked with identifying test functions that direc
 - Never guess parameter names; refer to the tool's input schema
 - If a tool is not available, explicitly state it and proceed to the next step
 
+**🕒 Timeout Optimization Rules**
+- Use `get_timeout_analysis` to monitor performance and prevent timeouts
+- If timeout risk is detected, use `emergency_finish_if_timeout_risk` for graceful termination
+- Focus on efficiency: prefer targeted searches over broad explorations
+- Prioritize high-value operations that directly contribute to the solution
+
 You have access to the following tools:-
 {tools_docs}
 
@@ -80,7 +80,6 @@ You are a code analysis expert tasked with identifying test functions that direc
 **🔍 Step-by-Step Process**
 1. **Problem Analysis** 
    - Parse the problem statement Carefully
-   - Read "Hints" carefully if it exists. It will helpful for solving problems.   
    - Identify affected functions/classes
    - Note expected input/output behaviors
 
@@ -113,6 +112,12 @@ You are a code analysis expert tasked with identifying test functions that direc
 - Always use the exact tool names from the provided documentation (e.g., `search_in_specified_file_v2`, not `search_in_specified_file`)
 - Never guess parameter names; refer to the tool's input schema
 - If a tool is not available, explicitly state it and proceed to the next step
+
+**🕒 Timeout Optimization Rules**
+- Use `get_timeout_analysis` to monitor performance and prevent timeouts
+- If timeout risk is detected, use `emergency_finish_if_timeout_risk` for graceful termination
+- Focus on efficiency: prefer targeted searches over broad explorations
+- Prioritize high-value operations that directly contribute to the solution
 
 **⚡ Multi-Tool Execution Guidance**
 - You CAN and SHOULD call multiple tools in a single step using arrays for `next_tool_name` and `next_tool_args`.
@@ -163,9 +168,9 @@ Your task: Fix all the failures from `run_repo_tests` test.
 3. Use `apply_code_edit_and_run_repo_tests` to fix the code and run the test immediately. You can add debug prints and run tests too. For debug prints: use `print("DEBUG: <message>")` or `print(f"DEBUG: <message> {{<variable>}}")`
 4. Use `apply_code_edit` to fix the code, but not run the test immediately.
 5. Use `run_repo_tests` to run the test again.
+6. You can print variable dumps(str(variable)) for debug purpose and see it in the result of `run_repo_tests`. You can compare the test result which will also give you an idea.
 7. Repeat the process until all the failures are fixed. You will see "Successfully ran all tests." from `run_repo_tests`.
 8. Use `pytest_fix_finish` to finish the task.
-9. For debugging purpose, you can raise an Error or Exception with messages including variable contents and rollback it.
 
 **✅ Validation** 
 - Use `run_repo_tests` to test your fixes. You must fix all the failures.
@@ -340,9 +345,6 @@ PATCH_FIND_INSTANCE_PROMPT_TEMPLATE = textwrap.dedent("""
 Problem Statement:
 {problem_statement}
 
-🔍 Strategic Hints Analysis:
-{hints}
-
 🔎 Codebase Search Results:
 {search_results}
 
@@ -371,15 +373,41 @@ Generate only SINGLE triplet of `next_thought`, `next_tool_name`, `next_tool_arg
 """)
 
 DEFAULT_PROXY_URL = os.getenv("AI_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "2000"))
+DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "2200"))
 MAX_TEST_PATCH_TIMEOUT = int(os.getenv("MAX_STEPS_TEST_PATCH_FIND", "400"))
+
+# 🚀 Adaptive Timeout Configuration
+def get_adaptive_timeout() -> int:
+    """Get adaptive timeout based on performance history and configuration"""
+    base_timeout = DEFAULT_TIMEOUT
+    
+    if TIMEOUT_OPTIMIZATION_CONFIG['AGGRESSIVE_TIMEOUT_REDUCTION']:
+        # Reduce timeout for better SWE-bench performance
+        # Most successful SWE-bench solutions complete within 15-20 minutes
+        adaptive_timeout = min(base_timeout, 1200)  # Cap at 20 minutes
+        logger.info(f"🕒 Using adaptive timeout: {adaptive_timeout}s (reduced from {base_timeout}s)")
+        return adaptive_timeout
+    
+    return base_timeout
+
+def get_adaptive_max_steps() -> int:
+    """Get adaptive max steps to prevent infinite loops"""
+    base_steps = MAX_STEPS
+    
+    if TIMEOUT_OPTIMIZATION_CONFIG['AGGRESSIVE_TIMEOUT_REDUCTION']:
+        # Reduce steps for faster convergence
+        adaptive_steps = min(base_steps, 150)  # Cap at 150 steps
+        logger.info(f"📈 Using adaptive max steps: {adaptive_steps} (reduced from {base_steps})")
+        return adaptive_steps
+    
+    return base_steps
 
 GLM_MODEL_NAME = "zai-org/GLM-4.5-FP8"
 KIMI_MODEL_NAME = "moonshotai/Kimi-K2-Instruct"
 DEEPSEEK_MODEL_NAME = "deepseek-ai/DeepSeek-V3-0324"
 AGENT_MODELS=[GLM_MODEL_NAME, KIMI_MODEL_NAME, DEEPSEEK_MODEL_NAME]
 
-MAX_STEPS = 400
+MAX_STEPS = 300
 MAX_STEPS_TEST_PATCH_FIND = 100
 DEBUG_MODE=True
 
@@ -405,6 +433,20 @@ EXPECTED_ACCURACY_IMPROVEMENT = {
     'intelligent_search': 0.15,  # +15%
     'combined': 0.40,  # +40% (synergistic effect)
     'confidence_threshold': 0.8
+}
+
+# 🕒 Enhanced Timeout and Performance Configuration
+TIMEOUT_OPTIMIZATION_CONFIG = {
+    'AGGRESSIVE_TIMEOUT_REDUCTION': True,
+    'EARLY_TERMINATION_THRESHOLD': 0.8,  # Terminate if 80% of timeout reached without progress
+    'STEP_TIME_WARNING_THRESHOLD': 60,  # Warn if single step takes >60 seconds
+    'INFERENCE_TIME_WARNING_THRESHOLD': 30,  # Warn if inference takes >30 seconds
+    'TOOL_EXECUTION_WARNING_THRESHOLD': 45,  # Warn if tool execution takes >45 seconds
+    'ENABLE_SMART_CHECKPOINTING': True,
+    'CHECKPOINT_INTERVAL_STEPS': 10,  # Checkpoint every 10 steps
+    'MAX_CONSECUTIVE_FAILURES': 5,  # Stop after 5 consecutive failures
+    'ENABLE_TIMEOUT_PREDICTION': True,
+    'TIMEOUT_PREDICTION_LOOKBACK': 5  # Look at last 5 steps for prediction
 }
 
 
@@ -587,6 +629,180 @@ class CircuitBreaker:
         
         if self.failure_count >= self.failure_threshold:
             self.state = 'OPEN'
+
+class TimeoutPredictor:
+    """Predict and prevent timeouts using historical performance data"""
+    
+    def __init__(self, lookback_steps: int = 5):
+        self.step_durations = []
+        self.inference_times = []
+        self.tool_execution_times = []
+        self.lookback_steps = lookback_steps
+        self.consecutive_slow_steps = 0
+        self.last_progress_time = time.time()
+        
+    def record_step_duration(self, duration: float):
+        """Record the duration of a workflow step"""
+        self.step_durations.append(duration)
+        if len(self.step_durations) > self.lookback_steps:
+            self.step_durations.pop(0)
+    
+    def record_inference_time(self, duration: float):
+        """Record inference time"""
+        self.inference_times.append(duration)
+        if len(self.inference_times) > self.lookback_steps:
+            self.inference_times.pop(0)
+    
+    def record_tool_execution_time(self, duration: float):
+        """Record tool execution time"""
+        self.tool_execution_times.append(duration)
+        if len(self.tool_execution_times) > self.lookback_steps:
+            self.tool_execution_times.pop(0)
+    
+    def predict_remaining_time(self, steps_remaining: int) -> float:
+        """Predict time needed for remaining steps"""
+        if not self.step_durations:
+            return steps_remaining * 30  # Conservative 30s per step estimate
+        
+        avg_step_time = sum(self.step_durations) / len(self.step_durations)
+        # Add 20% buffer for variability
+        return steps_remaining * avg_step_time * 1.2
+    
+    def should_terminate_early(self, elapsed_time: float, timeout: float, steps_remaining: int) -> tuple[bool, str]:
+        """Determine if we should terminate early to avoid timeout"""
+        predicted_time = self.predict_remaining_time(steps_remaining)
+        time_remaining = timeout - elapsed_time
+        
+        if predicted_time > time_remaining * 0.9:  # 90% confidence threshold
+            reason = f"Predicted time ({predicted_time:.1f}s) exceeds remaining time ({time_remaining:.1f}s)"
+            return True, reason
+        
+        # Check for performance degradation
+        if len(self.step_durations) >= 3:
+            recent_avg = sum(self.step_durations[-3:]) / 3
+            if recent_avg > 120:  # Steps taking >2 minutes on average
+                self.consecutive_slow_steps += 1
+                if self.consecutive_slow_steps >= 3:
+                    return True, f"Performance degradation detected: {recent_avg:.1f}s avg step time"
+            else:
+                self.consecutive_slow_steps = 0
+        
+        return False, ""
+    
+    def get_performance_summary(self) -> str:
+        """Get performance summary for logging"""
+        if not self.step_durations:
+            return "No performance data available"
+        
+        avg_step = sum(self.step_durations) / len(self.step_durations)
+        avg_inference = sum(self.inference_times) / len(self.inference_times) if self.inference_times else 0
+        avg_tool = sum(self.tool_execution_times) / len(self.tool_execution_times) if self.tool_execution_times else 0
+        
+        return f"Performance: avg_step={avg_step:.1f}s, avg_inference={avg_inference:.1f}s, avg_tool={avg_tool:.1f}s"
+
+class EnhancedTimeoutManager(TimeoutManager):
+    """Enhanced timeout manager with predictive capabilities and detailed logging"""
+    
+    def __init__(self):
+        super().__init__()
+        self.step_start_times = {}
+        self.performance_warnings = []
+        self.timeout_predictor = TimeoutPredictor()
+        self.operation_logs = []
+        
+    def start_step(self, step_id: str, context: str = "") -> str:
+        """Start timing a workflow step with context"""
+        step_key = f"step_{step_id}"
+        self.step_start_times[step_key] = {
+            'start_time': time.time(),
+            'context': context,
+            'step_id': step_id
+        }
+        return step_key
+    
+    def end_step(self, step_key: str) -> float:
+        """End step timing and log performance"""
+        if step_key not in self.step_start_times:
+            return 0.0
+        
+        step_info = self.step_start_times[step_key]
+        duration = time.time() - step_info['start_time']
+        
+        # Record for prediction
+        self.timeout_predictor.record_step_duration(duration)
+        
+        # Log performance warnings
+        if duration > TIMEOUT_OPTIMIZATION_CONFIG['STEP_TIME_WARNING_THRESHOLD']:
+            warning = f"⚠️ SLOW STEP {step_info['step_id']}: {duration:.1f}s - {step_info['context']}"
+            self.performance_warnings.append(warning)
+            logger.warning(warning)
+        
+        # Clean up
+        del self.step_start_times[step_key]
+        
+        return duration
+    
+    def log_inference_time(self, duration: float, model: str, step_id: str):
+        """Log inference time with warnings"""
+        self.timeout_predictor.record_inference_time(duration)
+        
+        if duration > TIMEOUT_OPTIMIZATION_CONFIG['INFERENCE_TIME_WARNING_THRESHOLD']:
+            warning = f"⚠️ SLOW INFERENCE Step {step_id}: {duration:.1f}s with {model}"
+            self.performance_warnings.append(warning)
+            logger.warning(warning)
+        
+        self.operation_logs.append(f"[{time.strftime('%H:%M:%S')}] Inference {step_id}: {duration:.1f}s ({model})")
+    
+    def log_tool_execution(self, tool_name: str, duration: float, step_id: str, success: bool = True):
+        """Log tool execution time with warnings"""
+        self.timeout_predictor.record_tool_execution_time(duration)
+        
+        if duration > TIMEOUT_OPTIMIZATION_CONFIG['TOOL_EXECUTION_WARNING_THRESHOLD']:
+            warning = f"⚠️ SLOW TOOL Step {step_id}: {tool_name} took {duration:.1f}s"
+            self.performance_warnings.append(warning)
+            logger.warning(warning)
+        
+        status = "✅" if success else "❌"
+        self.operation_logs.append(f"[{time.strftime('%H:%M:%S')}] {status} Tool {step_id}: {tool_name} ({duration:.1f}s)")
+    
+    def should_terminate_early(self, elapsed_time: float, timeout: float, steps_remaining: int, current_step: int) -> tuple[bool, str]:
+        """Enhanced early termination logic"""
+        # Use timeout predictor
+        should_terminate, reason = self.timeout_predictor.should_terminate_early(elapsed_time, timeout, steps_remaining)
+        if should_terminate:
+            logger.critical(f"🚨 EARLY TERMINATION TRIGGERED at step {current_step}: {reason}")
+            return True, reason
+        
+        # Check early termination threshold
+        if elapsed_time > timeout * TIMEOUT_OPTIMIZATION_CONFIG['EARLY_TERMINATION_THRESHOLD']:
+            reason = f"Reached {TIMEOUT_OPTIMIZATION_CONFIG['EARLY_TERMINATION_THRESHOLD']*100}% of timeout ({elapsed_time:.1f}s/{timeout}s)"
+            logger.critical(f"🚨 EARLY TERMINATION TRIGGERED at step {current_step}: {reason}")
+            return True, reason
+        
+        return False, ""
+    
+    def get_timeout_analysis_report(self) -> str:
+        """Generate comprehensive timeout analysis report"""
+        report = "🕒 TIMEOUT ANALYSIS REPORT\n" + "="*50 + "\n\n"
+        
+        # Performance warnings
+        if self.performance_warnings:
+            report += "⚠️ Performance Warnings:\n"
+            for warning in self.performance_warnings[-10:]:  # Last 10 warnings
+                report += f"   {warning}\n"
+            report += f"\nTotal warnings: {len(self.performance_warnings)}\n\n"
+        
+        # Performance summary
+        perf_summary = self.timeout_predictor.get_performance_summary()
+        report += f"📊 {perf_summary}\n\n"
+        
+        # Recent operation log
+        if self.operation_logs:
+            report += "📝 Recent Operations (last 10):\n"
+            for log_entry in self.operation_logs[-10:]:
+                report += f"   {log_entry}\n"
+        
+        return report
 
 # Add parallel execution classes
 class PerformanceMonitor:
@@ -893,24 +1109,11 @@ class COT:
         self.thoughts: list[COT.Action] = []
         self.latest_observations_to_keep=latest_observations_to_keep
         
-    def is_valid_tool_call(self, next_tool_name: str|list, next_tool_args: dict|list) -> bool:
-        if len(self.thoughts) == 0:
-            return True
-            
-        last_tool_name = self.thoughts[-1].next_tool_name
-        last_tool_args = self.thoughts[-1].next_tool_args
-        
-        # Exact match check - definitely reject
-        if next_tool_name == last_tool_name and next_tool_args == last_tool_args:
-            return False
-            
-        return True
-
-    def add_action(self, action:COT.Action) -> bool: # don't add if thought is repeated
-        # if not self.is_valid_tool_call(action.next_tool_name, action.next_tool_args):
-        #     return False
+    def add_action(self, action:COT.Action):
+        for thought in self.thoughts:
+            if thought.next_thought==action.next_thought and thought.next_tool_name==action.next_tool_name and thought.next_tool_args==action.next_tool_args:
+                thought.is_deleted=True
         self.thoughts.append(action)
-        return True
         
     def is_thought_repeated(self)->bool:
         # Check if the last thought is the same as the previous thought.
@@ -1105,7 +1308,6 @@ class Utils:
             except Exception as e:
                 logger.info(f"unable to fix manually, trying with llm")
                 fixed_json=Network.fix_json_string_with_llm(json_string)
-                # if fixed_json == ""
                 if fixed_json:
                     return fixed_json
                 else:
@@ -1168,12 +1370,10 @@ class Network:
             logger.error(f"Error fixing json string: {e},trying again..")
             logger.error(f"json string is :{json_string}")
             logger.error(f"LLM response is :{response}")
-            # if "API issues or malformed streaming response." in response:
-            #     return "API issues or malformed streaming response."
-            # attempt+=1
-            # if attempt>5:
-            return None
-            # return cls.fix_json_string_with_llm(json_string,attempt)
+            attempt+=1
+            if attempt>5:
+                return None
+            return cls.fix_json_string_with_llm(json_string,attempt)
             
             
     @classmethod
@@ -1226,10 +1426,8 @@ class Network:
                     logger.error("--------------------------------")
                     logger.error(f"raw_text: {raw_text}")
                     logger.error("--------------------------------")
-                    raise Exception(error_msg)     
-                
-                
-
+                    raise Exception(error_msg)
+                    
                 next_thought, next_tool_name, next_tool_args,error_msg = cls.parse_response(raw_text)
                 if error_msg:
                     raise Exception(error_msg)
@@ -1238,17 +1436,12 @@ class Network:
                 error_body = str(e)
                 logger.error(f"Error: {error_body}")
                 if attempt < max_retries:
-                    # delay = min(base_delay * (2 ** attempt),8)
-                    delay = base_delay
+                    delay = min(base_delay * (2 ** attempt),8)
                     logger.info(error_body)
                     logger.error("--------------------------------")
                     logger.error(f"response: {raw_text}")
                     logger.error("--------------------------------")
                     logger.info(f"[agent] Retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})") 
-
-                    if "This may indicate API issues or malformed streaming response." in raw_text:
-                        raise RuntimeError("API issues or malformed streaming response")
-
                     if "RATE_LIMIT_EXCEEDED" in error_body:
                         error_counter[cls.ErrorType.RATE_LIMIT_EXCEEDED.name]+=1
                     elif "RESERVED_TOKEN_PRESENT" in error_body:
@@ -1419,20 +1612,20 @@ class EnhancedNetwork(Network):
             logger.error(f"Error fixing json string: {e},trying again..")
             logger.error(f"json string is :{json_string}")
             logger.error(f"LLM response is :{response}")
-            # attempt+=1
-            # if attempt>5:
-            return None
-            # return cls.fix_json_string_with_llm(json_string,attempt)
+            attempt+=1
+            if attempt>5:
+                return None
+            return cls.fix_json_string_with_llm(json_string,attempt)
     
     @classmethod
-    def make_request(cls,messages:list,model:str,attempt:int=0, temperature:float=0.0)->str:
+    def make_request(cls,messages:list,model:str,attempt:int=0)->str:
         url = f"{DEFAULT_PROXY_URL.rstrip('/')}/agents/inference"
         
         # Cache miss - make the actual request
         request_data = {
                 "run_id": run_id if run_id else "1",
                 "messages": messages,
-                "temperature": temperature,
+                "temperature": 0.0,
             }
 
         headers = {
@@ -1440,8 +1633,10 @@ class EnhancedNetwork(Network):
         }
         # request_data['model']=AGENT_MODELS[attempt%len(AGENT_MODELS)]
         request_data['model'] = model
+        print(f"[agent] request_data: {request_data}")
         response = requests.post(url, json=request_data, timeout=120, headers=headers)
         print(f"[agent] HTTP {response.status_code} from {url} ({len(response.content)} bytes), using model: {model}")
+        print(f"[agent] run_id: {run_id}, response: {response.content}")
         
         response.raise_for_status()
         response_json = response.json()
@@ -1461,8 +1656,7 @@ class EnhancedNetwork(Network):
     def _request_next_action_with_retry(cls, messages: dict, 
                             model: str,
                             max_retries: int = 5, 
-                            base_delay: float = 1.0,
-                            temperature: float = 0.0) -> str:
+                            base_delay: float = 1.0) -> str:
         
         raw_text='not defined'
         error_counter=cls.get_error_counter()
@@ -1472,7 +1666,7 @@ class EnhancedNetwork(Network):
             try:
                 total_attempts+=1
                 index = AGENT_MODELS.index(model) if model in AGENT_MODELS else -1
-                raw_text=cls.make_request(messages,model=AGENT_MODELS[(index + attempt)%len(AGENT_MODELS)], temperature=temperature)
+                raw_text=cls.make_request(messages,model=AGENT_MODELS[(index + attempt)%len(AGENT_MODELS)])
                 is_valid,error_msg=cls.is_valid_response(raw_text)
                 if not(is_valid):
                     raise Exception(error_msg)
@@ -1485,17 +1679,12 @@ class EnhancedNetwork(Network):
                 error_body = str(e)
                 logger.error(f"Error: {error_body}")
                 if attempt < max_retries:
-                    # delay = min(base_delay * (2 ** attempt),8)
-                    delay = base_delay
+                    delay = min(base_delay * (2 ** attempt),8)
                     logger.info(error_body)
                     logger.error("--------------------------------")
                     logger.error(f"response: {raw_text}")
                     logger.error("--------------------------------")
                     logger.info(f"[agent] Retrying in {delay} seconds... (attempt {attempt + 1}/{max_retries})") 
-
-                    if "This may indicate API issues or malformed streaming response." in raw_text:
-                        raise RuntimeError("API issues or malformed streaming response")
-                        
                     if "RATE_LIMIT_EXCEEDED" in error_body:
                         error_counter[cls.ErrorType.RATE_LIMIT_EXCEEDED.name]+=1
                     elif "RESERVED_TOKEN_PRESENT" in error_body:
@@ -1523,7 +1712,7 @@ class EnhancedNetwork(Network):
         return next_thought, next_tool_name, next_tool_args,raw_text,total_attempts,error_counter,messages
     
     @classmethod
-    def inference(cls, messages: List[Dict[str, Any]], model: str, run_id: str = "1",return_json:bool=False, temperature:float=0.0) -> dict:
+    def inference(cls, messages: List[Dict[str, Any]], model: str, run_id: str = "1",return_json:bool=False) -> dict:
         """Prod inference with caching"""
         # Build request data
         cleaned_msgs: List[Dict[str, Any]] = []
@@ -1543,7 +1732,7 @@ class EnhancedNetwork(Network):
         if not cleaned_msgs:
             raise RuntimeError("No valid messages to send to proxy.")
 
-        next_thought,next_tool_name,next_tool_args,raw_text,total_attempts,error_counter,messages = cls._request_next_action_with_retry(cleaned_msgs, model=model, temperature=temperature)
+        next_thought,next_tool_name,next_tool_args,raw_text,total_attempts,error_counter,messages = cls._request_next_action_with_retry(cleaned_msgs, model=model)
         
         return next_thought,next_tool_name,next_tool_args,raw_text,total_attempts,error_counter,messages
     
@@ -2459,7 +2648,7 @@ class ToolManager:
         self.file_processor = ParallelFileProcessor(self)
         self.dependency_executor = DependencyAwareParallelExecutor(self)
         self.cache = SmartCache(default_ttl=1800)  # 30 minutes for tool results
-        self.timeout_manager = TimeoutManager()
+        self.timeout_manager = EnhancedTimeoutManager()  # Use enhanced timeout manager
         for name, attr in self.__class__.__dict__.items():
             if getattr(attr, "is_tool", False) and name not in ToolManager.TOOL_LIST:
                 if available_tools is not None and name not in available_tools: # if available_tools is provided, only include tools in the list
@@ -2600,91 +2789,6 @@ class ToolManager:
             )
 
         return tool_method
-    
-    
-    def _add_context_to_similar_match(self, original_content: str, formatted_match: str, context_lines: int = 2) -> str:
-        """Add context lines around a similar match for better understanding."""
-        lines = original_content.split('\n')
-        
-        # Extract the actual content from the formatted match (remove the description part)
-        match_lines = formatted_match.split('\n')
-        if len(match_lines) < 2:
-            return formatted_match
-            
-        # Skip the description line (e.g., "Lines 45-47: ..." or "Line 23: ...")
-        actual_content_lines = match_lines[1:]
-        actual_content = '\n'.join(actual_content_lines)
-        
-        # Find where this content appears in the original file
-        best_match_start = -1
-        best_similarity = 0
-        
-        # Search for the best matching position in the original content
-        for i in range(len(lines) - len(actual_content_lines) + 1):
-            candidate_lines = lines[i:i + len(actual_content_lines)]
-            candidate_content = '\n'.join(candidate_lines)
-            
-            import difflib
-            similarity = difflib.SequenceMatcher(None, actual_content.strip(), candidate_content.strip()).ratio()
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match_start = i
-        
-        if best_match_start == -1:
-            return formatted_match  # Fallback to original if can't find position
-        
-        # Calculate context boundaries
-        start_line = max(0, best_match_start - context_lines)
-        end_line = min(len(lines), best_match_start + len(actual_content_lines) + context_lines)
-        
-        # Build the context with line numbers
-        context_lines_list = []
-        for i in range(start_line, end_line):
-            line_num = i + 1
-            prefix = ">>> " if best_match_start <= i < best_match_start + len(actual_content_lines) else "    "
-            context_lines_list.append(f"{prefix}{line_num:4}| {lines[i]}")
-        
-        # Extract original description
-        description = match_lines[0] if match_lines else f"Match found at lines {best_match_start+1}-{best_match_start+len(actual_content_lines)}"
-        
-        return f"{description}\n" + "\n".join(context_lines_list)
-
-
-    def _find_most_similar_content(self, original_content: str, search_string: str, max_results: int = 3) -> list[tuple[float, str]]:
-        """Find the most similar content chunks to the search string."""
-        import difflib
-        
-        # Split content into meaningful chunks
-        lines = original_content.split('\n')
-        
-        # Try different chunk sizes to find the best match
-        chunks = []
-        
-        # Individual lines
-        for i, line in enumerate(lines):
-            if line.strip():  # Skip empty lines
-                chunks.append((f"Line {i+1}: {line.strip()}", line.strip()))
-        
-        # Multi-line chunks (3-5 lines) for better context
-        search_lines = search_string.split('\n')
-        target_chunk_size = max(3, len(search_lines))
-        
-        for i in range(len(lines) - target_chunk_size + 1):
-            chunk_lines = lines[i:i + target_chunk_size]
-            chunk_content = '\n'.join(chunk_lines).strip()
-            if chunk_content:
-                chunks.append((f"Lines {i+1}-{i+target_chunk_size}: ...", chunk_content))
-        
-        # Calculate similarity scores
-        similarities = []
-        for chunk_desc, chunk_content in chunks:
-            ratio = difflib.SequenceMatcher(None, search_string.strip(), chunk_content).ratio()
-            if ratio > 0.3:  # Only include reasonably similar content
-                similarities.append((ratio, chunk_desc, chunk_content))
-        
-        # Sort by similarity and return top results
-        similarities.sort(key=lambda x: x[0], reverse=True)
-        return [(ratio, f"{desc}\n{content}") for ratio, desc, content in similarities[:max_results]]
 
     def _get_file_content(
         self,
@@ -2692,8 +2796,7 @@ class ToolManager:
         search_start_line: int = None,
         search_end_line: int = None,
         search_term: str = None,
-        limit: int = 5000,
-        add_line_numbers: bool = False
+        limit: int = 5000
     ) -> str:
         """
         Retrieve file content, optionally limited to a line range or matching a search term.
@@ -2701,29 +2804,26 @@ class ToolManager:
         - If search_term is provided, ignores line ranges and returns search results.
         - If line range is provided, adjusts to function boundaries.
         - If limit != -1, trims output to n characters.
-        - All content returned includes line numbers at the start of each line.
         """
-
         # If search term is provided, use specialized search
         if search_term:
             logger.debug(f"search_term specified: {search_term}, searching in v2")
             return self.search_in_specified_file_v2(file_path, search_term)
 
         # Adjust start/end lines if they fall within a function
-        if file_path.endswith(".py"):
-            func_ranges = self.get_function_ranges(file_path)
+        func_ranges = self.get_function_ranges(file_path)
 
-            if search_start_line is not None:
-                for start, end, name in func_ranges:
-                    if start <= search_start_line <= end and start < search_start_line:
-                        logger.debug(f"Adjusting start line {search_start_line} to {start} (function {name})")
-                        search_start_line = start
+        if search_start_line is not None:
+            for start, end, name in func_ranges:
+                if start <= search_start_line <= end and start < search_start_line:
+                    logger.debug(f"Adjusting start line {search_start_line} to {start} (function {name})")
+                    search_start_line = start
 
-            if search_end_line is not None:
-                for start, end, name in func_ranges:
-                    if start <= search_end_line <= end and end > search_end_line:
-                        logger.debug(f"Adjusting end line {search_end_line} to {end} (function {name})")
-                        search_end_line = end
+        if search_end_line is not None:
+            for start, end, name in func_ranges:
+                if start <= search_end_line <= end and end > search_end_line:
+                    logger.debug(f"Adjusting end line {search_end_line} to {end} (function {name})")
+                    search_end_line = end
 
         logger.debug(f"search start line: {search_start_line}, search end line: {search_end_line}")
 
@@ -2733,20 +2833,11 @@ class ToolManager:
                 start_idx = max(0, (search_start_line or 1) - 1)
                 end_idx = min(len(lines), search_end_line or len(lines))
                 content = "".join(lines[start_idx:end_idx])
-                if add_line_numbers:
-                    numbered_content = self._add_line_numbers_to_content(content, start_idx + 1)
-                    result = f"Lines {start_idx+1}-{end_idx} of {file_path}:\n{numbered_content}"
-                else:
-                    result = f"Lines {start_idx+1}-{end_idx} of {file_path}:\n{content}"
+                return f"Lines {start_idx+1}-{end_idx} of {file_path}:\n{content}"
             else:
                 content = f.read()
-                if add_line_numbers:
-                    numbered_content = self._add_line_numbers_to_content(content, 1)
-                    result = numbered_content
-                else:
-                    result = content
 
-        return Utils.limit_strings(result, n=limit) if limit != -1 else result
+        return Utils.limit_strings(content, n=limit) if limit != -1 else content
 
     
     @tool
@@ -3641,16 +3732,7 @@ class ToolManager:
                         func_ranges.append((start, end, node.name))
         return func_ranges
 
-    def _add_line_numbers_to_content(self, content: str, start_line: int = 1) -> str:
-        """Helper method to add line numbers to content."""
-        lines = content.splitlines()
-        numbered_lines = []
-        for i, line in enumerate(lines):
-            line_num = start_line + i
-            numbered_lines.append(f"{line_num:6}|{line}")
-        return '\n'.join(numbered_lines)
-
-    def _extract_function_matches(self,file_path: str, search_term: str, *, max_output_lines: int = 1000, add_line_numbers: bool = False) -> str:
+    def _extract_function_matches(self,file_path: str, search_term: str, *, max_output_lines: int = 1000) -> str:
         '''
         Return the source code of any function definitions that contain `search_term`.
         If a match occurs outside of a function, only that line is returned. The final
@@ -3688,17 +3770,10 @@ class ToolManager:
         chunks: list[str] = []
         for start, end, name in functions_to_return:
             func_src = "\n".join(source_lines[start - 1:end])
-            if add_line_numbers:
-                numbered_func_src = self._add_line_numbers_to_content(func_src, start)
-                chunks.append(f"(lines {start}-{end}):\n{numbered_func_src}")
-            else:
-                chunks.append(f"(lines {start}-{end}):\n{func_src}")
+            chunks.append(f"(lines {start}-{end}):\n{func_src}")
 
         for ln in standalone_lines:
-            if add_line_numbers:
-                chunks.append(f"{ln:6}|{source_lines[ln - 1]}")
-            else:
-                chunks.append(f"{ln}:{source_lines[ln - 1]}")
+            chunks.append(f"{ln}:{source_lines[ln - 1]}")
 
         return Utils.limit_strings("\n\n".join(chunks), n=max_output_lines)
 
@@ -3899,8 +3974,6 @@ class ToolManager:
         Output:
             operation status - success confirmation or detailed error with guidance
         '''
-        if search == replace:
-            return "ERROR: search and replace are the same. Please provide a different search and replace."
         if not self.is_solution_approved:
             raise ToolManager.Error(ToolManager.Error.ErrorType.INVALID_TOOL_CALL.name,f"Error: You cannot use this tool before you have approval from user on your proposed solution. Please call get_approval_for_solution tool first with list of proposed solutions.")
         if not os.path.exists(file_path):
@@ -3911,22 +3984,8 @@ class ToolManager:
 
         match original.count(search):
             case 0:
-                # Find most similar content to help LLM correct the search string
-                similar_matches = self._find_most_similar_content(original, search, 1)
-                
-                error_msg = f"Error: search string not found in file {file_path}."
-                
-                if similar_matches:
-                    error_msg += f"\n\nMost similar snippet found (you may need to adjust your search string):"
-                    for i, (ratio, content) in enumerate(similar_matches, 1):
-                        similarity_pct = int(ratio * 100)
-                        # Add context lines around the match for better understanding
-                        content_with_context = self._add_context_to_similar_match(original, content, context_lines=2)
-                        error_msg += f"\n\n{i}. Similarity: {similarity_pct}%\n{content_with_context}"
-                else:
-                    error_msg += " No similar content found. Please check the file content and provide the exact code you want to replace."
-                
-                return error_msg
+                logger.error(f"search string not found in file {file_path}. You need to share the exact code you want to replace.")
+                raise ToolManager.Error(ToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name,f"Error: search string not found in file {file_path}. You need to share the exact code you want to replace.")
             case 1:
                 
                 new_content = original.replace(search, replace)
@@ -4484,6 +4543,36 @@ class ToolManager:
             return f"Error getting performance metrics: {e}"
     
     @tool
+    def get_timeout_analysis(self) -> str:
+        '''
+        Get real-time timeout analysis and performance warnings to help prevent timeouts
+        Arguments:
+            None
+        Output:
+            Current timeout analysis with performance warnings and predictions
+        '''
+        try:
+            return self.timeout_manager.get_timeout_analysis_report()
+        except Exception as e:
+            return f"Error getting timeout analysis: {e}"
+    
+    @tool
+    def emergency_finish_if_timeout_risk(self, reason: str) -> str:
+        '''
+        Emergency finish tool when timeout risk is detected - forces graceful termination
+        Arguments:
+            reason: Reason for emergency finish (e.g., "High timeout risk detected")
+        Output:
+            Emergency finish status
+        '''
+        try:
+            logger.critical(f"🚨 EMERGENCY FINISH TRIGGERED: {reason}")
+            # Force completion with current state
+            return "finish"
+        except Exception as e:
+            return f"Error in emergency finish: {e}"
+    
+    @tool
     def get_smart_performance_analysis(self) -> str:
         '''
         Get intelligent performance analysis with recommendations
@@ -4843,7 +4932,6 @@ class EnhancedToolManager(ToolManager):
         self.previous_failed_tests = []
         self.first_run_repo_tests_call = True
         self.can_finish = False
-        self.pytest_timeout_secs = 60
         self.last_run_repo_tests_failure_output = ""
         self.performance_monitor = PerformanceMonitor()
         self.parallel_executor = ParallelToolExecutor(self)
@@ -4851,7 +4939,7 @@ class EnhancedToolManager(ToolManager):
         self.file_processor = ParallelFileProcessor(self)
         self.dependency_executor = DependencyAwareParallelExecutor(self)
         self.cache = SmartCache(default_ttl=1800)  # 30 minutes for tool results
-        self.timeout_manager = TimeoutManager()
+        self.timeout_manager = EnhancedTimeoutManager()  # Use enhanced timeout manager
         self.should_checkpoint = False
         for name, attr in self.__class__.__dict__.items():
             if getattr(attr, "is_tool", False) and name not in self.TOOL_LIST:
@@ -4891,7 +4979,7 @@ class EnhancedToolManager(ToolManager):
         '''
         if file_path in self.blacklisted_test_files:
             return "You can't use this file, search other files"
-        return self._get_file_content(file_path,search_start_line,search_end_line,search_term,limit=5000,add_line_numbers=True)
+        return self._get_file_content(file_path,search_start_line,search_end_line,search_term,limit=5000)
     
     def save_file(self,file_path: str, content: str)->str:
         '''
@@ -5557,8 +5645,6 @@ class EnhancedToolManager(ToolManager):
             command = PYTEST_COMMAND_TEMPLATE.format(file_paths=file_paths_str)
             result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=60)
             out = (result.stdout or "") + (result.stderr or "")
-            self.logs.append("`run_repo_tests` output: \n" + out)
-
             output, success, failed_count = self.analyze_pytest_output(out)
             if test_runner != 'pytest' and self._check_dependency_errors(output):
                 last_test_runner = test_runner
@@ -5594,9 +5680,6 @@ class EnhancedToolManager(ToolManager):
                         output = out
                     return out, success
 
-            # self.logs.append("`run_repo_tests` output: \n" + out)
-            # output, success, failed_count = self.analyze_pytest_output(out)
-
             if not success:
                 if len(out) > 20000:
                     lines = out.splitlines()
@@ -5613,22 +5696,15 @@ class EnhancedToolManager(ToolManager):
                 if failed_count > 0:
                     debug_prints = self._extract_debug_prints_from_pytest(out)
                     failed_test_names = self._extract_failed_test_names(output)
-                    debug_outputs = "" 
                     if debug_prints and failed_test_names:
-                        debug_outputs += "\n\n=================================== Debug Prints ===================================\n\n"
+                        output += "\n\n=================================== Debug Prints ===================================\n\n"
                         for test_name, prints in debug_prints.items():
                             if test_name in failed_test_names:
                                 if len(prints) > 0:
                                     output += f"\n---------------------------------- Debug prints for {test_name} ----------------------------------\n"
                                     for print in prints:
                                         output += f"\n{print}"
-                        debug_outputs += "\n\n=================================== End of Debug Prints ===================================\n\n"
-                    
-                    # Only add debug_outputs if it has less than 500 lines
-                    if debug_outputs:
-                        debug_outputs_lines = debug_outputs.splitlines()
-                        if len(debug_outputs_lines) < 500:
-                            output += debug_outputs
+                        output += "\n\n=================================== End of Debug Prints ===================================\n\n"
 
                 if self.failed_count > failed_count: # if you've made progress, checkpoint your progress
                     if failed_count > 0:
@@ -5701,7 +5777,7 @@ class EnhancedToolManager(ToolManager):
             raise ToolManager.Error(ToolManager.Error.ErrorType.INVALID_FILE_PATH.name,f"Error: file '{file_path}' is not a python file.")
         if file_path in self.blacklisted_test_files:
             return f"Error: file '{file_path}' is blacklisted, you can't use this file."
-        return self._extract_function_matches(file_path, search_term, add_line_numbers=True)
+        return self._extract_function_matches(file_path, search_term)
 
     @ToolManager.tool
     def search_recurive_in_all_files_in_directory(self, directory_path: str, search_term: str)->str:
@@ -5850,56 +5926,40 @@ class EnhancedToolManager(ToolManager):
         Output:
             operation status - success confirmation or detailed error with guidance
         '''
-        if search == replace:
-            return "ERROR: search and replace are the same. Please provide a different search and replace."
         if self.should_checkpoint:
             return "You must checkpoint your progress using `checkpoint_progress` tool before you can apply any code edits."
         if not self.is_solution_approved:
-            return f"Error: You cannot use this tool before you have approval from user on your proposed solution. Please call get_approval_for_solution tool first with list of proposed solutions."
+            raise ToolManager.Error(ToolManager.Error.ErrorType.INVALID_TOOL_CALL.name,f"Error: You cannot use this tool before you have approval from user on your proposed solution. Please call get_approval_for_solution tool first with list of proposed solutions.")
         if not os.path.exists(file_path):
-            return f"Error: file '{file_path}' does not exist."
+            logger.error(f"file '{file_path}' does not exist.")
+            raise ToolManager.Error(ToolManager.Error.ErrorType.FILE_NOT_FOUND.name,f"Error: file '{file_path}' does not exist.")
         
         if "test" in file_path.lower() and "pytest" not in file_path.lower():
-            return f"Error: You cannot change test files. Try another way."
+            raise ToolManager.Error(ToolManager.Error.ErrorType.INVALID_TOOL_CALL.name,f"Error: You cannot change test files. Try another way.")
         
         original=self._get_file_content(file_path,limit=-1)
 
         match original.count(search):
             case 0:
-                # Find most similar content to help LLM correct the search string
-                similar_matches = self._find_most_similar_content(original, search, 1)
-                
-                error_msg = f"Error: search string not found in file {file_path}."
-                
-                if similar_matches:
-                    error_msg += f"\n\nMost similar snippet found (you may need to adjust your search string):"
-                    for i, (ratio, content) in enumerate(similar_matches, 1):
-                        similarity_pct = int(ratio * 100)
-                        # Add context lines around the match for better understanding
-                        content_with_context = self._add_context_to_similar_match(original, content, context_lines=2)
-                        error_msg += f"\n\n{i}. Similarity: {similarity_pct}%\n{content_with_context}"
-                else:
-                    error_msg += " No similar content found. Please check the file content and provide the exact code you want to replace."
-                
-                return error_msg
+                logger.error(f"search string not found in file {file_path}. You need to share the exact code you want to replace.")
+                raise ToolManager.Error(ToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name,f"Error: search string not found in file {file_path}. You need to share the exact code you want to replace.")
             case 1:
                 
                 new_content = original.replace(search, replace)
                 try:
-                    if file_path.endswith(".py"):
                         is_error,error=self.check_syntax_error(new_content)
-                    else:
-                        is_error = False
-                        error = None
-                    if not is_error:
-                        self.save_file(file_path, new_content)
-                        return "ok, code edit applied successfully"
-                    else:
-                        return f"Error: code edit failed. {error.message}"
-                except Exception as e:
-                    return f"Error: syntax error in file {file_path}. {e.message}"
-            case num_hits:  
-                return f"Error: search string found {num_hits} times in file '{file_path}'.\nPlease reformulate your search and replace to apply only one change."
+                        if not is_error:
+                            self.save_file(file_path, new_content)
+                                
+                            return "ok, code edit applied successfully"
+                        else:
+                            error.message="code edit failed. "+error.message
+                            raise error
+                except ToolManager.Error as e:
+                    raise ToolManager.Error(ToolManager.Error.ErrorType.SYNTAX_ERROR.name,f"Error: syntax error in file {file_path}. {e.message}")
+            case num_hits:
+                logger.error(f"search string found {num_hits} times in file '{file_path}'.\nPlease reformulate your search and replace to apply only one change.")
+                raise ToolManager.Error(ToolManager.Error.ErrorType.MULTIPLE_SEARCH_RESULTS_FOUND.name,f"Error: search string found {num_hits} times in file '{file_path}'.\nPlease reformulate your search and replace to apply only one change.")
 
     @ToolManager.tool
     def filter_test_func_names(self, test_func_names: List[str]):
@@ -5967,12 +6027,11 @@ class EnhancedToolManager(ToolManager):
         Output:
             Combined stdout/stderr (last 200 lines if long).
         '''
-        timeout_secs = self.pytest_timeout_secs
+        timeout_secs = 60
 
         if not self.test_files:
             return "ERROR: No test files found to run."
         if self.failed_test_names is None:
-            is_directory = True
             if self.first_run_repo_tests_call: # try to run tests on directories first
                 self.first_run_repo_tests_call = False
                 test_directories = set()
@@ -5987,13 +6046,10 @@ class EnhancedToolManager(ToolManager):
                         test_directories.add(test_dir)
                 if len(test_directories) > 0:
                     files_to_test = list(test_directories)
-                    is_directory = True
                 else:
                     files_to_test = self.test_files
-                    is_directory = False
             else:
                 files_to_test = self.test_files
-                is_directory = False
 
             print(f"Running tests on {files_to_test}")
             self.logs.append(f"Running tests on {files_to_test}")
@@ -6007,8 +6063,8 @@ class EnhancedToolManager(ToolManager):
             failed_test_names = self._extract_failed_test_names(output, files_to_test)
 
             if len(failed_test_names) > 10: # if there are too many failures in that directory, just try to run the file because there is time limit.
-                print(f"There are too many failures in that {'' if is_directory else 'file'}, running tests on the specified files only.")
-                self.logs.append(f"There are too many failures in that {'' if is_directory else 'file'}, running tests on the specified files only.")
+                print(f"There are too many failures in that directory, running tests on the specified files only.")
+                self.logs.append(f"There are too many failures in that directory, running tests on the specified files only.")
                 output, result = self._run_repo_tests_with_timeout(list(self.test_files), timeout_secs=timeout_secs)
                 if result:
                     self.can_finish = True
@@ -6017,16 +6073,13 @@ class EnhancedToolManager(ToolManager):
                 failed_test_names = self._extract_failed_test_names(output, files_to_test)
 
             if "ERROR: tests timed out." in output:
-                if is_directory == False:
-                    self.pytest_timeout_secs += 30
-                    
-                print(f"Running tests on the full {'' if is_directory else 'file'} timedout, running test on the specified files only.")
-                self.logs.append(f"Running tests on the full {'' if is_directory else 'file'} timedout, running test on the specified files only.")                
+                print(f"Running tests on the full directory timedout, running test on the specified files only.")
+                self.logs.append(f"Running tests on the full directory timedout, running test on the specified files only.")                
                 output, result = self._run_repo_tests_with_timeout(list(self.test_files), timeout_secs=timeout_secs)
                 if result:
                     self.can_finish = True
                     return output
-                    
+
                 failed_test_names = self._extract_failed_test_names(output, files_to_test)
 
             self.failed_test_names = self.previous_failed_tests + failed_test_names
@@ -6314,11 +6367,26 @@ def process_task(input_dict: Dict[str, Any], repod_dir: str = 'repo'):
 
     if task_type == "pytest_not_available":
         return has_dependency_error_task_process(input_dict, repod_dir)
-
-    result = multi_task_process(input_dict, repod_dir)
-    # Check if the result is successful
-    if result['patch'] and len(result['patch']) > 0 and "Error" not in result['logs']:
-        return result
+    
+    # If we reach here, task_type is "pytest_available"
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            result = multi_task_process(input_dict, repod_dir)
+            # Check if the result is successful
+            if result['patch'] and len(result['patch']) > 0 and "Error" not in result['logs']:
+                return result
+        except Exception as e:
+            # Log the error and retry
+            logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
+            if attempt == max_retries - 1:
+                # Last attempt, don't retry
+                break
+            continue
+    
+    # If all retries failed, proceed with unittest
+    logger.info("All pytest attempts failed. Falling back to unittest approach.")
+    return has_dependency_error_task_process(input_dict, repod_dir)
 
 def has_dependency_error_task_process(input_dict: Dict[str, Any], repod_dir: str = 'repo'):
     """Main entry point for task processing and code modification.
@@ -6332,17 +6400,13 @@ def has_dependency_error_task_process(input_dict: Dict[str, Any], repod_dir: str
     """
     # setting environment to include current working directory and lib directory
     
-    test_patch_find_elapsed_time = 0
     workflow_start_time = time.time()
     problem_text = input_dict.get("problem_statement")
-    hints = input_dict.get("Hints")
     if not problem_text:
         raise ValueError("input_dict must contain 'problem_statement'.")
     
-    if hints:
-        logger.info(f"Found hints in problem statement: {hints}")
-        
-    timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
+    timeout = get_adaptive_timeout()  # Use adaptive timeout for better performance
+    logger.info(f"🕒 [DEPENDENCY_ERROR_TASK] Using adaptive timeout: {timeout}s for problem: {problem_text[:100]}...")
     
     logs = []
     _logs_patch_find_workflow = []
@@ -6372,15 +6436,16 @@ def has_dependency_error_task_process(input_dict: Dict[str, Any], repod_dir: str
         os.system("git config --global --add safe.directory /sandbox")
         logger.info(f"current files:{os.listdir()}")
         logger.info(f"About to execute workflow...")
+
+        test_patch_find_elapsed_time = 0
         
         try:
             test_func_names, _logs_patch_find_workflow = execute_test_patch_find_workflow_v0(
                 problem_text,
-                timeout=MAX_TEST_PATCH_TIMEOUT, 
+                timeout=timeout, 
                 run_id_1=input_dict.get("run_id", ""), 
                 instance_id=input_dict.get("instance_id", ""),
-                search_results=search_results,
-                hints=hints  # Pass hints to workflow
+                search_results=search_results
             )
             test_patch_find_elapsed_time = time.time() - workflow_start_time 
             
@@ -6407,7 +6472,7 @@ def has_dependency_error_task_process(input_dict: Dict[str, Any], repod_dir: str
 
         patch_text, _logs_patch_workflow = execute_fix_workflow_v0(
                 problem_text,
-                timeout=timeout - test_patch_find_elapsed_time,
+                timeout=timeout,
                 run_id_1=input_dict.get("run_id", ""),
                 instance_id=input_dict.get("instance_id", ""),
                 test_func_codes=test_func_codes,
@@ -6435,8 +6500,8 @@ def agent_main(input_dict: Dict[str, Any], repo_dir: str = "repo", test_mode: bo
     global DEFAULT_PROXY_URL, REPO_DIR
     repo_dir = os.path.abspath(repo_dir)
     REPO_DIR = repo_dir
-    # if test_mode:
-    #     DEFAULT_PROXY_URL = "http://localhost:8001"
+    if test_mode:
+        DEFAULT_PROXY_URL = "http://localhost:8001"
 
     cwd = os.getcwd()
     if os.path.exists(repo_dir):
@@ -6457,10 +6522,11 @@ def set_env_for_agent():
     if Path(os.getcwd()+"/lib").exists() and os.getcwd()+"/lib" not in os.environ.get("PYTHONPATH",""):
         os.environ["PYTHONPATH"]=os.environ["PYTHONPATH"]+":"+os.getcwd()+"/lib"
 
-def execute_test_patch_find_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "") -> tuple[List[str], List[str]]:
+def execute_test_patch_find_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "", search_results: str = "") -> tuple[List[str], List[str]]:
     global run_id
     run_id=run_id_1
     cot=COT(latest_observations_to_keep=500)
+    print("WORKFLOW_V0")
     tool_manager=ToolManager(
         available_tools=[
             "search_in_all_files_content_v2",
@@ -6481,12 +6547,15 @@ def execute_test_patch_find_workflow_v0(problem_statement: str, *, timeout: int,
             "clear_cache",
             "get_cache_stats",
             "analyze_code_patterns",
-            "get_smart_performance_analysis"
+            "get_smart_performance_analysis",
+            "get_timeout_analysis",
+            "emergency_finish_if_timeout_risk"
         ]
     )
     logger.info(f"[TEST_PATCH_FIND] Starting test patch find agent execution...")
     system_prompt = TEST_PATCH_FIND_SYSTEM_PROMPT_TEMPLATE_V0.format(tools_docs=ToolManager.get_tool_docs(),format_prompt=FORMAT_PROMPT_V0)
-    instance_prompt = PATCH_FIND_INSTANCE_PROMPT_TEMPLATE.format(problem_statement=problem_statement)
+    instance_prompt = PATCH_FIND_INSTANCE_PROMPT_TEMPLATE.format(problem_statement=problem_statement,
+        search_results=search_results)
 
     #QA.SYSTEM_PROMPT=QA.SYSTEM_PROMPT.format(problem_statement=problem_statement)
     
@@ -6518,30 +6587,6 @@ def execute_test_patch_find_workflow_v0(problem_statement: str, *, timeout: int,
         try:
             next_thought, next_tool_name, next_tool_args,raw_text,total_attempts,error_counter,messages = Network.inference(messages, run_id=run_id)
             logs.append(f"next_thought: {next_thought}\n\nnext_tool_name: {next_tool_name}\n\nnext_tool_args: {next_tool_args}\n\n")
-            if not cot.is_valid_tool_call(next_tool_name, next_tool_args):
-                consecutive_rejections += 1
-
-                logger.error(f"[TEST_PATCH_FIND] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                logs.append(f"[TEST_PATCH_FIND] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                
-                # Add feedback to the LLM about the rejected tool call
-                rejection_feedback = REJECTION_FEEDBACK_PROMPT.format(next_tool_name=next_tool_name, next_tool_args=next_tool_args, consecutive_rejections=consecutive_rejections)
-                
-                cot.add_action(COT.Action(
-                    next_thought=next_thought,
-                    next_tool_name=next_tool_name,
-                    next_tool_args=next_tool_args,
-                    observation=rejection_feedback,
-                    is_error=False,
-                    raw_response=raw_text,
-                    total_attempts=total_attempts,
-                    inference_error_counter=error_counter,
-                    request_data=messages
-                ))
-                continue
-            else:
-                # Reset consecutive rejections counter on successful tool call
-                consecutive_rejections = 0
         except Exception as e:
             import traceback  # Ensure traceback is accessible
             error_msg=f"\n\nERROR: {repr(e)} {traceback.format_exc()}"
@@ -6592,7 +6637,6 @@ def execute_test_patch_find_workflow_v0(problem_statement: str, *, timeout: int,
         # This happens if we exit the loop without breaking (reached MAX_STEPS)
         cot.add_action(COT.Action(next_thought="global timeout reached",next_tool_name="",next_tool_args={},observation="",is_error=True))
         logger.info(f"[TEST_PATCH_FIND] [CRITICAL] Workflow completed after reaching MAX_STEPS ({MAX_STEPS_TEST_PATCH_FIND})")
-
 def execute_fix_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "", test_func_codes: List[tuple[str, str, str]] = None, test_file_paths: List[str] = None) -> tuple[str, List[str], List[str]]:
     global run_id
     run_id=run_id_1
@@ -6638,11 +6682,13 @@ def execute_fix_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: s
             "clear_cache",
             "get_cache_stats",
             "analyze_code_patterns",
-            "get_smart_performance_analysis"
+            "get_smart_performance_analysis",
+            "get_timeout_analysis",
+            "emergency_finish_if_timeout_risk"
         ],
         test_files=test_file_paths or []
     )
-    logger.info(f"Startingmain agent execution...")
+    logger.info(f"Starting main agent execution...")
     system_prompt = FIX_SYSTEM_PROMPT_TEMPLATE_V0.format(tools_docs=ToolManager.get_tool_docs(),format_prompt=FORMAT_PROMPT_V0)
     instance_prompt = INSTANCE_PROMPT_TEMPLATE.format(problem_statement=problem_statement, test_func_codes="\n\n".join(test_func_codes))
 
@@ -6655,7 +6701,6 @@ def execute_fix_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: s
     logs.append(f"cwd: {os.getcwd()}")
     logger.info(f"Starting workflow execution with {MAX_STEPS} max steps: timeout: {timeout} seconds : run_id: {run_id}")
 
-    consecutive_rejections = 0
     for step in range(MAX_STEPS):
         logger.info(f"Execution step {step + 1}/{MAX_STEPS}")
         
@@ -6679,31 +6724,6 @@ def execute_fix_workflow_v0(problem_statement: str, *, timeout: int, run_id_1: s
         try:
             next_thought, next_tool_name, next_tool_args,raw_text,total_attempts,error_counter,messages = Network.inference(messages, run_id=run_id)
             logs.append(f"next_thought: {next_thought}\n\nnext_tool_name: {next_tool_name}\n\nnext_tool_args: {next_tool_args}\n\n")
-
-            if not cot.is_valid_tool_call(next_tool_name, next_tool_args):
-                consecutive_rejections += 1
-
-                logger.error(f"[MAIN] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                logs.append(f"[MAIN] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                
-                # Add feedback to the LLM about the rejected tool call
-                rejection_feedback = REJECTION_FEEDBACK_PROMPT.format(next_tool_name=next_tool_name, next_tool_args=next_tool_args, consecutive_rejections=consecutive_rejections)
-                
-                cot.add_action(COT.Action(
-                    next_thought=next_thought,
-                    next_tool_name=next_tool_name,
-                    next_tool_args=next_tool_args,
-                    observation=rejection_feedback,
-                    is_error=False,
-                    raw_response=raw_text,
-                    total_attempts=total_attempts,
-                    inference_error_counter=error_counter,
-                    request_data=messages
-                ))
-                continue
-            else:
-                # Reset consecutive rejections counter on successful tool call
-                consecutive_rejections = 0
         except Exception as e:
             import traceback  # Ensure traceback is accessible
             error_msg=f"\n\nERROR: {repr(e)} {traceback.format_exc()}"
@@ -6806,19 +6826,41 @@ def execute_agent_workflow(
     last_start_over_time = time.time()
     start_over = False
     last_try_summarization = None
-    consecutive_rejections = 0  # Track consecutive tool call rejections
-    temperature = 0.0
+    tool_manager.is_repeating = 0
 
     for step in range(max_steps):
-        logger.info(f"[{log_prefix}] Execution step {step + 1}/{max_steps}, Elapsed time: {time.time() - start_time} seconds, timeout: {timeout} seconds")
-        logs.append(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{log_prefix}] Execution step {step + 1}/{max_steps}, Elapsed time: {time.time() - start_time} seconds, timeout: {timeout} seconds\n\n")
+        # Enhanced step timing and monitoring
+        step_start_time = time.time()
+        elapsed_time = step_start_time - start_time
+        steps_remaining = max_steps - step - 1
+        
+        # Start step timing
+        step_key = tool_manager.timeout_manager.start_step(str(step + 1), f"Workflow step {step + 1}")
+        
+        logger.info(f"[{log_prefix}] 🚀 STEP {step + 1}/{max_steps} | Elapsed: {elapsed_time:.1f}s/{timeout}s | Remaining: {steps_remaining} steps")
+        logs.append(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{log_prefix}] 🚀 STEP {step + 1}/{max_steps} | Elapsed: {elapsed_time:.1f}s/{timeout}s | {tool_manager.timeout_manager.timeout_predictor.get_performance_summary()}\n\n")
+        
+        # Check for early termination
+        should_terminate, termination_reason = tool_manager.timeout_manager.should_terminate_early(
+            elapsed_time, timeout, steps_remaining, step + 1
+        )
+        if should_terminate:
+            logger.critical(f"🚨 [{log_prefix}] EARLY TERMINATION: {termination_reason}")
+            logs.append(f"🚨 [{log_prefix}] EARLY TERMINATION at step {step + 1}: {termination_reason}\n\n")
+            logs.append(tool_manager.timeout_manager.get_timeout_analysis_report())
+            cot.add_action(COT.Action(
+                next_thought=f"Early termination triggered: {termination_reason}",
+                next_tool_name="",
+                next_tool_args={},
+                observation="",
+                is_error=True,
+                inference_error_counter={},
+                request_data=[]
+            ))
+            break
+        
         model_upgrade = False
         start_over = False
-
-        if time.time() - start_time > timeout:
-            tool_manager.checkpoint = tool_manager.get_final_git_patch()
-            break
-
         if time.time() - last_model_upgrade_time > upgrade_model_time: # upgrade the model after this time
             if model_level < len(models) - 1:
                 model_level = model_level + 1
@@ -6830,6 +6872,20 @@ def execute_agent_workflow(
                 model_upgrade = True
             else:
                 logger.info(f"[{log_prefix}] No more models to upgrade")
+
+        if time.time() - last_model_upgrade_time > timeout:
+            logger.info(f"[{log_prefix}] Global timeout reached")
+            logs.append(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [{log_prefix}] Global timeout reached\n\n")
+            cot.add_action(COT.Action(
+                next_thought="global timeout reached",
+                next_tool_name="",
+                next_tool_args={},
+                observation="",
+                is_error=True,
+                inference_error_counter={},
+                request_data=[]
+            ))
+            break
         
         if time.time() - last_start_over_time > start_over_time:
             last_start_over_time = time.time()
@@ -6869,12 +6925,12 @@ def execute_agent_workflow(
             {"role": "user", "content": instance_prompt},
         ]
         
-        # if cot.is_thought_repeated():
-        #     logger.info(f"[MAIN] Thought repeated, adding DO NOT REPEAT TOOL CALLS instruction")
-        #     logs.append(f"[{log_prefix}] Thought repeated, adding DO NOT REPEAT TOOL CALLS instruction\n\n")
-        #     last_thought = cot.thoughts[-1]
-        #     messages.append({"role": "user", "content": DO_NOT_REPEAT_TOOL_CALLS.format(previous_response=f"next_tool_name:{last_thought.next_tool_name}\n next_tool_args:{last_thought.next_tool_args}")})
-
+        if cot.is_thought_repeated():
+            tool_manager.is_repeating += 1
+            logger.info(f"[{log_prefix}] Thought repeated, adding DO NOT REPEAT TOOL CALLS instruction")
+            last_thought = cot.thoughts[-1]
+            messages.append({"role": "user", "content": DO_NOT_REPEAT_TOOL_CALLS.format(previous_response=f"next_tool_name:{last_thought.next_tool_name}\n next_tool_args:{last_thought.next_tool_args}")})
+        
         messages.extend(cot.to_str())            
         messages.append({"role": "system", "content": STOP_INSTRUCTION})
 
@@ -6886,44 +6942,19 @@ def execute_agent_workflow(
 
         try:
             inference_start_time = time.time()
-            next_thought, next_tool_name, next_tool_args, raw_text, total_attempts, error_counter, messages = EnhancedNetwork.inference(messages, model=current_model, run_id=run_id, temperature=temperature)
-            if temperature > 0.0:
-                temperature = 0.0
+            next_thought, next_tool_name, next_tool_args, raw_text, total_attempts, error_counter, messages = EnhancedNetwork.inference(messages, model=current_model, run_id=run_id)
+            inference_duration = time.time() - inference_start_time
             
-            logger.info(f"[{log_prefix}] next_thought: {next_thought}\nnext_tool_name: {next_tool_name}\nnext_tool_args: {next_tool_args}\nmodel: {current_model}\nmodel inference time: {time.time() - inference_start_time} seconds")
-            logs.append(f"[{log_prefix}] next_thought: {next_thought}\n\nnext_tool_name: {next_tool_name}\n\nnext_tool_args: {next_tool_args}\n\nmodel: {current_model}\n\nmodel inference time: {time.time() - inference_start_time} seconds\n\n")
+            # Enhanced inference logging with timeout monitoring
+            tool_manager.timeout_manager.log_inference_time(inference_duration, current_model, str(step + 1))
+            
+            logger.info(f"[{log_prefix}] ✅ INFERENCE COMPLETE Step {step + 1}: {inference_duration:.1f}s with {current_model}")
+            logger.info(f"[{log_prefix}] next_thought: {next_thought}\nnext_tool_name: {next_tool_name}\nnext_tool_args: {next_tool_args}")
+            logs.append(f"[{log_prefix}] ✅ INFERENCE Step {step + 1}: {inference_duration:.1f}s ({current_model})\n")
+            logs.append(f"next_thought: {next_thought}\n\nnext_tool_name: {next_tool_name}\n\nnext_tool_args: {next_tool_args}\n\n")
 
             if next_thought == None or next_tool_name == None or next_tool_args == None:
-                cot.thoughts = cot.thoughts[:-1] # remove last thought
-                continue
-                # raise Exception("next_thought is None or next_tool_name is None or next_tool_args is None")
-                
-            if not cot.is_valid_tool_call(next_tool_name, next_tool_args):
-                consecutive_rejections += 1
-
-                logger.error(f"[{log_prefix}] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                logs.append(f"[{log_prefix}] Thought repeated. Skipping tool call. {consecutive_rejections}\n\n")
-                
-                # Add feedback to the LLM about the rejected tool call
-                rejection_feedback = REJECTION_FEEDBACK_PROMPT.format(next_tool_name=next_tool_name, next_tool_args=next_tool_args, consecutive_rejections=consecutive_rejections)
-                
-                cot.add_action(COT.Action(
-                    next_thought=next_thought,
-                    next_tool_name=next_tool_name,
-                    next_tool_args=next_tool_args,
-                    observation=rejection_feedback,
-                    is_error=False,
-                    raw_response=raw_text,
-                    total_attempts=total_attempts,
-                    inference_error_counter=error_counter,
-                    request_data=messages
-                ))
-                temperature = 0.7
-                continue
-            else:
-                # Reset consecutive rejections counter on successful tool call
-                consecutive_rejections = 0
-            
+                raise Exception("next_thought is None or next_tool_name is None or next_tool_args is None")
         except Exception as e:
             import traceback
             error_msg = f"\n\nERROR: {repr(e)} {traceback.format_exc()}"
@@ -6940,12 +6971,14 @@ def execute_agent_workflow(
                 inference_error_counter=error_counter,
                 request_data=messages
             ))
-            temperature = 0.7
             continue
-
+        
+        logger.info(f"[{log_prefix}] About to execute operation: {next_tool_name}")
+       
         try:
-            # Support multiple tools per step
+            # Support multiple tools per step with enhanced timing
             tool_execution_start_time = time.time()
+            
             if isinstance(next_tool_name, list):
                 tool_names = [str(n).replace('"','').replace("'","") for n in next_tool_name]
                 if isinstance(next_tool_args, list):
@@ -6961,11 +6994,21 @@ def execute_agent_workflow(
                 elif len(tool_args_list) > len(tool_names):
                     tool_args_list = tool_args_list[:len(tool_names)]
                 observations = [None] * len(tool_names)
-                def _run(idx:int, name:str, args:dict):
-                    tool = tool_manager.get_tool(name)
-                    return tool(**args) if args else tool()
                 
-                # Run tools sequentially instead of in parallel
+                def _run(idx:int, name:str, args:dict):
+                    individual_start = time.time()
+                    try:
+                        tool = tool_manager.get_tool(name)
+                        result = tool(**args) if args else tool()
+                        individual_duration = time.time() - individual_start
+                        tool_manager.timeout_manager.log_tool_execution(name, individual_duration, f"{step + 1}.{idx + 1}", True)
+                        return result
+                    except Exception as e:
+                        individual_duration = time.time() - individual_start
+                        tool_manager.timeout_manager.log_tool_execution(name, individual_duration, f"{step + 1}.{idx + 1}", False)
+                        raise e
+                
+                # Run tools sequentially with individual timing
                 for i, tn in enumerate(tool_names):
                     observations[i] = _run(i, tn, tool_args_list[i])
                 next_observation = observations
@@ -6973,13 +7016,24 @@ def execute_agent_workflow(
                 if isinstance(next_tool_name, str) and ('"' in next_tool_name or "'" in next_tool_name):
                     next_tool_name=next_tool_name.replace('"','')
                     next_tool_name=next_tool_name.replace("'","")
-                next_observation = tool_manager.get_tool(next_tool_name)(**next_tool_args) if next_tool_args else tool_manager.get_tool(next_tool_name)()
+                
+                # Single tool execution with timing
+                try:
+                    next_observation = tool_manager.get_tool(next_tool_name)(**next_tool_args) if next_tool_args else tool_manager.get_tool(next_tool_name)()
+                    tool_execution_duration = time.time() - tool_execution_start_time
+                    tool_manager.timeout_manager.log_tool_execution(next_tool_name, tool_execution_duration, str(step + 1), True)
+                except Exception as e:
+                    tool_execution_duration = time.time() - tool_execution_start_time
+                    tool_manager.timeout_manager.log_tool_execution(next_tool_name, tool_execution_duration, str(step + 1), False)
+                    raise e
+            
             # Extract the formatting logic to avoid duplication
+            total_tool_time = time.time() - tool_execution_start_time
             formatted_observation = '\n\n'.join(next_observation) if isinstance(next_observation, list) else str(next_observation)
-            log_message = f"[{log_prefix}] tool execution time: {time.time() - tool_execution_start_time} seconds\n\nnext_observation:\n\n{formatted_observation}"
-
-            logs.append(log_message)
-            logger.info(log_message)
+            
+            logger.info(f"[{log_prefix}] ✅ TOOLS COMPLETE Step {step + 1}: {total_tool_time:.1f}s total")
+            logs.append(f"[{log_prefix}] ✅ TOOLS Step {step + 1}: {total_tool_time:.1f}s\n")
+            logs.append(f"next_observation:\n\n{formatted_observation}\n\n")
             
             cot.add_action(COT.Action(
                 next_thought=next_thought,
@@ -7008,7 +7062,6 @@ def execute_agent_workflow(
                 inference_error_counter=error_counter,
                 request_data=messages
             ))
-            temperature = 0.7
             continue
         except Exception as e:
             import traceback
@@ -7030,7 +7083,6 @@ def execute_agent_workflow(
                 inference_error_counter=error_counter,
                 request_data=messages
             ))
-            temperature = 0.7
             continue
         
         # Check for finish condition
@@ -7040,27 +7092,42 @@ def execute_agent_workflow(
                 next_tool_args = next_tool_args[next_tool_name.index(finish_tool_name)]
             if finish_tool_name == "test_patch_find_finish":
                 if next_observation == "finish":
-                    logger.info(f'[{log_prefix}] [CRITICAL] Workflow called {finish_tool_name} operation with test_func_names: {tool_manager.filtered_test_func_names}')
-                    logs.append(f"[{log_prefix}] Workflow called {finish_tool_name} operation with test_func_names: {tool_manager.filtered_test_func_names}\n\n")
+                    step_duration = tool_manager.timeout_manager.end_step(step_key)
+                    final_elapsed = time.time() - start_time
+                    logger.info(f'[{log_prefix}] 🎉 SUCCESS! Workflow finished in {final_elapsed:.1f}s ({step + 1} steps)')
+                    logs.append(f"🎉 [{log_prefix}] SUCCESS! Completed in {final_elapsed:.1f}s with {step + 1} steps\n")
+                    logs.append(tool_manager.timeout_manager.get_timeout_analysis_report())
                     return tool_manager.filtered_test_func_names, logs, messages
             if finish_tool_name == "finish" or finish_tool_name == "pytest_fix_finish":
                 if next_observation == "finish":
-                    logs.append(f"[{log_prefix}] Workflow called {finish_tool_name} operation\n\n")
-                    logger.info(f'[{log_prefix}] [CRITICAL] Workflow called {finish_tool_name} operation')
+                    step_duration = tool_manager.timeout_manager.end_step(step_key)
+                    final_elapsed = time.time() - start_time
+                    logger.info(f'[{log_prefix}] 🎉 SUCCESS! Workflow finished in {final_elapsed:.1f}s ({step + 1} steps)')
+                    logs.append(f"🎉 [{log_prefix}] SUCCESS! Completed in {final_elapsed:.1f}s with {step + 1} steps\n")
+                    logs.append(tool_manager.timeout_manager.get_timeout_analysis_report())
                     tool_manager.checkpoint = tool_manager.get_final_git_patch()
                     return tool_manager.checkpoint, logs, messages  # For finish tool, we'll handle the patch generation in the caller
         
-        logs.append(f"[{log_prefix}] Completed step {step + 1}, continuing to next step\n\n")
-        logger.info(f"[{log_prefix}] [CRITICAL] Completed step {step + 1}, continuing to next step")
+        # End step timing and log performance
+        step_duration = tool_manager.timeout_manager.end_step(step_key)
+        
+        # Log step completion with performance metrics
+        logger.info(f"[{log_prefix}] ✅ STEP COMPLETE {step + 1}: {step_duration:.1f}s | {tool_manager.timeout_manager.timeout_predictor.get_performance_summary()}")
+        logs.append(f"[{log_prefix}] ✅ STEP COMPLETE {step + 1}: {step_duration:.1f}s\n\n")
+        
+        # Add timeout analysis every 10 steps
+        if TIMEOUT_OPTIMIZATION_CONFIG['ENABLE_SMART_CHECKPOINTING'] and (step + 1) % TIMEOUT_OPTIMIZATION_CONFIG['CHECKPOINT_INTERVAL_STEPS'] == 0:
+            timeout_report = tool_manager.timeout_manager.get_timeout_analysis_report()
+            logger.info(f"[{log_prefix}] 📊 CHECKPOINT {step + 1}: Performance Analysis")
+            logs.append(f"📊 CHECKPOINT {step + 1}:\n{timeout_report}\n\n")
     logger.info(f"[{log_prefix}] [CRITICAL] Workflow completed after reaching MAX_STEPS ({max_steps})")
-    logs.append(f"[{log_prefix}] Workflow completed after reaching MAX_STEPS ({max_steps})\n\n")
     
     return tool_manager.checkpoint, logs, cot.to_str()
 
-def execute_test_patch_find_workflow_v1(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "", search_results: str = "", hints: str = "") -> tuple[List[str], List[str]]:
+def execute_test_patch_find_workflow_v1(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "", search_results: str = "") -> tuple[List[str], List[str]]:
     """Execute the test patch finding workflow."""
     print("WORKFLOW_V1")
-    max_retries = 3
+    max_retries = 5
     current_retries = 0
     while current_retries < max_retries:
         current_retries += 1
@@ -7087,8 +7154,7 @@ def execute_test_patch_find_workflow_v1(problem_statement: str, *, timeout: int,
         # Build instance prompt
         instance_prompt = PATCH_FIND_INSTANCE_PROMPT_TEMPLATE.format(
             problem_statement=problem_statement,
-            search_results=search_results,
-            hints=hints if hints else ""
+            search_results=search_results
         )
         
         test_func_names, logs, messages = execute_agent_workflow(
@@ -7167,7 +7233,6 @@ def execute_fix_workflow_v1(problem_statement: str, *, timeout: int, run_id_1: s
         instance_id=instance_id,
         models=[GLM_MODEL_NAME],
         start_over_time=timeout,
-        upgrade_model_time=timeout,
         # upgrade_model_time=700,
         tool_manager=tool_manager,
         system_prompt=system_prompt,
@@ -7186,32 +7251,24 @@ def execute_fix_workflow_v1(problem_statement: str, *, timeout: int, run_id_1: s
 
 def extract_keywords(problem_text: str) -> str:
     """Extract technical terms, exact patterns, and module paths from problem statement"""
-    
+    # Extract quoted strings (e.g., ".----", "----")
     quoted_patterns = re.findall(r'".*?"|\'.*?\'', problem_text)
-    
     module_paths = re.findall(r'\b\w+\.\w+\.\w+\b', problem_text)
-    
+    # Extract technical terms and digits
     technical_terms = [word for word in problem_text.lower().split() 
                        if word.isalnum() and len(word) > 2]
     
-    
+    # Combine all patterns
     all_keywords = list(set(quoted_patterns + module_paths + technical_terms))
     return '|'.join(all_keywords[:10])  # Use up to 10 most relevant keywords
 
 def multi_task_process(input_dict: Dict[str, Any], repod_dir: str = 'repo'):
-    
-    test_patch_find_elapsed_time = 0
     problem_text = input_dict.get("problem_statement")
-    hints = input_dict.get("Hints")
-    instance_id = input_dict.get("instance_id")
     if not problem_text:
         raise ValueError("input_dict must contain 'problem_statement'.")
     
-    # Extract hints from problem statement
-    if hints:
-        logger.info(f"Found hints in problem statement: {hints}")
-        
-    timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
+    timeout = get_adaptive_timeout()  # Use adaptive timeout for better performance
+    logger.info(f"🕒 [MULTI_TASK] Using adaptive timeout: {timeout}s for problem: {problem_text[:100]}...")
     
     logs = []
     _logs_patch_find_workflow = []
@@ -7244,6 +7301,7 @@ def multi_task_process(input_dict: Dict[str, Any], repod_dir: str = 'repo'):
         logger.info(f"current files:{os.listdir()}")
         logger.info(f"About to execute workflow...")
 
+        test_patch_find_elapsed_time = 0
 
         try:
             start_time = time.time()
@@ -7252,8 +7310,7 @@ def multi_task_process(input_dict: Dict[str, Any], repod_dir: str = 'repo'):
                 timeout=MAX_TEST_PATCH_TIMEOUT, 
                 run_id_1=input_dict.get("run_id", ""), 
                 instance_id=input_dict.get("instance_id", ""),
-                search_results=search_results ,
-                hints=hints
+                search_results=search_results 
             )
             test_patch_find_elapsed_time = time.time() - start_time
         except Exception as e:

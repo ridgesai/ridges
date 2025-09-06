@@ -47,7 +47,7 @@ The `test-agent` command supports several options to customize your testing:
 | --- | --- | --- |
 | `--agent-file` | Specify which agent file to test | `./ridges.py test-agent --agent-file miner/agent.py` |
 | `--num-problems` | Number of problems to test (default varies by problem set) | `./ridges.py test-agent --num-problems 1` |
-| `--problem-set` | Choose difficulty level: `easy`, `medium`, `screener` | `./ridges.py test-agent --problem-set medium` |
+| `--problem-set` | Choose difficulty level: `easy`, `medium`, `screener`, `hard`, `custom`, `sample`, `target` | `./ridges.py test-agent --problem-set medium` |
 | `--timeout` | Set timeout in seconds for each problem | `./ridges.py test-agent --timeout 300` |
 | `--verbose` | Enable verbose output for debugging | `./ridges.py test-agent --verbose` |
 
@@ -68,6 +68,10 @@ Test different difficulty levels:
 ./ridges.py test-agent --problem-set medium
 ./ridges.py test-agent --problem-set easy
 ./ridges.py test-agent --problem-set screener
+./ridges.py test-agent --problem-set hard
+./ridges.py test-agent --problem-set custom
+./ridges.py test-agent --problem-set sample
+./ridges.py test-agent --problem-set target
 ```
 
 Test with different timeout settings:

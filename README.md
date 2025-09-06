@@ -95,6 +95,8 @@ Each problem contains:
    ./ridges.py test-agent --problem-set easy
    ./ridges.py test-agent --problem-set medium
    ./ridges.py test-agent --problem-set screener
+   ./ridges.py test-agent --problem-set hard
+   ./ridges.py test-agent --problem-set custom
    
    # Test with custom timeout
    ./ridges.py test-agent --timeout 300
