@@ -1,12 +1,15 @@
 import asyncio
 import docker
 import subprocess
+import shutil
+from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv("validator/.env")
 
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
+from validator.sandbox.constants import REPOS_BASE_DIR
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -76,6 +79,45 @@ def cleanup_all_docker_containers():
         logger.error("⚠️  Make sure Docker is running!")
     except Exception as e:
         logger.error(f"❌ Unexpected error during Docker cleanup: {e}")
+    
+    # Clean up Docker system (logs, build cache, unused images, etc.)
+    try:
+        logger.info("🧹 Running Docker system cleanup to remove logs and cache...")
+        
+        # First, prune the system to remove unused containers, networks, images, and build cache
+        result = subprocess.run(
+            ["docker", "system", "prune", "-a", "-f", "--volumes"],
+            capture_output=True, text=True, timeout=300
+        )
+        if result.returncode == 0:
+            logger.info("✅ Docker system prune completed successfully")
+            if result.stdout:
+                logger.info(f"Docker system prune output: {result.stdout.strip()}")
+        else:
+            logger.warning(f"⚠️  Docker system prune had issues: {result.stderr}")
+        
+        # Also specifically prune builder cache which can be huge
+        subprocess.run(
+            ["docker", "builder", "prune", "-a", "-f"],
+            capture_output=True, text=True, timeout=60
+        )
+        logger.info("✅ Docker builder cache pruned")
+        
+    except subprocess.TimeoutExpired:
+        logger.warning("⚠️  Docker system cleanup timed out - continuing anyway")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to run Docker system cleanup: {e}")
+    
+    # Clean up repos directory
+    try:
+        if REPOS_BASE_DIR.exists():
+            logger.info(f"🗑️  Wiping repos directory: {REPOS_BASE_DIR}")
+            shutil.rmtree(REPOS_BASE_DIR, ignore_errors=True)
+            logger.info("✅ Repos directory cleaned up successfully")
+        else:
+            logger.info("📁 Repos directory doesn't exist, nothing to clean")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to clean up repos directory: {e}")
 
 async def main():
     """
