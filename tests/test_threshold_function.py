@@ -177,6 +177,8 @@ class TestThresholdFunction:
             score=0.85,
             set_id=2
         )
+
+        # :)
         
         # Drop and recreate the materialized view to pick up schema changes
         await db_connection.execute("DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE")
