@@ -236,8 +236,8 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     """, max_set_id)
     epoch_0_time = epoch_0_result['epoch_0_time'] if epoch_0_result else None
 
-    # Epoch length in minutes (based on weight setting loop interval from main.py)
-    epoch_length_minutes = 30
+    # Epoch length in minutes 
+    epoch_length_minutes = 72
 
     threshold_function = f"{floor:.6f} + ({t0:.6f} - {floor:.6f}) * Math.exp(-{k_effective:.6f} * x)"
 
