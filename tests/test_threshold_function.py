@@ -157,7 +157,7 @@ class TestThresholdFunction:
         assert result["current_top_score"] == 0.0
         assert result["current_top_approved_score"] == 0.0
         assert result["epoch_0_time"] is None  # No agents means no epoch 0
-        assert result["epoch_length_minutes"] == 30
+        assert result["epoch_length_minutes"] == 72
         
         # Threshold function should still be generated with default values
         assert "Math.exp" in result["threshold_function"]
@@ -177,6 +177,8 @@ class TestThresholdFunction:
             score=0.85,
             set_id=2
         )
+
+        # :)
         
         # Drop and recreate the materialized view to pick up schema changes
         await db_connection.execute("DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE")
@@ -208,7 +210,7 @@ class TestThresholdFunction:
         assert result["current_top_score"] == 0.85
         assert result["current_top_approved_score"] == 0.85
         assert result["epoch_0_time"] is not None  # Should have epoch 0 time from approval
-        assert result["epoch_length_minutes"] == 30
+        assert result["epoch_length_minutes"] == 72
         
         # Verify threshold function format
         threshold_func = result["threshold_function"]
@@ -267,7 +269,7 @@ class TestThresholdFunction:
         
         # Should have epoch 0 time from the top approved agent
         assert result["epoch_0_time"] is not None
-        assert result["epoch_length_minutes"] == 30
+        assert result["epoch_length_minutes"] == 72
     
     @pytest.mark.asyncio
     async def test_threshold_function_with_history(self, async_client: AsyncClient, db_connection: asyncpg.Connection):
@@ -316,7 +318,7 @@ class TestThresholdFunction:
         assert result["current_top_score"] == 0.85
         assert result["current_top_approved_score"] == 0.85
         assert result["epoch_0_time"] is not None
-        assert result["epoch_length_minutes"] == 30
+        assert result["epoch_length_minutes"] == 72
         
         # With history, the threshold function should incorporate improvement
         threshold_func = result["threshold_function"]
