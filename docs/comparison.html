@@ -1,0 +1,108 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Agent Comparison</title>
+<style>
+  body { font-family: sans-serif; margin: 2em; }
+  h1, h2, h3 { color: #333; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 2em; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
+  th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+  th { background-color: #f2f2f2; font-weight: bold; }
+  tr:nth-child(even) { background-color: #f9f9f9; }
+  .present { color: #28a745; text-align: center; font-size: 1.5em; font-weight: bold; }
+  .absent { color: #dc3545; text-align: center; font-size: 1.5em; font-weight: bold; }
+  .collapsible { background-color: #f2f2f2; cursor: pointer; padding: 12px; width: 100%; border: none; text-align: left; outline: none; font-size: 1.1em; margin-top: 1em; border-radius: 5px; }
+  .collapsible:hover { background-color: #e2e2e2; }
+  .content { padding: 0 18px; display: none; overflow: hidden; background-color: #fff; border: 1px solid #ddd; border-top: none; border-radius: 0 0 5px 5px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; background-color: #fdf6e3; color: #657b83; padding: 1em; border-radius: 5px; border: 1px solid #eee; }
+  .summary { background-color: #e7f3fe; border-left: 6px solid #2196F3; padding: 10px 20px; margin-bottom: 2em; }
+</style>
+</head>
+<body>
+
+<h1>SWE-Agent Comparison Report</h1>
+
+<div class="summary">
+  <h2>Overall Summary</h2>
+  <p>This report provides a detailed comparison of four Python-based SWE agents: <code>codex_80.py</code>, <code>cyan_76.py</code>, <code>test3_86.py</code>, and <code>yes_82.py</code>. The analysis covers their main architecture, toolsets, and system prompts.</p>
+  <p>The agents represent different evolutionary stages, with <code>cyan_76.py</code> being the most basic and <code>test3_86.py</code> and <code>yes_82.py</code> being the most advanced, featuring enhanced robustness and error handling.</p>
+</div>
+
+<h2>Main Architecture Comparison</h2>
+<p>All four agents are built upon a shared core architecture but exhibit significant differences in their implementation of advanced features. The table below highlights these architectural distinctions.</p>
+
+<h3>Architectural Features</h3>
+<table>
+  <tr>
+    <th>Feature</th>
+    <th>codex_80.py</th>
+    <th>cyan_76.py</th>
+    <th>test3_86.py</th>
+    <th>yes_82.py</th>
+  </tr>
+  <tr>
+    <td>Parallel Execution</td>
+    <td class='present'>✅</td>
+    <td class='absent'>❌</td>
+    <td class='present'>✅</td>
+    <td class='present'>✅</td>
+  </tr>
+  <tr>
+    <td>Performance Monitoring</td>
+    <td class='present'>✅</td>
+    <td class='absent'>❌</td>
+    <td class='present'>✅</td>
+    <td class='present'>✅</td>
+  </tr>
+  <tr>
+    <td>Timeout Management</td>
+    <td class='absent'>❌</td>
+    <td class='absent'>❌</td>
+    <td class='present'>✅</td>
+    <td class='present'>✅</td>
+  </tr>
+  <tr>
+    <td>Circuit Breaker</td>
+    <td class='absent'>❌</td>
+    <td class='absent'>❌</td>
+    <td class='present'>✅</td>
+    <td class='present'>✅</td>
+  </tr>
+</table>
+
+<h2>Tool Comparison</h2>
+<p>The agents' capabilities are defined by the tools they can use. The following table provides a comprehensive comparison of the available tools across the four agents.</p>
+<table>
+  <tr>
+    <th>Tool Name</th>
+    <th>codex_80.py</th>
+    <th>cyan_76.py</th>
+    <th>test3_86.py</th>
+    <th>yes_82.py</th>
+  </tr>
+<tr><td><code>analyze_code_patterns</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>analyze_dependencies</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>analyze_git_history</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>analyze_git_operations</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>analyze_test_coverage</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>apply_code_edit</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>check_git_workflow_issues</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>clear_cache</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>compare_solutions</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>compile_repo</code></td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>create_new_file</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>detect_code_smells</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>enhanced_problem_analysis</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>execute_intelligent_search</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>execute_self_consistency_analysis</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>filter_test_func_names</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>finish</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_approval_for_solution</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_cache_stats</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_code_quality_metrics</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_enhanced_test_coverage</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="absent">❌</td></tr><tr><td><code>get_file_content</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_function_body</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_git_branches</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_git_diff</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_git_log</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_git_status</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_performance_metrics</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_smart_performance_analysis</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>get_system_health</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>grep_replace_once</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>list_python_files</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>llm_complete</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>parallel_codebase_analysis</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>parallel_file_operations</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>parallel_test_discovery</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>propose_solutions</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>run_code</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>run_repo_tests</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>search_git_related_code</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>search_in_all_files_content</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>search_in_specified_file_v2</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>search_recurive_in_all_files_in_directory</code></td><td class="present">✅</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>search_recursive_in_all_files_in_directory</code></td><td class="absent">❌</td><td class="present">✅</td><td class="absent">❌</td><td class="absent">❌</td></tr><tr><td><code>sort_test_func_names</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>start_over</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>structured_llm</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>test_git_operation</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>test_patch_find_finish</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>validate_git_solution</code></td><td class="absent">❌</td><td class="absent">❌</td><td class="present">✅</td><td class="present">✅</td></tr><tr><td><code>validate_solution</code></td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td><td class="present">✅</td></tr>
+</table>
+
+<h2>System Prompt Comparison</h2>
+<p>The behavior of the agents is heavily influenced by their system prompts. This section allows for a detailed comparison of the different prompt templates used by the agents.</p>
+<button class="collapsible">FIX_SYSTEM_PROMPT_TEMPLATE_V0</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">INSTANCE_PROMPT_TEMPLATE</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">PATCH_FIND_INSTANCE_PROMPT_TEMPLATE</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">PYTEXT_FIX_INSTANCE_PROMPT_TEMPLATE_WITHOUT_PROBLEM_STATEMENT</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">PYTEXT_FIX_INSTANCE_PROMPT_TEMPLATE_WITH_PROBLEM_STATEMENT</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">TEST_PATCH_FIND_SYSTEM_PROMPT_TEMPLATE_V0</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div><button class="collapsible">TEST_PATCH_FIND_SYSTEM_PROMPT_TEMPLATE_V1</button><div class="content"><h3>codex_80.py</h3><pre><code><Could not parse prompt></code></pre><h3>cyan_76.py</h3><pre><code><Could not parse prompt></code></pre><h3>test3_86.py</h3><pre><code><Could not parse prompt></code></pre><h3>yes_82.py</h3><pre><code><Could not parse prompt></code></pre></div>
+<script>
+var coll = document.getElementsByClassName("collapsible");
+var i;
+
+for (i = 0; i < coll.length; i++) {
+  coll[i].addEventListener("click", function() {
+    this.classList.toggle("active");
+    var content = this.nextElementSibling;
+    if (content.style.display === "block") {
+      content.style.display = "none";
+    } else {
+      content.style.display = "block";
+    }
+  });
+}
+</script>
+
+</body>
+</html>
