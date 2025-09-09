@@ -181,17 +181,16 @@ SAMPLE_SET = [
 ]
 
 SCREENER_1_SET = [
-    "django__django-12209",
-    "django__django-14315",
-    "sympy__sympy-20916",
-    "pytest-dev__pytest-5809",
-    "astropy__astropy-7166",
-    "django__django-14752",
-    "django__django-14373",
-    "sympy__sympy-15875",
-    "pallets__flask-5014",
-    "django__django-13410",
-    "sympy__sympy-16886",
+    "django__django-15277",
+    "astropy__astropy-14309",
+    "django__django-16116",
+    "pylint-dev__pylint-7277",
+    "django__django-15741",
+    "django__django-15930",
+    "django__django-14765",
+    "django__django-13551",
+    "django__django-14493",
+    "django__django-15315"
 ]
 
 SCREENER_2_SET = [

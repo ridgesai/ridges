@@ -2072,6 +2072,7 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3e/82/13e2ca5e43f2c7219fafa069341d52ee1867c2d929a019574ec90f6d0114/py_bip39_bindings-0.2.0-cp313-cp313t-musllinux_1_2_armv7l.whl", hash = "sha256:e6064feb105ed5c7278d19e8c4e371710ce56adcdd48e0c5e6b77f9b005201b9", size = 699630, upload-time = "2024-12-09T15:04:51.103Z" },
     { url = "https://files.pythonhosted.org/packages/78/d7/f4c33dbc311cd07946994481dea7f09e417a29dc46e3c6de81d367a87194/py_bip39_bindings-0.2.0-cp313-cp313t-musllinux_1_2_i686.whl", hash = "sha256:0cb7a39bd65455c4cc3feb3f8d5766644410f32ac137aeea88b119c6ebe2d58b", size = 627655, upload-time = "2024-12-09T15:05:03.212Z" },
     { url = "https://files.pythonhosted.org/packages/31/68/7dbb7f20d64222bd64e56d976e30614fb10d8b9dd60547028cf12b7d23a4/py_bip39_bindings-0.2.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:58743e95cedee157a545d060ee401639308f995badb91477d195f1d571664b65", size = 603340, upload-time = "2024-12-09T15:05:17.062Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/ba/428b20399740ee40756df785fd0412b8afff35eaf49a9d93fff5d115e931/py_bip39_bindings-0.2.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:ade3ed8be37dcce01674e7f1974e4b53340abd423c940781898d33b096189581", size = 365266, upload-time = "2025-09-02T14:03:38.92Z" },
 ]
 
 [[package]]
@@ -2898,7 +2899,7 @@ wheels = [
 
 [[package]]
 name = "swebench"
-version = "4.0.4"
+version = "4.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -2916,9 +2917,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "unidiff" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/16/bf33207887fef8f0ff02ad2e48435403dc2f9eb18b348a22a824b1a8c96d/swebench-4.0.4.tar.gz", hash = "sha256:a9a91ae167d01891e2cac96c54d2f33002f5f1b2649bc974bb625e76a5176193", size = 132363, upload-time = "2025-07-17T03:57:59.631Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f4/f4/6e687aaad558702eab95defde9180ac00ed84caa27f077f3c3ec3a99c730/swebench-4.0.3.tar.gz", hash = "sha256:73947dcb01dd500c322cc56561e13602a37df740fbb7e86e66474216b57f606d", size = 130156, upload-time = "2025-05-07T00:43:12.511Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/65/bf9f45764317150c92fe9a0c37a0c4556c13eecc8878d4f92ffb3d31c861/swebench-4.0.4-py3-none-any.whl", hash = "sha256:4e315ac60ff7b5b7186592b84d22df9befd898bba296a6b9665fdb3487fcd8f7", size = 155281, upload-time = "2025-07-17T03:57:52.763Z" },
+    { url = "https://files.pythonhosted.org/packages/07/1e/4dc8776598c875f03329df3f2d80ef1839811b8937baded434d55d5fd5e5/swebench-4.0.3-py3-none-any.whl", hash = "sha256:30b20a1cca4a287b7b120e5c9d19b1642d8f2118e04ff0d680e9113f666f3cb5", size = 154199, upload-time = "2025-05-07T00:43:11.189Z" },
 ]
 
 [[package]]
