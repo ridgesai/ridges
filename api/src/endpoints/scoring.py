@@ -82,38 +82,30 @@ async def weights() -> Dict[str, float]:
     """
     DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
 
-    async with get_db_connection() as conn:
-        approved_agent_hotkeys_data = await conn.fetch("""
-            SELECT DISTINCT miner_hotkey FROM approved_version_ids
-            LEFT JOIN miner_agents ma on ma.version_id = approved_version_ids.version_id
-            WHERE ma.miner_hotkey NOT LIKE 'open-%' AND approved_version_ids.approved_at <= NOW()
-        """)
-        approved_agent_hotkeys = [row["miner_hotkey"] for row in approved_agent_hotkeys_data]
+    treasury_hotkey = await get_treasury_hotkey()
 
-        treasury_hotkeys_data = await conn.fetch("""
-            SELECT hotkey FROM treasury_wallets WHERE active = TRUE
-        """)
-        treasury_hotkeys = [row["hotkey"] for row in treasury_hotkeys_data]
-
-        dust_hotkeys = approved_agent_hotkeys + treasury_hotkeys
-
-    weights = {hotkey: DUST_WEIGHT for hotkey in dust_hotkeys} 
+    weights = {
+        treasury_hotkey: DUST_WEIGHT
+    }
 
     top_agent = await get_top_agent()
 
+    # Disburse to treasury to manually send to whoever should be top agent in the event of an error
     if top_agent is None:
+        weights[treasury_hotkey] = 1.0
+
         return weights
 
-    weight_left = 1.0 - DUST_WEIGHT * len(approved_agent_hotkeys)
+    weight_left = 1.0 - DUST_WEIGHT
     if top_agent.miner_hotkey.startswith("open-"):
-        weights[await get_treasury_hotkey()] = weight_left
+        weights[treasury_hotkey] = weight_left
     else:
         if check_if_hotkey_is_registered(top_agent.miner_hotkey):
             weights[top_agent.miner_hotkey] = weight_left
         else:
             logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet")
             await notify_unregistered_top_miner(top_agent.miner_hotkey)
-            weights[await get_treasury_hotkey()] = weight_left
+            weights[treasury_hotkey] = 1.0
 
     return weights
 
