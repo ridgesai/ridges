@@ -154,7 +154,7 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     except Exception:
         logger.error("Error fetching threshold config values from the database. Using default values.")
         INNOVATION_WEIGHT = 0.25
-        DECAY_PER_EPOCH = 0.2
+        DECAY_PER_EPOCH = 0.05
         FRONTIER_WEIGHT = 0.84
         IMPROVEMENT_WEIGHT = 0.30
 
