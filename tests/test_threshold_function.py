@@ -123,7 +123,7 @@ async def setup_database_schema(conn: asyncpg.Connection):
     await conn.execute("""
         INSERT INTO threshold_config (key, value) VALUES 
         ('innovation_weight', 0.25),
-        ('decay_per_epoch', 0.05),
+        ('decay_per_epoch', 0.2),
         ('frontier_scale', 0.84),
         ('improvement_weight', 0.30)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
