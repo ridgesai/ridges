@@ -1,3 +1,5 @@
+# To verify whether a dependancy is valid/not conflicting, add it here
+# And then cd to validator/sandbox and run docker build -t sandbox-runner .
 numpy>=1.26.0
 aiohttp>=3.9.0
 pandas>=2.1.0
@@ -41,3 +43,4 @@ platformdirs>=2.2.0
 astroid>=3.0.0a8,<=3.1.0-dev0
 appdirs==1.4.4
 autogen-agentchat==0.7.4
+autogen-ext[openai]

@@ -9,7 +9,7 @@ load_dotenv("validator/.env")
 
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
-from validator.sandbox.constants import REPOS_BASE_DIR
+from validator.sandbox.constants import REPOS_BASE_DIR, REPO_CACHE_DIR
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -108,16 +108,22 @@ def cleanup_all_docker_containers():
     except Exception as e:
         logger.warning(f"⚠️  Failed to run Docker system cleanup: {e}")
     
-    # Clean up repos directory
+    # Clean up repos and cache directories
     try:
-        if REPOS_BASE_DIR.exists():
-            logger.info(f"🗑️  Wiping repos directory: {REPOS_BASE_DIR}")
-            shutil.rmtree(REPOS_BASE_DIR, ignore_errors=True)
-            logger.info("✅ Repos directory cleaned up successfully")
-        else:
-            logger.info("📁 Repos directory doesn't exist, nothing to clean")
+        directories_to_clean = [
+            (REPOS_BASE_DIR, "repos directory"),
+            (REPO_CACHE_DIR, "repo cache directory")
+        ]
+        
+        for directory, description in directories_to_clean:
+            if directory.exists():
+                logger.info(f"🗑️  Wiping {description}: {directory}")
+                shutil.rmtree(directory, ignore_errors=True)
+                logger.info(f"✅ {description.capitalize()} cleaned up successfully")
+            else:
+                logger.info(f"📁 {description.capitalize()} doesn't exist, nothing to clean")
     except Exception as e:
-        logger.warning(f"⚠️  Failed to clean up repos directory: {e}")
+        logger.warning(f"⚠️  Failed to clean up directories: {e}")
 
 async def main():
     """
