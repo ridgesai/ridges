@@ -13,7 +13,7 @@ from ddtrace import tracer
 from docker.errors import ImageNotFound, APIError
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
-from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, run_instance
+from swebench.harness.run_evaluation import make_test_spec, run_instance
 
 from validator.sandbox.clone_repo import clone_repo
 from validator.sandbox.constants import (
@@ -240,14 +240,10 @@ class Sandbox:
         shutil.copytree(cache_path, repo_path)
 
         try:
-            from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid at module load
+            from validator.tasks.run_evaluation import load_swebench_problems
 
             instance_id = self.evaluation_run.swebench_instance_id
-            instance = load_swebench_dataset(
-                "SWE-bench/SWE-bench_Verified",
-                "test",
-                [instance_id],
-            )[0]
+            instance = load_swebench_problems()[instance_id]
 
             test_patch = instance.get("test_patch")
             if test_patch:
@@ -461,17 +457,19 @@ class Sandbox:
     @tracer.wrap(resource="run-swebench-evaluation")
     def _run_swebench_evaluation(self) -> None:
         """Run SWE-bench evaluation (blocking operation)"""
+        from validator.tasks.run_evaluation import load_swebench_problems
+        from swebench.harness.constants import SWEbenchInstance
         instance_id = self.evaluation_run.swebench_instance_id
         
         try:
             # Load instance and create prediction
-            instance = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", [instance_id])[0]
+            instance = load_swebench_problems()[instance_id]
             prediction = {
                 "instance_id": instance_id,
                 "model_name_or_path": self.evaluation_run.run_id,
                 "model_patch": self.evaluation_run.response,
             }
-            test_spec = make_test_spec(instance)
+            test_spec = make_test_spec(SWEbenchInstance(**instance.to_dict()))
             
             # Build environment and run evaluation
             build_env_images(self.manager.docker, [test_spec], max_workers=4)
