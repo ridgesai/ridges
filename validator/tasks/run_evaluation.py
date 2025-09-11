@@ -1,10 +1,9 @@
 """Task for running agents in sandboxes."""
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING, List
 from ddtrace import tracer
-
-from swebench.harness.utils import load_swebench_dataset
 from validator.utils.http_client import get_shared_client
 
 from validator.config import RIDGES_API_URL
@@ -18,6 +17,24 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+def load_swebench_problems() -> dict[str, SwebenchProblem]:
+    """Load SWE-bench problems from local JSON file"""
+    import json
+    
+    swe_bench_file = Path(__file__).parent.parent.parent / "swe_bench_verified.json"
+    with open(swe_bench_file, 'r') as f:
+        instances = json.load(f)
+    
+    problems = {}
+    for instance in instances:
+        problems[instance["instance_id"]] = SwebenchProblem(
+            instance_id=instance["instance_id"],
+            problem_statement=instance["problem_statement"],
+            repo=instance["repo"],
+            base_commit=instance["base_commit"],
+        )
+    
+    return problems
 
 @tracer.wrap(resource="run-evaluation")
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion, evaluation_runs: List[EvaluationRun]):
@@ -44,16 +61,10 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
 
         
         # Get problems for the evaluation runs
-        instance_ids = [evaluation_run.swebench_instance_id for evaluation_run in evaluation_runs]
-        instances = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", instance_ids)
+        all_problems = load_swebench_problems()
         problems = {
-            instance["instance_id"]: SwebenchProblem(
-                instance_id=instance["instance_id"],
-                problem_statement=instance["problem_statement"],
-                repo=instance["repo"],
-                base_commit=instance["base_commit"],
-            )
-            for instance in instances
+            evaluation_run.swebench_instance_id: all_problems[evaluation_run.swebench_instance_id]
+            for evaluation_run in evaluation_runs
         }
 
         for evaluation_run in evaluation_runs:

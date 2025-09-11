@@ -4,14 +4,12 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional
 from ddtrace import tracer
 
-import docker
 from docker.errors import ImageNotFound, APIError
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
@@ -32,12 +30,6 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
-
-def get_sandbox_image_for_instance(instance_id: str) -> str:
-    """Get commit-specific Docker image for a SWE-bench instance."""
-    # TEMPORARILY: Use default image until commit-specific images are fixed for AMD64
-    logger.info(f"Using default sandbox image for {instance_id} (commit-specific images have architecture issues)")
-    return SANDBOX_DOCKER_IMAGE
 
 class Sandbox:
     """Async sandbox for running agent evaluations"""
@@ -140,16 +132,20 @@ class Sandbox:
             if embed_file.exists():
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
-            # Get image name and always pull the latest version from GHCR
-            image_name = get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id)
-            logger.info(f"Pulling latest version of image: {image_name}")
+            # Get image name and pull only if not cached locally
+            image_name = SANDBOX_DOCKER_IMAGE
             try:
-                self.manager.docker.images.pull(image_name)
-                logger.info(f"Successfully pulled image: {image_name}")
-            except Exception as e:
-                logger.warning(f"Failed to pull image {image_name}: {e}")
-                # For default sandbox image, this should not fail
-                if image_name == SANDBOX_DOCKER_IMAGE:
+                # Check if image exists locally first
+                self.manager.docker.images.get(image_name)
+                logger.info(f"Using cached image: {image_name}")
+            except ImageNotFound:
+                logger.info(f"Image not found locally, pulling: {image_name}")
+                try:
+                    self.manager.docker.images.pull(image_name)
+                    logger.info(f"Successfully pulled image: {image_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to pull image {image_name}: {e}")
+                    # For default sandbox image, this should not fail
                     raise SystemExit(f"Failed to pull default sandbox image {SANDBOX_DOCKER_IMAGE}: {e}")
 
             self.container = self.manager.docker.containers.run(
