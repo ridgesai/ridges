@@ -245,7 +245,7 @@ class Sandbox:
             instance_id = self.evaluation_run.swebench_instance_id
             instance = load_swebench_problems()[instance_id]
 
-            test_patch = instance.get("test_patch")
+            test_patch = instance.test_patch
             if test_patch:
                 # First, get the list of files that will be affected by the patch
                 affected_files = []

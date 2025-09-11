@@ -32,6 +32,7 @@ def load_swebench_problems() -> dict[str, SwebenchProblem]:
             problem_statement=instance["problem_statement"],
             repo=instance["repo"],
             base_commit=instance["base_commit"],
+            test_patch=instance["test_patch"],
         )
     
     return problems

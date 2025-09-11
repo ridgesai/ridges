@@ -23,6 +23,7 @@ class SwebenchProblem(BaseModel):
     problem_statement: str
     repo: str
     base_commit: str
+    test_patch: str
 
 class SandboxInput(SwebenchProblem):
     run_id: str
