@@ -31,6 +31,18 @@ logger = get_logger(__name__)
 
 PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
 
+def load_swebench_instance(instance_id: str) -> dict:
+    import json
+
+    swe_bench_file = Path(__file__).parent.parent.parent / "swe_bench_verified.json"
+    with open(swe_bench_file, 'r') as f:
+        instances = json.load(f)
+    
+    for instance in instances:
+        if instance["instance_id"] == instance_id:
+            return instance
+    return None
+
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
@@ -458,19 +470,18 @@ class Sandbox:
     @tracer.wrap(resource="run-swebench-evaluation")
     def _run_swebench_evaluation(self) -> None:
         """Run SWE-bench evaluation (blocking operation)"""
-        from validator.tasks.run_evaluation import load_swebench_problems
         from swebench.harness.constants import SWEbenchInstance
         instance_id = self.evaluation_run.swebench_instance_id
         
         try:
             # Load instance and create prediction
-            instance = load_swebench_problems()[instance_id]
+            instance = load_swebench_instance(instance_id)
             prediction = {
                 "instance_id": instance_id,
                 "model_name_or_path": self.evaluation_run.run_id,
                 "model_patch": self.evaluation_run.response,
             }
-            test_spec = make_test_spec(SWEbenchInstance(**instance.to_dict()))
+            test_spec = make_test_spec(SWEbenchInstance(**instance))
             
             # Build environment and run evaluation
             build_env_images(self.manager.docker, [test_spec], max_workers=4)
