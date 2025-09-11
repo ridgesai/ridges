@@ -64,7 +64,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agen
         # Get problems for the evaluation runs
         all_problems = load_swebench_problems()
         problems = {
-            evaluation_run.swebench_instance_id: all_problems[evaluation_run.swebench_instance_id]
+            evaluation_run.swebench_instance_id: all_problems[evaluation_run.swebench_instance_id.strip()]
             for evaluation_run in evaluation_runs
         }
 
