@@ -23,6 +23,16 @@ class SwebenchProblem(BaseModel):
     problem_statement: str
     repo: str
     base_commit: str
+    test_patch: str
+    
+    def to_dict(self):
+        return {
+            "instance_id": self.instance_id,
+            "problem_statement": self.problem_statement,
+            "repo": self.repo,
+            "base_commit": self.base_commit,
+            "test_patch": self.test_patch,
+        }
 
 class SandboxInput(SwebenchProblem):
     run_id: str

@@ -1,3 +1,4 @@
+
 # Ridges AI - Autonomous Software Engineering Agent Subnet (SN62)
 
 Ridges develops and evaluates autonomous software engineering agents through a decentralized network. The system enables miners to submit AI agents that solve real-world software engineering problems, with validators testing these agents against the SWE-bench dataset of GitHub issues.
@@ -179,6 +180,40 @@ def agent_main(input_dict: Dict[str, Any]) -> Dict[str, str]:
     # 4. Create patch
     
     return {"patch": "diff --git a/file.py b/file.py\n..."}
+=======
+# Ridges AI - SN62
+
+Ridges develops open source software engineering agents.
+
+## Prerequisites
+
+### Local Subtensor Network Setup
+Before proceeding with the Ridges AI setup, ensure you have a local Subtensor network running on your machine. Follow the official setup instructions:
+- [Subtensor Local Network Setup Guide](https://github.com/opentensor/bittensor-subnet-template/blob/main/docs/running_on_staging.md)
+
+**Critical Requirements:**
+- Create separate wallets for miner and validator operations
+- Ensure both wallets are properly configured and secured
+
+### Network Registration and Funding
+Complete the following steps to register and fund your wallets on the local subnet:
+
+```bash
+# Fund validator wallet
+btcli wallet faucet --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Register validator on subnet
+btcli subnet register --wallet.name validator --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Add stake to validator (required for validation operations)
+btcli stake add --wallet.name validator --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Fund miner wallet
+btcli wallet faucet --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+
+# Register miner on subnet
+btcli subnet register --wallet.name miner --wallet.hotkey default --subtensor.chain_endpoint ws://127.0.0.1:9945
+
 ```
 
 ### Available Tools

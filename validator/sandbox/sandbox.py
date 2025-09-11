@@ -4,18 +4,16 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Dict, Any
+from typing import TYPE_CHECKING, Optional
 from ddtrace import tracer
 
-import docker
 from docker.errors import ImageNotFound, APIError
 from docker.models.containers import Container
 from swebench.harness.docker_build import build_env_images
-from swebench.harness.run_evaluation import load_swebench_dataset, make_test_spec, run_instance
+from swebench.harness.run_evaluation import make_test_spec, run_instance
 
 from validator.sandbox.clone_repo import clone_repo
 from validator.sandbox.constants import (
@@ -33,11 +31,17 @@ logger = get_logger(__name__)
 
 PRE_EMBEDDED_MOUNT = '/pre_embedded/chunks.json.gz'
 
-def get_sandbox_image_for_instance(instance_id: str) -> str:
-    """Get commit-specific Docker image for a SWE-bench instance."""
-    # TEMPORARILY: Use default image until commit-specific images are fixed for AMD64
-    logger.info(f"Using default sandbox image for {instance_id} (commit-specific images have architecture issues)")
-    return SANDBOX_DOCKER_IMAGE
+def load_swebench_instance(instance_id: str) -> dict:
+    import json
+
+    swe_bench_file = Path(__file__).parent.parent.parent / "swe_bench_verified.json"
+    with open(swe_bench_file, 'r') as f:
+        instances = json.load(f)
+    
+    for instance in instances:
+        if instance["instance_id"] == instance_id:
+            return instance
+    return None
 
 class Sandbox:
     """Async sandbox for running agent evaluations"""
@@ -120,6 +124,7 @@ class Sandbox:
             problem_statement=self.problem.problem_statement,
             repo=self.problem.repo,
             base_commit=self.problem.base_commit,
+            test_patch=self.problem.test_patch,
             run_id=self.evaluation_run.run_id,
         )
         
@@ -140,16 +145,20 @@ class Sandbox:
             if embed_file.exists():
                 volumes[str(embed_file)] = {'bind': PRE_EMBEDDED_MOUNT, 'mode': 'ro'}
 
-            # Get image name and always pull the latest version from GHCR
-            image_name = get_sandbox_image_for_instance(self.evaluation_run.swebench_instance_id)
-            logger.info(f"Pulling latest version of image: {image_name}")
+            # Get image name and pull only if not cached locally
+            image_name = SANDBOX_DOCKER_IMAGE
             try:
-                self.manager.docker.images.pull(image_name)
-                logger.info(f"Successfully pulled image: {image_name}")
-            except Exception as e:
-                logger.warning(f"Failed to pull image {image_name}: {e}")
-                # For default sandbox image, this should not fail
-                if image_name == SANDBOX_DOCKER_IMAGE:
+                # Check if image exists locally first
+                self.manager.docker.images.get(image_name)
+                logger.info(f"Using cached image: {image_name}")
+            except ImageNotFound:
+                logger.info(f"Image not found locally, pulling: {image_name}")
+                try:
+                    self.manager.docker.images.pull(image_name)
+                    logger.info(f"Successfully pulled image: {image_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to pull image {image_name}: {e}")
+                    # For default sandbox image, this should not fail
                     raise SystemExit(f"Failed to pull default sandbox image {SANDBOX_DOCKER_IMAGE}: {e}")
 
             self.container = self.manager.docker.containers.run(
@@ -244,16 +253,12 @@ class Sandbox:
         shutil.copytree(cache_path, repo_path)
 
         try:
-            from swebench.harness.run_evaluation import load_swebench_dataset  # local import to avoid at module load
+            from validator.tasks.run_evaluation import load_swebench_problems
 
             instance_id = self.evaluation_run.swebench_instance_id
-            instance = load_swebench_dataset(
-                "SWE-bench/SWE-bench_Verified",
-                "test",
-                [instance_id],
-            )[0]
+            instance = load_swebench_problems()[instance_id]
 
-            test_patch = instance.get("test_patch")
+            test_patch = instance.test_patch
             if test_patch:
                 # First, get the list of files that will be affected by the patch
                 affected_files = []
@@ -465,17 +470,18 @@ class Sandbox:
     @tracer.wrap(resource="run-swebench-evaluation")
     def _run_swebench_evaluation(self) -> None:
         """Run SWE-bench evaluation (blocking operation)"""
+        from swebench.harness.constants import SWEbenchInstance
         instance_id = self.evaluation_run.swebench_instance_id
         
         try:
             # Load instance and create prediction
-            instance = load_swebench_dataset("SWE-bench/SWE-bench_Verified", "test", [instance_id])[0]
+            instance = load_swebench_instance(instance_id)
             prediction = {
                 "instance_id": instance_id,
                 "model_name_or_path": self.evaluation_run.run_id,
                 "model_patch": self.evaluation_run.response,
             }
-            test_spec = make_test_spec(instance)
+            test_spec = make_test_spec(SWEbenchInstance(**instance))
             
             # Build environment and run evaluation
             build_env_images(self.manager.docker, [test_spec], max_workers=4)
