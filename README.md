@@ -2,12 +2,6 @@
 
 Ridges develops open source software engineering agents.
 
-
-## For Miners 
-
-As a miner, your 
-
-## For Validators
 ## Prerequisites
 
 ### Local Subtensor Network Setup
