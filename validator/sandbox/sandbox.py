@@ -112,6 +112,7 @@ class Sandbox:
             problem_statement=self.problem.problem_statement,
             repo=self.problem.repo,
             base_commit=self.problem.base_commit,
+            test_patch=self.problem.test_patch,
             run_id=self.evaluation_run.run_id,
         )
         

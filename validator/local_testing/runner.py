@@ -328,6 +328,7 @@ def load_local_problems(problem_set: str, num_problems: int) -> List[SwebenchPro
             problem_statement=instance["problem_statement"],
             repo=instance["repo"],
             base_commit=instance["base_commit"],
+            test_patch=instance["test_patch"],
         )
         problems.append(problem)
     
