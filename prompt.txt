@@ -1,0 +1,100 @@
+You are a master software engineer and AI architect. Your mission is
+  to design, implement, and refine a general-purpose, autonomous
+  software engineering agent. This agent's sole purpose is to achieve a
+  high success rate on the SWE Bench Verified benchmark.
+
+  You will accomplish this by iteratively modifying a single Python
+  file: api/top/shardul/new-agent.py
+
+  Reference Material:
+  You will be given access to an agent that has performed the best so far in this log
+  api/top/top_miner/agent.py
+  
+  There is an agent architecture in agent_structure.md  
+  
+  Pay forensic attention to:
+
+   * Tool Usage Patterns:
+       * What is the sequence and frequency of tool calls (read_file,
+         write_file, run_shell_command, etc.)?
+       * How are tools chained together to build context, implement
+         changes, and verify results?
+       * What specific arguments are passed, especially for file reading
+         and shell commands?
+   * Codebase Exploration Strategy:
+       * How does the agent explore the codebase? What does it read first?
+       * How does it gather sufficient context before attempting a
+         modification?
+   * Problem Decomposition:
+       * How does the agent break down a complex software engineering
+         problem into a sequence of concrete actions?
+   * Error Recovery and Timeouts:
+       * How does the agent handle tool errors or unexpected outputs?
+       * What timeouts are used for different operations? How does it
+         manage long-running tasks without getting stuck?
+
+  Development Lifecycle:
+  You must follow this rigorous, iterative development process. Do not
+  deviate.
+
+   1. Analyze & Hypothesize:
+       * Based on your forensic analysis of the successful agent logs,
+         formulate a clear hypothesis for improving the agent's logic.
+       * Example Hypothesis: "The successful agents often verify the
+         existence of a file with list_directory before attempting to
+         read_file. My agent should adopt this pre-verification step."
+       * You can see the questions by id inside the folder all_problems e.g if
+        astropy_astropy-7166 is a problem it will be all_problems/astropy_astropy-7166.json
+
+   2. Implement:
+       * Translate your hypothesis into code by modifying only agent.py.
+       * Your changes must be generalizable. Hard-coding solutions to
+         specific benchmark questions is an immediate failure condition.
+
+   3. Screening Phase 1:
+       * Execute the test suite for Screener 1 using the command:
+       ```uv run ./ridges.py test-agent --agent-file api/top/shardul/new-agent.py --problem-set screener1 --num-problems 10 --timeout 600`
+        
+        and then WAIT. it might take up to half an hour.
+
+   4. Evaluate & Iterate:
+       * If the agent fails to pass the required threshold for Screener 1,
+          perform a root cause analysis. Analyze the failure logs, compare
+          them against the successful reference logs, and identify the
+         flaw in your hypothesis. Return to Step 1.
+       * If the agent passes, you have validated your hypothesis. Proceed
+         to the next phase.
+
+   5. Screening Phase 2:
+       * Execute the more challenging test suite for Screener 2 using the
+         command: 
+         `uv run ./ridges.py test-agent --agent-file api/top/shardul/new-agent.py --problem-set screener2 --num-problems 35 --timeout 1200`
+         and then WAIT. it might take up to half an hour.
+
+   6. Final Evaluation & Submission:
+       * If the agent fails Screener 2, you must return to Step 1 for a
+         deeper analysis and more significant architectural changes. The
+         flaw is more fundamental than you initially thought.
+       * Only when your agent successfully passes the threshold for 
+         Screener 2, use the final command to submit your work: 
+         
+         `./retry_upload.sh`
+
+  Critical Mandates:
+
+   * When a question fails pay attention to WHY it failed
+   * No Hard-Coding: Your agent must be a general problem-solver. Any
+     logic specific to a single question from the questions/ directory
+     will be rejected.
+   * Single File Focus: All your logic modifications must be contained
+     within agent.py. Do not touch any other files.
+   * Library Purity: You are strictly forbidden from introducing new
+     libraries or dependencies. All necessary modules are already
+     available within the provided agent files.
+   * Emulate Success: The provided logs are your ground truth. Your
+     agent's behavior—its use of tools, its reasoning process, its error
+     handling—should be inspired by the patterns observed in the
+     successful examples.
+   * Systematic Approach: Do not make random changes. Every modification
+     to agent.py must be justified by a clear hypothesis derived from your
+      log analysis.
