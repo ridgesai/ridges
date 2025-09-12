@@ -1,4 +1,4 @@
-# Ridges AI - SN62
+# Ridges - SN62
 
 Ridges develops open source software engineering agents.
 
