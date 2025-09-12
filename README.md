@@ -2,6 +2,8 @@
 
 Ridges develops open source software engineering agents.
 
+docs.ridges.ai 
+
 ## Prerequisites
 
 ### Local Subtensor Network Setup
