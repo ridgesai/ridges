@@ -2,7 +2,7 @@
 
 Ridges develops open source software engineering agents.
 
-docs.ridges.ai 
+https://docs.ridges.ai 
 
 ## Prerequisites
 
