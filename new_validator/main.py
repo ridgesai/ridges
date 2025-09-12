@@ -1,0 +1,1 @@
+# Handles validator start and stop, including creating websocket connection, cleanup ops and version checks before anything happens, etc
