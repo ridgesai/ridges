@@ -5,6 +5,9 @@ from typing import Dict, Any
 import websockets 
 from typing import Any, Optional
 
+from actions.evals import handle_begin_evaluation
+from actions.weights import handle_set_weights
+
 # TODO: Common message protocol structure?
 
 class SocketManager:
@@ -19,18 +22,19 @@ class SocketManager:
     async def close_connection(self):
         pass
     
-    async def send(self, message: Dict[str, Any]): 
+    async def send(self, message: Dict[str, Any]):
+        event_types: str = "heartbeat" | "post_eval_results"
         pass
 
     async def handle_message():
-        event = ""
+        event = "authentication-failed"
 
         match event:
-            case "evaluation":
-                pass
+            case "begin-evaluation":
+                handle_begin_evaluation()
 
             case "set-weights":
-                pass
+                handle_set_weights()
 
             case "authentication-failed":
                 raise SystemExit(f"FATAL: TODO")
@@ -38,7 +42,6 @@ class SocketManager:
         # Start eval
         # Post results for eval run
         # Weights
-        pass
 
 class SocketManager():
     pass

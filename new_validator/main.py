@@ -14,7 +14,6 @@ class ValidatorStatus(Enum):
 class RidgesValidator:
     socket_manager: Optional[Any] # TODO: typing for socket manager too
     sandbox_manager: Optional[Any] # TODO: Add typing once sandbox mgr is created
-    proxy_manager: Optional[Any]
     status: ValidatorStatus
 
     def __init__(self) -> None:
