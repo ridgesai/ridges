@@ -44,24 +44,18 @@ inference_manager = InferenceManager()  # For inference
 
 
 def check_request_auth(http_request: Request, endpoint_type: str) -> None:
-    """
-    Check request authentication for endpoints using IP whitelist or screener password.
-    
-    Args:
-        http_request: FastAPI Request object
-        endpoint_type: Either "embedding" or "inference" for logging
-        
-    Raises:
-        HTTPException: If authentication fails
-    """
     client_ip = get_client_ip(http_request)
     
-    # First check: IP whitelist (if configured)
+    # 1. IP whitelist
     if WHITELISTED_VALIDATOR_IPS and client_ip in WHITELISTED_VALIDATOR_IPS:
-        # IP is whitelisted, allow through
         return
-    
-    # Second check: Screener password (if configured)
+
+    # 2. Internal sandbox auto-allow (inject screener password for container requests)
+    if client_ip.startswith("172.") or client_ip.startswith("192.168.") or client_ip == "sandbox-proxy":  ### <--- Change these ip's accordingly to work with your local network
+        # These are typical Docker internal IP ranges
+        return
+
+    # 3. Screener password
     if SCREENER_PASSWORD:
         auth_header = http_request.headers.get("authorization") or http_request.headers.get("Authorization")
         
@@ -70,26 +64,24 @@ def check_request_auth(http_request: Request, endpoint_type: str) -> None:
             logger.warning(f"{endpoint_type.capitalize()} request missing Authorization header from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Authorization header required")
         
-        # Check Bearer token format
         if not auth_header.startswith("Bearer "):
             track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
             logger.warning(f"{endpoint_type.capitalize()} request with invalid Authorization format from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Authorization header must be Bearer token")
         
-        # Extract and validate token
-        token = auth_header[7:]  # Remove "Bearer " prefix
+        token = auth_header[7:]
         if token == SCREENER_PASSWORD:
-            # Valid password, allow through
             return
         else:
             track_400_error(client_ip, BadRequestErrorCode.INVALID_SCREENER_PASSWORD)
             logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Invalid screener password")
     
-    # Neither IP whitelist nor password configured/valid - unauthorized
+    # Unauthorized
     track_400_error(client_ip, BadRequestErrorCode.UNAUTHORIZED_IP_ADDRESS)
-    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {format_ip_with_name(client_ip)} - not whitelisted and no valid authentication")
+    logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {format_ip_with_name(client_ip)}")
     raise HTTPException(status_code=401, detail="Unauthorized: IP not whitelisted and no valid authentication provided")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -340,7 +332,7 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
                 temperature=temperature,
                 model=model
             )
-        
+        logger.info(f"Inference result raw: {inference_result}")
         # Truncate and log the first 200 chars of the response to avoid log spam
         try:
             if isinstance(inference_result, str):
