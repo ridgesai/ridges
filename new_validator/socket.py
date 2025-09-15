@@ -1,30 +1,84 @@
 # All communications between validator and platform 
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import websockets 
-from typing import Any, Optional
+import asyncio 
 
-from actions.evals import handle_begin_evaluation
-from actions.weights import handle_set_weights
+from actions.evals.evals import handle_begin_evaluation
+from actions.chain.weights import handle_set_weights
+from loggers.logging_utils import get_logger
+
+import json
 
 # TODO: Common message protocol structure?
 
+logger = get_logger(__name__)
+websocket_url = None
+
+SCREENER_MODE = False
+
+def construct_message():
+    pass
+
 class SocketManager:
     ws: Optional[websockets.ClientConnection]
+    _closing_connection: bool
 
     def __init__(self) -> None:
         self.ws = None
 
     async def create_connection(self):
-        pass
+        while True: 
+            try: 
+                if websocket_url is None:
+                    raise RuntimeError("Websocket URL is not configured")
+                
+                async with websockets.connect(websocket_url, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
+                    self.ws = ws
+                    self._closing_connection = False
+
+                    # Authenticate
+                    await self.send()
+
+                    # Start heartbeat tasks - every 2.5s, report to platform the status 
+
+                    # Keep connection alive
+
+            except SystemExit:
+                # Authentication failed, don't reconnect
+                raise
+
+            except Exception as e:
+                logger.error(f"Error connecting to websocket: {e}")
 
     async def close_connection(self):
+        """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
         pass
     
     async def send(self, message: Dict[str, Any]):
-        event_types: str = "heartbeat" | "post_eval_results"
-        pass
+        if self.ws is None or self._closing_connection:
+            logger.error("Websocket not connected")
+            return 
+        
+        # Check if socket is still open
+        if hasattr(self.ws, 'closed') and self.ws.closed:
+            logger.error("Websocket connection is closed")
+            if not self._closing_connection:
+                # Trigger shutdown if we detect a closed connection
+                asyncio.create_task(self.close_connection())
+            return
+        
+        try:
+            await self.ws.send(json.dumps(message))
+
+        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:
+            # Connection closed while sending, shutting down
+            if not self._closing_connection:
+                asyncio.create_task(self.close_connection())
+        
+        except Exception as e:
+            logger.exception(f"Error while sending message – {e}")
 
     async def handle_message():
         event = "authentication-failed"
@@ -42,9 +96,3 @@ class SocketManager:
         # Start eval
         # Post results for eval run
         # Weights
-
-class SocketManager():
-    pass
-
-    async def send():
-        pass
