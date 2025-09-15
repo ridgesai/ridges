@@ -19,10 +19,14 @@ http_url = None
 SCREENER_MODE = False
 
 class ConnectionManager:
+    hotkey: str
     ws: Optional[websockets.ClientConnection]
     http: Optional[httpx.AsyncClient]
 
     _closing_connection: bool = False
+
+    def __init__(self, hotkey: str) -> None:
+        self.hotkey = hotkey
     
     async def create_connections(self):
         while True: 
@@ -69,6 +73,7 @@ class ConnectionManager:
             return
         
         try:
+            # TODO: SIGN
             await self.ws.send(json.dumps(message))
 
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:

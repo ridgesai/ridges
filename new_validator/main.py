@@ -13,14 +13,19 @@ class ValidatorStatus(Enum):
     EVALUATING = 'evaluating'
     SHUTTING_DOWN = 'shutting_down'
 
+from validator.config import WALLET_NAME, HOTKEY_NAME
+
+from fiber.chain.chain_utils import load_hotkey_keypair
+validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
+
 class RidgesValidator:
     connection_manager: Optional['ConnectionManager'] # TODO: typing for socket manager too
     sandbox_manager: Optional[Any] # TODO: Add typing once sandbox mgr is created
     status: ValidatorStatus
 
-    def __init__(self) -> None:
+    def __init__(self, hotkey: str) -> None:
         self.sandbox_manager = None
-        self.connection_manager = ConnectionManager()
+        self.connection_manager = ConnectionManager(hotkey=hotkey)
         self.status = ValidatorStatus.STARTING
 
         self.start()

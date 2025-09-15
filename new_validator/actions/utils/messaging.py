@@ -1,6 +1,6 @@
 import datetime
 from pydantic import BaseModel, Field
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 from enum import Enum
 from datetime import datetime
 
@@ -16,15 +16,13 @@ class BaseMessage(BaseModel):
 class Authentication(BaseMessage):
     type: Literal["validator-info"] = "validator-info"
     # timestamp + hotkey + version sig
-    signature: str
+    signature: Optional[str]
 
 class Heartbeat(BaseMessage):
     type: Literal["heartbeat"] = "heartbeat"
 
 class RequestNextEvaluation(BaseMessage):
     type: Literal["get-next-evaluation"] = "get-next-evaluation"
-    # timestamp + hotkey + version sig
-    signature: str
 
 class StartEvaluation(BaseMessage):
     type: Literal["start-evaluation"] = "start-evaluation"
@@ -42,30 +40,20 @@ class UpsertEvaluationRun(BaseMessage):
     evaluation_id: str
     run_id: str
     status: EvaluationRunStatus
+    signature: Optional[str]
 
 class FinishEvaluation(BaseMessage):
     type: Literal["finish-evaluation"] = "finish-evaluation"
     evaluation_id: str
-    final_score: float 
+    final_score: float
+    signature: Optional[str]
 
 ## Messages sent by platform 
-
-def construct_message_for_socket(
-    message_type: str,
-    payload: dict[str, Any]
-):
-    match message_type:
-        case "authenticaton":
-            return {
-                "event": "validator-info",
-            }
-
-        case "heartbeat":
-            pass
-
-        case "evaluation_result":
-            pass
-
-
-def parse_message_from_socket():
-    pass
+ValidatorMessage = (
+    Authentication
+    | Heartbeat
+    | RequestNextEvaluation
+    | StartEvaluation
+    | UpsertEvaluationRun
+    | FinishEvaluation
+)
