@@ -12,7 +12,7 @@ from api.src.backend.queries.scores import get_treasury_hotkeys as db_get_treasu
 from api.src.backend.queries.agents import get_agent_by_version_id as db_get_agent_by_version_id
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
 from api.src.backend.internal_tools import InternalTools
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 load_dotenv()
 

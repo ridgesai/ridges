@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 load_dotenv("proxy/.env")
 
 import os
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 import sys
 import uvicorn
 from contextlib import asynccontextmanager

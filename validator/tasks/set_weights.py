@@ -5,7 +5,7 @@ from fiber import SubstrateInterface
 from fiber.chain import chain_utils, interface, metagraph, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from ddtrace import tracer
 
 from validator.utils.weight_utils import process_weights_for_netuid

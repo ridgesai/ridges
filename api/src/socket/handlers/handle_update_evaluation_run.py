@@ -4,7 +4,7 @@ from api.src.backend.db_manager import get_transaction
 from api.src.backend.entities import Client, EvaluationRun
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.evaluation_runs import all_runs_finished, update_evaluation_run
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from api.src.models.screener import Screener

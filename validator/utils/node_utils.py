@@ -3,7 +3,7 @@
 from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS
 )

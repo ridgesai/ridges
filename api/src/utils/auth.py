@@ -1,6 +1,6 @@
 from fastapi import Request, Header, Depends, HTTPException
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 # from fiber import constants as cst
 
 logger = get_logger(__name__)

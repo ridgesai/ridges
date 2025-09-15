@@ -4,31 +4,27 @@ from typing import Dict, Any, Optional
 
 import websockets 
 import asyncio 
+import httpx
 
 from actions.evals.evals import handle_begin_evaluation
 from actions.chain.weights import handle_set_weights
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 import json
 
-# TODO: Common message protocol structure?
-
 logger = get_logger(__name__)
 websocket_url = None
+http_url = None
 
 SCREENER_MODE = False
 
-def construct_message():
-    pass
-
-class SocketManager:
+class ConnectionManager:
     ws: Optional[websockets.ClientConnection]
-    _closing_connection: bool
+    http: Optional[httpx.AsyncClient]
 
-    def __init__(self) -> None:
-        self.ws = None
-
-    async def create_connection(self):
+    _closing_connection: bool = False
+    
+    async def create_connections(self):
         while True: 
             try: 
                 if websocket_url is None:
@@ -45,6 +41,9 @@ class SocketManager:
 
                     # Keep connection alive
 
+                    # Create http connection once ws is confirmed
+                    self.http = httpx.AsyncClient()
+
             except SystemExit:
                 # Authentication failed, don't reconnect
                 raise
@@ -52,7 +51,7 @@ class SocketManager:
             except Exception as e:
                 logger.error(f"Error connecting to websocket: {e}")
 
-    async def close_connection(self):
+    async def close_connections(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
         pass
     
@@ -66,7 +65,7 @@ class SocketManager:
             logger.error("Websocket connection is closed")
             if not self._closing_connection:
                 # Trigger shutdown if we detect a closed connection
-                asyncio.create_task(self.close_connection())
+                asyncio.create_task(self.close_connections())
             return
         
         try:
@@ -75,7 +74,7 @@ class SocketManager:
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:
             # Connection closed while sending, shutting down
             if not self._closing_connection:
-                asyncio.create_task(self.close_connection())
+                asyncio.create_task(self.close_connections())
         
         except Exception as e:
             logger.exception(f"Error while sending message – {e}")

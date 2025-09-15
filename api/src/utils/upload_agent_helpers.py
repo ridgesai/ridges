@@ -1,7 +1,7 @@
 from fastapi import UploadFile, HTTPException
 from typing import Optional
 from api.src.socket.websocket_manager import WebSocketManager
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
 

@@ -5,7 +5,7 @@ from api.src.backend.entities import Client
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

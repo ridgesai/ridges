@@ -5,7 +5,7 @@ from fiber import SubstrateInterface
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 from ddtrace import tracer
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

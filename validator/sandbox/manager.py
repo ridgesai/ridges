@@ -22,7 +22,7 @@ from validator.sandbox.constants import (
 from validator.sandbox.schema import EvaluationRun, SwebenchProblem
 from validator.sandbox.sandbox import Sandbox
 from validator.utils.http_client import get_shared_client
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp

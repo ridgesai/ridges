@@ -2,7 +2,7 @@ import time
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.socket.server_helpers import get_relative_version_num
 

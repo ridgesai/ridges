@@ -1,5 +1,5 @@
 import httpx
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from validator.tasks.set_weights import set_weights_from_mapping
 from validator.utils.http_client import get_shared_client
 from validator.config import RIDGES_API_URL

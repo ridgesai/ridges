@@ -5,6 +5,8 @@ from enum import Enum
 import websockets
 
 import asyncio
+
+from new_validator.connection import ConnectionManager
 class ValidatorStatus(Enum):
     STARTING = 'starting'
     IDLING = 'idling'
@@ -12,19 +14,27 @@ class ValidatorStatus(Enum):
     SHUTTING_DOWN = 'shutting_down'
 
 class RidgesValidator:
-    socket_manager: Optional[Any] # TODO: typing for socket manager too
+    connection_manager: Optional['ConnectionManager'] # TODO: typing for socket manager too
     sandbox_manager: Optional[Any] # TODO: Add typing once sandbox mgr is created
     status: ValidatorStatus
 
     def __init__(self) -> None:
-        self.ws = None
         self.sandbox_manager = None
+        self.connection_manager = ConnectionManager()
         self.status = ValidatorStatus.STARTING
 
-    async def start(self):
-        pass
+        self.start()
 
+    async def start(self):
+        self.connection_manager.create_connections()
+        # TODO: Init sbox manager
+        return
+        
     async def shutdown(self):
+        # TODO
+
+        self.connection_manager.close_connections()
+
         pass
 
 async def main():

@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.queries.agents import get_agent_by_version_id
 from api.src.endpoints.retrieval import get_agent_code
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 import asyncpg
 
 # Load environment variables (safe to call multiple times)

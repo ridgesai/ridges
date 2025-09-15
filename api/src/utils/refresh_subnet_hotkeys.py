@@ -4,7 +4,7 @@ import time
 from substrateinterface import SubstrateInterface
 from typing import List
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

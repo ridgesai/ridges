@@ -3,8 +3,8 @@ import os
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
-from loggers.datadog import DatadogLogHandler
-from loggers.process_tracking import setup_process_logging
+from utils.datadog import DatadogLogHandler
+from utils.process_tracking import setup_process_logging
 
 load_dotenv()
 

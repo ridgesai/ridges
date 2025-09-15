@@ -11,7 +11,7 @@ import websockets.exceptions
 from ddtrace import tracer
 
 from validator.utils.get_screener_info import get_screener_info
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from validator.config import RIDGES_API_URL, SCREENER_MODE
 from validator.socket.handle_message import handle_message
 from validator.utils.get_validator_version_info import get_validator_info

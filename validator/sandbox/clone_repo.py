@@ -6,7 +6,7 @@ from ddtrace import tracer
 from git import Repo
 from git.exc import GitCommandError, InvalidGitRepositoryError
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

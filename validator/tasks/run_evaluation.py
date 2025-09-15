@@ -10,7 +10,7 @@ from validator.config import RIDGES_API_URL
 from validator.sandbox.manager import SandboxManager
 from validator.sandbox.schema import AgentVersion, EvaluationRun, SwebenchProblem
 from validator.sandbox.constants import AGENTS_BASE_DIR
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp

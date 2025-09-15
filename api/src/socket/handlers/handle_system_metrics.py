@@ -5,7 +5,7 @@ Handle system metrics updates from validators and screeners
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from api.src.backend.entities import Client
 
 logger = get_logger(__name__)

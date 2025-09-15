@@ -2,7 +2,7 @@
 
 import os
 import subprocess
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from ddtrace import tracer
 
 from validator.config import screener_hotkey
