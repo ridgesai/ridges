@@ -66,6 +66,7 @@ PERMISSABLE_PACKAGES = [
     "xgboost",
     "autogen",
     "autogen_ext",
+    "autogen_agentchat",
     "autogen_agentchat"
 ]
 
