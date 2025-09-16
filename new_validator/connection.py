@@ -2,12 +2,15 @@
 
 from typing import Dict, Any, Optional
 
+from numpy import sign
 import websockets 
 import asyncio 
 import httpx
 
 from actions.evals.evals import handle_begin_evaluation
 from actions.chain.weights import handle_set_weights
+from new_validator.actions.utils.authentication import sign_validator_message
+from new_validator.actions.utils.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
 from utils.logging_utils import get_logger
 
 import json
@@ -59,7 +62,28 @@ class ConnectionManager:
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
         pass
     
-    async def send(self, message: Dict[str, Any]):
+    async def send(self, message: ValidatorMessage):
+        if isinstance(message, (
+            Authentication,
+            StartEvaluation,
+            UpsertEvaluationRun,
+            FinishEvaluation
+        )):
+            signature = sign_validator_message(message)
+            message.signature = signature
+
+            return self._send_ws(
+                message=message.model_dump()
+            )
+        
+        return self._send_ws(
+            message=message.model_dump()
+        )
+
+    async def _send_http():
+        pass
+
+    async def _send_ws(self, message: Dict[str, Any]):
         if self.ws is None or self._closing_connection:
             logger.error("Websocket not connected")
             return 
@@ -73,7 +97,6 @@ class ConnectionManager:
             return
         
         try:
-            # TODO: SIGN
             await self.ws.send(json.dumps(message))
 
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:

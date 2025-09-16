@@ -26,9 +26,9 @@ class RequestNextEvaluation(BaseMessage):
 
 class StartEvaluation(BaseMessage):
     type: Literal["start-evaluation"] = "start-evaluation"
-    #  hotkey + version sig
     evaluation_id: str
     agent_info: str
+    signature: str
 
 class EvaluationRunStatus(Enum):
     RUNNING = "running"

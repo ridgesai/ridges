@@ -1,9 +1,10 @@
 from fiber import Keypair
 from new_validator.actions.utils.messaging import Authentication, FinishEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
+from logging import getLogger 
 
-def sign_validator_message(payload: ValidatorMessage, validator_hotkey: Keypair) -> str:
-    message: str = ""
-    
+logger = getLogger(__name__)
+
+def construct_validator_signature_payload(payload: ValidatorMessage) -> str:
     match payload:
         case Authentication():
             message = f"validator-auth:{payload.validator_hotkey}:{payload.version_commit_hash}:{payload.timestamp}"
@@ -20,7 +21,24 @@ def sign_validator_message(payload: ValidatorMessage, validator_hotkey: Keypair)
         case _:
             raise ValueError(f"Unknown message type: {type(payload).__name__}")
 
-    if not message:
-        raise Exception("No message constructed")
-    
+    return message
+
+def sign_validator_message(validator_hotkey: Keypair, payload: ValidatorMessage) -> str:
+    message = construct_validator_signature_payload(payload=payload)
+    return sign(validator_hotkey=validator_hotkey, message=message)
+
+def sign(validator_hotkey: Keypair, message: str) -> str:
     return validator_hotkey.sign(message).hex()
+
+def verify_validator_signaure(payload: ValidatorMessage, validator_hotkey: str):
+    if not (payload.signature):
+        raise Exception("No signature in payload")
+
+    message = construct_validator_signature_payload(payload=payload)
+    keypair = Keypair(public_key=bytes.fromhex(validator_hotkey), ss58_format=42)
+    
+    if not keypair.verify(message, payload.signature):
+        logger.error("Invalid signature for validator request")
+        return False
+
+    return True
