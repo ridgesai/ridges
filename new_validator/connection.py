@@ -31,6 +31,7 @@ class ConnectionManager:
 
     def __init__(self, hotkey: Keypair) -> None:
         self.hotkey = hotkey
+        self.create_connections()
     
     async def create_connections(self):
         while True: 
@@ -65,6 +66,10 @@ class ConnectionManager:
         pass
     
     async def send(self, message: ValidatorMessage):
+        # Inject hotkey, version commit to each message
+        
+        message.version_commit_hash = VERSION_COMMIT_HASH
+
         if isinstance(message, (
             Authentication,
             StartEvaluation,

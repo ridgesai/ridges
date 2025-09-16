@@ -2,6 +2,7 @@
 from typing import Optional, Any
 from enum import Enum
 
+from fiber import Keypair
 import websockets
 
 import asyncio
@@ -9,11 +10,6 @@ import asyncio
 from new_validator.connection import ConnectionManager
 from new_validator.evaluation import EvaluationManager
 from new_validator.chain import ChainManager
-class ValidatorStatus(Enum):
-    STARTING = 'starting'
-    IDLING = 'idling'
-    EVALUATING = 'evaluating'
-    SHUTTING_DOWN = 'shutting_down'
 
 from validator.config import WALLET_NAME, HOTKEY_NAME
 
@@ -23,12 +19,11 @@ validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
 class RidgesValidator:
     connection_manager: Optional['ConnectionManager'] # TODO: typing for socket manager too
     evaluation_manager: Optional['EvaluationManager'] # TODO: Add typing once sandbox mgr is created
-    status: ValidatorStatus
+    hotkey: Keypair
 
-    def __init__(self, hotkey: str) -> None:
-        self.evaluation_manager = EvaluationManager()
-        self.connection_manager = ConnectionManager(hotkey=hotkey)
-        self.status = ValidatorStatus.STARTING
+    def __init__(self, hotkey: Keypair) -> None:
+        self.hotkey = hotkey
+
 
         self.start()
 
@@ -39,8 +34,11 @@ class RidgesValidator:
             - Eval loop, that evaluates agents 
             - Weight loop, that periodically sets weights on chain
         '''
-        self.connection_manager.create_connections()
-        self.evaluation_manager.create_evaluation_manager(connection_manager=self.connection_manager)
+
+        # Create connection, eval managers
+        self.connection_manager = ConnectionManager(hotkey=self.hotkey)
+        self.evaluation_manager = EvaluationManager(connection_manager=self.connection_manager)
+
         return
         
     async def shutdown(self):

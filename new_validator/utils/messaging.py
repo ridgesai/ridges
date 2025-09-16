@@ -4,14 +4,11 @@ from typing import Any, Literal, Optional
 from enum import Enum
 from datetime import datetime
 
-class ValidatorMessageType(Enum):
-    HEARTBEAT = "heartbeat"
-
 class BaseMessage(BaseModel):
     type: str
     timestamp: datetime = Field(default_factory=datetime.now)
-    validator_hotkey: str
-    version_commit_hash: str
+    validator_hotkey: str = ""
+    version_commit_hash: str = ""
 
 class Authentication(BaseMessage):
     type: Literal["validator-info"] = "validator-info"
@@ -20,6 +17,13 @@ class Authentication(BaseMessage):
 
 class Heartbeat(BaseMessage):
     type: Literal["heartbeat"] = "heartbeat"
+    status: str
+    cpu_percent: Optional[float]
+    ram_percent: Optional[float]
+    ram_total_gb: Optional[float]
+    disk_percent: Optional[float]
+    disk_total_gb: Optional[float]
+    containers: Optional[float]
 
 class RequestNextEvaluation(BaseMessage):
     type: Literal["get-next-evaluation"] = "get-next-evaluation"
