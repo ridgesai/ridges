@@ -9,14 +9,12 @@ import httpx
 
 from new_validator.authentication import sign_validator_message
 from shared.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
-from new_validator.config import VERSION_COMMIT_HASH
+from new_validator.config import VERSION_COMMIT_HASH, WEBSOCKET_URL, HTTP_URL
 from utils.logging_utils import get_logger
 
 import json
 
 logger = get_logger(__name__)
-websocket_url = None
-http_url = None
 
 class ConnectionManager:
     hotkey: Keypair
@@ -34,10 +32,10 @@ class ConnectionManager:
     async def create_connections(self):
         while True: 
             try: 
-                if websocket_url is None:
+                if WEBSOCKET_URL is None:
                     raise RuntimeError("Websocket URL is not configured")
                 
-                async with websockets.connect(websocket_url, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
+                async with websockets.connect(WEBSOCKET_URL, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
                     self.ws = ws
                     self._closing_connection = False
 

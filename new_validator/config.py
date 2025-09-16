@@ -36,6 +36,10 @@ RIDGES_PROXY_URL = os.getenv("RIDGES_PROXY_URL", "http://52.1.119.189:8001")
 
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
+
+WEBSOCKET_URL = ""
+HTTP_URL = ""
+
 # Log initial configuration
 from utils.logging_utils import get_logger
 logger = get_logger(__name__)
