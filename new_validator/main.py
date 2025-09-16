@@ -11,7 +11,7 @@ from new_validator.connection import ConnectionManager
 from new_validator.evaluation import EvaluationManager
 from new_validator.chain import ChainManager
 
-from new_validator.utils.messaging import NewEvaluationInstruction, PlatformMessage
+from shared.messaging import NewEvaluationInstruction
 from validator.config import WALLET_NAME, HOTKEY_NAME
 
 from fiber.chain.chain_utils import load_hotkey_keypair

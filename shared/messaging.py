@@ -4,19 +4,21 @@ from typing import Any, Literal, Optional
 from enum import Enum
 from datetime import datetime
 
+from api.src.backend.entities import EvaluationRun, MinerAgent
+
 class BaseMessage(BaseModel):
-    type: str
+    event: str
     timestamp: datetime = Field(default_factory=datetime.now)
     validator_hotkey: str = ""
     version_commit_hash: str = ""
 
 class Authentication(BaseMessage):
-    type: Literal["validator-info"] = "validator-info"
+    event: Literal["validator-info"] = "validator-info"
     # timestamp + hotkey + version sig
     signature: Optional[str]
 
 class Heartbeat(BaseMessage):
-    type: Literal["heartbeat"] = "heartbeat"
+    event: Literal["heartbeat"] = "heartbeat"
     status: str
     cpu_percent: Optional[float]
     ram_percent: Optional[float]
@@ -26,10 +28,10 @@ class Heartbeat(BaseMessage):
     containers: Optional[float]
 
 class RequestNextEvaluation(BaseMessage):
-    type: Literal["get-next-evaluation"] = "get-next-evaluation"
+    event: Literal["get-next-evaluation"] = "get-next-evaluation"
 
 class StartEvaluation(BaseMessage):
-    type: Literal["start-evaluation"] = "start-evaluation"
+    event: Literal["start-evaluation"] = "start-evaluation"
     evaluation_id: str
     agent_info: str
     signature: str
@@ -40,14 +42,14 @@ class EvaluationRunStatus(Enum):
     FAILED = "failed"
 
 class UpsertEvaluationRun(BaseMessage):
-    type: Literal["upsert-evaluation-run"] = "upsert-evaluation-run"
+    event: Literal["upsert-evaluation-run"] = "upsert-evaluation-run"
     evaluation_id: str
     run_id: str
     status: EvaluationRunStatus
     signature: Optional[str]
 
 class FinishEvaluation(BaseMessage):
-    type: Literal["finish-evaluation"] = "finish-evaluation"
+    event: Literal["finish-evaluation"] = "finish-evaluation"
     evaluation_id: str
     final_score: float
     signature: Optional[str]
@@ -63,15 +65,16 @@ ValidatorMessage = (
 )
 
 class BaseInstruction(BaseModel):
-    type: str
+    event: str
 
 class SetWeightInstruction(BaseInstruction):
-    type: Literal["set-weights"]
+    event: Literal["set-weights"]
 
 class NewEvaluationInstruction:
-    type: Literal["evaluation"]
+    event: Literal["evaluation"]
     evaluation_id: str
-    miner_hotkey: str
+    agent_version: MinerAgent
+    evaluation_runs: list[EvaluationRun]
 
 PlatformMessage = (
     SetWeightInstruction,

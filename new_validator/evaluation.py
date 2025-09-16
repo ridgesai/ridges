@@ -12,7 +12,7 @@ import docker
 
 from logging import getLogger
 
-from new_validator.utils.messaging import Heartbeat, NewEvaluationInstruction
+from shared.messaging import Heartbeat, NewEvaluationInstruction
 
 logger = getLogger(__name__)
 
@@ -149,12 +149,13 @@ class EvaluationManager():
             await asyncio.sleep(2.5)
 
             status = "available"
+
             if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
                 status = "evaluating"
 
             # Collect system metrics
             try:
-                logger.debug("Collecting system metrics...")
+                logger.debug("Collxecting system metrics...")
                 system_metrics = await get_system_metrics()
                 logger.debug(f"Raw system metrics collected: {system_metrics}")
                 
