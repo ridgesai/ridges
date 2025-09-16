@@ -1,5 +1,5 @@
 from fiber import Keypair
-from new_validator.actions.utils.messaging import Authentication, FinishEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
+from new_validator.utils.messaging import Authentication, FinishEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
 from logging import getLogger 
 
 logger = getLogger(__name__)

@@ -2,7 +2,6 @@ import asyncio
 import docker
 import subprocess
 import shutil
-from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv("validator/.env")

@@ -2,15 +2,16 @@
 
 from typing import Dict, Any, Optional
 
-from numpy import sign
+from fiber import Keypair
 import websockets 
 import asyncio 
 import httpx
 
 from actions.evals.evals import handle_begin_evaluation
 from actions.chain.weights import handle_set_weights
-from new_validator.actions.utils.authentication import sign_validator_message
-from new_validator.actions.utils.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
+from new_validator.actions.chain.authentication import sign_validator_message
+from new_validator.utils.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
+from new_validator.config import VERSION_COMMIT_HASH
 from utils.logging_utils import get_logger
 
 import json
@@ -22,13 +23,13 @@ http_url = None
 SCREENER_MODE = False
 
 class ConnectionManager:
-    hotkey: str
+    hotkey: Keypair
     ws: Optional[websockets.ClientConnection]
     http: Optional[httpx.AsyncClient]
 
     _closing_connection: bool = False
 
-    def __init__(self, hotkey: str) -> None:
+    def __init__(self, hotkey: Keypair) -> None:
         self.hotkey = hotkey
     
     async def create_connections(self):
@@ -42,9 +43,10 @@ class ConnectionManager:
                     self._closing_connection = False
 
                     # Authenticate
-                    await self.send()
-
-                    # Start heartbeat tasks - every 2.5s, report to platform the status 
+                    await self.send(Authentication(
+                        validator_hotkey=self.hotkey.public_key,
+                        version_commit_hash=VERSION_COMMIT_HASH
+                    ))
 
                     # Keep connection alive
 
@@ -69,7 +71,11 @@ class ConnectionManager:
             UpsertEvaluationRun,
             FinishEvaluation
         )):
-            signature = sign_validator_message(message)
+            signature = sign_validator_message(
+                validator_hotkey=self.hotkey,
+                payload=message
+            )
+
             message.signature = signature
 
             return self._send_ws(
