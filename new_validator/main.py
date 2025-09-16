@@ -11,6 +11,7 @@ from new_validator.connection import ConnectionManager
 from new_validator.evaluation import EvaluationManager
 from new_validator.chain import ChainManager
 
+from new_validator.resource_management import cleanup_docker_containers
 from shared.messaging import NewEvaluationInstruction
 from validator.config import WALLET_NAME, HOTKEY_NAME
 
@@ -27,9 +28,14 @@ class RidgesValidator:
     chain_manager: Optional['ChainManager']
     hotkey: Keypair
 
-    def __init__(self, hotkey: Keypair) -> None:
+    def __init__(self, hotkey: Keypair, start: bool = False) -> None:
         self.hotkey = hotkey
-        self.start()
+        
+        # Start by cleaning up docker containers and freeing up disk space
+        cleanup_docker_containers()
+
+        if start:
+            self.start()
 
     async def start(self):
         '''

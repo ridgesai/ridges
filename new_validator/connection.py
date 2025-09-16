@@ -7,10 +7,8 @@ import websockets
 import asyncio 
 import httpx
 
-from actions.evals.evals import handle_begin_evaluation
-from actions.chain.weights import handle_set_weights
-from new_validator.actions.chain.authentication import sign_validator_message
-from new_validator.utils.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
+from new_validator.authentication import sign_validator_message
+from shared.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
 from new_validator.config import VERSION_COMMIT_HASH
 from utils.logging_utils import get_logger
 
