@@ -3,7 +3,7 @@ from typing import Optional, Any
 from enum import Enum
 
 from fiber import Keypair
-import websockets
+import json
 
 import asyncio
 
@@ -11,20 +11,24 @@ from new_validator.connection import ConnectionManager
 from new_validator.evaluation import EvaluationManager
 from new_validator.chain import ChainManager
 
+from new_validator.utils.messaging import NewEvaluationInstruction, PlatformMessage
 from validator.config import WALLET_NAME, HOTKEY_NAME
 
 from fiber.chain.chain_utils import load_hotkey_keypair
 validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
 
+from logging import getLogger
+
+logger = getLogger(__name__)
+
 class RidgesValidator:
-    connection_manager: Optional['ConnectionManager'] # TODO: typing for socket manager too
-    evaluation_manager: Optional['EvaluationManager'] # TODO: Add typing once sandbox mgr is created
+    connection_manager: Optional['ConnectionManager']
+    evaluation_manager: Optional['EvaluationManager']
+    chain_manager: Optional['ChainManager']
     hotkey: Keypair
 
     def __init__(self, hotkey: Keypair) -> None:
         self.hotkey = hotkey
-
-
         self.start()
 
     async def start(self):
@@ -36,10 +40,37 @@ class RidgesValidator:
         '''
 
         # Create connection, eval managers
-        self.connection_manager = ConnectionManager(hotkey=self.hotkey)
+        self.connection_manager = ConnectionManager(hotkey=self.hotkey, pass_message_to_validator=self.handle_platform_instructions)
         self.evaluation_manager = EvaluationManager(connection_manager=self.connection_manager)
+        self.chain_manager = ChainManager(hotkey=self.hotkey)
 
         return
+    
+    async def handle_platform_instructions(self, message: str):
+        """Process incoming platform message and route to validator
+        
+        Parameters
+        ----------
+        message: raw string from websocket
+        """
+        try:
+            parsed_message = json.loads(message)
+            event = parsed_message.get("event", None)
+
+            if event is None:
+                raise Exception(f"Platform sent message without a defined event: {message}")
+            
+            match event:
+                case "evaluation":
+                    self.evaluation_manager.run_evaluation(evaluation=NewEvaluationInstruction(**parsed_message))
+
+                case "set-weights":
+                    self.chain_manager.set_weight()
+
+                case _: 
+                    logger.info(f"Validator received unrecognized message: {message}")
+        except Exception as e:
+            logger.warning(f"Error parsing message from websocket: {e}")
         
     async def shutdown(self):
         # Kill connections and gracefully report shutdown

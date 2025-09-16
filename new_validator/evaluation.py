@@ -12,7 +12,7 @@ import docker
 
 from logging import getLogger
 
-from new_validator.utils.messaging import Heartbeat
+from new_validator.utils.messaging import Heartbeat, NewEvaluationInstruction
 
 logger = getLogger(__name__)
 
@@ -30,7 +30,8 @@ class EvaluationManager():
         # Start heartbeat task
         self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
         
-
+    def run_evaluation(evaluation: NewEvaluationInstruction):
+        pass
 
     def _cleanup_docker_containers():
         """
@@ -146,7 +147,7 @@ class EvaluationManager():
         """Send periodic heartbeat messages with system metrics to the platform."""
         while self.connection_manager.ws:
             await asyncio.sleep(2.5)
-            
+
             status = "available"
             if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
                 status = "evaluating"

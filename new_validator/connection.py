@@ -1,6 +1,6 @@
 # All communications between validator and platform 
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 from fiber import Keypair
 import websockets 
@@ -26,11 +26,13 @@ class ConnectionManager:
     hotkey: Keypair
     ws: Optional[websockets.ClientConnection]
     http: Optional[httpx.AsyncClient]
+    pass_message_to_validator: Callable[[str, Any], Any]
 
     _closing_connection: bool = False
 
-    def __init__(self, hotkey: Keypair) -> None:
+    def __init__(self, hotkey: Keypair, pass_message_to_validator: Callable[[str, Any], Any]) -> None:
         self.hotkey = hotkey
+        self.pass_message_to_validator = pass_message_to_validator
         self.create_connections()
     
     async def create_connections(self):
@@ -50,9 +52,22 @@ class ConnectionManager:
                     ))
 
                     # Keep connection alive
+                    # TODO: raise SystemExit(f"FATAL: TODO") handlshake
+                    
+                    try:
+                        while True: 
+                            message = await ws.recv()
+                            await self.pass_message_to_validator(message)
 
-                    # Create http connection once ws is confirmed
-                    self.http = httpx.AsyncClient()
+                    except websockets.ConnectionClosed:
+                        logger.info("Connection closed - handling disconnect")
+
+                    except Exception as e:
+                        logger.error(f"Error in message handling: {e}")
+                    
+                    finally:
+                        await self.close_connections()
+                    
 
             except SystemExit:
                 # Authentication failed, don't reconnect
@@ -67,7 +82,7 @@ class ConnectionManager:
     
     async def send(self, message: ValidatorMessage):
         # Inject hotkey, version commit to each message
-        
+        message.validator_hotkey = self.hotkey.public_key
         message.version_commit_hash = VERSION_COMMIT_HASH
 
         if isinstance(message, (
@@ -117,20 +132,3 @@ class ConnectionManager:
         
         except Exception as e:
             logger.exception(f"Error while sending message – {e}")
-
-    async def handle_message():
-        event = "authentication-failed"
-
-        match event:
-            case "begin-evaluation":
-                handle_begin_evaluation()
-
-            case "set-weights":
-                handle_set_weights()
-
-            case "authentication-failed":
-                raise SystemExit(f"FATAL: TODO")
-        # Heartbeat
-        # Start eval
-        # Post results for eval run
-        # Weights

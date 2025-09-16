@@ -52,7 +52,7 @@ class FinishEvaluation(BaseMessage):
     final_score: float
     signature: Optional[str]
 
-## Messages sent by platform 
+## Messages sent by validator 
 ValidatorMessage = (
     Authentication
     | Heartbeat
@@ -60,4 +60,20 @@ ValidatorMessage = (
     | StartEvaluation
     | UpsertEvaluationRun
     | FinishEvaluation
+)
+
+class BaseInstruction(BaseModel):
+    type: str
+
+class SetWeightInstruction(BaseInstruction):
+    type: Literal["set-weights"]
+
+class NewEvaluationInstruction:
+    type: Literal["evaluation"]
+    evaluation_id: str
+    miner_hotkey: str
+
+PlatformMessage = (
+    SetWeightInstruction,
+    NewEvaluationInstruction
 )
