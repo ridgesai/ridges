@@ -12,6 +12,8 @@ from new_validator.sandbox import SandboxManager
 from new_validator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from new_validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
+import new_validator.config as CONFIG
+
 logger = getLogger(__name__)
 
 class EvaluationManager():
@@ -74,6 +76,7 @@ class EvaluationManager():
                 logger.error(f"❌ Failed to collect system metrics, sending heartbeat without them: {e}")
                 # Fallback to heartbeat without metrics
                 await self.send({"event": "heartbeat", "status": status})
+
 
 
     def handle_evaluation_request(self):
