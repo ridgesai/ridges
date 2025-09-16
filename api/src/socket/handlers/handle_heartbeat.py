@@ -28,7 +28,7 @@ async def handle_heartbeat(
     if alleged_status != client.status:
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
-        raise WebSocketDisconnect()
+        # raise WebSocketDisconnect()
 
     # Process system metrics if included in heartbeat
     if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
