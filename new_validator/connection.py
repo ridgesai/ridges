@@ -18,8 +18,6 @@ logger = get_logger(__name__)
 websocket_url = None
 http_url = None
 
-SCREENER_MODE = False
-
 class ConnectionManager:
     hotkey: Keypair
     ws: Optional[websockets.ClientConnection]
