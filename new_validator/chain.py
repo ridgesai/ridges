@@ -8,9 +8,10 @@ import numpy as np
 from utils.logging_utils import get_logger
 from ddtrace import tracer
 
-from validator.utils.weight_utils import process_weights_for_netuid
+# TODO: Need to implement or find replacement for process_weights_for_netuid
+# from validator.utils.weight_utils import process_weights_for_netuid
 
-from validator.config import (
+from new_validator.config import (
     NETUID, 
     SUBTENSOR_NETWORK, 
     SUBTENSOR_ADDRESS,
@@ -113,19 +114,23 @@ class ChainManager:
             if abs(sum(scores) - 1.0) > 1e-6:
                 logger.warning(f"Sum of weights is not 1.0: {sum(scores)}")
 
-            # Process weights using the centralized function
-            try:
-                node_ids, node_weights = process_weights_for_netuid(
-                    uids=uids,
-                    weights=scores,
-                    netuid=NETUID,
-                    substrate=substrate,
-                    nodes=nodes,
-                    exclude_quantile=0
-                )
-            except Exception as e:
-                logger.error(f"Failed to process weights with exception: {e}")
-                return
+            # TODO: Process weights using the centralized function - function missing after validator folder deletion
+            # try:
+            #     node_ids, node_weights = process_weights_for_netuid(
+            #         uids=uids,
+            #         weights=scores,
+            #         netuid=NETUID,
+            #         substrate=substrate,
+            #         nodes=nodes,
+            #         exclude_quantile=0
+            #     )
+            # except Exception as e:
+            #     logger.error(f"Failed to process weights with exception: {e}")
+            #     return
+            
+            # Temporary placeholder - weight setting is disabled until function is implemented
+            logger.warning("Weight setting is currently disabled - process_weights_for_netuid function needs to be implemented")
+            return
 
             logger.info(f"Setting weights for {len(weights_mapping)} hotkeys")
 

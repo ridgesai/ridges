@@ -11,9 +11,8 @@ from new_validator.connection import ConnectionManager
 from new_validator.evaluation import EvaluationManager
 from new_validator.chain import ChainManager
 
-from new_validator.resource_management import cleanup_docker_containers
 from shared.messaging import NewEvaluationInstruction
-from validator.config import WALLET_NAME, HOTKEY_NAME
+from new_validator.config import WALLET_NAME, HOTKEY_NAME
 
 from fiber.chain.chain_utils import load_hotkey_keypair
 validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
@@ -31,8 +30,6 @@ class RidgesValidator:
     def __init__(self, hotkey: Keypair, start: bool = False) -> None:
         self.hotkey = hotkey
         
-        # Start by cleaning up docker containers and freeing up disk space
-        cleanup_docker_containers()
 
         if start:
             self.start()
@@ -91,7 +88,7 @@ async def main():
     This starts up the validator websocket, which connects to the Ridges platform 
     It receives and sends events like new agents to evaluate, eval status, scores, etc
     """
-    validator = RidgesValidator()
+    validator = RidgesValidator(hotkey=validator_hotkey)
     try:
         await validator.start()
     except KeyboardInterrupt:

@@ -1,6 +1,11 @@
 from datetime import timedelta
 import os
 import subprocess
+from pathlib import Path
+from dotenv import load_dotenv
+
+env_path = Path(__file__).parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 # External package imports
 from fiber.chain.chain_utils import load_hotkey_keypair
@@ -24,10 +29,10 @@ VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).deco
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
 RIDGES_API_URL = os.getenv("RIDGES_API_URL", None) 
 if RIDGES_API_URL is None:
-    print("RIDGES_API_URL must be set in validator/.env")
+    print("RIDGES_API_URL must be set in new_validator/.env")
     exit(1)
 if RIDGES_API_URL == "http://<YOUR_LOCAL_IP>:8000":
-    print("Set your local IP address in validator/.env")
+    print("Set your local IP address in new_validator/.env")
     exit(1)
 if RIDGES_API_URL in ["http://127.0.0.1:8000", "http://localhost:8000", "http://0.0.0.0:8000"]:
     print("You are running the validator on a loopback address. This will cause 502 connection errors while proxying. Please use your local IP address.")
