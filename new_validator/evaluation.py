@@ -34,9 +34,9 @@ class EvaluationManager():
         # Start heartbeat task
         self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
 
-        self.sandbox_manager = SandboxManager()
-        self.polyglot_suite = PolyglotSuite(Path(__file__) / "datasets" / "polyglot")
-        self.swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__) / "dataset" / "swebench_verified")
+        self.sandbox_manager = SandboxManager("http://192.168.129.138:1234")
+        self.polyglot_suite = PolyglotSuite(Path(__file__).parent / "datasets" / "polyglot")
+        self.swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__).parent / "datasets" / "swebench_verified")
 
         # We should somehow fetch the list of SWE-Bench Verified problems
         # And then prebuild the images to speed up evals
