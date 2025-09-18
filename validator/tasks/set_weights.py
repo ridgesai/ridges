@@ -6,7 +6,6 @@ from fiber.chain import chain_utils, interface, metagraph, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
 from utils.logging_utils import get_logger
-from ddtrace import tracer
 
 from validator.utils.weight_utils import process_weights_for_netuid
 
@@ -21,7 +20,6 @@ from validator.config import (
 
 logger = get_logger(__name__)
 
-@tracer.wrap(resource="set-weights-with-timeout")
 async def _set_weights_with_timeout(
     substrate,
     keypair,
@@ -56,7 +54,6 @@ async def _set_weights_with_timeout(
         logger.error(f"Error in set_node_weights: {str(e)}")
         return False
 
-@tracer.wrap(resource="query-node-id")
 def query_node_id(substrate: SubstrateInterface) -> int | None:
     keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
     node_id_query = substrate.query("SubtensorModule", "Uids", [NETUID, keypair.ss58_address])
@@ -65,7 +62,6 @@ def query_node_id(substrate: SubstrateInterface) -> int | None:
         return
     return node_id_query.value
 
-@tracer.wrap(resource="query-version-key")
 def query_version_key(substrate: SubstrateInterface) -> int | None:
     version_key_query = substrate.query("SubtensorModule", "WeightsVersionKey", [NETUID])
     if version_key_query is None:
@@ -74,7 +70,6 @@ def query_version_key(substrate: SubstrateInterface) -> int | None:
     return version_key_query.value
 
 
-@tracer.wrap(resource="set-weights-from-mapping")
 async def set_weights_from_mapping(weights_mapping: dict[str, float]):
     """Set validator weights according to a mapping of hotkey to weight.
     

@@ -3,7 +3,6 @@
 import subprocess
 import time
 from utils.logging_utils import get_logger
-from ddtrace import tracer
 
 from validator.config import validator_hotkey
 
@@ -11,7 +10,6 @@ logger = get_logger(__name__)
 
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
-@tracer.wrap(resource="get-validator-info")
 def get_validator_info():
     """Generate validator info with cryptographic proof of hotkey ownership."""
     if validator_hotkey is None:

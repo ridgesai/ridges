@@ -3,7 +3,6 @@
 import os
 import subprocess
 from utils.logging_utils import get_logger
-from ddtrace import tracer
 
 from validator.config import screener_hotkey
 
@@ -11,7 +10,6 @@ logger = get_logger(__name__)
 
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
-@tracer.wrap(resource="get-screener-info")
 def get_screener_info():
     """Generate screener info"""
     return {

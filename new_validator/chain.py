@@ -6,7 +6,6 @@ from fiber.chain import chain_utils, interface, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 import numpy as np
 from utils.logging_utils import get_logger
-from ddtrace import tracer
 
 # TODO: Need to implement or find replacement for process_weights_for_netuid
 # from validator.utils.weight_utils import process_weights_for_netuid

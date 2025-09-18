@@ -3,7 +3,6 @@
 import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, List
-from ddtrace import tracer
 from validator.utils.http_client import get_shared_client
 
 from validator.config import RIDGES_API_URL
@@ -37,7 +36,6 @@ def load_swebench_problems() -> dict[str, SwebenchProblem]:
     
     return problems
 
-@tracer.wrap(resource="run-evaluation")
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, agent_version: AgentVersion, evaluation_runs: List[EvaluationRun]):
     """Run evaluation for a specific agent version"""
     logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")

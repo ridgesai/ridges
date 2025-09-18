@@ -3,11 +3,9 @@ from utils.logging_utils import get_logger
 from validator.tasks.set_weights import set_weights_from_mapping
 from validator.utils.http_client import get_shared_client
 from validator.config import RIDGES_API_URL
-from ddtrace import tracer
 
 logger = get_logger(__name__)
 
-@tracer.wrap(resource="handle-set-weights")
 async def handle_set_weights(websocket_app, json_message):
     """Handle a `set-weights` websocket event.
     

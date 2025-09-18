@@ -9,7 +9,6 @@ from datetime import datetime, timezone
 import docker
 from docker.models.containers import Container
 from docker.errors import NotFound, ImageNotFound, APIError
-from ddtrace import tracer
 
 from validator.config import RIDGES_PROXY_URL, RIDGES_API_URL
 from validator.sandbox.constants import (
@@ -59,7 +58,6 @@ class SandboxManager:
         self._setup_proxy()
         self._setup_signal_handlers()
 
-    @tracer.wrap(resource="setup-network-for-sandbox-manager")
     def _setup_network(self) -> None:
         """Setup Docker network and proxy container"""
         # Create network
@@ -75,7 +73,6 @@ class SandboxManager:
         except NotFound:
             pass
     
-    @tracer.wrap(resource="setup-proxy-for-sandbox-manager")
     def _setup_proxy(self) -> None:
         """Setup proxy container"""
         try:
@@ -152,7 +149,6 @@ class SandboxManager:
         
         return success
     
-    @tracer.wrap(resource="create-sandbox")
     async def create_sandbox(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path) -> Sandbox:
         """Create a new sandbox for evaluation"""
         sandbox = Sandbox(evaluation_run, problem, agent_dir, self)
@@ -278,7 +274,6 @@ class SandboxManager:
 
         self.sandbox_manager = None
 
-    @tracer.wrap(resource="run-all-sandboxes")
     async def run_all_sandboxes(self) -> None:
         """Run all sandboxes in parallel"""
         async def run_sandbox_with_error_handling(sandbox: Sandbox):
@@ -312,7 +307,6 @@ class SandboxManager:
         finally:
             self._task_group = None
     
-    @tracer.wrap(resource="cleanup-sandbox-manager")
     def cleanup(self, force_cancel: bool = True) -> None:
         logger.info("Starting sandbox manager cleanup")
         

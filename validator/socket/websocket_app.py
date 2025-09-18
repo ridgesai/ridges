@@ -8,7 +8,6 @@ from typing import Any, Dict, Optional
 
 import websockets
 import websockets.exceptions
-from ddtrace import tracer
 
 from validator.utils.get_screener_info import get_screener_info
 from utils.logging_utils import get_logger
@@ -38,7 +37,6 @@ class WebsocketApp:
         self.heartbeat_task = None
         self._shutting_down = False
 
-    @tracer.wrap(resource="send-websocket-message")
     async def send(self, message: Dict[str, Any]):
         if self.ws is None or self._shutting_down:
             logger.error("Websocket not connected")
@@ -63,7 +61,6 @@ class WebsocketApp:
         except Exception as e:
             logger.exception(f"Error while sending message – {e}")
 
-    @tracer.wrap(resource="cancel-evaluation")
     async def cancel_running_evaluation(self):
         """Cancel the currently running evaluation if any."""
         # Force cancel all sandbox tasks immediately
@@ -134,7 +131,6 @@ class WebsocketApp:
                     # Fallback to heartbeat without metrics
                     await self.send({"event": "heartbeat", "status": status})
 
-    @tracer.wrap(resource="shutdown-websocket-app")
     async def shutdown(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
         if self._shutting_down:
@@ -167,7 +163,6 @@ class WebsocketApp:
             
         logger.info("WebsocketApp shutdown complete")
 
-    @tracer.wrap(resource="start-websocket-app")
     async def start(self):
         while True:
             try:

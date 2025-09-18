@@ -8,7 +8,6 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
-from ddtrace import tracer
 
 from docker.errors import ImageNotFound, APIError
 from docker.models.containers import Container
@@ -46,7 +45,6 @@ def load_swebench_instance(instance_id: str) -> dict:
 class Sandbox:
     """Async sandbox for running agent evaluations"""
     
-    @tracer.wrap(resource="initialize-sandbox")
     def __init__(self, evaluation_run: EvaluationRun, problem: SwebenchProblem, agent_dir: Path, manager: "SandboxManager"):
         self.evaluation_run = evaluation_run
         self.problem = problem
@@ -64,7 +62,6 @@ class Sandbox:
         """Mark this sandbox as cancelled to stop websocket communications."""
         self._cancelled = True
 
-    @tracer.wrap(resource="run-sandbox")
     async def run(self) -> None:
         """Run the complete sandbox evaluation pipeline"""
         
@@ -92,7 +89,6 @@ class Sandbox:
             self.evaluation_run.solved = False
             await self._send_update()
     
-    @tracer.wrap(resource="send-update")
     async def _send_update(self) -> None:
         """Send evaluation run update"""
         if self._cancelled:
@@ -105,7 +101,6 @@ class Sandbox:
         except Exception as e:
             logger.error(f"Failed to send update: {e}")
     
-    @tracer.wrap(resource="generate-patch")
     async def _generate_patch(self) -> None:
         """Generate patch using agent code"""
         # Setup repository
@@ -232,7 +227,6 @@ class Sandbox:
             if io_dir.exists():
                 shutil.rmtree(io_dir)
     
-    @tracer.wrap(resource="setup-repository")
     async def _setup_repository(self, repo_name: str, base_commit: str) -> Path:
         """Setup repository from cache or clone"""
         cache_key = f"{repo_name.replace('/', '_')}_{base_commit}"
@@ -315,7 +309,6 @@ class Sandbox:
         
         return repo_path
     
-    @tracer.wrap(resource="wait-container-capture-logs")
     async def _wait_for_container_and_capture_logs(self) -> None:
         """Wait for container completion and capture logs via docker logs command"""
         run_id = self.evaluation_run.run_id
@@ -365,7 +358,6 @@ class Sandbox:
         except Exception as e:
             logger.error(f"Error in container monitoring for {run_id}: {e}")
             
-    @tracer.wrap(resource="capture-logs-post-execution")
     async def _capture_container_logs_post_execution(self) -> None:
         """Capture complete container logs after execution using docker logs"""
         run_id = self.evaluation_run.run_id
@@ -417,7 +409,6 @@ class Sandbox:
             except Exception as e:
                 logger.warning(f"Failed to remove container {self.container.id}: {e}")
     
-    @tracer.wrap(resource="evaluate-patch")
     async def _evaluate_patch(self) -> None:
         """Evaluate patch using SWE-bench"""
         # Check if patch applies
@@ -431,7 +422,6 @@ class Sandbox:
         # Run SWE-bench evaluation
         await asyncio.get_event_loop().run_in_executor(None, self._run_swebench_evaluation)
     
-    @tracer.wrap(resource="check-if-patch-applies")
     def _check_patch_applies(self) -> Optional[str]:
         """Test if the patch applies and return error if it doesn't"""
         if not self.evaluation_run.response or not self.evaluation_run.response.strip():
@@ -467,7 +457,6 @@ class Sandbox:
                 pass
             patch_path.unlink(missing_ok=True)
     
-    @tracer.wrap(resource="run-swebench-evaluation")
     def _run_swebench_evaluation(self) -> None:
         """Run SWE-bench evaluation (blocking operation)"""
         from swebench.harness.constants import SWEbenchInstance
@@ -524,7 +513,6 @@ class Sandbox:
             self.evaluation_run.error = f"SWE-bench evaluation failed: {str(e)}"
             self.evaluation_run.solved = False
     
-    @tracer.wrap(resource="cleanup-sandbox")
     def cleanup(self) -> None:
         """Clean up sandbox resources"""
         if self.container:
