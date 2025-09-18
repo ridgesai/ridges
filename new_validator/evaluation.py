@@ -34,7 +34,9 @@ class EvaluationManager():
         # Start heartbeat task
         self.heartbeat_task = asyncio.create_task(self._send_heartbeat())
 
-        self.sandbox_manager = SandboxManager("http://192.168.129.77:1234")
+        # CXII FIX ME: HACK
+        from new_validator.config import SANDBOX_GATEWAY_URL
+        self.sandbox_manager = SandboxManager(SANDBOX_GATEWAY_URL)
         self.polyglot_suite = PolyglotSuite(Path(__file__).parent / "datasets" / "polyglot")
         self.swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__).parent / "datasets" / "swebench_verified")
 

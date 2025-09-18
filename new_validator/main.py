@@ -44,7 +44,6 @@ class RidgesValidator:
 
         # Create connection, eval managers
         self.connection_manager = ConnectionManager(hotkey=self.hotkey, pass_message_to_validator=self.handle_platform_instructions)
-        asyncio.create_task(self.connection_manager.create_connections())
         
         # Wait for connection to be established
         await self.connection_manager.wait_for_connection()
@@ -75,6 +74,11 @@ class RidgesValidator:
                 case "set-weights":
                     self.chain_manager.set_weight()
 
+                case "authentication-failed":
+                    error = parsed_message.get("error", "Unknown authentication error")
+                    logger.error(f"Authentication failed: {error}")
+                    raise SystemExit(f"Authentication failed: {error}")
+
                 case _: 
                     logger.info(f"Validator received unrecognized message: {message}")
         except Exception as e:
@@ -82,22 +86,25 @@ class RidgesValidator:
         
     async def shutdown(self):
         # Kill connections and gracefully report shutdown
-        self.connection_manager.close_connections()
+        await self.connection_manager.close_connections()
         # And then kill running evaluations. Run a cleanup on containers
         self.evaluation_manager.shutdown_evaluations()
         
         pass
 
+
+
 async def main():
-    """
-    This starts up the validator websocket, which connects to the Ridges platform 
-    It receives and sends events like new agents to evaluate, eval status, scores, etc
-    """
     validator = RidgesValidator(hotkey=validator_hotkey)
-    try:
-        await validator.start()
-    except KeyboardInterrupt:
-        await validator.shutdown()
+
+    logger.info("Validator starting up")
+    await validator.start()
+    while True:
+        await asyncio.sleep(1)
+    logger.info("Validator shutting down")
+    await validator.shutdown()
+
+
 
 if __name__ == "__main__":
     try:

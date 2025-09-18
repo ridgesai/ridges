@@ -35,7 +35,8 @@ class Screener(Client):
         elif hotkey.startswith("i-0"):  # Legacy screeners are stage 1
             return 1
         else:
-            return None
+            # CXII FIX ME: TEMPORARY HACK TO GET IT WORKING
+            return 1
 
     @staticmethod
     async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> tuple[Optional[float], Optional[str]]:

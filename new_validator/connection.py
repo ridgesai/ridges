@@ -28,29 +28,34 @@ class ConnectionManager:
     def __init__(self, hotkey: Keypair, pass_message_to_validator: Callable[[str, Any], Any]) -> None:
         self.hotkey = hotkey
         self.pass_message_to_validator = pass_message_to_validator
+        self.ws = None  # Initialize ws attribute  
         self._connected_event = asyncio.Event()
+        # Start connection task
+        asyncio.create_task(self.create_connections())
 
     async def create_connections(self):
-        while True: 
+        retry_count = 0
+        max_retries = 3
+        
+        while retry_count < max_retries: 
             try: 
                 if WEBSOCKET_URL is None or WEBSOCKET_URL == "":
                     raise RuntimeError("Websocket URL is not configured")
                 
+                logger.info(f"Connecting to websocket (attempt {retry_count + 1}/{max_retries})")
                 async with websockets.connect(WEBSOCKET_URL, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
                     self.ws = ws
                     self._closing_connection = False
 
                     # Authenticate
-                    await self.send(Authentication(
-                        validator_hotkey=self.hotkey.public_key,
-                        version_commit_hash=VERSION_COMMIT_HASH
-                    ))
+                    auth_message = Authentication(signature="placeholder")  # send() will inject proper signature
+                    await self.send(auth_message)
 
                     # Signal that connection is established
                     self._connected_event.set()
+                    retry_count = 0  # Reset retry count on successful connection
 
                     # Keep connection alive
-                    # TODO: raise SystemExit(f"FATAL: TODO") handlshake
                     
                     try:
                         while True: 
@@ -73,8 +78,17 @@ class ConnectionManager:
                 raise
 
             except Exception as e:
-                logger.error(f"Error connecting to websocket: {e}")
-                await asyncio.sleep(2)
+                retry_count += 1
+                logger.error(f"Error connecting to websocket (attempt {retry_count}/{max_retries}): {e}")
+                
+                if retry_count >= max_retries:
+                    logger.error("Max connection retries exceeded. Shutting down.")
+                    raise SystemExit("Failed to connect to platform after multiple attempts")
+                
+                # Wait longer between retries
+                wait_time = retry_count * 10  # 10s, 20s, 30s
+                logger.info(f"Waiting {wait_time} seconds before retry...")
+                await asyncio.sleep(wait_time)
 
     async def wait_for_connection(self):
         """Wait until the websocket connection is established."""
@@ -86,7 +100,7 @@ class ConnectionManager:
     
     async def send(self, message: ValidatorMessage):
         # Inject hotkey, version commit to each message
-        message.validator_hotkey = self.hotkey.public_key
+        message.validator_hotkey = self.hotkey.public_key.hex()  # Convert bytes to hex string
         message.version_commit_hash = VERSION_COMMIT_HASH
 
         if isinstance(message, (
@@ -102,11 +116,11 @@ class ConnectionManager:
 
             message.signature = signature
 
-            return self._send_ws(
+            return await self._send_ws(
                 message=message.model_dump()
             )
         
-        return self._send_ws(
+        return await self._send_ws(
             message=message.model_dump()
         )
 
@@ -127,7 +141,9 @@ class ConnectionManager:
             return
         
         try:
-            await self.ws.send(json.dumps(message))
+            # Handle datetime serialization with default=str
+            json_message = json.dumps(message, default=str)
+            await self.ws.send(json_message)
 
         except (websockets.exceptions.ConnectionClosed, websockets.exceptions.ConnectionClosedError) as e:
             # Connection closed while sending, shutting down
