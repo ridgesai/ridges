@@ -45,7 +45,6 @@ class Validator(Client):
         """Broadcast status change to dashboard clients"""
         try:
             import asyncio
-            from api.src.socket.websocket_manager import WebSocketManager
             
             # Create a task to send the status update
             loop = asyncio.get_event_loop()

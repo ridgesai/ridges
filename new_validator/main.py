@@ -44,6 +44,11 @@ class RidgesValidator:
 
         # Create connection, eval managers
         self.connection_manager = ConnectionManager(hotkey=self.hotkey, pass_message_to_validator=self.handle_platform_instructions)
+        asyncio.create_task(self.connection_manager.create_connections())
+        
+        # Wait for connection to be established
+        await self.connection_manager.wait_for_connection()
+
         self.evaluation_manager = EvaluationManager(connection_manager=self.connection_manager)
         self.chain_manager = ChainManager(hotkey=self.hotkey)
 

@@ -9,7 +9,7 @@ import httpx
 
 from new_validator.authentication import sign_validator_message
 from shared.messaging import Authentication, FinishEvaluation, RequestNextEvaluation, StartEvaluation, UpsertEvaluationRun, ValidatorMessage
-from new_validator.config import VERSION_COMMIT_HASH, WEBSOCKET_URL, HTTP_URL
+from new_validator.config import VERSION_COMMIT_HASH, WEBSOCKET_URL, RIDGES_API_URL
 from utils.logging_utils import get_logger
 
 import json
@@ -23,16 +23,17 @@ class ConnectionManager:
     pass_message_to_validator: Callable[[str, Any], Any]
 
     _closing_connection: bool = False
+    _connected_event: asyncio.Event
 
     def __init__(self, hotkey: Keypair, pass_message_to_validator: Callable[[str, Any], Any]) -> None:
         self.hotkey = hotkey
         self.pass_message_to_validator = pass_message_to_validator
-        self.create_connections()
-    
+        self._connected_event = asyncio.Event()
+
     async def create_connections(self):
         while True: 
             try: 
-                if WEBSOCKET_URL is None:
+                if WEBSOCKET_URL is None or WEBSOCKET_URL == "":
                     raise RuntimeError("Websocket URL is not configured")
                 
                 async with websockets.connect(WEBSOCKET_URL, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
@@ -44,6 +45,9 @@ class ConnectionManager:
                         validator_hotkey=self.hotkey.public_key,
                         version_commit_hash=VERSION_COMMIT_HASH
                     ))
+
+                    # Signal that connection is established
+                    self._connected_event.set()
 
                     # Keep connection alive
                     # TODO: raise SystemExit(f"FATAL: TODO") handlshake
@@ -60,6 +64,7 @@ class ConnectionManager:
                         logger.error(f"Error in message handling: {e}")
                     
                     finally:
+                        self._connected_event.clear()
                         await self.close_connections()
                     
 
@@ -69,6 +74,11 @@ class ConnectionManager:
 
             except Exception as e:
                 logger.error(f"Error connecting to websocket: {e}")
+                await asyncio.sleep(2)
+
+    async def wait_for_connection(self):
+        """Wait until the websocket connection is established."""
+        await self._connected_event.wait()
 
     async def close_connections(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
