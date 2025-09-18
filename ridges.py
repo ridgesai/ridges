@@ -26,9 +26,6 @@ CONFIG_FILE = "miner/.env"
 load_dotenv(CONFIG_FILE)
 load_dotenv(".env")
 
-validator_tracing = False
-if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV") and os.getenv("DD_SERVICE"):
-    validator_tracing = True
 
 def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
@@ -128,9 +125,9 @@ class RidgesCLI:
         self.api_url = api_url or DEFAULT_API_BASE_URL
         self.config = Config()
     
-    def get_keypair(self):
-        coldkey = self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-        hotkey = self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    def get_keypair(self, coldkey_name: Optional[str] = None, hotkey_name: Optional[str] = None):
+        coldkey = coldkey_name or self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+        hotkey = hotkey_name or self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
         return load_hotkey_keypair(coldkey, hotkey)
     
     def get_agent_path(self) -> str:
@@ -165,7 +162,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
         with open(file, 'rb') as f:
             files = {'agent_file': ('agent.py', f, 'text/plain')}
             content_hash = hashlib.sha256(f.read()).hexdigest()
-            keypair = ridges.get_keypair()
+            keypair = ridges.get_keypair(coldkey_name, hotkey_name)
             public_key = keypair.public_key.hex()
             
             name_and_prev_version = get_name_and_prev_version(ridges.api_url, keypair.ss58_address)
@@ -223,10 +220,7 @@ def run(no_auto_update: bool):
 
     if no_auto_update:
         console.print("🚀 Starting validator...", style="yellow")
-        if validator_tracing:
-            run_cmd("ddtrace-run uv run -m validator.main", capture=False)
-        else:
-            run_cmd("uv run -m validator.main", capture=False)
+        run_cmd("uv run -m validator.main", capture=False)
         return
     
     # Check if already running
@@ -347,7 +341,7 @@ def run(no_auto_update: bool):
         return
     
     # Start platform
-    if run_cmd(f"pm2 start '.venv/bin/ddtrace-run uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
+    if run_cmd(f"pm2 start 'uv run -m api.src.main' --name ridges-api-platform", capture=False)[0] == 0:
         console.print(Panel(f"[bold green] Platform started![/bold green] Running on 0.0.0.0:8000", title="✨ Success", border_style="green"))
         console.print(" Showing platform logs...", style="cyan")
         run_cmd("pm2 logs ridges-api-platform", capture=False)
