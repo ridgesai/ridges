@@ -8,7 +8,7 @@ from api.src.backend.queries.agents import get_agent_approved_banned, get_agent_
 from api.src.backend.queries.statistics import get_inference_details_for_run
 from api.src.backend.db_manager import db_operation
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 import asyncpg
 
 logger = get_logger(__name__)

@@ -37,7 +37,7 @@ RIDGES_PROXY_URL = os.getenv("RIDGES_PROXY_URL", "http://52.1.119.189:8001")
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
 # Log initial configuration
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 logger.info("Validator Configuration:")

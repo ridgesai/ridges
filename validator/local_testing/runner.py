@@ -17,7 +17,7 @@ from swebench.harness.run_evaluation import load_swebench_dataset
 from validator.local_testing.problem_instances import EASY_INSTANCES, MEDIUM_INSTANCES, HARD_INSTANCES, SCREENER_INSTANCES, TEST_SCREENER_INSTANCES
 from validator.sandbox.schema import SwebenchProblem
 from validator.local_testing.local_manager import LocalSandboxManager
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from rich.console import Console
 from rich.panel import Panel
 

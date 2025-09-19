@@ -3,18 +3,16 @@
 import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import SCREENER_MODE, validator_hotkey
-from ddtrace import tracer
 
 if TYPE_CHECKING:
     from validator.socket.websocket_app import WebsocketApp
 
 logger = get_logger(__name__)
 
-@tracer.wrap(resource="handle-evaluation")
 async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
     """Handle agent version events.
 

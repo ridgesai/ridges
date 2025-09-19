@@ -3,7 +3,7 @@ from typing import List
 
 from api.src.backend.queries.healthcheck import get_healthcheck_results
 from api.src.socket.server_helpers import SERVER_COMMIT_HASH
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

@@ -3,7 +3,7 @@ from typing import Optional, Dict, List, Union
 from fastapi import WebSocket, WebSocketDisconnect
 
 from api.src.models.evaluation import Evaluation
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.models.validator import Validator
 from api.src.models.screener import Screener
@@ -51,6 +51,9 @@ class WebSocketManager:
                 response_json = json.loads(response)
                 hotkey = getattr(self.clients[websocket], 'hotkey', None)
 
+                # Print received websocket message for debugging
+                print(f"📨 API RECEIVED WEBSOCKET MESSAGE: {response_json}")
+                
                 await route_message(websocket, hotkey, response_json, self.clients)
                 
         except WebSocketDisconnect:

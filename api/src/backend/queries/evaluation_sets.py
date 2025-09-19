@@ -3,7 +3,7 @@ from typing import List
 import asyncpg
 
 from api.src.backend.db_manager import db_operation
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

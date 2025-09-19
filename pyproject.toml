@@ -11,8 +11,6 @@ dependencies = [
     "boto>=2.49.0",
     "click>=8.1.0",
     "coverage>=7.10.2",
-    "datadog-api-client>=2.39.0",
-    "ddtrace>=3.10.1",
     "dotenv>=0.9.9",
     "email-validator>=2.2.0",
     "fiber[full]",

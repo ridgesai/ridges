@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Set
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from api.src.backend.db_manager import get_transaction
 
 logger = get_logger(__name__)

@@ -2,7 +2,6 @@ import asyncio
 import docker
 import subprocess
 import shutil
-from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv("validator/.env")
@@ -10,7 +9,7 @@ load_dotenv("validator/.env")
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
 from validator.sandbox.constants import REPOS_BASE_DIR, REPO_CACHE_DIR
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

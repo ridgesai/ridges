@@ -5,7 +5,7 @@ System metrics collection utility for validators/screeners.
 import subprocess
 import asyncio
 from typing import Dict, Optional
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
