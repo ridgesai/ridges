@@ -70,8 +70,8 @@ class BaseInstruction(BaseModel):
 class SetWeightInstruction(BaseInstruction):
     event: Literal["set-weights"]
 
-class NewEvaluationInstruction:
-    event: Literal["evaluation"]
+class NewEvaluationInstruction(BaseInstruction):
+    event: Literal["start-eval"]
     evaluation_id: str
     agent_version: MinerAgent
     evaluation_runs: list[EvaluationRun]

@@ -35,6 +35,9 @@ class RidgesValidator:
             self.start()
 
     async def start(self):
+        from new_validator.utils.logger import enable_verbose as sbox_logger_enable_verbose
+        sbox_logger_enable_verbose();
+
         '''
         The validator consists of three pieces:
             - A connection layer, that handles signing requests to platform and sending them back
@@ -68,8 +71,10 @@ class RidgesValidator:
                 raise Exception(f"Platform sent message without a defined event: {message}")
             
             match event:
-                case "evaluation":
-                    self.evaluation_manager.run_evaluation(evaluation=NewEvaluationInstruction(**parsed_message))
+                case "start-eval":
+                    # Create a task for the evaluation to prevent blocking message processing
+                    evaluation = NewEvaluationInstruction(**parsed_message)
+                    asyncio.create_task(self.evaluation_manager.run_evaluation(evaluation=evaluation))
 
                 case "set-weights":
                     self.chain_manager.set_weight()

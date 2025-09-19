@@ -1,3 +1,4 @@
+import json
 from new_validator.resource_management import get_system_metrics
 from new_validator.connection import ConnectionManager
 
@@ -17,6 +18,8 @@ from new_validator.config import AGENT_TIMEOUT, EVAL_TIMEOUT
 
 logger = getLogger(__name__)
 
+
+
 class EvaluationManager():
     connection_manager: ConnectionManager
     evaluation_task: Optional[asyncio.Task]
@@ -29,6 +32,8 @@ class EvaluationManager():
 
 
     def __init__(self, connection_manager: ConnectionManager) -> None:
+        
+        
         self.connection_manager = connection_manager
 
         # Start heartbeat task
@@ -45,10 +50,20 @@ class EvaluationManager():
         # TODO: Define SWEBENCH_VERIFIED_PROBLEMS or fetch from suite
         # self.swebench_verified_suite.prebuild_problem_images(self.sandbox_manager, SWEBENCH_VERIFIED_PROBLEMS)
 
-    def run_evaluation(self, evaluation: NewEvaluationInstruction):
+    async def run_evaluation(self, evaluation: NewEvaluationInstruction):
         """Run evaluation using the new agent runner library."""
         
         logger.info(f"Starting evaluation {evaluation.evaluation_id} for agent {evaluation.agent_version.agent_name}")
+        
+        # Fetch agent source code first
+        try:
+            agent_version_id = str(evaluation.agent_version.version_id)
+            agent_source_code = json.loads(await self.connection_manager.fetch_agent_source_code(agent_version_id))
+            logger.info(f"Successfully fetched agent source code for {evaluation.agent_version.agent_name} (version {agent_version_id})")
+        except Exception as e:
+            logger.error(f"Failed to fetch agent source code for evaluation {evaluation.evaluation_id}: {e}")
+            # TODO: Send error back to platform indicating agent source code fetch failure
+            return
         
         # Make sure all problems exist
         for run in evaluation.evaluation_runs:
@@ -74,11 +89,15 @@ class EvaluationManager():
 
             # This callback will be invoked when the agent finishes running
             def on_agent_finish(agent_result):
+                print(agent_result)
+                
                 if agent_result["status"] == "success":
                     logger.info(f"Agent finished successfully for run {run_id}")
                     
                     # This callback will be invoked when the agent finishes evaluating
                     def on_eval_finish(eval_result):
+                        print(eval_result)
+
                         if eval_result["status"] == "success":
                             logger.info(f"Evaluation completed successfully for run {run_id}")
                             # TODO: Send evaluation result back to platform
@@ -99,28 +118,29 @@ class EvaluationManager():
                     logger.error(f"Agent failed for run {run_id}: {agent_result.get('error', 'Unknown error')}")
                     # TODO: Send agent error back to platform
                     
-            # Run the agent - we need to get the agent source code from somewhere
-            # TODO: The agent source code should be available in the MinerAgent object or fetched separately
-            agent_source_code = "# TODO: Get agent source code from evaluation.agent_version"
-            
+            # Run the agent with the fetched source code
             suite.run_agent_in_sandbox_for_problem(
                 self.sandbox_manager,
                 run_id,
                 problem_name,
                 agent_source_code,
                 on_agent_finish,
-                timeout=AGENT_TIMEOUT
+                timeout=AGENT_TIMEOUT,
+                include_solution=True
             )
         
     async def _send_heartbeat(self):
         """Send periodic heartbeat messages with system metrics to the platform."""
+
+        # CXII FIX ME: this is crowding up the logs i cant debug so lets remove it right now
+        return
+
         while self.connection_manager.ws:
             await asyncio.sleep(2.5)
 
             status = "available"
 
-            if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
-                status = "evaluating"
+            # CXII FIX ME: determine status
 
             # Collect system metrics
             try:
@@ -142,6 +162,7 @@ class EvaluationManager():
                 else:
                     logger.warning("📊 Sending heartbeat WITHOUT metrics (all None or psutil unavailable)")
 
+                print("I AM TRYING TO SEND HEARTBEAT 1")
                 await self.connection_manager.send(message=heartbeat)
 
             except Exception as e:

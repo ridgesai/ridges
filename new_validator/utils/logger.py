@@ -35,5 +35,5 @@ def enable_verbose():
     _verbose_mode = True
 
 def debug(msg):
-    if _verbose_mode:
+    if True:
         print(f"{Colors.GRAY}DEBUG: {msg}{Colors.RESET}")

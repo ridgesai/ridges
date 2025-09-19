@@ -480,12 +480,12 @@ class Evaluation:
         evaluation_runs = await evaluation.start(conn)
 
         message = {
-            "event": "screen-agent",
+            "event": "start-eval",
             "evaluation_id": str(eval_id),
             "agent_version": agent.model_dump(mode="json"),
             "evaluation_runs": [run.model_dump(mode="json") for run in evaluation_runs],
         }
-        logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
+        logger.info(f"Sending start-eval message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
         
         await ws.send_to_all_non_validators("evaluation-started", message)
         return eval_id, await ws.send_to_client(screener, message)

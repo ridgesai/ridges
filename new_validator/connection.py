@@ -29,6 +29,7 @@ class ConnectionManager:
         self.hotkey = hotkey
         self.pass_message_to_validator = pass_message_to_validator
         self.ws = None  # Initialize ws attribute  
+        self.http = httpx.AsyncClient(timeout=30.0)  # Initialize HTTP client
         self._connected_event = asyncio.Event()
         # Start connection task
         asyncio.create_task(self.create_connections())
@@ -94,8 +95,45 @@ class ConnectionManager:
         """Wait until the websocket connection is established."""
         await self._connected_event.wait()
 
+    async def fetch_agent_source_code(self, version_id: str) -> str:
+        """Fetch agent source code from the platform API."""
+        if not self.http:
+            raise RuntimeError("HTTP client not initialized")
+        
+        try:
+            # Construct the API URL for fetching agent source code
+            api_url = f"{RIDGES_API_URL}/retrieval/agent-version-file"
+            
+            # Make the request to fetch agent source code as text
+            response = await self.http.get(
+                api_url,
+                params={
+                    "version_id": version_id,
+                    "return_as_text": True
+                }
+            )
+            
+            response.raise_for_status()  # Raise exception for HTTP errors
+            
+            agent_source_code = response.text
+            logger.info(f"Successfully fetched agent source code for version {version_id} ({len(agent_source_code)} characters)")
+            return agent_source_code
+            
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                logger.error(f"Agent version {version_id} not found on platform")
+                raise ValueError(f"Agent version {version_id} not found")
+            else:
+                logger.error(f"HTTP error {e.response.status_code} while fetching agent source code for {version_id}: {e}")
+                raise RuntimeError(f"Failed to fetch agent source code: HTTP {e.response.status_code}")
+        except Exception as e:
+            logger.error(f"Error fetching agent source code for version {version_id}: {e}")
+            raise RuntimeError(f"Failed to fetch agent source code: {e}")
+
     async def close_connections(self):
         """Properly shutdown the WebsocketApp by cancelling tasks and closing connections."""
+        if self.http:
+            await self.http.aclose()
         pass
     
     async def send(self, message: ValidatorMessage):

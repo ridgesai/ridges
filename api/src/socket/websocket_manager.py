@@ -51,6 +51,9 @@ class WebSocketManager:
                 response_json = json.loads(response)
                 hotkey = getattr(self.clients[websocket], 'hotkey', None)
 
+                # Print received websocket message for debugging
+                print(f"📨 API RECEIVED WEBSOCKET MESSAGE: {response_json}")
+                
                 await route_message(websocket, hotkey, response_json, self.clients)
                 
         except WebSocketDisconnect:

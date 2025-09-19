@@ -398,7 +398,8 @@ class SandboxManager:
                 warn(f"[SANDBOX] Could not clean up container for <{sandbox_id}>: {e}")
         
         # Clean up temp directory
-        cleanup_temp_dir(temp_dir)
+        # CXII FIX ME
+        # cleanup_temp_dir(temp_dir)
         del self.sandboxes[sandbox_id]
         
         debug(f"[SANDBOX] Cleaned up sandbox <{sandbox_id}>")
