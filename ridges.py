@@ -128,9 +128,9 @@ class RidgesCLI:
         self.api_url = api_url or DEFAULT_API_BASE_URL
         self.config = Config()
     
-    def get_keypair(self):
-        coldkey = self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-        hotkey = self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    def get_keypair(self, coldkey_name: Optional[str] = None, hotkey_name: Optional[str] = None):
+        coldkey = coldkey_name or self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+        hotkey = hotkey_name or self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
         return load_hotkey_keypair(coldkey, hotkey)
     
     def get_agent_path(self) -> str:
@@ -165,7 +165,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
         with open(file, 'rb') as f:
             files = {'agent_file': ('agent.py', f, 'text/plain')}
             content_hash = hashlib.sha256(f.read()).hexdigest()
-            keypair = ridges.get_keypair()
+            keypair = ridges.get_keypair(coldkey_name, hotkey_name)
             public_key = keypair.public_key.hex()
             
             name_and_prev_version = get_name_and_prev_version(ridges.api_url, keypair.ss58_address)

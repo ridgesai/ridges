@@ -102,6 +102,10 @@ class WebsocketApp:
 
     async def _send_heartbeat(self):
         """Send periodic heartbeat messages with system metrics to the platform."""
+
+        # CXII FIXME
+        return
+
         while self.ws:
             await asyncio.sleep(2.5)
             if self.ws:
@@ -173,6 +177,7 @@ class WebsocketApp:
             try:
                 if websocket_url is None:
                     raise RuntimeError("WebSocket URL is not configured")
+                logger.info(f"Connecting to websocket: {websocket_url}")
                 async with websockets.connect(websocket_url, ping_timeout=None, max_size=32 * 1024 * 1024) as ws:
                     self.ws = ws
                     self._shutting_down = False  # Reset shutdown flag on new connection

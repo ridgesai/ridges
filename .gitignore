@@ -29,7 +29,7 @@ logs_mineshaft/
 repos/
 repo_cache/
 agents/
-validator/repos/
+validator/datasets/swebench_verified/
 results/
 logs/
 

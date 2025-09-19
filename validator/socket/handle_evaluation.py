@@ -4,7 +4,6 @@ import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING
 from loggers.logging_utils import get_logger
-from validator.sandbox.schema import AgentVersion, EvaluationRun
 from validator.tasks.run_evaluation import run_evaluation
 from validator.config import SCREENER_MODE, validator_hotkey
 from ddtrace import tracer
@@ -40,25 +39,31 @@ async def handle_evaluation(websocket_app: "WebsocketApp", json_message: dict):
         version_num = agent_data.get("version_num")
         created_at = agent_data.get("created_at")
         version_id = agent_data.get("version_id")
-        evaluation_runs = [EvaluationRun(**run) for run in json_message.get("evaluation_runs", [])]
+        evaluation_runs = json_message.get("evaluation_runs", [])
+
+
+        logger.info("CXII: handle_evaluation()");
+        logger.info(f"CXII:     evaluation_id: {evaluation_id}");
+        # logger.info(f"CXII:     agent_data: {agent_data}");
+        # logger.info(f"CXII:     miner_hotkey: {miner_hotkey}");
+        # logger.info(f"CXII:     version_num: {version_num}");
+        # logger.info(f"CXII:     created_at: {created_at}");
+        logger.info(f"CXII:     version_id: {version_id}");
+        logger.info(f"CXII:     EVAL RUNS");
+        for eval_run in evaluation_runs:
+            logger.info(f"CXII:         {eval_run['run_id']} -- {eval_run['swebench_instance_id']}");
+        # logger.info(f"CXII:     evaluation_runs: {evaluation_runs}");
 
         # Handle 'Z' timezone suffix for UTC
         if created_at.endswith('Z'):
             created_at = created_at[:-1] + '+00:00'
-        
-        agent_version = AgentVersion(
-            version_id=version_id,
-            miner_hotkey=miner_hotkey,
-            version_num=version_num,
-            created_at=datetime.fromisoformat(created_at),
-        )
 
         # Create and track the evaluation task
         websocket_app.evaluation_task = asyncio.create_task(
-            run_evaluation(websocket_app, evaluation_id, agent_version, evaluation_runs)
+            run_evaluation(websocket_app, evaluation_id, version_id, evaluation_runs)
         )
 
-        await websocket_app.evaluation_task
+        # await websocket_app.evaluation_task
 
     except asyncio.CancelledError:
         logger.info("Evaluation task was cancelled. Ensure you are running docker.")

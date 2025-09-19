@@ -301,6 +301,9 @@ async def notify_unregistered_treasury_hotkey(treasury_hotkey: str):
 
 
 async def send_slack_message(text: str, channel: str = "slack-messages"):
+    # CXII FIXME
+    return
+    
     if slack_bot_token is None:
         return
 

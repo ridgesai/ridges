@@ -1,9 +1,14 @@
 from datetime import timedelta
 import os
 import subprocess
+import platform
 
 # External package imports
 from fiber.chain.chain_utils import load_hotkey_keypair
+
+# Set Docker platform for Apple Silicon compatibility
+if platform.machine() == 'arm64' and not os.getenv('DOCKER_DEFAULT_PLATFORM'):
+    os.environ['DOCKER_DEFAULT_PLATFORM'] = 'linux/arm64'
 
 SCREENER_MODE = os.getenv("SCREENER_MODE", "false") == "true"
 
