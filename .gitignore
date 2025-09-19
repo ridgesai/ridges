@@ -47,3 +47,9 @@ subnet_hotkeys_cache.json
 
 # IP name mappings (local config)
 whitelist.json
+
+
+
+# CXII FIX ME
+validator
+validator/*
