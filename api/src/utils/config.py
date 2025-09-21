@@ -64,8 +64,9 @@ PERMISSABLE_PACKAGES = [
     "urllib.request",
     "urllib3",
     "xgboost",
-    "autogen-agentchat==0.7.4",
-    "autogen-ext[openai]"
+    "autogen",
+    "autogen_ext",
+    "autogen_agentchat"
 ]
 MODEL_PRICE_PER_1M_TOKENS = {   "deepseek-ai/DeepSeek-V3-0324": 0.2722,
                                 "agentica-org/DeepCoder-14B-Preview": 0.02,
