@@ -103,9 +103,6 @@ class WebsocketApp:
     async def _send_heartbeat(self):
         """Send periodic heartbeat messages with system metrics to the platform."""
 
-        # CXII FIXME
-        return
-
         while self.ws:
             await asyncio.sleep(2.5)
             if self.ws:

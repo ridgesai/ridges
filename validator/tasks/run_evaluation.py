@@ -79,6 +79,7 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
                 # print(eval_result)
 
                 concated_logs = (agent_result.get('logs') or 'Unknown agent logs') + '\n' + (eval_result.get('logs') or 'Unknown eval logs')
+                print("!!!!!!!!!!!!!!!!! NUMBER OF LINES OF LOGS: ", len(concated_logs.split('\n')))
 
                 if eval_result["status"] == "success":
                     logger.info(f"Evaluation completed successfully for run {run_id}")
