@@ -43,7 +43,7 @@ async def handle_heartbeat(
                     await client.finish_evaluation(current_evaluation_id)
                 elif client.get_type() == "screener":
                     await client.finish_screening(current_evaluation_id)
-                client.status = "available"
+            client.status = "available"
 
     # Process system metrics if included in heartbeat
     if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
