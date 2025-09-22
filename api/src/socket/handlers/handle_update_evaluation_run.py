@@ -17,6 +17,11 @@ async def handle_update_evaluation_run(
     response_json: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Handle update-evaluation-run message from a client"""
+
+    logger.info(f"XXXXXXXXXX Received update-evaluation run: run_id {response_json["evaluation_run"]["run_id"]} --> {response_json["evaluation_run"]["status"]}")
+
+
+
     # Validate client type
     if client.get_type() not in ["validator", "screener"]:
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring update evaluation run request.")

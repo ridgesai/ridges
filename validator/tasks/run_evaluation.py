@@ -1,6 +1,7 @@
 """Task for running agents in sandboxes."""
 
 import asyncio
+import threading
 from datetime import datetime
 from pathlib import Path
 import json
@@ -19,19 +20,25 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
+# Global lock to prevent concurrent websocket sends
+_websocket_send_lock = threading.Lock()
 
 # this is one of the grossest, nastiest hacks ever written but we need to get this
 # out TONIGHT so since it works we will just leave it for now.
 # this will be fixed in the next release (within a week)
 def safe_websocket_send(websocket_app, message):
-    """Safely send websocket message, handling event loop issues"""
+    """Safely send websocket message, handling event loop issues and race conditions"""
+    def _send_with_lock():
+        with _websocket_send_lock:
+            asyncio.run(websocket_app.send(message))
+    
     try:
         loop = asyncio.get_running_loop()
-        asyncio.create_task(websocket_app.send(message))
+        # Use the lock even in async context by running in thread
+        threading.Thread(target=_send_with_lock, daemon=True).start()
     except RuntimeError:
-        # No running loop, run in new thread  
-        import threading
-        threading.Thread(target=lambda: asyncio.run(websocket_app.send(message)), daemon=True).start()
+        # No running loop, run in new thread with lock
+        threading.Thread(target=_send_with_lock, daemon=True).start()
 
 
 

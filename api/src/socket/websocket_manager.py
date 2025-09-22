@@ -58,7 +58,7 @@ class WebSocketManager:
                     print(response)
                     print(e)
                     print(traceback.format_exc())
-                    continue
+                    raise  
                 
         except WebSocketDisconnect:
             client = self.clients.pop(websocket, None)
