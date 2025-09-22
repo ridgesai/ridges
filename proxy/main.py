@@ -46,8 +46,13 @@ inference_manager = InferenceManager()  # For inference
 def check_request_auth(http_request: Request, endpoint_type: str) -> None:
     client_ip = get_client_ip(http_request)
     
-    # 1. IP whitelist
-    if WHITELISTED_VALIDATOR_IPS and client_ip in WHITELISTED_VALIDATOR_IPS:
+    # If no whitelist is configured, allow all requests through
+    if not WHITELISTED_VALIDATOR_IPS:
+        return
+    
+    # First check: IP whitelist (if configured)
+    if client_ip in WHITELISTED_VALIDATOR_IPS:
+        # IP is whitelisted, allow through
         return
 
     # 2. Internal sandbox auto-allow (inject screener password for container requests)
@@ -77,7 +82,7 @@ def check_request_auth(http_request: Request, endpoint_type: str) -> None:
             logger.warning(f"{endpoint_type.capitalize()} request with invalid screener password from IP {format_ip_with_name(client_ip)}")
             raise HTTPException(status_code=401, detail="Invalid screener password")
     
-    # Unauthorized
+    # Whitelist is configured but IP not whitelisted and no valid password - unauthorized
     track_400_error(client_ip, BadRequestErrorCode.UNAUTHORIZED_IP_ADDRESS)
     logger.warning(f"{endpoint_type.capitalize()} request from unauthorized IP {format_ip_with_name(client_ip)}")
     raise HTTPException(status_code=401, detail="Unauthorized: IP not whitelisted and no valid authentication provided")
@@ -90,16 +95,16 @@ async def lifespan(app: FastAPI):
     logger.info("Starting proxy server...")
     
     # Check authentication configuration
-    if not SCREENER_PASSWORD and not WHITELISTED_VALIDATOR_IPS:
-        logger.warning("WARNING: Neither SCREENER_PASSWORD nor WHITELISTED_VALIDATOR_IPS is set!")
-        logger.warning("WARNING: All inference and embedding requests will be rejected!")
-        logger.warning("WARNING: Please set SCREENER_PASSWORD or WHITELISTED_VALIDATOR_IPS environment variables.")
+    if not WHITELISTED_VALIDATOR_IPS:
+        if SCREENER_PASSWORD:
+            logger.info("Authentication: No IP whitelist configured - allowing all requests through (screener password available as fallback)")
+        else:
+            logger.info("Authentication: No IP whitelist configured - allowing all requests through")
     else:
         auth_methods = []
         if SCREENER_PASSWORD:
             auth_methods.append("screener password")
-        if WHITELISTED_VALIDATOR_IPS:
-            auth_methods.append(f"IP whitelist ({len(WHITELISTED_VALIDATOR_IPS)} IPs)")
+        auth_methods.append(f"IP whitelist ({len(WHITELISTED_VALIDATOR_IPS)} IPs)")
         logger.info(f"Authentication enabled: {', '.join(auth_methods)}")
     
     if ENV != 'dev' and db_manager is not None:
@@ -163,7 +168,7 @@ async def error_stats():
         "top_10_sources": formatted_top
     }
 
-@app.post("/agents/embedding")
+@app.post("/api/embedding")
 async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
     """Proxy endpoint for chutes embedding with database validation"""
     
@@ -237,7 +242,7 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             detail="Failed to get embedding due to internal server error. Please try again later."
         )
 
-@app.post("/agents/inference")
+@app.post("/api/inference")
 async def inference_endpoint(request: InferenceRequest, http_request: Request):
     """Proxy endpoint for chutes inference with database validation"""
 

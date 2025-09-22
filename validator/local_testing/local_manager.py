@@ -10,10 +10,16 @@ import uuid
 import shutil
 import json
 import subprocess
+import platform
 from pathlib import Path
+
+# Set Docker platform for Apple Silicon compatibility
+import os
+if platform.machine() == 'arm64' and not os.getenv('DOCKER_DEFAULT_PLATFORM'):
+    os.environ['DOCKER_DEFAULT_PLATFORM'] = 'linux/arm64'
+    
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
-import os
 import threading
 from validator.sandbox.constants import (
     SANDBOX_DOCKER_IMAGE, PROXY_DOCKER_IMAGE, SANDBOX_NETWORK_NAME,

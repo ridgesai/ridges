@@ -9,9 +9,14 @@ This module handles:
 
 import subprocess
 import os
+import platform
 from pathlib import Path
 from dotenv import load_dotenv
 from rich.console import Console
+
+# Set Docker platform for Apple Silicon compatibility
+if platform.machine() == 'arm64' and not os.getenv('DOCKER_DEFAULT_PLATFORM'):
+    os.environ['DOCKER_DEFAULT_PLATFORM'] = 'linux/arm64'
 
 console = Console()
 
@@ -61,58 +66,8 @@ def setup_local_testing_environment():
         raise SystemExit("Docker is required for local testing")
     
     # Pull required images
-    images_to_pull = [
-        "ghcr.io/ridgesai/ridges/sandbox:latest",
-        "ghcr.io/ridgesai/ridges/proxy:latest"
-    ]
+
     
-    # Also try to pull commit-specific images for original screener test instances ✅  
-    # These are the original screener set with newly built images
-    common_test_images = [
-        "ghcr.io/ridgesai/ridges/sandbox-astropy__astropy-14309:latest",
-        "ghcr.io/ridgesai/ridges/sandbox-django__django-11119:latest",
-        "ghcr.io/ridgesai/ridges/sandbox-psf__requests-5414:latest",
-        "ghcr.io/ridgesai/ridges/sandbox-psf__requests-6028:latest", 
-        "ghcr.io/ridgesai/ridges/sandbox-pylint-dev__pylint-7277:latest",
-    ]
-    
-    for image in images_to_pull:
-        try:
-            client.images.get(image)
-            console.print(f"Image {image} already exists", style="green")
-        except ImageNotFound:
-            console.print(f"Pulling {image}...", style="yellow")
-            try:
-                client.images.pull(image)
-                console.print(f"Successfully pulled {image}", style="green")
-            except APIError as e:
-                console.print(f"Failed to pull {image}", style="red")
-                console.print("This might be due to:", style="yellow")
-                console.print("  • Network connectivity issues", style="yellow")
-                console.print("  • Docker registry authentication", style="yellow")
-                console.print("  • Insufficient disk space", style="yellow")
-                console.print(f"Error details: {e}", style="dim")
-                raise SystemExit(f"Failed to pull required Docker image: {image}")
-            except Exception as e:
-                console.print(f"Failed to pull {image}: {e}", style="red")
-                raise SystemExit(f"Failed to pull required Docker image: {image}")
-    
-    # Pull common test images (non-fatal if they fail)
-    console.print("Pulling common commit-specific test images...", style="cyan")
-    for image in common_test_images:
-        try:
-            client.images.get(image)
-            console.print(f"Image {image} already exists", style="green")
-        except ImageNotFound:
-            console.print(f"Pulling {image}...", style="yellow")
-            try:
-                client.images.pull(image)
-                console.print(f"Successfully pulled {image}", style="green")
-            except APIError as e:
-                console.print(f"Failed to pull {image} (non-fatal): {e}", style="dim red")
-                # Don't raise error - these are optional for better testing experience
-            except Exception as e:
-                console.print(f"Failed to pull {image} (non-fatal): {e}", style="dim red")
     
     # Check if swebench is available
     try:
