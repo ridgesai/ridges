@@ -7,6 +7,7 @@ from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.backend.queries.evaluations import does_validator_have_running_evaluation, get_running_evaluation_by_validator_hotkey, get_agent_name_from_version_id, get_miner_hotkey_from_version_id
+from api.src.backend.queries.evaluation_runs import all_runs_finished
 from api.src.utils.slack import send_slack_message
 
 logger = get_logger(__name__)
@@ -29,6 +30,20 @@ async def handle_heartbeat(
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
         # raise WebSocketDisconnect()
+
+        # you know what this goddamn bug is so ridiculous i have no idea what in the state machine is
+        # causing the platform to not realize that the screener is finished but
+        # clearly the screeners/valis seem to know better so we are gonna scrap the idea of the
+        # platform being authoritative and just let the screeners/valis handle their own statuses.
+        if (alleged_status == "available" and (client.status == "screening" or client.status == "evaluating")):
+            # Get the current evaluation_id from the client
+            current_evaluation_id = client.current_evaluation_id
+            if current_evaluation_id and await all_runs_finished(current_evaluation_id):
+                if client.get_type() == "validator":
+                    await client.finish_evaluation(current_evaluation_id)
+                elif client.get_type() == "screener":
+                    await client.finish_screening(current_evaluation_id)
+                client.status = "available"
 
     # Process system metrics if included in heartbeat
     if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
