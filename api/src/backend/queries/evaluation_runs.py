@@ -84,8 +84,9 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
             patch_generated_at = $11,
             eval_started_at = $12,
             result_scored_at = $13,
-            cancelled_at = $14
-        WHERE run_id = $15
+            cancelled_at = $14,
+            logs = $15
+        WHERE run_id = $16
         """,
         evaluation_run.response,
         evaluation_run.error,
@@ -101,6 +102,7 @@ async def update_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
         evaluation_run.eval_started_at,
         evaluation_run.result_scored_at,
         evaluation_run.cancelled_at,
+        evaluation_run.logs,
         evaluation_run.run_id,
     )
 
