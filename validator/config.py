@@ -63,3 +63,6 @@ if SCREENER_MODE:
         logger.warning("WARNING: Please set SCREENER_PASSWORD environment variable.")
 else:
     validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
+
+AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "600"))
+EVAL_TIMEOUT = int(os.getenv("EVAL_TIMEOUT", "600"))

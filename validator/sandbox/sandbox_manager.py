@@ -127,6 +127,7 @@ class SandboxManager:
                     if elapsed > sandbox["timeout"]:
                         warn(f"[SANDBOX] Killing sandbox {sandbox_id} - exceeded timeout of {sandbox['timeout']} seconds (ran for {elapsed:.1f} seconds)")
                         try:
+                            sandbox["killed_by_watchdog"] = True
                             sandbox["container"].kill()
                         except Exception as e:
                             warn(f"[SANDBOX] Failed to kill container {sandbox_id}: {e}")
@@ -305,6 +306,10 @@ class SandboxManager:
                     debug(f"[DOCKER:{sandbox_id}] {log_line.decode('utf-8').rstrip()}")
             else:
                 sandbox["container"].wait()
+
+            if sandbox["killed_by_watchdog"]:
+                finish_with_error("killed by watchdog", result)
+                return
             
             debug(f"[SANDBOX] <{sandbox_id}> finished running")
 

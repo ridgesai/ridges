@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from ddtrace import tracer
 from validator.utils.http_client import get_shared_client
 
-from validator.config import RIDGES_API_URL, RIDGES_PROXY_URL
+from validator.config import RIDGES_API_URL, RIDGES_PROXY_URL, AGENT_TIMEOUT, EVAL_TIMEOUT
 from validator.sandbox.sandbox_manager import SandboxManager
 from validator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
@@ -113,7 +113,7 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
                 problem_name,
                 agent_result["diff"],
                 on_eval_finish,
-                timeout=600
+                timeout=EVAL_TIMEOUT
             )
 
             logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> eval_started")
@@ -138,7 +138,7 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
         problem_name,
         agent_code,
         on_agent_finish,
-        timeout=600,
+        timeout=AGENT_TIMEOUT,
         include_solution=True
     )
 
