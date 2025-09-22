@@ -323,7 +323,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             client=sandbox_manager.docker,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=1
+            max_workers=(os.cpu_count() or 4)-1
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
@@ -337,7 +337,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             client=sandbox_manager.docker,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=1
+            max_workers=(os.cpu_count() or 4)-1
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
