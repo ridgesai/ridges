@@ -11,8 +11,20 @@ load_dotenv("validator/.env")
 from validator.socket.websocket_app import WebsocketApp
 from loggers.logging_utils import get_logger
 from validator.utils.logger import enable_verbose
+from validator.sandbox.sandbox_manager import SandboxManager
+from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
+from validator.config import RIDGES_PROXY_URL
+from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_PROBLEMS
 
 logger = get_logger(__name__)
+
+
+def init_all_images():
+    manager = SandboxManager(RIDGES_PROXY_URL)
+    swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__) / "datasets" / "swebench_verified")
+    swebench_verified_suite.prebuild_problem_images(manager, SWEBENCH_VERIFIED_PROBLEMS)
+
+
 
 
 async def main():
@@ -22,6 +34,8 @@ async def main():
     """
 
     # enable_verbose()
+
+    init_all_images()
 
     websocket_app = WebsocketApp()
     try:
