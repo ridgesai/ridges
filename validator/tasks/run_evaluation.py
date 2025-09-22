@@ -138,8 +138,8 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
         problem_name,
         agent_code,
         on_agent_finish,
-        timeout=AGENT_TIMEOUT,
-        include_solution=True
+        timeout=AGENT_TIMEOUT
+        # ,include_solution=True
     )
 
     logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> sandbox_created")
