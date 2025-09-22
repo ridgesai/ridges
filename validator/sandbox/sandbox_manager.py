@@ -307,9 +307,9 @@ class SandboxManager:
             else:
                 sandbox["container"].wait()
 
-            if sandbox["killed_by_watchdog"]:
-                finish_with_error("killed by watchdog", result)
-                return
+            # if sandbox["killed_by_watchdog"]:
+            #     finish_with_error("killed by watchdog", result)
+            #     return
             
             debug(f"[SANDBOX] <{sandbox_id}> finished running")
 
