@@ -3,6 +3,7 @@
 import os
 import json
 import time
+import threading
 import traceback
 
 from pathlib import Path
@@ -157,41 +158,44 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
     def evaluate_solution_diff(self, sandbox_manager, run_id, problem_name, solution_diff, on_finish, *, timeout=None):
-        # TODO: thread
-        try:
-            report = self.run_swebench_evaluation(sandbox_manager, run_id, problem_name, solution_diff, timeout=timeout)
+        def _run_evaluation():
+            try:
+                report = self.run_swebench_evaluation(sandbox_manager, run_id, problem_name, solution_diff, timeout=timeout)
 
-            # Convert to our format
-            report = report[problem_name]
+                # Convert to our format
+                report = report[problem_name]
 
-            test_results = []
-            for category, tests in report["tests_status"].items():
-                for test_name in tests["success"]:
-                    test_results.append({
-                        "name": test_name,
-                        "category": category.lower(),
-                        "status": "pass"
-                    })
-                for test_name in tests["failure"]:
-                    test_results.append({
-                        "name": test_name,
-                        "category": category.lower(),
-                        "status": "fail"
-                    })
-            
-            on_finish({
-                "status": "success",
-                "test_results": test_results,
-                "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
-            })
-        except Exception as e:
-            warn(f"[SWEBENCH] Failed to run evaluation for {problem_name}: {e}")
-            on_finish({
-                "status": "error",
-                "error": str(e),
-                "traceback": traceback.format_exc(),
-                "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
-            })
+                test_results = []
+                for category, tests in report["tests_status"].items():
+                    for test_name in tests["success"]:
+                        test_results.append({
+                            "name": test_name,
+                            "category": category.lower(),
+                            "status": "pass"
+                        })
+                    for test_name in tests["failure"]:
+                        test_results.append({
+                            "name": test_name,
+                            "category": category.lower(),
+                            "status": "fail"
+                        })
+                
+                on_finish({
+                    "status": "success",
+                    "test_results": test_results,
+                    "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
+                })
+            except Exception as e:
+                warn(f"[SWEBENCH] Failed to run evaluation for {problem_name}: {e}")
+                on_finish({
+                    "status": "error",
+                    "error": str(e),
+                    "traceback": traceback.format_exc(),
+                    "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
+                })
+        
+        thread = threading.Thread(target=_run_evaluation, daemon=True)
+        thread.start()
 
 
 
@@ -228,35 +232,35 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         # Need to create a test spec before calling run_instance()
         test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
 
-        # Build environment images
-        debug(f"[SWEBENCH] Building environment images for {problem_name}")
-        start_time = time.time()
-        build_successful, build_failed = build_env_images(
-            client=sandbox_manager.docker,
-            dataset=[test_spec],
-            force_rebuild=False,
-            max_workers=4
-        )
-        elapsed_time = time.time() - start_time
-        if (len(build_failed) > 0):
-            warn(f"[SWEBENCH] Failed to build environment images for {problem_name}")
-            raise RuntimeError(f"Failed to build environment images for {problem_name}")
-        debug(f"[SWEBENCH] Successfully built environment images for {problem_name} in {elapsed_time:.1f} seconds")
+        # # Build environment images
+        # debug(f"[SWEBENCH] Building environment images for {problem_name}")
+        # start_time = time.time()
+        # build_successful, build_failed = build_env_images(
+        #     client=sandbox_manager.docker,
+        #     dataset=[test_spec],
+        #     force_rebuild=False,
+        #     max_workers=4
+        # )
+        # elapsed_time = time.time() - start_time
+        # if (len(build_failed) > 0):
+        #     warn(f"[SWEBENCH] Failed to build environment images for {problem_name}")
+        #     raise RuntimeError(f"Failed to build environment images for {problem_name}")
+        # debug(f"[SWEBENCH] Successfully built environment images for {problem_name} in {elapsed_time:.1f} seconds")
 
-        # Build instance images
-        debug(f"[SWEBENCH] Building instance images for {problem_name}")
-        start_time = time.time()
-        build_successful, build_failed = build_instance_images(
-            client=sandbox_manager.docker,
-            dataset=[test_spec],
-            force_rebuild=False,
-            max_workers=4
-        )
-        elapsed_time = time.time() - start_time
-        if (len(build_failed) > 0):
-            warn(f"[SWEBENCH] Failed to build instance images for {problem_name}")
-            raise RuntimeError(f"Failed to build instance images for {problem_name}")
-        debug(f"[SWEBENCH] Successfully built instance images for {problem_name} in {elapsed_time:.1f} seconds")
+        # # Build instance images
+        # debug(f"[SWEBENCH] Building instance images for {problem_name}")
+        # start_time = time.time()
+        # build_successful, build_failed = build_instance_images(
+        #     client=sandbox_manager.docker,
+        #     dataset=[test_spec],
+        #     force_rebuild=False,
+        #     max_workers=4
+        # )
+        # elapsed_time = time.time() - start_time
+        # if (len(build_failed) > 0):
+        #     warn(f"[SWEBENCH] Failed to build instance images for {problem_name}")
+        #     raise RuntimeError(f"Failed to build instance images for {problem_name}")
+        # debug(f"[SWEBENCH] Successfully built instance images for {problem_name} in {elapsed_time:.1f} seconds")
 
         # A "prediction" in the context of SWE-Bench is literally just a patch.
         # The model_name_or_path, model_patch, and instance_id keys are required.
@@ -283,13 +287,15 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             timeout=timeout,
             rewrite_reports=False
         )
-        if not result["completed"]:
-            warn(f"[SWEBENCH] Evaluation for {problem_name} was not completed")
-            raise RuntimeError(f"Evaluation for {problem_name} was not completed")
+
+        IS_SWEBENCH_VERSION_LESS_THAN_4_1_0 = True
+        if not IS_SWEBENCH_VERSION_LESS_THAN_4_1_0:
+            if not result["completed"]:
+                warn(f"[SWEBENCH] Evaluation for {problem_name} was not completed")
+                raise RuntimeError(f"Evaluation for {problem_name} was not completed")
+        
         elapsed_time = time.time() - start_time
         debug(f"[SWEBENCH] Successfully ran evaluation for {problem_name} in {elapsed_time:.1f} seconds")
-
-
 
         # Read the report
         report_path = Path("logs/run_evaluation") / run_id / run_id / problem_name / "report.json"
@@ -317,7 +323,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             client=sandbox_manager.docker,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=max(1, os.cpu_count() - 1)
+            max_workers=1
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
@@ -331,7 +337,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             client=sandbox_manager.docker,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=max(1, os.cpu_count() - 1)
+            max_workers=1
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:

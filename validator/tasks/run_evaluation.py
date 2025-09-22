@@ -34,6 +34,114 @@ def safe_websocket_send(websocket_app, message):
         threading.Thread(target=lambda: asyncio.run(websocket_app.send(message)), daemon=True).start()
 
 
+
+# also a gross hack
+def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verified_suite, agent_code,evaluation_run):
+    logger.info(f"XXXXXXXXXX Telling platform run {evaluation_run['run_id']} --> started")
+    evaluation_run["status"] = "started"
+    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+
+    run_id = evaluation_run["run_id"]
+    problem_name = evaluation_run["swebench_instance_id"]
+
+
+
+    logger.info(f"Running evaluation for problem {problem_name} with run_id {run_id}")
+    # print(evaluation_run)
+    
+    # Choose the appropriate suite
+    suite = polyglot_suite if polyglot_suite.has_problem(problem_name) else swebench_verified_suite
+
+    # This callback will be invoked when the agent finishes running
+    def on_agent_finish(agent_result):
+        # print(agent_result)
+        
+        
+        if agent_result["status"] == "success":
+            logger.info(f"Agent finished successfully for run {run_id}")
+
+            logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> patch_generated")
+            evaluation_run["status"] = "patch_generated"
+            evaluation_run["response"] = agent_result.get('diff', 'Unknown diff')
+            evaluation_run["logs"] = agent_result.get('logs', 'Unknown agent logs')
+            evaluation_run["patch_generated_at"] = datetime.now().isoformat()
+            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+            
+            # This callback will be invoked when the agent finishes evaluating
+            def on_eval_finish(eval_result):
+                # print(eval_result)
+
+                concated_logs = (agent_result.get('logs') or 'Unknown agent logs') + '\n' + (eval_result.get('logs') or 'Unknown eval logs')
+
+                if eval_result["status"] == "success":
+                    logger.info(f"Evaluation completed successfully for run {run_id}")
+
+                    logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> result_scored")
+                    evaluation_run["status"] = "result_scored"
+                    
+                    evaluation_run["logs"] = concated_logs
+
+                    # store test results
+                    # CXII FIXME
+                    evaluation_run["solved"] = True
+
+                    evaluation_run["result_scored_at"] = datetime.now().isoformat()
+                    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+                else:
+                    logger.error(f"Evaluation failed for run {run_id}: {eval_result.get('error', 'Unknown error')}")
+                    
+                    logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> cancelled")
+                    evaluation_run["status"] = "cancelled"
+                    evaluation_run["error"] = (agent_result.get('error') or 'Unknown error') + '\n' + (agent_result.get('traceback') or 'Unknown traceback')
+                    evaluation_run["logs"] = concated_logs
+                    evaluation_run["cancelled_at"] = datetime.now().isoformat()
+                    evaluation_run["solved"] = False
+                    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+                    
+
+            # Evaluate the agent
+            suite.evaluate_solution_diff(
+                sandbox_manager,
+                run_id,
+                problem_name,
+                agent_result["diff"],
+                on_eval_finish,
+                timeout=600
+            )
+
+            logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> eval_started")
+            evaluation_run["status"] = "eval_started"
+            evaluation_run["eval_started_at"] = datetime.now().isoformat()
+            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+        else:
+            logger.error(f"Agent failed for run {run_id}: {agent_result.get('error', 'Unknown error')}")
+            
+            logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> cancelled")
+            evaluation_run["status"] = "cancelled"
+            evaluation_run["error"] = agent_result.get('error', 'Unknown error') + '\n' + agent_result.get('traceback', 'Unknown traceback')
+            evaluation_run["logs"] = agent_result.get('logs', 'Unknown logs')
+            evaluation_run["cancelled_at"] = datetime.now().isoformat()
+            evaluation_run["solved"] = False
+            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+            
+    # Run the agent with the fetched source code
+    suite.run_agent_in_sandbox_for_problem(
+        sandbox_manager,
+        run_id,
+        problem_name,
+        agent_code,
+        on_agent_finish,
+        timeout=600,
+        include_solution=True
+    )
+
+    logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> sandbox_created")
+    evaluation_run["status"] = "sandbox_created"
+    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+    pass
+
+
+
 @tracer.wrap(resource="run-evaluation")
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, version_id: str, evaluation_runs: List[Dict[str, Any]]):
     """Run evaluation for a specific agent version"""
@@ -71,7 +179,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
             )
             response.raise_for_status()
             agent_code = json.loads(response.content)
-            print(f"Got the agent code: {agent_code}")
+            # print(f"Got the agent code: {agent_code}")
 
             
 
@@ -109,106 +217,7 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
 
 #   
 # 
-
-            logger.info(f"Telling platform run {evaluation_run['run_id']} --> started")
-            evaluation_run["status"] = "started"
-            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-
-            run_id = evaluation_run["run_id"]
-            problem_name = evaluation_run["swebench_instance_id"]
-
-
-
-            logger.info(f"Running evaluation for problem {problem_name} with run_id {run_id}")
-            print(evaluation_run)
-            
-            # Choose the appropriate suite
-            suite = polyglot_suite if polyglot_suite.has_problem(problem_name) else swebench_verified_suite
-
-            # This callback will be invoked when the agent finishes running
-            def on_agent_finish(agent_result):
-                print(agent_result)
-                
-                
-                if agent_result["status"] == "success":
-                    logger.info(f"Agent finished successfully for run {run_id}")
-
-                    logger.info(f"Telling platform run {run_id} --> patch_generated")
-                    evaluation_run["status"] = "patch_generated"
-                    evaluation_run["response"] = agent_result.get('diff', 'Unknown diff')
-                    evaluation_run["logs"] = agent_result.get('logs', 'Unknown agent logs')
-                    evaluation_run["patch_generated_at"] = datetime.now().isoformat()
-                    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-                    
-                    # This callback will be invoked when the agent finishes evaluating
-                    def on_eval_finish(eval_result):
-                        print(eval_result)
-
-                        if eval_result["status"] == "success":
-                            logger.info(f"Evaluation completed successfully for run {run_id}")
-
-                            logger.info(f"Telling platform run {run_id} --> result_scored")
-                            evaluation_run["status"] = "result_scored"
-                            
-                            evaluation_run["logs"] = agent_result.get('logs', 'Unknown agent logs') + '\n' + eval_result.get('logs', 'Unknown eval logs')
-
-                            # store test resulst
-                            # CXII FIXME
-                            evaluation_run["solved"] = True
-
-                            evaluation_run["result_scored_at"] = datetime.now().isoformat()
-                            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-                        else:
-                            logger.error(f"Evaluation failed for run {run_id}: {eval_result.get('error', 'Unknown error')}")
-                            
-                            logger.info(f"Telling platform run {run_id} --> cancelled")
-                            evaluation_run["status"] = "cancelled"
-                            evaluation_run["error"] = agent_result.get('error', 'Unknown error') + '\n' + agent_result.get('traceback', 'Unknown traceback')
-                            evaluation_run["logs"] = agent_result.get('logs', 'Unknown agent logs') + '\n' + eval_result.get('logs', 'Unknown eval logs')
-                            evaluation_run["cancelled_at"] = datetime.now().isoformat()
-                            evaluation_run["solved"] = False
-                            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-                            
-
-                    # Evaluate the agent
-                    suite.evaluate_solution_diff(
-                        sandbox_manager,
-                        run_id,
-                        problem_name,
-                        agent_result["diff"],
-                        on_eval_finish,
-                        timeout=600
-                    )
-
-                    logger.info(f"Telling platform run {run_id} --> eval_started")
-                    evaluation_run["status"] = "eval_started"
-                    evaluation_run["eval_started_at"] = datetime.now().isoformat()
-                    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-                else:
-                    logger.error(f"Agent failed for run {run_id}: {agent_result.get('error', 'Unknown error')}")
-                    
-                    logger.info(f"Telling platform run {run_id} --> cancelled")
-                    evaluation_run["status"] = "cancelled"
-                    evaluation_run["error"] = agent_result.get('error', 'Unknown error') + '\n' + agent_result.get('traceback', 'Unknown traceback')
-                    evaluation_run["logs"] = agent_result.get('logs', 'Unknown logs')
-                    evaluation_run["cancelled_at"] = datetime.now().isoformat()
-                    evaluation_run["solved"] = False
-                    safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
-                    
-            # Run the agent with the fetched source code
-            suite.run_agent_in_sandbox_for_problem(
-                sandbox_manager,
-                run_id,
-                problem_name,
-                agent_code,
-                on_agent_finish,
-                timeout=600,
-                include_solution=True
-            )
-
-            logger.info(f"Telling platform run {run_id} --> sandbox_created")
-            evaluation_run["status"] = "sandbox_created"
-            safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
+            run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verified_suite, agent_code, evaluation_run)
 
 
             

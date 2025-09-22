@@ -10,6 +10,7 @@ load_dotenv("validator/.env")
 # Internal package imports
 from validator.socket.websocket_app import WebsocketApp
 from loggers.logging_utils import get_logger
+from validator.utils.logger import enable_verbose
 
 logger = get_logger(__name__)
 
@@ -19,6 +20,8 @@ async def main():
     This starts up the validator websocket, which connects to the Ridges platform 
     It receives and sends events like new agents to evaluate, eval status, scores, etc
     """
+
+    # enable_verbose()
 
     websocket_app = WebsocketApp()
     try:

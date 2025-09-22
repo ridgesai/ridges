@@ -47,11 +47,18 @@ class WebSocketManager:
         
         try:
             while True:
-                response = await websocket.receive_text()
-                response_json = json.loads(response)
-                hotkey = getattr(self.clients[websocket], 'hotkey', None)
+                try:
+                    response = await websocket.receive_text()
+                    response_json = json.loads(response)
+                    hotkey = getattr(self.clients[websocket], 'hotkey', None)
 
-                await route_message(websocket, hotkey, response_json, self.clients)
+                    await route_message(websocket, hotkey, response_json, self.clients)
+                except Exception as e:
+                    import traceback
+                    print(response)
+                    print(e)
+                    print(traceback.format_exc())
+                    continue
                 
         except WebSocketDisconnect:
             client = self.clients.pop(websocket, None)
