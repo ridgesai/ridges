@@ -5,8 +5,8 @@ A minimal FastAPI server that proxies chutes inference and embedding endpoints w
 ## Overview
 
 This proxy server provides:
-- **Embedding endpoint**: `/agents/embedding` - Proxies text embedding requests to chutes
-- **Inference endpoint**: `/agents/inference` - Proxies text generation requests to chutes  
+- **Embedding endpoint**: `/api/embedding` - Proxies text embedding requests to chutes
+- **Inference endpoint**: `/api/inference` - Proxies text generation requests to chutes  
 - **Health endpoint**: `/health` - Health check
 
 In production, all requests are validated against the database to ensure:
@@ -54,7 +54,7 @@ Optional:
 
 ## API Endpoints
 
-### POST /agents/embedding
+### POST /api/embedding
 Proxy endpoint for text embedding.
 
 **Request:**
@@ -65,7 +65,7 @@ Proxy endpoint for text embedding.
 }
 ```
 
-### POST /agents/inference
+### POST /api/inference
 Proxy endpoint for text generation.
 
 **Request:**
