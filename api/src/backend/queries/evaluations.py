@@ -82,7 +82,6 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             ) as evaluation_runs
         FROM evaluations e
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
-            AND er.status != 'cancelled'
         WHERE e.version_id = $1
         AND e.set_id = $2
         AND (
@@ -201,7 +200,6 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 ) as evaluation_runs
             FROM evaluations e
             LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
-                AND er.status != 'cancelled'
             LEFT JOIN inf i ON er.run_id = i.run_id
             WHERE e.version_id = $1
             AND e.set_id = $2
