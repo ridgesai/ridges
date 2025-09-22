@@ -31,7 +31,7 @@ def init_all_images():
         "sphinx-doc__sphinx-9461", "sphinx-doc__sphinx-11510"
     ]
     manager = SandboxManager(RIDGES_PROXY_URL)
-    swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__) / "datasets" / "swebench_verified")
+    swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__).parent / "datasets" / "swebench_verified")
     swebench_verified_suite.prebuild_problem_images(manager, SWEBENCH_VERIFIED_PROBLEMS)
 
 
