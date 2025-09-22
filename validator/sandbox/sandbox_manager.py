@@ -280,6 +280,7 @@ class SandboxManager:
                 },
                 "environment": {
                     "PYTHONUNBUFFERED": "1",
+                    "PYTHONDONTWRITEBYTECODE": "1", # too many bugs with perms
                     "SANDBOX_PROXY_URL": f"http://{SANDBOX_PROXY_HOST}:{SANDBOX_PROXY_PORT}",
                     **sandbox["env_vars"]
                 },
