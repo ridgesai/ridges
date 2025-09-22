@@ -7,8 +7,6 @@ from pydantic import BaseModel, Field, EmailStr
 from typing import Literal, Optional, TYPE_CHECKING
 from enum import Enum
 
-
-
 class MinerAgent(BaseModel): 
     """Maps to the agent_versions table"""
     model_config = { "arbitrary_types_allowed": True }
@@ -22,9 +20,6 @@ class MinerAgent(BaseModel):
     agent_summary: Optional[str] = None
     ip_address: Optional[str] = None
     innovation_score: Optional[float] = None
-
-class AgentWithHydratedCode(MinerAgent):
-    code: str
 
 class MinerAgentWithScores(MinerAgent):
     """MinerAgent with computed scores by set_id"""

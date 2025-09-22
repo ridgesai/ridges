@@ -5,7 +5,7 @@ from typing import Optional
 import asyncpg
 from api.src.backend.entities import EvaluationRun
 from api.src.backend.db_manager import db_operation, db_transaction
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

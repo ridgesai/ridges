@@ -3,8 +3,8 @@ from fastapi import WebSocket
 
 from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
 from api.src.socket.handlers.handle_heartbeat import handle_heartbeat
-from loggers.process_tracking import process_context
-from loggers.logging_utils import get_logger
+from utils.process_tracking import process_context
+from utils.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.socket.handlers.handle_validator_info import handle_validator_info
 from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_evaluation

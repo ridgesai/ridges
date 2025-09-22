@@ -24,7 +24,7 @@ from validator.sandbox.constants import (
 from validator.sandbox.schema import EvaluationRun, SwebenchProblem, SandboxInput
 from validator.sandbox.sandbox import Sandbox, get_sandbox_image_for_instance
 from validator.sandbox.clone_repo import clone_repo
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 logger = get_logger(__name__)
 
 class DockerClientPool:

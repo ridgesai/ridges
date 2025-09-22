@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import os
 from typing import Any, List, Tuple
 from functools import wraps
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 import asyncpg
 

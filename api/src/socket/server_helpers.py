@@ -4,7 +4,7 @@ import subprocess
 import httpx
 from pathlib import Path
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

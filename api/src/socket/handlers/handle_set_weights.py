@@ -1,7 +1,7 @@
 from typing import Dict, Any
 
 from api.src.backend.queries.agents import get_top_agent
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
 

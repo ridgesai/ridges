@@ -1,4 +1,4 @@
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 import os
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler

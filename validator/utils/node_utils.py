@@ -3,16 +3,14 @@
 from fiber.chain.interface import get_substrate
 from fiber.chain.models import Node
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from validator.config import (
     NETUID, SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS
 )
 import random
-from ddtrace import tracer
 
 logger = get_logger(__name__)
 
-@tracer.wrap(resource="construct-server-address")
 async def construct_server_address(node: Node) -> str:
     """Construct server address for a node.
     
@@ -25,7 +23,6 @@ async def construct_server_address(node: Node) -> str:
         return f"http://127.0.0.1:{node.port}"
     return f"http://{node.ip}:{node.port}"
 
-@tracer.wrap(resource="get-active-nodes-on-chain")
 def get_active_nodes_on_chain() -> list[Node]:
     """This gets the miners registered as active on chain"""
     try:

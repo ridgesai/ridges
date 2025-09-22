@@ -2,7 +2,7 @@ import time
 from typing import Dict, Any
 from fastapi import WebSocket
 
-from loggers.logging_utils import get_logger
+from utils.logging_utils import get_logger
 from api.src.backend.entities import Client
 from api.src.socket.server_helpers import get_relative_version_num
 
@@ -40,7 +40,9 @@ async def handle_validator_info(
     old_client = ws_manager.clients[websocket]
     
     # Create appropriate client type based on hotkey
-    if hotkey.startswith("screener-1-") or hotkey.startswith("screener-2-") or hotkey.startswith("i-0"):  # Legacy i-0 support
+    # if hotkey.startswith("screener-1-") or hotkey.startswith("screener-2-") or hotkey.startswith("i-0"):  # Legacy i-0 support
+    # CXII FIX ME: HACK
+    if True:
         client = Screener(
             hotkey=hotkey,
             websocket=old_client.websocket,
