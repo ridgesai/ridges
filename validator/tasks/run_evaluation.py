@@ -127,7 +127,7 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
             
             logger.info(f"XXXXXXXXXX Telling platform run {run_id} --> result_scored")
             evaluation_run["status"] = "result_scored"
-            evaluation_run["error"] = agent_result.get('error', 'Unknown error') + '\n' + agent_result.get('traceback', 'Unknown traceback')
+            evaluation_run["error"] = (agent_result.get('error') or 'Unknown error') + '\n' + (agent_result.get('traceback') or 'Unknown traceback')
             evaluation_run["logs"] = agent_result.get('logs', 'Unknown logs')
             evaluation_run["result_scored_at"] = datetime.now().isoformat()
             evaluation_run["solved"] = False

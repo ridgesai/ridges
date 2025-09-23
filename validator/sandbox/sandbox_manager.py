@@ -223,7 +223,8 @@ class SandboxManager:
             "network_mode": network_mode,
             "timeout": timeout,
             "start_time": time.time(),
-            "container": None
+            "container": None,
+            "killed_by_watchdog": False
         }
 
         # Start Docker container in background thread
@@ -308,9 +309,10 @@ class SandboxManager:
             else:
                 sandbox["container"].wait()
 
-            # if sandbox["killed_by_watchdog"]:
-            #     finish_with_error("killed by watchdog", result)
-            #     return
+            # Check if container was killed by watchdog before trying to read output
+            if sandbox["killed_by_watchdog"]:
+                finish_with_error("Container exceeded timeout and was killed", result)
+                return
             
             debug(f"[SANDBOX] <{sandbox_id}> finished running")
 
