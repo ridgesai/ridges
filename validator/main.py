@@ -43,6 +43,9 @@ async def main():
     It receives and sends events like new agents to evaluate, eval status, scores, etc
     """
 
+    global global_status_running
+    global_status_running = False
+
     # enable_verbose()
 
     init_all_images()

@@ -154,6 +154,9 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, version_id: str, evaluation_runs: List[Dict[str, Any]]):
     """Run evaluation for a specific agent version"""
     
+
+    global global_status_running
+    global_status_running = True
     # CXII FIXME
     # logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")
 
@@ -249,3 +252,5 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
         errored = True
     finally:
         sandbox_manager.cleanup_all_sandboxes()
+        global global_status_running
+        global_status_running = False

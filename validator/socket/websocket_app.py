@@ -107,8 +107,10 @@ class WebsocketApp:
             await asyncio.sleep(2.5)
             if self.ws:
                 status = "available"
-                if self.evaluation_task is not None and not self.evaluation_task.done() and not self.evaluation_task.cancelled():
+                global global_status_running
+                if global_status_running:
                     status = "screening" if SCREENER_MODE else "evaluating"
+                
 
                 # Collect system metrics
                 try:
