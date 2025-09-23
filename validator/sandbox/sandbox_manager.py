@@ -275,6 +275,7 @@ class SandboxManager:
                 "image": "sandbox-image",
                 "command": f"python /sandbox/{script_name} 2>&1",
                 "name": sandbox_id,
+                "user": f"{os.getuid()}:{os.getgid()}",
                 "volumes": {
                     temp_dir: {"bind": "/sandbox", "mode": "rw"}
                 },

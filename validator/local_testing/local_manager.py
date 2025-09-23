@@ -496,6 +496,7 @@ class LocalSandbox:
             self.container = self.local_manager.docker.containers.run(
                 sandbox_image,
                 f"python agent_runner.py",
+                user=f"{os.getuid()}:{os.getgid()}",
                 volumes={
                     str(self.sandbox_dir): {"bind": SANDBOX_DIR, "mode": "rw"}
                 },
