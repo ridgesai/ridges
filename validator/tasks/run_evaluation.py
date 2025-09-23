@@ -91,7 +91,8 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
 
                     # store test results
                     # CXII FIXME
-                    evaluation_run["solved"] = True
+                    test_results = eval_result.get("test_results", [])
+                    evaluation_run["solved"] = all(t.get("status") == "pass" for t in test_results) if isinstance(test_results, list) else False
 
                     evaluation_run["result_scored_at"] = datetime.now().isoformat()
                     safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
