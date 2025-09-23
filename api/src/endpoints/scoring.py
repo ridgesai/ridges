@@ -84,9 +84,12 @@ async def weights() -> Dict[str, float]:
 
     treasury_hotkey = await get_treasury_hotkey()
 
+    # Burn until evals are done
     weights = {
-        treasury_hotkey: DUST_WEIGHT
+        "5EsNzkZ3DwDqCsYmSJDeGXX51dQJd5broUCH6dbDjvkTcicD": 1.0
     }
+
+    return weights
 
     top_agent = await get_top_agent()
 
