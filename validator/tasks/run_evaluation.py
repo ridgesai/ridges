@@ -252,5 +252,4 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
         errored = True
     finally:
         sandbox_manager.cleanup_all_sandboxes()
-        global global_status_running
         global_status_running = False
