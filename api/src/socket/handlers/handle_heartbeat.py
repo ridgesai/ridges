@@ -29,21 +29,7 @@ async def handle_heartbeat(
     if alleged_status != client.status:
         logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
         await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
-        # raise WebSocketDisconnect()
-
-        # you know what this goddamn bug is so ridiculous i have no idea what in the state machine is
-        # causing the platform to not realize that the screener is finished but
-        # clearly the screeners/valis seem to know better so we are gonna scrap the idea of the
-        # platform being authoritative and just let the screeners/valis handle their own statuses.
-        if (alleged_status == "available" and (client.status == "screening" or client.status == "evaluating")):
-            # Get the current evaluation_id from the client
-            current_evaluation_id = client.current_evaluation_id
-            if current_evaluation_id and await all_runs_finished(current_evaluation_id):
-                if client.get_type() == "validator":
-                    await client.finish_evaluation(current_evaluation_id)
-                elif client.get_type() == "screener":
-                    await client.finish_screening(current_evaluation_id)
-            client.status = "available"
+        raise WebSocketDisconnect()
 
     # Process system metrics if included in heartbeat
     if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
