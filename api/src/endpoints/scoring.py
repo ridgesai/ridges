@@ -81,6 +81,7 @@ async def weights() -> Dict[str, float]:
     Returns a dictionary of miner hotkeys to weights
     """
     DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
+    weights = {}  # Initialize weights dictionary
 
     treasury_hotkey = await get_treasury_hotkey()
 
