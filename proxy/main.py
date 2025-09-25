@@ -190,9 +190,8 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             if not evaluation_run:
                 logger.warning(f"Embedding request for run_id {request.run_id} -- run_id not found")
                 raise HTTPException(status_code=404, detail="Evaluation run not found")
-            
-            # Check if evaluation run is in the correct state
-            if evaluation_run.status != SandboxStatus.sandbox_created:
+
+            if (evaluation_run.status != SandboxStatus.sandbox_created) and (evaluation_run.status != SandboxStatus.started):
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_WRONG_STATUS)
                 logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
