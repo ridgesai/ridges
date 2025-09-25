@@ -163,7 +163,9 @@ class Evaluation:
                     from api.src.models.validator import Validator
 
                     # Create evaluation records but don't notify yet
-                    validators_to_notify = await Validator.get_connected()
+                    import random
+                    all_validators = await Validator.get_connected()
+                    validators_to_notify = random.sample(all_validators, min(3, len(all_validators)))
                     for validator in validators_to_notify:
                         if (combined_screener_score is None):
                             await send_slack_message(f"111 Screener score is None when creating evaluation for validator {validator.hotkey}, version {self.version_id}")
