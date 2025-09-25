@@ -24,7 +24,6 @@ def get_registered_validator_hotkeys() -> List[str]:
         # Extract hotkeys from all nodes (both miners and validators)
         hotkeys = [node.hotkey for node in nodes]
 
-        logger.info(f"Found {len(hotkeys)} registered nodes on subnet {netuid}")
         return hotkeys
 
     except Exception as e:
@@ -34,17 +33,5 @@ def get_registered_validator_hotkeys() -> List[str]:
 
 def is_validator_registered(validator_hotkey: str) -> bool:
     """Check if a validator hotkey is registered in the metagraph."""
-    try:
-        registered_hotkeys = get_registered_validator_hotkeys()
-        is_registered = validator_hotkey in registered_hotkeys
-
-        if is_registered:
-            logger.info(f"Validator hotkey {validator_hotkey} is registered in the metagraph")
-        else:
-            logger.warning(f"Validator hotkey {validator_hotkey} is NOT registered in the metagraph")
-
-        return is_registered
-
-    except Exception as e:
-        logger.error(f"Error checking validator registration for {validator_hotkey}: {e}")
-        return False
+    registered_hotkeys = get_registered_validator_hotkeys()
+    return validator_hotkey in registered_hotkeys
