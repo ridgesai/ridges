@@ -1,8 +1,10 @@
 import asyncio
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 from typing import Any, List, Tuple
 from functools import wraps
+from api.src.config import DB_HOST, DB_NAME, DB_PASS, DB_PORT, DB_USER
 from loggers.logging_utils import get_logger
 
 import asyncpg
@@ -22,8 +24,8 @@ class DBManager:
 
     async def open(self) -> None:
         """Initialize the connection‑pool and make sure the schema exists."""
-        logger.info(f"Initializing database connection to {self.conn_args['database']} on {self.conn_args['host']}:{self.conn_args['port']}.")
-        logger.info("Creating connection pool...")
+        logger.info(f"Initializing database connection to {self.conn_args['database']} on {self.conn_args['host']}:{self.conn_args['port']}")
+        
         self.pool = await asyncpg.create_pool(
             **self.conn_args,
             min_size=self.min_con,
@@ -37,7 +39,7 @@ class DBManager:
                 'lock_timeout': '30000',  # 30 seconds
             }
         )
-        logger.info("Ensuring schema...")
+
         await self._ensure_schema()
 
     async def close(self) -> None:
@@ -60,7 +62,9 @@ class DBManager:
     async def _ensure_schema(self) -> None:
         """Apply schema from an external .sql file if present; otherwise fall back to
         the minimal `device_events` table so the service can still start."""
-        from pathlib import Path
+        
+        logger.info("Ensuring schema")
+
         schema_file = Path(__file__).parent / "postgres_schema.sql"
 
         async with self.acquire() as con:
@@ -70,18 +74,6 @@ class DBManager:
                 return
             else:
                 raise Exception("Schema file is missing")
-
-DB_USER = os.getenv("AWS_MASTER_USERNAME")
-DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
-DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
-DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
-DB_PORT = os.getenv("PGPORT", "5432")
-
-# Ensure all environment variables are present
-assert DB_USER is not None, "DB_USER environment variable is required"
-assert DB_PASS is not None, "DB_PASS environment variable is required"
-assert DB_HOST is not None, "DB_HOST environment variable is required"
-assert DB_NAME is not None, "DB_NAME environment variable is required"
 
 new_db = DBManager(
     user=DB_USER,
