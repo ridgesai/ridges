@@ -5,6 +5,7 @@ from api.src.backend.entities import Client, EvaluationRun
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.evaluation_runs import all_runs_finished, update_evaluation_run
 from loggers.logging_utils import get_logger
+from typing import Union
 
 if TYPE_CHECKING:
     from api.src.models.screener import Screener
@@ -18,7 +19,7 @@ async def handle_update_evaluation_run(
 ) -> Dict[str, Any]:
     """Handle update-evaluation-run message from a client"""
 
-    logger.info(f"XXXXXXXXXX Received update-evaluation run: run_id {response_json["evaluation_run"]["run_id"]} --> {response_json["evaluation_run"]["status"]}")
+    logger.info(f"XXXXXXXXXX Received update-evaluation run: run_id {response_json['evaluation_run']['run_id']} --> {response_json['evaluation_run']['status']}")
 
 
 
@@ -26,7 +27,7 @@ async def handle_update_evaluation_run(
     if client.get_type() not in ["validator", "screener"]:
         logger.error(f"Client {client.ip_address} is not a validator or screener. Ignoring update evaluation run request.")
         return {"status": "error", "message": "Client is not a validator or screener"}
-    client: "Validator" | "Screener" = client
+    client: Union["Validator", "Screener"] = client
     
     evaluation_run_data = response_json.get("evaluation_run")
     
