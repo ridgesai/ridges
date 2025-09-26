@@ -2,8 +2,8 @@ class BowlingGame:
     def __init__(self):
         pass
 
-    def roll(self, pins):
+    def roll(self, pins) -> None:
         pass
 
-    def score(self):
+    def score(self) -> int:
         pass

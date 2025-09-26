@@ -9,7 +9,7 @@ class Board:
     def __init__(self, board):
         pass
 
-    def territory(self, x, y):
+    def territory(self, x, y) -> tuple[str, set]:
         """Find the owner and the territories given a coordinate on
            the board
 
@@ -25,7 +25,7 @@ class Board:
         """
         pass
 
-    def territories(self):
+    def territories(self) -> dict[str, set]:
         """Find the owners and the territories of the whole board
 
         Args:

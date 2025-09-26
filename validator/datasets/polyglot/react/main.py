@@ -7,9 +7,9 @@ class ComputeCell:
     def __init__(self, inputs, compute_function):
         self.value = None
 
-    def add_callback(self, callback):
+    def add_callback(self, callback) -> None:
         pass
 
-    def remove_callback(self, callback):
+    def remove_callback(self, callback) -> None:
         pass
     

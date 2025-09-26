@@ -10,11 +10,11 @@ class Hangman:
         self.remaining_guesses = 9
         self.status = STATUS_ONGOING
 
-    def guess(self, char):
+    def guess(self, char) -> None:
         pass
 
-    def get_masked_word(self):
+    def get_masked_word(self) -> str:
         pass
 
-    def get_status(self):
+    def get_status(self) -> str:
         pass

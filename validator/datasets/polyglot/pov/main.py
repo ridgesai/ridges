@@ -18,8 +18,8 @@ class Tree:
     def __eq__(self, other):
         return self.__dict__() == other.__dict__()
 
-    def from_pov(self, from_node):
+    def from_pov(self, from_node) -> 'Tree':
         pass
 
-    def path_to(self, from_node, to_node):
+    def path_to(self, from_node, to_node) -> list[str]:
         pass

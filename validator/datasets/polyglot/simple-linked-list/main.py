@@ -9,7 +9,7 @@ class Node:
     def value(self):
         pass
 
-    def next(self):
+    def next(self) -> 'Node' | None:
         pass
 
 
@@ -23,14 +23,14 @@ class LinkedList:
     def __len__(self):
         pass
 
-    def head(self):
+    def head(self) -> 'Node':
         pass
 
-    def push(self, value):
+    def push(self, value) -> None:
         pass
 
     def pop(self):
         pass
 
-    def reversed(self):
+    def reversed(self) -> 'LinkedList':
         pass

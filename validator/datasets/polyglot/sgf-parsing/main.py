@@ -25,5 +25,5 @@ class SgfTree:
         return not self == other
 
 
-def parse(input_string):
+def parse(input_string) -> SgfTree:
     pass
