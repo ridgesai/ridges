@@ -1,20 +1,20 @@
-def append(list1, list2):
+def append(list1, list2) -> list:
     pass
 
 
-def concat(lists):
+def concat(lists) -> list:
     pass
 
 
-def filter(function, list):
+def filter(function, list) -> list:
     pass
 
 
-def length(list):
+def length(list) -> int:
     pass
 
 
-def map(function, list):
+def map(function, list) -> list:
     pass
 
 
@@ -26,5 +26,5 @@ def foldr(function, list, initial):
     pass
 
 
-def reverse(list):
+def reverse(list) -> list:
     pass

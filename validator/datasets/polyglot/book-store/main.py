@@ -1,2 +1,2 @@
-def total(basket):
+def total(basket) -> int:
     pass

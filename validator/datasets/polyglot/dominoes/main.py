@@ -1,2 +1,2 @@
-def can_chain(dominoes):
+def can_chain(dominoes) -> list | None:
     pass
