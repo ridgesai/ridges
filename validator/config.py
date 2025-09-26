@@ -25,19 +25,30 @@ MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
 VERSION_KEY = 6
 VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
+
+def get_public_ip() -> str:
+    import urllib.request
+    return urllib.request.urlopen('http://ifconfig.me').read().decode('utf-8')
+
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-RIDGES_API_URL = os.getenv("RIDGES_API_URL", None) 
+RIDGES_API_URL = os.getenv("RIDGES_API_URL", None)
 if RIDGES_API_URL is None:
     print("RIDGES_API_URL must be set in validator/.env")
     exit(1)
-if RIDGES_API_URL == "http://<YOUR_LOCAL_IP>:8000":
-    print("Set your local IP address in validator/.env")
-    exit(1)
-if RIDGES_API_URL in ["http://127.0.0.1:8000", "http://localhost:8000", "http://0.0.0.0:8000"]:
+elif RIDGES_API_URL == "http://<YOUR_LOCAL_IP>:8000":
+    RIDGES_API_URL = f"http://{get_public_ip()}:8000"
+    print(f"Setting RIDGES_API_URL to {RIDGES_API_URL}")
+elif RIDGES_API_URL in ["http://127.0.0.1:8000", "http://localhost:8000", "http://0.0.0.0:8000"]:
     print("You are running the validator on a loopback address. This will cause 502 connection errors while proxying. Please use your local IP address.")
     exit(1)
+
 RIDGES_PROXY_URL = os.getenv("RIDGES_PROXY_URL", "http://52.1.119.189:8001")
+if RIDGES_PROXY_URL == "http://<YOUR_LOCAL_IP>:8001":
+    RIDGES_PROXY_URL = f"http://{get_public_ip()}:8001"
+    print(f"Setting RIDGES_API_URL to {RIDGES_API_URL}")
+
 
 LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
 
