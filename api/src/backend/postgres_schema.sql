@@ -322,12 +322,15 @@ agent_evaluations AS (
 ),
 filtered_scores AS (
     -- Remove the lowest score for each agent version and set combination
-    SELECT 
+    SELECT
         ae.*,
         ROW_NUMBER() OVER (
-            PARTITION BY ae.version_id, ae.set_id 
+            PARTITION BY ae.version_id, ae.set_id
             ORDER BY ae.score ASC
-        ) as score_rank
+        ) as score_rank,
+        COUNT(*) OVER (
+            PARTITION BY ae.version_id, ae.set_id
+        ) as total_scores
     FROM agent_evaluations ae
 )
 SELECT
@@ -345,7 +348,10 @@ SELECT
     AVG(fs.score) AS final_score
 FROM filtered_scores fs
 WHERE fs.set_id IS NOT NULL
-    AND fs.score_rank > 1  -- Exclude the lowest score (rank 1)
+    AND (
+        (fs.total_scores = 2 AND fs.score_rank > 0) OR
+        (fs.total_scores > 2 AND fs.score_rank > 1)
+    )  -- Keep all scores when only 2 exist, exclude lowest when 3+
 GROUP BY fs.version_id, fs.miner_hotkey, fs.agent_name, fs.version_num, 
          fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved, fs.approved_at
 HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
