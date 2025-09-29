@@ -252,7 +252,9 @@ class Screener(Client):
                 expected_status = getattr(AgentStatus, f"screening_{self.stage}")
                 if AgentStatus.from_string(agent_status) != expected_status:
                     logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
-                    return
+                    # Clearly a bug here, its somehow set to failed_screening_1 when we hit this if statement
+                    # It should be screening_1, no idea whats setting it to failed_screening_1
+                    # return
                 
                 if errored:
                     logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
