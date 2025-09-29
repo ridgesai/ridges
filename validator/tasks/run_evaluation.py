@@ -22,6 +22,16 @@ logger = get_logger(__name__)
 
 # Global async lock to prevent concurrent websocket sends
 _websocket_send_lock = asyncio.Lock()
+_main_event_loop = None
+
+def set_main_event_loop():
+    """Store reference to the main event loop for cross-thread websocket sends"""
+    global _main_event_loop
+    try:
+        _main_event_loop = asyncio.get_running_loop()
+        logger.info(f"Stored reference to main event loop for websocket sends: {id(_main_event_loop)}")
+    except RuntimeError:
+        logger.warning("No running event loop to store reference to")
 
 def safe_websocket_send(websocket_app, message):
     """Safely send websocket message, preventing concurrent writes that cause SSL errors"""
@@ -31,12 +41,19 @@ def safe_websocket_send(websocket_app, message):
     
     try:
         loop = asyncio.get_running_loop()
-        # Schedule in the existing event loop instead of creating new ones
+        logger.debug(f"safe_websocket_send: Using current event loop {id(loop)}")
+        # We're in an async context, schedule directly
         asyncio.create_task(_send_with_async_lock())
     except RuntimeError:
-        # No running loop, run in new event loop (shouldn't happen in normal operation)
-        logger.warning("No running event loop found, creating new one for websocket send - this may indicate a threading issue")
-        asyncio.run(_send_with_async_lock())
+        # No running loop, we're likely in a callback thread
+        logger.debug(f"safe_websocket_send: No running loop, using stored loop {id(_main_event_loop) if _main_event_loop else None}")
+        if _main_event_loop and not _main_event_loop.is_closed():
+            # Schedule in the main event loop thread-safely
+            future = asyncio.run_coroutine_threadsafe(_send_with_async_lock(), _main_event_loop)
+            # Don't wait for result to avoid blocking the callback
+        else:
+            logger.warning("No main event loop available, falling back to new event loop")
+            asyncio.run(_send_with_async_lock())
 
 
 
@@ -153,9 +170,11 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
 async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, version_id: str, evaluation_runs: List[Dict[str, Any]]):
     """Run evaluation for a specific agent version"""
     
+    # Store reference to main event loop for thread-safe websocket sends
+    # Note: run_evaluation runs as asyncio.Task in the main websocket event loop
+    set_main_event_loop()
 
-    global global_status_running
-    global_status_running = True
+    websocket_app.status_running = True
     # CXII FIXME
     # logger.info(f"Starting evaluation {evaluation_id} for agent {agent_version.miner_hotkey}")
 
@@ -251,4 +270,4 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
         errored = True
     finally:
         sandbox_manager.cleanup_all_sandboxes()
-        global_status_running = False
+        websocket_app.status_running = False

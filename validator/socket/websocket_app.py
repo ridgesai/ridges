@@ -24,15 +24,13 @@ logger = get_logger(__name__)
 
 logger.info(f"SCREENER_MODE: {SCREENER_MODE}")
 
-# Global status variable to track if evaluation is running
-global_status_running = False
-
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection]
     evaluation_task: Optional[asyncio.Task]
     sandbox_manager: Optional[Any]
     heartbeat_task: Optional[asyncio.Task]
     _shutting_down: bool
+    status_running: bool
     
     def __init__(self):
         self.ws = None
@@ -40,6 +38,7 @@ class WebsocketApp:
         self.sandbox_manager = None
         self.heartbeat_task = None
         self._shutting_down = False
+        self.status_running = False
 
     @tracer.wrap(resource="send-websocket-message")
     async def send(self, message: Dict[str, Any]):
@@ -110,8 +109,7 @@ class WebsocketApp:
             await asyncio.sleep(2.5)
             if self.ws:
                 status = "available"
-                global global_status_running
-                if global_status_running:
+                if self.status_running:
                     status = "screening" if SCREENER_MODE else "evaluating"
                 
 
