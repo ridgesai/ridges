@@ -238,6 +238,8 @@ class Screener(Client):
     async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish screening evaluation"""
         from api.src.models.evaluation import Evaluation
+
+        logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, entered finish_screening")
         
         try:
             evaluation = await Evaluation.get_by_id(evaluation_id)
@@ -249,11 +251,13 @@ class Screener(Client):
                 agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
                 expected_status = getattr(AgentStatus, f"screening_{self.stage}")
                 if AgentStatus.from_string(agent_status) != expected_status:
-                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
+                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
                     return
                 
                 if errored:
+                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
                     await evaluation.error(conn, reason)
+                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}: done")
                     notification_targets = None
                 else:
                     notification_targets = await evaluation.finish(conn)
@@ -284,13 +288,16 @@ class Screener(Client):
                                 logger.warning(f"Failed to assign evaluation {evaluation_id} to validator {validator.hotkey}")
                         else:
                             logger.info(f"Validator {validator.hotkey} not available for evaluation {evaluation_id}")
-                            
+            
+            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Got to end of try block")
         finally:
+            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, in finally block")
             # Single atomic reset and reassignment
             async with Evaluation.get_lock():
                 self.set_available()
                 logger.info(f"Screener {self.hotkey}: Reset to available and looking for next agent")
                 await Evaluation.screen_next_awaiting_agent(self)
+            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, exiting finally block")
     
     @staticmethod
     async def get_first_available() -> Optional['Screener']:

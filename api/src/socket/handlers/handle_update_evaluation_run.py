@@ -99,9 +99,15 @@ async def handle_update_evaluation_run(
         if await all_runs_finished(evaluation_run.evaluation_id):
             logger.info(f"All runs finished for evaluation {evaluation_run.evaluation_id}. Finishing evaluation.")
             if client.get_type() == "validator":
+                logger.info(f"Calling finish_evaluation for {evaluation_run.evaluation_id}")
                 await client.finish_evaluation(evaluation_run.evaluation_id)
+                logger.info(f"Called finish_evaluation for {evaluation_run.evaluation_id}")
             elif client.get_type() == "screener":
+                logger.info(f"Calling finish_screening for {evaluation_run.evaluation_id}")
                 await client.finish_screening(evaluation_run.evaluation_id)
+                logger.info(f"Called finish_screening for {evaluation_run.evaluation_id}")
+            else:
+                logger.info(f"Unknown type, not validator or screener, when trying to finish evaluation {evaluation_run.evaluation_id}")
         
         # Prepare broadcast data
         broadcast_data = evaluation_run.model_dump(mode='json')
