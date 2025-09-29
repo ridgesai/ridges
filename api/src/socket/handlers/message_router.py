@@ -11,6 +11,7 @@ from api.src.socket.handlers.handle_get_next_evaluation import handle_get_next_e
 from api.src.socket.handlers.handle_update_evaluation_run import handle_update_evaluation_run
 from api.src.socket.handlers.handle_evaluation_run_logs import handle_evaluation_run_logs
 from api.src.socket.handlers.handle_system_metrics import handle_system_metrics
+from api.src.socket.handlers.handle_inform_evaluation_completed import handle_inform_evaluation_completed
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
@@ -65,7 +66,7 @@ async def route_message(
         return {"error": "Not authenticated"}
     
     # Check IP whitelist for all validator/screener operations
-    protected_events = {"get-next-evaluation", "update-evaluation-run", "evaluation-run-logs", "heartbeat"}
+    protected_events = {"get-next-evaluation", "update-evaluation-run", "evaluation-run-logs", "heartbeat", "inform_evaluation_completed"}
     if event in protected_events:
         if not check_websocket_ip_auth(websocket, event):
             return {"error": "Access denied: IP not whitelisted"}
@@ -88,6 +89,9 @@ async def route_message(
     
     elif event == "system-metrics":
         return await handle_system_metrics(client, response_json)
+    
+    elif event == "inform_evaluation_completed":
+        return await handle_inform_evaluation_completed(client, response_json)
     
     else:
         logger.warning(f"Unknown event type: {event}")

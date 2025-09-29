@@ -258,6 +258,14 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
             await asyncio.sleep(1)
 
         logger.info(f"Evaluation {evaluation_id} completed successfully")
+        
+        # Inform platform that entire evaluation is completed
+        safe_websocket_send(websocket_app, {
+            "event": "inform_evaluation_completed", 
+            "evaluation_id": evaluation_id,
+            "version_id": version_id,
+            "completed_at": datetime.now().isoformat()
+        })
     except asyncio.CancelledError:
         logger.info(f"Evaluation {evaluation_id} was cancelled")
         # Only treat as error if not cancelled by platform
