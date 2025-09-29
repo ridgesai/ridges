@@ -24,6 +24,9 @@ logger = get_logger(__name__)
 
 logger.info(f"SCREENER_MODE: {SCREENER_MODE}")
 
+# Global status variable to track if evaluation is running
+global_status_running = False
+
 class WebsocketApp:
     ws: Optional[websockets.ClientConnection]
     evaluation_task: Optional[asyncio.Task]
