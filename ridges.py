@@ -17,7 +17,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
-from dotenv import load_dotenv
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform.ridges.ai"
@@ -563,9 +562,10 @@ def status():
 def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: str, verbose: bool, cleanup: bool, start_proxy: bool):
     """Test your agent locally with full SWE-bench evaluation"""
     
-    import tempfile
-    import shutil
     import traceback
+    import uuid
+    import time
+    import shutil
     from pathlib import Path
     
     # Check and setup .env file for proxy
@@ -575,7 +575,6 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
     if not proxy_env_path.exists():
         if proxy_env_example_path.exists():
             console.print("📋 No .env file found, copying from .env.example...", style="yellow")
-            import shutil
             shutil.copy(proxy_env_example_path, proxy_env_path)
             console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
         else:
@@ -599,8 +598,14 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
 
     # Load environment variables FIRST before any other imports
     try:
-        from validator.local_testing.setup import load_environment
-        load_environment()
+        from dotenv import load_dotenv
+        # Try to load from validator/.env if it exists
+        validator_env = Path("validator/.env")
+        if validator_env.exists():
+            load_dotenv(validator_env)
+            console.print("Loaded configuration from validator/.env", style="green")
+        else:
+            console.print("No validator/.env found, using defaults", style="yellow")
     except ImportError as e:
         console.print(f" Failed to load environment setup: {e}", style="bold red")
         return
@@ -647,30 +652,102 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
             console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
     
     try:
-        # Import our new local testing components (after environment is loaded)
-        from validator.local_testing.setup import setup_local_testing_environment
-        from validator.local_testing.local_manager import LocalSandboxManager
-        from validator.local_testing.runner import run_local_evaluations
+        # Import existing validator components instead of local testing modules
+        from validator.sandbox.sandbox_manager import SandboxManager
+        from validator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
+        from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
         
-        # One-time setup (pulls images, etc.)
-        console.print("🔧 Setting up local testing environment...", style="yellow")
-        setup_local_testing_environment()
+        # Set up gateway URL for sandbox manager
+        gateway_url = os.getenv("RIDGES_PROXY_URL", "http://localhost:8001")
         
-        # Create local sandbox manager
-        local_manager = LocalSandboxManager(verbose=verbose)
+        console.print("🔧 Setting up sandbox environment...", style="yellow")
         
-        # Run evaluations
-        import asyncio
-        results = asyncio.run(run_local_evaluations(
-            agent_file=agent_file,
-            num_problems=num_problems,
-            timeout=timeout,
-            problem_set=problem_set,
-            manager=local_manager
-        ))
+        # Create sandbox manager
+        sandbox_manager = SandboxManager(gateway_url, log_docker_to_stdout=verbose)
+        
+        # Load agent source code
+        with open(agent_file, 'r') as f:
+            agent_source_code = f.read()
+        
+        # Select problem suite and problems based on problem_set
+        if problem_set == "screener":
+            suite = PolyglotSuite("validator/datasets/polyglot")
+            # Use a few easy polyglot problems for screener
+            problem_names = ["affine-cipher", "beer-song", "bowling", "connect", "dot-dsl"][:num_problems]
+        elif problem_set == "easy":
+            suite = SWEBenchVerifiedSuite("validator/datasets/swebench_verified")
+            # Use some easy SWE-bench problems
+            problem_names = ["django__django-11138", "django__django-11400", "django__django-12325"][:num_problems]
+        elif problem_set == "medium":
+            suite = SWEBenchVerifiedSuite("validator/datasets/swebench_verified")
+            # Use medium difficulty problems
+            problem_names = ["django__django-12708", "django__django-13128", "django__django-13212"][:num_problems]
+        elif problem_set == "hard":
+            suite = SWEBenchVerifiedSuite("validator/datasets/swebench_verified")
+            # Use harder problems
+            problem_names = ["django__django-13449", "django__django-13837", "django__django-14007"][:num_problems]
+        else:
+            console.print(f" Unknown problem set: {problem_set}", style="bold red")
+            return
+        
+        # Run evaluations on each problem
+        results = []
+        for i, problem_name in enumerate(problem_names):
+            console.print(f"🧪 Running test {i+1}/{len(problem_names)}: {problem_name}", style="cyan")
+            
+            run_id = str(uuid.uuid4())
+            start_time = time.time()
+            
+            def on_finish(result):
+                duration = time.time() - start_time
+                solved = result.get("status") == "success" and result.get("test_results")
+                if solved and result.get("test_results"):
+                    # Check if any tests passed
+                    test_results = result.get("test_results", [])
+                    solved = any(test.get("status") == "pass" for test in test_results)
+                
+                results.append({
+                    'instance_id': problem_name,
+                    'status': 'SOLVED' if solved else 'FAILED',
+                    'solved': solved,
+                    'duration': duration,
+                    'patch_generated': result.get("status") == "success",
+                    'patch_length': len(result.get("diff", "")) if result.get("diff") else 0,
+                    'patch_content': result.get("diff", ""),
+                    'error': result.get("error", ""),
+                    'logs': [result.get("logs", "")] if result.get("logs") else []
+                })
+                
+                status_icon = "✅" if solved else "❌"
+                console.print(f"{status_icon} {problem_name}: {'SOLVED' if solved else 'FAILED'} ({duration:.1f}s)")
+            
+            # Run the agent on this problem
+            suite.run_agent_in_sandbox_for_problem(
+                sandbox_manager=sandbox_manager,
+                run_id=run_id,
+                problem_name=problem_name,
+                agent_source_code=agent_source_code,
+                on_finish=on_finish,
+                timeout=timeout,
+                include_solution=False
+            )
+            
+            # Wait for completion (simplified - in production this would be async)
+            time.sleep(1)
+            while sandbox_manager.get_num_sandboxes() > 0:
+                time.sleep(1)
         
         # Display results
-        display_test_results(results)
+        display_test_results({
+            'results': results,
+            'summary': {
+                'total_count': len(results),
+                'solved_count': sum(1 for r in results if r['solved']),
+                'success_rate': sum(1 for r in results if r['solved']) / len(results) * 100 if results else 0,
+                'patches_generated': sum(1 for r in results if r['patch_generated']),
+                'avg_time': sum(r['duration'] for r in results) / len(results) if results else 0
+            }
+        })
         
     except KeyboardInterrupt:
         console.print("\n🛑 Test interrupted by user", style="yellow")
@@ -683,8 +760,8 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         if cleanup:
             console.print("🧹 Cleaning up...", style="dim")
             try:
-                if 'local_manager' in locals():
-                    local_manager.cleanup()
+                if 'sandbox_manager' in locals():
+                    sandbox_manager.cleanup_all()
             except:
                 pass
         
