@@ -84,13 +84,13 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
         WHERE e.version_id = $1
         AND e.set_id = $2
-        AND (
-            (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
-            OR (
-                (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
-            )
-        )
+        -- AND (
+        --     (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+        --     OR (
+        --         (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+        --         AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
+        --     )
+        -- )
         GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
     """, version_id, set_id)
@@ -203,13 +203,13 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             LEFT JOIN inf i ON er.run_id = i.run_id
             WHERE e.version_id = $1
             AND e.set_id = $2
-            AND (
-                (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
-                OR (
-                    (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                    AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
-                )
-            )
+            -- AND (
+            --     (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+            --     OR (
+            --         (e.validator_hotkey LIKE 'screener-%' OR e.validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+            --         AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
+            --     )
+            -- )
             GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
             ORDER BY e.created_at DESC
         """, version_id, set_id)
@@ -284,39 +284,39 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             FROM evaluations 
             WHERE version_id = $1
             AND set_id = $2
-            AND (
-                (validator_hotkey NOT LIKE 'screener-%' AND validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
-                OR (
-                    (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')  -- Screener evaluations
-                    AND status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
-                )
-            )
+            -- AND (
+            --     (validator_hotkey NOT LIKE 'screener-%' AND validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
+            --     OR (
+            --         (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')  -- Screener evaluations
+            --         AND status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
+            --     )
+            -- )
         )
         
-        UNION ALL
-        
-        (
-            -- Get only the latest screener evaluation
-            SELECT 
-                evaluation_id,
-                version_id,
-                validator_hotkey,
-                set_id,
-                status,
-                terminated_reason,
-                created_at,
-                started_at,
-                finished_at,
-                score,
-                screener_score
-            FROM evaluations 
-            WHERE version_id = $1
-            AND set_id = $2
-            AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
-            AND status NOT IN ('completed', 'running')  -- Only errored screener evaluations
-            ORDER BY created_at DESC
-            LIMIT 1
-        )
+        -- UNION ALL
+        -- 
+        -- (
+        --     -- Get only the latest screener evaluation
+        --     SELECT 
+        --         evaluation_id,
+        --         version_id,
+        --         validator_hotkey,
+        --         set_id,
+        --         status,
+        --         terminated_reason,
+        --         created_at,
+        --         started_at,
+        --         finished_at,
+        --         score,
+        --         screener_score
+        --     FROM evaluations 
+        --     WHERE version_id = $1
+        --     AND set_id = $2
+        --     AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
+        --     AND status NOT IN ('completed', 'running')  -- Only errored screener evaluations
+        --     ORDER BY created_at DESC
+        --     LIMIT 1
+        -- )
         ORDER BY created_at DESC
         """,
         version_id, set_id
