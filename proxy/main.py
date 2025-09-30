@@ -194,10 +194,10 @@ async def embedding_endpoint(request: EmbeddingRequest, http_request: Request):
             if (evaluation_run.status != SandboxStatus.sandbox_created) and (evaluation_run.status != SandboxStatus.started):
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.EMBEDDING_WRONG_STATUS)
-                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
+                logger.warning(f"Embedding request for run_id {request.run_id} -- status != sandbox_created || started: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
+                    detail=f"Evaluation run is not in the sandbox_created or started state. Current status: {evaluation_run.status}"
                 )
             
             # Convert run_id to UUID (needed for database operations)
@@ -298,13 +298,13 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
                 raise HTTPException(status_code=404, detail="Evaluation run not found")
             
             # Check if evaluation run is in the correct state
-            if evaluation_run.status != SandboxStatus.sandbox_created:
+            if (evaluation_run.status != SandboxStatus.sandbox_created) and (evaluation_run.status != SandboxStatus.started):
                 client_ip = get_client_ip(http_request)
                 track_400_error(client_ip, BadRequestErrorCode.INFERENCE_WRONG_STATUS)
-                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
+                logger.warning(f"Inference request for run_id {request.run_id} -- status != sandbox_created || started: {evaluation_run.status} from IP {format_ip_with_name(client_ip)}")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Evaluation run is not in the sandbox_created state. Current status: {evaluation_run.status}"
+                    detail=f"Evaluation run is not in the sandbox_created or started state. Current status: {evaluation_run.status}"
                 )
             
             # Check cost limits at FastAPI level
