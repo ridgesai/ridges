@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import logging
 import uuid
+import traceback
 from typing import List, Optional, Tuple
 import asyncpg
 import asyncio
@@ -104,6 +105,45 @@ class Evaluation:
 
     async def finish(self, conn: asyncpg.Connection):
         """Finish evaluation, but retry if >=50% of inferences failed and any run errored"""
+        
+        # DEBUG: Check if this evaluation already has a terminated_reason set
+        current_terminated_reason = await conn.fetchval(
+            "SELECT terminated_reason FROM evaluations WHERE evaluation_id = $1", 
+            self.evaluation_id
+        )
+        if current_terminated_reason:
+            current_status = await conn.fetchval(
+                "SELECT status FROM evaluations WHERE evaluation_id = $1", 
+                self.evaluation_id
+            )
+            
+            # Print very noticeable debug information
+            print("=" * 80)
+            print("🚨 CRITICAL DEBUG: finish() called on evaluation with existing terminated_reason! 🚨")
+            print("=" * 80)
+            print(f"Evaluation ID: {self.evaluation_id}")
+            print(f"Version ID: {self.version_id}")
+            print(f"Validator Hotkey: {self.validator_hotkey}")
+            print(f"Current Status: {current_status}")
+            print(f"Existing terminated_reason: {current_terminated_reason}")
+            print(f"Is Screening: {self.is_screening}")
+            if self.is_screening:
+                print(f"Screener Stage: {self.screener_stage}")
+            print(f"Current Time: {datetime.now().isoformat()}")
+            print()
+            print("CALL STACK TRACE:")
+            print("-" * 40)
+            traceback.print_stack()
+            print("=" * 80)
+            
+            # Also log it for persistent record
+            logger.error(
+                f"CRITICAL: finish() called on evaluation {self.evaluation_id} "
+                f"(version_id: {self.version_id}, validator: {self.validator_hotkey}) "
+                f"that already has terminated_reason: '{current_terminated_reason}'. "
+                f"Current status: {current_status}. This will result in inconsistent state!"
+            )
+        
         # Check if we should retry due to inference failures
         successful, total, success_rate, any_run_errored = await self._check_inference_success_rate(conn)
         
