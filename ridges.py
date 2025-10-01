@@ -551,8 +551,8 @@ def status():
         else:
             console.print(f"❌ {display_name}: [bold red]Stopped[/bold red]")
 
+
 @cli.command()
-@click.argument("suite_name", type=click.Choice(['polyglot', 'swebench_verified']))
 @click.argument("problem_name")
 @click.argument("agent_file")
 @click.option("--log-docker-to-stdout", is_flag=True, help="Print Docker container logs to stdout in real-time")
@@ -563,7 +563,6 @@ def status():
 @click.option("--start-proxy", is_flag=True, default=True, help="Automatically start proxy if needed")
 @click.option("--gateway-url", help="URL for the gateway (overrides RIDGES_PROXY_URL)")
 def test_agent(
-    suite_name: str, 
     problem_name: str, 
     agent_file: str, 
     log_docker_to_stdout: bool, 
@@ -576,17 +575,29 @@ def test_agent(
 ) -> int:
     """Test your agent locally with full SWE-bench evaluation.
     
-    This command runs a single agent against a specific problem from either the Polyglot
-    or SWE-bench Verified problem suites. It automatically handles Docker sandbox creation,
-    proxy server management, and provides detailed output about the agent's performance.
+    This command runs a single agent against a specific problem. It automatically searches
+    all available problem suites (Polyglot and SWE-bench Verified) to find the problem,
+    handles Docker sandbox creation, proxy server management, and provides detailed output
+    about the agent's performance.
+    
+    Args:
+        problem_name: Name of the problem to run (e.g., 'affine-cipher', 'django__django-12308')
+        agent_file: Path to the agent Python file containing the agent_main() function
+        log_docker_to_stdout: Print Docker container logs to stdout in real-time
+        include_solution: Expose the solution to the agent at /sandbox/solution.diff
+        verbose: Enable verbose (debug) logging for detailed output
+        timeout: Timeout in seconds for sandbox execution (default: 10)
+        cleanup: Clean up Docker containers after test completion (default: True)
+        start_proxy: Automatically start proxy server if needed (default: True)
+        gateway_url: Optional URL for the gateway (overrides RIDGES_PROXY_URL)
     
     Returns:
         int: Exit code (0 for success, 1 for failure)
     
     Examples:
-        ./ridges.py test-agent polyglot affine-cipher miner/agent.py
-        ./ridges.py test-agent swebench_verified django__django-12308 miner/agent.py
-        ./ridges.py test-agent polyglot affine-cipher miner/agent.py --include-solution --log-docker-to-stdout --verbose
+        ./ridges.py test-agent affine-cipher miner/agent.py
+        ./ridges.py test-agent django__django-12308 miner/agent.py
+        ./ridges.py test-agent affine-cipher miner/agent.py --include-solution --log-docker-to-stdout --verbose
     
     Note:
         - Requires Docker to be running
@@ -645,7 +656,6 @@ def test_agent(
         return 1
     
     console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
-                        f"[yellow]Suite:[/yellow] {suite_name}\n"
                         f"[yellow]Problem:[/yellow] {problem_name}\n"
                         f"[yellow]Agent:[/yellow] {agent_file}\n"
                         f"[yellow]Timeout:[/yellow] {timeout}s", 
@@ -675,41 +685,42 @@ def test_agent(
             except:
                 console.print("🚀 Starting proxy...", style="yellow")
                 proxy_process = subprocess.Popen(
-                    ["python", "ridges.py", "proxy", "run", "--no-auto-update"],
+                    ["uv", "run", "-m", "proxy.main"],
                     stdout=subprocess.DEVNULL if not verbose else None,
                     stderr=subprocess.DEVNULL if not verbose else None,
                     preexec_fn=os.setsid  # Create new process group for proper cleanup
                 )
-                # Give proxy time to start
-                time.sleep(5)
-                console.print("✅ Proxy started", style="green")
+                # Give proxy time to start up
+                time.sleep(8)
+                
+                try:
+                    response = requests.get(f"{proxy_url}/health", timeout=5)
+                    if response.status_code == 200:
+                        console.print("✅ Proxy started", style="green")
+                    else:
+                        raise Exception("Proxy health check failed")
+                except:
+                    console.print("⚠️  Proxy may not have started properly", style="yellow")
+                    console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
         except Exception as e:
             console.print(f"⚠️  Could not start proxy: {e}", style="yellow")
             console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
     
     # Import validator components
     from validator.sandbox.sandbox_manager import SandboxManager
-    from validator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
-    from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
+    from validator.problem_suites.problem_suite import ProblemSuite
     
-    # Suite configuration matching abstract-agent-runner
-    suite_configs = {
-        "polyglot": {
-            "class": PolyglotSuite,
-            "path": "validator/datasets/polyglot"
-        },
-        "swebench_verified": {
-            "class": SWEBenchVerifiedSuite,
-            "path": "validator/datasets/swebench_verified"
-        }
-    }
+    # Find which suite contains the problem
+    console.print(f"🔍 Searching for problem '{problem_name}' in all suites...", style="yellow")
+    search_result = ProblemSuite.find_problem_in_suites(problem_name)
     
-    if suite_name not in suite_configs:
-        console.print(f" Unknown suite: {suite_name}. Available suites: {list(suite_configs.keys())}", style="bold red")
+    if search_result is None:
+        console.print(f" Problem '{problem_name}' not found in any suite", style="bold red")
+        console.print("Available suites: polyglot, swebench_verified", style="yellow")
         return 1
-
-    config = suite_configs[suite_name]
-    suite = config["class"](config["path"])
+    
+    suite_name, suite = search_result
+    console.print(f"✅ Found problem '{problem_name}' in '{suite_name}' suite", style="green")
     
     # Check test count like abstract-agent-runner does
     test_count = suite.get_problem_test_count(problem_name)
@@ -824,43 +835,75 @@ def test_agent(
             console.print(traceback.format_exc(), style="dim")
         return 1
     finally:
-        # Cleanup
-        if cleanup:
-            console.print("🧹 Cleaning up...", style="dim")
-            try:
-                if 'sandbox_manager' in locals():
-                    sandbox_manager.cleanup_all()
-            except:
-                pass
+        # Consolidated cleanup - always stop proxy process, conditionally clean containers
+        console.print("🧹 Cleaning up...", style="dim")
+        cleanup_tasks = []
         
-        # Stop proxy if we started it
+        # Stop proxy process if we started it (always do this)
         if proxy_process:
+            cleanup_tasks.append("proxy process")
             try:
-                # Kill the entire process group to ensure child processes are also terminated
                 import signal
                 if hasattr(proxy_process, 'pid') and proxy_process.pid:
                     try:
                         # Send SIGTERM to the entire process group
                         os.killpg(os.getpgid(proxy_process.pid), signal.SIGTERM)
                         proxy_process.wait(timeout=5)
-                        console.print("🛑 Proxy stopped", style="dim")
                     except (ProcessLookupError, OSError):
                         # Process already terminated
-                        console.print("🛑 Proxy stopped", style="dim")
+                        pass
                     except subprocess.TimeoutExpired:
                         # Force kill the process group
                         os.killpg(os.getpgid(proxy_process.pid), signal.SIGKILL)
-                        console.print("🛑 Proxy force stopped", style="dim")
                 else:
                     proxy_process.terminate()
                     proxy_process.wait(timeout=5)
-                    console.print("🛑 Proxy stopped", style="dim")
             except Exception as e:
                 try:
                     proxy_process.kill()
-                    console.print("🛑 Proxy force stopped", style="dim")
                 except:
-                    console.print("⚠️  Could not stop proxy process", style="yellow")
+                    if verbose:
+                        console.print(f"⚠️  Could not stop proxy process: {e}", style="yellow")
+        
+        # Clean up Docker containers if cleanup flag is enabled
+        if cleanup and 'sandbox_manager' in locals():
+            try:
+                # Get count of active sandboxes before cleanup
+                active_count = sandbox_manager.get_num_sandboxes()
+                
+                if active_count > 0:
+                    cleanup_tasks.append(f"{active_count} sandbox(es)")
+                    sandbox_manager.cleanup_all_sandboxes()
+                
+                # Also clean up the proxy container if it exists
+                try:
+                    if hasattr(sandbox_manager, 'proxy_container') and sandbox_manager.proxy_container:
+                        cleanup_tasks.append("proxy container")
+                        sandbox_manager.proxy_container.stop(timeout=3)
+                        sandbox_manager.proxy_container.remove(force=True)
+                        sandbox_manager.proxy_container = None
+                except Exception as proxy_cleanup_error:
+                    if verbose:
+                        console.print(f"⚠️  Could not clean up proxy container: {proxy_cleanup_error}", style="yellow")
+                
+                # Give cleanup some time to complete
+                if active_count > 0:
+                    time.sleep(1)
+                    # Check if sandbox cleanup was successful
+                    remaining_count = sandbox_manager.get_num_sandboxes()
+                    if remaining_count > 0:
+                        console.print(f"⚠️  {remaining_count} sandbox containers may still be running", style="yellow")
+                        
+            except Exception as e:
+                console.print(f"⚠️  Could not clean up containers: {e}", style="yellow")
+                if verbose:
+                    console.print(traceback.format_exc(), style="dim")
+        
+        # Show what was cleaned up
+        if cleanup_tasks:
+            console.print(f"✅ Cleaned up {', '.join(cleanup_tasks)}", style="dim")
+        else:
+            console.print("✅ Nothing to clean up", style="dim")
 
 
 if __name__ == "__main__":

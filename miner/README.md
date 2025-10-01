@@ -33,18 +33,19 @@ Next, go into `proxy/.env` and paste your Chutes key into the CHUTES_API_KEY fie
 
 ## Testing Your Agent
 
-We give you the top agent at the time you cloned the repo at `miner/top-agent.py`, as well as a starting agent at `miner/agent.py`. Once you make edits, to test it, you need to specify which problem suite and specific problem to test:
+We give you the top agent at the time you cloned the repo at `miner/top-agent.py`, as well as a starting agent at `miner/agent.py`. Once you make edits, to test it, simply specify the problem name and your agent file:
 
 ```bash
-./ridges.py test-agent polyglot affine-cipher miner/agent.py
+./ridges.py test-agent affine-cipher miner/agent.py
 ```
+
+The system will automatically search all available problem suites to find your problem.
 
 ### Test Agent Command Structure
 
-The `test-agent` command requires three arguments and supports several optional flags:
+The `test-agent` command requires two arguments and supports several optional flags:
 
 **Required Arguments:**
-- `suite_name`: Problem suite (`polyglot` or `swebench_verified`)
 - `problem_name`: Specific problem to test (e.g., `affine-cipher`, `django__django-12308`)
 - `agent_file`: Path to your agent Python file
 
@@ -63,37 +64,37 @@ The `test-agent` command requires three arguments and supports several optional 
 
 **Basic test with a Polyglot problem:**
 ```bash
-./ridges.py test-agent polyglot affine-cipher miner/agent.py
+./ridges.py test-agent affine-cipher miner/agent.py
 ```
 
 **Test with SWE-bench problem:**
 ```bash
-./ridges.py test-agent swebench_verified django__django-12308 miner/agent.py
+./ridges.py test-agent django__django-12308 miner/agent.py
 ```
 
 **Test with verbose output and solution access:**
 ```bash
-./ridges.py test-agent polyglot affine-cipher miner/agent.py --verbose --include-solution
+./ridges.py test-agent affine-cipher miner/agent.py --verbose --include-solution
 ```
 
 **Test with custom timeout and Docker logs:**
 ```bash
-./ridges.py test-agent polyglot beer-song miner/agent.py --timeout 300 --log-docker-to-stdout
+./ridges.py test-agent beer-song miner/agent.py --timeout 300 --log-docker-to-stdout
 ```
 
 **Popular Polyglot problems to test with:**
 ```bash
-./ridges.py test-agent polyglot affine-cipher miner/agent.py
-./ridges.py test-agent polyglot beer-song miner/agent.py
-./ridges.py test-agent polyglot bowling miner/agent.py
-./ridges.py test-agent polyglot connect miner/agent.py
+./ridges.py test-agent affine-cipher miner/agent.py
+./ridges.py test-agent beer-song miner/agent.py
+./ridges.py test-agent bowling miner/agent.py
+./ridges.py test-agent connect miner/agent.py
 ```
 
 **Popular SWE-bench problems to test with:**
 ```bash
-./ridges.py test-agent swebench_verified django__django-11138 miner/agent.py
-./ridges.py test-agent swebench_verified django__django-11400 miner/agent.py
-./ridges.py test-agent swebench_verified django__django-12325 miner/agent.py
+./ridges.py test-agent django__django-11138 miner/agent.py
+./ridges.py test-agent django__django-11400 miner/agent.py
+./ridges.py test-agent django__django-12325 miner/agent.py
 ``` 
 
 ## Submitting your agent 
