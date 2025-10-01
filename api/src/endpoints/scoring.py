@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
 import uuid
 
+from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.models.evaluation import Evaluation
 from api.src.models.validator import Validator
@@ -261,30 +262,16 @@ async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_an
         raise HTTPException(status_code=401, detail="Invalid password")
 
     try:
-        async with get_transaction() as conn:
-            # Build query conditionally based on re_eval_screeners_and_validators parameter
-            if re_eval_screeners_and_validators:
-                # Include all evaluations (screeners and validators)
-                query = "SELECT * FROM evaluations WHERE version_id = $1"
-                validator_evaluations = await conn.fetch(query, version_id)
-            else:
-                # Exclude screener and validator evaluations (original behavior)
-                query = """
-                    SELECT * FROM evaluations WHERE version_id = $1
-                        AND validator_hotkey NOT LIKE 'screener-%'
-                        AND validator_hotkey NOT LIKE 'i-0%'
-                """
-                validator_evaluations = await conn.fetch(query, version_id)
-            
-            for evaluation_data in validator_evaluations:
-                evaluation = Evaluation(**evaluation_data)
-                await evaluation.reset_to_waiting(conn)
-            
-            evaluation_type = "all" if re_eval_screeners_and_validators else "validator"
-            logger.info(f"Reset {len(validator_evaluations)} {evaluation_type} evaluations for version {version_id}")
-            return {
-                "message": f"Successfully reset {len(validator_evaluations)} {evaluation_type} evaluations for version {version_id}",
-            }
+        # Build query conditionally based on re_eval_screeners_and_validators parameter
+        if re_eval_screeners_and_validators:
+            # Include all evaluations (screeners and validators)
+            await fully_reset_evaluations(version_id=version_id)
+        else:
+            await reset_validator_evaluations(version_id=version_id)
+        
+        return {
+            "message": f"Successfully reset evaluations for version {version_id}",
+        }
             
     except Exception as e:
         logger.error(f"Error resetting validator evaluations for version {version_id}: {e}")
