@@ -78,6 +78,9 @@ def main():
     
     try:
         test_results = run_tests()
+
+        print("[POLYGLOT_TEST_RUNNER] Test results:")
+        print(test_results)
         
         tests_passed = sum(1 for test in test_results if test["status"] == "pass")
         tests_failed = sum(1 for test in test_results if test["status"] == "fail")
