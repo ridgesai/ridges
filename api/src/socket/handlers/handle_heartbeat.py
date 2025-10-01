@@ -27,9 +27,19 @@ async def handle_heartbeat(
 
     alleged_status = response_json["status"] # What the client thinks it's doing
     if alleged_status != client.status:
-        logger.warning(f"Client {client.hotkey} status mismatch: Client says {alleged_status}, but Platform says {client.status}")
-        await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
-        # raise WebSocketDisconnect()
+        client.status_mismatch_count += 1
+        logger.warning(f"Client {client.hotkey} status mismatch #{client.status_mismatch_count}: Client says {alleged_status}, but Platform says {client.status}")
+        
+        if client.status_mismatch_count >= 25:
+            logger.error(f"Client {client.hotkey} has {client.status_mismatch_count} consecutive status mismatches. Forcing reconnection.")
+            await websocket.send_json({"event": "error", "error": f"Too many status mismatches ({client.status_mismatch_count}). Reconnecting..."})
+            await websocket.close()
+            raise WebSocketDisconnect()
+        else:
+            await websocket.send_json({"event": "error", "error": f"Client status mismatch: Client says {alleged_status}, but Platform says {client.status}"})
+    else:
+        # Reset counter on successful status match
+        client.status_mismatch_count = 0
 
     # Process system metrics if included in heartbeat
     if any(key in response_json for key in ["cpu_percent", "ram_percent", "disk_percent", "containers", "ram_total_gb", "disk_total_gb"]):
@@ -63,10 +73,3 @@ async def handle_heartbeat(
         await send_slack_message(f"Client {client.hotkey} is supposedly {client.status}, but has no running evaluation")
     elif client.status == "available" and has_running_evaluation == True:
         await send_slack_message(f"Client {client.hotkey} is supposedly available, but has a running evaluation")
-        # Fix it until the actual cause is determined
-        client.status = "screening"
-        current_eval = await get_running_evaluation_by_validator_hotkey(client.hotkey)
-        client.current_evaluation_id = current_eval.evaluation_id;
-        client.current_agent_name = await get_agent_name_from_version_id(current_eval.version_id)
-        client.current_agent_hotkey = await get_miner_hotkey_from_version_id(current_eval.version_id)
-        await send_slack_message(f"Repaired client {client.hotkey} status to {client.status} (current_eval: {current_eval.evaluation_id}, current_agent_name: {client.current_agent_name}, current_agent_hotkey: {client.current_agent_hotkey})")

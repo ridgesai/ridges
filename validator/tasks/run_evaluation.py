@@ -107,9 +107,11 @@ def run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verifi
                     # store test results
                     # CXII FIXME
                     test_results = eval_result.get("test_results", [])
+                    logger.info(f"XXXXXXXXXX The test_results for run {run_id}: {test_results}")
                     evaluation_run["solved"] = all(t.get("status") == "pass" for t in test_results) if isinstance(test_results, list) else False
 
                     evaluation_run["result_scored_at"] = datetime.now().isoformat()
+                    
                     safe_websocket_send(websocket_app, {"event": "update-evaluation-run","evaluation_run": evaluation_run})
                 else:
                     logger.error(f"Evaluation failed for run {run_id}: {eval_result.get('error', 'Unknown error')}")

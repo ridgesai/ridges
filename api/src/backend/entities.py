@@ -434,6 +434,7 @@ class Client(BaseModel):
     connected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     ip_address: Optional[str] = None
     websocket: Optional[WebSocket] = None
+    status_mismatch_count: int = 0  # Track consecutive status mismatches
 
     def get_type(self) -> str:
         """Return the type of client"""
