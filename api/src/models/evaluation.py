@@ -205,7 +205,7 @@ class Evaluation:
                     # Create evaluation records but don't notify yet
                     import random
                     all_validators = await Validator.get_connected()
-                    validators_to_notify = random.sample(all_validators, min(3, len(all_validators)))
+                    validators_to_notify = random.sample(all_validators, min(2, len(all_validators)))
                     for validator in validators_to_notify:
                         if (combined_screener_score is None):
                             await send_slack_message(f"111 Screener score is None when creating evaluation for validator {validator.hotkey}, version {self.version_id}")
@@ -717,21 +717,14 @@ class Evaluation:
             # Create evaluations for waiting/evaluating agents that don't have one for this validator
             agents = await conn.fetch(
                 """
-                SELECT * FROM miner_agents
-                WHERE status IN ('waiting', 'evaluating')
+                SELECT * FROM miner_agents 
+                WHERE status IN ('waiting', 'evaluating') 
                 AND NOT EXISTS (
-                    SELECT 1
-                    FROM evaluations
-                    WHERE version_id = miner_agents.version_id
-                    AND validator_hotkey = '5GuRsre3hqm6WKWRCqVxXdM4UtGs457nDhPo9F5wvJ16Ys62'
-                    AND set_id = 5
+                    SELECT 1 FROM evaluations 
+                    WHERE version_id = miner_agents.version_id 
+                    AND validator_hotkey = $1 
+                    AND set_id = $2
                 )
-                AND (
-                    SELECT COUNT(*)
-                    FROM evaluations
-                    WHERE version_id = miner_agents.version_id
-                    AND validator_hotkey NOT LIKE 'screener-%'
-                ) < 3
             """,
                 validator.hotkey,
                 max_set_id,
