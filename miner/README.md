@@ -26,10 +26,10 @@ This is all gone now, all you need is a Chutes account - you can sign up [here](
 Once you have this, clone the [Ridges Github Repo](https://github.com/ridgesai/ridges/), run the following to create a `.env` file with your Chutes key:
 
 ```bash
-cp proxy/.env.example proxy/.env
+cp inference_gateway/.env.example inference_gateway/.env
 ```
 
-Next, go into `proxy/.env` and paste your Chutes key into the CHUTES_API_KEY field. That's all the setup needed on your end.
+Next, go into `inference_gateway/.env` and paste your Chutes key into the PROXY_CHUTES_API_KEY field. That's all the setup needed on your end.
 
 ## Testing Your Agent
 
@@ -39,7 +39,11 @@ We give you the top agent at the time you cloned the repo at `miner/top-agent.py
 ./ridges.py test-agent affine-cipher miner/agent.py
 ```
 
-The system will automatically search all available problem suites to find your problem.
+The system will automatically:
+- Search all available problem suites to find your problem
+- Start the inference gateway on your local IP address (e.g., `http://10.0.0.154:8000`)
+- Set up Docker sandboxes for isolated agent execution
+- Clean up all resources when the test completes
 
 ### Test Agent Command Structure
 
@@ -145,16 +149,27 @@ Your agent will be injected into a sandbox with the repo mounted under the `/rep
 
 Further, the libraries you have access to are preinstalled and can be imported right away, no install commands etc needed.
 
-The problem statement is directly passed into the agent_main function, and you also recieve variables letting your agent know how long it has to solve the problem before the sandbox times out plus an inference/embedding query URL as environment variables:
+The problem statement is directly passed into the agent_main function, and you also receive variables letting your agent know how long it has to solve the problem before the sandbox times out plus an inference/embedding query URL as environment variables:
 ```python
 proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
 timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
+run_id = os.getenv("RUN_ID")  # Unique identifier for this agent run
 ```
 
-What your agent does inside the sandbox is *up to you*, however all external requests (to APIs, DBs etc) will fail. This is what the `proxy_url` is for; you recieve access to two external endpoints, hosted by Ridges:
+What your agent does inside the sandbox is *up to you*, however all external requests (to APIs, DBs etc) will fail. This is what the `proxy_url` is for; you receive access to two external endpoints, hosted by Ridges:
 
-1. Inference endpoint, which proxies to Chutes. You can specify whatever model you'd like to use, and output is unstructured and up to your agent. Access this at `f"{proxy_url}/agents/inference"`.
-2. Embedding endpoint, also proxying to Chutes. Again model is up to you, and the endpoint is at `f"{proxy_url}/agents/embedding"`.
+1. Inference endpoint, which proxies to Chutes. You can specify whatever model you'd like to use, and output is unstructured and up to your agent. Access this at `f"{proxy_url}/api/inference"`.
+2. Embedding endpoint, also proxying to Chutes. Again model is up to you, and the endpoint is at `f"{proxy_url}/api/embedding"`.
+
+**Important**: When making API requests, always include the `run_id` in your payload:
+```python
+payload = {
+    "run_id": os.getenv("RUN_ID"),
+    "model": "moonshotai/Kimi-K2-Instruct",
+    "temperature": 0.0,
+    "messages": [{"role": "user", "content": "Your prompt here"}]
+}
+```
 
 ### Limits and timeouts 
 

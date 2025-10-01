@@ -599,39 +599,50 @@ def test_agent(
     import shutil
     import traceback
     import subprocess
+    import socket
     from pathlib import Path
     
-    # Check and setup .env file for proxy
-    proxy_env_path = Path("proxy/.env")
-    proxy_env_example_path = Path("proxy/.env.example")
+    def get_local_ip():
+        """Get the local IP address for the inference gateway."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Connect to a remote address (doesn't actually send data)
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except Exception as e:
+            console.print(f"⚠️ Could not determine local IP: {e}", style="yellow")
+            console.print("   You can manually specify with --gateway-url http://YOUR_IP:8000", style="dim")
+            return "192.168.1.100"  # Fallback IP
     
-    if not proxy_env_path.exists():
-        if proxy_env_example_path.exists():
-            console.print("📋 No .env file found, copying from .env.example...", style="yellow")
-            shutil.copy(proxy_env_example_path, proxy_env_path)
-            console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
+    inference_env_path = Path("inference_gateway/.env")
+    inference_env_example_path = Path("inference_gateway/.env.example")
+    
+    if not inference_env_path.exists():
+        if inference_env_example_path.exists():
+            console.print("📋 No inference_gateway/.env file found, copying from .env.example...", style="yellow")
+            shutil.copy(inference_env_example_path, inference_env_path)
+            console.print("✅ Created inference_gateway/.env from inference_gateway/.env.example", style="green")
         else:
-            console.print(" No proxy/.env.example file found! This is required for setup.", style="bold red")
+            console.print("❌ No inference_gateway/.env.example file found! This is required for setup.", style="bold red")
             return
     
     # Check for required Chutes API key
-    if os.path.exists("proxy/.env"):
-        with open("proxy/.env", "r") as f:
+    if os.path.exists("inference_gateway/.env"):
+        with open("inference_gateway/.env", "r") as f:
             env_content = f.read()
         
-        if "CHUTES_API_KEY=your_chutes_api_key_here" in env_content or "CHUTES_API_KEY=" in env_content and "CHUTES_API_KEY=your_chutes_api_key_here" not in env_content:
+        if "PROXY_CHUTES_API_KEY=" in env_content:
             # Check if it's just empty or still has placeholder
             import re
-            api_key_match = re.search(r'CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
-            if not api_key_match or api_key_match.group(1).strip() in ['', 'your_chutes_api_key_here']:
-                console.print(" CHUTES_API_KEY is required in proxy/.env", style="bold red")
-                console.print("   Please get your API key from https://chutes.ai and update proxy/.env", style="yellow")
+            api_key_match = re.search(r'PROXY_CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
+            if not api_key_match or not api_key_match.group(1).strip():
+                console.print("❌ PROXY_CHUTES_API_KEY is required in inference_gateway/.env", style="bold red")
+                console.print("   Please get your API key from https://chutes.ai and update inference_gateway/.env", style="yellow")
                 return
 
     # Load environment variables
     try:
         from dotenv import load_dotenv
-        # Try to load from validator/.env if it exists
         validator_env = Path("validator/.env")
         if validator_env.exists():
             load_dotenv(validator_env)
@@ -639,8 +650,13 @@ def test_agent(
         else:
             console.print("No validator/.env found, using defaults", style="yellow")
     except ImportError as e:
-        console.print(f" Failed to load environment setup: {e}", style="bold red")
+        console.print(f"❌ Failed to load environment setup: {e}", style="bold red")
         return
+    
+    if verbose:
+        from validator.utils.logger import enable_verbose
+        enable_verbose()
+        console.print("🔧 Verbose logging enabled", style="dim")
     
     console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
                         f"[yellow]Problem:[/yellow] {problem_name}\n"
@@ -653,51 +669,58 @@ def test_agent(
         console.print(f" Agent file not found: {agent_file}", style="bold red")
         return
     
-    # Check if proxy is needed and start if required
-    proxy_process = None
+    # Check if inference gateway is needed and start if required
+    gateway_process = None
+    local_ip = get_local_ip()
+    
     if start_proxy:
         try:
-            # Check if proxy is already running
-            import requests
+            # Determine gateway URL
             if gateway_url:
-                proxy_url = gateway_url
+                gateway_full_url = gateway_url
             else:
-                proxy_url = os.getenv("RIDGES_PROXY_URL", "http://localhost:8001")
+                gateway_full_url = f"http://{local_ip}:8000"
+            
+            # Check if inference gateway is already running
+            import requests
             try:
-                response = requests.get(f"{proxy_url}/health", timeout=5)
+                response = requests.get(f"{gateway_full_url}/docs", timeout=5)
                 if response.status_code == 200:
-                    console.print(f"✅ Proxy already running at {proxy_url}", style="green")
+                    console.print(f"✅ Inference gateway already running at {gateway_full_url}", style="green")
                 else:
-                    raise Exception("Proxy not responding")
+                    raise Exception("Gateway not responding")
             except:
-                console.print("🚀 Starting proxy...", style="yellow")
-                proxy_process = subprocess.Popen(
-                    ["uv", "run", "-m", "proxy.main"],
-                    stdout=subprocess.DEVNULL if not verbose else None,
-                    stderr=subprocess.DEVNULL if not verbose else None,
+                console.print(f"🚀 Starting inference gateway on {local_ip}:8000...", style="yellow")
+                gateway_process = subprocess.Popen(
+                    ["python", "main.py"],
+                    cwd="inference_gateway",
                     preexec_fn=os.setsid  # Create new process group for proper cleanup
                 )
-                # Give proxy time to start up
-                time.sleep(8)
+                # Give gateway time to start up
+                time.sleep(3)
                 
                 try:
-                    response = requests.get(f"{proxy_url}/health", timeout=5)
+                    response = requests.get(f"{gateway_full_url}/docs", timeout=5)
                     if response.status_code == 200:
-                        console.print("✅ Proxy started", style="green")
+                        console.print(f"✅ Inference gateway started at {gateway_full_url}", style="green")
                     else:
-                        raise Exception("Proxy health check failed")
+                        raise Exception("Gateway health check failed")
                 except:
-                    console.print("⚠️  Proxy may not have started properly", style="yellow")
-                    console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
+                    console.print("⚠️  Inference gateway may not have started properly", style="yellow")
+                    console.print(f"You may need to manually run: cd inference_gateway && python main.py", style="yellow")
         except Exception as e:
-            console.print(f"⚠️  Could not start proxy: {e}", style="yellow")
-            console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
+            console.print(f"⚠️  Could not start inference gateway: {e}", style="yellow")
+            console.print(f"You may need to manually run: cd inference_gateway && python main.py", style="yellow")
+    else:
+        if gateway_url:
+            gateway_full_url = gateway_url
+        else:
+            gateway_full_url = f"http://{local_ip}:8000"
+        console.print(f"Using inference gateway at: {gateway_full_url}", style="blue")
     
-    # Import validator components
     from validator.sandbox.sandbox_manager import SandboxManager
     from validator.problem_suites.problem_suite import ProblemSuite
     
-    # Find which suite contains the problem
     console.print(f"🔍 Searching for problem '{problem_name}' in all suites...", style="yellow")
     search_result = ProblemSuite.find_problem_in_suites(problem_name)
     
@@ -709,7 +732,6 @@ def test_agent(
     suite_name, suite = search_result
     console.print(f"✅ Found problem '{problem_name}' in '{suite_name}' suite", style="green")
     
-    # Check test count like abstract-agent-runner does
     test_count = suite.get_problem_test_count(problem_name)
     if test_count > 150:
         console.print(f" Problem {problem_name} has {test_count} tests (>150)", style="bold red")
@@ -717,16 +739,8 @@ def test_agent(
     
     console.print(f"Problem {problem_name} has {test_count} tests", style="cyan")
 
-    # Set up gateway URL for sandbox manager
-    if gateway_url:
-        proxy_url = gateway_url
-    else:
-        proxy_url = os.getenv("RIDGES_PROXY_URL", "http://localhost:8001")
-    
-    # Create sandbox manager
-    sandbox_manager = SandboxManager(proxy_url, log_docker_to_stdout=log_docker_to_stdout)
+    sandbox_manager = SandboxManager(gateway_full_url, log_docker_to_stdout=log_docker_to_stdout)
 
-    # Load agent source code
     with open(agent_file, "r") as f:
         agent_source_code = f.read()
 
@@ -772,7 +786,6 @@ def test_agent(
 
                     n = len((result.get("logs") or "").splitlines())
                     print(f"========== LOGS ({n} line{'s' if n != 1 else ''}) ==========")
-                    # print(result["logs"])
                 else:
                     print("========== ERROR ==========")
                     print(result.get("error", ""))
@@ -802,7 +815,6 @@ def test_agent(
             print(result.get("logs", ""))
 
     try:
-        # Run the agent on the problem
         suite.run_agent_in_sandbox_for_problem(sandbox_manager, run_id, problem_name, agent_source_code, on_finish, timeout=timeout, include_solution=include_solution)
         
         # Wait for completion
@@ -817,35 +829,43 @@ def test_agent(
         if verbose:
             console.print(traceback.format_exc(), style="dim")
     finally:
-        # Consolidated cleanup - always stop proxy process, conditionally clean containers
         console.print("🧹 Cleaning up...", style="dim")
         cleanup_tasks = []
         
-        # Stop proxy process if we started it (always do this)
-        if proxy_process:
-            cleanup_tasks.append("proxy process")
+        # Stop inference gateway process if we started it
+        if gateway_process:
+            cleanup_tasks.append("inference gateway process")
             try:
                 import signal
-                if hasattr(proxy_process, 'pid') and proxy_process.pid:
-                    try:
-                        # Send SIGTERM to the entire process group
-                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGTERM)
-                        proxy_process.wait(timeout=5)
-                    except (ProcessLookupError, OSError):
-                        # Process already terminated
-                        pass
-                    except subprocess.TimeoutExpired:
-                        # Force kill the process group
-                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGKILL)
+                # Try graceful shutdown first
+                if hasattr(gateway_process, 'pid') and gateway_process.pid:
+                    # Send SIGTERM to the entire process group
+                    os.killpg(os.getpgid(gateway_process.pid), signal.SIGTERM)
+                    gateway_process.wait(timeout=5)
                 else:
-                    proxy_process.terminate()
-                    proxy_process.wait(timeout=5)
-            except Exception as e:
+                    gateway_process.terminate()
+                    gateway_process.wait(timeout=5)
+            except (ProcessLookupError, OSError):
+                # Process already terminated - this is fine
+                pass
+            except subprocess.TimeoutExpired:
+                # Graceful shutdown failed, force kill
                 try:
-                    proxy_process.kill()
-                except:
+                    if hasattr(gateway_process, 'pid') and gateway_process.pid:
+                        os.killpg(os.getpgid(gateway_process.pid), signal.SIGKILL)
+                    else:
+                        gateway_process.kill()
+                except Exception as e:
                     if verbose:
-                        console.print(f"⚠️  Could not stop proxy process: {e}", style="yellow")
+                        console.print(f"⚠️  Could not stop inference gateway process: {e}", style="yellow")
+            except Exception as e:
+                # Any other error, try force kill as last resort
+                try:
+                    gateway_process.kill()
+                except Exception:
+                    pass
+                if verbose:
+                    console.print(f"⚠️  Could not stop inference gateway process: {e}", style="yellow")
         
         # Clean up Docker containers if cleanup flag is enabled
         if cleanup and 'sandbox_manager' in locals():
