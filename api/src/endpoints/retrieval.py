@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
@@ -35,7 +35,21 @@ logger = get_logger(__name__)
 s3_manager = S3Manager()
 internal_tools = InternalTools()
 
-async def get_agent_code(version_id: str, return_as_text: bool = False):
+SCREENER_IP_LIST = [
+    "3.89.93.137", # 1-1
+    "35.174.155.46", # 1-2
+    "3.82.227.252", # 1-3
+    "34.207.95.225", # 1-4
+    "44.204.233.125", # 1-5
+    "13.221.244.67", # 1-6
+    "13.221.159.150", # 1-7
+    "44.212.65.240", # 1-8
+    "184.73.11.250", # 2-1
+    "18.212.35.108", # 2-2
+    "3.91.231.29", # 2-3
+]
+
+async def get_agent_code(version_id: str, request: Request, return_as_text: bool = False):
     agent_version = await get_agent_by_version_id(version_id=version_id)
     
     if not agent_version:
@@ -44,6 +58,19 @@ async def get_agent_code(version_id: str, return_as_text: bool = False):
             status_code=404, 
             detail="The requested agent version was not found. Are you sure you have the correct version ID?"
         )
+    
+    # If status is screening, verify that it is a screener requesting
+    if "screening" in agent_version.status:
+        # Get client IP address
+        client_ip = request.client.host
+        
+        # Check if IP is in whitelist (add your allowed IPs to SCREENER_IP_LIST)
+        if client_ip not in SCREENER_IP_LIST:
+            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: IP not authorized"
+            )
     
     if return_as_text:
         try:

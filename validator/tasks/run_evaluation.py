@@ -208,10 +208,6 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
             )
             response.raise_for_status()
             agent_code = json.loads(response.content)
-            # print(f"Got the agent code: {agent_code}")
-
-            
-
         
        
         for evaluation_run in evaluation_runs:
@@ -222,34 +218,8 @@ async def run_evaluation(websocket_app: "WebsocketApp", evaluation_id: str, vers
             # eval_started
             # result_scored
             # cancelled
-
-
-# {
-#   "response": null,
-
-#   "error": null,
-#   "logs": null
-
-#   "pass_to_fail_success": null,
-#   "fail_to_pass_success": null,
-#   "pass_to_pass_success": null,
-#   "fail_to_fail_success": null,
-#   "solved": null,
-
-#   "status": "started",
-
-#   "sandbox_created_at": null,
-#   "patch_generated_at": null,
-#   "eval_started_at": null,
-#   "result_scored_at": null,
-#   "cancelled_at": null,
-
-#   
-# 
-            run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verified_suite, agent_code, evaluation_run)
-
-
-            
+ 
+            run_eval_run(websocket_app, sandbox_manager, polyglot_suite, swebench_verified_suite, agent_code, evaluation_run)    
 
         # Start monitoring for platform-side cancellations
         # sandbox_manager.start_cancellation_monitoring()
