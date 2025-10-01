@@ -268,3 +268,33 @@ class ProblemSuite(ABC):
         Each problem suite may have different test structures.
         """
         pass
+
+    @staticmethod
+    def find_problem_in_suites(problem_name: str) -> tuple[str, "ProblemSuite"] | None:
+        """Find which suite contains the given problem name.
+        
+        Args:
+            problem_name: Name of the problem to search for
+            
+        Returns:
+            Tuple of (suite_name, suite_instance) if found, None otherwise
+        """
+        from validator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
+        from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
+        
+        # Define available suites
+        suites_to_check = [
+            ("polyglot", PolyglotSuite, "validator/datasets/polyglot"),
+            ("swebench_verified", SWEBenchVerifiedSuite, "validator/datasets/swebench_verified")
+        ]
+        
+        for suite_name, suite_class, suite_path in suites_to_check:
+            try:
+                suite = suite_class(suite_path)
+                if suite.has_problem(problem_name):
+                    return suite_name, suite
+            except Exception as e:
+                # If suite fails to load, continue to next suite
+                continue
+        
+        return None

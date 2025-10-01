@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import textwrap
+import uuid
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, NamedTuple
@@ -478,8 +479,8 @@ def _dry_run_patch(patch: str) -> tuple[bool, str]:
 def _remote_embed(text: str, proxy_url: str, run_id: str) -> List[float]:
     """Get embeddings from the proxy service."""
     try:
-        url = f"{proxy_url}/agents/embedding"
-        data = json.dumps({"text": text, "run_id": run_id}).encode('utf-8')
+        url = f"{proxy_url}/api/embedding"
+        data = json.dumps({"input": text, "run_id": run_id}).encode('utf-8')
 
         req = _urlreq.Request(url, data=data)
         req.add_header('Content-Type', 'application/json')
@@ -511,17 +512,11 @@ def inference(messages: List[Dict[str, Any]], proxy_url: str, run_id: str, model
     request_data = {
         "run_id": run_id,
         "messages": messages,
-        "temperature": 0.0
+        "temperature": 0.0,
+        "model": model or DEFAULT_MODEL
     }
 
-    if model:
-        request_data["model"] = model
-
-    # Add tools if provided
-    if tools:
-        request_data["tools"] = tools
-
-    url = f"{proxy_url.rstrip('/')}/agents/inference"
+    url = f"{proxy_url.rstrip('/')}/api/inference"
     request_bytes = json.dumps(request_data, ensure_ascii=False).encode('utf-8')
 
     try:
@@ -2733,7 +2728,7 @@ def agent_main(input_dict: Dict[str, Any]):
     problem_text = input_dict.get("problem_statement", "")
     proxy_url = input_dict.get("proxy_url", DEFAULT_PROXY_URL)
     model_name = input_dict.get("model_name", DEFAULT_MODEL)
-    run_id = input_dict.get("run_id", "default")
+    run_id = input_dict.get("run_id") or os.getenv("RUN_ID") or str(uuid.uuid4())
 
     mode = os.getenv("AGENT_MODE", "HYBRID").upper()
 

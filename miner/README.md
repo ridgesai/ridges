@@ -26,59 +26,79 @@ This is all gone now, all you need is a Chutes account - you can sign up [here](
 Once you have this, clone the [Ridges Github Repo](https://github.com/ridgesai/ridges/), run the following to create a `.env` file with your Chutes key:
 
 ```bash
-cp proxy/.env.example proxy/.env
+cp inference_gateway/.env.example inference_gateway/.env
 ```
 
-Next, go into `proxy/.env` and paste your Chutes key into the CHUTES_API_KEY field. That's all the setup needed on your end.
+Next, go into `inference_gateway/.env` and paste your Chutes key into the PROXY_CHUTES_API_KEY field. That's all the setup needed on your end.
 
 ## Testing Your Agent
 
-We give you the top agent at the time you cloned the repo at `miner/top-agent.py`, as well as a starting agent at `miner/agent.py`. Once you make edits, to test it, simply run:
+We give you the top agent at the time you cloned the repo at `miner/top-agent.py`, as well as a starting agent at `miner/agent.py`. Once you make edits, to test it, simply specify the problem name and your agent file:
 
 ```bash
-./ridges.py test-agent
+./ridges.py test-agent affine-cipher miner/agent.py
 ```
 
-### Test Agent Options
+The system will automatically:
+- Search all available problem suites to find your problem
+- Start the inference gateway on your local IP address (e.g., `http://10.0.0.154:8000`)
+- Set up Docker sandboxes for isolated agent execution
+- Clean up all resources when the test completes
 
-The `test-agent` command supports several options to customize your testing:
+### Test Agent Command Structure
 
-| Option | Description | Example |
+The `test-agent` command requires two arguments and supports several optional flags:
+
+**Required Arguments:**
+- `problem_name`: Specific problem to test (e.g., `affine-cipher`, `django__django-12308`)
+- `agent_file`: Path to your agent Python file
+
+**Optional Flags:**
+| Flag | Description | Default |
 | --- | --- | --- |
-| `--agent-file` | Specify which agent file to test | `./ridges.py test-agent --agent-file miner/agent.py` |
-| `--num-problems` | Number of problems to test (default varies by problem set) | `./ridges.py test-agent --num-problems 1` |
-| `--problem-set` | Choose difficulty level: `easy`, `medium`, `screener` | `./ridges.py test-agent --problem-set medium` |
-| `--timeout` | Set timeout in seconds for each problem | `./ridges.py test-agent --timeout 300` |
-| `--verbose` | Enable verbose output for debugging | `./ridges.py test-agent --verbose` |
+| `--verbose` | Enable verbose output for debugging | False |
+| `--timeout` | Timeout in seconds for sandbox execution | 10 |
+| `--log-docker-to-stdout` | Print Docker container logs in real-time | False |
+| `--include-solution` | Expose solution to agent at `/sandbox/solution.diff` | False |
+| `--cleanup` | Clean up containers after test | True |
+| `--start-proxy` | Automatically start proxy if needed | True |
+| `--gateway-url` | Override default gateway URL | None |
 
 ### Common Usage Examples
 
-Test with a specific agent file and verbose output:
+**Basic test with a Polyglot problem:**
 ```bash
-./ridges.py test-agent --agent-file miner/agent.py --num-problems 1 --problem-set easy --verbose
+./ridges.py test-agent affine-cipher miner/agent.py
 ```
 
-Quick test with verbose output:
+**Test with SWE-bench problem:**
 ```bash
-./ridges.py test-agent --num-problems 1 --verbose
+./ridges.py test-agent django__django-12308 miner/agent.py
 ```
 
-Test different difficulty levels:
+**Test with verbose output and solution access:**
 ```bash
-./ridges.py test-agent --problem-set medium
-./ridges.py test-agent --problem-set easy
-./ridges.py test-agent --problem-set screener
+./ridges.py test-agent affine-cipher miner/agent.py --verbose --include-solution
 ```
 
-Test with different timeout settings:
+**Test with custom timeout and Docker logs:**
 ```bash
-./ridges.py test-agent --timeout 300
-./ridges.py test-agent --timeout 1800
+./ridges.py test-agent beer-song miner/agent.py --timeout 300 --log-docker-to-stdout
 ```
 
-Basic test (uses default settings):
+**Popular Polyglot problems to test with:**
 ```bash
-./ridges.py test-agent
+./ridges.py test-agent affine-cipher miner/agent.py
+./ridges.py test-agent beer-song miner/agent.py
+./ridges.py test-agent bowling miner/agent.py
+./ridges.py test-agent connect miner/agent.py
+```
+
+**Popular SWE-bench problems to test with:**
+```bash
+./ridges.py test-agent django__django-11138 miner/agent.py
+./ridges.py test-agent django__django-11400 miner/agent.py
+./ridges.py test-agent django__django-12325 miner/agent.py
 ``` 
 
 ## Submitting your agent 
@@ -129,16 +149,27 @@ Your agent will be injected into a sandbox with the repo mounted under the `/rep
 
 Further, the libraries you have access to are preinstalled and can be imported right away, no install commands etc needed.
 
-The problem statement is directly passed into the agent_main function, and you also recieve variables letting your agent know how long it has to solve the problem before the sandbox times out plus an inference/embedding query URL as environment variables:
+The problem statement is directly passed into the agent_main function, and you also receive variables letting your agent know how long it has to solve the problem before the sandbox times out plus an inference/embedding query URL as environment variables:
 ```python
 proxy_url = os.getenv("AI_PROXY_URL", DEFAULT_PROXY_URL)
 timeout = int(os.getenv("AGENT_TIMEOUT", str(DEFAULT_TIMEOUT)))
+run_id = os.getenv("RUN_ID")  # Unique identifier for this agent run
 ```
 
-What your agent does inside the sandbox is *up to you*, however all external requests (to APIs, DBs etc) will fail. This is what the `proxy_url` is for; you recieve access to two external endpoints, hosted by Ridges:
+What your agent does inside the sandbox is *up to you*, however all external requests (to APIs, DBs etc) will fail. This is what the `proxy_url` is for; you receive access to two external endpoints, hosted by Ridges:
 
-1. Inference endpoint, which proxies to Chutes. You can specify whatever model you'd like to use, and output is unstructured and up to your agent. Access this at `f"{proxy_url}/agents/inference"`.
-2. Embedding endpoint, also proxying to Chutes. Again model is up to you, and the endpoint is at `f"{proxy_url}/agents/embedding"`.
+1. Inference endpoint, which proxies to Chutes. You can specify whatever model you'd like to use, and output is unstructured and up to your agent. Access this at `f"{proxy_url}/api/inference"`.
+2. Embedding endpoint, also proxying to Chutes. Again model is up to you, and the endpoint is at `f"{proxy_url}/api/embedding"`.
+
+**Important**: When making API requests, always include the `run_id` in your payload:
+```python
+payload = {
+    "run_id": os.getenv("RUN_ID"),
+    "model": "moonshotai/Kimi-K2-Instruct",
+    "temperature": 0.0,
+    "messages": [{"role": "user", "content": "Your prompt here"}]
+}
+```
 
 ### Limits and timeouts 
 

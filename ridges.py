@@ -17,7 +17,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
-from dotenv import load_dotenv
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform.ridges.ai"
@@ -552,63 +551,117 @@ def status():
         else:
             console.print(f"❌ {display_name}: [bold red]Stopped[/bold red]")
 
+
 @cli.command()
-@click.option("--agent-file", default="miner/agent.py", help="Path to agent file to test")
-@click.option("--num-problems", default=3, type=int, help="Number of problems to test")
-@click.option("--timeout", default=1200, type=int, help="Timeout per problem in seconds")
-@click.option("--problem-set", default="screener", type=click.Choice(['screener', 'easy', 'medium', 'hard']), help="Which problem set to use")
-@click.option("--verbose", is_flag=True, help="Show detailed output")
+@click.argument("problem_name")
+@click.argument("agent_file")
+@click.option("--log-docker-to-stdout", is_flag=True, help="Print Docker container logs to stdout in real-time")
+@click.option("--include-solution", is_flag=True, help="Expose the solution to the agent at /sandbox/solution.diff")
+@click.option("--verbose", is_flag=True, help="Enable verbose (debug) logging")
+@click.option("--timeout", default=10, type=int, help="Timeout in seconds for sandbox execution (default: 10)")
 @click.option("--cleanup", is_flag=True, default=True, help="Clean up containers after test")
 @click.option("--start-proxy", is_flag=True, default=True, help="Automatically start proxy if needed")
-def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: str, verbose: bool, cleanup: bool, start_proxy: bool):
-    """Test your agent locally with full SWE-bench evaluation"""
+@click.option("--gateway-url", help="URL for the gateway (overrides RIDGES_PROXY_URL)")
+def test_agent(
+    problem_name: str, 
+    agent_file: str, 
+    log_docker_to_stdout: bool, 
+    include_solution: bool, 
+    verbose: bool, 
+    timeout: int, 
+    cleanup: bool, 
+    start_proxy: bool, 
+    gateway_url: str
+):
+    """Test your agent locally with full SWE-bench evaluation.
     
-    import tempfile
+    This command runs a single agent against a specific problem. It automatically searches
+    all available problem suites (Polyglot and SWE-bench Verified) to find the problem,
+    handles Docker sandbox creation, proxy server management, and provides detailed output
+    about the agent's performance.
+    
+    
+    Examples:
+        ./ridges.py test-agent affine-cipher miner/agent.py
+        ./ridges.py test-agent django__django-12308 miner/agent.py
+        ./ridges.py test-agent affine-cipher miner/agent.py --include-solution --log-docker-to-stdout --verbose
+    
+    Note:
+        - Requires Docker to be running
+        - Automatically sets up proxy/.env if needed
+        - Validates CHUTES_API_KEY configuration
+        - Problems with >150 tests are rejected to prevent excessive resource usage
+    """
+    
+    import os
+    import time
+    import uuid
     import shutil
     import traceback
+    import subprocess
+    import socket
     from pathlib import Path
     
-    # Check and setup .env file for proxy
-    proxy_env_path = Path("proxy/.env")
-    proxy_env_example_path = Path("proxy/.env.example")
+    def get_local_ip():
+        """Get the local IP address for the inference gateway."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Connect to a remote address (doesn't actually send data)
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+        except Exception as e:
+            console.print(f"⚠️ Could not determine local IP: {e}", style="yellow")
+            console.print("   You can manually specify with --gateway-url http://YOUR_IP:8000", style="dim")
+            return "192.168.1.100"  # Fallback IP
     
-    if not proxy_env_path.exists():
-        if proxy_env_example_path.exists():
-            console.print("📋 No .env file found, copying from .env.example...", style="yellow")
-            import shutil
-            shutil.copy(proxy_env_example_path, proxy_env_path)
-            console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
+    inference_env_path = Path("inference_gateway/.env")
+    inference_env_example_path = Path("inference_gateway/.env.example")
+    
+    if not inference_env_path.exists():
+        if inference_env_example_path.exists():
+            console.print("📋 No inference_gateway/.env file found, copying from .env.example...", style="yellow")
+            shutil.copy(inference_env_example_path, inference_env_path)
+            console.print("✅ Created inference_gateway/.env from inference_gateway/.env.example", style="green")
         else:
-            console.print(" No proxy/.env.example file found! This is required for setup.", style="bold red")
+            console.print("❌ No inference_gateway/.env.example file found! This is required for setup.", style="bold red")
             return
     
     # Check for required Chutes API key
-    import os
-    if os.path.exists("proxy/.env"):
-        with open("proxy/.env", "r") as f:
+    if os.path.exists("inference_gateway/.env"):
+        with open("inference_gateway/.env", "r") as f:
             env_content = f.read()
         
-        if "CHUTES_API_KEY=your_chutes_api_key_here" in env_content or "CHUTES_API_KEY=" in env_content and "CHUTES_API_KEY=your_chutes_api_key_here" not in env_content:
+        if "PROXY_CHUTES_API_KEY=" in env_content:
             # Check if it's just empty or still has placeholder
             import re
-            api_key_match = re.search(r'CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
-            if not api_key_match or api_key_match.group(1).strip() in ['', 'your_chutes_api_key_here']:
-                console.print(" CHUTES_API_KEY is required in proxy/.env", style="bold red")
-                console.print("   Please get your API key from https://chutes.ai and update proxy/.env", style="yellow")
+            api_key_match = re.search(r'PROXY_CHUTES_API_KEY=(.*)$', env_content, re.MULTILINE)
+            if not api_key_match or not api_key_match.group(1).strip():
+                console.print("❌ PROXY_CHUTES_API_KEY is required in inference_gateway/.env", style="bold red")
+                console.print("   Please get your API key from https://chutes.ai and update inference_gateway/.env", style="yellow")
                 return
 
-    # Load environment variables FIRST before any other imports
+    # Load environment variables
     try:
-        from validator.local_testing.setup import load_environment
-        load_environment()
+        from dotenv import load_dotenv
+        validator_env = Path("validator/.env")
+        if validator_env.exists():
+            load_dotenv(validator_env)
+            console.print("Loaded configuration from validator/.env", style="green")
+        else:
+            console.print("No validator/.env found, using defaults", style="yellow")
     except ImportError as e:
-        console.print(f" Failed to load environment setup: {e}", style="bold red")
+        console.print(f"❌ Failed to load environment setup: {e}", style="bold red")
         return
     
+    if verbose:
+        from validator.utils.logger import enable_verbose
+        enable_verbose()
+        console.print("🔧 Verbose logging enabled", style="dim")
+    
     console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
+                        f"[yellow]Problem:[/yellow] {problem_name}\n"
                         f"[yellow]Agent:[/yellow] {agent_file}\n"
-                        f"[yellow]Problems:[/yellow] {num_problems} from {problem_set} set\n"
-                        f"[yellow]Timeout:[/yellow] {timeout}s per problem", 
+                        f"[yellow]Timeout:[/yellow] {timeout}s", 
                         title=" Local Test", border_style="cyan"))
     
     # Validate agent file exists
@@ -616,61 +669,158 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         console.print(f" Agent file not found: {agent_file}", style="bold red")
         return
     
-    # Check if proxy is needed and start if required
-    proxy_process = None
+    # Check if inference gateway is needed and start if required
+    gateway_process = None
+    local_ip = get_local_ip()
+    
     if start_proxy:
         try:
-            # Check if proxy is already running
+            # Determine gateway URL
+            if gateway_url:
+                gateway_full_url = gateway_url
+            else:
+                gateway_full_url = f"http://{local_ip}:8000"
+            
+            # Check if inference gateway is already running
             import requests
-            proxy_url = os.getenv("RIDGES_PROXY_URL", "http://10.0.0.9:8001")
             try:
-                response = requests.get(f"{proxy_url}/health", timeout=5)
+                response = requests.get(f"{gateway_full_url}/docs", timeout=5)
                 if response.status_code == 200:
-                    console.print(f"✅ Proxy already running at {proxy_url}", style="green")
+                    console.print(f"✅ Inference gateway already running at {gateway_full_url}", style="green")
                 else:
-                    raise Exception("Proxy not responding")
+                    raise Exception("Gateway not responding")
             except:
-                console.print("🚀 Starting proxy...", style="yellow")
-                import os
-                proxy_process = subprocess.Popen(
-                    ["python", "ridges.py", "proxy", "run", "--no-auto-update"],
-                    stdout=subprocess.DEVNULL if not verbose else None,
-                    stderr=subprocess.DEVNULL if not verbose else None,
+                console.print(f"🚀 Starting inference gateway on {local_ip}:8000...", style="yellow")
+                gateway_process = subprocess.Popen(
+                    ["python", "main.py"],
+                    cwd="inference_gateway",
                     preexec_fn=os.setsid  # Create new process group for proper cleanup
                 )
-                # Give proxy time to start
-                import time
-                time.sleep(5)
-                console.print("✅ Proxy started", style="green")
+                # Give gateway time to start up
+                time.sleep(3)
+                
+                try:
+                    response = requests.get(f"{gateway_full_url}/docs", timeout=5)
+                    if response.status_code == 200:
+                        console.print(f"✅ Inference gateway started at {gateway_full_url}", style="green")
+                    else:
+                        raise Exception("Gateway health check failed")
+                except:
+                    console.print("⚠️  Inference gateway may not have started properly", style="yellow")
+                    console.print(f"You may need to manually run: cd inference_gateway && python main.py", style="yellow")
         except Exception as e:
-            console.print(f"⚠️  Could not start proxy: {e}", style="yellow")
-            console.print("You may need to run: ./ridges.py proxy run --no-auto-update", style="yellow")
+            console.print(f"⚠️  Could not start inference gateway: {e}", style="yellow")
+            console.print(f"You may need to manually run: cd inference_gateway && python main.py", style="yellow")
+    else:
+        if gateway_url:
+            gateway_full_url = gateway_url
+        else:
+            gateway_full_url = f"http://{local_ip}:8000"
+        console.print(f"Using inference gateway at: {gateway_full_url}", style="blue")
     
+    from validator.sandbox.sandbox_manager import SandboxManager
+    from validator.problem_suites.problem_suite import ProblemSuite
+    
+    console.print(f"🔍 Searching for problem '{problem_name}' in all suites...", style="yellow")
+    search_result = ProblemSuite.find_problem_in_suites(problem_name)
+    
+    if search_result is None:
+        console.print(f" Problem '{problem_name}' not found in any suite", style="bold red")
+        console.print("Available suites: polyglot, swebench_verified", style="yellow")
+        return
+    
+    suite_name, suite = search_result
+    console.print(f"✅ Found problem '{problem_name}' in '{suite_name}' suite", style="green")
+    
+    test_count = suite.get_problem_test_count(problem_name)
+    if test_count > 150:
+        console.print(f" Problem {problem_name} has {test_count} tests (>150)", style="bold red")
+        return
+    
+    console.print(f"Problem {problem_name} has {test_count} tests", style="cyan")
+
+    sandbox_manager = SandboxManager(gateway_full_url, log_docker_to_stdout=log_docker_to_stdout)
+
+    with open(agent_file, "r") as f:
+        agent_source_code = f.read()
+
+    run_id = str(uuid.uuid4())
+
+    def on_finish(result):
+        time.sleep(0.5)
+
+        print()
+        print()
+        print()
+
+        if (result["status"] == "success"):
+            n = len((result.get("diff") or "").splitlines())
+            print(f"========== DIFF ({n} line{'s' if n != 1 else ''}) ==========")
+            print(result.get("diff", ""))
+
+            n = len((result.get("logs") or "").splitlines())
+            print(f"========== LOGS ({n} line{'s' if n != 1 else ''}) ==========")
+
+            print()
+            print()
+            print()
+            
+            diff = result["diff"]
+            
+            def on_finish_eval(result):
+                time.sleep(0.5)
+                
+                print()
+                print()
+                print()
+
+                if result["status"] == "success":
+                    print("========== TEST RESULTS ==========")
+                    test_results = result.get("test_results", [])
+                    tests_passed = sum(1 for test in test_results if test["status"] == "pass")
+                    tests_failed = sum(1 for test in test_results if test["status"] == "fail")
+                    tests_skipped = sum(1 for test in test_results if test["status"] == "skip")
+                    print(f"{tests_passed} passed, {tests_failed} failed, {tests_skipped} skipped")
+                    for test in test_results:
+                        print(f"{test['name']} - {test.get('category', 'no category')} - {test['status']}")
+
+                    n = len((result.get("logs") or "").splitlines())
+                    print(f"========== LOGS ({n} line{'s' if n != 1 else ''}) ==========")
+                else:
+                    print("========== ERROR ==========")
+                    print(result.get("error", ""))
+                    
+                    print("========== TRACEBACK ==========")
+                    print(result.get("traceback", ""))
+
+                    print("========== LOGS ==========")
+                    print(result.get("logs", ""))
+
+                print()
+                print()
+                print()
+            
+            suite.evaluate_solution_diff(sandbox_manager, run_id, problem_name, diff, on_finish_eval, timeout=timeout)
+        else:
+            print("========== ERROR ==========")
+            print(result.get("error", ""))
+
+            print("========== TRACEBACK ==========")
+            print(result.get("traceback", ""))
+
+            print("========== DIFF ==========")
+            print(result.get("diff", ""))
+
+            print("========== LOGS ==========")
+            print(result.get("logs", ""))
+
     try:
-        # Import our new local testing components (after environment is loaded)
-        from validator.local_testing.setup import setup_local_testing_environment
-        from validator.local_testing.local_manager import LocalSandboxManager
-        from validator.local_testing.runner import run_local_evaluations
+        suite.run_agent_in_sandbox_for_problem(sandbox_manager, run_id, problem_name, agent_source_code, on_finish, timeout=timeout, include_solution=include_solution)
         
-        # One-time setup (pulls images, etc.)
-        console.print("🔧 Setting up local testing environment...", style="yellow")
-        setup_local_testing_environment()
-        
-        # Create local sandbox manager
-        local_manager = LocalSandboxManager(verbose=verbose)
-        
-        # Run evaluations
-        import asyncio
-        results = asyncio.run(run_local_evaluations(
-            agent_file=agent_file,
-            num_problems=num_problems,
-            timeout=timeout,
-            problem_set=problem_set,
-            manager=local_manager
-        ))
-        
-        # Display results
-        display_test_results(results)
+        # Wait for completion
+        time.sleep(1)
+        while sandbox_manager.get_num_sandboxes() > 0:
+            time.sleep(1)
         
     except KeyboardInterrupt:
         console.print("\n🛑 Test interrupted by user", style="yellow")
@@ -679,81 +829,84 @@ def test_agent(agent_file: str, num_problems: int, timeout: int, problem_set: st
         if verbose:
             console.print(traceback.format_exc(), style="dim")
     finally:
-        # Cleanup
-        if cleanup:
-            console.print("🧹 Cleaning up...", style="dim")
-            try:
-                if 'local_manager' in locals():
-                    local_manager.cleanup()
-            except:
-                pass
+        console.print("🧹 Cleaning up...", style="dim")
+        cleanup_tasks = []
         
-        # Stop proxy if we started it
-        if proxy_process:
+        # Stop inference gateway process if we started it
+        if gateway_process:
+            cleanup_tasks.append("inference gateway process")
             try:
-                # Kill the entire process group to ensure child processes are also terminated
-                import os
                 import signal
-                if hasattr(proxy_process, 'pid') and proxy_process.pid:
-                    try:
-                        # Send SIGTERM to the entire process group
-                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGTERM)
-                        proxy_process.wait(timeout=5)
-                        console.print("🛑 Proxy stopped", style="dim")
-                    except (ProcessLookupError, OSError):
-                        # Process already terminated
-                        console.print("🛑 Proxy stopped", style="dim")
-                    except subprocess.TimeoutExpired:
-                        # Force kill the process group
-                        os.killpg(os.getpgid(proxy_process.pid), signal.SIGKILL)
-                        console.print("🛑 Proxy force stopped", style="dim")
+                # Try graceful shutdown first
+                if hasattr(gateway_process, 'pid') and gateway_process.pid:
+                    # Send SIGTERM to the entire process group
+                    os.killpg(os.getpgid(gateway_process.pid), signal.SIGTERM)
+                    gateway_process.wait(timeout=5)
                 else:
-                    proxy_process.terminate()
-                    proxy_process.wait(timeout=5)
-                    console.print("🛑 Proxy stopped", style="dim")
-            except Exception as e:
+                    gateway_process.terminate()
+                    gateway_process.wait(timeout=5)
+            except (ProcessLookupError, OSError):
+                # Process already terminated - this is fine
+                pass
+            except subprocess.TimeoutExpired:
+                # Graceful shutdown failed, force kill
                 try:
-                    proxy_process.kill()
-                    console.print("🛑 Proxy force stopped", style="dim")
-                except:
-                    console.print("⚠️  Could not stop proxy process", style="yellow")
+                    if hasattr(gateway_process, 'pid') and gateway_process.pid:
+                        os.killpg(os.getpgid(gateway_process.pid), signal.SIGKILL)
+                    else:
+                        gateway_process.kill()
+                except Exception as e:
+                    if verbose:
+                        console.print(f"⚠️  Could not stop inference gateway process: {e}", style="yellow")
+            except Exception as e:
+                # Any other error, try force kill as last resort
+                try:
+                    gateway_process.kill()
+                except Exception:
+                    pass
+                if verbose:
+                    console.print(f"⚠️  Could not stop inference gateway process: {e}", style="yellow")
+        
+        # Clean up Docker containers if cleanup flag is enabled
+        if cleanup and 'sandbox_manager' in locals():
+            try:
+                # Get count of active sandboxes before cleanup
+                active_count = sandbox_manager.get_num_sandboxes()
+                
+                if active_count > 0:
+                    cleanup_tasks.append(f"{active_count} sandbox(es)")
+                    sandbox_manager.cleanup_all_sandboxes()
+                
+                # Also clean up the proxy container if it exists
+                try:
+                    if hasattr(sandbox_manager, 'proxy_container') and sandbox_manager.proxy_container:
+                        cleanup_tasks.append("proxy container")
+                        sandbox_manager.proxy_container.stop(timeout=3)
+                        sandbox_manager.proxy_container.remove(force=True)
+                        sandbox_manager.proxy_container = None
+                except Exception as proxy_cleanup_error:
+                    if verbose:
+                        console.print(f"⚠️  Could not clean up proxy container: {proxy_cleanup_error}", style="yellow")
+                
+                # Give cleanup some time to complete
+                if active_count > 0:
+                    time.sleep(1)
+                    # Check if sandbox cleanup was successful
+                    remaining_count = sandbox_manager.get_num_sandboxes()
+                    if remaining_count > 0:
+                        console.print(f"⚠️  {remaining_count} sandbox containers may still be running", style="yellow")
+                        
+            except Exception as e:
+                console.print(f"⚠️  Could not clean up containers: {e}", style="yellow")
+                if verbose:
+                    console.print(traceback.format_exc(), style="dim")
+        
+        # Show what was cleaned up
+        if cleanup_tasks:
+            console.print(f"✅ Cleaned up {', '.join(cleanup_tasks)}", style="dim")
+        else:
+            console.print("✅ Nothing to clean up", style="dim")
 
-def display_test_results(results: dict):
-    """Display test results in a nice format"""
-    
-    summary = results['summary']
-    individual_results = results['results']
-    
-    # Summary panel
-    solved_count = summary['solved_count']
-    total_count = summary['total_count']
-    success_rate = summary['success_rate']
-    avg_time = summary['avg_time']
-    
-    console.print(Panel(
-        f"[bold green]✅ Solved:[/bold green] {solved_count}/{total_count} ({success_rate:.1f}%)\n"
-        f"[yellow] Average time:[/yellow] {avg_time:.1f}s\n"
-        f"[cyan]🔧 Patches generated:[/cyan] {summary['patches_generated']}/{total_count}",
-        title="Test Summary", border_style="green" if success_rate > 0 else "red"
-    ))
-    
-    # Individual results
-    console.print("\n[bold cyan]Individual Results:[/bold cyan]")
-    for i, result in enumerate(individual_results):
-        status_icon = "✅" if result['solved'] else "❌" if result['error'] else "⚠️"
-        console.print(f"{status_icon} {result['instance_id']}: {result['status']} ({result['duration']:.1f}s)")
-        
-        if result.get('error'):
-            console.print(f"   [red]Error:[/red] {result['error'][:100]}...")
-        
-        # Display patch content if generated
-        if result.get('patch_content'):
-            console.print(f"   [green] Generated Patch:[/green]")
-            # Display patch in a code block style
-            patch_lines = result['patch_content'].split('\n')
-            for line in patch_lines:  # Show all lines
-                console.print(f"   [dim]{line}[/dim]")
-            console.print("")  # Add spacing
 
 if __name__ == "__main__":
     run_cmd(". .venv/bin/activate")
