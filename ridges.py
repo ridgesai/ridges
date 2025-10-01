@@ -572,7 +572,7 @@ def test_agent(
     cleanup: bool, 
     start_proxy: bool, 
     gateway_url: str
-) -> int:
+):
     """Test your agent locally with full SWE-bench evaluation.
     
     This command runs a single agent against a specific problem. It automatically searches
@@ -580,19 +580,6 @@ def test_agent(
     handles Docker sandbox creation, proxy server management, and provides detailed output
     about the agent's performance.
     
-    Args:
-        problem_name: Name of the problem to run (e.g., 'affine-cipher', 'django__django-12308')
-        agent_file: Path to the agent Python file containing the agent_main() function
-        log_docker_to_stdout: Print Docker container logs to stdout in real-time
-        include_solution: Expose the solution to the agent at /sandbox/solution.diff
-        verbose: Enable verbose (debug) logging for detailed output
-        timeout: Timeout in seconds for sandbox execution (default: 10)
-        cleanup: Clean up Docker containers after test completion (default: True)
-        start_proxy: Automatically start proxy server if needed (default: True)
-        gateway_url: Optional URL for the gateway (overrides RIDGES_PROXY_URL)
-    
-    Returns:
-        int: Exit code (0 for success, 1 for failure)
     
     Examples:
         ./ridges.py test-agent affine-cipher miner/agent.py
@@ -625,7 +612,7 @@ def test_agent(
             console.print("✅ Created proxy/.env from proxy/.env.example", style="green")
         else:
             console.print(" No proxy/.env.example file found! This is required for setup.", style="bold red")
-            return 1
+            return
     
     # Check for required Chutes API key
     if os.path.exists("proxy/.env"):
@@ -639,7 +626,7 @@ def test_agent(
             if not api_key_match or api_key_match.group(1).strip() in ['', 'your_chutes_api_key_here']:
                 console.print(" CHUTES_API_KEY is required in proxy/.env", style="bold red")
                 console.print("   Please get your API key from https://chutes.ai and update proxy/.env", style="yellow")
-                return 1
+                return
 
     # Load environment variables
     try:
@@ -653,7 +640,7 @@ def test_agent(
             console.print("No validator/.env found, using defaults", style="yellow")
     except ImportError as e:
         console.print(f" Failed to load environment setup: {e}", style="bold red")
-        return 1
+        return
     
     console.print(Panel(f"[bold cyan]🧪 Testing Agent Locally[/bold cyan]\n"
                         f"[yellow]Problem:[/yellow] {problem_name}\n"
@@ -664,7 +651,7 @@ def test_agent(
     # Validate agent file exists
     if not Path(agent_file).exists():
         console.print(f" Agent file not found: {agent_file}", style="bold red")
-        return 1
+        return
     
     # Check if proxy is needed and start if required
     proxy_process = None
@@ -717,7 +704,7 @@ def test_agent(
     if search_result is None:
         console.print(f" Problem '{problem_name}' not found in any suite", style="bold red")
         console.print("Available suites: polyglot, swebench_verified", style="yellow")
-        return 1
+        return
     
     suite_name, suite = search_result
     console.print(f"✅ Found problem '{problem_name}' in '{suite_name}' suite", style="green")
@@ -726,7 +713,7 @@ def test_agent(
     test_count = suite.get_problem_test_count(problem_name)
     if test_count > 150:
         console.print(f" Problem {problem_name} has {test_count} tests (>150)", style="bold red")
-        return 1
+        return
     
     console.print(f"Problem {problem_name} has {test_count} tests", style="cyan")
 
@@ -759,7 +746,6 @@ def test_agent(
 
             n = len((result.get("logs") or "").splitlines())
             print(f"========== LOGS ({n} line{'s' if n != 1 else ''}) ==========")
-            # print(result.get("logs", ""))
 
             print()
             print()
@@ -824,16 +810,12 @@ def test_agent(
         while sandbox_manager.get_num_sandboxes() > 0:
             time.sleep(1)
         
-        return 0
-        
     except KeyboardInterrupt:
         console.print("\n🛑 Test interrupted by user", style="yellow")
-        return 1
     except Exception as e:
         console.print(f" Test failed: {e}", style="bold red")
         if verbose:
             console.print(traceback.format_exc(), style="dim")
-        return 1
     finally:
         # Consolidated cleanup - always stop proxy process, conditionally clean containers
         console.print("🧹 Cleaning up...", style="dim")
