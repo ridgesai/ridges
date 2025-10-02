@@ -25,7 +25,6 @@ def warn(msg):
 
 def error(msg):
     print(f"{Colors.RED}ERROR: {msg}{Colors.RESET}")
-    exit(1)
 
 
 
