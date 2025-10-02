@@ -440,3 +440,14 @@ async def get_miner_hotkey_from_version_id(conn: asyncpg.Connection, version_id:
         FROM miner_agents 
         WHERE version_id = $1
     """, version_id)
+
+@db_operation
+async def update_evaluation_to_error(conn: asyncpg.Connection, evaluation_id: str, error_reason: str):
+    # We can asyncio.gather, but will do this post stability to reduce complexity
+    await conn.execute(
+        "UPDATE evaluations SET status = 'error', finished_at = NOW(), terminated_reason = $1 WHERE evaluation_id = $2",
+        error_reason,
+        evaluation_id 
+    )
+
+    await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE evaluation_id = $1", evaluation_id)

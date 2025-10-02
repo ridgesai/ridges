@@ -3,7 +3,7 @@ from typing import Optional, List, Tuple
 import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import AgentStatus, MinerAgent
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 
@@ -145,3 +145,17 @@ async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
     """
     data = await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
     return [str(row["version_id"]) for row in data]
+
+@db_operation
+async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: str):
+    try:
+        AgentStatus(status) # Check whether the status we are trying to set to is valid 
+    except ValueError:
+        logger.error(f"Tried to set agent to invalid status {status!r}")
+        raise ValueError("Invalid status")
+
+    await conn.execute(
+        "UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
+        status,
+        version_id
+    )

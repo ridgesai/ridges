@@ -4,6 +4,10 @@ import asyncpg
 
 from api.src.backend.entities import Client, AgentStatus, MinerAgent
 from api.src.backend.db_manager import get_transaction
+from api.src.backend.queries.agents import set_agent_status
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, update_evaluation_to_error
+from api.src.endpoints.agents import get_agent_by_version
+from api.src.endpoints.model_replacers import update_agent_status
 
 logger = logging.getLogger(__name__)
 
@@ -237,61 +241,30 @@ class Screener(Client):
     
     async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish screening evaluation"""
-        from api.src.models.evaluation import Evaluation
+        from api.src.models.evaluation import Evaluation     
 
-        logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, entered finish_screening")
+        SCREENING_STATUSES = ["screening_1", "screening_2"]   
         
         try:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+
+            if not evaluation or evaluation.status not in SCREENING_STATUSES or evaluation.validator_hotkey != self.hotkey:
                 logger.warning(f"Screener {self.hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
                 return
-            
-            async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-                expected_status = getattr(AgentStatus, f"screening_{self.stage}")
-                if AgentStatus.from_string(agent_status) != expected_status:
-                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
-                    # Clearly a bug here, its somehow set to failed_screening_1 when we hit this if statement
-                    # It should be screening_1, no idea whats setting it to failed_screening_1
-                    # return
-                
-                if errored:
-                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
-                    await evaluation.error(conn, reason)
-                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}: done")
-                    notification_targets = None
-                else:
-                    notification_targets = await evaluation.finish(conn)
 
-                from api.src.socket.websocket_manager import WebSocketManager
-                ws_manager = WebSocketManager.get_instance()
-                await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+            agent = await get_agent_by_version(evaluation.version_id)
 
-                self.set_available()
-                    
-                logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
-            
-            # Handle notifications AFTER transaction commits
-            if notification_targets:
-                # Notify stage 2 screener when stage 1 completes
-                if notification_targets.get("stage2_screener"):
-                    async with Evaluation.get_lock():
-                        await Evaluation.screen_next_awaiting_agent(notification_targets["stage2_screener"])
-                
-                # Notify validators with proper lock protection  
-                for validator in notification_targets.get("validators", []):
-                    async with Evaluation.get_lock():
-                        if validator.is_available():
-                            success = await validator.start_evaluation_and_send(evaluation_id)
-                            if success:
-                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
-                            else:
-                                logger.warning(f"Failed to assign evaluation {evaluation_id} to validator {validator.hotkey}")
-                        else:
-                            logger.info(f"Validator {validator.hotkey} not available for evaluation {evaluation_id}")
-            
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Got to end of try block")
+            if agent.status not in SCREENING_STATUSES:
+                logger.warning(f"Invalid status for miner agent: expected {evaluation.status}, agent is set to {agent.status}")
+
+            if errored:
+                """Error evaluation and reset agent"""
+                await update_evaluation_to_error(evaluation_id, reason)
+                # Very scuff, will remove when finalizing call chain
+                async with get_transaction() as conn:
+                    await Evaluation._update_agent_status(conn)
+                logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
+
         finally:
             logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, in finally block")
             # Single atomic reset and reassignment

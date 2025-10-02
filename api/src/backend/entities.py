@@ -314,13 +314,13 @@ class AgentStatus(Enum):
     scored = "scored"                                  # All evaluations complete
     replaced = "replaced"                              # Replaced by newer version
     pruned = "pruned"                                  # Pruned due to low score compared to top agent
-    
+
     # Legacy statuses for backward compatibility during transition
     awaiting_screening = "awaiting_screening_1"        # Map to stage 1
     screening = "screening_1"                          # Map to stage 1
     failed_screening = "failed_screening_1"            # Map to stage 1 fail
     evaluation = "evaluating"                          # Map to evaluating (legacy alias)
-    
+
     @classmethod
     def from_string(cls, status: str) -> 'AgentStatus':
         """Map database status string to agent state enum"""
@@ -343,7 +343,6 @@ class AgentStatus(Enum):
             "evaluation": cls.evaluating  # Critical: existing agents might have this status
         }
         return mapping.get(status, cls.awaiting_screening_1)
-
 
 class EvaluationStatus(Enum):
     waiting = "waiting"
