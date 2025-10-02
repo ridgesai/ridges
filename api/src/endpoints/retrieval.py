@@ -413,19 +413,6 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
             detail="Internal server error while retrieving emission alpha"
         )
     
-async def get_approved_version_ids() -> list[str]:
-    """
-    Returns a list of all approved version IDs
-    """
-    try:
-        return await db_get_all_approved_version_ids()
-    except Exception as e:
-        logger.error(f"Error retrieving approved version IDs: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving approved version IDs"
-        )
-    
 async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
     Returns the time until the next upload for a given hotkey
@@ -512,7 +499,6 @@ routes = [
     ("/agents-from-hotkey", get_agents_from_hotkey),    
     ("/inference-provider-statistics", get_inference_provider_statistics),
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
-    ("/approved-version-ids", get_approved_version_ids),
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
     ("/all-transactions", get_all_transactions),
     ("/all-treasury-hotkeys", get_all_treasury_hotkeys),

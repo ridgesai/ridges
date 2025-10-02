@@ -139,14 +139,6 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     return [MinerAgent(**dict(result)) for result in results]
 
 @db_operation
-async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
-    """
-    Get all approved version IDs
-    """
-    data = await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
-    return [str(row["version_id"]) for row in data]
-
-@db_operation
 async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: str):
     try:
         AgentStatus(status) # Check whether the status we are trying to set to is valid 
