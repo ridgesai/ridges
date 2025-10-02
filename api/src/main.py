@@ -22,6 +22,7 @@ from api.src.endpoints.agents import router as agents_router
 from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
+from api.src.endpoints.validator import router as validator_router
 from api.src.utils.slack import send_slack_message
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
@@ -79,6 +80,7 @@ app.include_router(agent_summaries_router, prefix="/agent-summaries")
 app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(benchmarks_router, prefix="/benchmarks")
+app.include_router(validator_router, prefix="/validator")
 app.include_router(system_status_router, prefix="/system")
 app.include_router(healthcheck_router)
 
