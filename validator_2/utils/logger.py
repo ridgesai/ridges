@@ -26,6 +26,10 @@ def warn(msg):
 def error(msg):
     print(f"{Colors.RED}ERROR: {msg}{Colors.RESET}")
 
+def fatal(msg):
+    error(msg)
+    exit(1)
+
 
 
 _verbose_mode = False
