@@ -1,4 +1,5 @@
 import os
+import utils.logger as logger
 
 from dotenv import load_dotenv
 
@@ -25,6 +26,8 @@ if not RIDGES_INFERENCE_GATEWAY_URL:
 
 
 # Print out the configuration
-print(f"Validator Hotkey: {VALIDATOR_HOTKEY}")
-print(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
-print(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
+logger.banner('VALIDATOR CONFIGURATION')
+logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY}")
+logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
+logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
+logger.banner()

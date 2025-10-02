@@ -17,7 +17,8 @@ class Colors:
 
 
 def info(msg):
-    print(f"{Colors.CYAN} INFO: {msg}{Colors.RESET}")
+    # print(f"{Colors.CYAN} INFO: {msg}{Colors.RESET}")
+    print(f" INFO: {msg}{Colors.RESET}")
 
 def warn(msg):
     print(f"{Colors.YELLOW} WARN: {msg}{Colors.RESET}")
@@ -37,3 +38,15 @@ def enable_verbose():
 def debug(msg):
     if _verbose_mode:
         print(f"{Colors.GRAY}DEBUG: {msg}{Colors.RESET}")
+
+
+
+def banner(title="", width=80, char="="):
+    if (title == ""):
+        info(char * width)
+        info("")
+        return
+    
+    pad = (width - len(title) - 2) // 2
+    line = char * pad + f" {title} " + char * (width - len(title) - 2 - pad)
+    info(line)
