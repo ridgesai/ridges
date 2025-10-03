@@ -574,19 +574,36 @@ async def create_evaluation(
     version_id: str, 
     validator_hotkey: str, 
     set_id: int, 
-    screener_score: float
-):
-    await conn.execute(
-        """
-        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
-        VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
-        """,
-        evaluation_id,
-        version_id,
-        validator_hotkey,
-        set_id,
-        screener_score,
-    )
+    screener_score: Optional[float]
+) -> Evaluation:
+    if screener_score:
+        evaluation = await conn.execute(
+            """
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+            VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
+            """,
+            evaluation_id,
+            version_id,
+            validator_hotkey,
+            set_id,
+            screener_score
+        )
+
+        return Evaluation(**evaluation)
+    
+    else:
+        evaluation = await conn.execute(
+            """
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+            VALUES ($1, $2, $3, $4, 'waiting', NOW())
+            """,
+            evaluation_id,
+            version_id,
+            validator_hotkey,
+            set_id
+        )
+
+        return Evaluation(**evaluation)
 
 @db_operation
 async def create_evaluation_runs(
@@ -685,3 +702,21 @@ async def evaluation_count_for_agent_and_status(conn: asyncpg.Connection, versio
         version_id,
         status.value
     )
+
+@db_operation
+async def check_for_currently_running_eval(conn: asyncpg.Connection, validator_hotkey: str) -> bool:
+    existing_evaluation = await conn.fetchrow(
+        """
+        SELECT evaluation_id, status FROM evaluations 
+        WHERE validator_hotkey = $1 AND status = 'running'
+        LIMIT 1
+        """,
+        validator_hotkey
+    )
+
+    # TODO; replace for fetchval
+    if existing_evaluation:
+        return True
+
+    else: 
+        return False

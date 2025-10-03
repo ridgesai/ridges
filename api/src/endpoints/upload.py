@@ -5,6 +5,8 @@ from api.src.backend.queries.evaluations import does_miner_have_running_evaluati
 from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
+from api.src.endpoints.screener import create_evaluation_for_validator, create_screener_evaluation
+from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
@@ -109,6 +111,26 @@ async def post_agent(
                     detail="Cannot upload new agent while previous evaluations are still running. Please wait and try again."
                 )
 
+            # TODO: will be replaced by monday state machine
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws_manager = WebSocketManager.get_instance()
+            
+            found_screener: Optional['Screener'] = None
+
+            for client in ws_manager.clients.values():
+                if (client.get_type() == "screener" and 
+                    client.status == "available" and
+                    client.is_available() and
+                    client.stage == 1):
+                    found_screener = client
+                    break
+            
+            if found_screener is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="No stage 1 screeners available for agent evaluation. Please try again later."
+                )
+
             # Replace old agent and upload code to S3
             await replace_old_agents(miner_hotkey=miner_hotkey)
             await upload_agent_code_to_s3(agent.version_id, agent_file) 
@@ -120,6 +142,13 @@ async def post_agent(
                 agent.agent_name,
                 agent.version_num,
                 agent.ip_address,
+            )
+
+            # Create evaluation for a screener thats connected 
+            await create_screener_evaluation(
+                hotkey=found_screener.hotkey,
+                agent=agent,
+                screener=found_screener
             )
 
             # Schedule background agent summary generation

@@ -1,4 +1,5 @@
 import logging
+from turtle import Screen
 from typing import Literal, Optional, List
 import asyncpg
 
@@ -132,3 +133,21 @@ class Screener(Client):
         self.set_available()
         logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
         await Evaluation.handle_screener_disconnection(self.hotkey)
+
+    @staticmethod
+    async def get_connected_1() -> List['Screener']:
+        """Get all connected sc1"""
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        screeners: list['Screener'] = [client for client in ws_manager.clients.values() if client.get_type() == "screener"]
+
+        return [screener for screener in screeners if screener.stage == 1]
+
+    @staticmethod
+    async def get_connected_2() -> List['Screener']:
+        """Get all connected sc2"""
+        from api.src.socket.websocket_manager import WebSocketManager
+        ws_manager = WebSocketManager.get_instance()
+        screeners: list['Screener'] = [client for client in ws_manager.clients.values() if client.get_type() == "screener"]
+
+        return [screener for screener in screeners if screener.stage == 2]

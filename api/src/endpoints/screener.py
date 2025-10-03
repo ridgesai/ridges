@@ -12,16 +12,18 @@ from typing import Any, Optional
 
 from fastapi import status
 from slack_bolt.context import complete
-from api.src.backend.entities import AgentStatus, EvaluationRun, EvaluationStatus, SandboxStatus
+from api.src.backend.entities import AgentStatus, EvaluationRun, EvaluationStatus, MinerAgent, SandboxStatus
 from logging import getLogger
 
 from api.src.backend.queries.agents import get_top_agent, set_agent_status
-from api.src.backend.queries.evaluations import create_evaluation, create_evaluation_runs, evaluation_count_for_agent_and_status, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, get_problems_for_set_and_stage, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error, update_evaluation_to_started
+from api.src.backend.queries.evaluations import check_for_currently_running_eval, create_evaluation, create_evaluation_runs, evaluation_count_for_agent_and_status, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, get_problems_for_set_and_stage, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error, update_evaluation_to_started
 from api.src.backend.queries.scores import get_combined_screener_score, get_current_set_id, update_innovation_score
 from api.src.endpoints.agents import get_agent_by_version
 
 
 from api.src.endpoints.model_replacers import update_agent_status
+from api.src.models.screener import Screener
+from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.models import TopAgentHotkey
 
@@ -240,6 +242,38 @@ async def finish_screening(
         return
 
     logger.error(f"Invalid screener status {agent.status}")
+
+# TODO
+async def create_screener_evaluation(hotkey: str, agent: MinerAgent, screener: 'Screener'):
+    existing_evaluation = check_for_currently_running_eval(hotkey)
+
+    if existing_evaluation:
+        logger.error(f"CRITICAL: Screener {hotkey} already has running evaluation {existing_evaluation['evaluation_id']} - refusing to create duplicate screening")
+        return False
+
+    ws = WebSocketManager.get_instance()
+    set_id = await get_current_set_id()
+    evaluation_id = str(uuid.uuid4())
+
+    create_evaluation(
+        evaluation_id=evaluation_id,
+        version_id=agent.version_id,
+        validator_hotkey=hotkey,
+        set_id=set_id
+    )
+
+    evaluation_runs = start_screening(evaluation_id, hotkey)
+
+    message = {
+        "event": "screen-agent",
+        "evaluation_id": evaluation_id,
+        "agent_version": agent.model_dump(mode="json"),
+        "evaluation_runs": [run.model_dump(mode="json") for run in evaluation_runs["runs_created"]],
+    }
+    logger.info(f"Sending screen-agent message to screener {hotkey}: evaluation_id={evaluation_id}, agent={agent.agent_name}")
+    
+    await ws.send_to_all_non_validators("evaluation-started", message)
+    await ws.send_to_client(screener, message)
 
 async def create_evaluation_for_validator(version_id: str, validator_hotkey: str, combined_screener_score: float) -> str:
     max_set_id = await get_current_set_id()
