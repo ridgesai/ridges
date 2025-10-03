@@ -31,7 +31,7 @@ async def finish_screening(
 ):
     evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
 
-    if not evaluation or evaluation.status not in SCREENING_STATUSES or evaluation.validator_hotkey != screener_hotkey:
+    if not evaluation or evaluation.validator_hotkey != screener_hotkey:
         logger.warning(f"Screener {screener_hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
         return
 
@@ -46,7 +46,7 @@ async def finish_screening(
             update_evaluation_to_error(evaluation_id, reason),
             set_agent_status(
                 version_id=agent.version_id,
-                status=AgentStatus.awaiting_screening_1.value if evaluation.status == "screening_1" else AgentStatus.awaiting_screening_2.value
+                status=AgentStatus.awaiting_screening_1.value if agent.status == "screening_1" else AgentStatus.awaiting_screening_2.value
             )
         )
         
@@ -60,25 +60,25 @@ async def finish_screening(
         # Set the agent back to awaiting for the same screener level if errored
         await set_agent_status(
             version_id=agent.version_id,
-            status=AgentStatus.awaiting_screening_1.value if evaluation.status == "screening_1" else AgentStatus.awaiting_screening_2.value
+            status=AgentStatus.awaiting_screening_1.value if agent.status == "screening_1" else AgentStatus.awaiting_screening_2.value
         )
         return
 
     await update_evaluation_to_completed(evaluation_id=evaluation_id)
 
     # Check whether it passed the screening thresholds.
-    threshold = SCREENING_1_THRESHOLD if evaluation.status == "screening_1" else SCREENING_2_THRESHOLD
+    threshold = SCREENING_1_THRESHOLD if agent.status == "screening_1" else SCREENING_2_THRESHOLD
 
     if evaluation.score < threshold:
         # Agent has failed, update status and that's that
         await set_agent_status(
             version_id=agent.version_id,
-            status=AgentStatus.failed_screening_1.value if evaluation.status == "screening_1" else AgentStatus.failed_screening_2.value
+            status=AgentStatus.failed_screening_1.value if agent.status == "screening_1" else AgentStatus.failed_screening_2.value
         )
 
         return
 
-    if evaluation.status == AgentStatus.screening_1.value:
+    if agent.status == AgentStatus.screening_1.value:
         await set_agent_status(
             version_id=agent.version_id,
             status=AgentStatus.awaiting_screening_2.value
@@ -86,7 +86,7 @@ async def finish_screening(
 
         return
 
-    if evaluation.status == AgentStatus.screening_2.value:
+    if agent.status == AgentStatus.screening_2.value:
         # If screening 2, see if we should prune it if its behind the top agent by enough, and create validator evals if not
         combined_screener_score, score_error = await get_combined_screener_score(agent.version_id)
         top_agent = await get_top_agent()
@@ -119,7 +119,7 @@ async def finish_screening(
         
         return
 
-    logger.error(f"Invalid screener status {evaluation.status}")
+    logger.error(f"Invalid screener status {agent.status}")
 
 async def create_evaluation_for_validator(version_id: str, validator_hotkey: str, combined_screener_score: float) -> str:
     max_set_id = await get_current_set_id()
