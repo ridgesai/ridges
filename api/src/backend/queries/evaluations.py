@@ -592,7 +592,7 @@ async def create_evaluation(
         return await conn.execute(
             """
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
-            VALUES ($1, $2, $3, $4, 'waiting', NOW())
+            VALUES ($1, $2, $3, $4, 'running', NOW())
             """,
             evaluation_id,
             version_id,

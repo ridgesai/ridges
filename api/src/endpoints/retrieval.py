@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse, PlainTextResponse
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+import os
 
 from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
@@ -64,11 +65,12 @@ async def get_agent_code(version_id: str, request: Request, return_as_text: bool
         
         # Check if IP is in whitelist (add your allowed IPs to SCREENER_IP_LIST)
         if client_ip not in SCREENER_IP_LIST:
-            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: IP not authorized"
-            )
+            if os.getenv("ENV") == "prod":
+                logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied: IP not authorized"
+                )
     
     if return_as_text:
         try:
