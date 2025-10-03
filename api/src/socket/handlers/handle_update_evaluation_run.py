@@ -2,8 +2,8 @@ from typing import TYPE_CHECKING, Dict, Any
 
 from api.src.backend.entities import Client, EvaluationRun
 from api.src.endpoints.screener import finish_screening
-from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.evaluation_runs import all_runs_finished, update_evaluation_run
+from api.src.backend.queries.evaluations import get_progress
 from loggers.logging_utils import get_logger
 from typing import Union
 
@@ -111,7 +111,7 @@ async def handle_update_evaluation_run(
         if 'status' in broadcast_data:
             broadcast_data['status'] = evaluation_run.status.value
         broadcast_data["validator_hotkey"] = client.hotkey  # Keep as validator_hotkey for API compatibility
-        broadcast_data["progress"] = await Evaluation.get_progress(evaluation_run.evaluation_id)
+        broadcast_data["progress"] = await get_progress(evaluation_run.evaluation_id)
         broadcast_data["validator_status"] = validator_status  # Include computed validator status
         
         await ws.send_to_all_non_validators("evaluation-run-update", broadcast_data)

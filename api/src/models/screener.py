@@ -24,6 +24,18 @@ class Screener(Client):
     disk_total_gb: Optional[float] = None
     containers: Optional[int] = None
 
+    @staticmethod
+    def get_stage(hotkey: str) -> Optional[int]:
+        """Determine screening stage based on hotkey"""
+        if hotkey.startswith("screener-1-"):
+            return 1
+        elif hotkey.startswith("screener-2-"):
+            return 2
+        elif hotkey.startswith("i-0"):  # Legacy screeners are stage 1
+            return 1
+        else:
+            return None
+            
     @property
     def stage(self) -> Optional[int]:
         """Get the screening stage for this screener"""

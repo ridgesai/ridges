@@ -626,3 +626,23 @@ async def replace_old_agents(conn: asyncpg.Connection, miner_hotkey: str) -> Non
     """,
         miner_hotkey,
     )
+
+@db_operation
+async def get_progress(conn: asyncpg.Connection, evaluation_id: str) -> float:
+    """Get progress of evaluation across all runs"""
+    progress = await conn.fetchval("""
+        SELECT COALESCE(AVG(
+            CASE status
+                WHEN 'started' THEN 0.2
+                WHEN 'sandbox_created' THEN 0.4
+                WHEN 'patch_generated' THEN 0.6
+                WHEN 'eval_started' THEN 0.8
+                WHEN 'result_scored' THEN 1.0
+                ELSE 0.0
+            END
+        ), 0.0)
+        FROM evaluation_runs 
+        WHERE evaluation_id = $1
+        AND status NOT IN ('cancelled', 'error')
+    """, evaluation_id)
+    return float(progress)

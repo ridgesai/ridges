@@ -3,17 +3,17 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
 import uuid
-
+import asyncio
+from api.src.models.validator import Validator
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
-from api.src.models.evaluation import Evaluation
 from api.src.utils.auth import verify_request, verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
-from api.src.backend.entities import MinerAgent, MinerAgentScored
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id
-from api.src.backend.entities import MinerAgentScored
+from api.src.backend.entities import MinerAgent, MinerAgentScored, AgentStatus
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id, set_agent_status
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, reset_evaluation_to_waiting
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
 from api.src.backend.internal_tools import InternalTools
@@ -29,6 +29,19 @@ logger = get_logger(__name__)
 treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 internal_tools = InternalTools()
+
+async def tell_validators_to_set_weights():
+    """Tell validators to set their weights."""
+
+    for validator in await Validator.get_connected():
+        await validator.websocket.send_json({"event": "set-weights"})
+
+    logger.info(f"Sent weight setting event to all validators")
+
+async def run_weight_setting_loop(minutes: int):
+    while True:
+        await tell_validators_to_set_weights()
+        await asyncio.sleep(minutes * 20)
 
 ## Actual endpoints ##
 async def weight_receiving_agent():
@@ -263,8 +276,16 @@ async def re_run_evaluation(password: str, evaluation_id: str):
     
     try:
         async with get_transaction() as conn:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            await evaluation.reset_to_waiting(conn)
+            # set evaluation to waiting, and its runs to cancelled
+            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+            await reset_evaluation_to_waiting(evaluation_id)
+
+            # set agent status to waiting
+            agent_version_id = evaluation.version_id
+            await set_agent_status(
+                version_id=agent_version_id,
+                status=AgentStatus.waiting.value
+            )
             return {"message": f"Successfully reset evaluation {evaluation_id}"}
     except Exception as e:
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
