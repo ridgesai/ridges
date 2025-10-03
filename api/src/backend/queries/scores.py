@@ -321,3 +321,60 @@ async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str)
 async def get_current_set_id(conn: asyncpg.Connection) -> int:
     max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
     return max_set_id
+
+@db_operation
+async def update_innovation_score(conn: asyncpg.Connection, version_id: str):
+    """Calculate and update innovation score for this evaluation's agent in one atomic query"""
+    try:
+        # Single atomic query that calculates and updates innovation score
+        await conn.execute("""
+            WITH agent_runs AS (
+                -- Get all result_scored runs for this agent
+                SELECT
+                    r.swebench_instance_id,
+                    r.solved,
+                    r.started_at,
+                    r.run_id
+                FROM evaluation_runs r
+                JOIN evaluations e ON e.evaluation_id = r.evaluation_id
+                WHERE e.version_id = $1
+                    AND r.status = 'result_scored'
+            ),
+            runs_with_prior AS (
+                -- Calculate prior solved ratio for each run using window functions
+                SELECT
+                    swebench_instance_id,
+                    solved,
+                    started_at,
+                    run_id,
+                    -- Calculate average solve rate for this instance before this run
+                    COALESCE(
+                        AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END) 
+                        OVER (
+                            PARTITION BY swebench_instance_id 
+                            ORDER BY started_at 
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        ), 0.0
+                    ) AS prior_solved_ratio
+                FROM agent_runs
+            ),
+            innovation_calculation AS (
+                SELECT
+                    COALESCE(
+                        AVG((CASE WHEN solved THEN 1.0 ELSE 0.0 END) - prior_solved_ratio), 0.0
+                    ) AS innovation_score
+                FROM runs_with_prior
+            )
+            UPDATE miner_agents 
+            SET innovation = (SELECT innovation_score FROM innovation_calculation)
+            WHERE version_id = $1
+        """, version_id)
+        
+        
+    except Exception as e:
+        logger.error(f"Failed to calculate innovation score for agent {version_id}: {e}")
+        # Set innovation score to NULL on error to indicate calculation failure
+        await conn.execute(
+            "UPDATE miner_agents SET innovation = NULL WHERE version_id = $1",
+            version_id
+        )

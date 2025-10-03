@@ -9,7 +9,9 @@ import asyncio
 from api.src.backend.entities import EvaluationRun, MinerAgent, MinerAgentScored, SandboxStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id
 from api.src.backend.queries.scores import get_combined_screener_score
+from api.src.endpoints.screener import finish_evaluation
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -814,11 +816,12 @@ class Evaluation:
             )
 
             for stuck_eval in stuck_evaluations:
-                evaluation = await Evaluation.get_by_id(stuck_eval["evaluation_id"])
+                evaluation = await get_evaluation_by_evaluation_id(stuck_eval["evaluation_id"])
+
                 if evaluation:
                     logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
                     # During startup recovery, don't trigger notifications
-                    _ = await evaluation.finish(conn)
+                    _ = await finish_evaluation(evaluation.evaluation_id, evaluation.validator_hotkey, errored=True, reason="Platform restarted")
 
             # Cancel waiting screenings for all screener types
             waiting_screenings = await conn.fetch(

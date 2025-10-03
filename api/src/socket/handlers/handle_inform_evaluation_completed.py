@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Dict, Any
 from datetime import datetime
 
 from api.src.backend.entities import Client
-from api.src.endpoints.screener import finish_screening
+from api.src.endpoints.screener import finish_evaluation, finish_screening
 from loggers.logging_utils import get_logger
 from typing import Union
 
@@ -39,7 +39,7 @@ async def handle_inform_evaluation_completed(
         # Force finish the evaluation (skip all_runs_finished check)
         if client.get_type() == "validator":
             logger.info(f"Calling finish_evaluation for {evaluation_id}")
-            await client.finish_evaluation(evaluation_id)
+            await finish_evaluation(evaluation_id, client.hotkey)
             logger.info(f"Called finish_evaluation for {evaluation_id}")
         elif client.get_type() == "screener":
             logger.info(f"Calling finish_screening for {evaluation_id}")

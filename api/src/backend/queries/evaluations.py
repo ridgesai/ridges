@@ -674,3 +674,14 @@ async def get_waiting_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
 @db_operation
 async def cancel_dangling_evaluation_runs(conn: asyncpg.Connection):
     await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')")
+
+@db_operation
+async def evaluation_count_for_agent_and_status(conn: asyncpg.Connection, version_id: str, status: EvaluationStatus):
+    """Returns the number of validator evals with a given state, for a specific agent"""
+    return await conn.fetchval(
+        """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = $2
+            AND validator_hotkey NOT LIKE 'screener-%' 
+            AND validator_hotkey NOT LIKE 'i-0%'""", 
+        version_id,
+        status.value
+    )
