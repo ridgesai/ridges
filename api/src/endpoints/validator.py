@@ -1,15 +1,15 @@
 import time
 import uuid
+
 from datetime import datetime
 from typing import Dict, Optional
-from uuid import UUID
 
+from fiber import Keypair
+from pydantic import BaseModel
+from fastapi.security import HTTPBearer
+from loggers.logging_utils import get_logger
 from api.src.backend.entities import EvaluationRun
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer
-from fiber import Keypair
-from loggers.logging_utils import get_logger
-from pydantic import BaseModel
 from validator_2.utils.system_metrics import ValidatorHeartbeatMetrics
 
 logger = get_logger(__name__)
@@ -62,7 +62,7 @@ class Validator(BaseModel):
     current_evaluation_id: Optional[UUID]
 
 # Map of session IDs to validator objects
-SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
+SESSION_ID_TO_VALIDATOR: Dict[uuid.UUID, Validator] = {}
 
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header
