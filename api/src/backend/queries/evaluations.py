@@ -492,6 +492,15 @@ async def reset_evaluation_to_waiting(conn: asyncpg.Connection, evaluation_id: s
 async def update_evaluation_to_started(conn: asyncpg.Connection, evaluation_id: str):
     await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", evaluation_id) 
 
+
+@db_operation
+async def get_problems_for_set_and_stage(conn: asyncpg.Connection, set_id: int, validation_stage: str) -> list[str]:
+    swebench_instance_ids_data = await conn.fetch(
+        "SELECT swebench_instance_id FROM evaluation_sets WHERE set_id = $1 AND type = $2", set_id, validation_stage
+    )
+
+    return [row["swebench_instance_id"] for row in swebench_instance_ids_data]
+
 @db_operation
 async def prune_evaluations_in_queue(conn: asyncpg.Connection, threshold: float, max_set_id: int):
     # Find evaluations with low screener scores that should be pruned
@@ -565,4 +574,14 @@ async def create_evaluation(
         validator_hotkey,
         set_id,
         screener_score,
+    )
+
+@db_operation
+async def create_evaluation_runs(
+    conn: asyncpg.Connection,
+    evaluation_runs: list[EvaluationRun]
+):
+    await conn.executemany(
+        "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, status, started_at) VALUES ($1, $2, $3, $4, $5)",
+        [(run.run_id, run.evaluation_id, run.swebench_instance_id, run.status.value, run.started_at) for run in evaluation_runs],
     )

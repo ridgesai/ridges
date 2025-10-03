@@ -3,14 +3,16 @@ All logic around screeners, including starting a screening, finishing it, handli
 """
 
 import asyncio
+import datetime
 import stat
+from time import timezone
 import uuid
 from typing import Optional
-from api.src.backend.entities import AgentStatus, EvaluationRun
+from api.src.backend.entities import AgentStatus, Evaluation, EvaluationRun, SandboxStatus
 from logging import getLogger
 
 from api.src.backend.queries.agents import get_top_agent, set_agent_status
-from api.src.backend.queries.evaluations import create_evaluation, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error, update_evaluation_to_started
+from api.src.backend.queries.evaluations import create_evaluation, create_evaluation_runs, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, get_problems_for_set_and_stage, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error, update_evaluation_to_started
 from api.src.backend.queries.scores import get_combined_screener_score, get_current_set_id
 from api.src.endpoints.agents import get_agent_by_version
 
@@ -60,13 +62,43 @@ async def start_screening(evaluation_id: str, screener_hotkey: str) -> bool:
 
     # Get max set ids and the problem instance ids associated
     current_set_id = await get_current_set_id()
+    problem_instance_ids = await get_problems_for_set_and_stage(set_id=current_set_id, validation_stage=validation_stage.value)
 
     # Create eval runs and insert 
-    # Update agetn status
-    # Insert eval runs
+    evaluation_runs = [
+        EvaluationRun(
+            run_id = uuid.uuid4(),
+            evaluation_id = evaluation_id,
+            swebench_instance_id = problem_id,
+            response=None,
+            error=None,
+            pass_to_fail_success=None,
+            fail_to_pass_success=None,
+            pass_to_pass_success=None,
+            fail_to_fail_success=None,
+            solved=None,
+            status = SandboxStatus.started,
+            started_at = datetime.now(timezone.utc),
+            sandbox_created_at=None,
+            patch_generated_at=None,
+            eval_started_at=None,
+            result_scored_at=None,
+            cancelled_at=None,
+        )
+        for problem_id in problem_instance_ids
+    ]
 
-    # Broadcast status change?
-    pass 
+    # Insert eval runs
+    await create_evaluation_runs(evaluation_runs=evaluation_runs)
+    
+    # Update agent status
+    await set_agent_status(
+        version_id=agent.version_id, 
+        status=AgentStatus.screening_1 if validation_stage == ValidationStage.SCREENER_1 else AgentStatus.screening_2
+    )
+
+    # TODO: Broadcast status change?
+    return
 
 async def start(self, conn: asyncpg.Connection) -> List[EvaluationRun]:
     """Start evaluation"""
