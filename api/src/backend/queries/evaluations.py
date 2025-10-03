@@ -574,10 +574,10 @@ async def create_evaluation(
     version_id: str, 
     validator_hotkey: str, 
     set_id: int, 
-    screener_score: Optional[float]
-) -> Evaluation:
+    screener_score: Optional[float] = None
+):
     if screener_score:
-        evaluation = await conn.execute(
+        return await conn.execute(
             """
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
             VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
@@ -588,11 +588,8 @@ async def create_evaluation(
             set_id,
             screener_score
         )
-
-        return Evaluation(**evaluation)
-    
     else:
-        evaluation = await conn.execute(
+        return await conn.execute(
             """
             INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
             VALUES ($1, $2, $3, $4, 'waiting', NOW())
@@ -602,8 +599,6 @@ async def create_evaluation(
             validator_hotkey,
             set_id
         )
-
-        return Evaluation(**evaluation)
 
 @db_operation
 async def create_evaluation_runs(
