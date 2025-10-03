@@ -488,6 +488,10 @@ async def reset_evaluation_to_waiting(conn: asyncpg.Connection, evaluation_id: s
     # Reset running evaluation_runs to pending so they can be picked up again
     await cancel_evaluation_runs(evaluation_id=evaluation_id)
 
+@db_operation 
+async def update_evaluation_to_started(conn: asyncpg.Connection, evaluation_id: str):
+    await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", evaluation_id) 
+
 @db_operation
 async def prune_evaluations_in_queue(conn: asyncpg.Connection, threshold: float, max_set_id: int):
     # Find evaluations with low screener scores that should be pruned

@@ -6,23 +6,145 @@ import asyncio
 import stat
 import uuid
 from typing import Optional
-from api.src.backend.entities import AgentStatus
+from api.src.backend.entities import AgentStatus, EvaluationRun
 from logging import getLogger
 
 from api.src.backend.queries.agents import get_top_agent, set_agent_status
-from api.src.backend.queries.evaluations import create_evaluation, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error
+from api.src.backend.queries.evaluations import create_evaluation, get_evaluation_by_evaluation_id, get_evaluation_for_version_validator_and_set, get_inference_success_rate, prune_evaluations_in_queue, reset_evaluation_to_waiting, update_evaluation_to_completed, update_evaluation_to_error, update_evaluation_to_started
 from api.src.backend.queries.scores import get_combined_screener_score, get_current_set_id
 from api.src.endpoints.agents import get_agent_by_version
+
 
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.models import TopAgentHotkey
 
 logger = getLogger(__name__)
 
+AWAITING_SCREENING_STATUSES = [AgentStatus.screening_1.value, AgentStatus.screening_2.value]
 SCREENING_STATUSES = [AgentStatus.screening_1.value, AgentStatus.screening_2.value]
 
-async def start_screening():
-    pass
+from enum import Enum
+class ValidationStage(Enum):
+    SCREENER_1 = "screener-1"
+    SCREENER_2 = "screener-2"
+    VALIDATION = "validator"
+
+def identify_validation_stage(hotkey: str) -> ValidationStage:
+    if "screener-1" in hotkey:
+        return ValidationStage.SCREENER_1
+    elif "screener-2" in hotkey:
+        return ValidationStage.SCREENER_2
+    else:
+        # TODO: Verify sn58 format 
+        return ValidationStage.VALIDATION
+
+async def start_screening(evaluation_id: str, screener_hotkey: str) -> bool:
+    # TODO: Where is the eval inserted?
+    # Get the evaluation, makes sure its screening and its the right hotkey making the request
+    validation_stage = identify_validation_stage(screener_hotkey)
+    evaluation = await get_evaluation_by_evaluation_id(evaluation_id=evaluation_id)
+
+    if not evaluation or validation_stage != identify_validation_stage(evaluation.validator_hotkey) or evaluation.validator_hotkey != screener_hotkey:
+        return False
+
+    # Get the agent version, make sure thats in screening too
+    agent = await get_agent_by_version(evaluation.version_id)
+
+    # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
+    if not agent or agent.status not in SCREENING_STATUSES:
+        logger.error(f"Tried to start agent {evaluation.version_id} screening but either agent doesnt exist or invalid status; {agent.status if agent else "No agent"}")
+        return False
+
+    # Once checks are in place, start the evaluation
+    await update_evaluation_to_started(evaluation_id)
+
+    # Get max set ids and the problem instance ids associated
+    current_set_id = await get_current_set_id()
+
+    # Create eval runs and insert 
+    # Update agetn status
+    # Insert eval runs
+
+    # Broadcast status change?
+    pass 
+
+async def start(self, conn: asyncpg.Connection) -> List[EvaluationRun]:
+    """Start evaluation"""
+    await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
+    self.status = EvaluationStatus.running
+
+    match self.screener_stage:
+        case 1:
+            type = "screener-1"
+        case 2:
+            type = "screener-2"
+        case _:
+            type = "validator"
+    max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+    swebench_instance_ids_data = await conn.fetch(
+        "SELECT swebench_instance_id FROM evaluation_sets WHERE set_id = $1 AND type = $2", max_set_id, type
+    )
+    swebench_instance_ids = [row["swebench_instance_id"] for row in swebench_instance_ids_data]
+    evaluation_runs = [
+        EvaluationRun(
+            run_id=uuid.uuid4(),
+            evaluation_id=self.evaluation_id,
+            swebench_instance_id=swebench_instance_id,
+            response=None,
+            error=None,
+            pass_to_fail_success=None,
+            fail_to_pass_success=None,
+            pass_to_pass_success=None,
+            fail_to_fail_success=None,
+            solved=None,
+            status=SandboxStatus.started,
+            started_at=datetime.now(timezone.utc),
+            sandbox_created_at=None,
+            patch_generated_at=None,
+            eval_started_at=None,
+            result_scored_at=None,
+            cancelled_at=None,
+        )
+        for swebench_instance_id in swebench_instance_ids
+    ]
+    await conn.executemany(
+        "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, status, started_at) VALUES ($1, $2, $3, $4, $5)",
+        [(run.run_id, run.evaluation_id, run.swebench_instance_id, run.status.value, run.started_at) for run in evaluation_runs],
+    )
+
+    await self._update_agent_status(conn)
+    return evaluation_runs
+async def start_screening_old(self, evaluation_id: str) -> bool:
+    """Handle start-evaluation message"""
+    from api.src.models.evaluation import Evaluation
+    
+    evaluation = await Evaluation.get_by_id(evaluation_id)
+    if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+        return False
+    
+    async with get_transaction() as conn:
+        agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+        agent_status = AgentStatus.from_string(agent["status"]) if agent else None
+        
+        # Check if agent is in the appropriate screening status for this screener stage
+        expected_status = getattr(AgentStatus, f"screening_{self.stage}")
+        if not agent or agent_status != expected_status:
+            logger.info(f"Stage {self.stage} screener {self.hotkey}: tried to start screening but agent is not in screening_{self.stage} status (current: {agent['status'] if agent else 'None'})")
+            return False
+        agent_name = agent["agent_name"]
+        agent_hotkey = agent["miner_hotkey"]
+
+        await evaluation.start(conn)
+        old_status = self.status
+        self.status = f"screening"
+        self.current_evaluation_id = evaluation_id
+        self.current_agent_name = agent_name
+        self.current_agent_hotkey = agent_hotkey
+        logger.info(f"Screener {self.hotkey}: {old_status} -> screening {agent_name}")
+        
+        # Broadcast status change
+        self._broadcast_status_change()
+        return True
 
 async def finish_screening(
     evaluation_id: str,
