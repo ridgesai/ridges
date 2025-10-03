@@ -646,3 +646,31 @@ async def get_progress(conn: asyncpg.Connection, evaluation_id: str) -> float:
         AND status NOT IN ('cancelled', 'error')
     """, evaluation_id)
     return float(progress)
+
+@db_operation
+async def get_stuck_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
+    result = await conn.fetch("""
+        SELECT e.evaluation_id FROM evaluations e
+        WHERE e.status = 'running'
+        AND NOT EXISTS (
+            SELECT 1 FROM evaluation_runs er 
+            WHERE er.evaluation_id = e.evaluation_id 
+            AND er.status NOT IN ('result_scored', 'cancelled')
+        )
+        AND EXISTS (
+            SELECT 1 FROM evaluation_runs er2
+            WHERE er2.evaluation_id = e.evaluation_id
+        )
+        """)
+
+    return [Evaluation(**dict(row)) for row in result]
+
+@db_operation
+async def get_waiting_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
+    result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'waiting'")
+
+    return [Evaluation(**dict(row)) for row in result]
+
+@db_operation
+async def cancel_dangling_evaluation_runs(conn: asyncpg.Connection):
+    await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')")

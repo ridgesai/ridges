@@ -172,3 +172,14 @@ async def upload_miner_agent(
         version_num,
         ip_address
     )
+
+@db_operation
+async def agent_startup_recovery(conn: asyncpg.Connection):
+    # Reset agent statuses for multi-stage screening
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening_1'")
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE status = 'screening_2'")
+    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluating'")
+    
+    # Legacy status recovery for backward compatibility
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening'")
+    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluation'")  # Legacy alias
