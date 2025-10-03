@@ -11,7 +11,6 @@ from api.src.backend.db_manager import get_db_connection, get_transaction
 from api.src.backend.entities import EvaluationStatus
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id
 from api.src.backend.queries.scores import get_combined_screener_score
-from api.src.endpoints.screener import finish_evaluation
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from api.src.utils.config import SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -840,6 +839,7 @@ class Evaluation:
                 if evaluation:
                     logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
                     # During startup recovery, don't trigger notifications
+                    from api.src.endpoints.screener import finish_evaluation
                     _ = await finish_evaluation(
                         str(evaluation.evaluation_id),
                         evaluation.validator_hotkey,

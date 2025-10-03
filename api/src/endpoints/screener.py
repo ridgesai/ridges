@@ -4,7 +4,6 @@ All logic around screeners, including starting a screening, finishing it, handli
 
 import asyncio
 from datetime import datetime, timezone
-from nt import error
 import stat
 from sys import version
 import uuid
@@ -20,8 +19,6 @@ from api.src.backend.queries.evaluations import check_for_currently_running_eval
 from api.src.backend.queries.scores import get_combined_screener_score, get_current_set_id, update_innovation_score
 from api.src.endpoints.agents import get_agent_by_version
 
-
-from api.src.endpoints.model_replacers import update_agent_status
 from api.src.models.screener import Screener
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -352,7 +349,7 @@ async def finish_evaluation(
     evaluation = await get_evaluation_by_evaluation_id(evaluation_id=evaluation_id)
 
     if not evaluation or evaluation.validator_hotkey != hotkey:
-        logger.warning(f"Validator {hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}. {"No such eval" if evaluation is None else f"Invalid hotkey {hotkey}"}")
+        logger.warning(f"Validator {hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}. {'No such eval' if evaluation is None else f'Invalid hotkey {hotkey}'}")
         return 
 
     # Get the agent and make sure the status is evaluating 

@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING, Dict, Any
 
 from api.src.backend.entities import Client, EvaluationRun
-from api.src.endpoints.screener import finish_evaluation, finish_screening
 from api.src.backend.queries.evaluation_runs import all_runs_finished, update_evaluation_run
 from api.src.backend.queries.evaluations import get_progress
 from loggers.logging_utils import get_logger
@@ -99,8 +98,10 @@ async def handle_update_evaluation_run(
         if await all_runs_finished(evaluation_run.evaluation_id):
             logger.info(f"All runs finished for evaluation {evaluation_run.evaluation_id}. Finishing evaluation.")
             if client.get_type() == "validator":
+                from api.src.endpoints.screener import finish_evaluation
                 await finish_evaluation(evaluation_run.evaluation_id, client.hotkey)
             elif client.get_type() == "screener":
+                from api.src.endpoints.screener import finish_screening
                 await finish_screening(evaluation_run.evaluation_id, client.hotkey)
             else:
                 logger.info(f"Unknown type, not validator or screener, when trying to finish evaluation {evaluation_run.evaluation_id}")
