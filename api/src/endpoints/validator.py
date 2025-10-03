@@ -2,8 +2,13 @@ import time
 import uuid
 
 from fiber import Keypair
+from datetime import datetime
 from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from fastapi.security import HTTPBearer
+from loggers.logging_utils import get_logger
+from fastapi import APIRouter, HTTPException, Depends
+
+logger = get_logger(__name__)
 
 
 
@@ -27,17 +32,52 @@ def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:
     return validator_hotkey in [validator["hotkey"] for validator in WHITELISTED_VALIDATORS]
 
 def validator_name_to_hotkey(validator_name: str) -> str:
-    return next((validator["hotkey"] for validator in WHITELISTED_VALIDATORS if validator["name"] == validator_name), None)
+    return next((validator["hotkey"] for validator in WHITELISTED_VALIDATORS if validator["name"] == validator_name), 'unknown')
 
 def validator_hotkey_to_name(validator_hotkey: str) -> str:
-    return next((validator["name"] for validator in WHITELISTED_VALIDATORS if validator["hotkey"] == validator_hotkey), None)
+    return next((validator["name"] for validator in WHITELISTED_VALIDATORS if validator["hotkey"] == validator_hotkey), 'unknown')
 
 
 
 # TODO: Move to utils/bittensor.py
 def check_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
-    keypair = Keypair(ss58_address=hotkey)
-    return keypair.verify(str(timestamp), bytes.fromhex(signed_timestamp))
+    try:
+        keypair = Keypair(ss58_address=hotkey)
+        return keypair.verify(str(timestamp), bytes.fromhex(signed_timestamp))
+    except Exception as e:
+        print(f"Error in check_signed_timestamp(timestamp={timestamp}, signed_timestamp={signed_timestamp}, hotkey={hotkey}): {e}")
+        return False
+
+
+
+# A connected validator
+class Validator(BaseModel):
+    name: str
+    hotkey: str
+    time_connected: datetime
+
+# Map of session IDs to validator objects
+SESSION_ID_TO_VALIDATOR = {}
+
+# Dependency to get the validator associated with the request
+# Requires that the request has a valid "Authorization: Bearer <session_id>" header
+# See validator_request_evaluation() and other endpoints for usage examples
+async def get_request_validator(token: str = Depends(HTTPBearer())) -> Validator:
+    try:
+        session_id = uuid.UUID(token.credentials)
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid session ID format (expected a UUID)."
+        )
+    
+    if session_id not in SESSION_ID_TO_VALIDATOR:
+        raise HTTPException(
+            status_code=401,
+            detail="Session ID not found or expired."
+        )
+    
+    return SESSION_ID_TO_VALIDATOR[session_id]
 
 
 
@@ -54,33 +94,57 @@ class ValidatorRegistrationResponse(BaseModel):
     session_id: uuid.UUID
 
 @router.post("/register")
-async def validator_register(request: ValidatorRegistrationRequest) -> ValidatorRegistrationResponse:
+async def validator_register(
+    request: ValidatorRegistrationRequest
+) -> ValidatorRegistrationResponse:
+
     if not DEV_MODE:
         # Ensure that the hotkey is in the list of acceptable validator hotkeys
         if not is_validator_hotkey_whitelisted(request.hotkey):
             raise HTTPException(
                 status_code=403,
-                detail="The provided hotkey is not in the list of whitelisted validator hotkeys"
+                detail="The provided hotkey is not in the list of whitelisted validator hotkeys."
             )
     
     # Check if the signed timestamp is valid (i.e., matches the raw timestamp)
     if not check_signed_timestamp(request.timestamp, request.signed_timestamp, request.hotkey):
         raise HTTPException(
             status_code=401,
-            detail="The provided signed timestamp does not match the provided timestamp"
+            detail="The provided signed timestamp does not match the provided timestamp."
         )
 
     # Ensure that the timestamp is within 1 minute of the current time
     if abs(int(request.timestamp) - int(time.time())) > 60:
         raise HTTPException(
             status_code=400,
-            detail="The provided timestamp is not within 1 minute of the current time"
+            detail="The provided timestamp is not within 1 minute of the current time."
         )
 
-    # All good, generate a random session ID
-    # TODO: Maintain a map of session IDs and their associated validator objects
+    # Register the validator with a new session ID
     session_id = uuid.uuid4()
+    SESSION_ID_TO_VALIDATOR[session_id] = Validator(
+        name=validator_hotkey_to_name(request.hotkey),
+        hotkey=request.hotkey,
+        time_connected=datetime.now()
+    )
     
-    print(f"Registered validator ({validator_hotkey_to_name(request.hotkey)}/{request.hotkey}), Session ID: {session_id}")
+    logger.info(f"Registered validator ({validator_hotkey_to_name(request.hotkey)}/{request.hotkey}), Session ID: {session_id}")
     
     return ValidatorRegistrationResponse(session_id=session_id)
+
+
+
+class ValidatorRequestEvaluationRequest(BaseModel):
+    pass
+
+class ValidatorRequestEvaluationResponse(BaseModel):
+    foo: str
+
+@router.post("/request-evaluation")
+async def validator_request_evaluation(
+    request: ValidatorRequestEvaluationRequest,
+    validator: Validator = Depends(get_request_validator)
+) -> ValidatorRequestEvaluationResponse:
+
+    logger.info(f"{validator.name}/{validator.hotkey} is requesting an evaluation")
+    return ValidatorRequestEvaluationResponse(foo="bar")

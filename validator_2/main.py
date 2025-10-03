@@ -7,8 +7,17 @@ from utils.http import post_ridges_platform
 
 
 
+# The session ID for this validator
+session_id = None
+
+
+
 async def main():
+    global session_id
+
     logger.enable_verbose()
+
+
 
     try:
         # Get the current timestamp, and sign it with the validator hotkey
@@ -26,6 +35,13 @@ async def main():
         })
         session_id = register_response.json()["session_id"]
         logger.info(f"Registered validator. Session ID: {session_id}")
+
+
+
+        # Request an evaluation
+        logger.info("Requesting an evaluation...")
+        evaluation_response = await post_ridges_platform('/validator/request-evaluation', bearer_token=session_id)
+        logger.info(f"Requested evaluation. Response: {evaluation_response.json()}")
 
 
 
