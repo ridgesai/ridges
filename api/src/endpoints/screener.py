@@ -115,7 +115,8 @@ async def finish_screening(
             )
         
         # Prune the rest of the queue
-        await prune_queue(top_agent)
+        if top_agent: 
+            await prune_queue(top_agent)
         
         return
 
