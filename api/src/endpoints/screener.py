@@ -7,7 +7,7 @@ import datetime
 import stat
 from time import timezone
 import uuid
-from typing import Optional
+from typing import Any, Optional
 from api.src.backend.entities import AgentStatus, EvaluationRun, SandboxStatus
 from logging import getLogger
 
@@ -40,22 +40,41 @@ def identify_validation_stage(hotkey: str) -> ValidationStage:
         # TODO: Verify sn58 format 
         return ValidationStage.VALIDATION
 
-async def start_screening(evaluation_id: str, screener_hotkey: str) -> bool:
+def match_validation_stage_to_agent_status(validation_stage: ValidationStage) -> AgentStatus:
+    if validation_stage == ValidationStage.SCREENER_1:
+        return AgentStatus.screening_1
+    elif validation_stage == ValidationStage.SCREENER_2:
+        return AgentStatus.screening_2
+    elif validation_stage == ValidationStage.VALIDATION:
+        return AgentStatus.evaluating
+
+async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
+    f"""
+    Temporarily returns a dict in format:
+     success: bool
+     runs_created: list[EvaluationRun]
+    """
     # TODO: Where is the eval inserted?
     # Get the evaluation, makes sure its screening and its the right hotkey making the request
-    validation_stage = identify_validation_stage(screener_hotkey)
+    validation_stage = identify_validation_stage(hotkey)
     evaluation = await get_evaluation_by_evaluation_id(evaluation_id=evaluation_id)
 
-    if not evaluation or validation_stage != identify_validation_stage(evaluation.validator_hotkey) or evaluation.validator_hotkey != screener_hotkey:
-        return False
+    if not evaluation or validation_stage != identify_validation_stage(evaluation.validator_hotkey) or evaluation.validator_hotkey != hotkey:
+        return {
+            "success": False,
+            "runs_created": []
+        }
 
     # Get the agent version, make sure thats in screening too
     agent = await get_agent_by_version(evaluation.version_id)
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
-    if not agent or agent.status not in SCREENING_STATUSES:
+    if not agent or agent.status != match_validation_stage_to_agent_status(validation_stage):
         logger.error(f"Tried to start agent {evaluation.version_id} screening but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
-        return False
+        return {
+            "success": False,
+            "runs_created": []
+        }
 
     # Once checks are in place, start the evaluation
     await update_evaluation_to_started(evaluation_id)
@@ -90,15 +109,19 @@ async def start_screening(evaluation_id: str, screener_hotkey: str) -> bool:
 
     # Insert eval runs
     await create_evaluation_runs(evaluation_runs=evaluation_runs)
-    
+
     # Update agent status
+    status = match_validation_stage_to_agent_status(validation_stage)
     await set_agent_status(
         version_id=agent.version_id, 
-        status=AgentStatus.screening_1 if validation_stage == ValidationStage.SCREENER_1 else AgentStatus.screening_2
+        status=status.value
     )
 
     # TODO: Broadcast status change?
-    return True
+    return {
+        "success": True,
+        "runs_created": evaluation_runs
+    }
 
 async def finish_screening(
     evaluation_id: str,
@@ -241,3 +264,7 @@ async def prune_queue(top_agent: TopAgentHotkey):
 
 async def handle_disconnect():
     pass
+
+async def finish_evaluation():
+    pass
+

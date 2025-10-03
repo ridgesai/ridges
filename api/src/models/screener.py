@@ -189,9 +189,9 @@ class Screener(Client):
 
     async def start_screening(self, evaluation_id: str) -> bool:
         """Handle start-evaluation message"""
-        from api.src.endpoints.screener import start_screening
+        from api.src.endpoints.screener import start_screening_new
 
-        result = start_screening(evaluation_id=evaluation_id, screener_hotkey=self.hotkey)
+        result = start_screening_new(evaluation_id=evaluation_id, screener_hotkey=self.hotkey)
         return result
         # Old code
         from api.src.models.evaluation import Evaluation

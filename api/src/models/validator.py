@@ -102,8 +102,8 @@ class Validator(Client):
             return False
 
         try:
-            async with get_transaction() as conn:
-                evaluation_runs = await evaluation.start(conn)
+            from api.src.endpoints.screener import start_screening as start_eval_new
+            evaluation_runs = await start_eval_new(evaluation_id=evaluation_id, hotkey=self.hotkey)
 
             message = {
                 "event": "evaluation",
