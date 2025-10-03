@@ -1,5 +1,6 @@
 import time
 import uuid
+from typing import Dict
 
 from fiber import Keypair
 from datetime import datetime
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 from fastapi.security import HTTPBearer
 from loggers.logging_utils import get_logger
 from fastapi import APIRouter, HTTPException, Depends
+from validator_2.utils.system_metrics import ValidatorHeartbeatMetrics
 
 logger = get_logger(__name__)
 
@@ -57,7 +59,7 @@ class Validator(BaseModel):
     time_connected: datetime
 
 # Map of session IDs to validator objects
-SESSION_ID_TO_VALIDATOR = {}
+SESSION_ID_TO_VALIDATOR: Dict[uuid.UUID, Validator] = {}
 
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header
@@ -148,3 +150,12 @@ async def validator_request_evaluation(
 
     logger.info(f"{validator.name}/{validator.hotkey} is requesting an evaluation")
     return ValidatorRequestEvaluationResponse(foo="bar")
+
+
+@router.post("/heartbeat")
+async def validator_heartbeat(
+    request: ValidatorHeartbeatMetrics,
+    validator: Validator = Depends(get_request_validator)
+) -> None:
+    logger.info(f"{validator.name}/{validator.hotkey} has sent heartbeat")
+    pass

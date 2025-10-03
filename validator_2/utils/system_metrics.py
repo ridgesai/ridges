@@ -4,26 +4,37 @@ System metrics collection utility for validators/screeners.
 
 import subprocess
 import asyncio
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Optional
 from loggers.logging_utils import get_logger
 
 logger = get_logger(__name__)
 
 try:
     import psutil
-
     PSUTIL_AVAILABLE = True
 except ImportError:
     logger.warning("psutil not available - system metrics will return None")
     PSUTIL_AVAILABLE = False
 
 
-async def get_system_metrics() -> Dict[str, Optional[float]]:
+@dataclass
+class ValidatorHeartbeatMetrics:
+    """System metrics for validator/screener machines."""
+    cpu_percent: Optional[float] = None
+    ram_percent: Optional[float] = None
+    ram_total_gb: Optional[float] = None
+    disk_percent: Optional[float] = None
+    disk_total_gb: Optional[float] = None
+    containers: Optional[int] = None
+
+
+async def get_validator_heartbeat_metrics() -> ValidatorHeartbeatMetrics:
     """
     Collect system metrics from this validator/screener machine.
-    
+
     Returns:
-        Dict containing:
+        SystemMetrics containing:
         - cpu_percent: CPU usage percentage (0-100)
         - ram_percent: RAM usage percentage (0-100)
         - ram_total_gb: Total RAM in GB
@@ -31,14 +42,7 @@ async def get_system_metrics() -> Dict[str, Optional[float]]:
         - disk_total_gb: Total disk space in GB
         - containers: Number of Docker containers running
     """
-    metrics = {
-        "cpu_percent": None,
-        "ram_percent": None,
-        "ram_total_gb": None,
-        "disk_percent": None,
-        "disk_total_gb": None,
-        "containers": None
-    }
+    metrics = ValidatorHeartbeatMetrics()
 
     if not PSUTIL_AVAILABLE:
         return metrics
@@ -46,21 +50,19 @@ async def get_system_metrics() -> Dict[str, Optional[float]]:
     try:
         # Get CPU usage (non-blocking)
         cpu_percent = psutil.cpu_percent(interval=None)
-        metrics["cpu_percent"] = round(float(cpu_percent), 1)
+        metrics.cpu_percent = round(float(cpu_percent), 1)
 
         # Get RAM usage percentage and total
         memory = psutil.virtual_memory()
-        metrics["ram_percent"] = round(float(memory.percent), 1)
-        metrics["ram_total_gb"] = round(float(memory.total) / (1024 ** 3), 1)  # Convert bytes to GB
+        metrics.ram_percent = round(float(memory.percent), 1)
+        metrics.ram_total_gb = round(float(memory.total) / (1024**3), 1)  # Convert bytes to GB
 
         # Get disk usage percentage and total for root filesystem
         disk = psutil.disk_usage('/')
-        metrics["disk_percent"] = round(float(disk.percent), 1)
-        metrics["disk_total_gb"] = round(float(disk.total) / (1024 ** 3), 1)  # Convert bytes to GB
+        metrics.disk_percent = round(float(disk.percent), 1)
+        metrics.disk_total_gb = round(float(disk.total) / (1024**3), 1)  # Convert bytes to GB
 
-        logger.debug(
-            f"Collected psutil metrics: CPU={metrics['cpu_percent']}%, RAM={metrics['ram_percent']}% ({metrics['ram_total_gb']}GB total), Disk={metrics['disk_percent']}% ({metrics['disk_total_gb']}GB total)"
-            )
+        logger.debug(f"Collected psutil metrics: CPU={metrics.cpu_percent}%, RAM={metrics.ram_percent}% ({metrics.ram_total_gb}GB total), Disk={metrics.disk_percent}% ({metrics.disk_total_gb}GB total)")
 
     except Exception as e:
         logger.warning(f"Error collecting psutil metrics: {e}")
@@ -81,7 +83,7 @@ async def get_system_metrics() -> Dict[str, Optional[float]]:
         if result.returncode == 0:
             # Count non-empty lines
             container_count = len([line for line in result.stdout.strip().split('\n') if line.strip()])
-            metrics["containers"] = container_count
+            metrics.containers = container_count
             logger.debug(f"Found {container_count} Docker containers")
         else:
             logger.warning(f"Docker ps failed with return code {result.returncode}: {result.stderr}")
