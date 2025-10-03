@@ -8,6 +8,7 @@ from api.src.backend.queries.agents import set_agent_status
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, update_evaluation_to_error
 from api.src.endpoints.agents import get_agent_by_version
 from api.src.endpoints.model_replacers import update_agent_status
+from api.src.endpoints.screener import finish_screening
 
 logger = logging.getLogger(__name__)
 
@@ -241,38 +242,8 @@ class Screener(Client):
     
     async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish screening evaluation"""
-        from api.src.models.evaluation import Evaluation     
-
-        SCREENING_STATUSES = ["screening_1", "screening_2"]   
-        
-        try:
-            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
-
-            if not evaluation or evaluation.status not in SCREENING_STATUSES or evaluation.validator_hotkey != self.hotkey:
-                logger.warning(f"Screener {self.hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
-                return
-
-            agent = await get_agent_by_version(evaluation.version_id)
-
-            if agent.status not in SCREENING_STATUSES:
-                logger.warning(f"Invalid status for miner agent: expected {evaluation.status}, agent is set to {agent.status}")
-
-            if errored:
-                """Error evaluation and reset agent"""
-                await update_evaluation_to_error(evaluation_id, reason)
-                # Very scuff, will remove when finalizing call chain
-                async with get_transaction() as conn:
-                    await Evaluation._update_agent_status(conn)
-                logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
-
-        finally:
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, in finally block")
-            # Single atomic reset and reassignment
-            async with Evaluation.get_lock():
-                self.set_available()
-                logger.info(f"Screener {self.hotkey}: Reset to available and looking for next agent")
-                await Evaluation.screen_next_awaiting_agent(self)
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, exiting finally block")
+        from api.src.endpoints.screener import finish_screening as new_finish_screening
+        await new_finish_screening(evaluation_id=evaluation_id, screener_hotkey=self.hotkey, errored=errored, reason=reason)
     
     @staticmethod
     async def get_first_available() -> Optional['Screener']:
