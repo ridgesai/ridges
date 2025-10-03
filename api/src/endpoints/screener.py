@@ -275,7 +275,7 @@ async def create_screener_evaluation(hotkey: str, agent: MinerAgent, screener: '
 async def create_evaluation_for_validator(version_id: str, validator_hotkey: str, combined_screener_score: float) -> str:
     max_set_id = await get_current_set_id()
 
-    existing_evaluation_id = get_evaluation_for_version_validator_and_set(
+    existing_evaluation_id = await get_evaluation_for_version_validator_and_set(
         version_id=version_id,
         validator_hotkey=validator_hotkey,
         set_id=max_set_id
@@ -305,7 +305,7 @@ async def prune_queue(top_agent: TopAgentHotkey):
     threshold = top_agent.avg_score - PRUNE_THRESHOLD
     max_set_id = await get_current_set_id()
 
-    prune_evaluations_in_queue(threshold, max_set_id)
+    await prune_evaluations_in_queue(threshold, max_set_id)
 
 async def handle_disconnect():
     pass
