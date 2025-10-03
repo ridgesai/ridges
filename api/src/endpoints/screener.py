@@ -8,7 +8,7 @@ import stat
 from time import timezone
 import uuid
 from typing import Optional
-from api.src.backend.entities import AgentStatus, Evaluation, EvaluationRun, SandboxStatus
+from api.src.backend.entities import AgentStatus, EvaluationRun, SandboxStatus
 from logging import getLogger
 
 from api.src.backend.queries.agents import get_top_agent, set_agent_status
@@ -54,7 +54,7 @@ async def start_screening(evaluation_id: str, screener_hotkey: str) -> bool:
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
     if not agent or agent.status not in SCREENING_STATUSES:
-        logger.error(f"Tried to start agent {evaluation.version_id} screening but either agent doesnt exist or invalid status; {agent.status if agent else "No agent"}")
+        logger.error(f"Tried to start agent {evaluation.version_id} screening but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
         return False
 
     # Once checks are in place, start the evaluation
