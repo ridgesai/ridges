@@ -17,6 +17,7 @@ from api.src.backend.queries.scores import get_combined_screener_score, get_curr
 from api.src.endpoints.agents import get_agent_by_version
 
 
+from api.src.endpoints.model_replacers import update_agent_status
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.models import TopAgentHotkey
 
@@ -70,11 +71,18 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
     if not agent or agent.status != match_validation_stage_to_agent_status(validation_stage):
-        logger.error(f"Tried to start agent {evaluation.version_id} screening but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
-        return {
-            "success": False,
-            "runs_created": []
-        }
+        # For some reason only screeners set the agent state before, and so validator stuck on waiting
+        if agent.status == "waiting":
+            await set_agent_status(
+                version_id=agent.version_id,
+                status=AgentStatus.evaluating.value
+            )
+        else:
+            logger.error(f"Tried to start agent {evaluation.version_id} validation but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
+            return {
+                "success": False,
+                "runs_created": []
+            }
 
     # Once checks are in place, start the evaluation
     await update_evaluation_to_started(evaluation_id)
