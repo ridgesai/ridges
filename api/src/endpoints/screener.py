@@ -64,6 +64,7 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     evaluation = await get_evaluation_by_evaluation_id(evaluation_id=evaluation_id)
 
     if not evaluation or validation_stage != identify_validation_stage(evaluation.validator_hotkey) or evaluation.validator_hotkey != hotkey:
+        print(f"FAIL1. Failed to create evaluation runs. Evaluation: {evaluation}, validation stage: {validation_stage}, other validation stage: {identify_validation_stage(evaluation.validator_hotkey)}")
         return {
             "success": False,
             "runs_created": []
@@ -74,6 +75,7 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
     if not agent or agent.status != match_validation_stage_to_agent_status(validation_stage):
+        print(f"FAIL2. Failed to create evaluation runs. agent: {agent}, matched vali stage: {match_validation_stage_to_agent_status(validation_stage)}")
         # For some reason only screeners set the agent state before, and so validator stuck on waiting
         if agent.status != "waiting":
             logger.error(f"Tried to start agent {evaluation.version_id} validation but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
