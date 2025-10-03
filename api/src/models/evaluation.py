@@ -97,7 +97,7 @@ class Evaluation:
         evaluation_runs = [
             EvaluationRun(
                 run_id=uuid.uuid4(),
-                evaluation_id=self.evaluation_id,
+                evaluation_id=uuid.UUID(self.evaluation_id),
                 swebench_instance_id=swebench_instance_id,
                 response=None,
                 error=None,
@@ -840,7 +840,12 @@ class Evaluation:
                 if evaluation:
                     logger.info(f"Auto-completing stuck evaluation {evaluation.evaluation_id} during startup recovery")
                     # During startup recovery, don't trigger notifications
-                    _ = await finish_evaluation(evaluation.evaluation_id, evaluation.validator_hotkey, errored=True, reason="Platform restarted")
+                    _ = await finish_evaluation(
+                        str(evaluation.evaluation_id),
+                        evaluation.validator_hotkey,
+                        errored=True,
+                        reason="Platform restarted"
+                    )
 
             # Cancel waiting screenings for all screener types
             waiting_screenings = await conn.fetch(
