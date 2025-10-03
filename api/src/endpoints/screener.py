@@ -3,9 +3,8 @@ All logic around screeners, including starting a screening, finishing it, handli
 """
 
 import asyncio
-import datetime
+from datetime import datetime, timezone
 import stat
-from time import timezone
 import uuid
 from typing import Any, Optional
 from api.src.backend.entities import AgentStatus, EvaluationRun, SandboxStatus

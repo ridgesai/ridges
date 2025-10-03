@@ -537,6 +537,7 @@ async def prune_evaluations_in_queue(conn: asyncpg.Connection, threshold: float,
     """, version_ids_to_prune)
 
 # Scuff. Need a better way to do general queries
+@db_operation
 async def get_evaluation_for_version_validator_and_set(
     conn: asyncpg.Connection,
     version_id: str,

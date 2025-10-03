@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 
-from api.src.backend.queries.evaluations import get_next_eval_dd
 from api.src.utils.auth import verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import QuestionSolveRateStats
