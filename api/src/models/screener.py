@@ -122,38 +122,3 @@ class Screener(Client):
         self.set_available()
         logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
         await Evaluation.handle_screener_disconnection(self.hotkey)
-
-    @staticmethod
-    async def get_first_available() -> Optional['Screener']:
-        """Read-only availability check - does NOT reserve screener"""
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        logger.debug(f"Checking {len(ws_manager.clients)} clients for available screener...")
-        for client in ws_manager.clients.values():
-            if client.get_type() == "screener" and client.status == "available":
-                logger.debug(f"Found available screener: {client.hotkey}")
-                return client
-        logger.warning("No available screeners found")
-        return None
-    
-    @staticmethod
-    async def get_first_available_and_reserve(stage: int) -> Optional['Screener']:
-        """Atomically find and reserve first available screener for specific stage - MUST be called within Evaluation lock"""
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        
-        for client in ws_manager.clients.values():
-            if (client.get_type() == "screener" and 
-                client.status == "available" and
-                client.is_available() and
-                client.stage == stage):
-                
-                # Immediately reserve to prevent race conditions
-                client.status = "reserving"
-                logger.info(f"Reserved stage {stage} screener {client.hotkey} for work assignment")
-                
-                return client
-        
-        logger.warning(f"No available stage {stage} screeners to reserve")
-        return None
-    
