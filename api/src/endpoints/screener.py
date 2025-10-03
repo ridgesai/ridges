@@ -3,6 +3,7 @@ All logic around screeners, including starting a screening, finishing it, handli
 """
 
 import asyncio
+import stat
 import uuid
 from typing import Optional
 from api.src.backend.entities import AgentStatus
@@ -95,12 +96,17 @@ async def finish_screening(
             # Score is too low, prune miner agent and don't create evaluations
             await set_agent_status(
                 version_id=agent.version_id,
-                status=AgentStatus.pruned
+                status=AgentStatus.pruned.value
             )
 
             await prune_queue(top_agent)
             
             return
+
+        await set_agent_status(
+            version_id=agent.version_id,
+            status=AgentStatus.waiting.value
+        )
 
         # Create validator evals
         # TODO: ADAM, replace with new connected valis map
