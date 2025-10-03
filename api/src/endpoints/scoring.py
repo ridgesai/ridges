@@ -267,6 +267,7 @@ async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_an
             # Include all evaluations (screeners and validators)
             await fully_reset_evaluations(version_id=version_id)
         else:
+            # TODO: use the newer better version
             await reset_validator_evaluations(version_id=version_id)
         
         return {

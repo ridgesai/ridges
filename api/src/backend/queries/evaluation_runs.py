@@ -324,8 +324,7 @@ async def reset_validator_evaluations(conn: asyncpg.Connection, version_id: str)
         WHERE evaluation_id = ANY($1::uuid[])
     """, evaluation_ids_to_cancel)
 
-
-
-
-
-
+@db_operation
+async def cancel_evaluation_runs(conn: asyncpg.Connection, evaluation_id: str):
+    """Cancel existing eval runs - e.g. for errored runs or disconnections etc"""
+    await conn.execute("UPDATE evaluation_runs SET status = 'cancelled' WHERE evaluation_id = $1", evaluation_id)

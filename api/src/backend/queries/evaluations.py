@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import logging
 import json
 
@@ -6,7 +6,7 @@ import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, EvaluationRunWithUsageDetails, AgentStatus
-from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
+from api.src.backend.queries.evaluation_runs import cancel_evaluation_runs, get_runs_with_usage_for_evaluation
 from api.src.backend.entities import EvaluationStatus
 
 logger = logging.getLogger(__name__)
@@ -451,3 +451,114 @@ async def update_evaluation_to_error(conn: asyncpg.Connection, evaluation_id: st
     )
 
     await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE evaluation_id = $1", evaluation_id)
+
+@db_operation
+async def update_evaluation_to_completed(conn: asyncpg.Connection, evaluation_id: str):
+    await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", evaluation_id) 
+
+@db_operation
+async def get_inference_success_rate(conn: asyncpg.Connection, evaluation_id: str) -> Tuple[int, int, float, bool]:
+    """Check inference success rate for this evaluation
+        
+    Returns:
+        tuple: (successful_count, total_count, success_rate, any_run_errored)
+    """
+    result = await conn.fetchrow("""
+        SELECT 
+            COUNT(*) as total_inferences,
+            COUNT(*) FILTER (WHERE status_code = 200) as successful_inferences,
+            COUNT(*) FILTER (WHERE er.error IS NOT NULL) > 0 as any_run_errored
+        FROM inferences i
+        JOIN evaluation_runs er ON i.run_id = er.run_id
+        WHERE er.evaluation_id = $1 AND er.status != 'cancelled'
+    """, evaluation_id)
+    
+    total = result['total_inferences'] or 0
+    successful = result['successful_inferences'] or 0
+    success_rate = successful / total if total > 0 else 1.0
+    any_run_errored = bool(result['any_run_errored'])
+    
+    return successful, total, success_rate, any_run_errored
+
+@db_operation
+async def reset_evaluation_to_waiting(conn: asyncpg.Connection, evaluation_id: str):
+    """Reset running evaluation back to waiting (for disconnections)"""
+    await conn.execute("UPDATE evaluations SET status = 'waiting', started_at = NULL WHERE evaluation_id = $1", evaluation_id)
+
+    # Reset running evaluation_runs to pending so they can be picked up again
+    await cancel_evaluation_runs(evaluation_id=evaluation_id)
+
+@db_operation
+async def prune_evaluations_in_queue(conn: asyncpg.Connection, threshold: float, max_set_id: int):
+    # Find evaluations with low screener scores that should be pruned
+    # We prune based on screener_score being below screening thresholds
+    low_score_evaluations = await conn.fetch("""
+        SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.screener_score
+        FROM evaluations e
+        JOIN miner_agents ma ON e.version_id = ma.version_id
+        WHERE e.set_id = $1 
+        AND e.status = 'waiting'
+        AND e.screener_score IS NOT NULL
+        AND e.screener_score < $2
+        AND ma.status NOT IN ('pruned', 'replaced')
+    """, max_set_id, threshold)
+    
+    if not low_score_evaluations:
+        return
+    
+    # Get unique version_ids to prune
+    version_ids_to_prune = list(set(eval['version_id'] for eval in low_score_evaluations))
+    
+    # Update evaluations to pruned status
+    await conn.execute("""
+        UPDATE evaluations 
+        SET status = 'pruned', finished_at = NOW() 
+        WHERE evaluation_id = ANY($1)
+    """, [eval['evaluation_id'] for eval in low_score_evaluations])
+    
+    # Update miner_agents to pruned status
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'pruned' 
+        WHERE version_id = ANY($1)
+    """, version_ids_to_prune)
+
+# Scuff. Need a better way to do general queries
+async def get_evaluation_for_version_validator_and_set(
+    conn: asyncpg.Connection,
+    version_id: str,
+    validator_hotkey: str,
+    set_id: int
+) -> Optional[str]:
+    evaluation_id = await conn.fetchval(
+        """
+        SELECT evaluation_id FROM evaluations 
+        WHERE version_id = $1 AND validator_hotkey = $2 AND set_id = $3
+    """,
+        version_id,
+        validator_hotkey,
+        set_id,
+    )
+
+    return evaluation_id
+
+@db_operation
+async def create_evaluation(
+    conn: asyncpg.Connection, 
+    evaluation_id: str, 
+    version_id: str, 
+    validator_hotkey: str, 
+    set_id: int, 
+    screener_score: float
+):
+    await conn.execute(
+        """
+        INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+        VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
+        """,
+        evaluation_id,
+        version_id,
+        validator_hotkey,
+        set_id,
+        screener_score,
+    )
