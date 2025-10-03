@@ -91,12 +91,12 @@ class Validator(Client):
         
         from api.src.models.evaluation import Evaluation
         evaluation = await Evaluation.get_by_id(evaluation_id)
-        
-        if not evaluation or evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+
+        if not evaluation or await evaluation.get_is_screening() or await evaluation.get_validator_hotkey() != self.hotkey:
             logger.warning(f"Validator {self.hotkey}: Invalid evaluation {evaluation_id}")
             return False
 
-        miner_agent = await get_agent_by_version_id(evaluation.version_id)
+        miner_agent = await get_agent_by_version_id(await evaluation.get_version_id())
         if not miner_agent:
             logger.error(f"Validator {self.hotkey}: Agent not found for evaluation {evaluation_id}")
             return False
@@ -163,7 +163,7 @@ class Validator(Client):
                 ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
                 LIMIT 1
             """, self.hotkey)
-    
+
     async def _check_and_start_next_evaluation(self):
         """Atomically check for and start next evaluation - MUST be called within lock"""
         from api.src.models.evaluation import Evaluation
