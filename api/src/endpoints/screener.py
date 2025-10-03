@@ -242,7 +242,7 @@ async def finish_screening(
 
 # TODO
 async def create_screener_evaluation(hotkey: str, agent: MinerAgent, screener: 'Screener'):
-    existing_evaluation = check_for_currently_running_eval(hotkey)
+    existing_evaluation = await check_for_currently_running_eval(hotkey)
 
     if existing_evaluation:
         logger.error(f"CRITICAL: Screener {hotkey} already has running evaluation {existing_evaluation['evaluation_id']} - refusing to create duplicate screening")
@@ -252,14 +252,14 @@ async def create_screener_evaluation(hotkey: str, agent: MinerAgent, screener: '
     set_id = await get_current_set_id()
     evaluation_id = str(uuid.uuid4())
 
-    create_evaluation(
+    await create_evaluation(
         evaluation_id=evaluation_id,
         version_id=agent.version_id,
         validator_hotkey=hotkey,
         set_id=set_id
     )
 
-    evaluation_runs = start_screening(evaluation_id, hotkey)
+    evaluation_runs = await start_screening(evaluation_id, hotkey)
 
     message = {
         "event": "screen-agent",
