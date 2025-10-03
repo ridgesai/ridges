@@ -1,13 +1,15 @@
 import time
 import uuid
-from typing import Dict
-
-from fiber import Keypair
 from datetime import datetime
-from pydantic import BaseModel
-from fastapi.security import HTTPBearer
-from loggers.logging_utils import get_logger
+from typing import Dict, Optional
+from uuid import UUID
+
+from api.src.backend.entities import EvaluationRun
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer
+from fiber import Keypair
+from loggers.logging_utils import get_logger
+from pydantic import BaseModel
 from validator_2.utils.system_metrics import ValidatorHeartbeatMetrics
 
 logger = get_logger(__name__)
@@ -57,16 +59,17 @@ class Validator(BaseModel):
     name: str
     hotkey: str
     time_connected: datetime
+    current_evaluation_id: Optional[UUID]
 
 # Map of session IDs to validator objects
-SESSION_ID_TO_VALIDATOR: Dict[uuid.UUID, Validator] = {}
+SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header
 # See validator_request_evaluation() and other endpoints for usage examples
 async def get_request_validator(token: str = Depends(HTTPBearer())) -> Validator:
     try:
-        session_id = uuid.UUID(token.credentials)
+        session_id = UUID(token.credentials)
     except ValueError:
         raise HTTPException(
             status_code=422,
@@ -93,7 +96,7 @@ class ValidatorRegistrationRequest(BaseModel):
     hotkey: str
 
 class ValidatorRegistrationResponse(BaseModel):
-    session_id: uuid.UUID
+    session_id: UUID
 
 @router.post("/register")
 async def validator_register(
@@ -158,4 +161,43 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> None:
     logger.info(f"{validator.name}/{validator.hotkey} has sent heartbeat")
+    pass
+
+
+def get_evaluation_id_for_run(run_id: UUID) -> UUID:
+    # TODO: Check db for evaluation id associated with run
+    pass
+
+
+def write_evaluation_run_to_db(evaluation_run: EvaluationRun) -> None:
+    # TODO: Write evaluation run to db
+    pass
+
+
+@router.post("/update-evaluation-run")
+async def update_evaluation_run(
+    evaluation_run: EvaluationRun,
+    validator: Validator = Depends(get_request_validator)
+) -> None:
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Validator {validator.hotkey} is not running an evaluation."
+        )
+
+    if evaluation_run.evaluation_id != validator.current_evaluation_id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Evaluation IDs do not match. Evaluation id: {evaluation_run.evaluation_id}, current validator's ({validator.hotkey} evaluation is: {validator.current_evaluation_id}"
+        )
+
+    db_evaluation_id = get_evaluation_id_for_run(evaluation_run.run_id)
+    if db_evaluation_id != validator.current_evaluation_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Evaluation ID mismatch: the provided evaluation ID ({evaluation_run.evaluation_id}) for run {evaluation_run.run_id} does not match the evaluation ID in the database ({db_evaluation_id})"
+        )
+
+    logger.info(f"{validator.name}/{validator.hotkey} has sent heartbeat")
+    write_evaluation_run_to_db(evaluation_run)
     pass
