@@ -145,3 +145,33 @@ async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
     """
     data = await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
     return [str(row["version_id"]) for row in data]
+
+
+
+
+
+
+# -------------------------------------------------------------------
+# NEW FUNCTIONS
+# -------------------------------------------------------------------
+
+@db_operation
+async def get_oldest_version_id_awaiting_screening(conn: asyncpg.Connection, screener_num: int) -> Optional[str]:
+    if (screener_num not in [1, 2]):
+        raise ValueError(f"Invalid screener number: {screener_num}")
+
+    row = await conn.fetchrow(f"""
+        SELECT version_id
+        FROM miner_agents
+        WHERE status = 'awaiting_screening_{screener_num}'
+        AND miner_hotkey NOT IN (
+            SELECT miner_hotkey FROM banned_hotkeys
+        )
+        ORDER BY created_at ASC
+        LIMIT 1;
+    """)
+
+    if not row:
+        return None
+
+    return str(row["version_id"])
