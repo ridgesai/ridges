@@ -31,8 +31,6 @@ class Screener(Client):
             return 1
         elif hotkey.startswith("screener-2-"):
             return 2
-        elif hotkey.startswith("i-0"):  # Legacy screeners are stage 1
-            return 1
         else:
             return None
             
