@@ -192,7 +192,7 @@ class Screener(Client):
         from api.src.endpoints.screener import start_screening_new
 
         result = start_screening_new(evaluation_id=evaluation_id, screener_hotkey=self.hotkey)
-        return result
+        return result["success"]
         # Old code
         from api.src.models.evaluation import Evaluation
         

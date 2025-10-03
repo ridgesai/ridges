@@ -103,13 +103,13 @@ class Validator(Client):
 
         try:
             from api.src.endpoints.screener import start_screening as start_eval_new
-            evaluation_runs = await start_eval_new(evaluation_id=evaluation_id, hotkey=self.hotkey)
+            start_state = await start_eval_new(evaluation_id=evaluation_id, hotkey=self.hotkey)
 
             message = {
                 "event": "evaluation",
                 "evaluation_id": str(evaluation_id),
                 "agent_version": miner_agent.model_dump(mode='json'),
-                "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
+                "evaluation_runs": [run.model_dump(mode='json') for run in start_state["runs_created"]]
             }
             
             # Send message to validator

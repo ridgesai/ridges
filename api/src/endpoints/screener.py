@@ -72,12 +72,7 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
     if not agent or agent.status != match_validation_stage_to_agent_status(validation_stage):
         # For some reason only screeners set the agent state before, and so validator stuck on waiting
-        if agent.status == "waiting":
-            await set_agent_status(
-                version_id=agent.version_id,
-                status=AgentStatus.evaluating.value
-            )
-        else:
+        if agent.status != "waiting":
             logger.error(f"Tried to start agent {evaluation.version_id} validation but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
             return {
                 "success": False,
@@ -88,48 +83,55 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     await update_evaluation_to_started(evaluation_id)
 
     # Get max set ids and the problem instance ids associated
-    current_set_id = await get_current_set_id()
-    problem_instance_ids = await get_problems_for_set_and_stage(set_id=current_set_id, validation_stage=validation_stage.value)
+    try:
+        current_set_id = await get_current_set_id()
+        problem_instance_ids = await get_problems_for_set_and_stage(set_id=current_set_id, validation_stage=validation_stage.value)
 
-    # Create eval runs and insert 
-    evaluation_runs = [
-        EvaluationRun(
-            run_id = uuid.uuid4(),
-            evaluation_id = evaluation_id,
-            swebench_instance_id = problem_id,
-            response=None,
-            error=None,
-            pass_to_fail_success=None,
-            fail_to_pass_success=None,
-            pass_to_pass_success=None,
-            fail_to_fail_success=None,
-            solved=None,
-            status = SandboxStatus.started,
-            started_at = datetime.now(timezone.utc),
-            sandbox_created_at=None,
-            patch_generated_at=None,
-            eval_started_at=None,
-            result_scored_at=None,
-            cancelled_at=None,
+        # Create eval runs and insert 
+        evaluation_runs = [
+            EvaluationRun(
+                run_id = uuid.uuid4(),
+                evaluation_id = evaluation_id,
+                swebench_instance_id = problem_id,
+                response=None,
+                error=None,
+                pass_to_fail_success=None,
+                fail_to_pass_success=None,
+                pass_to_pass_success=None,
+                fail_to_fail_success=None,
+                solved=None,
+                status = SandboxStatus.started,
+                started_at = datetime.now(timezone.utc),
+                sandbox_created_at=None,
+                patch_generated_at=None,
+                eval_started_at=None,
+                result_scored_at=None,
+                cancelled_at=None,
+            )
+            for problem_id in problem_instance_ids
+        ]
+
+        # Insert eval runs
+        await create_evaluation_runs(evaluation_runs=evaluation_runs)
+
+        # Update agent status
+        status = match_validation_stage_to_agent_status(validation_stage)
+        await set_agent_status(
+            version_id=agent.version_id, 
+            status=status.value
         )
-        for problem_id in problem_instance_ids
-    ]
 
-    # Insert eval runs
-    await create_evaluation_runs(evaluation_runs=evaluation_runs)
-
-    # Update agent status
-    status = match_validation_stage_to_agent_status(validation_stage)
-    await set_agent_status(
-        version_id=agent.version_id, 
-        status=status.value
-    )
-
-    # TODO: Broadcast status change?
-    return {
-        "success": True,
-        "runs_created": evaluation_runs
-    }
+        # TODO: Broadcast status change?
+        return {
+            "success": True,
+            "runs_created": evaluation_runs
+        }
+    except Exception as e:
+        logger.error(f"Error starting evaluation: {e}")
+        return {
+            "success": False,
+            "runs_created": []
+        }
 
 async def finish_screening(
     evaluation_id: str,
