@@ -2,13 +2,7 @@ import logging
 from typing import Literal, Optional, List
 import asyncpg
 
-from api.src.backend.entities import Client, AgentStatus, MinerAgent
-from api.src.backend.db_manager import get_transaction
-from api.src.backend.queries.agents import set_agent_status
-from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, update_evaluation_to_error
-from api.src.endpoints.agents import get_agent_by_version
-from api.src.endpoints.model_replacers import update_agent_status
-from api.src.endpoints.screener import finish_screening
+from api.src.backend.entities import Client
 
 logger = logging.getLogger(__name__)
 
@@ -29,85 +23,6 @@ class Screener(Client):
     disk_percent: Optional[float] = None
     disk_total_gb: Optional[float] = None
     containers: Optional[int] = None
-
-    @staticmethod
-    def get_stage(hotkey: str) -> Optional[int]:
-        """Determine screening stage based on hotkey"""
-        if hotkey.startswith("screener-1-"):
-            return 1
-        elif hotkey.startswith("screener-2-"):
-            return 2
-        elif hotkey.startswith("i-0"):  # Legacy screeners are stage 1
-            return 1
-        else:
-            return None
-
-    @staticmethod
-    async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> tuple[Optional[float], Optional[str]]:
-        """Calculate combined screener score as (questions solved by both) / (questions asked by both)
-        
-        Returns:
-            tuple[Optional[float], Optional[str]]: (score, error_message)
-            - score: The calculated score, or None if calculation failed
-            - error_message: None if successful, error description if failed
-        """
-        # Get evaluation IDs for both screener stages
-        stage_1_eval_id = await conn.fetchval(
-            """
-            SELECT evaluation_id FROM evaluations 
-            WHERE version_id = $1 
-            AND validator_hotkey LIKE 'screener-1-%'
-            AND status = 'completed'
-            ORDER BY created_at DESC 
-            LIMIT 1
-            """,
-            version_id
-        )
-        
-        stage_2_eval_id = await conn.fetchval(
-            """
-            SELECT evaluation_id FROM evaluations 
-            WHERE version_id = $1 
-            AND validator_hotkey LIKE 'screener-2-%'
-            AND status = 'completed'
-            ORDER BY created_at DESC 
-            LIMIT 1
-            """,
-            version_id
-        )
-        
-        if not stage_1_eval_id or not stage_2_eval_id:
-            missing = []
-            if not stage_1_eval_id:
-                missing.append("stage-1")
-            if not stage_2_eval_id:
-                missing.append("stage-2")
-            return None, f"Missing completed screener evaluation(s): {', '.join(missing)}"
-            
-        # Get solved count and total count for both evaluations
-        results = await conn.fetch(
-            """
-            SELECT 
-                SUM(CASE WHEN solved THEN 1 ELSE 0 END) as solved_count,
-                COUNT(*) as total_count
-            FROM evaluation_runs 
-            WHERE evaluation_id = ANY($1::uuid[])
-            AND status != 'cancelled'
-            """,
-            [stage_1_eval_id, stage_2_eval_id]
-        )
-        
-        if not results or len(results) == 0:
-            return None, f"No evaluation runs found for screener evaluations {stage_1_eval_id} and {stage_2_eval_id}"
-            
-        result = results[0]
-        solved_count = result['solved_count'] or 0
-        total_count = result['total_count'] or 0
-        
-        if total_count == 0:
-            return None, f"No evaluation runs to calculate score from (total_count=0)"
-            
-        return solved_count / total_count, None
 
     @property
     def stage(self) -> Optional[int]:
@@ -186,13 +101,6 @@ class Screener(Client):
     @property
     def screening_agent_name(self) -> Optional[str]:
         return self.current_agent_name
-
-    async def start_screening(self, evaluation_id: str) -> bool:
-        """Handle start-evaluation message"""
-        from api.src.endpoints.screener import start_screening_new
-
-        result = start_screening_new(evaluation_id=evaluation_id, screener_hotkey=self.hotkey)
-        return result["success"]
     
     async def connect(self):
         """Handle screener connection"""
@@ -214,12 +122,7 @@ class Screener(Client):
         self.set_available()
         logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
         await Evaluation.handle_screener_disconnection(self.hotkey)
-    
-    async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
-        """Finish screening evaluation"""
-        from api.src.endpoints.screener import finish_screening as new_finish_screening
-        await new_finish_screening(evaluation_id=evaluation_id, screener_hotkey=self.hotkey, errored=errored, reason=reason)
-    
+
     @staticmethod
     async def get_first_available() -> Optional['Screener']:
         """Read-only availability check - does NOT reserve screener"""

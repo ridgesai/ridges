@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Dict, Any
 from datetime import datetime
 
 from api.src.backend.entities import Client
+from api.src.endpoints.screener import finish_screening
 from loggers.logging_utils import get_logger
 from typing import Union
 
@@ -42,7 +43,7 @@ async def handle_inform_evaluation_completed(
             logger.info(f"Called finish_evaluation for {evaluation_id}")
         elif client.get_type() == "screener":
             logger.info(f"Calling finish_screening for {evaluation_id}")
-            await client.finish_screening(evaluation_id)
+            await finish_screening(evaluation_id, client.hotkey)
             logger.info(f"Called finish_screening for {evaluation_id}")
         else:
             logger.warning(f"Unknown client type when trying to finish evaluation {evaluation_id}")
