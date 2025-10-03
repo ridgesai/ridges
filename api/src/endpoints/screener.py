@@ -44,13 +44,19 @@ def identify_validation_stage(hotkey: str) -> ValidationStage:
         # TODO: Verify sn58 format 
         return ValidationStage.VALIDATION
 
-def match_validation_stage_to_agent_status(validation_stage: ValidationStage) -> AgentStatus:
-    if validation_stage == ValidationStage.SCREENER_1:
-        return AgentStatus.screening_1
-    elif validation_stage == ValidationStage.SCREENER_2:
-        return AgentStatus.screening_2
-    elif validation_stage == ValidationStage.VALIDATION:
-        return AgentStatus.evaluating
+def match_validation_stage_to_running_agent_status(validation_stage: ValidationStage) -> AgentStatus:
+    return {
+        ValidationStage.SCREENER_1: AgentStatus.screening_1,
+        ValidationStage.SCREENER_2: AgentStatus.screening_2,
+        ValidationStage.VALIDATION: AgentStatus.evaluating
+    }[validation_stage]
+
+def match_validation_stage_to_waiting_agent_status(validation_stage: ValidationStage) -> AgentStatus:
+    return {
+        ValidationStage.SCREENER_1: AgentStatus.awaiting_screening_1,
+        ValidationStage.SCREENER_2: AgentStatus.awaiting_screening_2,
+        ValidationStage.VALIDATION: AgentStatus.waiting
+    }[validation_stage]
 
 async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     f"""
@@ -74,8 +80,8 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     agent = await get_agent_by_version(evaluation.version_id)
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
-    if not agent or agent.status != match_validation_stage_to_agent_status(validation_stage):
-        print(f"FAIL2. Failed to create evaluation runs. agent: {agent}, matched vali stage: {match_validation_stage_to_agent_status(validation_stage)}")
+    if not agent or agent.status != match_validation_stage_to_waiting_agent_status(validation_stage):
+        print(f"FAIL2. Failed to create evaluation runs. agent: [{agent}], matched vali stage: {match_validation_stage_to_running_agent_status(validation_stage)}, matched waiting vali stage: {match_validation_stage_to_waiting_agent_status(validation_stage)}")
         # For some reason only screeners set the agent state before, and so validator stuck on waiting
         if agent.status != "waiting":
             logger.error(f"Tried to start agent {evaluation.version_id} validation but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
@@ -120,9 +126,9 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
         await create_evaluation_runs(evaluation_runs=evaluation_runs)
 
         # Update agent status
-        status = match_validation_stage_to_agent_status(validation_stage)
+        status = match_validation_stage_to_running_agent_status(validation_stage)
         await set_agent_status(
-            version_id=agent.version_id, 
+            version_id=str(agent.version_id),
             status=status.value
         )
 
