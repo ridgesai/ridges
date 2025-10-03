@@ -35,7 +35,6 @@ s3_manager = S3Manager()
 internal_tools = InternalTools()
 
 SCREENER_IP_LIST = [
-    "10.0.0.19", # local
     "3.89.93.137", # 1-1
     "35.174.155.46", # 1-2
     "3.82.227.252", # 1-3
