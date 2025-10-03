@@ -1,6 +1,7 @@
 from typing import Optional, List
 import logging
 import json
+import uuid
 
 import asyncpg
 
@@ -440,3 +441,18 @@ async def get_miner_hotkey_from_version_id(conn: asyncpg.Connection, version_id:
         FROM miner_agents 
         WHERE version_id = $1
     """, version_id)
+
+
+
+
+
+
+
+
+
+
+
+# -------------------------------------------------------------------
+# NEW FUNCTIONS
+# -------------------------------------------------------------------
+
