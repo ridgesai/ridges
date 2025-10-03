@@ -1,6 +1,4 @@
-import asyncio
 import os
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
@@ -9,7 +7,6 @@ import uuid
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.models.evaluation import Evaluation
-from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request, verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
@@ -33,21 +30,7 @@ treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 internal_tools = InternalTools()
 
-async def tell_validators_to_set_weights():
-    """Tell validators to set their weights."""
-
-    for validator in await Validator.get_connected():
-        await validator.websocket.send_json({"event": "set-weights"})
-
-    logger.info(f"Sent weight setting event to all validators")
-
-async def run_weight_setting_loop(minutes: int):
-    while True:
-        await tell_validators_to_set_weights()
-        await asyncio.sleep(minutes * 20)
-
 ## Actual endpoints ##
-
 async def weight_receiving_agent():
     '''
     This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
@@ -132,11 +115,6 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
         logger.error(f"Error banning agents: {e}")
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
     
-
-async def trigger_weight_set():
-    await tell_validators_to_set_weights()
-    return {"message": "Successfully triggered weight update"}
-
 async def approve_version(version_id: str, set_id: int, approval_password: str):
     """Approve a version ID using threshold scoring logic
     
@@ -434,7 +412,6 @@ public_routes = [
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
-    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/check-evaluation-status", check_evaluation_status, ["GET"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
