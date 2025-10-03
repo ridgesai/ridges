@@ -666,19 +666,6 @@ class Evaluation:
             return float(progress)
 
     @staticmethod
-    async def check_miner_has_no_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
-        """Check if miner has any running evaluations"""
-        has_running = await conn.fetchval(
-            """
-            SELECT EXISTS(SELECT 1 FROM evaluations e 
-            JOIN miner_agents ma ON e.version_id = ma.version_id 
-            WHERE ma.miner_hotkey = $1 AND e.status = 'running')
-        """,
-            miner_hotkey,
-        )
-        return not has_running
-
-    @staticmethod
     async def replace_old_agents(conn: asyncpg.Connection, miner_hotkey: str) -> None:
         """Replace all old agents and their evaluations for a miner"""
         # Replace old agents

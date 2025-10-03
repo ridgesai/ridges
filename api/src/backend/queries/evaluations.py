@@ -388,6 +388,17 @@ async def does_validator_have_running_evaluation(
     )
 
 @db_operation
+async def does_miner_have_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
+    return await conn.fetchval(
+        """
+        SELECT EXISTS(SELECT 1 FROM evaluations e 
+        JOIN miner_agents ma ON e.version_id = ma.version_id 
+        WHERE ma.miner_hotkey = $1 AND e.status = 'running')
+        """,
+        miner_hotkey
+    )
+
+@db_operation
 async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
@@ -585,4 +596,33 @@ async def create_evaluation_runs(
     await conn.executemany(
         "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, status, started_at) VALUES ($1, $2, $3, $4, $5)",
         [(run.run_id, run.evaluation_id, run.swebench_instance_id, run.status.value, run.started_at) for run in evaluation_runs],
+    )
+
+@db_operation
+async def replace_old_agents(conn: asyncpg.Connection, miner_hotkey: str) -> None:
+    """Replace all old agents and their evaluations for a miner"""
+    # Replace old agents
+    await conn.execute("UPDATE miner_agents SET status = 'replaced' WHERE miner_hotkey = $1 AND status != 'scored'", miner_hotkey)
+
+    # Replace their evaluations
+    await conn.execute(
+        """
+        UPDATE evaluations SET status = 'replaced' 
+        WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = $1)
+        AND status IN ('waiting', 'running')
+    """,
+        miner_hotkey,
+    )
+
+    # Cancel evaluation_runs for replaced evaluations
+    await conn.execute(
+        """
+        UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() 
+        WHERE evaluation_id IN (
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = $1)
+            AND status = 'replaced'
+        )
+    """,
+        miner_hotkey,
     )

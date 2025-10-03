@@ -193,36 +193,6 @@ class Screener(Client):
 
         result = start_screening_new(evaluation_id=evaluation_id, screener_hotkey=self.hotkey)
         return result["success"]
-        # Old code
-        from api.src.models.evaluation import Evaluation
-        
-        evaluation = await Evaluation.get_by_id(evaluation_id)
-        if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
-            return False
-        
-        async with get_transaction() as conn:
-            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-            agent_status = AgentStatus.from_string(agent["status"]) if agent else None
-            
-            # Check if agent is in the appropriate screening status for this screener stage
-            expected_status = getattr(AgentStatus, f"screening_{self.stage}")
-            if not agent or agent_status != expected_status:
-                logger.info(f"Stage {self.stage} screener {self.hotkey}: tried to start screening but agent is not in screening_{self.stage} status (current: {agent['status'] if agent else 'None'})")
-                return False
-            agent_name = agent["agent_name"]
-            agent_hotkey = agent["miner_hotkey"]
-
-            await evaluation.start(conn)
-            old_status = self.status
-            self.status = f"screening"
-            self.current_evaluation_id = evaluation_id
-            self.current_agent_name = agent_name
-            self.current_agent_hotkey = agent_hotkey
-            logger.info(f"Screener {self.hotkey}: {old_status} -> screening {agent_name}")
-            
-            # Broadcast status change
-            self._broadcast_status_change()
-            return True
     
     async def connect(self):
         """Handle screener connection"""

@@ -162,7 +162,7 @@ async def finish_screening(
         logger.info(f"Screener {screener_hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
     
     # Check inference success rate. If errored, set the screening back to awaiting and update this evaluation with errored 
-    successful, total, success_rate, any_run_errored = await get_inference_success_rate(evaluation_id=evaluation_id)
+    _, total, success_rate, any_run_errored = await get_inference_success_rate(evaluation_id=evaluation_id)
 
     if total > 0 and success_rate < 0.5 and any_run_errored:
         await reset_evaluation_to_waiting(evaluation_id)

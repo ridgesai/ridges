@@ -151,3 +151,24 @@ async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: st
         status,
         version_id
     )
+
+@db_operation
+async def upload_miner_agent(
+    conn: asyncpg.Connection,
+    version_id: str,
+    miner_hotkey: str,
+    agent_name: str,
+    version_num: int,
+    ip_address: str
+):
+    await conn.execute(
+        """
+            INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+            VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
+        """,
+        version_id,
+        miner_hotkey,
+        agent_name,
+        version_num,
+        ip_address
+    )
