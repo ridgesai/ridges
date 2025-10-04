@@ -80,8 +80,8 @@ async def start_screening(evaluation_id: str, hotkey: str) -> dict[str, Any]:
     agent = await get_agent_by_version(evaluation.version_id)
 
     # TODO: in old version this is set to screening by this point. Why? When allocated to screeners? Should be set here
-    if not agent or agent.status != match_validation_stage_to_waiting_agent_status(validation_stage):
-        print(f"FAIL2. Failed to create evaluation runs. agent: [{agent}], matched vali stage: {match_validation_stage_to_running_agent_status(validation_stage)}, matched waiting vali stage: {match_validation_stage_to_waiting_agent_status(validation_stage)}")
+    if not agent or agent.status != match_validation_stage_to_waiting_agent_status(validation_stage).value:
+        print(f"FAIL2. Failed to create evaluation runs. agent: [{agent}], matched vali stage: {match_validation_stage_to_running_agent_status(validation_stage).value}, matched waiting vali stage: {match_validation_stage_to_waiting_agent_status(validation_stage).value}")
         # For some reason only screeners set the agent state before, and so validator stuck on waiting
         if agent.status != "waiting":
             logger.error(f"Tried to start agent {evaluation.version_id} validation but either agent doesn't exist or invalid status; {agent.status if agent else 'No agent'}")
