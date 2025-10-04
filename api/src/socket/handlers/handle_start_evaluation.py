@@ -1,6 +1,7 @@
 from typing import Dict, Any
 
 from api.src.backend.entities import Client
+from api.src.endpoints.screener import start_screening
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
@@ -21,7 +22,8 @@ async def handle_start_evaluation(
     
     # Use appropriate start method based on client type
     if client.get_type() == "screener":
-        success = await client.start_screening(evaluation_id)
+        start_screening = await start_screening(evaluation_id, client.client_id)
+        success = start_screening["success"]
         action = "Screening"
     elif client.get_type() == "validator":
         success = await client.start_evaluation(evaluation_id)

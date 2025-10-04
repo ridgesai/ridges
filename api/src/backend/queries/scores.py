@@ -1,5 +1,6 @@
 from datetime import timezone
 import logging
+from typing import Optional
 from uuid import UUID
 import asyncpg
 from api.src.backend.db_manager import db_operation
@@ -248,3 +249,132 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
         "epoch_0_time": epoch_0_time,
         "epoch_length_minutes": epoch_length_minutes
     }
+
+@db_operation
+async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> tuple[Optional[float], Optional[str]]:
+        """Calculate combined screener score as (questions solved by both) / (questions asked by both)
+        
+        Returns:
+            tuple[Optional[float], Optional[str]]: (score, error_message)
+            - score: The calculated score, or None if calculation failed
+            - error_message: None if successful, error description if failed
+        """
+        # Get evaluation IDs for both screener stages
+        stage_1_eval_id = await conn.fetchval(
+            """
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id = $1 
+            AND validator_hotkey LIKE 'screener-1-%'
+            AND status = 'completed'
+            ORDER BY created_at DESC 
+            LIMIT 1
+            """,
+            version_id
+        )
+        
+        stage_2_eval_id = await conn.fetchval(
+            """
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id = $1 
+            AND validator_hotkey LIKE 'screener-2-%'
+            AND status = 'completed'
+            ORDER BY created_at DESC 
+            LIMIT 1
+            """,
+            version_id
+        )
+        
+        if not stage_1_eval_id or not stage_2_eval_id:
+            missing = []
+            if not stage_1_eval_id:
+                missing.append("stage-1")
+            if not stage_2_eval_id:
+                missing.append("stage-2")
+            return None, f"Missing completed screener evaluation(s): {', '.join(missing)}"
+            
+        # Get solved count and total count for both evaluations
+        results = await conn.fetch(
+            """
+            SELECT 
+                SUM(CASE WHEN solved THEN 1 ELSE 0 END) as solved_count,
+                COUNT(*) as total_count
+            FROM evaluation_runs 
+            WHERE evaluation_id = ANY($1::uuid[])
+            AND status != 'cancelled'
+            """,
+            [stage_1_eval_id, stage_2_eval_id]
+        )
+        
+        if not results or len(results) == 0:
+            return None, f"No evaluation runs found for screener evaluations {stage_1_eval_id} and {stage_2_eval_id}"
+            
+        result = results[0]
+        solved_count = result['solved_count'] or 0
+        total_count = result['total_count'] or 0
+        
+        if total_count == 0:
+            return None, f"No evaluation runs to calculate score from (total_count=0)"
+            
+        return solved_count / total_count, None
+
+@db_operation
+async def get_current_set_id(conn: asyncpg.Connection) -> int:
+    max_set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+    return max_set_id
+
+@db_operation
+async def update_innovation_score(conn: asyncpg.Connection, version_id: str):
+    """Calculate and update innovation score for this evaluation's agent in one atomic query"""
+    try:
+        # Single atomic query that calculates and updates innovation score
+        await conn.execute("""
+            WITH agent_runs AS (
+                -- Get all result_scored runs for this agent
+                SELECT
+                    r.swebench_instance_id,
+                    r.solved,
+                    r.started_at,
+                    r.run_id
+                FROM evaluation_runs r
+                JOIN evaluations e ON e.evaluation_id = r.evaluation_id
+                WHERE e.version_id = $1
+                    AND r.status = 'result_scored'
+            ),
+            runs_with_prior AS (
+                -- Calculate prior solved ratio for each run using window functions
+                SELECT
+                    swebench_instance_id,
+                    solved,
+                    started_at,
+                    run_id,
+                    -- Calculate average solve rate for this instance before this run
+                    COALESCE(
+                        AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END) 
+                        OVER (
+                            PARTITION BY swebench_instance_id 
+                            ORDER BY started_at 
+                            ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                        ), 0.0
+                    ) AS prior_solved_ratio
+                FROM agent_runs
+            ),
+            innovation_calculation AS (
+                SELECT
+                    COALESCE(
+                        AVG((CASE WHEN solved THEN 1.0 ELSE 0.0 END) - prior_solved_ratio), 0.0
+                    ) AS innovation_score
+                FROM runs_with_prior
+            )
+            UPDATE miner_agents 
+            SET innovation = (SELECT innovation_score FROM innovation_calculation)
+            WHERE version_id = $1
+        """, version_id)
+        
+        
+    except Exception as e:
+        logger.error(f"Failed to calculate innovation score for agent {version_id}: {e}")
+        # Set innovation score to NULL on error to indicate calculation failure
+        await conn.execute(
+            "UPDATE miner_agents SET innovation = NULL WHERE version_id = $1",
+            version_id
+        )

@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Tuple
 import logging
 import json
 
@@ -6,7 +6,7 @@ import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, EvaluationRunWithUsageDetails, AgentStatus
-from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
+from api.src.backend.queries.evaluation_runs import cancel_evaluation_runs, get_runs_with_usage_for_evaluation
 from api.src.backend.entities import EvaluationStatus
 
 logger = logging.getLogger(__name__)
@@ -388,6 +388,17 @@ async def does_validator_have_running_evaluation(
     )
 
 @db_operation
+async def does_miner_have_running_evaluations(conn: asyncpg.Connection, miner_hotkey: str) -> bool:
+    return await conn.fetchval(
+        """
+        SELECT EXISTS(SELECT 1 FROM evaluations e 
+        JOIN miner_agents ma ON e.version_id = ma.version_id 
+        WHERE ma.miner_hotkey = $1 AND e.status = 'running')
+        """,
+        miner_hotkey
+    )
+
+@db_operation
 async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Evaluation]:
     result = await conn.fetchrow(
         """
@@ -440,3 +451,267 @@ async def get_miner_hotkey_from_version_id(conn: asyncpg.Connection, version_id:
         FROM miner_agents 
         WHERE version_id = $1
     """, version_id)
+
+@db_operation
+async def update_evaluation_to_error(conn: asyncpg.Connection, evaluation_id: str, error_reason: str):
+    # We can asyncio.gather, but will do this post stability to reduce complexity
+    await conn.execute(
+        "UPDATE evaluations SET status = 'error', finished_at = NOW(), terminated_reason = $1 WHERE evaluation_id = $2",
+        error_reason,
+        evaluation_id 
+    )
+
+    await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE evaluation_id = $1", evaluation_id)
+
+@db_operation
+async def update_evaluation_to_completed(conn: asyncpg.Connection, evaluation_id: str):
+    await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", evaluation_id) 
+
+@db_operation
+async def get_inference_success_rate(conn: asyncpg.Connection, evaluation_id: str) -> Tuple[int, int, float, bool]:
+    """Check inference success rate for this evaluation
+        
+    Returns:
+        tuple: (successful_count, total_count, success_rate, any_run_errored)
+    """
+    result = await conn.fetchrow("""
+        SELECT 
+            COUNT(*) as total_inferences,
+            COUNT(*) FILTER (WHERE status_code = 200) as successful_inferences,
+            COUNT(*) FILTER (WHERE er.error IS NOT NULL) > 0 as any_run_errored
+        FROM inferences i
+        JOIN evaluation_runs er ON i.run_id = er.run_id
+        WHERE er.evaluation_id = $1 AND er.status != 'cancelled'
+    """, evaluation_id)
+    
+    total = result['total_inferences'] or 0
+    successful = result['successful_inferences'] or 0
+    success_rate = successful / total if total > 0 else 1.0
+    any_run_errored = bool(result['any_run_errored'])
+    
+    return successful, total, success_rate, any_run_errored
+
+@db_operation
+async def reset_evaluation_to_waiting(conn: asyncpg.Connection, evaluation_id: str):
+    """Reset running evaluation back to waiting (for disconnections)"""
+    await conn.execute("UPDATE evaluations SET status = 'waiting', started_at = NULL WHERE evaluation_id = $1", evaluation_id)
+
+    # Reset running evaluation_runs to pending so they can be picked up again
+    await cancel_evaluation_runs(evaluation_id=evaluation_id)
+
+@db_operation 
+async def update_evaluation_to_started(conn: asyncpg.Connection, evaluation_id: str):
+    await conn.execute("UPDATE evaluations SET status = 'running', started_at = NOW() WHERE evaluation_id = $1", evaluation_id) 
+
+
+@db_operation
+async def get_problems_for_set_and_stage(conn: asyncpg.Connection, set_id: int, validation_stage: str) -> list[str]:
+    swebench_instance_ids_data = await conn.fetch(
+        "SELECT swebench_instance_id FROM evaluation_sets WHERE set_id = $1 AND type = $2", set_id, validation_stage
+    )
+
+    return [row["swebench_instance_id"] for row in swebench_instance_ids_data]
+
+@db_operation
+async def prune_evaluations_in_queue(conn: asyncpg.Connection, threshold: float, max_set_id: int):
+    # Find evaluations with low screener scores that should be pruned
+    # We prune based on screener_score being below screening thresholds
+    low_score_evaluations = await conn.fetch("""
+        SELECT e.evaluation_id, e.version_id, e.validator_hotkey, e.screener_score
+        FROM evaluations e
+        JOIN miner_agents ma ON e.version_id = ma.version_id
+        WHERE e.set_id = $1 
+        AND e.status = 'waiting'
+        AND e.screener_score IS NOT NULL
+        AND e.screener_score < $2
+        AND ma.status NOT IN ('pruned', 'replaced')
+    """, max_set_id, threshold)
+    
+    if not low_score_evaluations:
+        return
+    
+    # Get unique version_ids to prune
+    version_ids_to_prune = list(set(eval['version_id'] for eval in low_score_evaluations))
+    
+    # Update evaluations to pruned status
+    await conn.execute("""
+        UPDATE evaluations 
+        SET status = 'pruned', finished_at = NOW() 
+        WHERE evaluation_id = ANY($1)
+    """, [eval['evaluation_id'] for eval in low_score_evaluations])
+    
+    # Update miner_agents to pruned status
+    await conn.execute("""
+        UPDATE miner_agents 
+        SET status = 'pruned' 
+        WHERE version_id = ANY($1)
+    """, version_ids_to_prune)
+
+# Scuff. Need a better way to do general queries
+@db_operation
+async def get_evaluation_for_version_validator_and_set(
+    conn: asyncpg.Connection,
+    version_id: str,
+    validator_hotkey: str,
+    set_id: int
+) -> Optional[str]:
+    evaluation_id = await conn.fetchval(
+        """
+        SELECT evaluation_id FROM evaluations 
+        WHERE version_id = $1 AND validator_hotkey = $2 AND set_id = $3
+    """,
+        version_id,
+        validator_hotkey,
+        set_id,
+    )
+
+    return evaluation_id
+
+@db_operation
+async def create_evaluation(
+    conn: asyncpg.Connection, 
+    evaluation_id: str, 
+    version_id: str, 
+    validator_hotkey: str, 
+    set_id: int, 
+    screener_score: Optional[float] = None
+):
+    if screener_score:
+        return await conn.execute(
+            """
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at, screener_score)
+            VALUES ($1, $2, $3, $4, 'waiting', NOW(), $5)
+            """,
+            evaluation_id,
+            version_id,
+            validator_hotkey,
+            set_id,
+            screener_score
+        )
+    else:
+        return await conn.execute(
+            """
+            INSERT INTO evaluations (evaluation_id, version_id, validator_hotkey, set_id, status, created_at)
+            VALUES ($1, $2, $3, $4, 'running', NOW())
+            """,
+            evaluation_id,
+            version_id,
+            validator_hotkey,
+            set_id
+        )
+
+@db_operation
+async def create_evaluation_runs(
+    conn: asyncpg.Connection,
+    evaluation_runs: list[EvaluationRun]
+):
+    await conn.executemany(
+        "INSERT INTO evaluation_runs (run_id, evaluation_id, swebench_instance_id, status, started_at) VALUES ($1, $2, $3, $4, $5)",
+        [(run.run_id, run.evaluation_id, run.swebench_instance_id, run.status.value, run.started_at) for run in evaluation_runs],
+    )
+
+@db_operation
+async def replace_old_agents(conn: asyncpg.Connection, miner_hotkey: str) -> None:
+    """Replace all old agents and their evaluations for a miner"""
+    # Replace old agents
+    await conn.execute("UPDATE miner_agents SET status = 'replaced' WHERE miner_hotkey = $1 AND status != 'scored'", miner_hotkey)
+
+    # Replace their evaluations
+    await conn.execute(
+        """
+        UPDATE evaluations SET status = 'replaced' 
+        WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = $1)
+        AND status IN ('waiting', 'running')
+    """,
+        miner_hotkey,
+    )
+
+    # Cancel evaluation_runs for replaced evaluations
+    await conn.execute(
+        """
+        UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() 
+        WHERE evaluation_id IN (
+            SELECT evaluation_id FROM evaluations 
+            WHERE version_id IN (SELECT version_id FROM miner_agents WHERE miner_hotkey = $1)
+            AND status = 'replaced'
+        )
+    """,
+        miner_hotkey,
+    )
+
+@db_operation
+async def get_progress(conn: asyncpg.Connection, evaluation_id: str) -> float:
+    """Get progress of evaluation across all runs"""
+    progress = await conn.fetchval("""
+        SELECT COALESCE(AVG(
+            CASE status
+                WHEN 'started' THEN 0.2
+                WHEN 'sandbox_created' THEN 0.4
+                WHEN 'patch_generated' THEN 0.6
+                WHEN 'eval_started' THEN 0.8
+                WHEN 'result_scored' THEN 1.0
+                ELSE 0.0
+            END
+        ), 0.0)
+        FROM evaluation_runs 
+        WHERE evaluation_id = $1
+        AND status NOT IN ('cancelled', 'error')
+    """, evaluation_id)
+    return float(progress)
+
+@db_operation
+async def get_stuck_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
+    result = await conn.fetch("""
+        SELECT e.evaluation_id FROM evaluations e
+        WHERE e.status = 'running'
+        AND NOT EXISTS (
+            SELECT 1 FROM evaluation_runs er 
+            WHERE er.evaluation_id = e.evaluation_id 
+            AND er.status NOT IN ('result_scored', 'cancelled')
+        )
+        AND EXISTS (
+            SELECT 1 FROM evaluation_runs er2
+            WHERE er2.evaluation_id = e.evaluation_id
+        )
+        """)
+
+    return [Evaluation(**dict(row)) for row in result]
+
+@db_operation
+async def get_waiting_evaluations(conn: asyncpg.Connection) -> List[Evaluation]:
+    result = await conn.fetch("SELECT * FROM evaluations WHERE status = 'waiting'")
+
+    return [Evaluation(**dict(row)) for row in result]
+
+@db_operation
+async def cancel_dangling_evaluation_runs(conn: asyncpg.Connection):
+    await conn.execute("UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() WHERE status not in ('result_scored', 'cancelled')")
+
+@db_operation
+async def evaluation_count_for_agent_and_status(conn: asyncpg.Connection, version_id: str, status: EvaluationStatus):
+    """Returns the number of validator evals with a given state, for a specific agent"""
+    return await conn.fetchval(
+        """SELECT COUNT(*) FROM evaluations WHERE version_id = $1 AND status = $2
+            AND validator_hotkey NOT LIKE 'screener-%' 
+            AND validator_hotkey NOT LIKE 'i-0%'""", 
+        version_id,
+        status.value
+    )
+
+@db_operation
+async def check_for_currently_running_eval(conn: asyncpg.Connection, validator_hotkey: str) -> bool:
+    existing_evaluation = await conn.fetchrow(
+        """
+        SELECT evaluation_id, status FROM evaluations 
+        WHERE validator_hotkey = $1 AND status = 'running'
+        LIMIT 1
+        """,
+        validator_hotkey
+    )
+
+    # TODO; replace for fetchval
+    if existing_evaluation:
+        return True
+
+    else: 
+        return False

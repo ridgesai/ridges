@@ -3,7 +3,7 @@ from typing import Optional, List, Tuple
 import asyncpg
 
 from api.src.backend.db_manager import db_operation, db_transaction
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import AgentStatus, MinerAgent
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
 
@@ -139,9 +139,51 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     return [MinerAgent(**dict(result)) for result in results]
 
 @db_operation
-async def get_all_approved_version_ids(conn: asyncpg.Connection) -> List[str]:
-    """
-    Get all approved version IDs
-    """
-    data = await conn.fetch("SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW()")
-    return [str(row["version_id"]) for row in data]
+async def set_agent_status(conn: asyncpg.Connection, version_id: str, status: str):
+    try:
+        AgentStatus(status) # Check whether the status we are trying to set to is valid 
+    except ValueError:
+        logger.error(f"Tried to set agent to invalid status {status!r}")
+        raise ValueError("Invalid status")
+
+    await conn.execute(
+        "UPDATE miner_agents SET status = $1 WHERE version_id = $2", 
+        status,
+        version_id
+    )
+
+@db_operation
+async def upload_miner_agent(
+    conn: asyncpg.Connection,
+    version_id: str,
+    miner_hotkey: str,
+    agent_name: str,
+    version_num: int,
+    ip_address: str
+):
+    await conn.execute(
+        """
+            INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+            VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
+        """,
+        version_id,
+        miner_hotkey,
+        agent_name,
+        version_num,
+        ip_address
+    )
+
+@db_operation
+async def agent_startup_recovery(conn: asyncpg.Connection):
+    # Reset agent statuses for multi-stage screening
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening_1'")
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE status = 'screening_2'")
+    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluating'")
+    
+    # Legacy status recovery for backward compatibility
+    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening'")
+    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluation'")  # Legacy alias
+
+@db_operation
+async def set_agent_status_by_version_id(conn: asyncpg.Connection, version_id: str, status: str):
+    await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", status, version_id)

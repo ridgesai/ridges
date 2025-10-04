@@ -38,11 +38,13 @@ async def handle_inform_evaluation_completed(
         # Force finish the evaluation (skip all_runs_finished check)
         if client.get_type() == "validator":
             logger.info(f"Calling finish_evaluation for {evaluation_id}")
-            await client.finish_evaluation(evaluation_id)
+            from api.src.endpoints.screener import finish_evaluation
+            await finish_evaluation(evaluation_id, client.hotkey)
             logger.info(f"Called finish_evaluation for {evaluation_id}")
         elif client.get_type() == "screener":
             logger.info(f"Calling finish_screening for {evaluation_id}")
-            await client.finish_screening(evaluation_id)
+            from api.src.endpoints.screener import finish_screening
+            await finish_screening(evaluation_id, client.hotkey)
             logger.info(f"Called finish_screening for {evaluation_id}")
         else:
             logger.warning(f"Unknown client type when trying to finish evaluation {evaluation_id}")
