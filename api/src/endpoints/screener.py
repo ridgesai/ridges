@@ -157,6 +157,7 @@ async def finish_screening(
         return
 
     agent = await get_agent_by_version(evaluation.version_id)
+    print(f"AGENT IS: {agent}")
 
     if agent.status not in SCREENING_STATUSES:
         logger.warning(f"Invalid status for miner agent: expected {evaluation.status}, agent is set to {agent.status}")
