@@ -161,6 +161,7 @@ async def finish_screening(
 
     if agent.status not in SCREENING_STATUSES:
         logger.warning(f"Invalid status for miner agent: expected {evaluation.status}, agent is set to {agent.status}")
+        return
 
     if errored:
         """Error evaluation and reset agent"""
