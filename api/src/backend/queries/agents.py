@@ -183,3 +183,7 @@ async def agent_startup_recovery(conn: asyncpg.Connection):
     # Legacy status recovery for backward compatibility
     await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE status = 'screening'")
     await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE status = 'evaluation'")  # Legacy alias
+
+@db_operation
+async def set_agent_status_by_version_id(conn: asyncpg.Connection, version_id: str, status: str):
+    await conn.execute("UPDATE miner_agents SET status = $1 WHERE version_id = $2", status, version_id)
