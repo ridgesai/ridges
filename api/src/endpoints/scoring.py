@@ -1,22 +1,19 @@
-import asyncio
 import os
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
 import uuid
-
+import asyncio
+from api.src.models.validator import Validator
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
-from api.src.models.evaluation import Evaluation
-from api.src.models.validator import Validator
 from api.src.utils.auth import verify_request, verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
-from api.src.backend.entities import MinerAgent, MinerAgentScored
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id
-from api.src.backend.entities import MinerAgentScored
+from api.src.backend.entities import MinerAgent, MinerAgentScored, AgentStatus
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id, set_agent_status
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
+from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, reset_evaluation_to_waiting
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
 from api.src.backend.internal_tools import InternalTools
@@ -47,7 +44,6 @@ async def run_weight_setting_loop(minutes: int):
         await asyncio.sleep(minutes * 20)
 
 ## Actual endpoints ##
-
 async def weight_receiving_agent():
     '''
     This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
@@ -132,11 +128,6 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
         logger.error(f"Error banning agents: {e}")
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
     
-
-async def trigger_weight_set():
-    await tell_validators_to_set_weights()
-    return {"message": "Successfully triggered weight update"}
-
 async def approve_version(version_id: str, set_id: int, approval_password: str):
     """Approve a version ID using threshold scoring logic
     
@@ -267,6 +258,7 @@ async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_an
             # Include all evaluations (screeners and validators)
             await fully_reset_evaluations(version_id=version_id)
         else:
+            # TODO: use the newer better version
             await reset_validator_evaluations(version_id=version_id)
         
         return {
@@ -284,8 +276,16 @@ async def re_run_evaluation(password: str, evaluation_id: str):
     
     try:
         async with get_transaction() as conn:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            await evaluation.reset_to_waiting(conn)
+            # set evaluation to waiting, and its runs to cancelled
+            evaluation = await get_evaluation_by_evaluation_id(evaluation_id)
+            await reset_evaluation_to_waiting(evaluation_id)
+
+            # set agent status to waiting
+            agent_version_id = evaluation.version_id
+            await set_agent_status(
+                version_id=agent_version_id,
+                status=AgentStatus.waiting.value
+            )
             return {"message": f"Successfully reset evaluation {evaluation_id}"}
     except Exception as e:
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
@@ -433,7 +433,6 @@ public_routes = [
     ("/screener-thresholds", get_screener_thresholds, ["GET"]),
     ("/prune-threshold", get_prune_threshold, ["GET"]),
     ("/threshold-function", get_threshold_function, ["GET"]),
-    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
     ("/check-evaluation-status", check_evaluation_status, ["GET"]),
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),

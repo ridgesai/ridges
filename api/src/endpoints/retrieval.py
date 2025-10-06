@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
-from api.src.models.screener import Screener
 from loggers.logging_utils import get_logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
+import os
 
 from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
@@ -24,7 +24,6 @@ from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
-from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
 from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_hotkeys as db_get_total_dispersed_by_treasury_hotkeys
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
@@ -66,11 +65,12 @@ async def get_agent_code(version_id: str, request: Request, return_as_text: bool
         
         # Check if IP is in whitelist (add your allowed IPs to SCREENER_IP_LIST)
         if client_ip not in SCREENER_IP_LIST:
-            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: IP not authorized"
-            )
+            if os.getenv("ENV") == "prod":
+                logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied: IP not authorized"
+                )
     
     if return_as_text:
         try:
@@ -413,19 +413,6 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
             detail="Internal server error while retrieving emission alpha"
         )
     
-async def get_approved_version_ids() -> list[str]:
-    """
-    Returns a list of all approved version IDs
-    """
-    try:
-        return await db_get_all_approved_version_ids()
-    except Exception as e:
-        logger.error(f"Error retrieving approved version IDs: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving approved version IDs"
-        )
-    
 async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
     Returns the time until the next upload for a given hotkey
@@ -512,7 +499,6 @@ routes = [
     ("/agents-from-hotkey", get_agents_from_hotkey),    
     ("/inference-provider-statistics", get_inference_provider_statistics),
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
-    ("/approved-version-ids", get_approved_version_ids),
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
     ("/all-transactions", get_all_transactions),
     ("/all-treasury-hotkeys", get_all_treasury_hotkeys),

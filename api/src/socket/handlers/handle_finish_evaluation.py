@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional
 
 from api.src.backend.entities import Client
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id
+from api.src.endpoints.screener import finish_evaluation, finish_screening
 from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
@@ -46,11 +47,21 @@ async def handle_finish_evaluation(
         
         if client.get_type() == "screener":
             screener: Screener = client
-            await screener.finish_screening(evaluation_id, errored, reason)
+            await finish_screening(
+                evaluation_id=evaluation_id,
+                hotkey=screener.hotkey,
+                errored=errored,
+                reason=reason
+            )
             action = "Screening"
         elif client.get_type() == "validator":
             validator: Validator = client
-            await validator.finish_evaluation(evaluation_id, errored, reason)
+            await finish_evaluation(
+                evaluation_id=evaluation_id,
+                hotkey=validator.hotkey,
+                errored=errored,
+                reason=reason
+            )
             action = "Evaluation"
         
         # Broadcast evaluation completion
