@@ -69,12 +69,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     run_id UUID PRIMARY KEY NOT NULL,
     evaluation_id UUID NOT NULL REFERENCES evaluations(evaluation_id),
     swebench_instance_id TEXT NOT NULL,
-    response TEXT,
+    patch TEXT,
     error TEXT,
-    pass_to_fail_success TEXT,
-    fail_to_pass_success TEXT,
-    pass_to_pass_success TEXT,
-    fail_to_fail_success TEXT,
     solved BOOLEAN,
     status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored, cancelled
     started_at TIMESTAMPTZ NOT NULL,
@@ -82,7 +78,12 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     patch_generated_at TIMESTAMPTZ,
     eval_started_at TIMESTAMPTZ,
     result_scored_at TIMESTAMPTZ,
-    cancelled_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ
+);
+
+-- Logs table
+CREATE TABLE IF NOT EXISTS evaluation_run_logs (
+    run_id UUID PRIMARY KEY NOT NULL,
     logs TEXT -- Complete Docker container logs for debugging and analysis
 );
 
