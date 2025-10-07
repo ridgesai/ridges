@@ -1,6 +1,0 @@
-from typing import List
-
-
-
-async def get_latest_set_id() -> int: ...
-async def get_all_problems_of_type_in_set(set_id: int, type: str) -> List[str]: ...

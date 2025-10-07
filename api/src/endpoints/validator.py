@@ -1,16 +1,15 @@
 import time
 
+from uuid import UUID, uuid4
 from datetime import datetime
-from typing import Dict, Optional
-
-from uuid import UUID
-from fiber import Keypair
 from pydantic import BaseModel
+from typing import Dict, Optional
 from fastapi.security import HTTPBearer
 from loggers.logging_utils import get_logger
+from utils.system_metrics import SystemMetrics
+from utils.fiber import validate_signed_timestamp
 from api.src.backend.entities import EvaluationRun
 from fastapi import APIRouter, HTTPException, Depends
-from validator_2.utils.system_metrics import ValidatorHeartbeatMetrics
 
 logger = get_logger(__name__)
 
@@ -20,46 +19,16 @@ DEV_MODE = True
 
 
 
-# List of whitelisted validators
-WHITELISTED_VALIDATORS = [
-    {"name": "RoundTable 21",         "hotkey": "5Djyacas3eWLPhCKsS3neNSJonzfxJmD3gcrMTFDc4eHsn62"},
-    {"name": "Uncle Tao",             "hotkey": "5FF1rU17iEYzMYS7V59P6mK2PFtz9wDUoUKrpFd3yw1wBcfq"},
-    {"name": "Yuma",                  "hotkey": "5Eho9y6iF5aTdKS28Awn2pKTd4dFsJ2o3shGtj1vjnLiaKJ1"},
-    {"name": "Rizzo",                 "hotkey": "5GuRsre3hqm6WKWRCqVxXdM4UtGs457nDhPo9F5wvJ16Ys62"},
-    {"name": "Ridges",                "hotkey": "5GgJptBaUiWwb8SQDinZ9rDQoVw47mgduXaCLHeJGTtA4JMS"},
-    {"name": "Crucible Labs",         "hotkey": "5HmkM6X1D3W3CuCSPuHhrbYyZNBy2aGAiZy9NczoJmtY25H7"},
-    {"name": "tao.bot",               "hotkey": "5E2LP6EnZ54m3wS8s1yPvD5c3xo71kQroBw7aUVK32TKeZ5u"},
-    {"name": "Opentensor Foundation", "hotkey": "5FZ1BFw8eRMAFK5zwJdyefrsn51Lrm217WKbo3MmdFH65YRr"},
-]
-
-def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:
-    return validator_hotkey in [validator["hotkey"] for validator in WHITELISTED_VALIDATORS]
-
-def validator_name_to_hotkey(validator_name: str) -> str:
-    return next((validator["hotkey"] for validator in WHITELISTED_VALIDATORS if validator["name"] == validator_name), 'unknown')
-
-def validator_hotkey_to_name(validator_hotkey: str) -> str:
-    return next((validator["name"] for validator in WHITELISTED_VALIDATORS if validator["hotkey"] == validator_hotkey), 'unknown')
-
-
-
-# TODO: Move to utils/bittensor.py
-def check_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
-    try:
-        keypair = Keypair(ss58_address=hotkey)
-        return keypair.verify(str(timestamp), bytes.fromhex(signed_timestamp))
-    except Exception as e:
-        print(f"Error in check_signed_timestamp(timestamp={timestamp}, signed_timestamp={signed_timestamp}, hotkey={hotkey}): {e}")
-        return False
-
-
-
 # A connected validator
 class Validator(BaseModel):
     name: str
     hotkey: str
     time_connected: datetime
-    current_evaluation_id: Optional[UUID]
+
+    current_evaluation_id: Optional[UUID] = None
+
+    time_last_heartbeat: Optional[datetime] = None
+    system_metrics: SystemMetrics = SystemMetrics()
 
 # Map of session IDs to validator objects
 SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
@@ -90,6 +59,8 @@ router = APIRouter()
 
 
 
+# /validator/register
+
 class ValidatorRegistrationRequest(BaseModel):
     timestamp: int
     signed_timestamp: str
@@ -112,7 +83,7 @@ async def validator_register(
             )
     
     # Check if the signed timestamp is valid (i.e., matches the raw timestamp)
-    if not check_signed_timestamp(request.timestamp, request.signed_timestamp, request.hotkey):
+    if not validate_signed_timestamp(request.timestamp, request.signed_timestamp, request.hotkey):
         raise HTTPException(
             status_code=401,
             detail="The provided signed timestamp does not match the provided timestamp."
@@ -126,7 +97,7 @@ async def validator_register(
         )
 
     # Register the validator with a new session ID
-    session_id = uuid.uuid4()
+    session_id = uuid4()
     SESSION_ID_TO_VALIDATOR[session_id] = Validator(
         name=validator_hotkey_to_name(request.hotkey),
         hotkey=request.hotkey,
@@ -138,6 +109,8 @@ async def validator_register(
     return ValidatorRegistrationResponse(session_id=session_id)
 
 
+
+# /validator/request-evaluation
 
 class ValidatorRequestEvaluationRequest(BaseModel):
     pass
@@ -155,13 +128,24 @@ async def validator_request_evaluation(
     return ValidatorRequestEvaluationResponse(foo="bar")
 
 
+
+# /validator/heartbeat
+
+class ValidatorHeartbeatRequest(BaseModel):
+    system_metrics: SystemMetrics
+class ValidatorHeartbeatResponse(BaseModel):
+    pass
+
 @router.post("/heartbeat")
 async def validator_heartbeat(
-    request: ValidatorHeartbeatMetrics,
+    request: ValidatorHeartbeatRequest,
     validator: Validator = Depends(get_request_validator)
-) -> None:
-    logger.info(f"{validator.name}/{validator.hotkey} has sent heartbeat")
+) -> ValidatorHeartbeatResponse:
+    logger.info(f"Received heartbeat from{validator.name}/{validator.hotkey}")
+    validator.time_last_heartbeat = datetime.now()
+    validator.system_metrics = request.system_metrics
     pass
+
 
 
 def get_evaluation_id_for_run(run_id: UUID) -> UUID:

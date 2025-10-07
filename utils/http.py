@@ -2,7 +2,9 @@ import json
 import httpx
 import config
 
-import utils.logger as logger
+from loggers.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 

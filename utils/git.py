@@ -36,12 +36,12 @@ def clone_repo(repo_url, target_dir):
 
 
 
-def clone_local_repo_at_commit(repo_path, commit_hash, target_dir):
+def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir):
     """
     Clone a local repository at a specific commit into the target directory.
     
     Args:
-        repo_path: Path to the local repository 
+        local_repo_dir: Path to the local repository 
         commit_hash: The commit hash to checkout
         target_dir: Directory to clone the repository into
         
@@ -49,14 +49,14 @@ def clone_local_repo_at_commit(repo_path, commit_hash, target_dir):
         tuple: (success: bool, error_message: str or None)
     """
     
-    if not os.path.exists(repo_path):
-        return False, f"Repository path does not exist: {repo_path}"
+    if not os.path.exists(local_repo_dir):
+        return False, f"Repository path does not exist: {local_repo_dir}"
     
     if not os.path.exists(target_dir):
         return False, f"Target directory does not exist: {target_dir}"
     
     # Convert to absolute path to avoid issues with relative paths in temp directories
-    abs_repo_path = os.path.abspath(repo_path)
+    abs_repo_path = os.path.abspath(local_repo_dir)
     
     try:
         # Create a temporary directory for the clone operation
