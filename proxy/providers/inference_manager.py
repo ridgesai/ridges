@@ -33,12 +33,12 @@ class InferenceManager:
     
     def _find_provider(self, model: str) -> InferenceProvider:
         """Find the primary provider for the given model"""
-        # Prioritize Targon for models it supports, 25% of the time
+        # Prioritize Targon for models it supports, 5% of the time
         import random
         if (
             self.targon.supports_model(model)
             and self.targon.is_available()
-            and random.random() < 0.25
+            and random.random() < 0.05
         ):
             return self.targon
             
