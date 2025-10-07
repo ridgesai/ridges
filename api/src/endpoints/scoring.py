@@ -17,7 +17,7 @@ from api.src.backend.entities import MinerAgent, MinerAgentScored
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
-from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
+from api.src.utils.subtensor import get_subnet_hotkeys, check_if_hotkey_is_registered
 from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
@@ -71,7 +71,7 @@ async def get_treasury_hotkey():
             raise ValueError("No active treasury wallets found in database")
         treasury_hotkey = treasury_hotkey_data[0]["hotkey"]
 
-        if not check_if_hotkey_is_registered(treasury_hotkey):
+        if not await check_if_hotkey_is_registered(treasury_hotkey):
             logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
             await notify_unregistered_treasury_hotkey(treasury_hotkey)
         
@@ -100,7 +100,7 @@ async def weights() -> Dict[str, float]:
     if top_agent.miner_hotkey.startswith("open-"):
         weights[treasury_hotkey] = weight_left
     else:
-        if check_if_hotkey_is_registered(top_agent.miner_hotkey):
+        if await check_if_hotkey_is_registered(top_agent.miner_hotkey):
             weights[top_agent.miner_hotkey] = weight_left
         else:
             logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet")
