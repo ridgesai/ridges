@@ -315,7 +315,6 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
                 temperature=temperature,
                 model=model
             )
-        logger.info(f"Inference result raw: {inference_result}")
         # Truncate and log the first 200 chars of the response to avoid log spam
         try:
             if isinstance(inference_result, str):

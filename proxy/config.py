@@ -74,12 +74,6 @@ TARGON_PRICING: Dict[str, float] = {
     "moonshotai/Kimi-K2-Instruct": 0.14,
     "zai-org/GLM-4.5-FP8": 0.5  # Same pricing as FP8 variant
 }
-
-# Model redirects (map requested model to actual model for Targon)
-MODEL_REDIRECTS: Dict[str, str] = {
-    "zai-org/GLM-4.5-FP8": "zai-org/GLM-4.5"  # Redirect FP8 to standard GLM-4.5
-}
-
 # Cost limits
 MAX_COST_PER_RUN = 2.0  # Maximum cost per evaluation run
 

@@ -18,8 +18,7 @@ from proxy.models import GPTMessage
 from proxy.config import (
     TARGON_API_KEY,
     TARGON_FALLBACK_MODELS,
-    TARGON_PRICING,
-    MODEL_REDIRECTS,
+    TARGON_PRICING
 )
 
 logger = logging.getLogger(__name__)
