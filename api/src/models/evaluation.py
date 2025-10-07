@@ -106,124 +106,138 @@ class Evaluation:
     async def finish(self, conn: asyncpg.Connection):
         """Finish evaluation, but retry if >=50% of inferences failed and any run errored"""
         
-        # Use the evaluation lock to prevent race conditions with disconnection handling
-        async with Evaluation.get_lock():
-            # DEBUG: Check if this evaluation already has a terminated_reason set
-            current_terminated_reason = await conn.fetchval(
-                "SELECT terminated_reason FROM evaluations WHERE evaluation_id = $1", 
-                self.evaluation_id
+        # Check if evaluation is already completed - prevent duplicate finish calls
+        current_status = await conn.fetchval(
+            "SELECT status FROM evaluations WHERE evaluation_id = $1", 
+            self.evaluation_id
+        )
+        
+        if current_status == 'completed':
+            logger.warning(
+                f"finish() called on already completed evaluation {self.evaluation_id} "
+                f"(version: {self.version_id}, validator: {self.validator_hotkey}). "
+                f"Skipping to prevent agent status overwrites."
             )
-            if current_terminated_reason:
-                current_status = await conn.fetchval(
-                    "SELECT status FROM evaluations WHERE evaluation_id = $1", 
-                    self.evaluation_id
-                )
-                
-                # Print very noticeable debug information
-                print("=" * 80)
-                print("🚨 CRITICAL DEBUG: finish() called on evaluation with existing terminated_reason! 🚨")
-                print("=" * 80)
-                print(f"Evaluation ID: {self.evaluation_id}")
-                print(f"Version ID: {self.version_id}")
-                print(f"Validator Hotkey: {self.validator_hotkey}")
-                print(f"Current Status: {current_status}")
-                print(f"Existing terminated_reason: {current_terminated_reason}")
-                print(f"Is Screening: {self.is_screening}")
-                if self.is_screening:
-                    print(f"Screener Stage: {self.screener_stage}")
-                print(f"Current Time: {datetime.now().isoformat()}")
-                print()
-                print("CALL STACK TRACE:")
-                print("-" * 40)
-                traceback.print_stack()
-                print("=" * 80)
-                
-                # Also log it for persistent record
-                logger.error(
-                    f"CRITICAL: finish() called on evaluation {self.evaluation_id} "
-                    f"(version_id: {self.version_id}, validator: {self.validator_hotkey}) "
-                    f"that already has terminated_reason: '{current_terminated_reason}'. "
-                    f"Current status: {current_status}. This will result in inconsistent state!"
-                )
+            return None
+        
+        # Use the evaluation lock to prevent race conditions with disconnection handling
+        # async with Evaluation.get_lock():
+            # DEBUG: Check if this evaluation already has a terminated_reason set
+        current_terminated_reason = await conn.fetchval(
+            "SELECT terminated_reason FROM evaluations WHERE evaluation_id = $1", 
+            self.evaluation_id
+        )
+        if current_terminated_reason:
+            # current_status = await conn.fetchval(
+            #     "SELECT status FROM evaluations WHERE evaluation_id = $1", 
+            #     self.evaluation_id
+            # )
             
-            # Check if we should retry due to inference failures
-            successful, total, success_rate, any_run_errored = await self._check_inference_success_rate(conn)
-            
-            # If we have inferences and >=50% failed AND any run errored, retry instead of finishing
-            if total > 0 and success_rate < 0.5 and any_run_errored:
-                logger.info(f"Evaluation {self.evaluation_id} completed but {successful}/{total} successful inferences ({success_rate:.1%}) with run errors. Retrying...")
-                await self.reset_to_waiting(conn)
-                return
-            
-            await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
-            self.status = EvaluationStatus.completed
-            self.score = await conn.fetchval("SELECT score FROM evaluations WHERE evaluation_id = $1", self.evaluation_id)
-
-            # Store validators to notify after agent status update
-            validators_to_notify = []
-            stage2_screener_to_notify = None
-
-            # If it's a screener, handle stage-specific logic
+            # Print very noticeable debug information
+            print("=" * 80)
+            print("🚨 CRITICAL DEBUG: finish() called on evaluation with existing terminated_reason! 🚨")
+            print("=" * 80)
+            print(f"Evaluation ID: {self.evaluation_id}")
+            print(f"Version ID: {self.version_id}")
+            print(f"Validator Hotkey: {self.validator_hotkey}")
+            print(f"Current Status: {current_status}")
+            print(f"Existing terminated_reason: {current_terminated_reason}")
+            print(f"Is Screening: {self.is_screening}")
             if self.is_screening:
-                stage = self.screener_stage
-                threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
-                if self.score < threshold:
-                    logger.info(f"Stage {stage} screening failed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
-                else:
-                    logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
+                print(f"Screener Stage: {self.screener_stage}")
+            print(f"Current Time: {datetime.now().isoformat()}")
+            print()
+            print("CALL STACK TRACE:")
+            print("-" * 40)
+            traceback.print_stack()
+            print("=" * 80)
+            
+            # Also log it for persistent record
+            logger.error(
+                f"CRITICAL: finish() called on evaluation {self.evaluation_id} "
+                f"(version_id: {self.version_id}, validator: {self.validator_hotkey}) "
+                f"that already has terminated_reason: '{current_terminated_reason}'. "
+                f"Current status: {current_status}. This will result in inconsistent state!"
+            )
+        
+        # Check if we should retry due to inference failures
+        successful, total, success_rate, any_run_errored = await self._check_inference_success_rate(conn)
+        
+        # If we have inferences and >=50% failed AND any run errored, retry instead of finishing
+        if total > 0 and success_rate < 0.5 and any_run_errored:
+            logger.info(f"Evaluation {self.evaluation_id} completed but {successful}/{total} successful inferences ({success_rate:.1%}) with run errors. Retrying...")
+            await self.reset_to_waiting(conn)
+            return
+        
+        await conn.execute("UPDATE evaluations SET status = 'completed', finished_at = NOW() WHERE evaluation_id = $1", self.evaluation_id)
+        self.status = EvaluationStatus.completed
+        self.score = await conn.fetchval("SELECT score FROM evaluations WHERE evaluation_id = $1", self.evaluation_id)
+
+        # Store validators to notify after agent status update
+        validators_to_notify = []
+        stage2_screener_to_notify = None
+
+        # If it's a screener, handle stage-specific logic
+        if self.is_screening:
+            stage = self.screener_stage
+            threshold = SCREENING_1_THRESHOLD if stage == 1 else SCREENING_2_THRESHOLD
+            if self.score < threshold:
+                logger.info(f"Stage {stage} screening failed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
+            else:
+                logger.info(f"Stage {stage} screening passed for agent {self.version_id} with score {self.score} (threshold: {threshold})")
+                
+                if stage == 1:
+                    # Stage 1 passed -> find ONE available stage 2 screener
+                    from api.src.socket.websocket_manager import WebSocketManager
+                    ws_manager = WebSocketManager.get_instance()
+                    for client in ws_manager.clients.values():
+                        if client.get_type() != "screener":
+                            continue
+                        screener: Screener = client
+                        
+                        if screener.stage == 2 and screener.is_available():
+                            stage2_screener_to_notify = screener
+                            break
+                elif stage == 2:
+                    # Stage 2 passed -> check if we should prune immediately
+                    combined_screener_score, score_error = await Screener.get_combined_screener_score(conn, self.version_id)
+                    # ^ if this is None, we should likely not be here, because it means that either there was no screener 1 or screener 2 evaluation, but in which case how would be here anyway?
+                    if score_error:
+                        await send_slack_message(f"Stage 2 screener score error for version {self.version_id}: {score_error}")
+                    top_agent = await MinerAgentScored.get_top_agent(conn)
                     
-                    if stage == 1:
-                        # Stage 1 passed -> find ONE available stage 2 screener
-                        from api.src.socket.websocket_manager import WebSocketManager
-                        ws_manager = WebSocketManager.get_instance()
-                        for client in ws_manager.clients.values():
-                            if client.get_type() != "screener":
-                                continue
-                            screener: Screener = client
-                            
-                            if screener.stage == 2 and screener.is_available():
-                                stage2_screener_to_notify = screener
-                                break
-                    elif stage == 2:
-                        # Stage 2 passed -> check if we should prune immediately
-                        combined_screener_score, score_error = await Screener.get_combined_screener_score(conn, self.version_id)
-                        # ^ if this is None, we should likely not be here, because it means that either there was no screener 1 or screener 2 evaluation, but in which case how would be here anyway?
-                        if score_error:
-                            await send_slack_message(f"Stage 2 screener score error for version {self.version_id}: {score_error}")
-                        top_agent = await MinerAgentScored.get_top_agent(conn)
-                        
-                        if top_agent and combined_screener_score is not None and (top_agent.avg_score - combined_screener_score) > PRUNE_THRESHOLD:
-                            # Score is too low, prune miner agent and don't create evaluations
-                            await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
-                            logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with combined score {combined_screener_score:.3f} (threshold: {top_agent.avg_score - PRUNE_THRESHOLD:.3f})")
-                            return {
-                                "stage2_screener": None,
-                                "validators": []
-                            }
-                        
-                        # Score is acceptable -> notify validators
-                        from api.src.models.validator import Validator
+                    if top_agent and combined_screener_score is not None and (top_agent.avg_score - combined_screener_score) > PRUNE_THRESHOLD:
+                        # Score is too low, prune miner agent and don't create evaluations
+                        await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", self.version_id)
+                        logger.info(f"Pruned agent {self.version_id} immediately after screener-2 with combined score {combined_screener_score:.3f} (threshold: {top_agent.avg_score - PRUNE_THRESHOLD:.3f})")
+                        return {
+                            "stage2_screener": None,
+                            "validators": []
+                        }
+                    
+                    # Score is acceptable -> notify validators
+                    from api.src.models.validator import Validator
 
-                        # Create evaluation records but don't notify yet
-                        import random
-                        all_validators = await Validator.get_connected()
-                        validators_to_notify = random.sample(all_validators, min(2, len(all_validators)))
-                        for validator in validators_to_notify:
-                            if (combined_screener_score is None):
-                                await send_slack_message(f"111 Screener score is None when creating evaluation for validator {validator.hotkey}, version {self.version_id}")
-                                await send_slack_message(f"Evaluation object: {str(self)}")
-                            await self.create_for_validator(conn, self.version_id, validator.hotkey, combined_screener_score)
-                        
-                        # Prune low-scoring evaluations after creating validator evaluations
-                        await Evaluation.prune_low_waiting(conn)
+                    # Create evaluation records but don't notify yet
+                    import random
+                    all_validators = await Validator.get_connected()
+                    validators_to_notify = random.sample(all_validators, min(2, len(all_validators)))
+                    for validator in validators_to_notify:
+                        if (combined_screener_score is None):
+                            await send_slack_message(f"111 Screener score is None when creating evaluation for validator {validator.hotkey}, version {self.version_id}")
+                            await send_slack_message(f"Evaluation object: {str(self)}")
+                        await self.create_for_validator(conn, self.version_id, validator.hotkey, combined_screener_score)
+                    
+                    # Prune low-scoring evaluations after creating validator evaluations
+                    await Evaluation.prune_low_waiting(conn)
 
-            await self._update_agent_status(conn)
+        await self._update_agent_status(conn)
 
-            # Return notification targets to be handled OUTSIDE this transaction  
-            return {
-                "stage2_screener": stage2_screener_to_notify,
-                "validators": validators_to_notify
-            }
+        # Return notification targets to be handled OUTSIDE this transaction  
+        return {
+            "stage2_screener": stage2_screener_to_notify,
+            "validators": validators_to_notify
+        }
 
     async def _check_inference_success_rate(self, conn: asyncpg.Connection) -> Tuple[int, int, float, bool]:
         """Check inference success rate for this evaluation
@@ -486,19 +500,25 @@ class Evaluation:
         """Create screening evaluation"""
         from api.src.socket.websocket_manager import WebSocketManager
 
-        # Safety check: Ensure screener doesn't already have a running evaluation
-        existing_evaluation = await conn.fetchrow(
-            """
-            SELECT evaluation_id, status FROM evaluations 
-            WHERE validator_hotkey = $1 AND status = 'running'
-            LIMIT 1
-            """,
-            screener.hotkey
-        )
+        # # Additional safety check: Ensure this agent doesn't already have a running screening at the same stage (lowk useless)
+        # screener_stage = screener.stage
+        # agent_running_screening = await conn.fetchval(
+        #     """
+        #     SELECT COUNT(*) FROM evaluations e
+        #     JOIN miner_agents ma ON e.version_id = ma.version_id
+        #     WHERE ma.version_id = $1 
+        #     AND (
+        #         (e.validator_hotkey LIKE 'screener-1-%' OR e.validator_hotkey LIKE 'i-0%')
+        #         OR e.validator_hotkey LIKE 'screener-2-%'
+        #     )
+        #     AND e.status = 'running'
+        #     """,
+        #     agent.version_id
+        # )
         
-        if existing_evaluation:
-            logger.error(f"CRITICAL: Screener {screener.hotkey} already has running evaluation {existing_evaluation['evaluation_id']} - refusing to create duplicate screening")
-            return "", False
+        # if agent_running_screening > 0:
+        #     logger.error(f"CRITICAL: Agent {agent.version_id} already has running screening - refusing to create duplicate screening")
+        #     return "", False
 
         ws = WebSocketManager.get_instance()
 
@@ -577,7 +597,7 @@ class Evaluation:
                 # Log the agents for debugging
                 awaiting_agents = await conn.fetch(
                     """
-                    SELECT version_id, miner_hotkey, agent_name, created_at FROM miner_agents 
+                    SELECT version_id, miner_hotkey, agent_name, created_at, version_num, created_at FROM miner_agents 
                     WHERE status = $1 
                     AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
                     ORDER BY created_at ASC
@@ -587,45 +607,20 @@ class Evaluation:
                 for agent in awaiting_agents[:3]:  # Log first 3
                     logger.info(f"Awaiting stage {screener.stage} agent: {agent['agent_name']} ({agent['version_id']}) from {agent['miner_hotkey']}")
 
-            # Atomically claim the next awaiting agent for this stage using CTE with FOR UPDATE SKIP LOCKED
-            logger.debug(f"Stage {screener.stage} screener {screener.hotkey} attempting to claim agent with status '{target_status}'")
-            try:
-                claimed_agent = await conn.fetchrow(
-                    """
-                    WITH next_agent AS (
-                        SELECT version_id FROM miner_agents 
-                        WHERE status = $1 
-                        AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
-                        ORDER BY created_at ASC 
-                        FOR UPDATE SKIP LOCKED
-                        LIMIT 1
-                    )
-                    UPDATE miner_agents 
-                    SET status = $2
-                    FROM next_agent
-                    WHERE miner_agents.version_id = next_agent.version_id
-                    RETURNING miner_agents.version_id, miner_hotkey, agent_name, version_num, created_at
-                """,
-                    target_status,
-                    target_screening_status
-                )
-            except Exception as e:
-                logger.warning(f"Database error while claiming agent for screener {screener.hotkey}: {e}")
-                claimed_agent = None
 
-            if not claimed_agent:
+            else:
                 screener.set_available()  # Ensure available state is set
                 logger.info(f"No stage {screener.stage} agents claimed by screener {screener.hotkey} despite {awaiting_count} awaiting")
                 return
 
-            logger.info(f"Stage {screener.stage} screener {screener.hotkey} claimed agent {claimed_agent['agent_name']} ({claimed_agent['version_id']})")
+            logger.info(f"Stage {screener.stage} screener {screener.hotkey} claimed agent {awaiting_agents[0]['agent_name']} ({awaiting_agents[0]['version_id']})")
 
             agent = MinerAgent(
-                version_id=claimed_agent["version_id"],
-                miner_hotkey=claimed_agent["miner_hotkey"],
-                agent_name=claimed_agent["agent_name"],
-                version_num=claimed_agent["version_num"],
-                created_at=claimed_agent["created_at"],
+                version_id=awaiting_agents[0]["version_id"],
+                miner_hotkey=awaiting_agents[0]["miner_hotkey"],
+                agent_name=awaiting_agents[0]["agent_name"],
+                version_num=awaiting_agents[0]["version_num"],
+                created_at=awaiting_agents[0]["created_at"],
                 status=target_screening_status,  # Already set to correct status in query
             )
         
@@ -771,22 +766,22 @@ class Evaluation:
     @staticmethod
     async def handle_screener_disconnection(screener_hotkey: str):
         """Atomically handle screener disconnection: error active evaluations and reset agents"""
-        async with Evaluation.get_lock():
-            async with get_transaction() as conn:
-                # Get active screening evaluations for all screener types
-                active_screenings = await conn.fetch(
-                    """
-                    SELECT evaluation_id, version_id FROM evaluations 
-                    WHERE validator_hotkey = $1 AND status IN ('running', 'waiting') 
-                    AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
-                """,
-                    screener_hotkey,
-                )
+        # async with Evaluation.get_lock():
+        async with get_transaction() as conn:
+            # Get active screening evaluations for all screener types
+            active_screenings = await conn.fetch(
+                """
+                SELECT evaluation_id, version_id FROM evaluations 
+                WHERE validator_hotkey = $1 AND status IN ('running', 'waiting') 
+                AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
+            """,
+                screener_hotkey,
+            )
 
-                for screening_row in active_screenings:
-                    evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
-                    if evaluation:
-                        await evaluation.error(conn, "Disconnected from screener (error code 1)")
+            for screening_row in active_screenings:
+                evaluation = await Evaluation.get_by_id(screening_row["evaluation_id"])
+                if evaluation:
+                    await evaluation.error(conn, "Disconnected from screener (error code 1)")
 
     @staticmethod
     async def startup_recovery():

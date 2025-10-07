@@ -112,16 +112,6 @@ async def post_agent(
                         detail="No stage 1 screeners available for agent evaluation. Please try again later."
                     )
                 
-                # Check is there is an evaluation in the database with the screener's hotkey that has running status
-                # This is to prevent the case where a screener.is_available() returns true but the screener is actually running an evaluation
-                # from api.src.backend.queries.evaluations import is_screener_running_evaluation
-                # is_screener_running_evaluation = await is_screener_running_evaluation(screener.hotkey)
-                # if is_screener_running_evaluation:
-                #     logger.error(f"No available stage 1 screener for agent upload from miner {miner_hotkey} - screener {screener.hotkey} said it was available but there is an evaluation in the database with the screener's hotkey that has running status")
-                #     raise HTTPException(
-                #         status_code=409,
-                #         detail="No stage 1 screeners available for agent evaluation. Please try again later."
-                #     )
 
                 async with get_transaction() as conn:
                     can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, miner_hotkey)
@@ -160,13 +150,6 @@ async def post_agent(
                         else:
                             logger.warning(f"Failed to assign agent {agent.version_id} to screener - screener is not running")
                         
-                        # CRITICAL FIX: Reset agent status back to awaiting_screening_1 to prevent stuck agents
-                        # The agent was created but never properly assigned to screener
-                        await conn.execute(
-                            "UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE version_id = $1",
-                            agent.version_id
-                        )
-                        logger.warning(f"Reset agent {agent.version_id} status to awaiting_screening_1 due to failed screener assignment")
                 
                 # Screener state is now committed, lock can be released
 

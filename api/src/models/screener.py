@@ -231,9 +231,10 @@ class Screener(Client):
         """Handle screener disconnection"""
         from api.src.models.evaluation import Evaluation
         # Explicitly reset status on disconnect to ensure clean state
-        self.set_available()
-        logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
-        await Evaluation.handle_screener_disconnection(self.hotkey)
+        async with Evaluation.get_lock():
+            self.set_available()
+            logger.info(f"Screener {self.hotkey} disconnected, status reset to: {self.status}")
+            await Evaluation.handle_screener_disconnection(self.hotkey)
     
     async def finish_screening(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish screening evaluation"""
@@ -241,13 +242,13 @@ class Screener(Client):
 
         logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, entered finish_screening")
         
-        try:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
-                logger.warning(f"Screener {self.hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
-                return
-            
-            async with Evaluation.get_lock():
+        async with Evaluation.get_lock():  # SINGLE LOCK FOR ENTIRE FUNCTION
+            try:
+                evaluation = await Evaluation.get_by_id(evaluation_id)
+                if not evaluation or not evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
+                    logger.warning(f"Screener {self.hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
+                    return
+                
                 async with get_transaction() as conn:
                     agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
                     expected_status = getattr(AgentStatus, f"screening_{self.stage}")
@@ -272,17 +273,15 @@ class Screener(Client):
                     self.set_available()
                         
                     logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
-            
-            # Handle notifications AFTER transaction commits
-            if notification_targets:
-                # Notify stage 2 screener when stage 1 completes
-                if notification_targets.get("stage2_screener"):
-                    async with Evaluation.get_lock():
-                        await Evaluation.screen_next_awaiting_agent(notification_targets["stage2_screener"])
                 
-                # Notify validators with proper lock protection  
-                for validator in notification_targets.get("validators", []):
-                    async with Evaluation.get_lock():
+                # Handle notifications AFTER transaction commits
+                if notification_targets:
+                    # Notify stage 2 screener when stage 1 completes
+                    if notification_targets.get("stage2_screener"):
+                        await Evaluation.screen_next_awaiting_agent(notification_targets["stage2_screener"])
+                    
+                    # Notify validators
+                    for validator in notification_targets.get("validators", []):
                         if validator.is_available():
                             success = await validator.start_evaluation_and_send(evaluation_id)
                             if success:
@@ -291,16 +290,18 @@ class Screener(Client):
                                 logger.warning(f"Failed to assign evaluation {evaluation_id} to validator {validator.hotkey}")
                         else:
                             logger.info(f"Validator {validator.hotkey} not available for evaluation {evaluation_id}")
-            
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Got to end of try block")
-        finally:
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, in finally block")
-            # Single atomic reset and reassignment
-            async with Evaluation.get_lock():
+                
                 self.set_available()
                 logger.info(f"Screener {self.hotkey}: Reset to available and looking for next agent")
                 await Evaluation.screen_next_awaiting_agent(self)
-            logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, exiting finally block")
+                logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}, completed successfully")
+                
+            except Exception as e:
+                logger.error(f"Screener {self.hotkey}: Error in finish_screening: {e}")
+                # Ensure screener is reset even on error
+                self.set_available()
+                await Evaluation.screen_next_awaiting_agent(self)
+                logger.info(f"Screener {self.hotkey}: Reset to available after error in finish_screening")
     
     @staticmethod
     async def get_first_available() -> Optional['Screener']:
@@ -319,6 +320,8 @@ class Screener(Client):
     async def get_first_available_and_reserve(stage: int) -> Optional['Screener']:
         """Atomically find and reserve first available screener for specific stage - MUST be called within Evaluation lock"""
         from api.src.socket.websocket_manager import WebSocketManager
+        from api.src.backend.db_manager import get_db_connection
+        
         ws_manager = WebSocketManager.get_instance()
         
         for client in ws_manager.clients.values():
@@ -326,6 +329,20 @@ class Screener(Client):
                 client.status == "available" and
                 client.is_available() and
                 client.stage == stage):
+                
+                # Double-check against database to ensure screener is truly available
+                async with get_db_connection() as db_conn:
+                    has_running_evaluation = await db_conn.fetchval(
+                        """
+                        SELECT EXISTS(SELECT 1 FROM evaluations 
+                        WHERE validator_hotkey = $1 AND status = 'running')
+                        """,
+                        client.hotkey
+                    )
+                    
+                    if has_running_evaluation:
+                        logger.warning(f"Screener {client.hotkey} appears available in memory but has running evaluation in database - skipping")
+                        continue
                 
                 # Immediately reserve to prevent race conditions
                 client.status = "reserving"
