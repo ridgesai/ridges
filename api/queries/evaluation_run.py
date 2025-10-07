@@ -3,7 +3,7 @@ import asyncpg
 
 from uuid import UUID
 from typing import Optional
-from models.evaluation_runs import EvaluationRun
+from models.evaluation_run import EvaluationRun
 from api.src.backend.db_manager import db_operation
 
 
@@ -23,7 +23,7 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: 
 
 @db_operation
 async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: EvaluationRun):
-    # Note that evaluation_id, problem_name, and created_at are immutable (and never included in the update), since there is no reason to update them after creation
+    # Note that evaluation_id, problem_name, and created_at are immutable (and never included in the UPDATE), since there is no reason to modify them after creation
 
     await conn.execute(
         """
