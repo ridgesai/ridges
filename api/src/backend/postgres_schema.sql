@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS evaluation_sets
 );
 
 
-create table evaluations
+create table if not exists evaluations
 (
     -- Uniquely identifies this evaluation
     evaluation_id uuid not null primary key,
@@ -83,7 +83,10 @@ create table evaluations
     -- Identifies the validator/screener this evaluation is assigned to
     validator_hotkey text not null,
     -- The set ID that this evaluation is using
-    set_id integer not null
+    set_id integer not null,
+    -- Timestamp tracking
+    created_at timestamp with time zone not null default now(),
+    finished_at timestamp with time zone
 );
 
 CREATE TYPE EvaluationRunStatus AS ENUM (
@@ -454,13 +457,23 @@ CREATE TRIGGER tr_refresh_agent_scores_banned
 CREATE OR REPLACE FUNCTION set_top_agent_on_completed_evaluation()
 RETURNS TRIGGER AS $$
 DECLARE
+    evaluation_status TEXT;
     latest_set_id INT;
     latest_top_version UUID;
     current_top_version UUID;
     has_current BOOLEAN;
 BEGIN
-    -- Only act when status is set to completed
-    IF NEW.status <> 'success' THEN
+    -- Compute the evaluation status by querying evaluation_runs
+    SELECT CASE
+        WHEN EVERY(status = 'finished') THEN 'success'
+        WHEN EVERY(status IN ('finished', 'error')) THEN 'failure'
+        ELSE 'running'
+    END INTO evaluation_status
+    FROM evaluation_runs
+    WHERE evaluation_id = NEW.evaluation_id;
+
+    -- Only act when status is 'success'
+    IF evaluation_status <> 'success' THEN
         RETURN NEW;
     END IF;
 
@@ -497,9 +510,9 @@ $$ LANGUAGE plpgsql;
 -- Trigger to invoke the above function when an evaluation completes
 DROP TRIGGER IF EXISTS tr_set_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations_hydrated
+    AFTER UPDATE OF finished_at ON evaluations
     FOR EACH ROW
-    WHEN (NEW.status = 'success')
+    WHEN (NEW.finished_at IS NOT NULL AND OLD.finished_at IS NULL)
     EXECUTE FUNCTION set_top_agent_on_completed_evaluation();
 
 -- Approved Top Agents History
@@ -567,9 +580,9 @@ $$ LANGUAGE plpgsql;
 -- 1) When an evaluation completes (same as top_agents)
 DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_approved_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations_hydrated
+    AFTER UPDATE OF finished_at ON evaluations
     FOR EACH ROW
-    WHEN (NEW.status = 'success')
+    WHEN (NEW.finished_at IS NOT NULL AND OLD.finished_at IS NULL)
     EXECUTE FUNCTION set_approved_top_agent_if_changed();
 
 -- 2) When an agent is approved for a set
