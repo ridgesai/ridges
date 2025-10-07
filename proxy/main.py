@@ -253,27 +253,6 @@ async def inference_endpoint(request: InferenceRequest, http_request: Request):
     #     request.model = "deepseek-ai/DeepSeek-V3-0324"
 
     try:
-        # Don't log this stuff it provides no value
-
-        # Log only the last incoming message to avoid flooding the console
-        # if request.messages:
-        #     last_msg = request.messages[-1]
-        #     snippet = (last_msg.content[:300] + "…") if last_msg.content and len(last_msg.content) > 300 else last_msg.content
-        #     logger.info(
-        #         "Inference request | model=%s | run_id=%s | total_msgs=%d | last_role=%s | last_preview=%s",
-        #         request.model,
-        #         request.run_id,
-        #         len(request.messages),
-        #         last_msg.role,
-        #         snippet,
-        #     )
-        # else:
-        #     logger.info(
-        #         "Inference request | model=%s | run_id=%s | total_msgs=0",
-        #         request.model,
-        #         request.run_id,
-        #     )
-        
         if ENV != 'dev':
             # Production mode - run_id is required
             if not request.run_id:
