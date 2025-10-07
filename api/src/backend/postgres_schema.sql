@@ -38,13 +38,6 @@ create table if not exists agents
     version_num integer not null,
 
     -- The current status of the agent
-    --     screening_1
-    --     failed_screening_1
-    --     screening_2
-    --     failed_screening_2
-    --     evaluating
-    --     finished
-    --     cancelled
     status AgentStatus,
 
     agent_summary text,
@@ -59,31 +52,14 @@ create table if not exists agents
 );
 
 
--- Add agent_summary column if it doesn't exist (for existing tables)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'agents' AND column_name = 'agent_summary'
-    ) THEN
-        ALTER TABLE agents ADD COLUMN agent_summary TEXT;
-    END IF;
-END $$;
-
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
     banned_reason TEXT,
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS evaluation_sets (
-    set_id INT NOT NULL,
-    type TEXT NOT NULL, -- validator, screener
-    swebench_instance_id TEXT NOT NULL,
-    PRIMARY KEY (set_id, type, swebench_instance_id)
-);
 
-create table evaluation_sets
+CREATE TABLE IF NOT EXISTS evaluation_sets
 (
     -- Identifies the set ID (which starts at 1) that this problem belongs to
     set_id integer not null,
@@ -159,7 +135,7 @@ create table evaluation_run_logs
 -- Embeddings table
 CREATE TABLE IF NOT EXISTS embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    evaluation_run_id UUID NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
     input_text TEXT NOT NULL,
     cost FLOAT,
     response JSONB,
@@ -170,7 +146,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 -- Inference table
 CREATE TABLE IF NOT EXISTS inferences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id UUID NOT NULL,
+    evaluation_run_id UUID NOT NULL references evaluation_runs(evaluation_run_id),
     messages JSONB NOT NULL,
     temperature FLOAT NOT NULL,
     model TEXT NOT NULL,
@@ -262,48 +238,17 @@ CREATE TABLE IF NOT EXISTS treasury_transactions (
     fee BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Trigger functions and triggers for automatic score updates
-
--- Function to update evaluation score when evaluation runs are updated
-CREATE OR REPLACE FUNCTION update_evaluation_score()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Update the score for the associated evaluation based on average of solved runs
-    UPDATE evaluations 
-    SET score = (
-        SELECT AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END)
-        FROM evaluation_runs 
-        WHERE evaluation_id = NEW.evaluation_id
-        AND status != 'cancelled'
-    )
-    WHERE evaluation_id = NEW.evaluation_id;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Drop existing triggers if they exist
-DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON agents;
-
--- Trigger to update evaluation score when evaluation runs are inserted or updated
-DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-CREATE TRIGGER tr_update_evaluation_score
-    AFTER INSERT OR UPDATE OF solved ON evaluation_runs
-    FOR EACH ROW
-    EXECUTE FUNCTION update_evaluation_score();
 
 -- Performance optimization indices for evaluations queries
 
--- Primary composite index for main query filtering and ordering
-CREATE INDEX IF NOT EXISTS idx_evaluations_version_set_created 
-ON evaluations (agent_id, set_id, created_at DESC);
+-- -- Primary composite index for main query filtering and ordering
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_version_set_created
+-- ON evaluations (agent_id, set_id, created_at DESC);
 
--- Composite index optimized for screener evaluations in CTE
-CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup 
-ON evaluations (agent_id, set_id, validator_hotkey, created_at DESC)
-WHERE (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-%');
+-- -- Composite index optimized for screener evaluations in CTE
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup
+-- ON evaluations (agent_id, set_id, validator_hotkey, created_at DESC)
+-- WHERE (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-%');
 
 -- Index for evaluation_id lookups (used in IN clause)
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
@@ -312,32 +257,32 @@ CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern 
 ON evaluations (validator_hotkey text_pattern_ops);
 
--- Partial index for non-screener evaluations
-CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener 
-ON evaluations (agent_id, set_id, created_at DESC)
-WHERE (validator_hotkey NOT LIKE 'screener-1-%' AND validator_hotkey NOT LIKE 'screener-2-%' AND validator_hotkey NOT LIKE 'i-%');
+-- -- Partial index for non-screener evaluations
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener
+-- ON evaluations (agent_id, set_id, created_at DESC)
+-- WHERE (validator_hotkey NOT LIKE 'screener-1-%' AND validator_hotkey NOT LIKE 'screener-2-%' AND validator_hotkey NOT LIKE 'i-%');
 
 -- NEW INDICES FOR OPTIMIZED get_evaluations_with_usage_for_agent_version QUERY
 
--- Critical index for evaluation_runs JOIN and filtering
--- Covers: JOIN ON evaluation_id, WHERE status != 'cancelled', ORDER BY started_at
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_status_started 
-ON evaluation_runs (evaluation_id, status, started_at) 
-WHERE status != 'cancelled';
-
--- Optimized index for non-cancelled runs only (partial index for better performance)
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled 
-ON evaluation_runs (evaluation_id, started_at) 
-WHERE status != 'cancelled';
+-- -- Critical index for evaluation_runs JOIN and filtering
+-- -- Covers: JOIN ON evaluation_id, WHERE status != 'cancelled', ORDER BY started_at
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_status_started
+-- ON evaluation_runs (evaluation_id, status, started_at)
+-- WHERE status != 'cancelled';
+--
+-- -- Optimized index for non-cancelled runs only (partial index for better performance)
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled
+-- ON evaluation_runs (evaluation_id, started_at)
+-- WHERE status != 'cancelled';
 
 -- General index for evaluation_runs foreign key if it doesn't exist
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
 
--- Optimized index for innovation score calculations
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_innovation_fast
-ON evaluation_runs (swebench_instance_id, started_at, solved, run_id)
-WHERE status = 'result_scored' AND solved = true;
+-- -- Optimized index for innovation score calculations
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_innovation_fast
+-- ON evaluation_runs_hydrated (problem_name, started_at, solved, evaluation_run_id)
+-- WHERE status = 'result_scored' AND solved = true;
 
 -- Speeds up filtering to the miner’s agent_ids
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey_version
@@ -347,21 +292,37 @@ ON agents (miner_hotkey, agent_id);
 CREATE INDEX IF NOT EXISTS idx_treasury_transactions_version
 ON treasury_transactions (agent_id);
 
-drop materialized view if exists evaluations_with_status cascade;
+drop materialized view if exists evaluations_hydrated cascade;
+drop materialized view if exists evaluation_runs_hydrated cascade;
 
 CREATE TYPE EvaluationStatus AS ENUM ('running', 'success', 'failure');
 
-create materialized view evaluations_with_status as
-select
+-- First view: evaluation_runs with solved status
+CREATE MATERIALIZED VIEW evaluation_runs_hydrated AS
+SELECT
+    evaluation_runs.*,
+    CASE
+        WHEN COUNT(test.*) > 0 AND COUNT(test.*) = COUNT(test.*) FILTER (WHERE test->>'status' = 'pass')
+            THEN true
+        ELSE false
+        END AS solved
+FROM evaluation_runs
+         CROSS JOIN LATERAL jsonb_array_elements(evaluation_runs.test_results) AS test
+GROUP BY evaluation_runs.evaluation_run_id;
+
+-- Second view: evaluations with aggregated status and average score
+CREATE MATERIALIZED VIEW evaluations_hydrated AS
+SELECT
     evaluations.*,
-    (case
-        when every(evaluation_runs.status = 'finished') then 'success'
-        when every(evaluation_runs.status in ('finished', 'error')) then 'failure'
-        else 'running'
-    end)::EvaluationStatus as status
-from evaluations
-join evaluation_runs using (evaluation_id)
-group by evaluations.evaluation_id;
+    (CASE
+         WHEN EVERY(erh.status = 'finished') THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
+         ELSE 'running'
+        END)::EvaluationStatus AS status,
+    COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) AS score
+FROM evaluations
+         JOIN evaluation_runs_hydrated erh USING (evaluation_id)
+GROUP BY evaluations.evaluation_id;
 
 
 -- Drop and recreate materialized view to ensure clean state for concurrent refresh
@@ -398,13 +359,11 @@ agent_evaluations AS (
         (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
         avi.approved_at
     FROM all_agents aa
-    INNER JOIN evaluations e ON aa.agent_id = e.agent_id
-        AND e.status = 'completed' 
+    INNER JOIN evaluations_hydrated e ON aa.agent_id = e.agent_id
+        AND e.status = 'success'
         AND e.score IS NOT NULL
         AND e.score > 0
-        AND e.validator_hotkey NOT LIKE 'screener-1-%'
-        AND e.validator_hotkey NOT LIKE 'screener-2-%'
-        AND e.validator_hotkey NOT LIKE 'i-0%'
+        AND e.validator_hotkey NOT LIKE 'screener-%'
         AND e.set_id IS NOT NULL
     LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
 ),
@@ -501,7 +460,7 @@ DECLARE
     has_current BOOLEAN;
 BEGIN
     -- Only act when status is set to completed
-    IF NEW.status <> 'completed' THEN
+    IF NEW.status <> 'success' THEN
         RETURN NEW;
     END IF;
 
@@ -538,7 +497,7 @@ $$ LANGUAGE plpgsql;
 -- Trigger to invoke the above function when an evaluation completes
 DROP TRIGGER IF EXISTS tr_set_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations_with_status
+    AFTER UPDATE OF status ON evaluations_hydrated
     FOR EACH ROW
     WHEN (NEW.status = 'success')
     EXECUTE FUNCTION set_top_agent_on_completed_evaluation();
@@ -608,7 +567,7 @@ $$ LANGUAGE plpgsql;
 -- 1) When an evaluation completes (same as top_agents)
 DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_approved_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations_with_status
+    AFTER UPDATE OF status ON evaluations_hydrated
     FOR EACH ROW
     WHEN (NEW.status = 'success')
     EXECUTE FUNCTION set_approved_top_agent_if_changed();
