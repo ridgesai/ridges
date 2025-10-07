@@ -416,21 +416,44 @@ CREATE INDEX idx_agent_scores_version ON agent_scores (agent_id);
 CREATE INDEX idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
 CREATE INDEX idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
 
--- Function to refresh the agent_scores materialized view
-CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
+-- Function to refresh the entire materialized view chain
+CREATE OR REPLACE FUNCTION refresh_materialized_view_chain()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores;
+    -- Refresh in dependency order
+    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
+    REFRESH MATERIALIZED VIEW evaluations_hydrated;
+    REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to refresh materialized view when evaluations are updated
+-- Function to refresh only agent_scores materialized view
+CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW agent_scores;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to refresh materialized views when evaluations are updated
+-- Note: We don't need to refresh evaluation_runs_hydrated since evaluations table
+-- doesn't affect it, but we do need evaluations_hydrated and agent_scores
+CREATE OR REPLACE FUNCTION refresh_evaluations_and_scores()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW evaluations_hydrated;
+    REFRESH MATERIALIZED VIEW agent_scores;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;
 CREATE TRIGGER tr_refresh_agent_scores
     AFTER INSERT OR UPDATE OR DELETE ON evaluations
     FOR EACH STATEMENT
-    EXECUTE FUNCTION refresh_agent_scores_view();
+    EXECUTE FUNCTION refresh_evaluations_and_scores();
 
 -- Trigger to refresh materialized view when agent status changes
 DROP TRIGGER IF EXISTS tr_refresh_agent_scores_agents ON agents;
@@ -452,6 +475,13 @@ CREATE TRIGGER tr_refresh_agent_scores_banned
     AFTER INSERT OR DELETE ON banned_hotkeys
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
+
+-- Trigger to refresh entire materialized view chain when evaluation_runs change
+DROP TRIGGER IF EXISTS tr_refresh_materialized_views ON evaluation_runs;
+CREATE TRIGGER tr_refresh_materialized_views
+    AFTER INSERT OR UPDATE OR DELETE ON evaluation_runs
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_materialized_view_chain();
 
 -- Trigger function to update top_agents when an evaluation is marked as completed
 CREATE OR REPLACE FUNCTION set_top_agent_on_completed_evaluation()
