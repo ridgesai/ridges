@@ -1,5 +1,6 @@
 import json
 import httpx
+import textwrap
 import utils.logger as logger
 import validator.config as config
 
@@ -20,7 +21,8 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
 
     url = f"{config.RIDGES_PLATFORM_URL.rstrip("/")}/{endpoint.lstrip("/")}"
 
-    logger.debug(f"Sending request for POST {url}\n{json.dumps(body, indent=2)}")
+    logger.debug(f"Sending request for POST {url}")
+    logger.debug(textwrap.indent(json.dumps(body, indent=2), "  "))
     
     try:
         # Send the request
@@ -28,7 +30,10 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token is not None else None
             response = await client.post(url, json=body, headers=headers)
             response.raise_for_status()
-            logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}\n{json.dumps(response.json(), indent=2)}")
+
+            logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
+            logger.debug(textwrap.indent(json.dumps(response.json(), indent=2), "  "))
+            
             return response
     
     except httpx.HTTPStatusError as e:
@@ -38,19 +43,22 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
         # Try and print the response as best as we can
         try:
             response_json = e.response.json()
-            if isinstance(response_json, dict) and len(response_json) == 1 and "detail" in response_json:
+            if isinstance(response_json, dict) and len(response_json) == 1 and "detail" in response_json and isinstance(response_json["detail"], str):
                 # The response is a JSON that looks like {"detail": "..."}
-                logger.error(response_json["detail"])
+                logger.error(textwrap.indent(response_json["detail"], "  "))
             else:
                 # The response is a JSON
-                logger.error(f"Response (JSON):\n{json.dumps(response_json, indent=2)}")
+                logger.error(f"Response (JSON):")
+                logger.error(textwrap.indent(json.dumps(response_json, indent=2), "  "))
         except Exception:
             # The response is not a JSON
-            logger.error(f"Response:\n{e.response.text}")
-
+            logger.error(f"Response:")
+            logger.error(textwrap.indent(e.response.text, "  "))
+        
         exit(1)
     
     except Exception as e:
         # Internal error (timeout, DNS error, etc.)
         logger.error(f"{type(e).__name__} during POST {url}")
+
         exit(1)
