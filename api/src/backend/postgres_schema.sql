@@ -14,7 +14,7 @@ INSERT INTO threshold_config (key, value) VALUES
 ON CONFLICT (key) DO NOTHING;
 
 -- Create AgentStatus enum type if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
         CREATE TYPE AgentStatus AS ENUM (
@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS evaluations
 );
 
 -- Create EvaluationRunStatus enum type if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationrunstatus') THEN
         CREATE TYPE EvaluationRunStatus AS ENUM (
@@ -112,7 +112,7 @@ BEGIN
 END $$;
 
 -- Evaluation Runs table
-create table if not exists evaluation_runs
+CREATE TABLE IF NOT EXISTS evaluation_runs
 (
     -- Uniquely identifies this evaluation run
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
@@ -138,7 +138,17 @@ create table if not exists evaluation_runs
     finished_or_errored_at TIMESTAMP WITH TIME ZONE
 );
 
-create table if not exists evaluation_run_logs
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationrunlogtype') THEN
+            CREATE TYPE EvaluationRunLogType AS ENUM (
+                'agent',
+                'eval'
+            );
+        END IF;
+    END $$;
+
+CREATE TABLE IF NOT EXISTS evaluation_run_logs
 (
     -- Identifies the evaluation run these logs are for
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
@@ -313,7 +323,7 @@ DROP MATERIALIZED VIEW IF EXISTS evaluations_hydrated CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS evaluation_runs_hydrated CASCADE;
 
 -- Create EvaluationStatus enum type if it doesn't exist
-DO $$ 
+DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationstatus') THEN
         CREATE TYPE EvaluationStatus AS ENUM ('running', 'success', 'failure');
@@ -325,13 +335,15 @@ CREATE MATERIALIZED VIEW evaluation_runs_hydrated AS
 SELECT
     evaluation_runs.*,
     CASE
-        WHEN COUNT(test.*) > 0 AND COUNT(test.*) = COUNT(test.*) FILTER (WHERE test->>'status' = 'pass')
-            THEN true
+        WHEN evaluation_runs.test_results IS NULL THEN NULL
+        WHEN jsonb_array_length(evaluation_runs.test_results) = 0 THEN NULL
+        WHEN (
+            SELECT COUNT(*) FILTER (WHERE test->>'status' = 'pass')
+            FROM jsonb_array_elements(evaluation_runs.test_results) AS test
+        ) = jsonb_array_length(evaluation_runs.test_results) THEN true
         ELSE false
-        END AS solved
-FROM evaluation_runs
-         CROSS JOIN LATERAL jsonb_array_elements(evaluation_runs.test_results) AS test
-GROUP BY evaluation_runs.evaluation_run_id;
+    END AS solved
+FROM evaluation_runs;
 
 -- Second view: evaluations with aggregated status and average score
 CREATE MATERIALIZED VIEW evaluations_hydrated AS
@@ -348,7 +360,6 @@ FROM evaluations
 GROUP BY evaluations.evaluation_id;
 
 
--- Drop and recreate materialized view to ensure clean state for concurrent refresh
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
 
 -- Recreate the materialized view
@@ -428,7 +439,6 @@ HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
--- CRITICAL: This unique index enables CONCURRENT refresh
 DROP INDEX IF EXISTS idx_agent_scores_unique;
 CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (agent_id, set_id);
 CREATE INDEX idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
@@ -454,12 +464,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to refresh materialized views when evaluations are updated
--- Note: We don't need to refresh evaluation_runs_hydrated since evaluations table
--- doesn't affect it, but we do need evaluations_hydrated and agent_scores
+-- Trigger to refresh materialized views when evaluations table changes
+-- Refreshes in dependency order to ensure fresh data
 CREATE OR REPLACE FUNCTION refresh_evaluations_and_scores()
 RETURNS TRIGGER AS $$
 BEGIN
+    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
     REFRESH MATERIALIZED VIEW evaluations_hydrated;
     REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
