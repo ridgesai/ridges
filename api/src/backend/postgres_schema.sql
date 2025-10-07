@@ -419,14 +419,11 @@ CREATE INDEX idx_agent_scores_version ON agent_scores (agent_id);
 CREATE INDEX idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
 CREATE INDEX idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
 
--- Function to refresh the entire materialized view chain
-CREATE OR REPLACE FUNCTION refresh_materialized_view_chain()
+-- Function to refresh evaluation_runs_hydrated
+CREATE OR REPLACE FUNCTION refresh_evaluation_runs_hydrated()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Refresh in dependency order
     REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
-    REFRESH MATERIALIZED VIEW evaluations_hydrated;
-    REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -479,12 +476,12 @@ CREATE TRIGGER tr_refresh_agent_scores_banned
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
 
--- Trigger to refresh entire materialized view chain when evaluation_runs change
-DROP TRIGGER IF EXISTS tr_refresh_materialized_views ON evaluation_runs;
-CREATE TRIGGER tr_refresh_materialized_views
+-- Trigger to refresh evaluation_runs_hydrated when evaluation_runs change
+DROP TRIGGER IF EXISTS tr_refresh_evaluation_runs_views ON evaluation_runs;
+CREATE TRIGGER tr_refresh_evaluation_runs_views
     AFTER INSERT OR UPDATE OR DELETE ON evaluation_runs
     FOR EACH STATEMENT
-    EXECUTE FUNCTION refresh_materialized_view_chain();
+    EXECUTE FUNCTION refresh_evaluation_runs_hydrated();
 
 -- Trigger function to update top_agents when an evaluation is marked as completed
 CREATE OR REPLACE FUNCTION set_top_agent_on_completed_evaluation()
