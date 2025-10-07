@@ -14,7 +14,6 @@ from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.backend.queries.agents import check_if_agent_banned
 from api.src.backend.entities import MinerAgent, Evaluation
 from api.src.utils.s3 import S3Manager
-from api.src.utils.similarity_checker import SimilarityChecker
 from api.src.backend.db_manager import get_transaction
 
 logger = get_logger(__name__)

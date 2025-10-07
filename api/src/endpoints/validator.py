@@ -1,20 +1,20 @@
 import time
+import utils.logger as logger
 
 from uuid import UUID, uuid4
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Dict, Optional
 from fastapi.security import HTTPBearer
-from loggers.logging_utils import get_logger
 from utils.system_metrics import SystemMetrics
 from utils.fiber import validate_signed_timestamp
 from api.src.backend.entities import EvaluationRun
 from fastapi import APIRouter, HTTPException, Depends
-
-logger = get_logger(__name__)
-
+from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
 
 
+
+# TODO: this needs to be in the config file somewhere.
 DEV_MODE = True
 
 
@@ -148,7 +148,7 @@ async def validator_heartbeat(
 
 
 
-def get_evaluation_id_for_run(run_id: UUID) -> UUID:
+def get_evaluation_id_from_run_id(run_id: UUID) -> UUID:
     # TODO: Check db for evaluation id associated with run
     pass
 

@@ -37,6 +37,8 @@ handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+logger.propagate = False
+
 
 
 def debug(message: str):
