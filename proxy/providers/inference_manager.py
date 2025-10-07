@@ -38,7 +38,7 @@ class InferenceManager:
         if (
             self.targon.supports_model(model)
             and self.targon.is_available()
-            and random.random() < 0.05
+            and random.random() < 0.25
         ):
             return self.targon
             
