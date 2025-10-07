@@ -126,12 +126,15 @@ CREATE TABLE evaluation_runs
     finished_or_errored_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TABLE evaluation_run_logs
+CREATE TYPE EvaluationRunLogType AS ENUM ('agent', 'eval');
+CREATE TABLE IF NOT EXISTS evaluation_run_logs
 (
     -- Identifies the evaluation run these logs are for
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
     -- The logs
-    logs TEXT
+    logs TEXT,
+    -- Whether the logs were produced by the agent or the eval system
+    type EvaluationRunLogType
 );
 
 
