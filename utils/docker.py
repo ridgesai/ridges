@@ -1,6 +1,5 @@
 import subprocess
-
-from validator.utils.logger import debug, info, warn, error
+import utils.logger as logger
 
 
 
@@ -13,18 +12,18 @@ def build_docker_image(dockerfile_dir, tag):
         tag: Tag to give the Docker image
     """
 
-    info(f"[SANDBOX] Building Docker image: {tag}")
+    logger.info(f"[SANDBOX] Building Docker image: {tag}")
     
     try:
         result = subprocess.run(["docker", "build", "-t", tag, dockerfile_dir], text=True)
         
         if result.returncode == 0:
-            info(f"[SANDBOX] Successfully built Docker image: {tag}")
+            logger.info(f"[SANDBOX] Successfully built Docker image: {tag}")
         else:
             raise Exception(f"Docker build failed with exit code {result.returncode}")
             
     except Exception as e:
-        error(f"[SANDBOX] Failed to build Docker image: {e}")
+        logger.error(f"[SANDBOX] Failed to build Docker image: {e}")
         raise
 
 

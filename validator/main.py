@@ -1,9 +1,9 @@
 import time
-import config
 import asyncio
 import utils.logger as logger
+import validator.config as config
 
-from utils.http import post_ridges_platform
+from validator.http import post_ridges_platform
 
 
 
@@ -14,8 +14,6 @@ session_id = None
 
 async def main():
     global session_id
-
-    logger.enable_verbose()
 
 
 

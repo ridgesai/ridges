@@ -1,10 +1,10 @@
 """Git utilities for managing repository operations."""
 
 import os
-import subprocess
 import shutil
 import tempfile
-from validator.utils.logger import debug, info, warn, error
+import subprocess
+import utils.logger as logger
 
 
 
@@ -21,13 +21,13 @@ def clone_repo(repo_url, target_dir):
     """
     
     try:
-        debug(f"[GIT] Cloning repository from {repo_url} to {target_dir}")
+        logger.info(f"[GIT] Cloning repository from {repo_url} to {target_dir}")
  
         result = subprocess.run(["git", "clone", repo_url, target_dir])
         if result.returncode != 0:
             return False, f"Failed to clone repository: {result.returncode}"
         
-        debug(f"[GIT] Successfully cloned repository to {target_dir}")
+        logger.info(f"[GIT] Successfully cloned repository to {target_dir}")
  
         return True, None
         
@@ -64,7 +64,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir):
             temp_repo_path = os.path.join(temp_clone_dir, "repo")
             
             # Clone the repository
-            debug(f"[GIT] Cloning repository from {abs_repo_path} to {temp_repo_path}")
+            logger.info(f"[GIT] Cloning repository from {abs_repo_path} to {temp_repo_path}")
             result = subprocess.run(
                 ["git", "clone", abs_repo_path, temp_repo_path],
                 capture_output=True,
@@ -76,7 +76,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir):
                 return False, f"Failed to clone repository: {result.stderr}"
             
             # Checkout the specific commit
-            debug(f"[GIT] Checking out commit {commit_hash}")
+            logger.info(f"[GIT] Checking out commit {commit_hash}")
             result = subprocess.run(
                 ["git", "checkout", commit_hash],
                 capture_output=True,
@@ -89,7 +89,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir):
             
             # Copy all files from the cloned repo to the target directory
             # (excluding .git directory to save space)
-            debug(f"[GIT] Copying repository files to {target_dir}")
+            logger.info(f"[GIT] Copying repository files to {target_dir}")
             for item in os.listdir(temp_repo_path):
                 if item == ".git":
                     continue
@@ -102,7 +102,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir):
                 else:
                     shutil.copy2(src_path, dst_path)
             
-            debug(f"[GIT] Successfully cloned repository at commit {commit_hash} to {target_dir}")
+            logger.info(f"[GIT] Successfully cloned repository at commit {commit_hash} to {target_dir}")
             return True, None
             
     except Exception as e:
@@ -148,30 +148,30 @@ def init_repo_with_initial_commit(directory, commit_message="Initial commit"):
 
     try:
         # Initialize git repository
-        debug(f"[GIT] Initializing git repository in {directory}")
+        logger.info(f"[GIT] Initializing git repository in {directory}")
         subprocess.run(['git', 'init'], capture_output=True, text=True, check=True, cwd=directory)
-        debug(f"[GIT] Initialized git repository in {directory}")
+        logger.info(f"[GIT] Initialized git repository in {directory}")
 
         # Add all files
-        debug(f"[GIT] Adding all files in {directory}")
+        logger.info(f"[GIT] Adding all files in {directory}")
         subprocess.run(['git', 'add', '.'], capture_output=True, text=True, check=True, cwd=directory)
-        debug(f"[GIT] Added all files in {directory}")
+        logger.info(f"[GIT] Added all files in {directory}")
         
         # Make initial commit
-        debug(f"[GIT] Making initial commit: {commit_message}")
+        logger.info(f"[GIT] Making initial commit: {commit_message}")
         subprocess.run(['git', 'commit', '-m', commit_message], capture_output=True, text=True, check=True, cwd=directory)
-        debug(f"[GIT] Made initial commit: {commit_message}")
+        logger.info(f"[GIT] Made initial commit: {commit_message}")
         
         return True
         
     except subprocess.CalledProcessError as e:
-        warn(f"[GIT] Git command failed: {e}")
-        warn(f"[GIT] Command output: {e.stdout}")
-        warn(f"[GIT] Command error: {e.stderr}")
+        logger.warning(f"[GIT] Git command failed: {e}")
+        logger.warning(f"[GIT] Command output: {e.stdout}")
+        logger.warning(f"[GIT] Command error: {e.stderr}")
 
         return False
     
     except Exception as e:
-        warn(f"[GIT] Failed to initialize git repository: {e}")
+        logger.warning(f"[GIT] Failed to initialize git repository: {e}")
 
         return False

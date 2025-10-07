@@ -4,10 +4,9 @@ import os
 import json
 import shutil
 
-from validator.utils.diff import get_file_diff
-from validator.utils.logger import debug, info, warn, error
-from validator.utils.git import init_repo_with_initial_commit
-from validator.problem_suites.problem_suite import ProblemSuite
+from utils.diff import get_file_diff
+from utils.git import init_repo_with_initial_commit
+from abstract_agent_runner.problem_suites.problem_suite import ProblemSuite
 
 
 class PolyglotSuite(ProblemSuite):

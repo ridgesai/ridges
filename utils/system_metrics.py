@@ -1,11 +1,11 @@
 import psutil
+import utils.logger as logger
 
 from typing import Optional
 from pydantic import BaseModel
 from loggers.logging_utils import get_logger
 from utils.docker import get_num_docker_containers
 
-logger = get_logger(__name__)
 
 
 class SystemMetrics(BaseModel):
@@ -29,7 +29,7 @@ class SystemMetrics(BaseModel):
 
 
 
-async def get_validator_heartbeat_metrics() -> SystemMetrics:
+async def get_system_metrics() -> SystemMetrics:
     metrics = SystemMetrics()
 
     try:
@@ -46,7 +46,7 @@ async def get_validator_heartbeat_metrics() -> SystemMetrics:
         metrics.num_containers = get_num_docker_containers()
 
     except Exception as e:
-        # TODO
+        logger.warning(f"Error in get_system_metrics(): {e}")
         pass
         
     return metrics

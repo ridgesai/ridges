@@ -47,10 +47,8 @@ RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
 
 
 # Print out the configuration
-logger.banner('VALIDATOR CONFIGURATION')
 logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")
 logger.info(f"Validator Hotkey Name: {VALIDATOR_HOTKEY_NAME}")
 logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY.ss58_address}")
 logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
 logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
-logger.banner()

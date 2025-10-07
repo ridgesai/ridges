@@ -1,7 +1,6 @@
-from fiber import Keypair
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
-logger = get_logger(__name__)
+from fiber import Keypair
 
 
 
