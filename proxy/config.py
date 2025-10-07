@@ -60,7 +60,8 @@ MODEL_PRICING: Dict[str, float] = {
     "zai-org/GLM-4.5-Air": 0.0000,
     "rayonlabs/Gradients-Instruct-8B": 0.02,
     "openai/gpt-oss-120b": 0.2904,
-    "rayonlabs/Gradients-Instruct-8B": 0.02
+    "rayonlabs/Gradients-Instruct-8B": 0.02,
+    "zai-org/GLM-4.6-FP8": 0.2
 }
 
 # Models that support Targon fallback
