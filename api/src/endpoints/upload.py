@@ -148,6 +148,14 @@ async def post_agent(
                             logger.warning(f"Failed to assign agent {agent.version_id} to screener")
                         else:
                             logger.warning(f"Failed to assign agent {agent.version_id} to screener - screener is not running")
+                        
+                        # CRITICAL FIX: Reset agent status back to awaiting_screening_1 to prevent stuck agents
+                        # The agent was created but never properly assigned to screener
+                        await conn.execute(
+                            "UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE version_id = $1",
+                            agent.version_id
+                        )
+                        logger.warning(f"Reset agent {agent.version_id} status to awaiting_screening_1 due to failed screener assignment")
                 
                 # Screener state is now committed, lock can be released
 

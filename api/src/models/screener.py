@@ -247,30 +247,31 @@ class Screener(Client):
                 logger.warning(f"Screener {self.hotkey}: Invalid finish_screening call for evaluation {evaluation_id}")
                 return
             
-            async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-                expected_status = getattr(AgentStatus, f"screening_{self.stage}")
-                if AgentStatus.from_string(agent_status) != expected_status:
-                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
-                    # Clearly a bug here, its somehow set to failed_screening_1 when we hit this if statement
-                    # It should be screening_1, no idea whats setting it to failed_screening_1
-                    # return
-                
-                if errored:
-                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
-                    await evaluation.error(conn, reason)
-                    logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}: done")
-                    notification_targets = None
-                else:
-                    notification_targets = await evaluation.finish(conn)
-
-                from api.src.socket.websocket_manager import WebSocketManager
-                ws_manager = WebSocketManager.get_instance()
-                await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
-
-                self.set_available()
+            async with Evaluation.get_lock():
+                async with get_transaction() as conn:
+                    agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+                    expected_status = getattr(AgentStatus, f"screening_{self.stage}")
+                    if AgentStatus.from_string(agent_status) != expected_status:
+                        logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
+                        # Clearly a bug here, its somehow set to failed_screening_1 when we hit this if statement
+                        # It should be screening_1, no idea whats setting it to failed_screening_1
+                        # return
                     
-                logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+                    if errored:
+                        logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}")
+                        await evaluation.error(conn, reason)
+                        logger.info(f"Screener {self.hotkey}: Finishing screening {evaluation_id}: Errored with reason: {reason}: done")
+                        notification_targets = None
+                    else:
+                        notification_targets = await evaluation.finish(conn)
+
+                    from api.src.socket.websocket_manager import WebSocketManager
+                    ws_manager = WebSocketManager.get_instance()
+                    await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+
+                    self.set_available()
+                        
+                    logger.info(f"Screener {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
             
             # Handle notifications AFTER transaction commits
             if notification_targets:
