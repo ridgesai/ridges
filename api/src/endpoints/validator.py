@@ -7,13 +7,13 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from fastapi.security import HTTPBearer
+from models.evaluation import Evaluation
 from utils.system_metrics import SystemMetrics
 from utils.fiber import validate_signed_timestamp
-from api.src.backend.entities import EvaluationRun
 from fastapi import Depends, APIRouter, HTTPException
-from api.queries.evaluation_runs import get_evaluation_run_by_id
-from models.evaluation_runs import EvaluationRunStatus, EvaluationRunTestResult
+from api.queries.evaluation_runs import get_evaluation_run_by_id, update_evaluation_run_by_id
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
+from models.evaluation_runs import EvaluationRun, EvaluationRunStatus, EvaluationRunTestResult
 
 
 
@@ -130,7 +130,8 @@ class ValidatorRequestEvaluationRequest(BaseModel):
     pass
 
 class ValidatorRequestEvaluationResponse(BaseModel):
-    foo: str
+    evaluation: Evaluation
+    evaluation_runs: List[EvaluationRun]
 
 @router.post("/request-evaluation")
 async def validator_request_evaluation(
@@ -239,7 +240,6 @@ async def update_evaluation_run(
             # Update the evaluation run to initializing_agent
             evaluation_run.status = EvaluationRunStatus.initializing_agent
             evaluation_run.started_initializing_agent_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
 
 
 
@@ -254,7 +254,6 @@ async def update_evaluation_run(
             # Update the evaluation run to running_agent
             evaluation_run.status = EvaluationRunStatus.running_agent
             evaluation_run.started_running_agent_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
 
 
 
@@ -284,7 +283,6 @@ async def update_evaluation_run(
             evaluation_run.status = EvaluationRunStatus.initializing_eval
             evaluation_run.patch = request.patch
             evaluation_run.started_initializing_eval_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
 
         
 
@@ -299,7 +297,6 @@ async def update_evaluation_run(
             # Update the evaluation run to running_eval
             evaluation_run.status = EvaluationRunStatus.running_eval
             evaluation_run.started_running_eval_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
 
 
 
@@ -328,7 +325,6 @@ async def update_evaluation_run(
             # Update the evaluation run to finished
             evaluation_run.status = EvaluationRunStatus.finished
             evaluation_run.finished_or_errored_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
         
 
 
@@ -365,9 +361,10 @@ async def update_evaluation_run(
             evaluation_run.error_code = request.error_code
             evaluation_run.error_message = request.error_message
             evaluation_run.finished_or_errored_at = datetime.now()
-            await update_evaluation_run(evaluation_run)
 
 
+
+    await update_evaluation_run_by_id(evaluation_run)
 
     logger.info(f"Updated evaluation run {request.evaluation_run_id} to {request.updated_status}")
 

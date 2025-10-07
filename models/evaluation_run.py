@@ -2,7 +2,7 @@ from enum import Enum
 from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional, Array
+from typing import List, Optional
 
 
 
@@ -44,7 +44,7 @@ class EvaluationRun(BaseModel):
     status: EvaluationRunStatus
 
     patch: Optional[str] = None
-    test_results: Optional[Array[EvaluationRunTestResult]] = None
+    test_results: Optional[List[EvaluationRunTestResult]] = None
 
     error_code: Optional[int] = None
     error_message: Optional[str] = None
