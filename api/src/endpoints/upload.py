@@ -114,14 +114,14 @@ async def post_agent(
                 
                 # Check is there is an evaluation in the database with the screener's hotkey that has running status
                 # This is to prevent the case where a screener.is_available() returns true but the screener is actually running an evaluation
-                from api.src.backend.queries.evaluations import is_screener_running_evaluation
-                is_screener_running_evaluation = await is_screener_running_evaluation(screener.hotkey)
-                if is_screener_running_evaluation:
-                    logger.error(f"No available stage 1 screener for agent upload from miner {miner_hotkey} - screener {screener.hotkey} said it was available but there is an evaluation in the database with the screener's hotkey that has running status")
-                    raise HTTPException(
-                        status_code=409,
-                        detail="No stage 1 screeners available for agent evaluation. Please try again later."
-                    )
+                # from api.src.backend.queries.evaluations import is_screener_running_evaluation
+                # is_screener_running_evaluation = await is_screener_running_evaluation(screener.hotkey)
+                # if is_screener_running_evaluation:
+                #     logger.error(f"No available stage 1 screener for agent upload from miner {miner_hotkey} - screener {screener.hotkey} said it was available but there is an evaluation in the database with the screener's hotkey that has running status")
+                #     raise HTTPException(
+                #         status_code=409,
+                #         detail="No stage 1 screeners available for agent evaluation. Please try again later."
+                #     )
 
                 async with get_transaction() as conn:
                     can_upload = await Evaluation.check_miner_has_no_running_evaluations(conn, miner_hotkey)
