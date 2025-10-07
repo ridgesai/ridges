@@ -46,9 +46,6 @@ async def lifespan(app: FastAPI):
     logger.info("Fetching and caching GitHub commits...")
     await fetch_and_store_commits()
     
-    # Simple startup recovery through evaluation model
-    from api.src.models.evaluation import Evaluation
-    await Evaluation.startup_recovery()
     
     # Recover threshold-based approvals
     from api.src.utils.threshold_scheduler import threshold_scheduler

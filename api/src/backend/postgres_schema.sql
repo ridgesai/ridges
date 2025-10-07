@@ -13,15 +13,21 @@ INSERT INTO threshold_config (key, value) VALUES
 ('improvement_weight', 0.30)
 ON CONFLICT (key) DO NOTHING;
 
-CREATE TYPE AgentStatus AS ENUM (
-    'cancelled',
-    'screening_1',
-    'failed_screening_1',
-    'screening_2',
-    'failed_screening_2',
-    'evaluating',
-    'finished'
-);
+-- Create AgentStatus enum type if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
+        CREATE TYPE AgentStatus AS ENUM (
+            'cancelled',
+            'screening_1',
+            'failed_screening_1',
+            'screening_2',
+            'failed_screening_2',
+            'evaluating',
+            'finished'
+        );
+    END IF;
+END $$;
 
 -- Agents table
 CREATE TABLE IF NOT EXISTS agents
@@ -89,18 +95,24 @@ CREATE TABLE IF NOT EXISTS evaluations
     finished_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TYPE EvaluationRunStatus AS ENUM (
-    'pending',
-    'initializing_agent',
-    'running_agent',
-    'initializing_eval',
-    'running_eval',
-    'finished',
-    'error'
-);
+-- Create EvaluationRunStatus enum type if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationrunstatus') THEN
+        CREATE TYPE EvaluationRunStatus AS ENUM (
+            'pending',
+            'initializing_agent',
+            'running_agent',
+            'initializing_eval',
+            'running_eval',
+            'finished',
+            'error'
+        );
+    END IF;
+END $$;
 
 -- Evaluation Runs table
-CREATE TABLE evaluation_runs
+create table if not exists evaluation_runs
 (
     -- Uniquely identifies this evaluation run
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
@@ -126,8 +138,7 @@ CREATE TABLE evaluation_runs
     finished_or_errored_at TIMESTAMP WITH TIME ZONE
 );
 
-CREATE TYPE EvaluationRunLogType AS ENUM ('agent', 'eval');
-CREATE TABLE IF NOT EXISTS evaluation_run_logs
+create table if not exists evaluation_run_logs
 (
     -- Identifies the evaluation run these logs are for
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
@@ -301,7 +312,13 @@ ON treasury_transactions (agent_id);
 DROP MATERIALIZED VIEW IF EXISTS evaluations_hydrated CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS evaluation_runs_hydrated CASCADE;
 
-CREATE TYPE EvaluationStatus AS ENUM ('running', 'success', 'failure');
+-- Create EvaluationStatus enum type if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationstatus') THEN
+        CREATE TYPE EvaluationStatus AS ENUM ('running', 'success', 'failure');
+    END IF;
+END $$;
 
 -- First view: evaluation_runs with solved status
 CREATE MATERIALIZED VIEW evaluation_runs_hydrated AS
