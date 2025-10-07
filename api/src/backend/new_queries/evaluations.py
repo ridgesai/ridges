@@ -1,6 +1,6 @@
-import uuid
 import asyncpg
 
+from uuid import UUID, uuid4
 from api.src.backend.db_manager import db_transaction
 from api.src.backend.new_queries.evaluation_runs import create_evaluation_run_for_evaluation_id
 from api.src.backend.new_queries.evaluation_sets import get_all_problems_of_type_in_set, get_latest_set_id
@@ -8,7 +8,7 @@ from api.src.backend.new_queries.evaluation_sets import get_all_problems_of_type
 
 
 @db_transaction
-async def create_screener_evaluation_and_runs_for_agent(conn: asyncpg.Connection, version_id: str, screener_hotkey: str) -> uuid.UUID:
+async def create_screener_evaluation_and_runs_for_agent(conn: asyncpg.Connection, version_id: str, screener_hotkey: str) -> UUID:
     # Figure out the screener number
     # TODO: Assumes screener_hotkey is valid (i.e., "screener-1-X" or "screener-2-X"). Maybe sanity check this?
     screener_class = int(screener_hotkey.split("-")[1])
@@ -17,7 +17,7 @@ async def create_screener_evaluation_and_runs_for_agent(conn: asyncpg.Connection
     latest_set_id = await get_latest_set_id()
 
     # Second, create a new evaluation
-    evaluation_id = str(uuid.uuid4())
+    evaluation_id = str(uuid4())
     await conn.execute("""
         INSERT INTO evaluations (
             evaluation_id,

@@ -1,10 +1,10 @@
 import asyncio
 import os
+from uuid import UUID
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Dict, List, Optional
-import uuid
 
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
@@ -399,7 +399,7 @@ async def check_evaluation_status(evaluation_id: str):
             # Check evaluation status
             result = await conn.fetchrow(
                 "SELECT status, finished_at FROM evaluations WHERE evaluation_id = $1", 
-                uuid.UUID(evaluation_id)
+                UUID(evaluation_id)
             )
             
             if not result:

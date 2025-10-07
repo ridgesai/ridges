@@ -1,9 +1,9 @@
 import time
-import uuid
 
 from datetime import datetime
 from typing import Dict, Optional
 
+from uuid import UUID
 from fiber import Keypair
 from pydantic import BaseModel
 from fastapi.security import HTTPBearer
@@ -62,7 +62,7 @@ class Validator(BaseModel):
     current_evaluation_id: Optional[UUID]
 
 # Map of session IDs to validator objects
-SESSION_ID_TO_VALIDATOR: Dict[uuid.UUID, Validator] = {}
+SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header

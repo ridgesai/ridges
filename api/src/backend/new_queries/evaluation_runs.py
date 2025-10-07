@@ -1,13 +1,13 @@
-import uuid
 import asyncpg
 
+from uuid import UUID, uuid4
 from api.src.backend.db_manager import db_operation
 
 
 
 @db_operation
-async def create_evaluation_run_for_evaluation_id(conn: asyncpg.Connection, evaluation_id: str, problem: str) -> uuid.UUID:
-    run_id = str(uuid.uuid4())
+async def create_evaluation_run_for_evaluation_id(conn: asyncpg.Connection, evaluation_id: str, problem: str) -> UUID:
+    run_id = str(UUID.uuid4())
     await conn.execute("""
         INSERT INTO evaluation_runs (
             run_id,
