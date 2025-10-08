@@ -7,8 +7,6 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, B
 from pydantic import BaseModel, Field
 
 from api.src.backend.db_manager import get_transaction
-from api.src.backend.entities import MinerAgent, AgentStatus
-from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.utils.auth import verify_request_public
@@ -17,7 +15,7 @@ from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_
     upload_agent_code_to_s3, record_upload_attempt
 from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
-
+from models.agent import AgentStatus, Agent
 
 logger = get_logger(__name__)
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
@@ -80,9 +78,9 @@ async def post_agent(
             logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent with process ID: {process_id}.")
             logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
             check_if_python_file(agent_file.filename)
-            latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
+            latest_agent: Optional[Agent] = await get_latest_agent(miner_hotkey=miner_hotkey)
 
-            agent = MinerAgent(
+            agent = Agent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,

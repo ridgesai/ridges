@@ -23,9 +23,6 @@ class MinerAgent(BaseModel):
     ip_address: Optional[str] = None
     innovation_score: Optional[float] = None
 
-class AgentWithHydratedCode(MinerAgent):
-    code: str
-
 class MinerAgentWithScores(MinerAgent):
     """MinerAgent with computed scores by set_id"""
     score: Optional[float]
