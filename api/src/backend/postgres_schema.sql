@@ -350,7 +350,7 @@ CREATE MATERIALIZED VIEW evaluations_hydrated AS
 SELECT
     evaluations.*,
     (CASE
-         WHEN EVERY(erh.status = 'finished') THEN 'success'
+         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
          WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
          ELSE 'running'
         END)::EvaluationStatus AS status,
