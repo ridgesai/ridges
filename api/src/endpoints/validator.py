@@ -279,7 +279,7 @@ class ValidatorUpdateEvaluationRunResponse(BaseModel):
     pass
 
 @router.post("/update-evaluation-run")
-async def update_evaluation_run(
+async def validator_update_evaluation_run(
     request: ValidatorUpdateEvaluationRunRequest,
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorUpdateEvaluationRunResponse:
@@ -476,7 +476,7 @@ class ValidatorDisconnectResponse(BaseModel):
     pass
 
 @router.post("/disconnect")
-async def validator_heartbeat(
+async def validator_disconnect(
     request: ValidatorDisconnectRequest,
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorDisconnectResponse:
@@ -488,12 +488,17 @@ async def validator_heartbeat(
 
     return ValidatorDisconnectResponse()
 
+
 # /validator/finish-evaluation
+class ValidatorFinishEvaluationRequest(BaseModel):
+    pass
+class ValidatorFinishEvaluationResponse(BaseModel):
+    pass
 @router.post("/finish-evaluation")
 async def validator_finish_evaluation(
-    request: None,
+    request: ValidatorFinishEvaluationRequest,
     validator: Validator = Depends(get_request_validator)
-) -> None:
+) -> ValidatorFinishEvaluationResponse:
     """
     Mark validator as having finished evaluation in SESSION_ID_TO_VALIDATOR map.
     """
