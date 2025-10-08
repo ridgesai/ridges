@@ -124,9 +124,9 @@ class Validator(Client):
             old_status = self.status
             self.status = f"evaluating"
             self.current_evaluation_id = evaluation_id
-            self.current_agent_name = miner_agent.agent_name
+            self.current_agent_name = miner_agent.name
             self.current_agent_hotkey = miner_agent.miner_hotkey
-            logger.info(f"Validator {self.hotkey} successfully started evaluating {miner_agent.agent_name}")
+            logger.info(f"Validator {self.hotkey} successfully started evaluating {miner_agent.name}")
 
             # Broadcast status change
             self._broadcast_status_change()
@@ -158,7 +158,7 @@ class Validator(Client):
                 SELECT e.evaluation_id FROM evaluations e
                 JOIN agents ma ON e.agent_id = ma.agent_id
                 WHERE e.validator_hotkey = $1 AND e.status = 'waiting' AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-                AND ma.status NOT IN ('screening_1', 'screening_2', 'awaiting_screening_1', 'awaiting_screening_2', 'pruned')
+                AND ma.status NOT IN ('screening_1', 'screening_2', 'screening_1', 'awaiting_screening_2', 'pruned')
                 AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
                 LIMIT 1

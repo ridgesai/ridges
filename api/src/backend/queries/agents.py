@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 @db_operation
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
-        "SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status "
+        "SELECT agent_id, miner_hotkey, name, version_num, created_at, status "
         "FROM agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
         miner_hotkey
     )

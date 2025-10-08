@@ -18,7 +18,6 @@ from api.src.backend.queries.bench_evaluation_runs import get_runs_for_benchmark
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
-from api.src.backend.queries.queue import get_queue_for_all_validators as db_get_queue_for_all_validators, get_screener_queue_by_stage as db_get_screener_queue_by_stage
 from api.queries.evaluation_set import get_latest_set_id
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
@@ -342,31 +341,6 @@ async def inferences_for_run(run_id: str) -> list[Inference]:
 
     return inferences
 
-async def validator_queues():
-    """
-    Returns a list of every validator and their queue info
-    """
-    queue_info = await db_get_queue_for_all_validators()
-
-    if queue_info is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Error loading queue info"
-        )
-    
-    return queue_info
-
-async def screener_queues() -> ScreenerQueueByStage:
-    """Get screener queues by stage (stage 1 and stage 2)"""
-    try:
-        return await db_get_screener_queue_by_stage()
-    except Exception as e:
-        logger.error(f"Error getting screener queues: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving screener queues. Please try again later."
-        )
-    
 async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
     """
     Returns a list of all agents for a given hotkey
@@ -505,8 +479,6 @@ routes = [
     ("/agent-by-hotkey", agent_summary_by_hotkey),
     ("/queue-position-by-hotkey", get_queue_position),
     ("/inferences-by-run", inferences_for_run),
-    ("/validator-queues", validator_queues),
-    ("/screener-queues", screener_queues),
     ("/agent-scores-over-time", agent_scores_over_time),
     ("/miner-score-activity", miner_score_activity),
     ("/agents-from-hotkey", get_agents_from_hotkey),    

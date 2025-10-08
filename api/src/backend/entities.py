@@ -1,24 +1,24 @@
 ## Defines the structures that we expect to get back from the database manager. Does not map 1-1 with the actual tables
 from datetime import datetime, timezone
+from enum import Enum
+from typing import Optional
 from uuid import UUID
 
 from fastapi import WebSocket
+from models.agent import AgentStatus
 from pydantic import BaseModel, Field, EmailStr
-from typing import Literal, Optional, TYPE_CHECKING
-from enum import Enum
 
 
-
-class MinerAgent(BaseModel): 
+class MinerAgent(BaseModel):
     """Maps to the agent_versions table"""
     model_config = { "arbitrary_types_allowed": True }
     
     agent_id: UUID
     miner_hotkey: str
-    agent_name: str
+    name: str
     version_num: int
     created_at: datetime
-    status: str
+    status: AgentStatus
     agent_summary: Optional[str] = None
     ip_address: Optional[str] = None
     innovation_score: Optional[float] = None

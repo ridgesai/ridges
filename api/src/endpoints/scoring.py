@@ -199,7 +199,7 @@ async def approve_version(agent_id: str, set_id: int, approval_password: str):
 async def re_eval_approved(approval_password: str):
     """
     Re-evaluate approved agents with the newest evaluation set
-    by setting the agents status to "awaiting_screening"
+    by setting the agents status to screening
     """
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password")
@@ -211,14 +211,14 @@ async def re_eval_approved(approval_password: str):
         async with get_transaction() as conn:
             await conn.execute("""
                 UPDATE agents SET status = 'scored'
-                WHERE status in ('awaiting_screening_1', 'awaiting_screening_2', 'screening_1', 'screening_2', 'waiting')
+                WHERE status in ('screening_1', 'screening_2', 'evaluating')
             """)
         
         # Reset approved agents to awaiting stage 1 screening
         async with get_transaction() as conn:
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
-                UPDATE agents SET status = 'awaiting_screening_1'
+                UPDATE agents SET status = 'screening_1'
                 WHERE agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -226,7 +226,7 @@ async def re_eval_approved(approval_password: str):
             """)
             
             agents_to_re_evaluate = [MinerAgent(**agent) for agent in agent_data]
-            logger.info(f"Reset {len(agents_to_re_evaluate)} approved agents to awaiting_screening")
+            logger.info(f"Reset {len(agents_to_re_evaluate)} approved agents to screening")
         
         if not agents_to_re_evaluate:
             logger.info("No approved agents found for re-evaluation")

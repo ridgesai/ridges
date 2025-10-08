@@ -137,7 +137,7 @@ async def get_all_pending_payouts(password: str):
         hydrated_payouts = {}
         for agent_id in gross_emissions.keys():
             agent = await db_get_agent_by_agent_id(agent_id)
-            agent_name = agent.agent_name if agent else None
+            agent_name = agent.name if agent else None
             agent_hotkey = agent.miner_hotkey if agent else None
             bittensor_hotkey = await db_get_open_user_bittensor_hotkey(agent_hotkey) if agent_hotkey else None
             periods = periods_on_top_map.get(agent_id, [])

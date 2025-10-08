@@ -247,7 +247,7 @@ async def get_agent_status(agent_id: str) -> Dict[str, Any]:
         return {
             'agent_id': str(agent.agent_id),
             'miner_hotkey': agent.miner_hotkey,
-            'agent_name': agent.agent_name,
+            'agent_name': agent.name,
             'version_num': agent.version_num,
             'created_at': agent.created_at,
             'status': agent.status,

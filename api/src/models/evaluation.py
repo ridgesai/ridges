@@ -512,7 +512,7 @@ class Evaluation:
             "agent_version": agent.model_dump(mode="json"),
             "evaluation_runs": [run.model_dump(mode="json") for run in evaluation_runs],
         }
-        logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.agent_name}")
+        logger.info(f"Sending screen-agent message to screener {screener.hotkey}: evaluation_id={eval_id}, agent={agent.name}")
         
         await ws.send_to_all_non_validators("evaluation-started", message)
         return eval_id, await ws.send_to_client(screener, message)
@@ -617,10 +617,10 @@ class Evaluation:
             if success:
                 # Commit screener state changes
                 screener.status = "screening"
-                screener.current_agent_name = agent.agent_name
+                screener.current_agent_name = agent.name
                 screener.current_evaluation_id = eval_id
                 screener.current_agent_hotkey = agent.miner_hotkey
-                logger.info(f"Stage {screener.stage} screener {screener.hotkey} successfully assigned to {agent.agent_name}")
+                logger.info(f"Stage {screener.stage} screener {screener.hotkey} successfully assigned to {agent.name}")
                 
                 # Broadcast status change to dashboard
                 screener._broadcast_status_change()
