@@ -16,7 +16,7 @@ API_DIR = Path(__file__).parent.parent.parent
 TOP_AGENTS_DIR = API_DIR / "top"
 
 @db_operation
-async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int = 5) -> List[str]:
+async def get_top_approved_agent_ids(conn: asyncpg.Connection, num_agents: int = 5) -> List[str]:
     """
     Get top approved version IDs using the agent_scores materialized view.
     Returns the actual TOP approved agents by score.
@@ -30,14 +30,14 @@ async def get_top_approved_version_ids(conn: asyncpg.Connection, num_agents: int
     
     # Use the materialized view for faster lookups
     results = await conn.fetch("""
-        SELECT ass.version_id, ass.final_score
+        SELECT ass.agent_id, ass.final_score
         FROM agent_scores ass
         WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
         ORDER BY ass.final_score DESC
         LIMIT $2
     """, max_set_id, num_agents)
 
-    return [str(row['version_id']) for row in results]
+    return [str(row['agent_id']) for row in results]
 
 async def update_top_agents_cache() -> bool:
     """
@@ -51,35 +51,35 @@ async def update_top_agents_cache() -> bool:
         logger.info("Starting top agents cache update...")
         
         # Get top 5 approved version IDs directly (since miner_agents table is empty)
-        approved_version_ids = await get_top_approved_version_ids(num_agents=5)
+        approved_agent_ids = await get_top_approved_agent_ids(num_agents=5)
         
-        if not approved_version_ids:
+        if not approved_agent_ids:
             logger.warning("No approved version IDs found in database")
             return False
         
-        logger.info(f"Found {len(approved_version_ids)} approved version IDs to cache")
+        logger.info(f"Found {len(approved_agent_ids)} approved version IDs to cache")
         
         # Create S3 manager
         s3_manager = S3Manager()
         
         # Download and save each agent
-        for rank, version_id in enumerate(approved_version_ids, 1):
+        for rank, agent_id in enumerate(approved_agent_ids, 1):
             try:
                 rank_dir = TOP_AGENTS_DIR / f"rank_{rank}"
                 rank_dir.mkdir(parents=True, exist_ok=True)
                 
                 # Download agent code from S3
-                agent_code = await s3_manager.get_file_text(f"{version_id}/agent.py")
+                agent_code = await s3_manager.get_file_text(f"{agent_id}/agent.py")
                 
                 # Save to local file
                 agent_file_path = rank_dir / "agent.py"
                 with open(agent_file_path, 'w') as f:
                     f.write(agent_code)
                 
-                logger.info(f"Saved rank {rank} agent (version_id: {version_id}) to {agent_file_path}")
+                logger.info(f"Saved rank {rank} agent (agent_id: {agent_id}) to {agent_file_path}")
                 
             except Exception as e:
-                logger.error(f"Failed to download/save rank {rank} agent (version_id: {version_id}): {e}")
+                logger.error(f"Failed to download/save rank {rank} agent (agent_id: {agent_id}): {e}")
                 return False
         
         logger.info("Top agents cache update completed successfully")
@@ -156,7 +156,7 @@ async def debug_s3_contents():
     except Exception as e:
         print(f"Error exploring S3: {e}")
 
-async def debug_approved_version_ids_in_s3():
+async def debug_approved_agent_ids_in_s3():
     """Check if approved version IDs exist with different key patterns"""
     print("\n=== DEBUG: Checking Approved Version IDs in S3 ===")
     
@@ -164,21 +164,21 @@ async def debug_approved_version_ids_in_s3():
     
     # Get approved version IDs from database
     async with new_db.acquire() as conn:
-        approved_versions = await conn.fetch("SELECT version_id FROM approved_version_ids LIMIT 5")
-        version_ids = [str(row['version_id']) for row in approved_versions]
+        approved_versions = await conn.fetch("SELECT agent_id FROM approved_agent_ids LIMIT 5")
+        agent_ids = [str(row['agent_id']) for row in approved_versions]
     
-    print(f"Checking {len(version_ids)} approved version IDs:")
+    print(f"Checking {len(agent_ids)} approved version IDs:")
     
-    for i, version_id in enumerate(version_ids, 1):
-        print(f"\n{i}. Version ID: {version_id}")
+    for i, agent_id in enumerate(agent_ids, 1):
+        print(f"\n{i}. Version ID: {agent_id}")
         
         # Try different key patterns
         key_patterns_to_try = [
-            f"{version_id}/agent.py",  # Current pattern we're using
-            f"{version_id}",           # Just version ID
-            f"agent_{version_id}.py",  # Different naming
-            f"agents/{version_id}.py", # Different folder structure
-            f"{version_id}.py",        # Version ID as filename
+            f"{agent_id}/agent.py",  # Current pattern we're using
+            f"{agent_id}",           # Just version ID
+            f"agent_{agent_id}.py",  # Different naming
+            f"agents/{agent_id}.py", # Different folder structure
+            f"{agent_id}.py",        # Version ID as filename
         ]
         
         for pattern in key_patterns_to_try:
@@ -186,33 +186,33 @@ async def debug_approved_version_ids_in_s3():
             status = "✅ EXISTS" if exists else "❌ NOT FOUND"
             print(f"  {pattern}: {status}")
         
-        # If none found, try searching for any object containing this version_id
-        print(f"  Searching for any object containing '{version_id}'...")
+        # If none found, try searching for any object containing this agent_id
+        print(f"  Searching for any object containing '{agent_id}'...")
         objects = await s3_manager.list_objects(max_keys=1000)
-        matches = [obj['Key'] for obj in objects if version_id in obj['Key']]
+        matches = [obj['Key'] for obj in objects if agent_id in obj['Key']]
         
         if matches:
-            print(f"  Found {len(matches)} objects containing this version_id:")
+            print(f"  Found {len(matches)} objects containing this agent_id:")
             for match in matches[:3]:  # Show first 3 matches
                 print(f"    - {match}")
             if len(matches) > 3:
                 print(f"    ... and {len(matches) - 3} more")
         else:
-            print(f"  No objects found containing '{version_id}'")
+            print(f"  No objects found containing '{agent_id}'")
 
-async def test_specific_version_id():
+async def test_specific_agent_id():
     """Test downloading the specific version ID that the user found in S3"""
     print("\n=== TEST: Downloading specific version ID from S3 ===")
     
     # The version ID the user found in S3 console
-    test_version_id = "8e34cb30-0322-40ec-9028-d66f240f1905"
+    test_agent_id = "8e34cb30-0322-40ec-9028-d66f240f1905"
     
     s3_manager = S3Manager()
     
     try:
         # Try to download this specific agent
-        print(f"Attempting to download: {test_version_id}/agent.py")
-        agent_code = await s3_manager.get_file_text(f"{test_version_id}/agent.py")
+        print(f"Attempting to download: {test_agent_id}/agent.py")
+        agent_code = await s3_manager.get_file_text(f"{test_agent_id}/agent.py")
         
         print(f"✅ SUCCESS! Downloaded agent code:")
         print(f"  - Size: {len(agent_code)} characters")
@@ -230,7 +230,7 @@ async def test_specific_version_id():
         return True
         
     except Exception as e:
-        print(f"❌ FAILED to download {test_version_id}: {e}")
+        print(f"❌ FAILED to download {test_agent_id}: {e}")
         return False
 
 async def test_update():
@@ -241,7 +241,7 @@ async def test_update():
     await new_db.open()
     
     try:
-        # Debug: Check what's in approved_version_ids
+        # Debug: Check what's in approved_agent_ids
         print("\n=== DEBUG: Getting TOP 5 approved agents by COMPUTED SCORE (excluding outliers) from MAX SET_ID ===")
         async with new_db.acquire() as conn:
             # First get max set_id
@@ -256,7 +256,7 @@ async def test_update():
             # Get the top 5 approved agents using the materialized view
             top_agents = await conn.fetch("""
                 SELECT 
-                    ass.version_id, 
+                    ass.agent_id, 
                     ass.miner_hotkey,
                     ass.final_score as computed_score,
                     ass.validator_count as num_scores_used
@@ -268,10 +268,10 @@ async def test_update():
             
             print(f"TOP 5 approved agents by computed score (excluding outliers):")
             for i, row in enumerate(top_agents, 1):
-                print(f"  Rank {i}: {row['version_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']}, scores used: {row['num_scores_used']})")
+                print(f"  Rank {i}: {row['agent_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']}, scores used: {row['num_scores_used']})")
             
             # Also check total approved agents
-            total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_version_ids")
+            total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_agent_ids")
             print(f"\nTotal approved version IDs: {total_approved}")
         
         # Test our main cache update function

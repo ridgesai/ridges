@@ -61,7 +61,7 @@ async def handle_finish_evaluation(
             await WebSocketManager.get_instance().send_to_all_non_validators(
                 "evaluation_completed",
                 {
-                    "version_id": str(evaluation.version_id),
+                    "agent_id": str(evaluation.agent_id),
                     "miner_hotkey": evaluation.miner_hotkey,
                     "evaluation_id": str(evaluation_id),
                     "timestamp": datetime.now().isoformat()

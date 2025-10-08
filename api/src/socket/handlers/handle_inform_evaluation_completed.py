@@ -18,7 +18,7 @@ async def handle_inform_evaluation_completed(
     """Handle inform_evaluation_completed message from a validator/screener"""
 
     evaluation_id = response_json.get("evaluation_id")
-    version_id = response_json.get("version_id")
+    agent_id = response_json.get("agent_id")
     completed_at = response_json.get("completed_at")
     
     logger.info(f"XXXXXXXXXX Received inform_evaluation_completed: evaluation_id {evaluation_id} from {client.get_type()} {client.hotkey}")
@@ -56,7 +56,7 @@ async def handle_inform_evaluation_completed(
                 "evaluation_completed",
                 {
                     "evaluation_id": str(evaluation_id),
-                    "version_id": str(version_id) if version_id else None,
+                    "agent_id": str(agent_id) if agent_id else None,
                     "completed_at": completed_at or datetime.now().isoformat(),
                     "completed_by": client.hotkey
                 }

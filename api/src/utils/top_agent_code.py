@@ -13,11 +13,11 @@ async def update_top_agent_code():
     # Get top agent versionid
     top_agents = await get_top_agents(num_agents=1)
     top_agent = top_agents[0]
-    logger.info(f"Updating top agent code with version id {top_agent.version_id}.")
+    logger.info(f"Updating top agent code with agent id {top_agent.agent_id}.")
 
     # Get code text from s3
-    code_text = await s3.get_file_text(f"{top_agent.version_id}/agent.py")
-    logger.info(f"Got code text from s3 for version id {top_agent.version_id}.")
+    code_text = await s3.get_file_text(f"{top_agent.agent_id}/agent.py")
+    logger.info(f"Got code text from s3 for agent id {top_agent.agent_id}.")
 
     # Append warning on the top
     code_text = f"# This is the top agent. We encourage you to try to improve it, however purely copying and submitting it will result in an error.\n{code_text}"
@@ -26,4 +26,4 @@ async def update_top_agent_code():
     with open("miner/agent.py", "w") as f:
         f.write(code_text)
 
-    logger.info(f"Successfully updated top agent code with version id {top_agent.version_id}.")
+    logger.info(f"Successfully updated top agent code with agent id {top_agent.agent_id}.")

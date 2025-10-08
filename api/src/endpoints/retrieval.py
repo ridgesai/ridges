@@ -10,7 +10,7 @@ from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
-from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_version_id, get_agents_by_hotkey
+from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_agent_id, get_agents_by_hotkey
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
 from api.src.backend.queries.evaluations import get_queue_info as db_get_queue_info
 from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as db_get_runs_for_evaluation, get_evaluation_run_logs as db_get_evaluation_run_logs
@@ -24,7 +24,7 @@ from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
-from api.src.backend.queries.agents import get_all_approved_version_ids as db_get_all_approved_version_ids
+from api.src.backend.queries.agents import get_all_approved_agent_ids as db_get_all_approved_agent_ids
 from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_hotkeys as db_get_total_dispersed_by_treasury_hotkeys
 from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
@@ -49,11 +49,11 @@ SCREENER_IP_LIST = [
     "3.91.231.29", # 2-3
 ]
 
-async def get_agent_code(version_id: str, request: Request, return_as_text: bool = False):
-    agent_version = await get_agent_by_version_id(version_id=version_id)
+async def get_agent_code(agent_id: str, request: Request, return_as_text: bool = False):
+    agent_version = await get_agent_by_agent_id(agent_id=agent_id)
     
     if not agent_version:
-        logger.info(f"File for agent version {version_id} was requested but not found in our database")
+        logger.info(f"File for agent version {agent_id} was requested but not found in our database")
         raise HTTPException(
             status_code=404, 
             detail="The requested agent version was not found. Are you sure you have the correct version ID?"
@@ -66,7 +66,7 @@ async def get_agent_code(version_id: str, request: Request, return_as_text: bool
         
         # Check if IP is in whitelist (add your allowed IPs to SCREENER_IP_LIST)
         if client_ip not in SCREENER_IP_LIST:
-            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {version_id}")
+            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {agent_id}")
             raise HTTPException(
                 status_code=403,
                 detail="Access denied: IP not authorized"
@@ -74,9 +74,9 @@ async def get_agent_code(version_id: str, request: Request, return_as_text: bool
     
     if return_as_text:
         try:
-            text = await s3_manager.get_file_text(f"{version_id}/agent.py")
+            text = await s3_manager.get_file_text(f"{agent_id}/agent.py")
         except Exception as e:
-            logger.error(f"Error retrieving agent version code from S3 for version {version_id}: {e}")
+            logger.error(f"Error retrieving agent version code from S3 for version {agent_id}: {e}")
             raise HTTPException(
                 status_code=500,
                 detail="Internal server error while retrieving agent version code. Please try again later."
@@ -85,9 +85,9 @@ async def get_agent_code(version_id: str, request: Request, return_as_text: bool
         return text
 
     try:
-        agent_object = await s3_manager.get_file_object(f"{version_id}/agent.py")
+        agent_object = await s3_manager.get_file_object(f"{agent_id}/agent.py")
     except Exception as e:
-        logger.error(f"Error retrieving agent version file from S3 for version {version_id}: {e}")
+        logger.error(f"Error retrieving agent version file from S3 for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving agent version file. Please try again later."
@@ -122,11 +122,11 @@ async def get_connected_validators():
     
     return validators
 
-async def get_queue_info(version_id: str):
+async def get_queue_info(agent_id: str):
     try:
-        queue_info = await db_get_queue_info(version_id)
+        queue_info = await db_get_queue_info(agent_id)
     except Exception as e:
-        logger.error(f"Error retrieving queue info for version {version_id}: {e}")
+        logger.error(f"Error retrieving queue info for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving queue info. Please try again later."
@@ -134,15 +134,15 @@ async def get_queue_info(version_id: str):
     
     return queue_info
 
-async def get_evaluations(version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
+async def get_evaluations(agent_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     try:
         # If no set_id provided, use the latest set_id
         if set_id is None:
             set_id = await get_latest_set_id()
         
-        evaluations = await get_evaluations_for_agent_version(version_id, set_id)
+        evaluations = await get_evaluations_for_agent_version(agent_id, set_id)
     except Exception as e:
-        logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
+        logger.error(f"Error retrieving evaluations for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving evaluations. Please try again later."
@@ -150,11 +150,11 @@ async def get_evaluations(version_id: str, set_id: Optional[int] = None) -> list
     
     return evaluations
 
-async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = None, fast: bool = Query(default=True, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage(agent_id: str, set_id: Optional[int] = None, fast: bool = Query(default=True, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
     try:
-        evaluations = await get_evaluations_with_usage_for_agent_version(version_id, set_id, fast=fast)
+        evaluations = await get_evaluations_with_usage_for_agent_version(agent_id, set_id, fast=fast)
     except Exception as e:
-        logger.error(f"Error retrieving evaluations for version {version_id}: {e}")
+        logger.error(f"Error retrieving evaluations for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving evaluations. Please try again later."
@@ -162,7 +162,7 @@ async def get_evaluations_with_usage(version_id: str, set_id: Optional[int] = No
     
     return evaluations
 
-async def get_screening_evaluations(version_id: str, stage: int = Query(description="Screening stage (1 or 2)"), set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
+async def get_screening_evaluations(agent_id: str, stage: int = Query(description="Screening stage (1 or 2)"), set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     """Get screening evaluations for an agent version filtered by stage"""
     try:
         # Validate stage parameter
@@ -176,7 +176,7 @@ async def get_screening_evaluations(version_id: str, stage: int = Query(descript
         if set_id is None:
             set_id = await get_latest_set_id()
         
-        evaluations = await get_evaluations_for_agent_version(version_id, set_id)
+        evaluations = await get_evaluations_for_agent_version(agent_id, set_id)
         
         # Filter to only screening evaluations (screener- or i-0 prefixed validator hotkeys)
         screening_evaluations = [
@@ -199,7 +199,7 @@ async def get_screening_evaluations(version_id: str, stage: int = Query(descript
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving screening evaluations for version {version_id}: {e}")
+        logger.error(f"Error retrieving screening evaluations for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
             detail="Internal server error while retrieving screening evaluations. Please try again later."
@@ -413,12 +413,12 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
             detail="Internal server error while retrieving emission alpha"
         )
     
-async def get_approved_version_ids() -> list[str]:
+async def get_approved_agent_ids() -> list[str]:
     """
     Returns a list of all approved version IDs
     """
     try:
-        return await db_get_all_approved_version_ids()
+        return await db_get_all_approved_agent_ids()
     except Exception as e:
         logger.error(f"Error retrieving approved version IDs: {e}")
         raise HTTPException(
@@ -512,7 +512,7 @@ routes = [
     ("/agents-from-hotkey", get_agents_from_hotkey),    
     ("/inference-provider-statistics", get_inference_provider_statistics),
     ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
-    ("/approved-version-ids", get_approved_version_ids),
+    ("/approved-agent-ids", get_approved_agent_ids),
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
     ("/all-transactions", get_all_transactions),
     ("/all-treasury-hotkeys", get_all_treasury_hotkeys),

@@ -18,7 +18,7 @@ async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
     return await MinerAgentScored.get_24_hour_statistics(conn)
 
 class RunningEvaluation(BaseModel):
-    version_id: UUID
+    agent_id: UUID
     validator_hotkey: str
     started_at: datetime
     agent_name: str
@@ -31,7 +31,7 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
     results = await conn.fetch("""
         select 
             e.evaluation_id,
-            e.version_id, 
+            e.agent_id, 
             e.validator_hotkey, 
             e.started_at, 
             a.agent_name, 
@@ -49,11 +49,11 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
                 END
             ), 0.0) as progress
         from evaluations e
-        left join miner_agents a on a.version_id = e.version_id
+        left join miner_agents a on a.agent_id = e.agent_id
         left join evaluation_runs r on r.evaluation_id = e.evaluation_id 
             and r.status not in ('cancelled')
         where e.status = 'running'
-        group by e.evaluation_id, e.version_id, e.validator_hotkey, e.started_at, 
+        group by e.evaluation_id, e.agent_id, e.validator_hotkey, e.started_at, 
                  a.agent_name, a.miner_hotkey, a.version_num;
     """)
 
@@ -88,7 +88,7 @@ class QueuePositionPerValidator(BaseModel):
 async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> list[QueuePositionPerValidator]:
     results = await conn.fetch("""
         WITH latest_version AS (
-            SELECT version_id
+            SELECT agent_id
             FROM   miner_agents
             WHERE  miner_hotkey = $1
             ORDER  BY version_num DESC
@@ -104,7 +104,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
                     ORDER BY     e.screener_score DESC NULLS LAST, e.created_at
                 ) AS queue_position
             FROM   evaluations   e
-            JOIN   miner_agents  ma ON ma.version_id = e.version_id
+            JOIN   miner_agents  ma ON ma.agent_id = e.agent_id
             WHERE  e.status = 'waiting'                -- only items still in the queue
             AND  ma.miner_hotkey NOT IN (SELECT miner_hotkey
                                         FROM banned_hotkeys)  -- skip banned miners
@@ -115,7 +115,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
             w.queue_position
         FROM   waiting_queue w
         JOIN   evaluations  e  ON e.evaluation_id = w.evaluation_id
-        JOIN   latest_version lv ON lv.version_id  = e.version_id
+        JOIN   latest_version lv ON lv.agent_id  = e.agent_id
         ORDER  BY w.validator_hotkey;
     """, miner_hotkey)
 
@@ -150,10 +150,10 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
             SELECT 
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 ma.miner_hotkey,
-                ma.version_id,
+                ma.agent_id,
                 e.score
             FROM miner_agents ma
-            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+            LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
                 AND e.status = 'completed' 
                 AND e.score IS NOT NULL
@@ -206,7 +206,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
         WITH hourly_submissions AS (
             SELECT 
                 DATE_TRUNC('hour', created_at) as hour,
-                COUNT(DISTINCT version_id) as miner_submissions
+                COUNT(DISTINCT agent_id) as miner_submissions
             FROM miner_agents
             WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             GROUP BY DATE_TRUNC('hour', created_at)
@@ -225,7 +225,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 AVG(e.score) as hour_max_score
             FROM miner_agents ma
-            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+            LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
                 AND e.status = 'completed' 
                 AND e.score IS NOT NULL

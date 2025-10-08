@@ -86,7 +86,7 @@ async def handle_update_evaluation_run(
                 await WebSocketManager.get_instance().send_to_all_non_validators(
                     "evaluation_progress",
                     {
-                        "version_id": str(eval_data.version_id),
+                        "agent_id": str(eval_data.agent_id),
                         "evaluation_id": str(evaluation_run.evaluation_id),
                         "run_id": str(evaluation_run.run_id),
                         "status": evaluation_run.status.value,

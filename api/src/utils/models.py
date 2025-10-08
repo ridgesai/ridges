@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Literal, List
 
 class AgentVersionResponse(BaseModel):
-    version_id: str
+    agent_id: str
     agent_id: str
     version_num: int
     created_at: datetime
@@ -38,7 +38,7 @@ class EvaluationRunResponse(BaseModel):
 
 class EvaluationResponse(BaseModel):
     evaluation_id: str
-    version_id: str
+    agent_id: str
     validator_hotkey: str
     status: Literal["waiting", "running", "completed", "disconnected", "error"]
     terminated_reason: Optional[str]
@@ -55,7 +55,7 @@ class AgentSummary(BaseModel):
 
 class TopAgentHotkey(BaseModel):
     miner_hotkey: str
-    version_id: UUID
+    agent_id: UUID
     avg_score: float
 
 class AgentQueryResponse(BaseModel):
@@ -86,7 +86,7 @@ class InferenceRequest(BaseModel):
     messages: List[GPTMessage] = Field(..., description="Messages to send to the model")
 
 class AgentVersionNew(BaseModel):
-    version_id: str
+    agent_id: str
     version_num: int
     created_at: datetime
     score: Optional[float]
@@ -125,7 +125,7 @@ class QueueInfo(BaseModel):
     place_in_queue: int
 
 class RunningAgentEval(BaseModel):
-    version_id: str
+    agent_id: str
     validator_hotkey: str
     started_at: datetime
     agent_id: str

@@ -3,7 +3,7 @@ from typing import Literal, Optional, List
 
 from api.src.backend.entities import Client, AgentStatus
 from api.src.backend.db_manager import get_db_connection, get_transaction
-from api.src.backend.queries.agents import get_agent_by_version_id
+from api.src.backend.queries.agents import get_agent_by_agent_id
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,7 @@ class Validator(Client):
             logger.warning(f"Validator {self.hotkey}: Invalid evaluation {evaluation_id}")
             return False
 
-        miner_agent = await get_agent_by_version_id(evaluation.version_id)
+        miner_agent = await get_agent_by_agent_id(evaluation.agent_id)
         if not miner_agent:
             logger.error(f"Validator {self.hotkey}: Agent not found for evaluation {evaluation_id}")
             return False
@@ -156,7 +156,7 @@ class Validator(Client):
         async with get_db_connection() as conn:
             return await conn.fetchval("""
                 SELECT e.evaluation_id FROM evaluations e
-                JOIN miner_agents ma ON e.version_id = ma.version_id
+                JOIN miner_agents ma ON e.agent_id = ma.agent_id
                 WHERE e.validator_hotkey = $1 AND e.status = 'waiting' AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ma.status NOT IN ('screening_1', 'screening_2', 'awaiting_screening_1', 'awaiting_screening_2', 'pruned')
                 AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -175,9 +175,9 @@ class Validator(Client):
                 return
             
             async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
                 if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
-                    logger.warning(f"Validator {self.hotkey}: Agent {evaluation.version_id} not in evaluating status during finish")
+                    logger.warning(f"Validator {self.hotkey}: Agent {evaluation.agent_id} not in evaluating status during finish")
                     return
                 
                 if errored:

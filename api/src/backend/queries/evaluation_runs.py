@@ -282,15 +282,15 @@ async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> str:
     return logs or ""  # Return empty string if logs is NULL
 
 @db_operation
-async def fully_reset_evaluations(conn: asyncpg.Connection, version_id: str):
+async def fully_reset_evaluations(conn: asyncpg.Connection, agent_id: str):
     """Deletes all evaluations and sets an agent back to screening 1"""
 
     # Delete all evaluations related to this agent
     await conn.execute(
         """
-        DELETE * FROM evaluations WHERE version_id = $1
+        DELETE * FROM evaluations WHERE agent_id = $1
         """,
-        version_id
+        agent_id
     )
 
     # Set status back to awaiting_screening_1
@@ -298,23 +298,23 @@ async def fully_reset_evaluations(conn: asyncpg.Connection, version_id: str):
         """
         update miner_agents 
         set status = 'awaiting_screening_1'
-        where version_id = $1
+        where agent_id = $1
         """,
-        version_id
+        agent_id
     )
 
 @db_operation
-async def reset_validator_evaluations(conn: asyncpg.Connection, version_id: str):
+async def reset_validator_evaluations(conn: asyncpg.Connection, agent_id: str):
     """Resets only validator evaluations back to waiting"""
-    # Set all vali evaluations on that version id back to waiting
+    # Set all vali evaluations on that agent id back to waiting
     evaluations_set_to_waiting = await conn.fetch("""
         UPDATE evaluations
         SET status = 'waiting', started_at = NULL
-        WHERE version_id = $1
+        WHERE agent_id = $1
           AND validator_hotkey NOT LIKE 'screener-%'
           AND validator_hotkey NOT LIKE 'i-0%'
         RETURNING evaluation_id
-    """, version_id)
+    """, agent_id)
 
     # Cancel any associated eval runs
     evaluation_ids_to_cancel = [row["evaluation_id"] for row in evaluations_set_to_waiting]

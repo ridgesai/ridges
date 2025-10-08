@@ -17,7 +17,7 @@ async def get_queue_for_all_validators(
                 json_agg(
                     json_build_object(
                         'evaluation_id', e.evaluation_id,
-                        'version_id', e.version_id,
+                        'agent_id', e.agent_id,
                         'miner_hotkey', m.miner_hotkey,
                         'agent_name', m.agent_name,
                         'created_at', e.created_at,
@@ -25,7 +25,7 @@ async def get_queue_for_all_validators(
                     ) ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
                 ) as queue_items
             FROM evaluations e
-            JOIN miner_agents m ON e.version_id = m.version_id
+            JOIN miner_agents m ON e.agent_id = m.agent_id
             WHERE e.status = 'waiting'
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND m.miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
@@ -43,7 +43,7 @@ async def get_queue_for_all_validators(
         for item in queue_items_data:
             queue_items.append(EvaluationQueueItem(
                 evaluation_id=item['evaluation_id'],
-                version_id=item['version_id'],
+                agent_id=item['agent_id'],
                 miner_hotkey=item['miner_hotkey'],
                 agent_name=item['agent_name'],
                 created_at=item['created_at'],
@@ -67,7 +67,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
     stage1_rows = await conn.fetch(
         """
         SELECT 
-            version_id,
+            agent_id,
             miner_hotkey,
             agent_name,
             version_num,
@@ -85,7 +85,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
     stage2_rows = await conn.fetch(
         """
         SELECT 
-            version_id,
+            agent_id,
             miner_hotkey,
             agent_name,
             version_num,

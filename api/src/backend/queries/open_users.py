@@ -97,7 +97,7 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
         """
         WITH ordered AS (
             SELECT
-                ath.version_id,
+                ath.agent_id,
                 ath.top_at AS period_start,
                 LEAD(ath.top_at) OVER (ORDER BY ath.top_at) AS period_end
             FROM approved_top_agents_history ath
@@ -106,7 +106,7 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
             o.period_start,
             COALESCE(o.period_end, NOW()) AS period_end
         FROM ordered o
-        JOIN miner_agents ma ON ma.version_id = o.version_id
+        JOIN miner_agents ma ON ma.agent_id = o.agent_id
         WHERE ma.miner_hotkey = $1
         ORDER BY o.period_start ASC
         """,
@@ -121,14 +121,14 @@ async def get_periods_on_top_map(conn: asyncpg.Connection) -> dict[str, list[tup
         """
         WITH ordered AS (
             SELECT
-                ath.version_id,
+                ath.agent_id,
                 ath.top_at AS period_start,
                 LEAD(ath.top_at) OVER (ORDER BY ath.top_at) AS period_end
             FROM approved_top_agents_history ath
-            WHERE ath.version_id IS NOT NULL
+            WHERE ath.agent_id IS NOT NULL
         )
         SELECT
-            o.version_id,
+            o.agent_id,
             o.period_start,
             COALESCE(o.period_end, NOW()) AS period_end
         FROM ordered o
@@ -138,8 +138,8 @@ async def get_periods_on_top_map(conn: asyncpg.Connection) -> dict[str, list[tup
 
     periods_map: dict[str, list[tuple[datetime, datetime]]] = {}
     for row in rows:
-        version_id = str(row["version_id"])
-        periods_map.setdefault(version_id, []).append((row["period_start"], row["period_end"]))
+        agent_id = str(row["agent_id"])
+        periods_map.setdefault(agent_id, []).append((row["period_start"], row["period_end"]))
 
     return periods_map
 
@@ -149,7 +149,7 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
         """
         SELECT COALESCE(SUM(tt.amount_alpha_rao), 0)
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
         WHERE ma.miner_hotkey = $1
         """,
         open_hotkey,
@@ -167,11 +167,11 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             tt.staker_hotkey,
             tt.amount_alpha_rao,
             tt.occurred_at,
-            tt.version_id,
+            tt.agent_id,
             tt.extrinsic_code,
             tt.fee
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
         WHERE ma.miner_hotkey = $1
         ORDER BY tt.occurred_at DESC
         """,
@@ -185,7 +185,7 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             "staker_hotkey": str(row["staker_hotkey"]),
             "amount_alpha": int(row["amount_alpha_rao"]) if row["amount_alpha_rao"] is not None else 0,
             "occurred_at": str(row["occurred_at"]),
-            "version_id": str(row["version_id"]),
+            "agent_id": str(row["agent_id"]),
             "extrinsic_code": str(row["extrinsic_code"]),
             "fee": bool(row["fee"])
         }
@@ -201,17 +201,17 @@ async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
             tt.destination_coldkey,
             tt.staker_hotkey,
             tt.amount_alpha_rao,
-            tt.version_id AS transaction_version_id,
+            tt.agent_id AS transaction_agent_id,
             tt.occurred_at,
             tt.extrinsic_code,
             tt.fee,
-            ma.version_id AS agent_id,
+            ma.agent_id AS agent_id,
             ma.miner_hotkey,
             ma.agent_name,
             ma.version_num,
             ma.created_at
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.version_id = tt.version_id
+        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
         ORDER BY tt.occurred_at DESC
         """,
     )
@@ -222,7 +222,7 @@ async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
             "destination_coldkey": str(row["destination_coldkey"]),
             "staker_hotkey": str(row["staker_hotkey"]),
             "amount_alpha": int(row["amount_alpha_rao"]),
-            "transaction_version_id": str(row["transaction_version_id"]),
+            "transaction_agent_id": str(row["transaction_agent_id"]),
             "occurred_at": str(row["occurred_at"]),
             "extrinsic_code": str(row["extrinsic_code"]),
             "fee": bool(row["fee"]),
@@ -264,19 +264,19 @@ async def get_total_dispersed_by_treasury_hotkeys(conn: asyncpg.Connection) -> i
     return int(total) if total is not None else 0
 
 @db_operation
-async def get_total_payouts_by_version_ids(conn: asyncpg.Connection, version_ids: list[str]) -> dict[str, int]:
-    if not version_ids:
+async def get_total_payouts_by_agent_ids(conn: asyncpg.Connection, agent_ids: list[str]) -> dict[str, int]:
+    if not agent_ids:
         return {}
 
     rows = await conn.fetch(
         """
-        SELECT version_id, COALESCE(SUM(amount_alpha_rao), 0) AS total_amount
+        SELECT agent_id, COALESCE(SUM(amount_alpha_rao), 0) AS total_amount
         FROM treasury_transactions
-        WHERE version_id = ANY($1::uuid[])
-        GROUP BY version_id
+        WHERE agent_id = ANY($1::uuid[])
+        GROUP BY agent_id
         """,
-        version_ids,
+        agent_ids,
     )
 
-    totals = {str(row["version_id"]): int(row["total_amount"]) for row in rows}
-    return {vid: totals.get(vid, 0) for vid in version_ids}
+    totals = {str(row["agent_id"]): int(row["total_amount"]) for row in rows}
+    return {vid: totals.get(vid, 0) for vid in agent_ids}

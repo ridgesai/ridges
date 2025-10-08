@@ -8,7 +8,7 @@ from api.src.backend.entities import MinerAgent, Inference
 async def get_24_hour_statistics() -> dict[str, Any]: ...
 
 class RunningEvaluation(BaseModel):
-    version_id: UUID
+    agent_id: UUID
     validator_hotkey: str
     started_at: datetime
     agent_name: str

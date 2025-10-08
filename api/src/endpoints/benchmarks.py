@@ -38,11 +38,11 @@ async def get_solved_percentage_per_question():
 async def get_top_agents_solved_for_question(swebench_instance_id: str) -> list[MinerAgentWithScores]:
     async with get_db_connection() as conn:
         solving_agents = await conn.fetch("""
-            SELECT a.version_id, a.miner_hotkey, a.agent_name, a.version_num, a.created_at, a.status, e.set_id, ass.final_score as score
+            SELECT a.agent_id, a.miner_hotkey, a.agent_name, a.version_num, a.created_at, a.status, e.set_id, ass.final_score as score
                 FROM evaluation_runs r
             LEFT JOIN evaluations e ON e.evaluation_id = r.evaluation_id
-            RIGHT JOIN miner_agents a ON a.version_id = e.version_id
-            LEFT JOIN agent_scores ass ON a.version_id = ass.version_id
+            RIGHT JOIN miner_agents a ON a.agent_id = e.agent_id
+            LEFT JOIN agent_scores ass ON a.agent_id = ass.agent_id
                 WHERE r.swebench_instance_id = $1
                 AND solved = true
             ORDER BY ass.final_score DESC

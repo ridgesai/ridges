@@ -13,7 +13,7 @@ class MinerAgent(BaseModel):
     """Maps to the agent_versions table"""
     model_config = { "arbitrary_types_allowed": True }
     
-    version_id: UUID
+    agent_id: UUID
     miner_hotkey: str
     agent_name: str
     version_num: int
@@ -36,7 +36,7 @@ class MinerAgentScored(BaseModel):
     """Maps to the agent_scores materialized view with precomputed scoring logic"""
     model_config = { "arbitrary_types_allowed": True }
     
-    version_id: UUID
+    agent_id: UUID
     miner_hotkey: str
     agent_name: str
     version_num: int
@@ -50,9 +50,9 @@ class MinerAgentScored(BaseModel):
     final_score: float
     
     @staticmethod
-    async def check_for_new_high_score(conn, version_id: UUID) -> dict:
+    async def check_for_new_high_score(conn, agent_id: UUID) -> dict:
         """
-        Check if version_id scored higher than all approved agents within the same set_id.
+        Check if agent_id scored higher than all approved agents within the same set_id.
         Uses the agent_scores materialized view for performance.
         
         Returns dict with:
@@ -63,12 +63,12 @@ class MinerAgentScored(BaseModel):
         # Get the current agent's score from materialized view
         agent_score_result = await conn.fetchrow("""
             SELECT 
-                version_id, miner_hotkey, agent_name, version_num,
+                agent_id, miner_hotkey, agent_name, version_num,
                 created_at, status, agent_summary, set_id, 
                 approved, validator_count, final_score
             FROM agent_scores
-            WHERE version_id = $1
-        """, version_id)
+            WHERE agent_id = $1
+        """, agent_id)
         
         if not agent_score_result:
             return {
@@ -94,7 +94,7 @@ class MinerAgentScored(BaseModel):
                 "high_score_detected": True,
                 "agent_name": agent_score_result['agent_name'],
                 "miner_hotkey": agent_score_result['miner_hotkey'], 
-                "version_id": str(version_id),
+                "agent_id": str(agent_id),
                 "version_num": agent_score_result['version_num'],
                 "new_score": float(current_score),
                 "previous_max_score": float(max_approved_score) if max_approved_score else 0.0,
@@ -123,7 +123,7 @@ class MinerAgentScored(BaseModel):
         
         # Get current leader from materialized view
         current_leader = await conn.fetchrow("""
-            SELECT ass.version_id, ass.miner_hotkey, ass.final_score, ass.created_at
+            SELECT ass.agent_id, ass.miner_hotkey, ass.final_score, ass.created_at
             FROM agent_scores ass
             WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $1
             ORDER BY ass.final_score DESC, ass.created_at ASC
@@ -138,7 +138,7 @@ class MinerAgentScored(BaseModel):
         
         # Find challenger that beats current leader by 1.5%
         challenger = await conn.fetchrow("""
-            SELECT ass.version_id, ass.miner_hotkey, ass.final_score
+            SELECT ass.agent_id, ass.miner_hotkey, ass.final_score
             FROM agent_scores ass
             WHERE ass.approved = true AND ass.approved_at <= NOW() AND ass.set_id = $2 AND ass.final_score >= $1
             ORDER BY ass.final_score DESC, ass.created_at ASC
@@ -150,7 +150,7 @@ class MinerAgentScored(BaseModel):
         
         return TopAgentHotkey(
             miner_hotkey=winner['miner_hotkey'],
-            version_id=winner['version_id'],
+            agent_id=winner['agent_id'],
             avg_score=float(winner['final_score'])
         )
     
@@ -165,7 +165,7 @@ class MinerAgentScored(BaseModel):
 
         max_approved_set_id: Optional[int] = None
         if filter_for_approved:
-            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_version_ids WHERE approved_at <= NOW()")
+            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_agent_ids WHERE approved_at <= NOW()")
             if max_approved_set_id is None:
                 return []
 
@@ -176,7 +176,7 @@ class MinerAgentScored(BaseModel):
             param_idx = len(params) + 1
             like_param = f"%{search_term}%"
             where_clauses.append(
-                f"(CAST(version_id AS TEXT) ILIKE ${param_idx} OR agent_name ILIKE ${param_idx} OR miner_hotkey ILIKE ${param_idx})"
+                f"(CAST(agent_id AS TEXT) ILIKE ${param_idx} OR agent_name ILIKE ${param_idx} OR miner_hotkey ILIKE ${param_idx})"
             )
             params.append(like_param)
 
@@ -189,13 +189,13 @@ class MinerAgentScored(BaseModel):
         if filter_for_approved and max_approved_set_id is not None:
             param_idx = len(params) + 1
             where_clauses.append(
-                f"version_id IN (SELECT version_id FROM approved_version_ids WHERE set_id = ${param_idx} AND approved_at <= NOW())"
+                f"agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE set_id = ${param_idx} AND approved_at <= NOW())"
             )
             params.append(max_approved_set_id)
 
         query = f"""
             SELECT 
-                version_id, miner_hotkey, agent_name, version_num,
+                agent_id, miner_hotkey, agent_name, version_num,
                 created_at, status, agent_summary, set_id,
                 approved, validator_count, final_score as score
             FROM agent_scores
@@ -266,14 +266,14 @@ class MinerAgentScored(BaseModel):
         """Get agent summary by hotkey using the agent_scores materialized view where available"""
         results = await conn.fetch("""
             SELECT 
-                ma.version_id, ma.miner_hotkey, ma.agent_name, ma.version_num,
+                ma.agent_id, ma.miner_hotkey, ma.agent_name, ma.version_num,
                 ma.created_at, ma.status, ma.agent_summary,
                 COALESCE(ass.set_id, NULL) as set_id,
                 COALESCE(ass.approved, NULL) as approved,
                 COALESCE(ass.validator_count, NULL) as validator_count,
                 COALESCE(ass.final_score, NULL) as score
             FROM miner_agents ma
-            LEFT JOIN agent_scores ass ON ma.version_id = ass.version_id
+            LEFT JOIN agent_scores ass ON ma.agent_id = ass.agent_id
             WHERE ma.miner_hotkey = $1
             AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             ORDER BY ma.version_num DESC, ma.created_at DESC
@@ -286,7 +286,7 @@ class MinerAgentScored(BaseModel):
         """Get agents with their scores grouped by set_id using the materialized view"""
         results = await conn.fetch("""
             SELECT 
-                version_id, miner_hotkey, agent_name, version_num,
+                agent_id, miner_hotkey, agent_name, version_num,
                 created_at, status, set_id, approved,
                 validator_count as num_validators, final_score as computed_score
             FROM agent_scores
@@ -372,7 +372,7 @@ class Evaluation(BaseModel):
     model_config = { "arbitrary_types_allowed": True }
     
     evaluation_id: UUID
-    version_id: UUID
+    agent_id: UUID
     validator_hotkey: str
     set_id: int
     status: EvaluationStatus
@@ -491,7 +491,7 @@ class EvaluationQueueItem(BaseModel):
     model_config = { "arbitrary_types_allowed": True }
     
     evaluation_id: UUID
-    version_id: UUID
+    agent_id: UUID
     miner_hotkey: str
     agent_name: str
     created_at: datetime
@@ -507,7 +507,7 @@ class ScreenerQueueAgent(BaseModel):
     """Agent in screener queue"""
     model_config = { "arbitrary_types_allowed": True }
     
-    version_id: UUID
+    agent_id: UUID
     miner_hotkey: str
     agent_name: str
     version_num: int
@@ -542,7 +542,7 @@ class TreasuryTransaction(BaseModel):
     staker_hotkey: str
     amount_alpha: int
     occurred_at: datetime
-    version_id: UUID
+    agent_id: UUID
     extrinsic_code: str
     fee: bool
 

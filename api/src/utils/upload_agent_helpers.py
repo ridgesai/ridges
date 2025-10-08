@@ -187,19 +187,19 @@ async def check_eval_running_for_hotkey(miner_hotkey: str) -> None:
         )
 
 
-async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
-    logger.debug(f"Uploading agent code for version {version_id} to S3...")
+async def upload_agent_code_to_s3(agent_id: str, agent_file: UploadFile) -> None:
+    logger.debug(f"Uploading agent code for version {agent_id} to S3...")
 
     try:
-        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
+        await s3_manager.upload_file_object(agent_file.file, f"{agent_id}/agent.py")
     except Exception as e:
-        logger.error(f"Failed to upload agent code to S3. Version ID: {version_id}. Error: {e}.")
+        logger.error(f"Failed to upload agent code to S3. Version ID: {agent_id}. Error: {e}.")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to store agent in our database. Please try again later."
         )
     
-    logger.debug(f"Successfully uploaded agent code for version {version_id} to S3.")
+    logger.debug(f"Successfully uploaded agent code for version {agent_id} to S3.")
 
 async def record_upload_attempt(upload_type: str, success: bool, **kwargs) -> None:
     """Record an upload attempt in the upload_attempts table."""
@@ -207,11 +207,11 @@ async def record_upload_attempt(upload_type: str, success: bool, **kwargs) -> No
         async with get_transaction() as conn:
             await conn.execute(
                 """INSERT INTO upload_attempts (upload_type, success, hotkey, agent_name, filename, 
-                file_size_bytes, ip_address, error_type, error_message, ban_reason, http_status_code, version_id) 
+                file_size_bytes, ip_address, error_type, error_message, ban_reason, http_status_code, agent_id) 
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
                 upload_type, success, kwargs.get('hotkey'), kwargs.get('agent_name'), kwargs.get('filename'),
                 kwargs.get('file_size_bytes'), kwargs.get('ip_address'), kwargs.get('error_type'),
-                kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('version_id')
+                kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('agent_id')
             )
         logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
     except Exception as e:

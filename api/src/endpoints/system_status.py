@@ -92,7 +92,7 @@ async def run_manual_health_check():
                 WHERE status = 'evaluating' 
                 AND NOT EXISTS (
                     SELECT 1 FROM evaluations 
-                    WHERE version_id = miner_agents.version_id 
+                    WHERE agent_id = miner_agents.agent_id 
                     AND status = 'running'
                 )
             """)
@@ -154,7 +154,7 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as agents_last_hour,
                     COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as evaluations_last_hour
                 FROM miner_agents ma
-                FULL OUTER JOIN evaluations e ON ma.version_id = e.version_id
+                FULL OUTER JOIN evaluations e ON ma.agent_id = e.agent_id
             """)
             
             return {

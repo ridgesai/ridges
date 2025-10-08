@@ -6,7 +6,7 @@ from api.src.models.screener import Screener
 from api.src.models.validator import Validator
 from loggers.logging_utils import get_logger
 from api.src.backend.entities import Client
-from api.src.backend.queries.evaluations import does_validator_have_running_evaluation, get_running_evaluation_by_validator_hotkey, get_agent_name_from_version_id, get_miner_hotkey_from_version_id
+from api.src.backend.queries.evaluations import does_validator_have_running_evaluation, get_running_evaluation_by_validator_hotkey, get_agent_name_from_agent_id, get_miner_hotkey_from_agent_id
 from api.src.backend.queries.evaluation_runs import all_runs_finished
 
 logger = get_logger(__name__)

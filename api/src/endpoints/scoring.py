@@ -14,7 +14,7 @@ from api.src.utils.auth import verify_request, verify_request_public
 from loggers.logging_utils import get_logger
 from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
 from api.src.backend.entities import MinerAgent, MinerAgentScored
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_version_id as db_get_agent_by_version_id
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_agent_id as db_get_agent_by_agent_id
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
@@ -134,65 +134,65 @@ async def trigger_weight_set():
     await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
-async def approve_version(version_id: str, set_id: int, approval_password: str):
+async def approve_version(agent_id: str, set_id: int, approval_password: str):
     """Approve a version ID using threshold scoring logic
     
     Args:
-        version_id: The agent version to evaluate for approval
+        agent_id: The agent version to evaluate for approval
         set_id: The evaluation set ID  
         approval_password: Password for approval
     """
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
     
-    agent = await db_get_agent_by_version_id(version_id)
+    agent = await db_get_agent_by_agent_id(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     try:
         # Use threshold scoring logic to determine approval action
-        result = await evaluate_agent_for_threshold_approval(version_id, set_id)
+        result = await evaluate_agent_for_threshold_approval(agent_id, set_id)
         
         if result['action'] == 'approve_now':
             # Approve immediately and add to top agents history
-            await approve_agent_version(version_id, set_id, None)
+            await approve_agent_version(agent_id, set_id, None)
             
             async with get_transaction() as conn:
                 await conn.execute("""
-                    INSERT INTO approved_top_agents_history (version_id, set_id, top_at)
+                    INSERT INTO approved_top_agents_history (agent_id, set_id, top_at)
                     VALUES ($1, $2, NOW())
-                """, version_id, set_id)
+                """, agent_id, set_id)
             
             return {
-                "message": f"Agent {version_id} approved immediately - {result['reason']}",
+                "message": f"Agent {agent_id} approved immediately - {result['reason']}",
                 "action": "approve_now"
             }
             
         elif result['action'] == 'approve_future':
             # Schedule future approval
             threshold_scheduler.schedule_future_approval(
-                version_id, 
+                agent_id, 
                 set_id, 
                 result['future_approval_time']
             )
             
-            # Store the future approval in approved_version_ids with future timestamp
-            await approve_agent_version(version_id, set_id, result['future_approval_time'])
+            # Store the future approval in approved_agent_ids with future timestamp
+            await approve_agent_version(agent_id, set_id, result['future_approval_time'])
             
             return {
-                "message": f"Agent {version_id} scheduled for approval at {result['future_approval_time'].isoformat()} - {result['reason']}",
+                "message": f"Agent {agent_id} scheduled for approval at {result['future_approval_time'].isoformat()} - {result['reason']}",
                 "action": "approve_future",
                 "approval_time": result['future_approval_time'].isoformat()
             }
             
         else:  # reject
             return {
-                "message": f"Agent {version_id} not approved - {result['reason']}",
+                "message": f"Agent {agent_id} not approved - {result['reason']}",
                 "action": "reject"
             }
             
     except Exception as e:
-        logger.error(f"Error evaluating agent {version_id} for threshold approval: {e}")
+        logger.error(f"Error evaluating agent {agent_id} for threshold approval: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
 
@@ -219,7 +219,7 @@ async def re_eval_approved(approval_password: str):
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
                 UPDATE miner_agents SET status = 'awaiting_screening_1'
-                WHERE version_id IN (SELECT version_id FROM approved_version_ids WHERE approved_at <= NOW())
+                WHERE agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 RETURNING *
@@ -253,8 +253,8 @@ async def refresh_scores():
         logger.error(f"Error refreshing agent scores: {e}")
         raise HTTPException(status_code=500, detail="Error refreshing agent scores")
 
-async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_and_validators: bool = False):
-    """Re-evaluate an agent by resetting all validator evaluations for a version_id back to waiting status"""
+async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_validators: bool = False):
+    """Re-evaluate an agent by resetting all validator evaluations for a agent_id back to waiting status"""
     if password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid password")
 
@@ -262,16 +262,16 @@ async def re_evaluate_agent(password: str, version_id: str, re_eval_screeners_an
         # Build query conditionally based on re_eval_screeners_and_validators parameter
         if re_eval_screeners_and_validators:
             # Include all evaluations (screeners and validators)
-            await fully_reset_evaluations(version_id=version_id)
+            await fully_reset_evaluations(agent_id=agent_id)
         else:
-            await reset_validator_evaluations(version_id=version_id)
+            await reset_validator_evaluations(agent_id=agent_id)
         
         return {
-            "message": f"Successfully reset evaluations for version {version_id}",
+            "message": f"Successfully reset evaluations for version {agent_id}",
         }
             
     except Exception as e:
-        logger.error(f"Error resetting validator evaluations for version {version_id}: {e}")
+        logger.error(f"Error resetting validator evaluations for version {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting validator evaluations")
 
 async def re_run_evaluation(password: str, evaluation_id: str):
@@ -288,7 +288,7 @@ async def re_run_evaluation(password: str, evaluation_id: str):
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
-async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
+async def store_treasury_transaction(dispersion_extrinsic_code: str, agent_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
     if password != treasury_transaction_password:
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
 
@@ -312,7 +312,7 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id:
             destination_coldkey=dispersion_extrinsic_details["destination_coldkey"],
             amount_alpha=dispersion_extrinsic_details["alpha_amount"],
             fee=False,
-            version_id=version_id,
+            agent_id=agent_id,
             occurred_at=dispersion_extrinsic_details["occurred_at"],
             staker_hotkey=dispersion_extrinsic_details["staker_hotkey"],
             extrinsic_code=dispersion_extrinsic_code
@@ -325,7 +325,7 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, version_id:
                 destination_coldkey=fee_extrinsic_details["destination_coldkey"],
                 amount_alpha=fee_extrinsic_details["alpha_amount"],
                 fee=True,
-                version_id=version_id,
+                agent_id=agent_id,
                 occurred_at=fee_extrinsic_details["occurred_at"],
                 staker_hotkey=fee_extrinsic_details["staker_hotkey"],
                 extrinsic_code=fee_extrinsic_code
@@ -352,40 +352,40 @@ async def get_threshold_function():
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
 
-async def prune_agent(version_ids: str, approval_password: str):
-    """Prune a specific agent by setting its status to pruned and pruning all its evaluations, a comma separated list of version_ids"""
+async def prune_agent(agent_ids: str, approval_password: str):
+    """Prune a specific agent by setting its status to pruned and pruning all its evaluations, a comma separated list of agent_ids"""
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password")
     
     try:
-        for version_id in version_ids.split(","):
+        for agent_id in agent_ids.split(","):
             async with get_transaction() as conn:
                 # Check if agent exists
-                agent = await conn.fetchrow("SELECT * FROM miner_agents WHERE version_id = $1", version_id)
+                agent = await conn.fetchrow("SELECT * FROM miner_agents WHERE agent_id = $1", agent_id)
                 if not agent:
                     raise HTTPException(status_code=404, detail="Agent not found")
                 
                 # Update agent status to pruned
-                await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE version_id = $1", version_id)
+                await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE agent_id = $1", agent_id)
                 
                 # Update all evaluations for this agent to pruned status
                 evaluation_count = await conn.fetchval("""
                     UPDATE evaluations 
                     SET status = 'pruned', finished_at = NOW() 
-                    WHERE version_id = $1 
+                    WHERE agent_id = $1 
                     AND status IN ('waiting', 'running', 'error', 'completed')
                     AND validator_hotkey NOT LIKE 'screener-%'
-                    RETURNING (SELECT COUNT(*) FROM evaluations WHERE version_id = $1)
-                """, version_id)
+                    RETURNING (SELECT COUNT(*) FROM evaluations WHERE agent_id = $1)
+                """, agent_id)
                 
-                logger.info(f"Pruned agent {version_id} ({agent['agent_name']}) and {evaluation_count or 0} evaluations")
+                logger.info(f"Pruned agent {agent_id} ({agent['agent_name']}) and {evaluation_count or 0} evaluations")
                 
-        return {"message": f"Successfully pruned {len(version_ids.split(','))} agents"}
+        return {"message": f"Successfully pruned {len(agent_ids.split(','))} agents"}
             
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error pruning agent {version_id}: {e}")
+        logger.error(f"Error pruning agent {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to prune agent due to internal server error")
 
 async def check_evaluation_status(evaluation_id: str):

@@ -38,7 +38,7 @@ class Screener(Client):
             return None
 
     @staticmethod
-    async def get_combined_screener_score(conn: asyncpg.Connection, version_id: str) -> tuple[Optional[float], Optional[str]]:
+    async def get_combined_screener_score(conn: asyncpg.Connection, agent_id: str) -> tuple[Optional[float], Optional[str]]:
         """Calculate combined screener score as (questions solved by both) / (questions asked by both)
         
         Returns:
@@ -50,25 +50,25 @@ class Screener(Client):
         stage_1_eval_id = await conn.fetchval(
             """
             SELECT evaluation_id FROM evaluations 
-            WHERE version_id = $1 
+            WHERE agent_id = $1 
             AND validator_hotkey LIKE 'screener-1-%'
             AND status = 'completed'
             ORDER BY created_at DESC 
             LIMIT 1
             """,
-            version_id
+            agent_id
         )
         
         stage_2_eval_id = await conn.fetchval(
             """
             SELECT evaluation_id FROM evaluations 
-            WHERE version_id = $1 
+            WHERE agent_id = $1 
             AND validator_hotkey LIKE 'screener-2-%'
             AND status = 'completed'
             ORDER BY created_at DESC 
             LIMIT 1
             """,
-            version_id
+            agent_id
         )
         
         if not stage_1_eval_id or not stage_2_eval_id:
@@ -191,7 +191,7 @@ class Screener(Client):
             return False
         
         async with get_transaction() as conn:
-            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
             
             # Check if agent is in the appropriate screening status for this screener stage
@@ -248,10 +248,10 @@ class Screener(Client):
                 return
             
             async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
                 expected_status = getattr(AgentStatus, f"screening_{self.stage}")
                 if AgentStatus.from_string(agent_status) != expected_status:
-                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.version_id} not in screening_{self.stage} status during finish (current: {agent_status})")
+                    logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.agent_id} not in screening_{self.stage} status during finish (current: {agent_status})")
                     # Clearly a bug here, its somehow set to failed_screening_1 when we hit this if statement
                     # It should be screening_1, no idea whats setting it to failed_screening_1
                     # return

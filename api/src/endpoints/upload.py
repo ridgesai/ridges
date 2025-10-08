@@ -82,7 +82,7 @@ async def post_agent(
             latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
 
             agent = MinerAgent(
-                version_id=str(uuid.uuid4()),
+                agent_id=str(uuid.uuid4()),
                 miner_hotkey=miner_hotkey,
                 agent_name=name if not latest_agent else latest_agent.agent_name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
@@ -124,14 +124,14 @@ async def post_agent(
 
                     await Evaluation.replace_old_agents(conn, miner_hotkey)
 
-                    await upload_agent_code_to_s3(agent.version_id, agent_file)
+                    await upload_agent_code_to_s3(agent.agent_id, agent_file)
 
                     await conn.execute(
                         """
-                        INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                        INSERT INTO miner_agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
                         VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                     """,
-                        agent.version_id,
+                        agent.agent_id,
                         agent.miner_hotkey,
                         agent.agent_name,
                         agent.version_num,
@@ -144,35 +144,35 @@ async def post_agent(
                         # If send fails, reset screener
                         if screener.status == 'reserving':
                             screener.set_available()
-                            logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+                            logger.warning(f"Failed to assign agent {agent.agent_id} to screener")
                         else:
-                            logger.warning(f"Failed to assign agent {agent.version_id} to screener - screener is not running")
+                            logger.warning(f"Failed to assign agent {agent.agent_id} to screener - screener is not running")
                 
                 # Screener state is now committed, lock can be released
 
             # ADAM: remove this for now
             # # Schedule background agent summary generation
-            # logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+            # logger.info(f"Scheduling agent summary generation for {agent.agent_id}")
             # background_tasks.add_task(
             #     generate_and_store_agent_summary,
-            #     agent.version_id,
-            #     run_id=f"upload-{agent.version_id}"
+            #     agent.agent_id,
+            #     run_id=f"upload-{agent.agent_id}"
             # )
 
-            logger.info(f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}.")
+            logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
             logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
             
             # Record successful upload
             await record_upload_attempt(
                 upload_type="agent", 
                 success=True, 
-                version_id=agent.version_id,
+                agent_id=agent.agent_id,
                 **upload_data
             )
 
             return AgentUploadResponse(
                 status="success",
-                message=f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}."
+                message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
             )
     
     except HTTPException as e:
@@ -252,7 +252,7 @@ async def post_open_agent(
         latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=open_hotkey)
 
         agent = MinerAgent(
-            version_id=str(uuid.uuid4()),
+            agent_id=str(uuid.uuid4()),
             miner_hotkey=open_hotkey,
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
@@ -290,14 +290,14 @@ async def post_open_agent(
 
                 await Evaluation.replace_old_agents(conn, open_hotkey)
 
-                await upload_agent_code_to_s3(agent.version_id, agent_file)
+                await upload_agent_code_to_s3(agent.agent_id, agent_file)
 
                 await conn.execute(
                     """
-                    INSERT INTO miner_agents (version_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                    INSERT INTO miner_agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
                     VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                 """,
-                    agent.version_id,
+                    agent.agent_id,
                     agent.miner_hotkey,
                     agent.agent_name,
                     agent.version_num,
@@ -309,29 +309,29 @@ async def post_open_agent(
                 if not success:
                     # If send fails, reset screener
                     screener.set_available()
-                    logger.warning(f"Failed to assign agent {agent.version_id} to screener")
+                    logger.warning(f"Failed to assign agent {agent.agent_id} to screener")
 
         # ADAM: WHY is this ENTIRE FUNCTION basically duplicated WHY
-        # logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+        # logger.info(f"Scheduling agent summary generation for {agent.agent_id}")
         # background_tasks.add_task(
         #     generate_and_store_agent_summary,
-        #     agent.version_id,
-        #     run_id=f"upload-{agent.version_id}"
+        #     agent.agent_id,
+        #     run_id=f"upload-{agent.agent_id}"
         # )
 
-        logger.info(f"Successfully uploaded agent {agent.version_id} for open user {open_hotkey}.")
+        logger.info(f"Successfully uploaded agent {agent.agent_id} for open user {open_hotkey}.")
         
         # Record successful upload
         await record_upload_attempt(
             upload_type="open-agent",
             success=True,
-            version_id=agent.version_id,
+            agent_id=agent.agent_id,
             **upload_data
         )
 
         return AgentUploadResponse(
             status="success",
-            message=f"Successfully uploaded agent {agent.version_id} for open user {open_hotkey}."
+            message=f"Successfully uploaded agent {agent.agent_id} for open user {open_hotkey}."
         )
     
     except HTTPException as e:
