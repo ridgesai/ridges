@@ -318,6 +318,7 @@ class Screener(Client):
     async def get_first_available_and_reserve(stage: int) -> Optional['Screener']:
         """Atomically find and reserve first available screener for specific stage - MUST be called within Evaluation lock"""
         from api.src.socket.websocket_manager import WebSocketManager
+        from api.src.backend.db_manager import get_db_connection
         ws_manager = WebSocketManager.get_instance()
         
         for client in ws_manager.clients.values():
@@ -325,6 +326,19 @@ class Screener(Client):
                 client.status == "available" and
                 client.is_available() and
                 client.stage == stage):
+
+                # Double-check against database to ensure screener is truly available
+                async with get_db_connection() as db_conn:
+                    has_running_evaluation = await db_conn.fetchval(
+                        """
+                        SELECT EXISTS(SELECT 1 FROM evaluations 
+                        WHERE validator_hotkey = $1 AND status = 'running')
+                        """, client.hotkey
+                    )
+
+                    if has_running_evaluation:
+                        logger.warning(f"Screener {client.hotkey} appears available in memory but has running evaluation in database - skipping")
+                        continue
                 
                 # Immediately reserve to prevent race conditions
                 client.status = "reserving"
