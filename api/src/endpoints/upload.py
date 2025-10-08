@@ -11,7 +11,7 @@ from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
 from api.src.utils.auth import verify_request_public
-from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3, record_upload_attempt
+from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_file_size, check_agent_code, upload_agent_code_to_s3, record_upload_attempt
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.models.evaluation import Evaluation
@@ -84,7 +84,7 @@ async def post_agent(
             latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=miner_hotkey)
 
             agent = MinerAgent(
-                agent_id=str(uuid.uuid4()),
+                agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
                 agent_name=name if not latest_agent else latest_agent.agent_name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
@@ -126,7 +126,7 @@ async def post_agent(
 
                     await Evaluation.replace_old_agents(conn, miner_hotkey)
 
-                    await upload_agent_code_to_s3(agent.agent_id, agent_file)
+                    await upload_agent_code_to_s3(str(agent.agent_id), agent_file)
 
                     await conn.execute(
                         """
@@ -254,7 +254,7 @@ async def post_open_agent(
         latest_agent: Optional[MinerAgent] = await get_latest_agent(miner_hotkey=open_hotkey)
 
         agent = MinerAgent(
-            agent_id=str(uuid.uuid4()),
+            agent_id=uuid.uuid4(),
             miner_hotkey=open_hotkey,
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
@@ -292,7 +292,7 @@ async def post_open_agent(
 
                 await Evaluation.replace_old_agents(conn, open_hotkey)
 
-                await upload_agent_code_to_s3(agent.agent_id, agent_file)
+                await upload_agent_code_to_s3(str(agent.agent_id), agent_file)
 
                 await conn.execute(
                     """
