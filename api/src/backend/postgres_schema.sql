@@ -64,19 +64,27 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Create EvaluationSetGroup enum type if it doesn't exist
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationsetgroup') THEN
+            CREATE TYPE EvaluationSetGroup AS ENUM (
+                'screener_1',
+                'screener_2',
+                'validator'
+            );
+        END IF;
+    END $$;
 
 CREATE TABLE IF NOT EXISTS evaluation_sets
 (
     -- Identifies the set ID (which starts at 1) that this problem belongs to
     set_id INTEGER NOT NULL,
     -- Indicates the type of problem this is
-    --     screener_1
-    --     screener_2
-    --     validator
-    type TEXT NOT NULL,
+    set_group EvaluationSetGroup NOT NULL,
     -- The actual problem name (SWE-Bench or Polyglot)
     problem_name TEXT,
-    PRIMARY KEY (set_id, type, problem_name)
+    PRIMARY KEY (set_id, set_group, problem_name)
 );
 
 

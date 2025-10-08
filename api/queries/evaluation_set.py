@@ -13,11 +13,11 @@ async def get_latest_set_id(conn: asyncpg.Connection) -> int:
 
 
 @db_operation
-async def get_all_problems_of_type_in_set(conn: asyncpg.Connection, set_id: int, type: str) -> List[str]:
+async def get_all_problems_of_group_in_set(conn: asyncpg.Connection, set_id: int, set_group: str) -> List[str]:
     results = await conn.fetch("""
-        SELECT swebench_instance_id
+        SELECT problem_name
         FROM evaluation_sets
-        WHERE set_id = $1 AND type = $2
-        ORDER BY swebench_instance_id
-    """, set_id, type)
-    return [row["swebench_instance_id"] for row in results]
+        WHERE set_id = $1 AND set_group = $2
+        ORDER BY problem_name
+    """, set_id, set_group)
+    return [row["problem_name"] for row in results]
