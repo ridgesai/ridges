@@ -106,7 +106,7 @@ class AgentSummaryResponse(BaseModel):
 
 class ExecutionNew(BaseModel):
     evaluation_id: str
-    agent_version_id: str
+    agent_id: str
     validator_hotkey: str
     status: Literal["waiting", "running", "completed", "error", "replaced"]
     terminated_reason: Optional[str]
