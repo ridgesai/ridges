@@ -83,7 +83,7 @@ async def post_agent(
             agent = MinerAgent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
-                agent_name=name if not latest_agent else latest_agent.name,
+                name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(),
                 status=AgentStatus.screening_1,
@@ -117,7 +117,7 @@ async def post_agent(
 
             logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
             logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
-            
+
             # Record successful upload
             await record_upload_attempt(
                 upload_type="agent", 

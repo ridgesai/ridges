@@ -181,7 +181,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
                 progress.add_task("🔐 Signing and uploading...", total=None)
-                
+
                 with httpx.Client() as client:
                     response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
                 
@@ -203,7 +203,7 @@ def get_name_and_prev_version(url: str, miner_hotkey: str) -> Optional[tuple[str
             if response.status_code == 200:
                 latest_agent = response.json()
                 if latest_agent:
-                    return latest_agent.get("agent_name"), latest_agent.get("version_num")
+                    return latest_agent.get("name"), latest_agent.get("version_num")
     except Exception as e:
         console.print(f"💥 Error: {e}", style="bold red")
         exit(1)
