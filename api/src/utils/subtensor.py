@@ -22,8 +22,17 @@ async def get_subnet_hotkeys():
                 data = json.loads(content)
                 return data["hotkeys"]
         else:
-            logger.warning("Hotkeys cache file does not exist. Make sure refresh_subnet_hotkeys.py service is running.")
+            logger.warning("Hotkeys cache file does not exist. Make sure hotkey subscription service is running.")
             return []
     except Exception as e:
         logger.error(f"Error reading hotkeys cache: {e}")
         return []
+
+async def check_if_hotkey_is_registered(hotkey: str) -> bool:
+    """Check if a hotkey is registered on the subnet by looking in the cache."""
+    try:
+        hotkeys = await get_subnet_hotkeys()
+        return hotkey in hotkeys
+    except Exception as e:
+        logger.error(f"Error checking if hotkey is registered: {e}")
+        return False

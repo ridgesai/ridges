@@ -24,6 +24,7 @@ from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.utils.slack import send_slack_message
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
+from api.src.utils.hotkey_subscription import start_hotkey_subscription, stop_hotkey_subscription
 
 logger = get_logger(__name__)
 
@@ -56,8 +57,13 @@ async def lifespan(app: FastAPI):
     # Start background tasks
     asyncio.create_task(run_weight_setting_loop(30))
     
+    # Start hotkey subscription service
+    asyncio.create_task(start_hotkey_subscription())
+    
     yield
 
+    # Stop hotkey subscription service
+    await stop_hotkey_subscription()
     await new_db.close()
 
 app = FastAPI(lifespan=lifespan)
