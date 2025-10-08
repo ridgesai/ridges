@@ -3,8 +3,6 @@ from typing import List
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix='PROXY_', env_file='.env')
     

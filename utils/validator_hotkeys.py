@@ -13,6 +13,7 @@ WHITELISTED_VALIDATORS = [
     {"name": "Adam's Validator",      "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"},
     {"name": "Alex's Validator",      "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
 
+    {"name": "Shaks' Validator",      "hotkey": "5F26aNVC3rZVNbH36DWdZzxPVH17iBNGD14Wtb4nQem742Q7"}
 ]
 
 def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:

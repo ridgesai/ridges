@@ -23,7 +23,7 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
 
 
 
-    url = f"{config.RIDGES_PLATFORM_URL.rstrip("/")}/{endpoint.lstrip("/")}"
+    url = f"{config.RIDGES_PLATFORM_URL.rstrip('/')}/{endpoint.lstrip('/')}"
 
     logger.debug(f"Sending request for POST {url}")
     if body != {}:
