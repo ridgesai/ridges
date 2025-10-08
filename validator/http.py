@@ -35,9 +35,11 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token is not None else None
             response = await client.post(url, json=body, headers=headers)
             response.raise_for_status()
+            response_json = response.json()
 
             logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
-            logger.debug(textwrap.indent(json.dumps(response.json(), indent=2), "  "))
+            if response_json != {}:
+                logger.debug(textwrap.indent(json.dumps(response_json, indent=2), "  "))
             
             return response.json()
     

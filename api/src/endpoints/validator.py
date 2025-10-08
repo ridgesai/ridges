@@ -20,6 +20,8 @@ from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotke
 
 # A connected validator
 class Validator(BaseModel):
+    session_id: UUID
+
     name: str
     hotkey: str
     time_connected: datetime
@@ -114,6 +116,7 @@ async def validator_register(
     # Register the validator with a new session ID
     session_id = uuid4()
     SESSION_ID_TO_VALIDATOR[session_id] = Validator(
+        session_id=session_id,
         name=validator_hotkey_to_name(request.hotkey),
         hotkey=request.hotkey,
         time_connected=datetime.now()
@@ -399,3 +402,23 @@ async def update_evaluation_run(
     logger.info(f"  Updated status: {request.updated_status}")
 
     return ValidatorUpdateEvaluationRunResponse()
+
+
+
+class ValidatorDisconnectRequest(BaseModel):
+    reason: str
+class ValidatorDisconnectResponse(BaseModel):
+    pass
+
+@router.post("/disconnect")
+async def validator_heartbeat(
+    request: ValidatorDisconnectRequest,
+    validator: Validator = Depends(get_request_validator)
+) -> ValidatorDisconnectResponse:
+
+    logger.info(f"Validator {validator.name}/{validator.hotkey} disconnected")
+    logger.info(f"  Reason: {request.reason}")
+
+    del SESSION_ID_TO_VALIDATOR[validator.session_id]
+
+    return ValidatorDisconnectResponse()

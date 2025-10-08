@@ -1,4 +1,5 @@
 import time
+import atexit
 import asyncio
 import utils.logger as logger
 import validator.config as config
@@ -9,6 +10,18 @@ from validator.http import post_ridges_platform
 
 # The session ID for this validator
 session_id = None
+
+
+
+async def disconnect():
+    if session_id is None:
+        return
+    
+    logger.info("Disconnecting validator...")
+    await post_ridges_platform("/validator/disconnect", {"reason": "Keyboard interrupt"}, bearer_token=session_id)
+    logger.info("Disconnected validator")
+
+atexit.register(asyncio.run, disconnect())
 
 
 
@@ -26,7 +39,7 @@ async def main():
         
         # Register with the Ridges platform, yielding us a session ID
         logger.info("Registering validator...")
-        register_response = await post_ridges_platform('/validator/register', {
+        register_response = await post_ridges_platform("/validator/register", {
             "timestamp": timestamp,
             "signed_timestamp": signed_timestamp,
             "hotkey": config.VALIDATOR_HOTKEY.ss58_address
@@ -40,7 +53,7 @@ async def main():
         while True:
             logger.info("Requesting an evaluation...")
             
-            evaluation_response = await post_ridges_platform('/validator/request-evaluation', bearer_token=session_id)
+            evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id)
             
             # If no evaluation is available, wait and try again
             if evaluation_response is None:
@@ -57,7 +70,6 @@ async def main():
     except Exception as e:
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
         exit(1)
-        
 
 
 

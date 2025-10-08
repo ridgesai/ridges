@@ -18,7 +18,7 @@ class ColoredFormatter(logging.Formatter):
         
         level_name = record.levelname
         if level_name in self.COLORS:
-            colored_level = f"{self.COLORS[level_name]}{level_name}{self.RESET}"
+            colored_level = f"[{self.COLORS[level_name]}{level_name.ljust(8)}{self.RESET}]"
             formatted = formatted.replace(level_name, colored_level, 1)
         
         return formatted
@@ -26,7 +26,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 logger = logging.getLogger('ridges')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 formatter = ColoredFormatter(
     '%(asctime)s.%(msecs)03d - %(filename)s:%(lineno)d - %(levelname)s - %(message)s',
