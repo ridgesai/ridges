@@ -440,3 +440,13 @@ async def get_miner_hotkey_from_version_id(conn: asyncpg.Connection, version_id:
         FROM miner_agents 
         WHERE version_id = $1
     """, version_id)
+
+@db_operation
+async def is_screener_running_evaluation(conn: asyncpg.Connection, validator_hotkey: str) -> bool:
+    """Check if a screener is running an evaluation"""
+    return await conn.fetchval(
+        """
+        SELECT EXISTS(SELECT 1 FROM evaluations WHERE validator_hotkey = $1 AND status = 'running')
+        """,
+        validator_hotkey
+    )
