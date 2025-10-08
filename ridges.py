@@ -10,7 +10,6 @@ from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
 import subprocess
-import requests
 from typing import Optional
 from dotenv import load_dotenv
 from rich.console import Console

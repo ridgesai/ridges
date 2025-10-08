@@ -3,31 +3,25 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
+from pydantic import BaseModel, Field
+
 from api.src.backend.db_manager import get_transaction
-from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import MinerAgent, AgentStatus
+from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, \
     check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_file_size, check_agent_code, \
     upload_agent_code_to_s3, record_upload_attempt
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 
-from pydantic import BaseModel, Field
-
-from api.src.utils.auth import verify_request_public
-from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_code_similarity, check_file_size, check_agent_code, upload_agent_code_to_s3, record_upload_attempt
-from api.src.backend.queries.agents import get_ban_reason
-from api.src.models.evaluation import Evaluation
-from api.src.backend.queries.agents import get_latest_agent
-from api.src.backend.entities import MinerAgent, AgentStatus
-from api.src.backend.db_manager import get_transaction
-from api.src.backend.queries.open_users import get_open_user_by_hotkey
 
 logger = get_logger(__name__)
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
+
 
 prod = False
 if os.getenv("ENV") == "prod":

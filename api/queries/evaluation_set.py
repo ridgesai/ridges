@@ -1,6 +1,7 @@
+from typing import List
+
 import asyncpg
 
-from typing import List
 from api.src.backend.db_manager import db_operation
 from models.evaluation_set import EvaluationSetGroup
 

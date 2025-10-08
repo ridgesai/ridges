@@ -4,16 +4,16 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
+from fastapi import Depends, APIRouter, HTTPException
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel
+
 import utils.logger as logger
 from api.queries.agent import get_agent_code_by_agent_id
 from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
 from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
-from fastapi import Depends, APIRouter, HTTPException
-from fastapi.security import HTTPBearer
-from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunTestResult
-from pydantic import BaseModel
 from utils.fiber import validate_signed_timestamp
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted

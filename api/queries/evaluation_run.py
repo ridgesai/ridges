@@ -1,13 +1,11 @@
 import json
+from typing import Optional
+from uuid import UUID
+
 import asyncpg
 
-from uuid import UUID
-from typing import Optional
-
-from models.evaluation import Evaluation
-from models.evaluation_run import EvaluationRun
 from api.src.backend.db_manager import db_operation
-
+from models.evaluation_run import EvaluationRun
 
 
 @db_operation
