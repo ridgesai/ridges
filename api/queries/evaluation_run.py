@@ -59,5 +59,17 @@ async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: 
 async def create_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:
     await conn.execute(
         """
-        INSERT INTO evaluation_runs """
+        INSERT INTO evaluation_runs (
+            evaluation_run_id,
+            evaluation_id,
+            problem_name,
+            status,
+            created_at
+        ) VALUES ($1, $2, $3, $4, $5)
+        """,
+        evaluation_run.evaluation_run_id,
+        evaluation_run.evaluation_id,
+        evaluation_run.problem_name,
+        evaluation_run.status.value,
+        evaluation_run.created_at,
     )

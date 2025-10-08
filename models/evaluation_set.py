@@ -1,0 +1,16 @@
+from enum import Enum
+
+
+class EvaluationSetGroup(str, Enum):
+    screener_1 = "screener_1"
+    screener_2 = "screener_2"
+    validator = "validator"
+
+    @staticmethod
+    def from_validator_hotkey(validator_hotkey: str):
+        if validator_hotkey.startswith("screener-1"):
+            return EvaluationSetGroup.screener_1
+        elif validator_hotkey.startswith("screener-2"):
+            return EvaluationSetGroup.screener_2
+        elif validator_hotkey.startswith("validator"):
+            return EvaluationSetGroup.validator
