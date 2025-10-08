@@ -30,7 +30,7 @@ async def handle_heartbeat(
         client.status_mismatch_count += 1
         logger.warning(f"Client {client.hotkey} status mismatch #{client.status_mismatch_count}: Client says {alleged_status}, but Platform says {client.status}")
         
-        if client.status_mismatch_count >= 100:
+        if client.status_mismatch_count >= 25:
             logger.error(f"Client {client.hotkey} has {client.status_mismatch_count} consecutive status mismatches. Forcing reconnection.")
             await websocket.send_json({"event": "error", "error": f"Too many status mismatches ({client.status_mismatch_count}). Reconnecting..."})
             await websocket.close()

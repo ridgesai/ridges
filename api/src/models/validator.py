@@ -149,8 +149,7 @@ class Validator(Client):
     async def disconnect(self):
         """Handle validator disconnection"""
         from api.src.models.evaluation import Evaluation
-        async with Evaluation.get_lock():
-            await Evaluation.handle_validator_disconnection(self.hotkey)
+        await Evaluation.handle_validator_disconnection(self.hotkey)
     
     async def get_next_evaluation(self) -> Optional[str]:
         """Get next evaluation ID for this validator"""
@@ -168,42 +167,44 @@ class Validator(Client):
     async def finish_evaluation(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish evaluation and automatically look for next work"""
         from api.src.models.evaluation import Evaluation
-        async with Evaluation.get_lock():
-            try:
-                evaluation = await Evaluation.get_by_id(evaluation_id)
-                if not evaluation or evaluation.validator_hotkey != self.hotkey:
-                    logger.warning(f"Validator {self.hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}")
+        
+        try:
+            evaluation = await Evaluation.get_by_id(evaluation_id)
+            if not evaluation or evaluation.validator_hotkey != self.hotkey:
+                logger.warning(f"Validator {self.hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}")
+                return
+            
+            async with get_transaction() as conn:
+                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
+                if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
+                    logger.warning(f"Validator {self.hotkey}: Agent {evaluation.version_id} not in evaluating status during finish")
                     return
                 
-                async with get_transaction() as conn:
-                    agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE version_id = $1", evaluation.version_id)
-                    if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
-                        logger.warning(f"Validator {self.hotkey}: Agent {evaluation.version_id} not in evaluating status during finish")
-                        return
-                    
-                    if errored:
-                        await evaluation.error(conn, reason)
-                        notification_targets = None
-                    else:
-                        notification_targets = await evaluation.finish(conn)
-                
-                from api.src.socket.websocket_manager import WebSocketManager
-                ws_manager = WebSocketManager.get_instance()
-                await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
-                
-                logger.info(f"Validator {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
-                
-                # Handle notifications AFTER transaction commits
-                if notification_targets:
-                    # Note: Validators typically don't trigger stage transitions, but handle any notifications
-                    for validator in notification_targets.get("validators", []):
-                        async with Evaluation.get_lock():
-                            if validator.is_available():
-                                success = await validator.start_evaluation_and_send(evaluation_id)
-                                if success:
-                                    logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
-                                    
-            finally:
+                if errored:
+                    await evaluation.error(conn, reason)
+                    notification_targets = None
+                else:
+                    notification_targets = await evaluation.finish(conn)
+            
+            from api.src.socket.websocket_manager import WebSocketManager
+            ws_manager = WebSocketManager.get_instance()
+            await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
+            
+            logger.info(f"Validator {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
+            
+            # Handle notifications AFTER transaction commits
+            if notification_targets:
+                # Note: Validators typically don't trigger stage transitions, but handle any notifications
+                for validator in notification_targets.get("validators", []):
+                    async with Evaluation.get_lock():
+                        if validator.is_available():
+                            success = await validator.start_evaluation_and_send(evaluation_id)
+                            if success:
+                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
+                                
+        finally:
+            # Single atomic reset and reassignment
+            async with Evaluation.get_lock():
                 self.set_available()
                 logger.info(f"Validator {self.hotkey}: Reset to available and looking for next evaluation")
                 await self._check_and_start_next_evaluation()
