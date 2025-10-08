@@ -11,44 +11,44 @@ MIN_EVALS: Final[int] = 3
 async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[UUID]:
     if validator_hotkey.startswith("screener-1"):
         result = await conn.fetchrow("""
-            SELECT agent_id FROM screener_1_queue limit 1
+            SELECT agent_id FROM screener_1_queue LIMIT 1
         """)
     elif validator_hotkey.startswith("screener-2"):
         result = await conn.fetchrow("""
-             SELECT agent_id FROM screener_2_queue limit 1
+             SELECT agent_id FROM screener_2_queue LIMIT 1
         """)
     else:
         result = await conn.fetchrow(
             """
-            with  
-                validator_eval_counts as (  
-                    select  
-                        agent_id,  
-                        count(*) as num_evals,  
-                        bool_or(validator_hotkey = $1) as already_evaluated  
-                    from evaluations_hydrated  
-                    where evaluations_hydrated.status = 'success'  
-                      and validator_hotkey not like 'screener-%'  
-                    group by agent_id  
-                ),  
-                screener_2_scores as (  
-                    select agent_id, MAX(score) as score from evaluations_hydrated  
-                    where validator_hotkey like 'screener-2%'  
-                      and evaluations_hydrated.status = 'success'  
-                    group by agent_id  
-                )  
-            select  
+            WITH
+                validator_eval_counts AS (
+                    SELECT
+                        agent_id,
+                        COUNT(*) AS num_evals,
+                        BOOL_OR(validator_hotkey = $1) AS already_evaluated
+                    FROM evaluations_hydrated
+                    WHERE evaluations_hydrated.status = 'success'
+                      AND validator_hotkey NOT LIKE 'screener-%'
+                    GROUP BY agent_id
+                ),
+                screener_2_scores AS (
+                    SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
+                    WHERE validator_hotkey LIKE 'screener-2%'
+                      AND evaluations_hydrated.status = 'success'
+                    GROUP BY agent_id
+                )
+            SELECT
                 agent_id
-            from agents  
-                 inner join screener_2_scores using (agent_id)
-                 left join validator_eval_counts using (agent_id)
-            where  
+            FROM agents
+                 INNER JOIN screener_2_scores USING (agent_id)
+                 LEFT JOIN validator_eval_counts USING (agent_id)
+            WHERE
                 agents.status = 'evaluating'
-                and not COALESCE(already_evaluated, false)
-                and not COALESCE(num_evals, 0) < $2
-            order by  
-                screener_2_scores.score desc,  
-                agents.created_at asc
+                AND NOT COALESCE(already_evaluated, false)
+                AND NOT COALESCE(num_evals, 0) < $2
+            ORDER BY
+                screener_2_scores.score DESC,
+                agents.created_at ASC
             """,
             validator_hotkey,
             MIN_EVALS
