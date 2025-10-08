@@ -669,7 +669,7 @@ CREATE TABLE IF NOT EXISTS upload_attempts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     upload_type TEXT NOT NULL, -- 'agent' or 'open-agent'
     hotkey TEXT,
-    name TEXT,
+    agent_name TEXT,
     filename TEXT,
     file_size_bytes BIGINT,
     ip_address TEXT,
