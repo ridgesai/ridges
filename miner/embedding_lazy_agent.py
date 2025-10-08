@@ -19,8 +19,11 @@ from enum import Enum
 import json
 import csv
 import logging
+import threading
+from collections import defaultdict
 import urllib.request as _urlreq
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import concurrent
 import math
 
 
@@ -231,91 +234,72 @@ Strict Requirements:
 6. Ensure the solution handles all edge cases, validates inputs, and produces correct outputs.
 7. The solution must be executable as-is with no placeholders or TODOs.
 8. If problem statement doesn't explicitely requires a list of strings as a response, do not use list of strings for multiline text problems, just use raw string format.
+9. For reset/refresh operations, ensure that an instance NEVER reuses a value it previously had, even if random seed is reset. Keep track of past values per instance.
 Return only the final Python code.
-
 Response Examples:
 ```python
 a.py
 {content}
-
 b.py
 {content}
 ```
-
-Remember: The output format and type are as important as the algorithm correctness. Pay meticulous attention to exact return types and formatting requirements.
 """
 )
 GENERATE_INITIAL_TESTCASES_PROMPT = textwrap.dedent("""
 You are an expert Python testcase developer. Your task is to generate a complete testcases for the given problem statement.
-
 Important things:
 1. Test functions declared in code skeleton, don't customized those prototypes.
 2. Read the problem statement carefully and deeply and generate testcases that exactly match the rules, mathmatical fomulas, algorithms, data, and workflow in it.
 3. Do not generate testcases that are not mentioned in problem statement
 4. Minimize all testcases as you have context and generation limit
-
 Strict Requirements:
 1. Output the full content of Python test files along with their file names. You **MUST** output the **file name** along with file content.
 2. Do not include explanations, comments, or markdown formatting.
 3. Use only standard Python (no external libraries).
-
 Response Examples:
 ```python
 test_a.py
 contents of test_a.py
-
 test_b.py
 contents of test_b.py
 ```
-
-Remember: The output format and type are as important as the algorithm correctness. Pay meticulous attention to exact return types and formatting requirements.
 """
 )
 GENERATE_TESTCASES_WITH_MULTI_STEP_REASONING_PROMPT = textwrap.dedent(
 """
 You are an expert Python testcase developer. Your task is to generate a complete testcases for the given problem statement.
-
 Important things:
 1. Test functions declared in code skeleton, don't customized those prototypes.
 2. Read the problem statement carefully and deeply and generate testcases that exactly match the rules, mathmatical fomulas, algorithms, data, and workflow in it.
 3. Do not generate testcases that are not mentioned in problem statement
 4. Minimize all testcases as you have context and generation limit
-
 Strict Requirements:
 1. Output the full content of Python test files along with their file names. You **MUST** output the **file name** along with file content.
 2. Do not include explanations, comments, or markdown formatting.
 3. Use only standard Python (no external libraries).
-
 Response Examples:
 ```python
 test_a.py
 contents of test_a.py
-
 test_b.py
 contents of test_b.py
 ```
-Remember: The output format and type are as important as the algorithm correctness. Pay meticulous attention to exact return types and formatting requirements.
 """
 )
 TESTCASES_CHECK_PROMPT = textwrap.dedent(
 """
 You are an expert testcases reviewer specializing in invalid testcases detection and prevention. Your task is to analyze the generated test code if it's all valid for the problem statement.
-
 Important:
 1. Check for incorrect/invalid intput/output pair based on the problem statement and fix them or remove if it's impossible to fix
 2. Check if testcases are not covering critical edgecases for the problem statement and add missing testcases
 3. Minimize all testcases as you have context and generation limit
-
 If no invalid testcases are detected and covered all critical edge cases:
 - Return the original code unchanged
-
 STRICT REQUIREMENT: Return the final Python test code along with their file names. Do not include any explanations, comments, or additional text.
-
 example:
 ```python
 test_a.py
 contents of test_a.py
-
 test_b.py
 contents of test_b.py
 ```
@@ -323,7 +307,6 @@ contents of test_b.py
 )
 FIX_TASK_SYSTEM_PROMPT = textwrap.dedent("""
 # Hey there! You're a Coding Assistant 🚀. I have uploaded all files of a python repository. Your current working directory is at the root of that repo. You will be provided with a problem statement and you need to make the necessary changes to fix the issue.
-
 ## Follow these steps to fix the issue:
 1. As a first step, find the relevant files in the repo to work on.
 2. Localise the code causing the issue.
@@ -338,23 +321,19 @@ FIX_TASK_SYSTEM_PROMPT = textwrap.dedent("""
 11. You need to propose at least 2 meaningfully different and accurate solutions to the problem to the user for approval.
 12. You need to look at both expected output mentioned in the problem statement AND the output in the most relevant test case. This is very important.
 13. If you find that the error while running the run_code or run_repo_tests tool due to missing dependencies, do not try to solve it as you don't have any internet access.
-
 ## Multi-file awareness (critical):
 - Tests and patch contexts may span multiple files. Do not stop after the first similar match or applied fix.
 - Keep searching the repository after each match and apply consistent changes to every relevant file before finishing.
 - Prefer using `search_in_all_files_content` to enumerate matches across the codebase and `search_in_specified_file_v2` to drill into each file; iterate until no applicable occurrences remain.
 - Re-run tests only after covering all discovered occurrences to avoid partial fixes.
-
 ## Test generation guidance:
 - Use `generate_test_function(file_path, test_function_code, position)` after discovering the most relevant existing test file.
 - Prefer `position="auto"` which inserts after imports or before the `if __name__ == "__main__":` block when present, falling back to append.
 - Generated tests (new files or appended functions) are tracked and excluded from the final patch automatically, so they must not show up in the final diff.
 - Keep generated tests minimal and focused on the bug and its edge cases.
 - Note that current test functions should be passed originally and generated test function is FAIL_TO_PASS.
-
 You have access to the following tools:-
 {tools_docs}
-
 {format_prompt}
 """)
 FIX_TASK_INSTANCE_PROMPT_TEMPLATE = textwrap.dedent("""
@@ -386,7 +365,7 @@ PROBLEM_TYPE_FIX = "FIX"
 PROBLEM_LANGUAGE_PYTHON = "python"
 
 DEFAULT_PROXY_URL = os.getenv("SANDBOX_PROXY_URL", "http://sandbox_proxy")
-DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "1800"))
+DEFAULT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "2000"))
 MAX_TEST_PATCH_TIMEOUT = int(os.getenv("MAX_STEPS_TEST_PATCH_FIND", "400"))
 
 MAX_EMBED_TOKENS = 128000
@@ -410,17 +389,13 @@ MAX_FIX_TASK_STEPS = 400
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
 for h in list(logger.handlers):
     logger.removeHandler(h)
-
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
 stream_handler = logging.StreamHandler(sys.stdout)
 stream_handler.setLevel(logging.DEBUG)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
-
 run_id = None
 
 # =============================================================================
@@ -428,8 +403,6 @@ run_id = None
 # =============================================================================
 
 class EnhancedCOT:
-    """Chain of Thought tracking system"""
-    
     class Action:
         def __init__(self, next_thought: str, next_tool_name: str, next_tool_args: dict, 
                      observation: list|tuple|str, is_error: bool = False, raw_response: str = None,
@@ -452,13 +425,10 @@ class EnhancedCOT:
     def is_valid_tool_call(self, next_tool_name: str|list, next_tool_args: dict|list) -> bool:
         if len(self.thoughts) == 0:
             return True
-            
         last_tool_name = self.thoughts[-1].next_tool_name
         last_tool_args = self.thoughts[-1].next_tool_args
-        
         if next_tool_name == last_tool_name and next_tool_args == last_tool_args:
             return False
-            
         return True
 
     def add_action(self, action: EnhancedCOT.Action) -> bool:
@@ -515,8 +485,7 @@ class EnhancedCOT:
                         assistant_str = (
                             f"next_thought:{thought.next_thought}\n"
                             f"next_tool_name:{thought.next_tool_name}\n"
-                            f"next_tool_args:{thought.next_tool_args}"
-                        )
+                            f"next_tool_args:{thought.next_tool_args}")
                         if thought.observation is None:
                             _obs_len = 0
                         elif isinstance(thought.observation, (list, tuple)):
@@ -563,8 +532,6 @@ class EnhancedCOT:
 
 
 class Utils:
-    """Utility methods for common operations"""
-    
     @classmethod
     def get_available_modules(cls) -> set[str]:
         import sys, pkgutil
@@ -614,8 +581,6 @@ class Utils:
 
 
 class FunctionVisitor(ast.NodeVisitor):
-    """AST visitor for function extraction"""
-    
     def __init__(self, file_content: str):
         self.functions = {}
         self.current_class = None
@@ -662,8 +627,6 @@ class FunctionVisitor(ast.NodeVisitor):
 
 
 class ClassVisitor(ast.NodeVisitor):
-    """AST visitor for class extraction"""
-    
     def __init__(self, file_content: str):
         self.classes = {}
         self.file_content = file_content
@@ -684,11 +647,172 @@ class ClassVisitor(ast.NodeVisitor):
             "line_number": line_number
         }
         self.generic_visit(node)
-
-
+class SmartCache:
+    """Intelligent caching system with TTL and automatic cleanup"""
+    def __init__(self, default_ttl: int = 300):
+        self.cache = {}
+        self.default_ttl = default_ttl
+        self.access_count = defaultdict(int)
+        self.last_cleanup = time.time()
+        self.cleanup_interval = 60  # Cleanup every minute
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get cached value if not expired"""
+        self._cleanup_if_needed()
+        if key in self.cache:
+            timestamp, value = self.cache[key]
+            if time.time() - timestamp < self.default_ttl:
+                self.access_count[key] += 1
+                return value
+            else:
+                del self.cache[key]
+                del self.access_count[key]
+        return default
+    def set(self, key: str, value: Any, ttl: int = None) -> None:
+        """Set cached value with TTL"""
+        self._cleanup_if_needed()
+        self.cache[key] = (time.time(), value)
+        self.access_count[key] = 0
+    def _cleanup_if_needed(self) -> None:
+        """Clean up expired cache entries"""
+        current_time = time.time()
+        if current_time - self.last_cleanup > self.cleanup_interval:
+            expired_keys = []
+            for key, (timestamp, _) in self.cache.items():
+                if current_time - timestamp > self.default_ttl:
+                    expired_keys.append(key)
+            for key in expired_keys:
+                del self.cache[key]
+                del self.access_count[key]
+            self.last_cleanup = current_time
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics"""
+        return {
+            'total_entries': len(self.cache),
+            'most_accessed': sorted(self.access_count.items(), key=lambda x: x[1], reverse=True)[:5],
+            'cache_size_mb': sum(len(str(v)) for _, v in self.cache.items()) / (1024 * 1024)
+        }
+class PerformanceMonitor:
+    """Monitor performance metrics for parallel operations with enhanced caching"""
+    def __init__(self):
+        self.metrics = defaultdict(list)
+        self.start_times = {}
+        self.cache = {}
+        self.cache_ttl = 300  # 5 minutes default TTL
+    def start_timer(self, operation: str):
+        """Start timing an operation"""
+        self.start_times[operation] = time.time()
+    def end_timer(self, operation: str):
+        """End timing an operation and record the duration"""
+        if operation in self.start_times:
+            duration = time.time() - self.start_times[operation]
+            self.metrics[operation].append(duration)
+            logger.info(f"⏱️ {operation} took {duration:.2f} seconds")
+    def get_cached_result(self, key: str, ttl: int = None):
+        """Get cached result if not expired"""
+        if key in self.cache:
+            timestamp, value = self.cache[key]
+            if time.time() - timestamp < (ttl or self.cache_ttl):
+                return value
+            else:
+                del self.cache[key]
+        return None
+    def cache_result(self, key: str, value: Any, ttl: int = None):
+        """Cache a result with TTL"""
+        self.cache[key] = (time.time(), value)
+    def get_average_time(self, operation: str) -> float:
+        """Get average time for an operation"""
+        times = self.metrics.get(operation, [])
+        return sum(times) / len(times) if times else 0
+    def get_performance_summary(self) -> str:
+        """Get a summary of all performance metrics"""
+        summary = "Performance Summary:\n"
+        for operation, times in self.metrics.items():
+            avg_time = sum(times) / len(times)
+            total_time = sum(times)
+            summary += f"  {operation}: avg={avg_time:.2f}s, total={total_time:.2f}s, count={len(times)}\n"
+        return summary
+class ParallelToolExecutor:
+    """Execute multiple tool operations in parallel with improved error handling"""
+    def __init__(self, tool_manager, max_workers=4):
+        self.tool_manager = tool_manager
+        self.max_workers = max_workers
+        self.results = {}
+        self.lock = threading.Lock()
+        self.timeout = 60  # Default timeout in seconds
+        self.retry_attempts = 3
+    def execute_parallel_analysis(self, file_path: str, test_func_names: List[str]) -> Dict[str, Any]:
+        """Execute multiple analysis tools in parallel"""
+        tasks = {
+            'file_content': lambda: self.tool_manager._get_file_content(file_path) if hasattr(self.tool_manager, '_get_file_content') else "Not available",
+            'function_ranges': lambda: self.tool_manager.get_function_ranges(file_path) if hasattr(self.tool_manager, 'get_function_ranges') else "Not available",
+        }
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all tasks
+            future_to_task = {
+                executor.submit(task_func): task_name 
+                for task_name, task_func in tasks.items()
+            }
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_task):
+                task_name = future_to_task[future]
+                try:
+                    result = future.result(timeout=30)  # 30 second timeout per task
+                    with self.lock:
+                        self.results[task_name] = result
+                    logger.info(f"✅ {task_name} completed successfully")
+                except Exception as e:
+                    with self.lock:
+                        self.results[task_name] = f"Error: {str(e)}"
+                    logger.error(f"❌ {task_name} failed: {e}")
+        return self.results
+class ParallelFileSearcher:
+    """Search multiple files and terms in parallel"""
+    def __init__(self, tool_manager):
+        self.tool_manager = tool_manager
+    def search_multiple_files_parallel(self, search_terms: List[str], file_patterns: List[str] = None) -> Dict[str, str]:
+        """Search for multiple terms across files in parallel"""
+        def search_single_term(term: str) -> tuple[str, str]:
+            try:
+                if hasattr(self.tool_manager, 'search_in_all_files_content'):
+                    result = self.tool_manager.search_in_all_files_content(term)
+                else:
+                    result = f"Search not available for term: {term}"
+                return term, result
+            except Exception as e:
+                return term, f"Error searching for '{term}': {e}"
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(search_terms), 4)) as executor:
+            future_to_term = {
+                executor.submit(search_single_term, term): term 
+                for term in search_terms
+            }
+            results = {}
+            for future in concurrent.futures.as_completed(future_to_term):
+                term, result = future.result()
+                results[term] = result
+        return results
+class ParallelFileProcessor:
+    """Process multiple files in parallel"""
+    def __init__(self, tool_manager):
+        self.tool_manager = tool_manager
+    def get_multiple_file_contents_parallel(self, file_paths: List[str]) -> Dict[str, str]:
+        """Get contents of multiple files in parallel"""
+        def get_file_content(file_path: str) -> tuple[str, str]:
+            try:
+                content = self.tool_manager._get_file_content(file_path) if hasattr(self.tool_manager, '_get_file_content') else "Content not available"
+                return file_path, content
+            except Exception as e:
+                return file_path, f"Error reading {file_path}: {e}"
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(file_paths), 5)) as executor:
+            future_to_file = {
+                executor.submit(get_file_content, file_path): file_path 
+                for file_path in file_paths
+            }
+            results = {}
+            for future in concurrent.futures.as_completed(future_to_file):
+                file_path, content = future.result()
+                results[file_path] = content
+        return results
 class EnhancedNetwork:
-    """Network and inference management"""
-    
     class ErrorType(Enum):
         EMPTY_RESPONSE = 1
         RESERVED_TOKEN_PRESENT = 2
@@ -1044,26 +1168,106 @@ class EnhancedToolManager:
         return wrapper
 
     def __init__(self, **kwargs):
-        pass
-    
+        # Initialize enhanced components for caching and parallel operations
+        self.performance_monitor = PerformanceMonitor()
+        self.parallel_executor = ParallelToolExecutor(self)
+        self.file_searcher = ParallelFileSearcher(self)
+        self.file_processor = ParallelFileProcessor(self)
+        self.cache = SmartCache(default_ttl=1800)  # 30 minutes for tool results
+    def get_tool_docs(self)->str:
+        return '\n\n'.join([json.dumps(tool_metadata, ensure_ascii=False) for _,tool_metadata in self.TOOL_LIST.items()])
+    def get_tool(self,tool_name:str):
+        if tool_name not in self.TOOL_LIST:
+            return f"Error: tool '{tool_name}' not found"
+        tool_method = getattr(self, tool_name, None)
+        if tool_method is None or not callable(tool_method):
+            return f"Error: tool '{tool_name}' does not exist. Please use one of the following tools: {', '.join(self.TOOL_LIST.keys())}"
+        return tool_method
+    def _check_syntax_error(self,content:str,file_path:str="<unknown>")->bool:
+        try:
+            ast.parse(content, filename=file_path)
+            return False, None
+        except SyntaxError as e:
+            logger.error(f"Syntax error: {e}")
+            
+            return True, EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SYNTAX_ERROR.name,f"Syntax error. {str(e)}")
+    def _add_line_numbers_to_content(self, content: str, start_line: int = 1) -> str:
+        """Helper method to add line numbers to content."""
+        lines = content.splitlines()
+        numbered_lines = []
+        for i, line in enumerate(lines):
+            line_num = start_line + i
+            numbered_lines.append(f"{line_num:6}|{line}")
+        return '\n'.join(numbered_lines)
+    def _add_context_to_similar_match(self, original_content: str, formatted_match: str, context_lines: int = 2) -> str:
+        """Add context lines around a similar match for better understanding."""
+        lines = original_content.split('\n')
+        # Extract the actual content from the formatted match (remove the description part)
+        match_lines = formatted_match.split('\n')
+        if len(match_lines) < 2:
+            return formatted_match
+        # Skip the description line (e.g., "Lines 45-47: ..." or "Line 23: ...")
+        actual_content_lines = match_lines[1:]
+        actual_content = '\n'.join(actual_content_lines)
+        # Find where this content appears in the original file
+        best_match_start = -1
+        best_similarity = 0
+        # Search for the best matching position in the original content
+        for i in range(len(lines) - len(actual_content_lines) + 1):
+            candidate_lines = lines[i:i + len(actual_content_lines)]
+            candidate_content = '\n'.join(candidate_lines)
+            import difflib
+            similarity = difflib.SequenceMatcher(None, actual_content.strip(), candidate_content.strip()).ratio()
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match_start = i
+        if best_match_start == -1:
+            return formatted_match  # Fallback to original if can't find position
+        # Calculate context boundaries
+        start_line = max(0, best_match_start - context_lines)
+        end_line = min(len(lines), best_match_start + len(actual_content_lines) + context_lines)
+        # Build the context with line numbers
+        context_lines_list = []
+        for i in range(start_line, end_line):
+            line_num = i + 1
+            prefix = ">>> " if best_match_start <= i < best_match_start + len(actual_content_lines) else "    "
+            context_lines_list.append(f"{prefix}{line_num:4}| {lines[i]}")
+        # Extract original description
+        description = match_lines[0] if match_lines else f"Match found at lines {best_match_start+1}-{best_match_start+len(actual_content_lines)}"
+        return f"{description}\n" + "\n".join(context_lines_list)
+    def _find_most_similar_content(self, original_content: str, search_string: str, max_results: int = 3) -> list[tuple[float, str]]:
+        """Find the most similar content chunks to the search string."""
+        import difflib
+        # Split content into meaningful chunks
+        lines = original_content.split('\n')
+        # Try different chunk sizes to find the best match
+        chunks = []
+        # Individual lines
+        for i, line in enumerate(lines):
+            if line.strip():  # Skip empty lines
+                chunks.append((f"Line {i+1}: {line.strip()}", line.strip()))
+        # Multi-line chunks (3-5 lines) for better context
+        search_lines = search_string.split('\n')
+        target_chunk_size = max(3, len(search_lines))
+        for i in range(len(lines) - target_chunk_size + 1):
+            chunk_lines = lines[i:i + target_chunk_size]
+            chunk_content = '\n'.join(chunk_lines).strip()
+            if chunk_content:
+                chunks.append((f"Lines {i+1}-{i+target_chunk_size}: ...", chunk_content))
+        # Calculate similarity scores
+        similarities = []
+        for chunk_desc, chunk_content in chunks:
+            ratio = difflib.SequenceMatcher(None, search_string.strip(), chunk_content).ratio()
+            if ratio > 0.3:  # Only include reasonably similar content
+                similarities.append((ratio, chunk_desc, chunk_content))
+        # Sort by similarity and return top results
+        similarities.sort(key=lambda x: x[0], reverse=True)
+        return [(ratio, f"{desc}\n{content}") for ratio, desc, content in similarities[:max_results]]
     @classmethod
     def tool_parsing(cls, fn):
         tool_schemas = None
         name = fn.__name__
         doc_fn = fn.__doc__ or ""
-        
-        # If no proper docstring, create a basic one with parameter descriptions
-        if not doc_fn.strip() or "Arguments:" not in doc_fn:
-            # Generate basic docstring from function signature
-            sig = inspect.signature(fn)
-            param_descriptions = []
-            for param_name, param in sig.parameters.items():
-                if param_name == 'self':
-                    continue
-                param_descriptions.append(f"{param_name}: {param_name} parameter")
-            
-            doc_fn = f"Tool: {name}\n\nArguments:\n" + "\n".join(param_descriptions) + "\n\nOutput: Tool execution result"
-        
         doc = doc_fn.split("Arguments:")[0]
         output_description = doc_fn.split("Output:")
         if len(output_description) > 1:
@@ -1081,21 +1285,13 @@ class EnhancedToolManager:
                 required.append(param.name)
                 
             type_hint = str(param.annotation) if param.annotation != param.empty else "string"
-            
-            # Generate parameter description - more robust parsing
-            param_description = f"{param.name} parameter"
-            
-            # Try to extract from Arguments section
-            arguments_section = doc_fn.split("Arguments:")
-            if len(arguments_section) > 1:
-                arguments_text = arguments_section[1].split("Output:")[0] if "Output:" in arguments_section[1] else arguments_section[1]
-                # Look for parameter description in format "param_name: description"
-                param_pattern = rf"{param.name}:\s*([^\n]+)"
-                param_match = re.search(param_pattern, arguments_text)
-                if param_match:
-                    param_description = param_match.group(1).strip()
-            
-            # Type handling
+            param_description=re.search(f"{param.name}:([^\n]+)",doc_fn)
+            if param_description:
+                param_description=param_description.group(1)
+            else:
+                raise ValueError(f"Parameter description not found for {param.name} in {doc_fn}: tool name: {name}")
+            # Special handling for list[str] / List[str] annotations so that the
+            # generated JSON schema correctly represents an array of strings.
             if ("list" in type_hint.lower()) and ("str" in type_hint):
                 properties[param.name] = {
                     "type": "array",
@@ -1132,7 +1328,34 @@ class EnhancedToolManager:
         }
         
         return tool_schemas
-
+    def get_final_git_patch(self) -> str:
+        '''
+        Generates git diff patch containing all modifications in working directory
+        Useful for capturing comprehensive change summary before finalization
+        '''
+        try:
+            # Update to include cfg, txt, and toml files along with py files
+            # Check whether ignore_files is a property of this clas
+            command = f"""
+            shopt -s globstar
+            cp .gitignore .gitignore.backup 2>/dev/null || true
+            echo 'src/agent.py' >> .gitignore
+            echo 'src/agent_runner.py' >> .gitignore
+            git add **/*.py 2>/dev/null || true
+            git add **/*.toml 2>/dev/null || true
+            git add **/*.cfg 2>/dev/null || true
+            git add **/*.txt 2>/dev/null || true
+            git diff --cached > .patch.txt
+            cat .patch.txt
+            mv .gitignore.backup .gitignore 2>/dev/null || true
+            """
+            print("Generating git patch...")
+            output = subprocess.run(["bash", "-c", command], timeout=30, capture_output=True, text=True)
+            # output = output.stdout.decode("utf-8") + '\n' + output.stderr.decode("utf-8")
+            return output.stdout
+        except Exception as e:
+            logger.error(f"Error generating git patch: {e}")
+            return f"Error generating git patch: {e}"
     @classmethod
     def get_tool_args_for_tool(self, tool_name: str, required_only: bool = False) -> list[str]:
         if tool_name not in self.TOOL_LIST:
@@ -1141,28 +1364,7 @@ class EnhancedToolManager:
             return list(self.TOOL_LIST[tool_name]['input_schema']['properties'].keys())
         else:
             return self.TOOL_LIST[tool_name]['input_schema']['required']
-
-    def get_tool_docs(self) -> str:
-        return '\n\n'.join([json.dumps(tool_metadata, ensure_ascii=False) for _, tool_metadata in self.TOOL_LIST.items()])
-
-    def get_tool(self, tool_name: str):
-        if tool_name not in self.TOOL_LIST:
-            return f"Error: tool '{tool_name}' not found"
-        tool_method = getattr(self, tool_name, None)
-        if tool_method is None or not callable(tool_method):
-            return f"Error: tool '{tool_name}' does not exist. Please use one of the following tools: {', '.join(self.TOOL_LIST.keys())}"
-        
-        return tool_method
-    
-    def _check_syntax_error(self, content: str, file_path: str = "<unknown>") -> tuple[bool, Optional[Error]]:
-        try:
-            ast.parse(content, filename=file_path)
-            return False, None
-        except SyntaxError as e:
-            logger.error(f"Syntax error: {e}")
-            return True, EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SYNTAX_ERROR.name, f"Syntax error. {str(e)}")
-
-    def _save(self, file_path: str, content: str) -> str:
+    def _save(self,file_path: str, content: str)->str:
         is_syntax_error, error = self._check_syntax_error(content)
         if not is_syntax_error:
             with open(file_path, "w") as file:
@@ -1223,117 +1425,22 @@ class EnhancedToolManager:
             raise EnhancedToolManager.Error(error_type, f"Error running code: {result.stderr}\n")
         observation = f"{result.stdout}\n"
         return observation
-    
-    def _add_line_numbers_to_content(self, content: str, start_line: int = 1) -> str:
-        lines = content.splitlines()
-        numbered_lines = []
-        for i, line in enumerate(lines):
-            line_num = start_line + i
-            numbered_lines.append(f"{line_num:6}|{line}")
-        return '\n'.join(numbered_lines)
-    
-    def _add_context_to_similar_match(self, original_content: str, formatted_match: str, context_lines: int = 2) -> str:
-        lines = original_content.split('\n')
-        match_lines = formatted_match.split('\n')
-        if len(match_lines) < 2:
-            return formatted_match
-            
-        actual_content_lines = match_lines[1:]
-        actual_content = '\n'.join(actual_content_lines)
-        
-        best_match_start = -1
-        best_similarity = 0
-        
-        for i in range(len(lines) - len(actual_content_lines) + 1):
-            candidate_lines = lines[i:i + len(actual_content_lines)]
-            candidate_content = '\n'.join(candidate_lines)
-            
-            import difflib
-            similarity = difflib.SequenceMatcher(None, actual_content.strip(), candidate_content.strip()).ratio()
-            if similarity > best_similarity:
-                best_similarity = similarity
-                best_match_start = i
-        
-        if best_match_start == -1:
-            return formatted_match
-
-        start_line = max(0, best_match_start - context_lines)
-        end_line = min(len(lines), best_match_start + len(actual_content_lines) + context_lines)
-        
-        context_lines_list = []
-        for i in range(start_line, end_line):
-            line_num = i + 1
-            prefix = ">>> " if best_match_start <= i < best_match_start + len(actual_content_lines) else "    "
-            context_lines_list.append(f"{prefix}{line_num:4}| {lines[i]}")
-        
-        description = match_lines[0] if match_lines else f"Match found at lines {best_match_start+1}-{best_match_start+len(actual_content_lines)}"
-        return f"{description}\n" + "\n".join(context_lines_list)
-
-    def _find_most_similar_content(self, original_content: str, search_string: str, max_results: int = 3) -> list[tuple[float, str]]:
-        import difflib
-        
-        lines = original_content.split('\n')
-        chunks = []
-        
-        for i, line in enumerate(lines):
-            if line.strip():
-                chunks.append((f"Line {i+1}: {line.strip()}", line.strip()))
-        
-        search_lines = search_string.split('\n')
-        target_chunk_size = max(3, len(search_lines))
-        
-        for i in range(len(lines) - target_chunk_size + 1):
-            chunk_lines = lines[i:i + target_chunk_size]
-            chunk_content = '\n'.join(chunk_lines).strip()
-            if chunk_content:
-                chunks.append((f"Lines {i+1}-{i+target_chunk_size}: ...", chunk_content))
-        
-        similarities = []
-        for chunk_desc, chunk_content in chunks:
-            ratio = difflib.SequenceMatcher(None, search_string.strip(), chunk_content).ratio()
-            if ratio > 0.3:
-                similarities.append((ratio, chunk_desc, chunk_content))
-        
-        similarities.sort(key=lambda x: x[0], reverse=True)
-        return [(ratio, f"{desc}\n{content}") for ratio, desc, content in similarities[:max_results]]
-
-    def get_final_git_patch(self) -> str:
-        try:
-            command = """
-            shopt -s globstar
-
-            cp .gitignore .gitignore.backup 2>/dev/null || true
-            echo 'src/agent.py' >> .gitignore
-            echo 'src/agent_runner.py' >> .gitignore
-
-            git add **/*.py 2>/dev/null || true
-            git add **/*.toml 2>/dev/null || true
-            git add **/*.cfg 2>/dev/null || true
-            git add **/*.txt 2>/dev/null || true
-
-            git diff --cached > .patch.txt
-            cat .patch.txt
-
-            mv .gitignore.backup .gitignore 2>/dev/null || true
-            """
-            print("Generating git patch...")
-            output = subprocess.run(["bash", "-c", command], timeout=30, capture_output=True, text=True)
-            return output.stdout
-        except Exception as e:
-            logger.error(f"Error generating git patch: {e}")
-            return f"Error generating git patch: {e}"
-
-
 class FixTaskEnhancedToolManager(EnhancedToolManager):
     """Specialized tool manager for fix tasks"""
     
     def __init__(self, available_tools: Optional[list[str]] = [], test_runner: str = "pytest", test_runner_mode: str = "FILE"):
-        self.new_files_created = []
-        self.is_solution_approved = False
-        self.test_runner = test_runner
-        self.test_runner_mode = test_runner_mode
-        self.generated_test_files = []
-
+        # Initialize enhanced components from parent class
+        self.performance_monitor = PerformanceMonitor()
+        self.parallel_executor = ParallelToolExecutor(self)
+        self.file_searcher = ParallelFileSearcher(self)
+        self.file_processor = ParallelFileProcessor(self)
+        self.cache = SmartCache(default_ttl=1800)  # 30 minutes for tool results
+        self.new_files_created=[]
+        self.is_solution_approved=False
+        self.test_runner=test_runner
+        self.test_runner_mode=test_runner_mode
+        self.generated_test_files=[]
+        # Check all classes in the method resolution order (MRO) to include inherited tools
         for cls in self.__class__.__mro__:
             for name, attr in cls.__dict__.items():
                 if getattr(attr, "is_tool", False) and name not in self.TOOL_LIST:
@@ -1409,69 +1516,107 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
     @EnhancedToolManager.tool
     def save_file(self, file_path: str, content: str) -> str:
         '''
-        Writes text content to specified filesystem location
-        
+        Writes text content to specified filesystem location. If there are any syntax errors in the code, it rejects the edit with an error message. Do not use this tool to create test or files to reproduce the error.
         Arguments:
             file_path: target filesystem path
             content: text data to write
-            
         Output:
             Success message
         '''
         if "test" in file_path.lower() or "reproduce" in file_path.lower():
             raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.INVALID_TOOL_CALL.name, "Error: You cannot use this tool to create test or files to reproduce the error.")
         return self._save(file_path, content)
-    
-    @EnhancedToolManager.tool   
-    def get_approval_for_solution(self, solutions: list[str], selected_solution: int, reason_for_selection: str) -> str:
+    def _extract_function_matches(self,file_path: str, search_term: str, *, max_output_lines: int = 1000) -> str:
         '''
-        Get approval for proposed solution
-        
+        Return the source code of any function definitions that contain `search_term`.
+        If a match occurs outside of a function, only that line is returned. The final
+        output is truncated with `limit_strings` to avoid excessive verbosity.
+        '''
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source_lines = f.read().splitlines()
+        except Exception as e:
+            logger.error(f"Error reading '{file_path}': {e}")
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.FILE_NOT_FOUND.name,f"Error reading '{file_path}': {e}")
+        # Identify all lines that contain the search term.
+        match_lines = [idx + 1 for idx, line in enumerate(source_lines) if search_term in line]
+        if not match_lines:
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name,f"'{search_term}' not found in file '{file_path}'")
+        func_ranges=self.get_function_ranges(file_path)
+        def _containing_function(line_no: int):
+            for start, end, name in func_ranges:
+                if start <= line_no <= end:
+                    return (start, end, name)
+            return None
+        functions_to_return: list[tuple[int, int, str]] = []
+        standalone_lines: list[int] = []
+        for ln in match_lines:
+            info = _containing_function(ln)
+            if info and info not in functions_to_return:
+                functions_to_return.append(info)
+            elif not info:
+                standalone_lines.append(ln)
+        chunks: list[str] = []
+        for start, end, name in functions_to_return:
+            func_src = "\n".join(source_lines[start - 1:end])
+            chunks.append(f"(lines {start}-{end}):\n{func_src}")
+        for ln in standalone_lines:
+            chunks.append(f"{ln}:{source_lines[ln - 1]}")
+        return Utils.limit_strings("\n\n".join(chunks), n=max_output_lines)
+    @EnhancedToolManager.tool
+    def search_in_all_files_content(self, search_term: str, case_sensitive: bool = False) -> str:
+        '''
+        Search for a text pattern across all .py files in the project, excluding any file with "test" in its path.
+        Use at the beginning of the workflow to locate all possible references to a function, class, or variable.
+        If more context is needed (e.g., surrounding functions, classes, etc.), follow up with get_classes or get_functions.
         Arguments:
-            solutions: list of solutions proposed by you
-            selected_solution: index of the solution you think is the best
-            reason_for_selection: reason for selecting the solution over other solutions
-            
+            search_term: text pattern to locate (e.g., "def test_function", "*SomeClass*")
+            case_sensitive: flag to determine if the search should be case-sensitive
         Output:
-            approval status
+            locations where pattern was found with file paths and line numbers
         '''
-        logger.info(f"solutions: {solutions}")
-        logger.info(f"selected_solution: {selected_solution}")
-        logger.info(f"reason_for_selection: {reason_for_selection}")
-        parsed_solutions = []
-        for solution in solutions:
-            sols = re.split(r"(Solution \d+:)", solution)
-            sols = [f"{sols[i]}{sols[i+1]}" for i in range(1, len(sols), 2)]
-            parsed_solutions.extend(sols)
-        
-        solutions = parsed_solutions
-
-        if type(solutions) is not list or len(solutions) < 2:
-            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.INVALID_TOOL_CALL.name, "Error: solutions must be a list with length at least 2.")
-
-        self.is_solution_approved = True
-        return "Approved"
-          
-    def _save(self, file_path: str, content: str) -> str:
-        is_syntax_error, error = self.check_syntax_error(content)
-        if not is_syntax_error:
-            with open(file_path, "w") as file:
-                file.write(content)
-            self.new_files_created.append(file_path)
-            return f"File {file_path} saved successfully"
-        else:
-            logger.error(f"Error saving file: {error.message}")
-            error.message = "Error saving file. " + error.message
-            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SYNTAX_ERROR.name, error.message)
- 
+        output = []
+        search_flags = 0 if case_sensitive else re.IGNORECASE
+        # Walk through all directories and find Python files
+        for root, _, files in os.walk("."):
+            # Skip .git and docs directories
+            if ".git" in root or "docs" in root:
+                continue
+            for file in files:
+                if file.endswith('.py'):
+                    file_path = os.path.join(root, file)
+                    # Always check if search term is in the file name
+                    if re.search(search_term, file_path, search_flags):
+                        output.append(f"{file_path} | Filename match")
+                    try:
+                        with open(file_path, "r", encoding="utf-8") as f:
+                            content = f.read()
+                        if not re.search(search_term, content, search_flags):
+                            continue
+                        # Parse the file content using AST
+                        tree = ast.parse(content, filename=file_path)
+                        visitor = FunctionVisitor(content)
+                        visitor.visit(tree)
+                        for function_name, function_info in visitor.functions.items():
+                            body = function_info["body"]
+                            if re.search(search_term, body, search_flags):
+                                lines = body.split("\n")
+                                for idx, line in enumerate(lines):
+                                    if re.search(search_term, line, search_flags):
+                                        line_number = function_info["line_number"] + idx
+                                        output.append(f"{file_path}:{line_number} | {function_name} | {line.rstrip()}")
+                    except Exception as e:
+                        logger.error(f"Error searching in file {file_path} with search term {search_term}: {e}")
+        output = Utils.limit_strings("\n".join(output), n=100)
+        if not output:
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name, f"'{search_term}' not found in the codebase.")
+        return output
     @EnhancedToolManager.tool
     def get_functions(self, function_paths: List[str]) -> Dict[str, str]:
         '''
-        Get functions from a list of function paths
-        
+        Get functions from a list of function paths.
         Arguments:
-            function_paths: list of function paths
-            
+            function_paths: list of function paths (e.g. ["folder1/file1.py::class1::function1", "folder2/file2.py::class2::function2"])
         Output:
             dictionary of functions with function paths as keys and function bodies as values
         '''
@@ -1501,11 +1646,9 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
     @EnhancedToolManager.tool
     def get_classes(self, class_paths: List[str]) -> Dict[str, str]:
         '''
-        Get classes from a list of class paths
-        
+        Get classes from a list of class paths.
         Arguments:
-            class_paths: list of class paths
-            
+            class_paths: list of class paths (e.g. ["folder1/file1.py::class1", "folder2/file2.py::class2"])
         Output:
             dictionary of classes with class paths as keys and class bodies as values
         '''
@@ -1530,61 +1673,8 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
                 classes[class_path] = f"Error processing {file_path}: {str(e)}"
 
         return classes
-
-    @EnhancedToolManager.tool
-    def search_in_all_files_content(self, search_term: str, case_sensitive: bool = False) -> str:
-        '''
-        Search for text pattern across all .py files in the project
-        
-        Arguments:
-            search_term: text pattern to locate
-            case_sensitive: flag to determine if search should be case-sensitive
-            
-        Output:
-            locations where pattern was found with file paths and line numbers
-        '''
-        output = []
-        search_flags = 0 if case_sensitive else re.IGNORECASE
-
-        for root, _, files in os.walk("."):
-            if ".git" in root or "docs" in root:
-                continue
-
-            for file in files:
-                if file.endswith('.py'):
-                    file_path = os.path.join(root, file)
-
-                    if re.search(search_term, file_path, search_flags):
-                        output.append(f"{file_path} | Filename match")
-
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            content = f.read()
-
-                        if not re.search(search_term, content, search_flags):
-                            continue
-
-                        tree = ast.parse(content, filename=file_path)
-                        visitor = FunctionVisitor(content)
-                        visitor.visit(tree)
-
-                        for function_name, function_info in visitor.functions.items():
-                            body = function_info["body"]
-                            if re.search(search_term, body, search_flags):
-                                lines = body.split("\n")
-                                for idx, line in enumerate(lines):
-                                    if re.search(search_term, line, search_flags):
-                                        line_number = function_info["line_number"] + idx
-                                        output.append(f"{file_path}:{line_number} | {function_name} | {line.rstrip()}")
-                    except Exception as e:
-                        logger.error(f"Error searching in file {file_path} with search term {search_term}: {e}")
-
-        output = Utils.limit_strings("\n".join(output), n=100)
-        if not output:
-            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name, f"'{search_term}' not found in the codebase.")
-        return output
-
-    def get_function_ranges(self, file_path: str) -> list[tuple[int, int, str]]:
+    def get_function_ranges(self,file_path: str)->list[tuple[int, int, str]]:
+        # Try to parse the file to map lines to their enclosing functions.
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 source_lines = f.read().splitlines()
@@ -1606,48 +1696,45 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
                     if start is not None and end is not None:
                         func_ranges.append((start, end, node.name))
         return func_ranges
-
-    def _extract_function_matches(self, file_path: str, search_term: str, *, max_output_lines: int = 1000) -> str:
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                source_lines = f.read().splitlines()
-        except Exception as e:
-            logger.error(f"Error reading '{file_path}': {e}")
-            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.FILE_NOT_FOUND.name, f"Error reading '{file_path}': {e}")
-
-        match_lines = [idx + 1 for idx, line in enumerate(source_lines) if search_term in line]
-        if not match_lines:
-            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name, f"'{search_term}' not found in file '{file_path}'")
-
-        func_ranges = self.get_function_ranges(file_path)
-
-        def _containing_function(line_no: int):
-            for start, end, name in func_ranges:
-                if start <= line_no <= end:
-                    return (start, end, name)
-            return None
-
-        functions_to_return: list[tuple[int, int, str]] = []
-        standalone_lines: list[int] = []
-        for ln in match_lines:
-            info = _containing_function(ln)
-            if info and info not in functions_to_return:
-                functions_to_return.append(info)
-            elif not info:
-                standalone_lines.append(ln)
-
-        chunks: list[str] = []
-        for start, end, name in functions_to_return:
-            func_src = "\n".join(source_lines[start - 1:end])
-            chunks.append(f"(lines {start}-{end}):\n{func_src}")
-
-        for ln in standalone_lines:
-            chunks.append(f"{ln}:{source_lines[ln - 1]}")
-
-        return Utils.limit_strings("\n\n".join(chunks), n=max_output_lines)
-
+    @EnhancedToolManager.tool   
+    def get_approval_for_solution(self,solutions:list[str],selected_solution:int,reason_for_selection:str)->str:
+        '''
+        This tool is used to get approval for your proposed solution. You need to propose at least 2 meaningfully different and elegant solutions to the problem.
+        While all the solutions proposed needs to be accurate, but following are guidelines for selecting the best solution:
+        1. Expected output should be closest to the most relevant test case.
+        Arguments:
+            solutions: list of solutions proposed by you. Here each solution individually should be very detailed and then must explain why they are better than the other solutions.
+            selected_solution: Index of the solution you think is the best.
+            reason_for_selection: Reason for selecting the solution over other solutions.
+        Output:
+            approval: approved/not approved. If approved, you can go ahead and implement the solution.
+        '''
+        logger.info(f"solutions: {solutions}")
+        logger.info(f"selected_solution: {selected_solution}")
+        logger.info(f"reason_for_selection: {reason_for_selection}")
+        parsed_solutions = []
+        for solution in solutions:
+            sols = re.split(r"(Solution \d+:)", solution)
+            sols = [f"{sols[i]}{sols[i+1]}" for i in range(1, len(sols), 2)]  # Combine the split parts correctly
+            parsed_solutions.extend(sols)
+        solutions = parsed_solutions
+        if type(solutions) is not list or len(solutions)<2:
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.INVALID_TOOL_CALL.name,f"Error: solutions must be a list with length at least 2.")
+        self.is_solution_approved = True
+        return "Approved"
+    def _save(self,file_path: str, content: str)->str:
+        is_syntax_error, error = self.check_syntax_error(content)
+        if not is_syntax_error:
+            with open(file_path, "w") as file:
+                file.write(content)
+            self.new_files_created.append(file_path)
+            return f"File {file_path} saved successfully"
+        else:
+            logger.error(f"Error saving file: {error.message}")
+            error.message="Error saving file. "+error.message
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SYNTAX_ERROR.name,error.message)
     @EnhancedToolManager.tool
-    def search_in_specified_file_v2(self, file_path: str, search_term: str) -> str:
+    def search_in_specified_file_v2(self,file_path: str, search_term: str)->str:
         '''
         Locates text patterns within a specific file
         
@@ -1661,19 +1748,136 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
         if not file_path.endswith(".py"):
             raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.INVALID_FILE_PATH.name, f"Error: file '{file_path}' is not a python file.")
         return self._extract_function_matches(file_path, search_term)
-
-    @EnhancedToolManager.tool
-    def start_over(self, problem_with_old_approach: str, new_apprach_to_try: str):
+    # @tool
+    def search_recurive_in_all_files_in_directory(self, directory_path: str, search_term: str)->str:
         '''
-        Revert changes and start over
-        
+        Locates text patterns recursively within all files in a specific directory
         Arguments:
-            problem_with_old_approach: issues with current approach
-            new_apprach_to_try: new approach to try
-            
+            directory_path: target directory for pattern matching
+            search_term: text pattern to find (e.g., "def test_function", "*SomeClass*")
         Output:
-            confirmation message
+            matching locations with line numbers, or error description
         '''
+        if not os.path.exists(directory_path) or not os.path.isdir(directory_path):
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.FILE_NOT_FOUND.name,f"Error: directory '{directory_path}' does not exist.")
+        output=subprocess.run(["bash", "-c", f"grep -rn --include='*.py' {directory_path} -e '{search_term}'"], capture_output=True)
+        output=output.stdout.decode("utf-8")
+        output=Utils.limit_strings(output, n=100)
+        if not output:
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.SEARCH_TERM_NOT_FOUND.name,f"'{search_term}' not found in file '{directory_path}'")
+        return output
+    def create_new_file(self,file_path:str, content:str)->str:
+        '''
+        Generates new file with specified content at target location. Do not use this tool to create test or files to reproduce the error unless user has specifically asked you to create test files as part of problem statement.
+        Arguments:
+            file_path: destination path for new file
+            content: text content for file creation
+        '''
+        if "test" in file_path.lower() or "reproduce" in file_path.lower():
+            raise EnhancedToolManager.Error(EnhancedToolManager.Error.ErrorType.INVALID_TOOL_CALL.name,f"Error: You cannot use this tool to create test or files to reproduce the error.")
+        return self._save(file_path, content)
+    @EnhancedToolManager.tool
+    def run_repo_tests(self,file_paths:List[str])->str:
+        '''
+        Runs the tests for the repository. This tool will only run the tests for the files provided.
+        Arguments:
+            file_paths: path of the files to run the tests for.
+        Output:
+            Returns the stdout/stderr from the executed files.
+        '''
+        if self.test_runner == "pytest":
+            print("CMD: pytest ", file_paths)
+            result = subprocess.run(["pytest"] + file_paths, shell=True, capture_output=True, text=True, timeout=90)
+            output = (result.stdout or "") + (result.stderr or "")
+        else:
+            if self.test_runner_mode == "MODULE":
+                modules = [filepath_to_module(f, os.getcwd(), self.test_runner) for f in file_paths]
+                cmd = f"{self.test_runner} {' '.join(modules)}"
+                print("CMD: ", cmd)
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=90)
+                output = (result.stdout or "") + (result.stderr or "")
+            else:
+                files_to_test = [clean_filepath(f, os.getcwd(), self.test_runner) for f in file_paths]
+                cmd = f"{self.test_runner} {' '.join(files_to_test)}"
+                print("CMD: ", cmd)
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=90)
+                output = (result.stdout or "") + (result.stderr or "")
+        return output
+    @EnhancedToolManager.tool
+    def run_code(self,content:str,file_path:str)->str:
+        '''
+        Runs any python code. You can use this tool directly to run any test code or bug reproduction code.
+        Saves the code at the given file_path and then runs it. Do not use this tool to create test or files to reproduce the error unless user has specifically asked you to create test files as part of problem statement.
+        Arguments:
+            content: text code to write in file
+            file_path: path of the file to save the code in. This file should always be in the current working directory.
+        Output:
+            Returns the stdout/stderr from the executed file.
+            Returns error message if there are any third party dependencies.
+        '''
+        self._save(file_path, content)
+        self.generated_test_files.append(file_path)
+        # Parse the file's AST to collect import statements
+        with open(file_path, "r") as f:
+            tree = ast.parse(f.read(), filename=file_path)
+        disallowed_modules = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                # Use the module specified in 'from x import y' if available;
+                # otherwise fall back to the imported name from plain 'import x'
+                if isinstance(node, ast.ImportFrom) and node.module:
+                    mod = node.module.split(".")[0]
+                else:
+                    mod = node.names[0].name.split(".")[0]
+                # Skip if built-in module
+                if mod in sys.builtin_module_names:
+                    continue
+                # Skip relative imports ("from . import foo") which have level > 0
+                if isinstance(node, ast.ImportFrom) and node.level and node.level > 0:
+                    continue
+                # --- Additional check: allow local modules/packages in CWD ---
+                cwd = os.getcwd()
+                local_file = os.path.join(cwd, f"{mod}.py")
+                local_pkg_init = os.path.join(cwd, mod, "__init__.py")
+                local_pkg_dir = os.path.join(cwd, mod)
+                # Also check inside a conventional 'lib' folder within cwd
+                lib_dir = os.path.join(cwd, 'lib')
+                lib_file = os.path.join(lib_dir, f"{mod}.py")
+                lib_pkg_init = os.path.join(lib_dir, mod, "__init__.py")
+                lib_pkg_dir = os.path.join(lib_dir, mod)
+                if (
+                    os.path.isfile(local_file)
+                    or os.path.isfile(local_pkg_init)
+                    or os.path.isdir(local_pkg_dir)
+                    or os.path.isfile(lib_file)
+                    or os.path.isfile(lib_pkg_init)
+                    or os.path.isdir(lib_pkg_dir)
+                ):
+                    # Treat as local dependency, allow it
+                    continue
+                # Any other module is considered disallowed
+                disallowed_modules.add(mod)
+        if disallowed_modules and False:
+            logger.error(f"Cannot run, third party dependencies detected: {sorted(disallowed_modules)}\n")
+            raise ToolManager.Error(ToolManager.Error.ErrorType.THIRD_PARTY_DEPENDENCIES.name,f"Error:Cannot run, third party dependencies detected: {sorted(disallowed_modules)}\n")
+        result = subprocess.run(["python", file_path], capture_output=True, text=True, check=False, timeout=60)
+        if result.returncode!=0:
+            error_type=EnhancedToolManager.Error.ErrorType.RUNTIME_ERROR
+            if "ImportError" in result.stderr:
+                error_type=EnhancedToolManager.Error.ErrorType.IMPORT_ERROR
+            if "ModuleNotFoundError" in result.stderr:
+                error_type=EnhancedToolManager.Error.ErrorType.THIRD_PARTY_DEPENDENCIES
+            raise EnhancedToolManager.Error(error_type,f"Error running code: {result.stderr}\n")
+        observation = f"{result.stdout}\n"
+        return observation
+    @EnhancedToolManager.tool
+    def start_over(self,problem_with_old_approach:str,new_apprach_to_try:str):
+        '''
+        This will revert any changes made to the codebase and let's you start over. Only use this tool when you have concluded that current changes you made to the codebase are not relevant and you want to start again with new approach.
+        Arguments:
+            problem_with_old_approach: What you tried and what was the key issues you faced with this approach.
+            new_apprach_to_try: What is the new approach you want to try and how it will fix the issues you faced earlier.
+        '''    
         logger.info("============Start Over============")
         os.system("git reset --hard")
         logger.info(f"problem_with_old_approach: {problem_with_old_approach}")
@@ -1825,102 +2029,9 @@ class FixTaskEnhancedToolManager(EnhancedToolManager):
         return self._save(file_path, content)
 
     @EnhancedToolManager.tool
-    def run_repo_tests(self, file_paths: List[str]) -> str:
+    def apply_code_edit(self,file_path:str, search:str, replace:str)->str:
         '''
-        Runs the tests for the repository
-        
-        Arguments:
-            file_paths: path of the files to run the tests for
-            
-        Output:
-            Returns the stdout/stderr from the executed files
-        '''
-        if self.test_runner == "pytest":
-            print("CMD: pytest ", file_paths)
-            result = subprocess.run(["pytest"] + file_paths, shell=True, capture_output=True, text=True, timeout=90)
-            output = (result.stdout or "") + (result.stderr or "")
-        else:
-            if self.test_runner_mode == "MODULE":
-                modules = [filepath_to_module(f, os.getcwd(), self.test_runner) for f in file_paths]
-                cmd = f"{self.test_runner} {' '.join(modules)}"
-                print("CMD: ", cmd)
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=90)
-                output = (result.stdout or "") + (result.stderr or "")
-            else:
-                files_to_test = [clean_filepath(f, os.getcwd(), self.test_runner) for f in file_paths]
-                cmd = f"{self.test_runner} {' '.join(files_to_test)}"
-                print("CMD: ", cmd)
-                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=90)
-                output = (result.stdout or "") + (result.stderr or "")
-        return output
-
-    @EnhancedToolManager.tool
-    def run_code(self, content: str, file_path: str) -> str:
-        '''
-        Runs any python code
-        
-        Arguments:
-            content: text code to write in file
-            file_path: path of the file to save the code in
-            
-        Output:
-            Returns the stdout/stderr from the executed file
-        '''
-        self._save(file_path, content)
-        self.generated_test_files.append(file_path)
-        
-        with open(file_path, "r") as f:
-            tree = ast.parse(f.read(), filename=file_path)
-
-        disallowed_modules = set()
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                if isinstance(node, ast.ImportFrom) and node.module:
-                    mod = node.module.split(".")[0]
-                else:
-                    mod = node.names[0].name.split(".")[0]
-
-                if mod in sys.builtin_module_names:
-                    continue
-
-                if isinstance(node, ast.ImportFrom) and node.level and node.level > 0:
-                    continue
-
-                cwd = os.getcwd()
-                local_file = os.path.join(cwd, f"{mod}.py")
-                local_pkg_init = os.path.join(cwd, mod, "__init__.py")
-                local_pkg_dir = os.path.join(cwd, mod)
-                lib_dir = os.path.join(cwd, 'lib')
-                lib_file = os.path.join(lib_dir, f"{mod}.py")
-                lib_pkg_init = os.path.join(lib_dir, mod, "__init__.py")
-                lib_pkg_dir = os.path.join(lib_dir, mod)
-
-                if (os.path.isfile(local_file) or os.path.isfile(local_pkg_init) or os.path.isdir(local_pkg_dir) or
-                    os.path.isfile(lib_file) or os.path.isfile(lib_pkg_init) or os.path.isdir(lib_pkg_dir)):
-                    continue
-
-                disallowed_modules.add(mod)
-
-        if disallowed_modules and False:
-            logger.error(f"Cannot run, third party dependencies detected: {sorted(disallowed_modules)}\n")
-            raise ToolManager.Error(ToolManager.Error.ErrorType.THIRD_PARTY_DEPENDENCIES.name, f"Error:Cannot run, third party dependencies detected: {sorted(disallowed_modules)}\n")
-
-        result = subprocess.run(["python", file_path], capture_output=True, text=True, check=False, timeout=60)
-        if result.returncode != 0:
-            error_type = EnhancedToolManager.Error.ErrorType.RUNTIME_ERROR
-            if "ImportError" in result.stderr:
-                error_type = EnhancedToolManager.Error.ErrorType.IMPORT_ERROR
-            if "ModuleNotFoundError" in result.stderr:
-                error_type = EnhancedToolManager.Error.ErrorType.THIRD_PARTY_DEPENDENCIES
-            raise EnhancedToolManager.Error(error_type, f"Error running code: {result.stderr}\n")
-        observation = f"{result.stdout}\n"
-        return observation
-    
-    @EnhancedToolManager.tool
-    def apply_code_edit(self, file_path: str, search: str, replace: str) -> str:
-        '''
-        Performs targeted text replacement within source files
-        
+        Performs targeted text replacement within source files. If there are any syntax errors in the code, it rejects the edit with an error message. Please note use you can only use this tool after you have approval from user on your proposed solution.
         Arguments:
             file_path: target file for modification
             search: exact text pattern to locate and replace
@@ -3400,9 +3511,12 @@ def process_fix_task(input_dict: Dict[str, Any]):
 
 def fix_task_solve_workflow(problem_statement: str, *, timeout: int, run_id_1: str, instance_id: str = "", \
     test_runner: str = "pytest", test_runner_mode: str = "FILE", n_max_steps = MAX_FIX_TASK_STEPS):
+    """
+    Enhanced workflow with temperature control, rejection tracking, and performance monitoring
+    """
     global run_id
     run_id = run_id_1
-    cot = EnhancedCOT()
+    cot = EnhancedCOT(latest_observations_to_keep=5)
     tool_manager = FixTaskEnhancedToolManager(
         available_tools=[
             "get_file_content",
