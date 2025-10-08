@@ -4,9 +4,11 @@ import textwrap
 import utils.logger as logger
 import validator.config as config
 
+from typing import Dict, Any
 
 
-async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: str = None) -> httpx.Response:
+
+async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: str = None) -> Dict[str, Any]:
     """
     Helper function that sends a POST request to the Ridges platform.
 
@@ -18,6 +20,8 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
     Returns:
         The response from the Ridges platform. If the request returns a non-2xx status code, the function will print the error and exit the program.
     """
+
+
 
     url = f"{config.RIDGES_PLATFORM_URL.rstrip("/")}/{endpoint.lstrip("/")}"
 
@@ -35,7 +39,7 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
             logger.debug(textwrap.indent(json.dumps(response.json(), indent=2), "  "))
             
-            return response
+            return response.json()
     
     except httpx.HTTPStatusError as e:
         # HTTP error (4xx or 5xx)

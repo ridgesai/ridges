@@ -31,15 +31,26 @@ async def main():
             "signed_timestamp": signed_timestamp,
             "hotkey": config.VALIDATOR_HOTKEY.ss58_address
         })
-        session_id = register_response.json()["session_id"]
+        session_id = register_response["session_id"]
         logger.info(f"Registered validator. Session ID: {session_id}")
 
 
 
         # Request an evaluation
-        logger.info("Requesting an evaluation...")
-        evaluation_response = await post_ridges_platform('/validator/request-evaluation', bearer_token=session_id)
-        logger.info(f"Requested evaluation. Response: {evaluation_response.json()}")
+        while True:
+            logger.info("Requesting an evaluation...")
+            
+            evaluation_response = await post_ridges_platform('/validator/request-evaluation', bearer_token=session_id)
+            
+            # If no evaluation is available, wait and try again
+            if evaluation_response is None:
+                logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
+                time.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
+                continue
+
+            logger.info("Received evaluation:")
+            logger.info(f"  # of lines in agent code: {len(evaluation_response.agent_code.splitlines())}")
+            logger.info(f"  # of evaluation runs: {len(evaluation_response.evaluation_runs)}")
 
 
 
@@ -54,4 +65,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.warn("Keyboard interrupt")
+        logger.warning("Keyboard interrupt")

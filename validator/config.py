@@ -46,6 +46,13 @@ RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
 
 
 
+# Load the time to wait between requesting for a new evaluation
+REQUEST_EVALUATION_INTERVAL_SECONDS = int(os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS"))
+if not REQUEST_EVALUATION_INTERVAL_SECONDS:
+    logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")
+
+
+
 # Print out the configuration
 logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")
 logger.info(f"Validator Hotkey Name: {VALIDATOR_HOTKEY_NAME}")

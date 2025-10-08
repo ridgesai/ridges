@@ -1,4 +1,3 @@
-from calendar import c
 import time
 import utils.logger as logger
 
@@ -11,11 +10,11 @@ from models.evaluation import Evaluation
 from utils.system_metrics import SystemMetrics
 from utils.fiber import validate_signed_timestamp
 from fastapi import Depends, Response, APIRouter, HTTPException
-from api.queries.evaluations import create_new_evaluation_and_evaluation_runs
-from api.queries.agents import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.evaluation import create_new_evaluation_and_evaluation_runs
+from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunTestResult
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
-from api.queries.evaluation_runs import get_evaluation_run_by_id, update_evaluation_run_by_id
 
 
 
@@ -120,8 +119,8 @@ async def validator_register(
         time_connected=datetime.now()
     )
     
-    logger.info(f"Registered validator ({validator_hotkey_to_name(request.hotkey)}/{request.hotkey})")
-    logger.info(f"\tSession ID: {session_id}")
+    logger.info(f"Validator {validator_hotkey_to_name(request.hotkey)}/{request.hotkey} was registered")
+    logger.info(f"  Session ID: {session_id}")
     
     return ValidatorRegistrationResponse(session_id=session_id)
 
@@ -133,14 +132,14 @@ class ValidatorRequestEvaluationRequest(BaseModel):
     pass
 
 class ValidatorRequestEvaluationResponse(BaseModel):
-    evaluation: Evaluation
+    agent_code: str
     evaluation_runs: List[EvaluationRun]
 
 @router.post("/request-evaluation")
 async def validator_request_evaluation(
     request: ValidatorRequestEvaluationRequest,
     validator: Validator = Depends(get_request_validator)
-) -> ValidatorRequestEvaluationResponse:
+) -> Optional[ValidatorRequestEvaluationResponse]:
 
     # Make sure the validator is not already running an evaluation
     if validator.current_evaluation_id is not None:
@@ -149,21 +148,26 @@ async def validator_request_evaluation(
             detail=f"This validator is already running an evaluation, and validators may only run one evaluation at a time."
         )
 
-    # Find the next agent awaiting an evaluation for this validator
+    # Find the next agent awaiting an evaluation from this validator
     agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
     if agent_id is None:
-        # Nobody is awaiting an evaluation for this validator
-        return Response(status_code=204)
+        # Nobody is awaiting an evaluation from this validator
+        return None
+
+    # Get the agent code
+    # TODO
+    # agent_code = await get_agent_code_by_agent_id(agent_id)
+    agent_code = "Line 1\nLine 2\nLine 3"
 
     # Create a new evaluation and evaluation runs for this agent
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
 
     logger.info(f"Validator {validator.name}/{validator.hotkey} requested an evaluation")
-    logger.info(f"\tAgent ID: {agent_id}")
-    logger.info(f"\tEvaluation ID: {evaluation.evaluation_id}")
-    logger.info(f"\t# of evaluation runs: {len(evaluation_runs)}")
+    logger.info(f"  Agent ID: {agent_id}")
+    logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
+    logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
 
-    return ValidatorRequestEvaluationResponse(evaluation=evaluation, evaluation_runs=evaluation_runs)
+    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
 
 
 
@@ -180,8 +184,8 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorHeartbeatResponse:
 
-    logger.info(f"Received heartbeat from {validator.name}/{validator.hotkey}")
-    logger.info(f"\tSystem metrics: {request.system_metrics}")
+    logger.info(f"Validator {validator.name}/{validator.hotkey} sent a heartbeat")
+    logger.info(f"  System metrics: {request.system_metrics}")
 
     validator.time_last_heartbeat = datetime.now()
     validator.system_metrics = request.system_metrics
@@ -390,6 +394,8 @@ async def update_evaluation_run(
 
     await update_evaluation_run_by_id(evaluation_run)
 
-    logger.info(f"Updated evaluation run {request.evaluation_run_id} to {request.updated_status}")
+    logger.info(f"Validator {validator.name}/{validator.hotkey} updated an evaluation run to {request.updated_status}")
+    logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
+    logger.info(f"  Updated status: {request.updated_status}")
 
     return ValidatorUpdateEvaluationRunResponse()
