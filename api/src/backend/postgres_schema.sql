@@ -684,7 +684,7 @@ WHERE agents.status = 'screening_1'
     SELECT 1
     FROM evaluations_hydrated
     WHERE evaluations_hydrated.agent_id = agents.agent_id
-      AND evaluations_hydrated.status = 'success'
+      AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.validator_hotkey LIKE 'screener-1%'
   )
 ORDER BY agents.created_at ASC;
@@ -699,7 +699,7 @@ WHERE agents.status = 'screening_2'
     SELECT 1
     FROM evaluations_hydrated
     WHERE evaluations_hydrated.agent_id = agents.agent_id
-      AND evaluations_hydrated.status = 'success'
+      AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.validator_hotkey LIKE 'screener-2%'
   )
 ORDER BY agents.created_at ASC;
@@ -711,9 +711,10 @@ WITH
     validator_eval_counts AS (
         SELECT
             agent_id,
-            COUNT(*) AS num_evals
+            COUNT(*) FILTER (WHERE status = 'running') AS num_running_evals,
+            COUNT(*) FILTER (WHERE status = 'success') AS num_finished_evals
         FROM evaluations_hydrated
-        WHERE evaluations_hydrated.status = 'success'
+        WHERE evaluations_hydrated.status IN ('success', 'running')
           AND validator_hotkey NOT LIKE 'screener%'
         GROUP BY agent_id
     ),
@@ -726,14 +727,14 @@ WITH
 SELECT
     agent_id,
     status,
-    num_evals
+    num_running_evals,
+    num_finished_evals
 FROM agents
      INNER JOIN screener_2_scores USING (agent_id)
      LEFT JOIN validator_eval_counts USING (agent_id)
 WHERE
     agents.status = 'evaluating'
-  AND COALESCE(num_evals, 0) < 3
 ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
-    num_evals DESC
+    num_finished_evals DESC
