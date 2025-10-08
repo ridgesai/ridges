@@ -4,8 +4,11 @@ from uuid import UUID
 import asyncpg
 import utils.logger as logger
 from api.src.backend.db_manager import db_operation
+from api.src.utils.s3 import S3Manager
 
 MIN_EVALS: Final[int] = 3
+
+s3_manager = S3Manager()
 
 
 @db_operation
@@ -64,3 +67,14 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
     if result is None or "agent_id" not in result:
         return None
     return result["agent_id"]
+
+
+async def get_agent_code_by_agent_id(agent_id: str) -> str:
+    """Get agent code from S3 by agent ID"""
+    try:
+        text = await s3_manager.get_file_text(f"{agent_id}/agent.py")
+    except Exception as e:
+        logger.error(f"Error retrieving agent version code from S3 for agent {agent_id}: {e}")
+        raise Exception(f"Internal server error while retrieving agent code for id {agent_id}. Please try again later.")
+
+    return text

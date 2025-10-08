@@ -1,21 +1,21 @@
 import time
-import utils.logger as logger
-
-from uuid import UUID, uuid4
 from datetime import datetime
-from pydantic import BaseModel
 from typing import Dict, List, Optional
+from uuid import UUID, uuid4
+
+import utils.logger as logger
+from api.queries.agent import get_agent_code_by_agent_id
+from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.evaluation import create_new_evaluation_and_evaluation_runs
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
+from fastapi import Depends, APIRouter, HTTPException
 from fastapi.security import HTTPBearer
 from models.evaluation import Evaluation
-from utils.system_metrics import SystemMetrics
-from utils.fiber import validate_signed_timestamp
-from fastapi import Depends, Response, APIRouter, HTTPException
-from api.queries.evaluation import create_new_evaluation_and_evaluation_runs
-from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunTestResult
+from pydantic import BaseModel
+from utils.fiber import validate_signed_timestamp
+from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
-
 
 
 # A connected validator
@@ -158,9 +158,7 @@ async def validator_request_evaluation(
         return None
 
     # Get the agent code
-    # TODO
-    # agent_code = await get_agent_code_by_agent_id(agent_id)
-    agent_code = "Line 1\nLine 2\nLine 3"
+    agent_code = await get_agent_code_by_agent_id(agent_id)
 
     # Create a new evaluation and evaluation runs for this agent
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
