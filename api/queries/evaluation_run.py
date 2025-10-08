@@ -55,8 +55,8 @@ async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: 
         evaluation_run.finished_or_errored_at
     )
 
-@db_operation
 async def create_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:
+    """Create an evaluation run. Caller is responsible for providing connection."""
     await conn.execute(
         """
         INSERT INTO evaluation_runs (

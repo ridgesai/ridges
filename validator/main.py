@@ -54,7 +54,8 @@ async def main():
             logger.info("Requesting an evaluation...")
             
             evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id)
-            
+
+
             # If no evaluation is available, wait and try again
             if evaluation_response is None:
                 logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
@@ -62,8 +63,8 @@ async def main():
                 continue
 
             logger.info("Received evaluation:")
-            logger.info(f"  # of lines in agent code: {len(evaluation_response.agent_code.splitlines())}")
-            logger.info(f"  # of evaluation runs: {len(evaluation_response.evaluation_runs)}")
+            logger.info(f"  # of lines in agent code: {len(evaluation_response['agent_code'].splitlines())}")
+            logger.info(f"  # of evaluation runs: {len(evaluation_response['evaluation_runs'])}")
 
 
 

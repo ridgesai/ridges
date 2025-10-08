@@ -12,6 +12,26 @@ from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
 
 
+async def create_evaluation(conn: asyncpg.connection.Connection, evaluation: Evaluation) -> None:
+    """Create an evaluation. Caller is responsible for providing connection."""
+    await conn.execute(
+        """
+        INSERT INTO evaluations (
+            evaluation_id,
+            agent_id,
+            validator_hotkey,
+            set_id,
+            created_at
+        ) VALUES ($1, $2, $3, $4, $5)
+        """,
+        evaluation.evaluation_id,
+        evaluation.agent_id,
+        evaluation.validator_hotkey,
+        evaluation.set_id,
+        evaluation.created_at,
+    )
+
+
 @db_transaction
 async def create_new_evaluation_and_evaluation_runs(
     conn: asyncpg.Connection,
@@ -33,6 +53,10 @@ async def create_new_evaluation_and_evaluation_runs(
         set_id=set_id,
         created_at=datetime.now(),
     )
+    print(f"CREATING EVALUATION WITH ID: {evaluation.evaluation_id}")
+    await create_evaluation(conn, evaluation)
+    print(f"FINISHED CREATING EVALUATION WITH ID: {evaluation.evaluation_id}")
+
 
     evaluation_runs = [
         EvaluationRun(
@@ -46,6 +70,6 @@ async def create_new_evaluation_and_evaluation_runs(
     ]
 
     for evaluation_run in evaluation_runs:
-        await create_evaluation_run(evaluation_run)
+        await create_evaluation_run(conn, evaluation_run)
 
     return evaluation, evaluation_runs
