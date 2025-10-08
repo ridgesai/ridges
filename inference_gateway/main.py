@@ -3,7 +3,7 @@ import uvicorn
 import requests
 from openai import OpenAI
 from fastapi import FastAPI, HTTPException
-from models import InferenceRequest, EmbeddingRequest, Settings
+from models import InferenceRequest, InferenceResponse, EmbeddingRequest, EmbeddingResponse, Settings
 
 
 
@@ -23,7 +23,7 @@ app = FastAPI(title="Inference Gateway", description="Inference gateway server w
 
 
 @app.post("/api/inference")
-async def inference(request: InferenceRequest):
+async def inference(request: InferenceRequest) -> InferenceResponse:
     try:
         messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
         response = chutes_client.chat.completions.create(
@@ -32,14 +32,14 @@ async def inference(request: InferenceRequest):
             temperature=request.temperature,
             stream=False
         )
-        return response.choices[0].message.content
+        return InferenceResponse(response=response.choices[0].message.content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 
 @app.post("/api/embedding")
-async def embedding(request: EmbeddingRequest):
+async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     try:
         response = requests.post(
             settings.CHUTES_EMBEDDING_URL,
@@ -53,7 +53,7 @@ async def embedding(request: EmbeddingRequest):
             }
         )
         response.raise_for_status()
-        return response.json()[0]
+        return EmbeddingResponse(response=response.json()[0])
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
