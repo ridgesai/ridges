@@ -69,10 +69,10 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
     return result["agent_id"]
 
 
-async def get_agent_code_by_agent_id(agent_id: str) -> str:
+async def get_agent_code_by_agent_id(agent_id: UUID) -> str:
     """Get agent code from S3 by agent ID"""
     try:
-        text = await s3_manager.get_file_text(f"{agent_id}/agent.py")
+        text = await s3_manager.get_file_text(f"{str(agent_id)}/agent.py")
     except Exception as e:
         logger.error(f"Error retrieving agent version code from S3 for agent {agent_id}: {e}")
         raise Exception(f"Internal server error while retrieving agent code for id {agent_id}. Please try again later.")

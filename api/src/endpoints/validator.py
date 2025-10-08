@@ -190,7 +190,7 @@ async def validator_register_as_screener(
     logger.info(f"Screener {request.name} was registered")
     logger.info(f"  Session ID: {session_id}")
     
-    return ValidatorRegistrationResponse(session_id=session_id)
+    return ScreenerRegistrationResponse(session_id=session_id)
 
 
 
@@ -313,7 +313,7 @@ async def validator_update_evaluation_run(
 
 
     # The logic differs based on the updated status of the evaluation run
-    match (request.updated_status):
+    match request.updated_status:
         case EvaluationRunStatus.pending:
             # There is no case where the validator should update an evaluation run to pending, since all evaluation runs start as pending
             raise HTTPException(
@@ -516,3 +516,4 @@ async def validator_finish_evaluation(
         )
 
     validator.current_evaluation_id = None
+    return ValidatorFinishEvaluationResponse()
