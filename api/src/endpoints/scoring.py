@@ -18,7 +18,6 @@ from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_a
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
-from api.src.utils.slack import notify_unregistered_top_miner, notify_unregistered_treasury_hotkey
 from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
@@ -73,7 +72,6 @@ async def get_treasury_hotkey():
 
         if not check_if_hotkey_is_registered(treasury_hotkey):
             logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
-            await notify_unregistered_treasury_hotkey(treasury_hotkey)
         
         return treasury_hotkey
 
@@ -104,7 +102,6 @@ async def weights() -> Dict[str, float]:
             weights[top_agent.miner_hotkey] = weight_left
         else:
             logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet")
-            await notify_unregistered_top_miner(top_agent.miner_hotkey)
             weights[treasury_hotkey] = 1.0
 
     return weights

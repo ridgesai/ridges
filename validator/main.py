@@ -1,5 +1,4 @@
 import time
-import atexit
 import asyncio
 import utils.logger as logger
 import validator.config as config
@@ -23,8 +22,6 @@ async def disconnect():
         logger.info("Disconnected validator")
     except Exception as e:
         logger.error(f"Error disconnecting validator: {type(e).__name__}: {e}")
-
-atexit.register(asyncio.run, disconnect())
 
 
 
@@ -81,3 +78,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.warning("Keyboard interrupt")
+        asyncio.run(disconnect())

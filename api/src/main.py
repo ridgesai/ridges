@@ -23,7 +23,6 @@ from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.endpoints.validator import router as validator_router
-from api.src.utils.slack import send_slack_message
 from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
@@ -84,8 +83,6 @@ app.include_router(healthcheck_router)
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await WebSocketManager.get_instance().handle_connection(websocket)
-
-send_slack_message(f"From main.py")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None, ws_max_size=32 * 1024 * 1024)
