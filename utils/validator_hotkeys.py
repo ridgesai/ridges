@@ -10,7 +10,9 @@ WHITELISTED_VALIDATORS = [
     {"name": "Opentensor Foundation", "hotkey": "5FZ1BFw8eRMAFK5zwJdyefrsn51Lrm217WKbo3MmdFH65YRr"},
 
     # Developer validators, used for testing
-    {"name": "Adam's Validator",      "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"}
+    {"name": "Adam's Validator",      "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"},
+    {"name": "Alex's Validator",      "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
+
 ]
 
 def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:
