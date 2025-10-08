@@ -39,14 +39,14 @@ async def main():
             timestamp = int(time.time())
             signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
             
-            register_response = await post_ridges_platform("/validator/register_as_validator", {
+            register_response = await post_ridges_platform("/validator/register-as-validator", {
                 "timestamp": timestamp,
                 "signed_timestamp": signed_timestamp,
                 "hotkey": config.VALIDATOR_HOTKEY.ss58_address
             })
         
         elif config.MODE == "screener":
-            register_response = await post_ridges_platform("/validator/register_as_screener", {
+            register_response = await post_ridges_platform("/validator/register-as-screener", {
                 "name": config.SCREENER_NAME,
                 "password": config.SCREENER_PASSWORD
             })

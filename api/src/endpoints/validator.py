@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import utils.logger as logger
 from api.queries.agent import get_agent_code_by_agent_id
 from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation import create_new_evaluation_and_evaluation_runs
+from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
 from fastapi import Depends, APIRouter, HTTPException
 from fastapi.security import HTTPBearer
@@ -71,7 +71,7 @@ router = APIRouter()
 
 
 
-# /validator/register_as_validator
+# /validator/register-as-validator
 
 class ValidatorRegistrationRequest(BaseModel):
     timestamp: int
@@ -81,8 +81,8 @@ class ValidatorRegistrationRequest(BaseModel):
 class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
 
-@router.post("/register_as_validator")
-async def validator_register(
+@router.post("/register-as-validator")
+async def validator_register_as_validator(
     request: ValidatorRegistrationRequest
 ) -> ValidatorRegistrationResponse:
 
@@ -130,7 +130,7 @@ async def validator_register(
 
 
 
-# /validator/register_as_screener
+# /validator/register-as-screener
 
 class ScreenerRegistrationRequest(BaseModel):
     name: str
@@ -139,7 +139,7 @@ class ScreenerRegistrationRequest(BaseModel):
 class ScreenerRegistrationResponse(BaseModel):
     session_id: UUID
 
-@router.post("/register_as_screener")
+@router.post("/register-as-screener")
 async def validator_register_as_screener(
     request: ScreenerRegistrationRequest
 ) -> ScreenerRegistrationResponse:
@@ -492,7 +492,22 @@ async def validator_heartbeat(
 @router.post("/finish-evaluation")
 async def validator_finish_evaluation(
     request: None,
+    validator: Validator = Depends(get_request_validator)
 ) -> None:
     """
-    Mark evaluation as completed
+    Mark validator as having finished evaluation in SESSION_ID_TO_VALIDATOR map.
     """
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Validator ({validator.hotkey}) is trying to finish an evaluation but the platform indicates that this validator is currently not even running an evaluation."
+        )
+
+    evaluation_runs = get_evaluation_runs_for_evaluation(validator.current_evaluation_id)
+    if any(evaluation_run.status != EvaluationRunStatus.finished for evaluation_run in evaluation_runs):
+        raise HTTPException(
+            status_code=409,
+            detail="The error message is required when updating an evaluation run to error."
+        )
+
+    validator.current_evaluation_id = None

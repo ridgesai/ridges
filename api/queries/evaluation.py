@@ -4,6 +4,8 @@ from typing import List, Tuple
 from uuid import UUID
 
 import asyncpg
+from sqlalchemy.engine import row
+
 from api.queries.evaluation_run import create_evaluation_run
 from api.queries.evaluation_set import get_latest_set_id, get_all_problems_of_group_in_set
 from api.src.backend.db_manager import db_transaction
@@ -73,3 +75,22 @@ async def create_new_evaluation_and_evaluation_runs(
         await create_evaluation_run(conn, evaluation_run)
 
     return evaluation, evaluation_runs
+
+@db_transaction
+async def get_evaluation_runs_for_evaluation(conn: asyncpg.connection.Connection, evaluation_id: int) -> List[EvaluationRun]:
+    """Get all evaluation runs for a given evaluation run_id."""
+    response = await conn.fetch(
+        """
+        SELECT *
+        FROM evaluation_runs
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id
+    )
+    import ipdb; ipdb.set_trace()
+    evaluation_runs = [
+        EvaluationRun(
+            evaluation_run_id=row["evaluation_run_id"],
+        )
+        for evaluation_run in response
+    ]
