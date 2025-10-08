@@ -41,7 +41,7 @@ async def get_top_agents_solved_for_question(swebench_instance_id: str) -> list[
             SELECT a.agent_id, a.miner_hotkey, a.agent_name, a.version_num, a.created_at, a.status, e.set_id, ass.final_score as score
                 FROM evaluation_runs r
             LEFT JOIN evaluations e ON e.evaluation_id = r.evaluation_id
-            RIGHT JOIN miner_agents a ON a.agent_id = e.agent_id
+            RIGHT JOIN agents a ON a.agent_id = e.agent_id
             LEFT JOIN agent_scores ass ON a.agent_id = ass.agent_id
                 WHERE r.swebench_instance_id = $1
                 AND solved = true

@@ -88,11 +88,11 @@ async def run_manual_health_check():
             # Check for obviously broken states
             running_evals = await conn.fetchval("SELECT COUNT(*) FROM evaluations WHERE status = 'running'")
             inconsistent_agents = await conn.fetchval("""
-                SELECT COUNT(*) FROM miner_agents 
+                SELECT COUNT(*) FROM agents 
                 WHERE status = 'evaluating' 
                 AND NOT EXISTS (
                     SELECT 1 FROM evaluations 
-                    WHERE agent_id = miner_agents.agent_id 
+                    WHERE agent_id = agents.agent_id 
                     AND status = 'running'
                 )
             """)
@@ -130,7 +130,7 @@ async def _get_system_metrics() -> Dict:
                     COUNT(*) FILTER (WHERE status = 'scored') as scored_agents,
                     COUNT(*) FILTER (WHERE status = 'replaced') as replaced_agents,
                     COUNT(*) FILTER (WHERE status = 'pruned') as pruned_agents
-                FROM miner_agents
+                FROM agents
                 WHERE created_at >= NOW() - INTERVAL '24 hours'
             """)
             
@@ -153,7 +153,7 @@ async def _get_system_metrics() -> Dict:
                 SELECT 
                     COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as agents_last_hour,
                     COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '1 hour') as evaluations_last_hour
-                FROM miner_agents ma
+                FROM agents ma
                 FULL OUTER JOIN evaluations e ON ma.agent_id = e.agent_id
             """)
             

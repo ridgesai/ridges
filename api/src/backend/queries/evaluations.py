@@ -394,7 +394,7 @@ async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner
         """
         SELECT e.*
         FROM evaluations e
-        JOIN miner_agents ma ON e.agent_id = ma.agent_id
+        JOIN agents ma ON e.agent_id = ma.agent_id
         WHERE ma.miner_hotkey = $1
         AND e.status = 'running'
         ORDER BY e.created_at ASC
@@ -429,7 +429,7 @@ async def get_agent_name_from_agent_id(conn: asyncpg.Connection, agent_id: str) 
     """Get agent name for a given agent_id"""
     return await conn.fetchval("""
         SELECT agent_name 
-        FROM miner_agents 
+        FROM agents 
         WHERE agent_id = $1
     """, agent_id)
 
@@ -438,7 +438,7 @@ async def get_miner_hotkey_from_agent_id(conn: asyncpg.Connection, agent_id: str
     """Get miner hotkey for a given agent_id"""
     return await conn.fetchval("""
         SELECT miner_hotkey 
-        FROM miner_agents 
+        FROM agents 
         WHERE agent_id = $1
     """, agent_id)
 

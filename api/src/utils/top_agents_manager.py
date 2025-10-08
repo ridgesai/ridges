@@ -50,7 +50,7 @@ async def update_top_agents_cache() -> bool:
     try:
         logger.info("Starting top agents cache update...")
         
-        # Get top 5 approved version IDs directly (since miner_agents table is empty)
+        # Get top 5 approved version IDs directly (since agents table is empty)
         approved_agent_ids = await get_top_approved_agent_ids(num_agents=5)
         
         if not approved_agent_ids:

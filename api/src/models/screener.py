@@ -191,7 +191,7 @@ class Screener(Client):
             return False
         
         async with get_transaction() as conn:
-            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
+            agent = await conn.fetchrow("SELECT status, agent_name, miner_hotkey FROM agents WHERE agent_id = $1", evaluation.agent_id)
             agent_status = AgentStatus.from_string(agent["status"]) if agent else None
             
             # Check if agent is in the appropriate screening status for this screener stage
@@ -248,7 +248,7 @@ class Screener(Client):
                 return
             
             async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
+                agent_status = await conn.fetchval("SELECT status FROM agents WHERE agent_id = $1", evaluation.agent_id)
                 expected_status = getattr(AgentStatus, f"screening_{self.stage}")
                 if AgentStatus.from_string(agent_status) != expected_status:
                     logger.warning(f"Stage {self.stage} screener {self.hotkey}: Evaluation {evaluation_id}: Agent {evaluation.agent_id} not in screening_{self.stage} status during finish (current: {agent_status})")

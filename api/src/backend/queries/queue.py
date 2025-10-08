@@ -25,7 +25,7 @@ async def get_queue_for_all_validators(
                     ) ORDER BY e.screener_score DESC NULLS LAST, e.created_at ASC
                 ) as queue_items
             FROM evaluations e
-            JOIN miner_agents m ON e.agent_id = m.agent_id
+            JOIN agents m ON e.agent_id = m.agent_id
             WHERE e.status = 'waiting'
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND m.miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
@@ -73,7 +73,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
             version_num,
             created_at,
             status
-        FROM miner_agents 
+        FROM agents 
         WHERE status = 'awaiting_screening_1'
         AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
         AND status NOT IN ('pruned', 'replaced')
@@ -91,7 +91,7 @@ async def get_screener_queue_by_stage(conn: asyncpg.Connection) -> ScreenerQueue
             version_num,
             created_at,
             status
-        FROM miner_agents 
+        FROM agents 
         WHERE status = 'awaiting_screening_2'
         AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
         AND status NOT IN ('pruned', 'replaced')

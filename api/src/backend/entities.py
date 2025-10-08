@@ -217,8 +217,8 @@ class MinerAgentScored(BaseModel):
         
         if max_set_id is None:
             # No evaluation sets exist yet
-            total_agents = await conn.fetchval("SELECT COUNT(*) FROM miner_agents")
-            recent_agents = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '24 hours'")
+            total_agents = await conn.fetchval("SELECT COUNT(*) FROM agents")
+            recent_agents = await conn.fetchval("SELECT COUNT(*) FROM agents WHERE created_at >= NOW() - INTERVAL '24 hours'")
             
             return {
                 'number_of_agents': total_agents or 0,
@@ -240,8 +240,8 @@ class MinerAgentScored(BaseModel):
                 AND ass.created_at < NOW() - INTERVAL '48 hours'
             )
             SELECT
-                (SELECT COUNT(DISTINCT miner_hotkey) FROM miner_agents WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as number_of_agents,
-                (SELECT COUNT(*) FROM miner_agents WHERE created_at >= NOW() - INTERVAL '48 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as agent_iterations_last_24_hours,
+                (SELECT COUNT(DISTINCT miner_hotkey) FROM agents WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as number_of_agents,
+                (SELECT COUNT(*) FROM agents WHERE created_at >= NOW() - INTERVAL '48 hours' AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)) as agent_iterations_last_24_hours,
                 (SELECT max_score FROM current_max) as top_agent_score,
                 COALESCE((SELECT max_score FROM current_max) - COALESCE((SELECT max_score FROM yesterday_max), 0), 0) as daily_score_improvement
         """, max_set_id)
@@ -272,7 +272,7 @@ class MinerAgentScored(BaseModel):
                 COALESCE(ass.approved, NULL) as approved,
                 COALESCE(ass.validator_count, NULL) as validator_count,
                 COALESCE(ass.final_score, NULL) as score
-            FROM miner_agents ma
+            FROM agents ma
             LEFT JOIN agent_scores ass ON ma.agent_id = ass.agent_id
             WHERE ma.miner_hotkey = $1
             AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)

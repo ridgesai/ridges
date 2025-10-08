@@ -190,7 +190,7 @@ class Evaluation:
                     
                     if top_agent and combined_screener_score is not None and (top_agent.avg_score - combined_screener_score) > PRUNE_THRESHOLD:
                         # Score is too low, prune miner agent and don't create evaluations
-                        await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE agent_id = $1", self.agent_id)
+                        await conn.execute("UPDATE agents SET status = 'pruned' WHERE agent_id = $1", self.agent_id)
                         logger.info(f"Pruned agent {self.agent_id} immediately after screener-2 with combined score {combined_screener_score:.3f} (threshold: {top_agent.avg_score - PRUNE_THRESHOLD:.3f})")
                         return {
                             "stage2_screener": None,
@@ -275,26 +275,26 @@ class Evaluation:
             if self.score is not None and self.score >= threshold:
                 if stage == 1:
                     # Stage 1 passed -> move to stage 2
-                    await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE agent_id = $1", self.agent_id)
+                    await conn.execute("UPDATE agents SET status = 'awaiting_screening_2' WHERE agent_id = $1", self.agent_id)
                 elif stage == 2:
                     # Stage 2 passed -> ready for validation
-                    await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE agent_id = $1", self.agent_id)
+                    await conn.execute("UPDATE agents SET status = 'waiting' WHERE agent_id = $1", self.agent_id)
             else:
                 if stage == 1:
                     # Stage 1 failed
-                    await conn.execute("UPDATE miner_agents SET status = 'failed_screening_1' WHERE agent_id = $1", self.agent_id)
+                    await conn.execute("UPDATE agents SET status = 'failed_screening_1' WHERE agent_id = $1", self.agent_id)
                 elif stage == 2:
                     # Stage 2 failed
-                    await conn.execute("UPDATE miner_agents SET status = 'failed_screening_2' WHERE agent_id = $1", self.agent_id)
+                    await conn.execute("UPDATE agents SET status = 'failed_screening_2' WHERE agent_id = $1", self.agent_id)
             return
 
         # Handle screening errors like disconnection - reset to appropriate awaiting state
         if self.is_screening and self.status == EvaluationStatus.error:
             stage = self.screener_stage
             if stage == 1:
-                await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_1' WHERE agent_id = $1", self.agent_id)
+                await conn.execute("UPDATE agents SET status = 'awaiting_screening_1' WHERE agent_id = $1", self.agent_id)
             elif stage == 2:
-                await conn.execute("UPDATE miner_agents SET status = 'awaiting_screening_2' WHERE agent_id = $1", self.agent_id)
+                await conn.execute("UPDATE agents SET status = 'awaiting_screening_2' WHERE agent_id = $1", self.agent_id)
             return
 
         # Check for any stage 1 screening evaluations (only running - waiting evaluations don't mean agent is actively being screened)
@@ -305,7 +305,7 @@ class Evaluation:
             self.agent_id,
         )
         if stage1_count > 0:
-            await conn.execute("UPDATE miner_agents SET status = 'screening_1' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'screening_1' WHERE agent_id = $1", self.agent_id)
             return
 
         # Check for any stage 2 screening evaluations (only running - waiting evaluations don't mean agent is actively being screened)
@@ -316,12 +316,12 @@ class Evaluation:
             self.agent_id,
         )
         if stage2_count > 0:
-            await conn.execute("UPDATE miner_agents SET status = 'screening_2' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'screening_2' WHERE agent_id = $1", self.agent_id)
             return
 
         # Handle evaluation status transitions for regular evaluations
         if self.status == EvaluationStatus.running and not self.is_screening:
-            await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'evaluating' WHERE agent_id = $1", self.agent_id)
             return
 
         # For other cases, check remaining regular evaluations (non-screening)
@@ -345,13 +345,13 @@ class Evaluation:
         )
 
         if waiting_count > 0 and running_count == 0:
-            await conn.execute("UPDATE miner_agents SET status = 'waiting' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'waiting' WHERE agent_id = $1", self.agent_id)
         elif waiting_count == 0 and running_count == 0 and completed_count > 0:
             # Calculate and update innovation score for this agent before setting status to 'scored'
             await self._update_innovation_score(conn)
-            await conn.execute("UPDATE miner_agents SET status = 'scored' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'scored' WHERE agent_id = $1", self.agent_id)
         else:
-            await conn.execute("UPDATE miner_agents SET status = 'evaluating' WHERE agent_id = $1", self.agent_id)
+            await conn.execute("UPDATE agents SET status = 'evaluating' WHERE agent_id = $1", self.agent_id)
 
     async def _update_innovation_score(self, conn: asyncpg.Connection):
         """Calculate and update innovation score for this evaluation's agent in one atomic query"""
@@ -395,7 +395,7 @@ class Evaluation:
                         ) AS innovation_score
                     FROM runs_with_prior
                 )
-                UPDATE miner_agents 
+                UPDATE agents 
                 SET innovation = (SELECT innovation_score FROM innovation_calculation)
                 WHERE agent_id = $1
             """, self.agent_id)
@@ -406,7 +406,7 @@ class Evaluation:
             logger.error(f"Failed to calculate innovation score for agent {self.agent_id}: {e}")
             # Set innovation score to NULL on error to indicate calculation failure
             await conn.execute(
-                "UPDATE miner_agents SET innovation = NULL WHERE agent_id = $1",
+                "UPDATE agents SET innovation = NULL WHERE agent_id = $1",
                 self.agent_id
             )
 
@@ -553,14 +553,14 @@ class Evaluation:
         
         async with get_transaction() as conn:
             # First check if there are any agents awaiting this stage of screening
-            awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM miner_agents WHERE status = $1", target_status)
+            awaiting_count = await conn.fetchval("SELECT COUNT(*) FROM agents WHERE status = $1", target_status)
             logger.info(f"Found {awaiting_count} agents with {target_status} status")
 
             if awaiting_count > 0:
                 # Log the agents for debugging
                 awaiting_agents = await conn.fetch(
                     """
-                    SELECT agent_id, miner_hotkey, agent_name, created_at FROM miner_agents 
+                    SELECT agent_id, miner_hotkey, agent_name, created_at FROM agents 
                     WHERE status = $1 
                     AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
                     ORDER BY created_at ASC
@@ -576,18 +576,18 @@ class Evaluation:
                 claimed_agent = await conn.fetchrow(
                     """
                     WITH next_agent AS (
-                        SELECT agent_id FROM miner_agents 
+                        SELECT agent_id FROM agents 
                         WHERE status = $1 
                         AND miner_hotkey NOT IN (SELECT miner_hotkey from banned_hotkeys)
                         ORDER BY created_at ASC 
                         FOR UPDATE SKIP LOCKED
                         LIMIT 1
                     )
-                    UPDATE miner_agents 
+                    UPDATE agents 
                     SET status = $2
                     FROM next_agent
-                    WHERE miner_agents.agent_id = next_agent.agent_id
-                    RETURNING miner_agents.agent_id, miner_hotkey, agent_name, version_num, created_at
+                    WHERE agents.agent_id = next_agent.agent_id
+                    RETURNING agents.agent_id, miner_hotkey, agent_name, version_num, created_at
                 """,
                     target_status,
                     target_screening_status
@@ -656,7 +656,7 @@ class Evaluation:
         has_running = await conn.fetchval(
             """
             SELECT EXISTS(SELECT 1 FROM evaluations e 
-            JOIN miner_agents ma ON e.agent_id = ma.agent_id 
+            JOIN agents ma ON e.agent_id = ma.agent_id 
             WHERE ma.miner_hotkey = $1 AND e.status = 'running')
         """,
             miner_hotkey,
@@ -667,13 +667,13 @@ class Evaluation:
     async def replace_old_agents(conn: asyncpg.Connection, miner_hotkey: str) -> None:
         """Replace all old agents and their evaluations for a miner"""
         # Replace old agents
-        await conn.execute("UPDATE miner_agents SET status = 'replaced' WHERE miner_hotkey = $1 AND status != 'scored'", miner_hotkey)
+        await conn.execute("UPDATE agents SET status = 'replaced' WHERE miner_hotkey = $1 AND status != 'scored'", miner_hotkey)
 
         # Replace their evaluations
         await conn.execute(
             """
             UPDATE evaluations SET status = 'replaced' 
-            WHERE agent_id IN (SELECT agent_id FROM miner_agents WHERE miner_hotkey = $1)
+            WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = $1)
             AND status IN ('waiting', 'running')
         """,
             miner_hotkey,
@@ -685,7 +685,7 @@ class Evaluation:
             UPDATE evaluation_runs SET status = 'cancelled', cancelled_at = NOW() 
             WHERE evaluation_id IN (
                 SELECT evaluation_id FROM evaluations 
-                WHERE agent_id IN (SELECT agent_id FROM miner_agents WHERE miner_hotkey = $1)
+                WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = $1)
                 AND status = 'replaced'
             )
         """,
@@ -702,11 +702,11 @@ class Evaluation:
             # Create evaluations for waiting/evaluating agents that don't have one for this validator
             agents = await conn.fetch(
                 """
-                SELECT * FROM miner_agents 
+                SELECT * FROM agents 
                 WHERE status IN ('waiting', 'evaluating') 
                 AND NOT EXISTS (
                     SELECT 1 FROM evaluations 
-                    WHERE agent_id = miner_agents.agent_id 
+                    WHERE agent_id = agents.agent_id 
                     AND validator_hotkey = $1 
                     AND set_id = $2
                 )
@@ -787,7 +787,7 @@ class Evaluation:
         low_score_evaluations = await conn.fetch("""
             SELECT e.evaluation_id, e.agent_id, e.validator_hotkey, e.screener_score
             FROM evaluations e
-            JOIN miner_agents ma ON e.agent_id = ma.agent_id
+            JOIN agents ma ON e.agent_id = ma.agent_id
             WHERE e.set_id = $1 
             AND e.status = 'waiting'
             AND e.screener_score IS NOT NULL
@@ -809,9 +809,9 @@ class Evaluation:
             WHERE evaluation_id = ANY($1)
         """, [eval['evaluation_id'] for eval in low_score_evaluations])
         
-        # Update miner_agents to pruned status
+        # Update agents to pruned status
         await conn.execute("""
-            UPDATE miner_agents 
+            UPDATE agents 
             SET status = 'pruned' 
             WHERE agent_id = ANY($1)
         """, agent_ids_to_prune)

@@ -49,7 +49,7 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
                 END
             ), 0.0) as progress
         from evaluations e
-        left join miner_agents a on a.agent_id = e.agent_id
+        left join agents a on a.agent_id = e.agent_id
         left join evaluation_runs r on r.evaluation_id = e.evaluation_id 
             and r.status not in ('cancelled')
         where e.status = 'running'
@@ -89,7 +89,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
     results = await conn.fetch("""
         WITH latest_version AS (
             SELECT agent_id
-            FROM   miner_agents
+            FROM   agents
             WHERE  miner_hotkey = $1
             ORDER  BY version_num DESC
             LIMIT  1
@@ -104,7 +104,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
                     ORDER BY     e.screener_score DESC NULLS LAST, e.created_at
                 ) AS queue_position
             FROM   evaluations   e
-            JOIN   miner_agents  ma ON ma.agent_id = e.agent_id
+            JOIN   agents  ma ON ma.agent_id = e.agent_id
             WHERE  e.status = 'waiting'                -- only items still in the queue
             AND  ma.miner_hotkey NOT IN (SELECT miner_hotkey
                                         FROM banned_hotkeys)  -- skip banned miners
@@ -144,7 +144,7 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
         set_id_query = "SELECT MAX(set_id) FROM evaluations"
         set_id = await conn.fetchval(set_id_query)
     
-    # Get comprehensive data from miner_agents and evaluations
+    # Get comprehensive data from agents and evaluations
     query = """
         WITH hourly_data AS (
             SELECT 
@@ -152,7 +152,7 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
                 ma.miner_hotkey,
                 ma.agent_id,
                 e.score
-            FROM miner_agents ma
+            FROM agents ma
             LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
                 AND e.status = 'completed' 
@@ -207,7 +207,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
             SELECT 
                 DATE_TRUNC('hour', created_at) as hour,
                 COUNT(DISTINCT agent_id) as miner_submissions
-            FROM miner_agents
+            FROM agents
             WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             GROUP BY DATE_TRUNC('hour', created_at)
         ),
@@ -224,7 +224,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
             SELECT 
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 AVG(e.score) as hour_max_score
-            FROM miner_agents ma
+            FROM agents ma
             LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
                 AND e.status = 'completed' 

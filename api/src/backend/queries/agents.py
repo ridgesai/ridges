@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
         "SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status "
-        "FROM miner_agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
+        "FROM agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
         miner_hotkey
     )
 
@@ -26,7 +26,7 @@ async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optio
 async def get_agent_by_agent_id(conn: asyncpg.Connection, agent_id: str) -> Optional[MinerAgent]:
     result = await conn.fetchrow(
         "SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status "
-        "FROM miner_agents WHERE agent_id = $1",
+        "FROM agents WHERE agent_id = $1",
         agent_id
     )
 
@@ -79,7 +79,7 @@ async def get_top_agent(conn: asyncpg.Connection) -> Optional[TopAgentHotkey]:
 async def get_agents_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> List[MinerAgent]:
     result = await conn.fetch("""
         SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status
-        FROM miner_agents
+        FROM agents
         WHERE miner_hotkey = $1
     """, miner_hotkey)
     return [MinerAgent(**dict(result)) for result in result]
@@ -129,7 +129,7 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     # Get the updated agents
     results = await conn.fetch("""
         SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status
-        FROM miner_agents 
+        FROM agents 
         WHERE agent_id IN (
             SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW()
         )

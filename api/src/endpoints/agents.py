@@ -273,7 +273,7 @@ async def get_flow_data_for_agent(conn: asyncpg.Connection, agent_id: str) -> Di
     """Get flow data directly from database"""
     agent = await conn.fetchrow("""
         SELECT agent_id, miner_hotkey, agent_name, version_num, created_at, status
-        FROM miner_agents WHERE agent_id = $1
+        FROM agents WHERE agent_id = $1
     """, agent_id)
     
     if not agent:

@@ -156,7 +156,7 @@ class Validator(Client):
         async with get_db_connection() as conn:
             return await conn.fetchval("""
                 SELECT e.evaluation_id FROM evaluations e
-                JOIN miner_agents ma ON e.agent_id = ma.agent_id
+                JOIN agents ma ON e.agent_id = ma.agent_id
                 WHERE e.validator_hotkey = $1 AND e.status = 'waiting' AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ma.status NOT IN ('screening_1', 'screening_2', 'awaiting_screening_1', 'awaiting_screening_2', 'pruned')
                 AND ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -175,7 +175,7 @@ class Validator(Client):
                 return
             
             async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM miner_agents WHERE agent_id = $1", evaluation.agent_id)
+                agent_status = await conn.fetchval("SELECT status FROM agents WHERE agent_id = $1", evaluation.agent_id)
                 if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
                     logger.warning(f"Validator {self.hotkey}: Agent {evaluation.agent_id} not in evaluating status during finish")
                     return

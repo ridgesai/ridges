@@ -106,7 +106,7 @@ async def get_open_agent_periods_on_top(conn: asyncpg.Connection, miner_hotkey: 
             o.period_start,
             COALESCE(o.period_end, NOW()) AS period_end
         FROM ordered o
-        JOIN miner_agents ma ON ma.agent_id = o.agent_id
+        JOIN agents ma ON ma.agent_id = o.agent_id
         WHERE ma.miner_hotkey = $1
         ORDER BY o.period_start ASC
         """,
@@ -149,7 +149,7 @@ async def get_emission_dispersed_to_open_user(conn: asyncpg.Connection, open_hot
         """
         SELECT COALESCE(SUM(tt.amount_alpha_rao), 0)
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
+        INNER JOIN agents ma ON ma.agent_id = tt.agent_id
         WHERE ma.miner_hotkey = $1
         """,
         open_hotkey,
@@ -171,7 +171,7 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
             tt.extrinsic_code,
             tt.fee
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
+        INNER JOIN agents ma ON ma.agent_id = tt.agent_id
         WHERE ma.miner_hotkey = $1
         ORDER BY tt.occurred_at DESC
         """,
@@ -211,7 +211,7 @@ async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
             ma.version_num,
             ma.created_at
         FROM treasury_transactions tt
-        INNER JOIN miner_agents ma ON ma.agent_id = tt.agent_id
+        INNER JOIN agents ma ON ma.agent_id = tt.agent_id
         ORDER BY tt.occurred_at DESC
         """,
     )

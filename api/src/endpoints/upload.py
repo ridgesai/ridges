@@ -3,6 +3,8 @@ import uuid
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from api.src.models.screener import Screener
 from datetime import datetime
+
+from models.agent import AgentStatus
 from pydantic import BaseModel, Field
 from typing import Optional
 from loggers.logging_utils import get_logger
@@ -14,7 +16,7 @@ from api.src.backend.queries.agents import get_ban_reason
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
-from api.src.backend.entities import MinerAgent, AgentStatus
+from api.src.backend.entities import MinerAgent
 from api.src.backend.db_manager import get_transaction
 from api.src.backend.queries.open_users import get_open_user_by_hotkey
 
@@ -87,7 +89,7 @@ async def post_agent(
                 agent_name=name if not latest_agent else latest_agent.agent_name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(),
-                status=AgentStatus.awaiting_screening_1,
+                status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
             )
 
@@ -128,7 +130,7 @@ async def post_agent(
 
                     await conn.execute(
                         """
-                        INSERT INTO miner_agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                        INSERT INTO agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
                         VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                     """,
                         agent.agent_id,
@@ -257,7 +259,7 @@ async def post_open_agent(
             agent_name=name if not latest_agent else latest_agent.agent_name,
             version_num=latest_agent.version_num + 1 if latest_agent else 0,
             created_at=datetime.now(),
-            status=AgentStatus.awaiting_screening,
+            status=AgentStatus.screening_1,
             ip_address=request.client.host if request.client else None,
         )
 
@@ -294,7 +296,7 @@ async def post_open_agent(
 
                 await conn.execute(
                     """
-                    INSERT INTO miner_agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
+                    INSERT INTO agents (agent_id, miner_hotkey, agent_name, version_num, created_at, status, ip_address)
                     VALUES ($1, $2, $3, $4, NOW(), 'awaiting_screening_1', $5)
                 """,
                     agent.agent_id,

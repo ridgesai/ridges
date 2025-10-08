@@ -199,7 +199,7 @@ async def approve_version(agent_id: str, set_id: int, approval_password: str):
 async def re_eval_approved(approval_password: str):
     """
     Re-evaluate approved agents with the newest evaluation set
-    by setting the miner_agents status to "awaiting_screening"
+    by setting the agents status to "awaiting_screening"
     """
     if approval_password != os.getenv("APPROVAL_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid approval password")
@@ -210,7 +210,7 @@ async def re_eval_approved(approval_password: str):
         # Mark old agents as scored
         async with get_transaction() as conn:
             await conn.execute("""
-                UPDATE miner_agents SET status = 'scored'
+                UPDATE agents SET status = 'scored'
                 WHERE status in ('awaiting_screening_1', 'awaiting_screening_2', 'screening_1', 'screening_2', 'waiting')
             """)
         
@@ -218,7 +218,7 @@ async def re_eval_approved(approval_password: str):
         async with get_transaction() as conn:
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch("""
-                UPDATE miner_agents SET status = 'awaiting_screening_1'
+                UPDATE agents SET status = 'awaiting_screening_1'
                 WHERE agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -361,12 +361,12 @@ async def prune_agent(agent_ids: str, approval_password: str):
         for agent_id in agent_ids.split(","):
             async with get_transaction() as conn:
                 # Check if agent exists
-                agent = await conn.fetchrow("SELECT * FROM miner_agents WHERE agent_id = $1", agent_id)
+                agent = await conn.fetchrow("SELECT * FROM agents WHERE agent_id = $1", agent_id)
                 if not agent:
                     raise HTTPException(status_code=404, detail="Agent not found")
                 
                 # Update agent status to pruned
-                await conn.execute("UPDATE miner_agents SET status = 'pruned' WHERE agent_id = $1", agent_id)
+                await conn.execute("UPDATE agents SET status = 'pruned' WHERE agent_id = $1", agent_id)
                 
                 # Update all evaluations for this agent to pruned status
                 evaluation_count = await conn.fetchval("""

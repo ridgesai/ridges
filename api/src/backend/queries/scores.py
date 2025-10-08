@@ -203,7 +203,7 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     INNOVATION_SCALE = 0.0
     if latest_agent_id is not None:
         innovation_row = await conn.fetchrow(
-            "SELECT innovation FROM miner_agents WHERE agent_id = $1",
+            "SELECT innovation FROM agents WHERE agent_id = $1",
             latest_agent_id,
         )
         if innovation_row and innovation_row["innovation"] is not None:

@@ -296,7 +296,7 @@ async def fully_reset_evaluations(conn: asyncpg.Connection, agent_id: str):
     # Set status back to awaiting_screening_1
     await conn.execute(
         """
-        update miner_agents 
+        update agents 
         set status = 'awaiting_screening_1'
         where agent_id = $1
         """,
