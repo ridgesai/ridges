@@ -16,7 +16,6 @@ from api.src.models.evaluation import Evaluation
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.backend.entities import MinerAgent, AgentStatus
 from api.src.backend.db_manager import get_transaction
-from api.src.utils.agent_summary_generator import generate_and_store_agent_summary
 from api.src.backend.queries.open_users import get_open_user_by_hotkey
 
 logger = get_logger(__name__)
@@ -151,13 +150,14 @@ async def post_agent(
                 
                 # Screener state is now committed, lock can be released
 
-            # Schedule background agent summary generation
-            logger.info(f"Scheduling agent summary generation for {agent.version_id}")
-            background_tasks.add_task(
-                generate_and_store_agent_summary,
-                agent.version_id,
-                run_id=f"upload-{agent.version_id}"
-            )
+            # ADAM: remove this for now
+            # # Schedule background agent summary generation
+            # logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+            # background_tasks.add_task(
+            #     generate_and_store_agent_summary,
+            #     agent.version_id,
+            #     run_id=f"upload-{agent.version_id}"
+            # )
 
             logger.info(f"Successfully uploaded agent {agent.version_id} for miner {miner_hotkey}.")
             logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
@@ -311,12 +311,13 @@ async def post_open_agent(
                     screener.set_available()
                     logger.warning(f"Failed to assign agent {agent.version_id} to screener")
 
-        logger.info(f"Scheduling agent summary generation for {agent.version_id}")
-        background_tasks.add_task(
-            generate_and_store_agent_summary,
-            agent.version_id,
-            run_id=f"upload-{agent.version_id}"
-        )
+        # ADAM: WHY is this ENTIRE FUNCTION basically duplicated WHY
+        # logger.info(f"Scheduling agent summary generation for {agent.version_id}")
+        # background_tasks.add_task(
+        #     generate_and_store_agent_summary,
+        #     agent.version_id,
+        #     run_id=f"upload-{agent.version_id}"
+        # )
 
         logger.info(f"Successfully uploaded agent {agent.version_id} for open user {open_hotkey}.")
         

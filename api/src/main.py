@@ -17,7 +17,6 @@ from api.src.endpoints.scoring import router as scoring_router, run_weight_setti
 from api.src.socket.websocket_manager import WebSocketManager
 from api.src.endpoints.healthcheck import router as healthcheck_router
 from api.src.endpoints.system_status import router as system_status_router
-from api.src.endpoints.agent_summaries import router as agent_summaries_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
@@ -72,7 +71,6 @@ app.add_middleware(
 app.include_router(upload_router, prefix="/upload")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
-app.include_router(agent_summaries_router, prefix="/agent-summaries")
 app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(benchmarks_router, prefix="/benchmarks")
