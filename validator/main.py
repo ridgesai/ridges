@@ -17,9 +17,12 @@ async def disconnect():
     if session_id is None:
         return
     
-    logger.info("Disconnecting validator...")
-    await post_ridges_platform("/validator/disconnect", {"reason": "Keyboard interrupt"}, bearer_token=session_id)
-    logger.info("Disconnected validator")
+    try:
+        logger.info("Disconnecting validator...")
+        await post_ridges_platform("/validator/disconnect", {"reason": "Keyboard interrupt"}, bearer_token=session_id)
+        logger.info("Disconnected validator")
+    except Exception as e:
+        logger.error(f"Error disconnecting validator: {type(e).__name__}: {e}")
 
 atexit.register(asyncio.run, disconnect())
 

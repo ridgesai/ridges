@@ -62,10 +62,10 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             logger.error(f"Response:")
             logger.error(textwrap.indent(e.response.text, "  "))
         
-        exit(1)
+        raise
     
     except Exception as e:
         # Internal error (timeout, DNS error, etc.)
         logger.error(f"{type(e).__name__} during POST {url}")
 
-        exit(1)
+        raise
