@@ -487,3 +487,12 @@ async def validator_heartbeat(
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
     return ValidatorDisconnectResponse()
+
+# /validator/finish-evaluation
+@router.post("/finish-evaluation")
+async def validator_finish_evaluation(
+    request: None,
+) -> None:
+    """
+    Mark evaluation as completed
+    """
