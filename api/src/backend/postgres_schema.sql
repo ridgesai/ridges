@@ -673,3 +673,67 @@ CREATE TABLE IF NOT EXISTS upload_attempts (
     agent_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Screener 1 queue view
+-- Returns agents in screening_1 status that haven't been successfully evaluated by a screener-1 validator yet
+CREATE OR REPLACE VIEW screener_1_queue AS
+SELECT agents.agent_id, agents.status
+FROM agents
+WHERE agents.status = 'screening_1'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM evaluations_hydrated
+    WHERE evaluations_hydrated.agent_id = agents.agent_id
+      AND evaluations_hydrated.status = 'success'
+      AND evaluations_hydrated.validator_hotkey LIKE 'screener-1%'
+  )
+ORDER BY agents.created_at ASC;
+
+-- Screener 2 queue view
+-- Returns agents in screening_2 status that haven't been successfully evaluated by a screener-2 validator yet
+CREATE OR REPLACE VIEW screener_2_queue AS
+SELECT agents.agent_id, agents.status
+FROM agents
+WHERE agents.status = 'screening_2'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM evaluations_hydrated
+    WHERE evaluations_hydrated.agent_id = agents.agent_id
+      AND evaluations_hydrated.status = 'success'
+      AND evaluations_hydrated.validator_hotkey LIKE 'screener-2%'
+  )
+ORDER BY agents.created_at ASC;
+
+-- Validator queue view
+-- Returns agents in evaluating status, from highest to lowest sc2 score
+CREATE OR REPLACE VIEW validator_queue AS
+with
+    validator_eval_counts as (
+        select
+            agent_id,
+            count(*) as num_evals
+        from evaluations_hydrated
+        where evaluations_hydrated.status = 'success'
+          and validator_hotkey not like 'screener%'
+        group by agent_id
+    ),
+    screener_2_scores as (
+        select agent_id, MAX(score) as score from evaluations_hydrated
+        where validator_hotkey like 'screener-2%'
+          and evaluations_hydrated.status = 'success'
+        group by agent_id
+    )
+select
+    agent_id,
+    status,
+    num_evals
+from agents
+     inner join screener_2_scores using (agent_id)
+     left join validator_eval_counts using (agent_id)
+where
+    agents.status = 'evaluating'
+  and COALESCE(num_evals, 0) < 3
+order by
+    screener_2_scores.score desc,
+    agents.created_at asc,
+    num_evals desc
