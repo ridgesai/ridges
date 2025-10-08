@@ -2,6 +2,19 @@ import os
 import utils.logger as logger
 from dotenv import load_dotenv
 
+
+
+# TODO ADAM
+# This isn't actually called anywhere afaik, eventually need to replace all other places that load os.getenv directly with this.
+# redundantly define all envvars and then manually load each one, rather should iterate over the ENV_VARS dictionary and load each one.
+#    probably do some hack shit to do that
+#    sys.modules[__name__].__dict__["THE_VARIABLE_NAME"] = "THE_VALUE"
+
+
+
+
+
+
 # Load everything from .env
 load_dotenv()
 
