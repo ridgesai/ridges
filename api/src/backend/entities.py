@@ -558,23 +558,3 @@ class QuestionSolveRateStats(BaseModel):
 
 
 
-
-
-
-
-
-
-
-
-
-# FIXED STUFF DOWN HERE FOR NOW
-# I want to get rid of useless entities so anything I end up actually using I'll put here
-
-
-class SandboxStatus(Enum):
-    started = "started"
-    sandbox_created = "sandbox_created"
-    patch_generated = "patch_generated"
-    eval_started = "eval_started"
-    result_scored = "result_scored"
-    cancelled = "cancelled"

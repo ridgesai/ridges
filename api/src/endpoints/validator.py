@@ -405,6 +405,8 @@ async def update_evaluation_run(
 
 
 
+# /validator/disconnect
+
 class ValidatorDisconnectRequest(BaseModel):
     reason: str
 class ValidatorDisconnectResponse(BaseModel):
