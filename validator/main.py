@@ -31,20 +31,28 @@ async def main():
 
 
     try:
-        # Get the current timestamp, and sign it with the validator hotkey
-        timestamp = int(time.time())
-        signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
-
-
-        
         # Register with the Ridges platform, yielding us a session ID
         logger.info("Registering validator...")
-        register_response = await post_ridges_platform("/validator/register", {
-            "timestamp": timestamp,
-            "signed_timestamp": signed_timestamp,
-            "hotkey": config.VALIDATOR_HOTKEY.ss58_address
-        })
+
+        if config.MODE == "validator":
+            # Get the current timestamp, and sign it with the validator hotkey
+            timestamp = int(time.time())
+            signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
+            
+            register_response = await post_ridges_platform("/validator/register_as_validator", {
+                "timestamp": timestamp,
+                "signed_timestamp": signed_timestamp,
+                "hotkey": config.VALIDATOR_HOTKEY.ss58_address
+            })
+        
+        elif config.MODE == "screener":
+            register_response = await post_ridges_platform("/validator/register_as_screener", {
+                "name": config.SCREENER_NAME,
+                "password": config.SCREENER_PASSWORD
+            })
+        
         session_id = register_response["session_id"]
+
         logger.info(f"Registered validator. Session ID: {session_id}")
 
 

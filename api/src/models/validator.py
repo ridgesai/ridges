@@ -43,32 +43,11 @@ class Validator(Client):
     
     def _broadcast_status_change(self) -> None:
         """Broadcast status change to dashboard clients"""
-        try:
-            import asyncio
-            from api.src.socket.websocket_manager import WebSocketManager
-            
-            # Create a task to send the status update
-            loop = asyncio.get_event_loop()
-            loop.create_task(self._async_broadcast_status_change())
-        except Exception as e:
-            logger.warning(f"Failed to broadcast status change for validator {self.hotkey}: {e}")
+        raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
     
     async def _async_broadcast_status_change(self) -> None:
         """Async method to broadcast status change"""
-        try:
-            from api.src.socket.websocket_manager import WebSocketManager
-            ws_manager = WebSocketManager.get_instance()
-            
-            await ws_manager.send_to_all_non_validators("validator-status-changed", {
-                "type": "validator",
-                "validator_hotkey": self.hotkey,
-                "status": self.status,
-                "evaluating_id": self.current_evaluation_id,
-                "evaluating_agent_hotkey": self.current_agent_hotkey,
-                "evaluating_agent_name": self.current_agent_name
-            })
-        except Exception as e:
-            logger.error(f"Failed to send status change broadcast for validator {self.hotkey}: {e}")
+        raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
     
     def set_available(self) -> None:
         """Set validator to available state"""
@@ -84,57 +63,7 @@ class Validator(Client):
             self._broadcast_status_change()
     
     async def start_evaluation_and_send(self, evaluation_id: str) -> bool:
-        """Start evaluation and send to validator"""
-        if not self.is_available():
-            logger.info(f"Validator {self.hotkey} not available for evaluation {evaluation_id}")
-            return False
-        
-        from api.src.models.evaluation import Evaluation
-        evaluation = await Evaluation.get_by_id(evaluation_id)
-        
-        if not evaluation or evaluation.is_screening or evaluation.validator_hotkey != self.hotkey:
-            logger.warning(f"Validator {self.hotkey}: Invalid evaluation {evaluation_id}")
-            return False
-
-        miner_agent = await get_agent_by_agent_id(evaluation.agent_id)
-        if not miner_agent:
-            logger.error(f"Validator {self.hotkey}: Agent not found for evaluation {evaluation_id}")
-            return False
-
-        try:
-            async with get_transaction() as conn:
-                evaluation_runs = await evaluation.start(conn)
-
-            message = {
-                "event": "evaluation",
-                "evaluation_id": str(evaluation_id),
-                "agent_version": miner_agent.model_dump(mode='json'),
-                "evaluation_runs": [run.model_dump(mode='json') for run in evaluation_runs]
-            }
-            
-            # Send message to validator
-            await self.websocket.send_json(message)
-
-            # Broadcast to other clients
-            from api.src.socket.websocket_manager import WebSocketManager
-            ws_manager = WebSocketManager.get_instance()
-            await ws_manager.send_to_all_non_validators("evaluation-started", message)
-                
-            # Commit validator state changes
-            old_status = self.status
-            self.status = f"evaluating"
-            self.current_evaluation_id = evaluation_id
-            self.current_agent_name = miner_agent.name
-            self.current_agent_hotkey = miner_agent.miner_hotkey
-            logger.info(f"Validator {self.hotkey} successfully started evaluating {miner_agent.name}")
-
-            # Broadcast status change
-            self._broadcast_status_change()
-            return True
-            
-        except Exception as e:
-            logger.error(f"Validator {self.hotkey}: Failed to send evaluation {evaluation_id}: {e}")
-            return False
+        raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
     
     async def connect(self):
         """Handle validator connection"""
@@ -166,48 +95,7 @@ class Validator(Client):
     
     async def finish_evaluation(self, evaluation_id: str, errored: bool = False, reason: Optional[str] = None):
         """Finish evaluation and automatically look for next work"""
-        from api.src.models.evaluation import Evaluation
-        
-        try:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            if not evaluation or evaluation.validator_hotkey != self.hotkey:
-                logger.warning(f"Validator {self.hotkey}: Invalid finish_evaluation call for evaluation {evaluation_id}")
-                return
-            
-            async with get_transaction() as conn:
-                agent_status = await conn.fetchval("SELECT status FROM agents WHERE agent_id = $1", evaluation.agent_id)
-                if AgentStatus.from_string(agent_status) != AgentStatus.evaluating:
-                    logger.warning(f"Validator {self.hotkey}: Agent {evaluation.agent_id} not in evaluating status during finish")
-                    return
-                
-                if errored:
-                    await evaluation.error(conn, reason)
-                    notification_targets = None
-                else:
-                    notification_targets = await evaluation.finish(conn)
-            
-            from api.src.socket.websocket_manager import WebSocketManager
-            ws_manager = WebSocketManager.get_instance()
-            await ws_manager.send_to_all_non_validators("evaluation-finished", {"evaluation_id": evaluation_id})
-            
-            logger.info(f"Validator {self.hotkey}: Successfully finished evaluation {evaluation_id}, errored={errored}")
-            
-            # Handle notifications AFTER transaction commits
-            if notification_targets:
-                # Note: Validators typically don't trigger stage transitions, but handle any notifications
-                for validator in notification_targets.get("validators", []):
-                    async with Evaluation.get_lock():
-                        if validator.is_available():
-                            success = await validator.start_evaluation_and_send(evaluation_id)
-                            if success:
-                                logger.info(f"Successfully assigned evaluation {evaluation_id} to validator {validator.hotkey}")
-                                
-        finally:
-            # Single atomic reset and reassignment
-            async with Evaluation.get_lock():
-                self.set_available()
-                logger.info(f"Validator {self.hotkey}: Reset to available and looking for next evaluation")
-                await self._check_and_start_next_evaluation()
+        raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
     
     async def _check_and_start_next_evaluation(self):
         """Atomically check for and start next evaluation - MUST be called within lock"""
@@ -239,6 +127,4 @@ class Validator(Client):
     @staticmethod
     async def get_connected() -> List['Validator']:
         """Get all connected validators"""
-        from api.src.socket.websocket_manager import WebSocketManager
-        ws_manager = WebSocketManager.get_instance()
-        return [client for client in ws_manager.clients.values() if client.get_type() == "validator"]
+        raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")

@@ -7,8 +7,7 @@ class ColoredFormatter(logging.Formatter):
         'DEBUG':    '\033[36m', # Cyan
         'INFO':     '\033[32m', # Green
         'WARNING':  '\033[33m', # Yellow
-        'ERROR':    '\033[31m', # Red
-        'CRITICAL': '\033[31m'  # Red
+        'ERROR':    '\033[31m'  # Red
     }
 
     RESET = '\033[0m'
@@ -56,3 +55,9 @@ def warning(message: str):
 def error(message: str):
     for line in message.split('\n'):
         logger.error(line)
+
+def fatal(message: str):
+    for line in message.split('\n'):
+        logger.error(line)
+        
+    exit(1)

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta, timezone
 
 from api.src.utils.auth import verify_request_public
 from api.src.utils.s3 import S3Manager
-from api.src.socket.websocket_manager import WebSocketManager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_agent_id, get_agents_by_hotkey
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
@@ -109,17 +108,7 @@ async def get_connected_validators():
     """
     Returns a list of all connected validators and screener validators
     """
-    try:
-        # Get validators with their individual system metrics
-        validators = await WebSocketManager.get_instance().get_clients()
-    except Exception as e:
-        logger.error(f"Error retrieving connected validators: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving connected validators. Please try again later."
-        )
-    
-    return validators
+    raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
 
 async def get_queue_info(agent_id: str):
     try:

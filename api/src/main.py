@@ -13,12 +13,10 @@ from api.src.backend.db_manager import new_db
 from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
-from api.src.endpoints.scoring import router as scoring_router, run_weight_setting_loop
-from api.src.socket.websocket_manager import WebSocketManager
+from api.src.endpoints.scoring import router as scoring_router
 from api.src.endpoints.healthcheck import router as healthcheck_router
 from api.src.endpoints.system_status import router as system_status_router
 from api.src.endpoints.agents import router as agents_router
-from api.src.socket.server_helpers import fetch_and_store_commits
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.endpoints.validator import router as validator_router
@@ -39,25 +37,19 @@ async def lifespan(app: FastAPI):
         logger.warning("⚠️" * 5)
     else:
         logger.info(f"✅ IP whitelist configured with {len(WHITELISTED_VALIDATOR_IPS)} whitelisted IPs")
-    
-    # Fetch and cache GitHub commits at startup
-    logger.info("Fetching and caching GitHub commits...")
-    await fetch_and_store_commits()
+
     
     
     # Recover threshold-based approvals
     from api.src.utils.threshold_scheduler import threshold_scheduler
     await threshold_scheduler.recover_pending_approvals()
-    
-    # Start background tasks
-    asyncio.create_task(run_weight_setting_loop(30))
-    
+
     yield
 
     await new_db.close()
 
 app = FastAPI(lifespan=lifespan)
-server = WebSocketManager()
+
 
 # Configure CORS
 app.add_middleware(
@@ -78,9 +70,6 @@ app.include_router(validator_router, prefix="/validator")
 app.include_router(system_status_router, prefix="/system")
 app.include_router(healthcheck_router)
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await WebSocketManager.get_instance().handle_connection(websocket)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_timeout=None, ws_max_size=32 * 1024 * 1024)

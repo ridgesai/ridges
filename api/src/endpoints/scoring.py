@@ -32,18 +32,6 @@ treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 internal_tools = InternalTools()
 
-async def tell_validators_to_set_weights():
-    """Tell validators to set their weights."""
-
-    for validator in await Validator.get_connected():
-        await validator.websocket.send_json({"event": "set-weights"})
-
-    logger.info(f"Sent weight setting event to all validators")
-
-async def run_weight_setting_loop(minutes: int):
-    while True:
-        await tell_validators_to_set_weights()
-        await asyncio.sleep(minutes * 20)
 
 ## Actual endpoints ##
 

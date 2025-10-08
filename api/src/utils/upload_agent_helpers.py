@@ -1,6 +1,5 @@
 from fastapi import UploadFile, HTTPException
 from typing import Optional
-from api.src.socket.websocket_manager import WebSocketManager
 from loggers.logging_utils import get_logger
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -18,7 +17,6 @@ from api.src.backend.db_manager import get_transaction
 
 logger = get_logger(__name__)
 s3_manager = S3Manager()
-ws = WebSocketManager.get_instance()
 
 def get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Getting miner hotkey from file info: {file_info}.")

@@ -1,3 +1,4 @@
+import re
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -70,7 +71,7 @@ router = APIRouter()
 
 
 
-# /validator/register
+# /validator/register_as_validator
 
 class ValidatorRegistrationRequest(BaseModel):
     timestamp: int
@@ -80,7 +81,7 @@ class ValidatorRegistrationRequest(BaseModel):
 class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
 
-@router.post("/register")
+@router.post("/register_as_validator")
 async def validator_register(
     request: ValidatorRegistrationRequest
 ) -> ValidatorRegistrationResponse:
@@ -122,7 +123,71 @@ async def validator_register(
         time_connected=datetime.now()
     )
     
-    logger.info(f"Validator {validator_hotkey_to_name(request.hotkey)}/{request.hotkey} was registered")
+    logger.info(f"Validator '{validator_hotkey_to_name(request.hotkey)}' ({request.hotkey}) was registered")
+    logger.info(f"  Session ID: {session_id}")
+    
+    return ValidatorRegistrationResponse(session_id=session_id)
+
+
+
+# /validator/register_as_screener
+
+class ScreenerRegistrationRequest(BaseModel):
+    name: str
+    password: str
+
+class ScreenerRegistrationResponse(BaseModel):
+    session_id: UUID
+
+@router.post("/register_as_screener")
+async def validator_register_as_screener(
+    request: ScreenerRegistrationRequest
+) -> ScreenerRegistrationResponse:
+
+    # Ensure that the name is in the format screener-CLASS-NUM
+    if not re.match(r"screener-\d-\d+", request.name):
+        raise HTTPException(
+            status_code=400,
+            detail="The provided name is not in the format screener-CLASS-NUM."
+        )
+    
+    # Ensure that the CLASS is either 1 or 2
+    screener_class = request.name.split("-")[1]
+    if screener_class != "1" and screener_class != "2":
+        raise HTTPException(
+            status_code=400,
+            detail="The screener class must be either 1 or 2."
+        )
+    
+    # Ensure that the password is correct
+    
+    # TODO
+    import os
+    SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
+
+    if request.password != SCREENER_PASSWORD:
+        raise HTTPException(
+            status_code=403,
+            detail="The provided password is incorrect."
+        )
+
+    # Ensure that the screener is not already registered
+    if is_validator_registered(request.name):
+        raise HTTPException(
+            status_code=409,
+            detail=f"There is already a screener connected with the given name."
+        )
+
+    # Register the screener with a new session ID
+    session_id = uuid4()
+    SESSION_ID_TO_VALIDATOR[session_id] = Validator(
+        session_id=session_id,
+        name=request.name,
+        hotkey=request.name,
+        time_connected=datetime.now()
+    )
+    
+    logger.info(f"Screener {request.name} was registered")
     logger.info(f"  Session ID: {session_id}")
     
     return ValidatorRegistrationResponse(session_id=session_id)
@@ -163,7 +228,7 @@ async def validator_request_evaluation(
     # Create a new evaluation and evaluation runs for this agent
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
 
-    logger.info(f"Validator {validator.name}/{validator.hotkey} requested an evaluation")
+    logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
     logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
@@ -185,7 +250,7 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorHeartbeatResponse:
 
-    logger.info(f"Validator {validator.name}/{validator.hotkey} sent a heartbeat")
+    logger.info(f"Validator '{validator.name}' sent a heartbeat")
     logger.info(f"  System metrics: {request.system_metrics}")
 
     validator.time_last_heartbeat = datetime.now()
@@ -395,7 +460,7 @@ async def update_evaluation_run(
 
     await update_evaluation_run_by_id(evaluation_run)
 
-    logger.info(f"Validator {validator.name}/{validator.hotkey} updated an evaluation run to {request.updated_status}")
+    logger.info(f"Validator '{validator.name}' updated an evaluation run to {request.updated_status}")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
     logger.info(f"  Updated status: {request.updated_status}")
 
@@ -416,7 +481,7 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorDisconnectResponse:
 
-    logger.info(f"Validator {validator.name}/{validator.hotkey} disconnected")
+    logger.info(f"Validator '{validator.name}' disconnected")
     logger.info(f"  Reason: {request.reason}")
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
