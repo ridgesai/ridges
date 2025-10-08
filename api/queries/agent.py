@@ -1,8 +1,9 @@
-import asyncpg
-
 from typing import Optional, Final
-from api.src.backend.db_manager import db_operation
 from uuid import UUID
+
+import asyncpg
+import utils.logger as logger
+from api.src.backend.db_manager import db_operation
 
 MIN_EVALS: Final[int] = 3
 
@@ -58,6 +59,8 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
             MIN_EVALS
         )
 
+
+    logger.debug(f"Result is: {result}, validator_hotkey: {validator_hotkey}")
     if result is None or "agent_id" not in result:
         return None
-    return UUID(result["agent_id"])
+    return result["agent_id"]

@@ -12,5 +12,5 @@ class EvaluationSetGroup(str, Enum):
             return EvaluationSetGroup.screener_1
         elif validator_hotkey.startswith("screener-2"):
             return EvaluationSetGroup.screener_2
-        elif validator_hotkey.startswith("validator"):
+        else:
             return EvaluationSetGroup.validator

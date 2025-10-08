@@ -199,16 +199,16 @@ async def populate_data(num_agents: int, num_evaluations_per_agent: int, num_run
 
         # Create evaluation set if not exists
         await conn.execute("""
-            INSERT INTO evaluation_sets (set_id, type, problem_name)
+            INSERT INTO evaluation_sets (set_id, set_group, problem_name)
             VALUES (1, 'validator', $1)
-            ON CONFLICT (set_id, type, problem_name) DO NOTHING
+            ON CONFLICT (set_id, set_group, problem_name) DO NOTHING
         """, PROBLEM_NAMES[0])
 
         for problem in PROBLEM_NAMES[:5]:
             await conn.execute("""
-                INSERT INTO evaluation_sets (set_id, type, problem_name)
+                INSERT INTO evaluation_sets (set_id, set_group, problem_name)
                 VALUES (1, 'validator', $1)
-                ON CONFLICT (set_id, type, problem_name) DO NOTHING
+                ON CONFLICT (set_id, set_group, problem_name) DO NOTHING
             """, problem)
 
         # Create agents - ensure at least one agent in each status
