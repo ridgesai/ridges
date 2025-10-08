@@ -49,6 +49,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
             ORDER BY
                 screener_2_scores.score DESC,
                 agents.created_at ASC
+            LIMIT 1
             """,
             validator_hotkey,
             MIN_EVALS
