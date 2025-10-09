@@ -1,16 +1,23 @@
-from typing import Optional, Final
-from uuid import UUID
+
+
 
 import asyncpg
 
 import utils.logger as logger
+
+from uuid import UUID
+from models.agent import Agent
+from typing import Optional, Final
+from api.src.utils.s3 import S3Manager
 from api.src.backend.db_manager import db_operation
 from api.src.utils.s3 import S3Manager
 from models.agent import Agent, AgentScored
 from models.evaluation_set import EvaluationSetGroup
 
+# TODO: should not be here. should go in config.py 
 MIN_EVALS: Final[int] = 3
 
+# TODO: this should not go in queries. should go in utils/s3.py (which doesn't exist yet)
 s3_manager = S3Manager()
 
 
