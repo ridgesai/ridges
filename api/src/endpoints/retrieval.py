@@ -55,6 +55,7 @@ async def get_agent_code(agent_id: str, request: Request, return_as_text: bool =
             detail="The requested agent version was not found. Are you sure you have the correct version ID?"
         )
     
+    # TODO: Code hiding should not be implemented like this, we should have the IP list be dynamically generated from the list of currently connected screeners.
     # If status is screening, verify that it is a screener requesting
     if "screening" in agent_version.status:
         # Get client IP address

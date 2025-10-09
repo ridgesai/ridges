@@ -101,19 +101,3 @@ EMBEDDING_PRICE_PER_SECOND = 0.0001
 SCREENING_1_THRESHOLD = 0.4
 SCREENING_2_THRESHOLD = 0.3
 PRUNE_THRESHOLD = 0.05 # Must be within 5 percentage points of the final score
-
-# Authentication configuration
-import os
-
-def load_whitelist():
-    """Load IP whitelist from JSON file"""
-    import json
-    try:
-        with open('whitelist.json', 'r') as f:
-            data = json.load(f)
-            return set(data.get('whitelist', []))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return set()
-
-# Parse whitelisted IPs once at startup
-WHITELISTED_VALIDATOR_IPS = load_whitelist()

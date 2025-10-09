@@ -1,5 +1,15 @@
+import docker
 import subprocess
 import utils.logger as logger
+
+
+
+logger.info("Creating Docker client...")
+try:
+    docker_client = docker.from_env()
+    logger.info("Created Docker client")
+except Exception as e:
+    logger.fatal(f"Failed to create Docker client: {e}")
 
 
 
@@ -12,18 +22,18 @@ def build_docker_image(dockerfile_dir, tag):
         tag: Tag to give the Docker image
     """
 
-    logger.info(f"[SANDBOX] Building Docker image: {tag}")
+    logger.info(f"Building Docker image: {tag}")
     
     try:
         result = subprocess.run(["docker", "build", "-t", tag, dockerfile_dir], text=True)
         
         if result.returncode == 0:
-            logger.info(f"[SANDBOX] Successfully built Docker image: {tag}")
+            logger.info(f"Successfully built Docker image: {tag}")
         else:
             raise Exception(f"Docker build failed with exit code {result.returncode}")
             
     except Exception as e:
-        logger.error(f"[SANDBOX] Failed to build Docker image: {e}")
+        logger.error(f"Failed to build Docker image: {e}")
         raise
 
 
@@ -36,3 +46,88 @@ def get_num_docker_containers():
     # This is equivalent to `docker ps -q | wc -l`
     result = subprocess.run(["docker", "ps", "-q"], capture_output=True, text=True)
     return len([line for line in result.stdout.strip().split('\n') if line.strip()])
+
+
+
+def stop_and_delete_all_docker_containers():
+    """
+    Stop and delete all Docker containers.
+    """
+    
+    logger.info("Stopping and deleting all containers")
+    
+    for container in docker_client.containers.list(all=True):
+        try:
+            container.stop(timeout=3)
+        except Exception as e:
+            logger.warning(f"Could not stop container {container.name}: {e}")
+        
+        try:
+            container.remove(force=True)
+        except Exception as e:
+            logger.warning(f"Could not remove container {container.name}: {e}")
+
+    docker_client.containers.prune()
+    
+    logger.info("Stopped and deleted all containers")
+
+
+
+def create_internal_docker_network(name: str):
+    """
+    Create an internal Docker network, if it does not already exist.
+
+    Args:
+        name: The name of the network to create
+    """
+    
+    if docker_client.networks.list(names=[name]):
+        logger.info(f"Found internal Docker network: {name}")
+    else:
+        docker_client.networks.create(name, driver="bridge", internal=True)
+        logger.info(f"Created internal Docker network: {name}")
+
+
+
+def connect_docker_container_to_internet(container: docker.models.containers.Container):
+    """
+    Connect a Docker container to the internet.
+
+    Args:
+        container: The container to connect to the internet
+    """
+
+    logger.info(f"Connecting Docker container {container.name} to internet...")
+
+    bridge_network = docker_client.networks.get("bridge")
+    bridge_network.connect(container)
+    
+    logger.info(f"Connected Docker container {container.name} to internet")
+
+
+
+def create_docker_container(*, image: str, name: str, network: str, env_vars: dict) -> docker.models.containers.Container:
+    """
+    Create a Docker container, with the given image, name, network, and environment.
+    The Docker container will run in the background, so this function will return immediately.
+
+    Args:
+        name: The name of the container
+        image: The image to use for the container
+        network: The network to connect the container to
+        env_vars: The environment variables to set for the container
+    """
+
+    logger.info(f"Creating Docker container: {name}")
+
+    container = docker_client.containers.run(
+        name=name,
+        image=image,
+        network=network,
+        environment=env_vars,
+        detach=True
+    )
+
+    logger.info(f"Created Docker container: {name}")
+
+    return container

@@ -1,12 +1,27 @@
-"""Base class for problem suite managers."""
+"""Base class for problem suites."""
 
 import os
+import utils.logger as logger
+
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
+from utils.diff import apply_diff_to_local_repo, validate_diff_for_local_repo
 
-from validator.utils.diff import apply_diff, validate_diff
-from validator.utils.logger import debug, info, warn, error
-from validator.sandbox.sandbox_manager import SandboxManager
 
+
+
+
+class ProblemSuiteProblemTest(BaseModel):
+    name: str
+    category: ProblemSuiteProblemTestCategory
+    status: ProblemSuiteProblemTestStatus
+
+class ProblemSuiteProblem(BaseModel):
+    name: str
+    problem_statement: str
+    solution_diff: str
+    tests: List[ProblemSuiteProblemTest]
+    userdata: Any
 
 
 class ProblemSuite(ABC):
@@ -15,7 +30,9 @@ class ProblemSuite(ABC):
     Classes like PolyglotProblemSuite and SWEBenchProblemSuite inherit from this class.
     """
 
-    def __init__(self, dataset_path):
+
+
+    def __init__(self, dataset_path: str):
         self.problems = {}
         
         self.dataset_path = dataset_path
@@ -23,12 +40,26 @@ class ProblemSuite(ABC):
 
 
 
-    def _add_problem(self, name, *, problem_statement, solution_diff, tests, extra=None):
+    def _add_problem(
+        self,
+        name: str,
+        *,
+        problem_statement: str,
+        solution_diff: str,
+        tests: List[ProblemSuiteProblemTest],
+        extra: Optional[Dict[str, Any]] = None
+    ):
         """
-        Add a problem to the suite.
+        Adds a problem to the suite.
         
-        The solution_diff is a diff that is known to be a correct solution to the problem.
-        It is only exposed to the agent if the environment variable RIDGES_INCLUDE_GOLD_PATCH is set.
+        Args:
+            name: Name of the problem
+            problem_statement: Problem statement, typically in Markdown format
+            solution_diff: Solution diff, known to be a correct solution to the problem
+            tests: List of tests for the problem
+
+            extra: Extra data specific to the problem suite
+                   (e.g., SWEBenchVerifiedSuite needs to store the commit hash of each problem, etc.)
         """
 
         problem_data = {
@@ -44,7 +75,7 @@ class ProblemSuite(ABC):
         self.problems[name] = problem_data
 
     @abstractmethod
-    def load_problems(self, dataset_path):
+    def load_problems(self, dataset_path: str):
         """
         Load problems from the given problem suite path.
         Each inherited class must implement this method according to how their problem suite is structured.
@@ -55,7 +86,7 @@ class ProblemSuite(ABC):
 
 
     @abstractmethod
-    def copy_problem_files_to_directory(self, problem_name, dir, *, include_tests=False, include_solution=False):
+    def copy_problem_files_to_directory(self, problem_name: str, dir: str, *, include_tests: bool = False, include_solution: bool = False):
         """
         Copy all the files required for an agent to solve a specific problem into a given directory.
         Each inherited class must implement this method according to how their problem suite is structured.
@@ -68,31 +99,34 @@ class ProblemSuite(ABC):
         """
         pass
 
-    @abstractmethod 
-    def get_test_runner_path(self):
-        """
-        Return the path to the test runner script for this problem suite.
-        Each problem suite can have its own test execution approach.
-        The test runner will receive the problem's "tests" field as input through input.json.
+
+
+
+    # TODO REMOVEEE
+    # def get_test_runner_path(self):
+    #     """
+    #     Return the path to the test runner script for this problem suite.
+    #     Each problem suite can have its own test execution approach.
+    #     The test runner will receive the problem's "tests" field as input through input.json.
         
-        The test runner will write its output to output.json, as typical.
-        Ignoring the details of the format (check the documentation for SandboxManager.create_sandbox()):
-            {
-                "test_results": [
-                    # For SWEBenchVerified...
-                    {"name": "test_m2m_initial_callable", "category": "pass_to_pass", "status": "pass" or "fail" or "skip"},
+    #     The test runner will write its output to output.json, as typical.
+    #     Ignoring the details of the format (check the documentation for SandboxManager.create_sandbox()):
+    #         {
+    #             "test_results": [
+    #                 # For SWEBenchVerified...
+    #                 {"name": "test_m2m_initial_callable", "category": "pass_to_pass", "status": "pass" or "fail" or "skip"},
                     
-                    # For Polyglot...
-                    {"name": "test_encode_with_a_not_coprime_to_m", "status": "pass" or "fail" or "skip"},
+    #                 # For Polyglot...
+    #                 {"name": "test_encode_with_a_not_coprime_to_m", "status": "pass" or "fail" or "skip"},
 
-                    ...
-                ]
-            }
+    #                 ...
+    #             ]
+    #         }
 
-        Returns:
-            Path to the test runner Python script
-        """
-        pass
+    #     Returns:
+    #         Path to the test runner Python script
+    #     """
+    #     pass
 
 
 
@@ -261,13 +295,6 @@ class ProblemSuite(ABC):
         """You can access .tests, .problem_statement, and .solution_diff from the returned problem."""
         return self.problems.get(problem_name)
 
-    @abstractmethod
-    def get_problem_test_count(self, problem_name):
-        """
-        Return the total number of tests for a given problem.
-        Each problem suite may have different test structures.
-        """
-        pass
 
     @staticmethod
     def find_problem_in_suites(problem_name: str) -> tuple[str, "ProblemSuite"] | None:

@@ -20,23 +20,12 @@ from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.endpoints.validator import router as validator_router
-from api.src.utils.config import WHITELISTED_VALIDATOR_IPS
 
 logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await new_db.open()
-    
-    # Check IP whitelist configuration at startup
-    if not WHITELISTED_VALIDATOR_IPS:
-        logger.warning("⚠️" * 5)
-        logger.warning("⚠️  IP whitelist is empty - allowing ALL IPs to access protected endpoints!")
-        logger.warning("⚠️  This is a SECURITY RISK for production environments!")
-        logger.warning("⚠️  Add IPs to 'whitelist' array in whitelist.json to restrict access.")
-        logger.warning("⚠️" * 5)
-    else:
-        logger.info(f"✅ IP whitelist configured with {len(WHITELISTED_VALIDATOR_IPS)} whitelisted IPs")
 
     
     

@@ -2,22 +2,25 @@ import logging
 
 
 
-class ColoredFormatter(logging.Formatter):
-    COLORS = {
-        'DEBUG':    '\033[36m', # Cyan
-        'INFO':     '\033[32m', # Green
-        'WARNING':  '\033[33m', # Yellow
-        'ERROR':    '\033[31m'  # Red
-    }
+LEVEL_NAME_TO_COLOR = {
+    'DEBUG':    '\033[36m', # Cyan
+    'INFO':     '\033[32m', # Green
+    'WARNING':  '\033[33m', # Yellow
+    'ERROR':    '\033[31m'  # Red
+}
 
-    RESET = '\033[0m'
-    
+GRAY = '\033[90m'
+RESET = '\033[0m'
+
+
+
+class ColoredFormatter(logging.Formatter):
     def format(self, record):
         formatted = super().format(record)
         
         level_name = record.levelname
-        if level_name in self.COLORS:
-            colored_level = f"[{self.COLORS[level_name]}{level_name.ljust(8)}{self.RESET}]"
+        if level_name in LEVEL_NAME_TO_COLOR:
+            colored_level = f"[{LEVEL_NAME_TO_COLOR[level_name]}{level_name}{RESET}]"
             formatted = formatted.replace(level_name, colored_level, 1)
         
         return formatted
@@ -42,22 +45,20 @@ logger.propagate = False
 
 def debug(message: str):
     for line in message.split('\n'):
-        logger.debug(line)
+        logger.debug(GRAY + line + RESET, stacklevel=2)
 
 def info(message: str):
     for line in message.split('\n'):
-        logger.info(line)
+        logger.info(line, stacklevel=2)
 
 def warning(message: str):
     for line in message.split('\n'):
-        logger.warning(line)
+        logger.warning(line, stacklevel=2)
 
 def error(message: str):
     for line in message.split('\n'):
-        logger.error(line)
+        logger.error(LEVEL_NAME_TO_COLOR['ERROR'] + line + RESET, stacklevel=2)
 
 def fatal(message: str):
-    for line in message.split('\n'):
-        logger.error(line)
-        
-    exit(1)
+    error(message)
+    raise Exception(message)

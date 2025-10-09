@@ -5,16 +5,15 @@ import json
 import time
 import threading
 import traceback
+import utils.logger as logger
 
 from pathlib import Path
-from validator.utils.diff import apply_diff
-from validator.utils.logger import debug, info, warn, error
-from validator.problem_suites.problem_suite import ProblemSuite
+from utils.diff import apply_diff_to_local_repo
+from evaluator.problem_suites.problem_suite import ProblemSuite
 from swebench.harness.constants import SWEbenchInstance
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
-from validator.utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exists
-
+from utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exists_in_local_repo
 
 
 class SWEBenchVerifiedSuite(ProblemSuite):
@@ -26,83 +25,78 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def load_problems(self, dataset_path):
         """Load problems from swebench_verified.json and verify directory structure."""
 
+
+        logger.info(f"Loading problems from {dataset_path}...")
+
+        # Make sure the dataset path exists
         if not os.path.exists(dataset_path):
-            error(f"[SWEBENCH] Problem suite directory not found: {dataset_path}")
-            raise FileNotFoundError(f"Problem suite directory not found: {dataset_path}")
-            
+            logger.fatal(f"Dataset not found: {dataset_path}")
+        
+        # Make sure the swebench_verified.json file exists
         json_path = os.path.join(dataset_path, "swebench_verified.json")
         if not os.path.exists(json_path):
-            error(f"[SWEBENCH] swebench_verified.json not found at: {json_path}")
-            raise FileNotFoundError(f"swebench_verified.json not found at: {json_path}")
+            logger.fatal(f"swebench_verified.json not found at: {json_path}")
             
-        try:
-            with open(json_path, "r") as f:
-                problems_list = json.load(f)
+        # Open the swebench_verified.json file
+        with open(json_path, "r") as f:
+            problems_list = json.load(f)
+        
+        logger.debug(f"Loaded {len(problems_list)} problems from {json_path}")
+        
+        # Count unique repositories
+        unique_repos = set()
+        for problem in problems_list:
+            unique_repos.add(problem.get("repo"))
+        
+        logger.debug(f"Finding {len(unique_repos)} unique repositories...")
+        
+        # Check that all repositories exist in the repos/ directory
+        repos_dir = os.path.join(dataset_path, "repos")
+        if not os.path.exists(repos_dir):
+            os.makedirs(repos_dir, exist_ok=True)
+        
+        for repo in unique_repos:
+            # Convert repository format from "owner/name" to directory name format "owner_name"
+            repo_dir_name = repo.replace("/", "_")
+            repo_path = os.path.join(repos_dir, repo_dir_name)
             
-            info(f"[SWEBENCH] Loaded {len(problems_list)} problems from {json_path}")
+            if not os.path.exists(repo_path):
+                repo_url = f"https://github.com/{repo}.git"
+                clone_repo(repo_url, repo_path)
+        
+        logger.debug(f"Found {len(unique_repos)} unique repositories")
+        
+        # Process each problem
+        for problem in problems_list:
+            instance_id = problem.get("instance_id")
             
-            # Count unique repositories
-            unique_repos = set()
-            for problem in problems_list:
-                repo = problem.get("repo")
-                if repo:
-                    unique_repos.add(repo)
+            repo = problem.get("repo")
+            base_commit = problem.get("base_commit")
             
-            debug(f"[SWEBENCH] Finding {len(unique_repos)} unique repositories")
+            # Verify commit exists in repository
+            repo_dir_name = repo.replace("/", "_")
+            repo_path = os.path.join(repos_dir, repo_dir_name)
             
-            # Check that all repositories exist in the repos/ directory
-            repos_dir = os.path.join(dataset_path, "repos")
-            if not os.path.exists(repos_dir):
-                os.makedirs(repos_dir, exist_ok=True)
-            
-            for repo in unique_repos:
-                # Convert repository format from "owner/name" to directory name format "owner_name"
-                repo_dir_name = repo.replace("/", "_")
-                repo_path = os.path.join(repos_dir, repo_dir_name)
-                
-                if not os.path.exists(repo_path):
-                    repo_url = f"https://github.com/{repo}.git"
-                    success, error_msg = clone_repo(repo_url, repo_path)
-                    if not success:
-                        raise RuntimeError(f"Failed to clone repository {repo}: {error_msg}")
-            
-            debug(f"[SWEBENCH] Found {len(unique_repos)} unique repositories")
-            
-            # Process each problem
-            for problem in problems_list:
-                instance_id = problem.get("instance_id")
-                
-                repo = problem.get("repo")
-                base_commit = problem.get("base_commit")
-                
-                # # Verify commit exists in repository
-                # repo_dir_name = repo.replace("/", "_")
-                # repo_path = os.path.join(repos_dir, repo_dir_name)
-                
-                # if not verify_commit_exists(repo_path, base_commit):
-                #     error(f"[SWEBENCH] Problem {instance_id}: commit {base_commit} not found in repository {repo}")
-                #     raise ValueError(f"Problem {instance_id}: commit {base_commit} not found in repository {repo}")
-                
-                # debug(f"[SWEBENCH] Verified commit {base_commit} exists in {repo} for problem {instance_id}")
-                
-                self._add_problem(
-                    instance_id, 
-                    problem_statement=problem.get("problem_statement"), 
-                    solution_diff=problem.get("patch"), 
-                    tests={
-                        "pass_to_pass": json.loads(problem.get("PASS_TO_PASS")),
-                        "fail_to_pass": json.loads(problem.get("FAIL_TO_PASS"))
-                    },
-                    extra={
-                        "swebench_instance": problem
-                    }
-                )
-            
-            info(f"[SWEBENCH] Successfully loaded {len(self.problems)} problems")
-            
-        except Exception as e:
-            error(f"[SWEBENCH] Failed to load problems: {e}")
-            raise e
+            # if not verify_commit_exists_in_local_repo(repo_path, base_commit):
+            #     logger.fatal(f"Problem {instance_id}: commit {base_commit} not found in repository {repo}")
+                             
+            self._add_problem(
+                instance_id,
+                problem_statement=problem.get("problem_statement"), 
+                solution_diff=problem.get("patch"), 
+                tests={
+                    "pass_to_pass": json.loads(problem.get("PASS_TO_PASS")),
+                    "fail_to_pass": json.loads(problem.get("FAIL_TO_PASS"))
+                },
+                extra={
+                    "swebench_instance": problem
+                }
+            )
+
+            logger.debug(f"Problem {instance_id} verified successfully")
+        
+        logger.info(f"Successfully loaded {len(self.problems)} problems")
+
 
 
 

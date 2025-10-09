@@ -3,7 +3,7 @@ from uuid import UUID
 from datetime import datetime
 from pydantic import BaseModel
 from typing import List, Optional
-
+from models.problem import ProblemTestResult
 
 
 class EvaluationRunStatus(str, Enum):
@@ -17,25 +17,6 @@ class EvaluationRunStatus(str, Enum):
 
 
 
-class EvaluationRunTestResultCategory(str, Enum):
-    default = 'default'
-    pass_to_pass = 'pass_to_pass'
-    pass_to_fail = 'pass_to_fail'
-    fail_to_pass = 'fail_to_pass'
-    fail_to_fail = 'fail_to_fail'
-
-class EvaluationRunTestResultStatus(str, Enum):
-    passed = 'passed'
-    failed = 'failed'
-    skipped = 'skipped'
-
-class EvaluationRunTestResult(BaseModel):
-    problem_name: str
-    category: EvaluationRunTestResultCategory
-    status: EvaluationRunTestResultStatus
-
-
-
 class EvaluationRun(BaseModel):
     evaluation_run_id: UUID
     evaluation_id: UUID
@@ -44,7 +25,7 @@ class EvaluationRun(BaseModel):
     status: EvaluationRunStatus
 
     patch: Optional[str] = None
-    test_results: Optional[List[EvaluationRunTestResult]] = None
+    test_results: Optional[List[ProblemTestResult]] = None
 
     error_code: Optional[int] = None
     error_message: Optional[str] = None

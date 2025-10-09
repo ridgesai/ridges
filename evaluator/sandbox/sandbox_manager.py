@@ -1,34 +1,26 @@
-"""SandboxManager for creating and managing Docker sandboxes."""
+"""SandboxManager class for creating and managing Docker sandboxes."""
 
 import os
 import json
 import time
-import docker
+import httpx
 import shutil
-import requests
 import threading
 import traceback
-import subprocess
+import utils.logger as logger
 
 from enum import Enum
-
-from validator.utils.docker import build_docker_image
-from validator.utils.logger import debug, info, warn, error
-from validator.utils.temp import create_temp_dir, cleanup_temp_dir
+from utils.temp import create_temp_dir, cleanup_temp_dir
+from utils.docker import build_docker_image, create_docker_container, create_internal_docker_network, stop_and_delete_all_docker_containers
 
 
 
 SANDBOX_NETWORK_NAME = "sandbox-network"
 
 class SandboxNetworkMode(Enum):
-    # Restricted to sandbox-only local network (default)
-    SANDBOX = "sandbox"
-    
-    # Full Internet access
-    PUBLIC = "public"
-    
-    # Connected to both Docker internal network and Internet
-    BOTH = "both"
+    SANDBOX = "sandbox" # Allows access to the sandbox-only local network (default)
+    PUBLIC = "public" # Allows access to the full Internet
+    BOTH = "both" # Allows access to both the sandbox-only local network and the full Internet
 
 
 
@@ -42,84 +34,54 @@ class SandboxManager:
 
 
 
-    def __init__(self, gateway_url, *, log_docker_to_stdout=False):
-        self._check_gateway(gateway_url)
+    def __init__(self, inference_gateway_url: str):
+        self._check_inference_gateway(inference_gateway_url)
 
-
-
-        try:
-            self.docker = docker.from_env()
-        except Exception as e:
-            error(f"[SANDBOX] Failed to create Docker client: {e}")
-
-        debug(f"[SANDBOX] Stopping and deleting all containers")
-        for container in self.docker.containers.list(all=True):
-            try:
-                container.stop(timeout=3)
-            except Exception as e:
-                warn(f"[SANDBOX] Could not stop container {container.name}: {e}")
-            try:
-                container.remove(force=True)
-            except Exception as e:
-                warn(f"[SANDBOX] Could not remove container {container.name}: {e}")
-        self.docker.containers.prune()
-        debug(f"[SANDBOX] Stopped and deleted all containers")
-
-
+        stop_and_delete_all_docker_containers()
 
         build_docker_image(os.path.dirname(__file__), "sandbox-image")
         self.sandboxes = {}
         
-        self._create_sandbox_network()
+        create_internal_docker_network(SANDBOX_NETWORK_NAME)
 
         self.proxy_container = None
         self.proxy_temp_dir = None
         build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
-        self._create_sandbox_proxy(gateway_url)
-
-        self.log_docker_to_stdout = log_docker_to_stdout
+        self._create_sandbox_proxy(inference_gateway_url)
 
         self._start_watchdog()
 
-    def _check_gateway(self, gateway_url):
-        info(f"[SANDBOX] Checking gateway URL: {gateway_url}")
-        try:
-            requests.get(gateway_url)
-        except Exception as e:
-            error(f"[SANDBOX] Gateway URL {gateway_url} is invalid: {e}")
-        info(f"[SANDBOX] Gateway URL {gateway_url} is valid")
 
-    def __del__(self):
+
+    def _check_inference_gateway(self, inference_gateway_url):
+        logger.info(f"Checking inference gateway URL: {inference_gateway_url}")
+
+        valid = False
         try:
-            self.cleanup_all()
-            
-            if self.proxy_container:
-                try:
-                    self.proxy_container.stop()
-                    self.proxy_container.remove()
-                    info("[SANDBOX] Stopped and removed proxy container")
-                except Exception as e:
-                    warn(f"[SANDBOX] Could not clean up proxy container: {e}")
-            
-            if self.proxy_temp_dir:
-                cleanup_temp_dir(self.proxy_temp_dir)
-                debug("[SANDBOX] Cleaned up proxy temp directory")
-                
-        except Exception:
+            httpx.get(inference_gateway_url)
+            valid = True
+        except Exception as e:
             pass
+
+        if not valid:
+            logger.fatal(f"Inference gateway URL {inference_gateway_url} is invalid")
+        
+        logger.info(f"Inference gateway URL {inference_gateway_url} is valid")
 
 
 
     def _start_watchdog(self):
         self.watchdog_thread = threading.Thread(target=self._watchdog)
         self.watchdog_thread.daemon = True
-        debug("[SANDBOX] Starting watchdog thread")
+        logger.info("Starting sandbox watchdog thread")
         self.watchdog_thread.start()
 
     def _watchdog(self):
-        debug("[SANDBOX] Started watchdog thread")
+        logger.info("Started sandbox watchdog thread")
+
         while True:
             time.sleep(1)
+
             for sandbox_id in list(self.sandboxes.keys()):
                 sandbox = self.sandboxes[sandbox_id]
                 if sandbox["container"]:
@@ -428,67 +390,30 @@ class SandboxManager:
         else:
             raise ValueError(f"Unknown network mode: {network_mode}")
 
-    def _create_sandbox_network(self):
-        """
-        Create the isolated sandbox network.
-        
-        This network allows sandboxes to communicate with each other without going over the Internet.
-        """
-
-        try:
-            self.docker.networks.get(SANDBOX_NETWORK_NAME)
-            debug(f"[SANDBOX] Found sandbox network: {SANDBOX_NETWORK_NAME}")
-        except docker.errors.NotFound:
-            try:
-                self.docker.networks.create(
-                    SANDBOX_NETWORK_NAME,
-                    driver="bridge",
-                    internal=True
-                )
-                info(f"[SANDBOX] Created sandbox network: {SANDBOX_NETWORK_NAME}")
-            except Exception as e:
-                error(f"[SANDBOX] Failed to create sandbox network: {e}")
-                raise
-        except Exception as e:
-            raise
-
 
 
     def _create_sandbox_proxy(self, gateway_url):
         """
-        Spawn the sandbox proxy server.
+        Create the sandbox proxy server.
         
         This is a special sandbox that runs a proxy server (nginx).
         This is the only sandbox that can access the internet.
         
         The other sandboxes cannot directly access the internet.
-        They can, however, access it through this proxy server, which only allows specific requests.
-        The requests sent to this proxy are forwarded to the gateway (specified when creating the SandboxManager).
+        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inferencegateway.
         """
   
-        info(f"[SANDBOX] Running sandbox proxy")
-        
-        # Run proxy in Docker container on both networks
-        self.proxy_container = self.docker.containers.run(
-            "sandbox-proxy-image",
+        logger.info("Running sandbox proxy")
+
+        self.proxy_container = create_docker_container(
             name=SANDBOX_PROXY_HOST,
+            image="sandbox-proxy-image",
             network=SANDBOX_NETWORK_NAME,
-            environment={
+            env_vars={
                 "GATEWAY_URL": gateway_url,
                 "GATEWAY_HOST": gateway_url.split("://")[1].split(":")[0]
-            },
-            remove=False,
-            detach=True
+            }
         )
-        
-        try:
-            bridge_network = self.docker.networks.get("bridge")
-            bridge_network.connect(self.proxy_container)
-            debug("[SANDBOX] Connected sandbox proxy to bridge network")
-        except Exception as e:
-            warn(f"[SANDBOX] Failed to connect sandbox proxy to bridge network: {e}")
-
-        time.sleep(1)
     
 
 
