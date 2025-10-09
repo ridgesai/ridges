@@ -7,7 +7,7 @@ import asyncpg
 from sqlalchemy.engine import row
 
 from api.queries.evaluation_run import create_evaluation_run
-from api.queries.evaluation_set import get_latest_set_id, get_all_problems_of_group_in_set
+from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_of_group_in_set
 from api.src.backend.db_manager import db_transaction
 from api.src.backend.db_manager import db_operation
 from models.evaluation import Evaluation, EvaluationStatus
@@ -47,7 +47,7 @@ async def create_new_evaluation_and_evaluation_runs(
         set_id = await get_latest_set_id()
 
     set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
-    problem_names = await get_all_problems_of_group_in_set(set_id, set_group)
+    problem_names = await get_all_problem_names_of_group_in_set(set_id, set_group)
 
     evaluation = Evaluation(
         evaluation_id=uuid.uuid4(),

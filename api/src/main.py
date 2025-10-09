@@ -17,6 +17,8 @@ from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
 from api.src.endpoints.validator import router as validator_router
+from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
+
 
 logger = get_logger(__name__)
 
@@ -27,8 +29,8 @@ async def lifespan(app: FastAPI):
     
     
     # Recover threshold-based approvals
-    from api.src.utils.threshold_scheduler import threshold_scheduler
-    await threshold_scheduler.recover_pending_approvals()
+    # from api.src.utils.threshold_scheduler import threshold_scheduler
+    # await threshold_scheduler.recover_pending_approvals()
 
     yield
 
@@ -53,6 +55,7 @@ app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(benchmarks_router, prefix="/benchmarks")
 app.include_router(validator_router, prefix="/validator")
+app.include_router(evaluation_sets_router, prefix="/evaluation-sets")
 
 
 if __name__ == "__main__":
