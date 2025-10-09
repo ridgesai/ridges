@@ -263,11 +263,14 @@ async def get_network_stats():
 
     return statistics_24_hrs
 
-async def get_running_evaluations() -> list[RunningEvaluation]:
+from models.evaluation import EvaluationStatus, EvaluationWithStatus
+async def get_running_evaluations() -> list[EvaluationWithStatus]:
     """
     Gets a list of currently running evaluations to display on dashboard
     """
-    evaluations = await get_currently_running_evaluations()
+    from api.queries.evaluation import get_evaluations_by_status
+
+    evaluations = await get_evaluations_by_status(EvaluationStatus.running)
 
     return evaluations
 
@@ -448,6 +451,13 @@ async def get_pending_dispersal() -> dict[str, Any]:
             detail="Internal server error while retrieving pending dispersal"
         )
 
+from api.queries.agent import get_agent
+import uuid
+
+async def shak_scratchpad(id: str) -> Any:
+    agent = await get_agent(uuid.UUID(id))
+    return agent
+
 router = APIRouter()
 
 routes = [
@@ -476,7 +486,8 @@ routes = [
     ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
     ("/all-transactions", get_all_transactions),
     ("/all-treasury-hotkeys", get_all_treasury_hotkeys),
-    ("/pending-dispersal", get_pending_dispersal)
+    ("/pending-dispersal", get_pending_dispersal),
+    ("/agent-scratch", shak_scratchpad)
 ]
 
 for path, endpoint in routes:

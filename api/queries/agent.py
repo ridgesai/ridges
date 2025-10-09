@@ -2,10 +2,11 @@ from typing import Optional, Final
 from uuid import UUID
 
 import asyncpg
+
 import utils.logger as logger
 from api.src.backend.db_manager import db_operation
 from api.src.utils.s3 import S3Manager
-from models.agent import Agent
+from models.agent import Agent, AgentStatus
 
 MIN_EVALS: Final[int] = 3
 
@@ -81,14 +82,16 @@ async def get_agent_code_by_agent_id(agent_id: UUID) -> str:
     return text
 
 @db_operation
-async def get_agent_by_agent_id(conn: asyncpg.Connection, agent_id: str) -> Optional[Agent]:
-    result = await conn.fetchrow(
-        "SELECT agent_id, miner_hotkey, name, version_num, created_at, status "
-        "FROM agents WHERE agent_id = $1",
-        agent_id
-    )
+async def get_agent(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
+    result = await conn.fetchrow("""
+        SELECT 
+            *
+        FROM agents 
+        WHERE agent_id = $1
+        LIMIT 1
+    """, str(agent_id))
 
-    if not result:
+    if result is None:
         return None
 
-    return Agent(**dict(result))
+    return Agent(**result)
