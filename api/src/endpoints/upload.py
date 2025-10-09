@@ -33,6 +33,21 @@ class ErrorResponse(BaseModel):
     """Error response model"""
     detail: str = Field(..., description="Error message describing what went wrong")
 
+router = APIRouter()
+
+@router.post(
+    "/agent",
+    tags=["upload"],
+    dependencies=[Depends(verify_request_public)],
+    response_model=AgentUploadResponse,
+    responses={
+        400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
+        409: {"model": ErrorResponse, "description": "Conflict - Upload request already processed"},
+        429: {"model": ErrorResponse, "description": "Too Many Requests - Rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"},
+        503: {"model": ErrorResponse, "description": "Service Unavailable - No screeners available for evaluation"}
+    }
+)
 async def post_agent(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
@@ -160,26 +175,3 @@ async def post_agent(
             **upload_data
         )
         raise
-
-router = APIRouter()
-
-routes = [
-    ("/agent", post_agent),
-]
-
-for path, endpoint in routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["upload"],
-        dependencies=[Depends(verify_request_public)],
-        methods=["POST"],
-        response_model=AgentUploadResponse,
-        responses={
-            400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
-            409: {"model": ErrorResponse, "description": "Conflict - Upload request already processed"},
-            429: {"model": ErrorResponse, "description": "Too Many Requests - Rate limit exceeded"},
-            500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"},
-            503: {"model": ErrorResponse, "description": "Service Unavailable - No screeners available for evaluation"}
-        }
-    )
