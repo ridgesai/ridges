@@ -28,11 +28,6 @@ ENV_VARS = {
     "AWS_MASTER_PASSWORD": {"type": str, "required": True},
     "AWS_RDS_PLATFORM_ENDPOINT": {"type": str, "required": True},
     "AWS_RDS_PLATFORM_DB_NAME": {"type": str, "required": True},
-    "DB_USER_INT": {"type": str, "required": True},
-    "DB_PASS_INT": {"type": str, "required": True},
-    "DB_HOST_INT": {"type": str, "required": True},
-    "DB_NAME_INT": {"type": str, "required": True},
-    "DB_PORT_INT": {"type": str, "required": True},
     "AWS_S3_BUCKET_NAME": {"type": str, "required": True},
     "AWS_REGION": {"type": str, "required": True},
     "AWS_ACCESS_KEY_ID": {"type": str, "required": True},
@@ -86,21 +81,6 @@ check_env_var("AWS_RDS_PLATFORM_ENDPOINT", AWS_RDS_PLATFORM_ENDPOINT)
 AWS_RDS_PLATFORM_DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
 check_env_var("AWS_RDS_PLATFORM_DB_NAME", AWS_RDS_PLATFORM_DB_NAME)
 
-# Internal Database Configuration
-DB_USER_INT = os.getenv("DB_USER_INT")
-check_env_var("DB_USER_INT", DB_USER_INT)
-
-DB_PASS_INT = os.getenv("DB_PASS_INT")
-check_env_var("DB_PASS_INT", DB_PASS_INT)
-
-DB_HOST_INT = os.getenv("DB_HOST_INT")
-check_env_var("DB_HOST_INT", DB_HOST_INT)
-
-DB_NAME_INT = os.getenv("DB_NAME_INT")
-check_env_var("DB_NAME_INT", DB_NAME_INT)
-
-DB_PORT_INT = os.getenv("DB_PORT_INT")
-check_env_var("DB_PORT_INT", DB_PORT_INT)
 
 AWS_S3_BUCKET_NAME = os.getenv("AWS_S3_BUCKET_NAME")
 check_env_var("AWS_S3_BUCKET_NAME", AWS_S3_BUCKET_NAME)

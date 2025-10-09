@@ -8,7 +8,9 @@ from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
 from utils.database import initialize_database, deinitialize_database
+from inference_gateway.ai_models import is_model_supported_for_inference
 from inference_gateway.queries.evaluation_run import get_evaluation_run_status_by_id
+from inference_gateway.queries.inference import get_number_of_inferences_for_evaluation_run
 from inference_gateway.models import InferenceRequest, InferenceResponse, EmbeddingRequest, EmbeddingResponse
 
 
@@ -58,6 +60,21 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         raise HTTPException(
             status_code=400,
             detail="The evaluation run specified is not in the running_agent state."
+        )
+
+    # Make sure the evaluation run has not already made too many requests
+    num_inferences = await get_number_of_inferences_for_evaluation_run(request.evaluation_run_id)
+    if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
+        raise HTTPException(
+            status_code=429,
+            detail="The evaluation run specified has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
+        )
+
+    # Make sure we support the model for inference
+    if not is_model_supported_for_inference(request.model):
+        raise HTTPException(
+            status_code=404,
+            detail="The model specified is not supported by Ridges for inference."
         )
 
  

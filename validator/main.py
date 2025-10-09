@@ -4,6 +4,7 @@ import utils.logger as logger
 import validator.config as config
 
 from validator.http import post_ridges_platform
+from 
 
 
 
@@ -54,6 +55,11 @@ async def main():
         session_id = register_response["session_id"]
 
         logger.info(f"Registered validator. Session ID: {session_id}")
+
+
+
+        # Load all problem suites
+
 
 
 
