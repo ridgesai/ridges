@@ -10,9 +10,6 @@ from api.src.backend.db_manager import get_transaction
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.utils.auth import verify_request_public
-from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, \
-    check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_file_size, check_agent_code, \
-    upload_agent_code_to_s3, record_upload_attempt
 import utils.logger as logger
 
 from models.agent import AgentStatus, Agent
@@ -58,6 +55,10 @@ async def post_agent(
     
     Rate limiting may apply based on configuration.
     """
+
+
+    # TODO ADAM: we have to redo this entire function. right now it probably doesn't even work.
+
 
     # Extract upload attempt data for tracking
     miner_hotkey = get_miner_hotkey(file_info)
