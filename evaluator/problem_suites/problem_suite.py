@@ -1,6 +1,9 @@
 """Base class for problem suites."""
 
 import os
+
+from pydantic import BaseModel
+
 import utils.logger as logger
 
 from abc import ABC, abstractmethod
