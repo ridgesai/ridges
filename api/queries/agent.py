@@ -1,16 +1,13 @@
 import asyncpg
+import api.config as config
 import utils.logger as logger
 
 from uuid import UUID
-from models.agent import Agent, AgentStatus
-from typing import Optional, Final
-from models.agent import Agent, AgentScored
-from models.evaluation import EvaluationStatus
+from typing import Optional
 from utils.database import db_operation
+from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
-
-# TODO: should not be here. should go in config.py 
-MIN_EVALS: Final[int] = 3
+from models.agent import Agent, AgentScored, AgentStatus
 
 
 
@@ -66,7 +63,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
             LIMIT 1
             """,
             validator_hotkey,
-            MIN_EVALS
+            config.NUM_EVALS_PER_AGENT
         )
 
     if result is None or "agent_id" not in result:
@@ -101,7 +98,7 @@ async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[
 async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
     queue_to_query = f"{queue_stage.value}_queue"
     queue = await conn.fetch(f"""
-        select a.*
+        SELECT *
         from agents a
         join {queue_to_query} q on q.agent_id = a.agent_id
     """)
@@ -123,3 +120,6 @@ async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -
     )
 
     return [AgentScored(**agent) for agent in results]
+
+
+

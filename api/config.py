@@ -69,3 +69,24 @@ if not DATABASE_NAME:
 SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
 if not SCREENER_PASSWORD:
     logger.fatal("SCREENER_PASSWORD is not set in .env")
+
+
+
+# Load validator configuration
+SCREENER_1_THRESHOLD = float(os.getenv("SCREENER_1_THRESHOLD"))
+if not SCREENER_1_THRESHOLD:
+    logger.fatal("SCREENER_1_THRESHOLD is not set in .env")
+
+SCREENER_2_THRESHOLD = float(os.getenv("SCREENER_2_THRESHOLD"))
+if not SCREENER_2_THRESHOLD:
+    logger.fatal("SCREENER_2_THRESHOLD is not set in .env")
+
+PRUNE_THRESHOLD = float(os.getenv("PRUNE_THRESHOLD"))
+if not PRUNE_THRESHOLD:
+    logger.fatal("PRUNE_THRESHOLD is not set in .env")
+
+
+
+NUM_EVALS_PER_AGENT = int(os.getenv("NUM_EVALS_PER_AGENT"))
+if not NUM_EVALS_PER_AGENT:
+    logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")

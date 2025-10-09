@@ -1,5 +1,6 @@
 import re
 import time
+import api.config as config
 import utils.logger as logger
 
 from uuid import UUID, uuid4
@@ -11,6 +12,7 @@ from fastapi.security import HTTPBearer
 from models.evaluation import Evaluation
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
+from utils.s3 import download_text_file_from_s3
 from utils.fiber import validate_signed_timestamp
 from fastapi import Depends, APIRouter, HTTPException
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
@@ -162,12 +164,7 @@ async def validator_register_as_screener(
         )
     
     # Ensure that the password is correct
-    
-    # TODO
-    import os
-    SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
-
-    if request.password != SCREENER_PASSWORD:
+    if request.password != config.SCREENER_PASSWORD:
         raise HTTPException(
             status_code=403,
             detail="The provided password is incorrect."
@@ -221,11 +218,10 @@ async def validator_request_evaluation(
     # Find the next agent awaiting an evaluation from this validator
     agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
     if agent_id is None:
-        # Nobody is awaiting an evaluation from this validator
         return None
 
     # Get the agent code
-    agent_code = await get_agent_code_by_agent_id(agent_id)
+    agent_code = await download_text_file_from_s3(f"agents/{agent_id}")
 
     # Create a new evaluation and evaluation runs for this agent
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
