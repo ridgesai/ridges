@@ -90,7 +90,7 @@ async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[
 
 @db_operation
 async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) -> None:
-    await upload_text_file_to_s3(f"agents/{agent.agent_id}", agent_text)
+    await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
     await conn.execute(
         f"""

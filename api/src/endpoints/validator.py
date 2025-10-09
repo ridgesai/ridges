@@ -221,7 +221,7 @@ async def validator_request_evaluation(
         return None
 
     # Get the agent code
-    agent_code = await download_text_file_from_s3(f"agents/{agent_id}")
+    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
 
     # Create a new evaluation and evaluation runs for this agent
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
