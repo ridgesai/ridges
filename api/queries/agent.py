@@ -8,11 +8,7 @@ from utils.database import db_operation
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored, AgentStatus
-
-
-
-# TODO ADAM: some funky shit is going on here fix when i can
-
+from utils.s3 import upload_text_file_to_s3
 
 
 @db_operation
@@ -92,7 +88,21 @@ async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[
 
     return Agent(**result)
 
+@db_operation
+async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) -> None:
+    await upload_text_file_to_s3(str(agent.agent_id), agent_text)
 
+    await conn.execute(
+        f"""
+                INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
+                VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+                """,
+        agent.agent_id,
+        agent.miner_hotkey,
+        agent.name,
+        agent.version_num,
+        agent.ip_address,
+    )
 
 @db_operation
 async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
@@ -120,6 +130,22 @@ async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -
     )
 
     return [AgentScored(**agent) for agent in results]
+
+@db_operation
+async def record_upload_attempt(conn: asyncpg.Connection, upload_type: str, success: bool, **kwargs) -> None:
+    """Record an upload attempt in the upload_attempts table."""
+    try:
+        await conn.execute(
+            """INSERT INTO upload_attempts (upload_type, success, hotkey, agent_name, filename,
+                                            file_size_bytes, ip_address, error_type, error_message, ban_reason, http_status_code, agent_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
+            upload_type, success, kwargs.get('hotkey'), kwargs.get('agent_name'), kwargs.get('filename'),
+            kwargs.get('file_size_bytes'), kwargs.get('ip_address'), kwargs.get('error_type'),
+            kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('agent_id')
+        )
+        logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
+    except Exception as e:
+        logger.error(f"Failed to record upload attempt: {e}")
 
 
 

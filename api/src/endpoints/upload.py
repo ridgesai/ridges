@@ -6,16 +6,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 
-from api.src.backend.queries.agents import get_ban_reason
-from api.src.backend.queries.agents import get_latest_agent
-from api.src.utils.auth import verify_request_public
 import utils.logger as logger
-
+from api.queries.agent import create_agent, record_upload_attempt
+from api.src.backend.queries.agents import get_latest_agent, get_ban_reason
+from api.src.utils.auth import verify_request_public
+from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
+    check_rate_limit, check_replay_attack, check_signature, check_hotkey_registered, check_file_size, check_agent_code
 from models.agent import AgentStatus, Agent
-
-
-
-
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -70,10 +67,6 @@ async def post_agent(
     Rate limiting may apply based on configuration.
     """
 
-
-    # TODO ADAM: we have to redo this entire function. right now it probably doesn't even work.
-
-
     # Extract upload attempt data for tracking
     miner_hotkey = get_miner_hotkey(file_info)
     agent_file.file.seek(0, 2)
@@ -89,62 +82,55 @@ async def post_agent(
     }
     
     try:
-        with process_context("handle-upload-agent") as process_id:
-            logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent with process ID: {process_id}.")
-            logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
-            check_if_python_file(agent_file.filename)
-            latest_agent: Optional[Agent] = await get_latest_agent(miner_hotkey=miner_hotkey)
+        logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
+        logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
+        check_if_python_file(agent_file.filename)
+        latest_agent: Optional[Agent] = await get_latest_agent(miner_hotkey=miner_hotkey)
 
-            agent = Agent(
-                agent_id=uuid.uuid4(),
-                miner_hotkey=miner_hotkey,
-                name=name if not latest_agent else latest_agent.name,
-                version_num=latest_agent.version_num + 1 if latest_agent else 0,
-                created_at=datetime.now(),
-                status=AgentStatus.screening_1,
-                ip_address=request.client.host if request.client else None,
-            )
+        agent = Agent(
+            agent_id=uuid.uuid4(),
+            miner_hotkey=miner_hotkey,
+            name=name if not latest_agent else latest_agent.name,
+            version_num=latest_agent.version_num + 1 if latest_agent else 0,
+            created_at=datetime.now(),
+            status=AgentStatus.screening_1,
+            ip_address=request.client.host if request.client else None,
+        )
 
-            if prod: await check_agent_banned(miner_hotkey=miner_hotkey)
-            if prod and latest_agent: check_rate_limit(latest_agent)
-            check_replay_attack(latest_agent, file_info)
-            if prod: check_signature(public_key, file_info, signature)
-            if prod: await check_hotkey_registered(miner_hotkey)
-            file_content = await check_file_size(agent_file)
-            # TODO: Uncomment this when embedding similarity check is done
-            # if prod: await check_code_similarity(file_content, miner_hotkey)
-            check_agent_code(file_content)
+        if prod:
+            await check_agent_banned(miner_hotkey=miner_hotkey)
+            if latest_agent:
+                check_rate_limit(latest_agent)
 
-            async with get_transaction() as conn:
-                await upload_agent_code_to_s3(str(agent.agent_id), agent_file)
+        check_replay_attack(latest_agent, file_info)
 
-                await conn.execute(
-                    """
-                    INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-                    VALUES ($1, $2, $3, $4, NOW(), 'screening_1', $5)
-                """,
-                    agent.agent_id,
-                    agent.miner_hotkey,
-                    agent.name,
-                    agent.version_num,
-                    agent.ip_address,
-                )
+        if prod:
+            check_signature(public_key, file_info, signature)
+            await check_hotkey_registered(miner_hotkey)
+        file_content = await check_file_size(agent_file)
 
-            logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
-            logger.debug(f"Completed handle-upload-agent with process ID {process_id}.")
+        # TODO: Uncomment this when embedding similarity check is done
+        # if prod: await check_code_similarity(file_content, miner_hotkey)
+        check_agent_code(file_content)
 
-            # Record successful upload
-            await record_upload_attempt(
-                upload_type="agent", 
-                success=True, 
-                agent_id=agent.agent_id,
-                **upload_data
-            )
+        agent_text = (await agent_file.read()).decode("utf-8")
+        await create_agent(agent, agent_text)
 
-            return AgentUploadResponse(
-                status="success",
-                message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
-            )
+
+        logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
+
+        # Record successful upload
+        await record_upload_attempt(
+            upload_type="agent",
+            success=True,
+            agent_id=agent.agent_id,
+            **upload_data
+        )
+
+        return AgentUploadResponse(
+            status="success",
+            message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
+        )
     
     except HTTPException as e:
         # Determine error type and get ban reason if applicable

@@ -6,14 +6,13 @@ from utils.database import db_operation, db_transaction
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
 import utils.logger as logger
-from models.agent import AgentStatus
-
+from models.agent import AgentStatus, Agent
 
 
 @db_operation
-async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:
+async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Agent]:
     result = await conn.fetchrow(
-        "SELECT agent_id, miner_hotkey, name, version_num, created_at, status "
+        "SELECT agent_id, miner_hotkey, name, version_num, created_at, status, ip_address "
         "FROM agents WHERE miner_hotkey = $1 ORDER BY version_num DESC LIMIT 1",
         miner_hotkey
     )
@@ -21,7 +20,7 @@ async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optio
     if not result:
         return None
 
-    return MinerAgent(**dict(result))
+    return Agent(**dict(result))
 
 @db_operation
 async def get_agent_by_agent_id(conn: asyncpg.Connection, agent_id: str) -> Optional[MinerAgent]:

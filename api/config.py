@@ -90,3 +90,7 @@ if not PRUNE_THRESHOLD:
 NUM_EVALS_PER_AGENT = int(os.getenv("NUM_EVALS_PER_AGENT"))
 if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
+
+AGENT_RATE_LIMIT_SECONDS = int(os.getenv("AGENT_RATE_LIMIT_SECONDS"))
+if not NUM_EVALS_PER_AGENT:
+    logger.fatal("AGENT_RATE_LIMIT_SECONDS is not set in .env")
