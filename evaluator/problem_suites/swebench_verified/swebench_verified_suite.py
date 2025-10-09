@@ -8,9 +8,9 @@ import traceback
 import utils.logger as logger
 
 from pathlib import Path
-from utils.diff import apply_diff_to_local_repo
-from evaluator.problem_suites.problem_suite import ProblemSuite
 from swebench.harness.constants import SWEbenchInstance
+from evaluator.problem_suites.problem_suite import ProblemSuite
+from models.problem import Problem, ProblemTest, ProblemTestCategory
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
 from utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exists_in_local_repo
@@ -23,9 +23,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
     def load_problems(self, dataset_path):
-        """Load problems from swebench_verified.json and verify directory structure."""
-
-
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
@@ -68,86 +65,69 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         
         # Process each problem
         for problem in problems_list:
-            instance_id = problem.get("instance_id")
+            problem_name = problem.get("instance_id")
             
-            repo = problem.get("repo")
-            base_commit = problem.get("base_commit")
+            # repo = problem.get("repo")
+            # base_commit = problem.get("base_commit")
             
-            # Verify commit exists in repository
-            repo_dir_name = repo.replace("/", "_")
-            repo_path = os.path.join(repos_dir, repo_dir_name)
-            
+            # # Verify commit exists in repository
+            # repo_dir_name = repo.replace("/", "_")
+            # repo_path = os.path.join(repos_dir, repo_dir_name)
+        
             # if not verify_commit_exists_in_local_repo(repo_path, base_commit):
-            #     logger.fatal(f"Problem {instance_id}: commit {base_commit} not found in repository {repo}")
-                             
-            self._add_problem(
-                instance_id,
-                problem_statement=problem.get("problem_statement"), 
-                solution_diff=problem.get("patch"), 
-                tests={
-                    "pass_to_pass": json.loads(problem.get("PASS_TO_PASS")),
-                    "fail_to_pass": json.loads(problem.get("FAIL_TO_PASS"))
-                },
-                extra={
-                    "swebench_instance": problem
-                }
-            )
+            #     logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
 
-            logger.debug(f"Problem {instance_id} verified successfully")
+            # Convert tests to our format
+            tests = []
+            for test_name in json.loads(problem.get("PASS_TO_PASS")):
+                tests.append(ProblemTest(name=test_name, category=ProblemTestCategory.pass_to_pass))
+            for test_name in json.loads(problem.get("FAIL_TO_PASS")):
+                tests.append(ProblemTest(name=test_name, category=ProblemTestCategory.fail_to_pass))
+
+            self._add_problem(Problem(
+                name=problem_name,
+
+                problem_statement=problem.get("problem_statement"),
+                tests=tests,
+                solution_diff=problem.get("patch"),
+                
+                # We will store the entire SWE-Bench problem object in the userdata (this is basically a Dict[str, Any])
+                # This is so that we can access metadata like the commit hash later on
+                userdata=problem
+            ))
+
+            # logger.debug(f"Problem {problem_name} verified successfully")
         
-        logger.info(f"Successfully loaded {len(self.problems)} problems")
+        logger.info(f"Successfully loaded {len(self.problems)} problems from {dataset_path}")
 
 
 
-
-    def copy_problem_files_to_directory(self, problem_name, dir, *, include_tests=False, include_solution=False):
-        """Copy problem files to the given directory."""
-        
-        problem = self.get_problem(problem_name)
-        if not problem:
-            warn(f"[SWEBENCH] Problem {problem_name} not found")
-            raise ValueError(f"Problem {problem_name} not found")
-
-        # Get repository and commit information from metadata
-        swebench_instance = problem.get("swebench_instance")
+    def copy_problem_files_to_directory(
+        self,
+        problem: Problem,
+        dir: str,
+        *,
+        include_tests: bool = False,
+        include_solution: bool = False
+    ):
+        # Get the SWE-Bench problem object
+        swebench_instance = problem.userdata
         repo = swebench_instance.get("repo")
-        base_commit = swebench_instance.get("base_commit")
+        commit_hash = swebench_instance.get("base_commit")
 
         # Convert repository format from "owner/name" to directory name format "owner_name"
-        repo_dir_name = repo.replace("/", "_")
-        repo_path = os.path.join(self.dataset_path, "repos", repo_dir_name)
+        local_repo_dir = os.path.join(self.dataset_path, "repos", repo.replace("/", "_"))
         
         # Clone the appropriate repository at the specific commit that the problem requires
-        debug(f"[SWEBENCH] Cloning {repo} at commit {base_commit} to {dir} for {problem_name}")
-        success, error_msg = clone_local_repo_at_commit(repo_path, base_commit, dir)
-        if not success:
-            warn(f"[SWEBENCH] Failed to clone repository for {problem_name}: {error_msg}")
-            raise RuntimeError(f"Failed to clone repository for {problem_name}: {error_msg}")
-        debug(f"[SWEBENCH] Successfully copied repository files for {problem_name}")
+        clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
 
-        # REMOVED: Falling back to SWE-Bench Harness
-        #
-        # # Copy test files if requested
-        # if include_tests:
-        #     test_patch = swebench_instance.get("test_patch")
-        #     debug(f"[SWEBENCH] Applying test patch for {problem_name}")
-        #     success, error_msg = apply_diff(test_patch, dir)
-        #     if not success:
-        #         error(f"[SWEBENCH] Failed to apply test patch for {problem_name}: {error_msg}")
-        #         raise RuntimeError(f"Failed to apply test patch for {problem_name}: {error_msg}")
-        #     debug(f"[SWEBENCH] Successfully applied test patch for {problem_name}")
-        
         # Copy solution files if requested
         if include_solution:
             # Write solution.diff file
             with open(os.path.join(dir, "solution.diff"), "w") as f:
                 f.write(problem["solution_diff"])
-            debug(f"[SWEBENCH] Created solution.diff in {dir} for {problem_name}")
+            logger.debug(f"Created solution.diff in {dir} for {problem.name}")
 
-
-
-    def get_test_runner_path(self):
-        return os.path.join(os.path.dirname(__file__), "TEST_RUNNER.py")
 
 
 
@@ -193,17 +173,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
 
-    def get_problem_test_count(self, problem_name):
-        problem = self.get_problem(problem_name)
-        if not problem:
-            return 0
-        
-        tests = problem.get("tests", {})
-        pass_to_pass = tests.get("pass_to_pass")
-        fail_to_pass = tests.get("fail_to_pass")
-        
-        return len(pass_to_pass) + len(fail_to_pass)
-
+ 
     
 
     def run_swebench_evaluation(self, sandbox_manager, run_id, problem_name, diff, *, timeout=None):

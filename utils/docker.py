@@ -75,10 +75,7 @@ def stop_and_delete_all_docker_containers():
 
 def create_internal_docker_network(name: str):
     """
-    Create an internal Docker network, if it does not already exist.
-
-    Args:
-        name: The name of the network to create
+    Creates an internal Docker network, if it does not already exist.
     """
     
     if docker_client.networks.list(names=[name]):
@@ -91,10 +88,7 @@ def create_internal_docker_network(name: str):
 
 def connect_docker_container_to_internet(container: docker.models.containers.Container):
     """
-    Connect a Docker container to the internet.
-
-    Args:
-        container: The container to connect to the internet
+    Connects a Docker container to the internet.
     """
 
     logger.info(f"Connecting Docker container {container.name} to internet...")

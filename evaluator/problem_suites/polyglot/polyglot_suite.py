@@ -8,6 +8,7 @@ import utils.logger as logger
 from utils.diff import get_file_diff
 from utils.git import init_local_repo_with_initial_commit
 from evaluator.problem_suites.problem_suite import ProblemSuite
+from models.problem import Problem, ProblemTest, ProblemTestCategory
 
 
 class PolyglotSuite(ProblemSuite):
@@ -17,10 +18,6 @@ class PolyglotSuite(ProblemSuite):
 
 
     def load_problems(self, dataset_path):
-        """Load problems from polyglot.json and verify directory structure."""
-        
-
-
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
@@ -34,16 +31,16 @@ class PolyglotSuite(ProblemSuite):
             
         # Open the polyglot.json file
         with open(json_path, "r") as f:
-            problems_list = json.load(f)
+            problem_list = json.load(f)
         
-        logger.debug(f"Loaded {len(problems_list)} problems from {json_path}")
+        logger.debug(f"Loaded {len(problem_list)} problems from {json_path}")
         
         # Process each problem
-        for problem in problems_list:
+        for problem in problem_list:
             # Parse problem name
             problem_name = problem.get("name")
             if not problem_name:
-                logger.fatal(f"Found problem without name field")
+                logger.fatal("Problem missing name field")
             
             problem_dir = os.path.join(dataset_path, problem_name)
             
@@ -68,23 +65,28 @@ class PolyglotSuite(ProblemSuite):
             with open(instructions_path, "r") as f:
                 problem_statement = f.read()
 
+            # Parse problem tests
+            test_names = problem.get("tests")
+            if not test_names:
+                logger.fatal(f"Problem {problem_name} missing tests field")
+
+            tests = [ProblemTest(name=test_name, category=ProblemTestCategory.default) for test_name in test_names]
+
             # Calculate diff between main.py and solution.py
             main_path = os.path.join(problem_dir, "main.py")
             solution_path = os.path.join(problem_dir, "solution.py")
             solution_diff = get_file_diff(main_path, solution_path)
             
-            # Parse problem tests
-            tests = problem.get("tests")
-            if not tests:
-                logger.fatal(f"Problem {problem_name} missing tests field")
-            
+
+
             # Add the problem to the suite
-            self._add_problem(
-                problem_name,
+            self._add_problem(Problem(
+                name=problem_name,
+
                 problem_statement=problem_statement,
-                solution_diff=solution_diff,
-                tests=tests
-            )
+                tests=tests,
+                solution_diff=solution_diff
+            ))
             
             logger.debug(f"Problem {problem_name} verified successfully")
         
@@ -92,37 +94,35 @@ class PolyglotSuite(ProblemSuite):
 
 
 
-    def copy_problem_files_to_directory(self, problem_name, dir, *, include_tests=False, include_solution=False):
-        """Copy problem files to the given directory.""" 
-
-
-
-        # Make sure the problem exists
-        problem = self.get_problem(problem_name)
-        if not problem:
-            logger.fatal(f"Problem {problem_name} not found")
-
-        problem_dir = os.path.join(self.dataset_path, problem_name)
+    def copy_problem_files_to_directory(
+        self,
+        problem: Problem,
+        dir: str,
+        *,
+        include_tests: bool = False,
+        include_solution: bool = False
+    ):
+        problem_dir = os.path.join(self.dataset_path, problem.name)
         
         # Always copy main.py
         shutil.copy2(os.path.join(problem_dir, "main.py"), os.path.join(dir, "main.py"))
-        logger.debug(f"Copied main.py to {dir} for {problem_name}")
+        logger.debug(f"Copied main.py to {dir} for {problem.name}")
 
         # Copy test files if requested
         if include_tests:
             shutil.copy2(os.path.join(problem_dir, "tests.py"), os.path.join(dir, "tests.py"))
-            logger.debug(f"Copied tests.py to {dir} for {problem_name}")
+            logger.debug(f"Copied tests.py to {dir} for {problem.name}")
 
         # Copy solution files if requested
         if include_solution:
             # Copy solution.py
             shutil.copy2(os.path.join(problem_dir, "solution.py"), os.path.join(dir, "solution.py"))
-            logger.debug(f"Copied solution.py to {dir} for {problem_name}")
+            logger.debug(f"Copied solution.py to {dir} for {problem.name}")
             
             # Write solution.diff file
             with open(os.path.join(dir, "solution.diff"), "w") as f:
                 f.write(problem["solution_diff"])
-            logger.debug(f"Created solution.diff in {dir} for {problem_name}")
+            logger.debug(f"Created solution.diff in {dir} for {problem.name}")
 
         # Initialize git repository with initial commit
         init_local_repo_with_initial_commit(dir, "Initial commit")

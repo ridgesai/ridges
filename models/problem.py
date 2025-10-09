@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List
+from typing import List, Any
 from pydantic import BaseModel
 
 
@@ -29,6 +29,10 @@ class ProblemTestResult(BaseModel):
 
 class Problem(BaseModel):
     name: str
+
     problem_statement: str
-    solution_diff: str
     tests: List[ProblemTest]
+
+    solution_diff: str
+
+    userdata: Any = None
