@@ -10,7 +10,7 @@ from api.queries.evaluation_run import create_evaluation_run
 from api.queries.evaluation_set import get_latest_set_id, get_all_problems_of_group_in_set
 from api.src.backend.db_manager import db_transaction
 from api.src.backend.db_manager import db_operation
-from models.evaluation import Evaluation, EvaluationWithStatus, EvaluationStatus
+from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
 
@@ -97,7 +97,7 @@ async def get_evaluation_runs_for_evaluation(conn: asyncpg.connection.Connection
     ]
 
 @db_operation
-async def get_evaluations_by_status(conn: asyncpg.Connection, status: EvaluationStatus) -> list[EvaluationWithStatus]:
+async def get_evaluations_by_status(conn: asyncpg.Connection, status: EvaluationStatus) -> list[Evaluation]:
     results = await conn.fetch(
         """
         select * from evaluations_hydrated where status = $1
@@ -105,4 +105,4 @@ async def get_evaluations_by_status(conn: asyncpg.Connection, status: Evaluation
         status.value
     )
 
-    return [EvaluationWithStatus(**result) for result in results]
+    return [Evaluation(**result) for result in results]

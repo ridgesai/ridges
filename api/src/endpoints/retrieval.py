@@ -263,8 +263,8 @@ async def get_network_stats():
 
     return statistics_24_hrs
 
-from models.evaluation import EvaluationStatus, EvaluationWithStatus
-async def get_running_evaluations() -> list[EvaluationWithStatus]:
+from models.evaluation import EvaluationStatus, Evaluation
+async def get_running_evaluations() -> list[Evaluation]:
     """
     Gets a list of currently running evaluations to display on dashboard
     """
@@ -451,12 +451,21 @@ async def get_pending_dispersal() -> dict[str, Any]:
             detail="Internal server error while retrieving pending dispersal"
         )
 
-from api.queries.agent import get_agent
+from api.queries.agent import get_top_agents as x
+from models.evaluation_set import EvaluationSetGroup
 import uuid
 
-async def shak_scratchpad(id: str) -> Any:
-    agent = await get_agent(uuid.UUID(id))
-    return agent
+async def shak_scratchpad() -> Any:
+    # Queue
+    # agent = await get_agents_in_queue(EvaluationSetGroup.screener_1)
+    # return agent
+
+    # top agents 
+    # agents = await x()
+    # return agents
+
+    # Connected validators and what theyre doing 
+    pass
 
 router = APIRouter()
 

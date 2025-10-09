@@ -16,6 +16,3 @@ class Evaluation(BaseModel):
     set_id: int
     created_at: datetime
     finished_at: Optional[datetime] = None
-
-class EvaluationWithStatus(Evaluation):
-    status: EvaluationStatus

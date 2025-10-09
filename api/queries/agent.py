@@ -6,7 +6,8 @@ import asyncpg
 import utils.logger as logger
 from api.src.backend.db_manager import db_operation
 from api.src.utils.s3 import S3Manager
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentScored
+from models.evaluation_set import EvaluationSetGroup
 
 MIN_EVALS: Final[int] = 3
 
@@ -95,3 +96,27 @@ async def get_agent(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]
         return None
 
     return Agent(**result)
+
+@db_operation
+async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
+    queue_to_query = f"{queue_stage.value}_queue"
+    queue = await conn.fetch(f"""
+        select a.*
+        from agents a
+        join {queue_to_query} q on q.agent_id = a.agent_id
+    """)
+
+    return [Agent(**agent) for agent in queue]
+
+@db_operation
+async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -> list[AgentScored]:
+    results = await conn.fetch(
+        """
+        select * from agent_scores 
+        where set_id = (select max(set_id) from evaluation_sets)
+        order by final_score desc
+        limit $1
+        """, number_of_agents
+    )
+
+    return [AgentScored(**agent) for agent in results]

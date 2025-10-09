@@ -28,3 +28,10 @@ class Agent(BaseModel):
 
     created_at: datetime
     ip_address: Optional[str] = None
+
+class AgentScored(Agent):
+    set_id: int
+
+    approved: bool 
+    validator_count: int
+    final_score: float
