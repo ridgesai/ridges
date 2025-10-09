@@ -18,5 +18,6 @@ class Evaluation(BaseModel):
     created_at: datetime
     finished_at: Optional[datetime] = None
 
-class EvaluationWithRuns(Evaluation):
+class EvaluationWithRuns(BaseModel):
+    evaluation: Evaluation
     runs: list[EvaluationRun]

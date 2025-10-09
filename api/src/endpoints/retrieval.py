@@ -501,7 +501,7 @@ async def shak_scratchpad() -> Any:
 
 import uuid
 
-from api.queries.agent import get_agents_in_queue, get_top_agents
+from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent
 from models.evaluation import EvaluationStatus, Evaluation
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored
@@ -541,7 +541,15 @@ async def evaluation_with_runs():
     pass
 
 async def agent_by_id(agent_id: str) -> Agent:
-    pass
+    agent = await get_agent(agent_id=uuid.UUID(agent_id))
+    
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found"
+        )
+
+    return agent
 
 async def miner_agents():
     pass
@@ -555,21 +563,25 @@ async def weight_receiving_agent():
 router = APIRouter()
 
 routes = [
-    ("/agent-version-file", get_agent_code), 
-    ("/connected-validators", get_connected_validators), 
-    ("/evaluations", get_evaluations),
-    ("/screening-evaluations", get_screening_evaluations),
-    ("/runs-for-evaluation", get_runs_for_evaluation),
-    ("/network-stats", get_network_stats),
-    ("/running-evaluations", get_running_evaluations),
-    ("/top-agents", get_top_agents),
-    ("/queue-position-by-hotkey", get_queue_position),
-    ("/inferences-by-run", inferences_for_run),
-    ("/agent-scores-over-time", agent_scores_over_time),
-    ("/miner-score-activity", miner_score_activity),
-    ("/agents-from-hotkey", get_agents_from_hotkey),    
-    ("/inference-provider-statistics", get_inference_provider_statistics),
-    ("/agent-scratch", shak_scratchpad)
+    ("/queue", queue),
+    ("/top-agents", top_agents),
+    ("/agent-by-id", agent_by_id)
+
+    # ("/agent-version-file", get_agent_code), 
+    # ("/connected-validators", get_connected_validators), 
+    # ("/evaluations", get_evaluations),
+    # ("/screening-evaluations", get_screening_evaluations),
+    # ("/runs-for-evaluation", get_runs_for_evaluation),
+    # ("/network-stats", get_network_stats),
+    # ("/running-evaluations", get_running_evaluations),
+    # ("/top-agents", get_top_agents),
+    # ("/queue-position-by-hotkey", get_queue_position),
+    # ("/inferences-by-run", inferences_for_run),
+    # ("/agent-scores-over-time", agent_scores_over_time),
+    # ("/miner-score-activity", miner_score_activity),
+    # ("/agents-from-hotkey", get_agents_from_hotkey),    
+    # ("/inference-provider-statistics", get_inference_provider_statistics),
+    # ("/agent-scratch", shak_scratchpad)
 ]
 
 for path, endpoint in routes:
