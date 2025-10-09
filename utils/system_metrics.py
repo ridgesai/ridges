@@ -3,7 +3,6 @@ import utils.logger as logger
 
 from typing import Optional
 from pydantic import BaseModel
-from loggers.logging_utils import get_logger
 from utils.docker import get_num_docker_containers
 
 
@@ -47,6 +46,5 @@ async def get_system_metrics() -> SystemMetrics:
 
     except Exception as e:
         logger.warning(f"Error in get_system_metrics(): {e}")
-        pass
         
     return metrics

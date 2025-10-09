@@ -18,6 +18,8 @@ class EvaluationSetGroup(str, Enum):
         else:
             return EvaluationSetGroup.validator
 
+
+
 class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
