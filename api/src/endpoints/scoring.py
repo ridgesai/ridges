@@ -23,6 +23,7 @@ from api.src.backend.queries.scores import store_treasury_transaction as db_stor
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
 from api.src.backend.queries.scores import evaluate_agent_for_threshold_approval
 from api.src.utils.threshold_scheduler import threshold_scheduler
+from models.agent import AgentStatus
 
 load_dotenv()
 
@@ -195,16 +196,16 @@ async def re_eval_approved(approval_password: str):
         
         # Mark old agents as scored
         async with get_transaction() as conn:
-            await conn.execute("""
-                UPDATE agents SET status = 'scored'
-                WHERE status in ('screening_1', 'screening_2', 'evaluating')
+            await conn.execute(f"""
+                UPDATE agents SET status = '{AgentStatus.cancelled.value}'
+                WHERE status in ('{AgentStatus.screening_1.value}', '{AgentStatus.screening_2.value}', '{AgentStatus.evaluating.value}')
             """)
         
         # Reset approved agents to awaiting stage 1 screening
         async with get_transaction() as conn:
             # Reset approved agents to awaiting stage 1 screening
-            agent_data = await conn.fetch("""
-                UPDATE agents SET status = 'screening_1'
+            agent_data = await conn.fetch(f"""
+                UPDATE agents SET status = '{AgentStatus.screening_1.value}'
                 WHERE agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -381,7 +382,7 @@ async def check_evaluation_status(evaluation_id: str):
         async with get_db_connection() as conn:
             # Check evaluation status
             result = await conn.fetchrow(
-                "SELECT status, finished_at FROM evaluations WHERE evaluation_id = $1", 
+                "SELECT status, finished_at FROM evaluations_hydrated WHERE evaluation_id = $1",
                 UUID(evaluation_id)
             )
             
