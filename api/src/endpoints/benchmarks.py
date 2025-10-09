@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends
 from api.src.utils.auth import verify_request_public
 import utils.logger as logger
 from api.src.backend.entities import QuestionSolveRateStats
-from api.src.backend.db_manager import get_db_connection
 from api.src.backend.entities import MinerAgentWithScores
 from models.evaluation_run import EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup

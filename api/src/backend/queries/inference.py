@@ -1,7 +1,7 @@
 import asyncpg
 from datetime import datetime
 
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from api.src.backend.entities import ProviderStatistics
 
 @db_operation

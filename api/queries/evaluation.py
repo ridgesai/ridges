@@ -7,8 +7,8 @@ import asyncpg
 
 from api.queries.evaluation_run import create_evaluation_run
 from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_of_group_in_set
-from api.src.backend.db_manager import db_operation
-from api.src.backend.db_manager import db_transaction
+from utils.database import db_operation
+from utils.database import db_transaction
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup

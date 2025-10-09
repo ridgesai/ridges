@@ -5,7 +5,7 @@ import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.queries.agent import get_agent
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from api.src.backend.entities import Inference, EvaluationStatus
 from api.src.backend.queries.agents import get_agent_approved_banned
 from api.src.utils.auth import verify_request_public

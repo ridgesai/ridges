@@ -1,14 +1,14 @@
-# TODO: cleanup how we set this all up
-from dotenv import load_dotenv
+# TODO ADAM: slowly fixing this
 
-load_dotenv("api/.env")
 
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-from api.src.backend.db_manager import new_db
+
+
+
 import utils.logger as logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
@@ -22,21 +22,60 @@ from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
 
+
+
+
+
+
+
+import api.config as config
+
+from utils.s3 import initialize_s3, deinitialize_s3
+from utils.database import initialize_database, deinitialize_database
+
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await new_db.open()
+    await initialize_database(
+        username=config.DATABASE_USERNAME,
+        password=config.DATABASE_PASSWORD,
+        host=config.DATABASE_HOST,
+        port=config.DATABASE_PORT,
+        name=config.DATABASE_NAME
+    )
 
-    
-    
-    # Recover threshold-based approvals
-    # from api.src.utils.threshold_scheduler import threshold_scheduler
-    # await threshold_scheduler.recover_pending_approvals()
+    await initialize_s3(
+        _bucket=config.S3_BUCKET_NAME,
+        region=config.AWS_REGION,
+        access_key_id=config.AWS_ACCESS_KEY_ID,
+        secret_access_key=config.AWS_SECRET_ACCESS_KEY
+    )
+
+
 
     yield
 
-    await new_db.close()
+
+
+    await deinitialize_database()
+    await deinitialize_s3()
+
+
 
 app = FastAPI(lifespan=lifespan)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Configure CORS
@@ -44,8 +83,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", 'https://www.ridges.ai'],
     allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"]
 )
 
 app.include_router(upload_router, prefix="/upload")

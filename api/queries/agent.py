@@ -1,24 +1,20 @@
-
-
-
 import asyncpg
-
 import utils.logger as logger
 
 from uuid import UUID
 from models.agent import Agent
 from typing import Optional, Final
-from api.src.utils.s3 import S3Manager
-from api.src.backend.db_manager import db_operation
-from api.src.utils.s3 import S3Manager
 from models.agent import Agent, AgentScored
+from utils.database import db_operation
 from models.evaluation_set import EvaluationSetGroup
 
 # TODO: should not be here. should go in config.py 
 MIN_EVALS: Final[int] = 3
 
-# TODO: this should not go in queries. should go in utils/s3.py (which doesn't exist yet)
-s3_manager = S3Manager()
+
+
+# TODO ADAM: some funky shit is going on here fix when i can
+
 
 
 @db_operation
@@ -79,15 +75,9 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
 
 
 
-async def get_agent_code_by_agent_id(agent_id: UUID) -> str:
-    """Get agent code from S3 by agent ID"""
-    try:
-        text = await s3_manager.get_file_text(f"{str(agent_id)}/agent.py")
-    except Exception as e:
-        logger.error(f"Error retrieving agent version code from S3 for agent {agent_id}: {e}")
-        raise Exception(f"Internal server error while retrieving agent code for id {agent_id}. Please try again later.")
 
-    return text
+
+
 
 @db_operation
 async def get_agent(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
@@ -104,6 +94,8 @@ async def get_agent(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]
 
     return Agent(**result)
 
+
+
 @db_operation
 async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
     queue_to_query = f"{queue_stage.value}_queue"
@@ -114,6 +106,9 @@ async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationS
     """)
 
     return [Agent(**agent) for agent in queue]
+
+
+
 
 @db_operation
 async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -> list[AgentScored]:

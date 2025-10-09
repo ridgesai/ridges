@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Optional, List, Tuple
 import asyncpg
 
-from api.src.backend.db_manager import db_operation, db_transaction
+from utils.database import db_operation, db_transaction
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
 import utils.logger as logger

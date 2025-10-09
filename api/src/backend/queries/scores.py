@@ -2,7 +2,7 @@ from datetime import timezone
 import logging
 from uuid import UUID
 import asyncpg
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from api.src.backend.entities import MinerAgentScored, TreasuryTransaction
 
 

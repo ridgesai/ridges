@@ -78,9 +78,10 @@ def create_internal_docker_network(name: str):
     Creates an internal Docker network, if it does not already exist.
     """
     
-    if docker_client.networks.list(names=[name]):
+    try:
+        docker_client.networks.get(name)
         logger.info(f"Found internal Docker network: {name}")
-    else:
+    except docker.errors.NotFound:
         docker_client.networks.create(name, driver="bridge", internal=True)
         logger.info(f"Created internal Docker network: {name}")
 

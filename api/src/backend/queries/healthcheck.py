@@ -1,6 +1,6 @@
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 
 @db_operation
 async def get_healthcheck_results(conn: asyncpg.Connection, limit: int = 30):

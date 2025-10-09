@@ -5,7 +5,6 @@ from uuid import UUID
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.backend.entities import MinerAgent
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.entities import TreasuryTransaction
@@ -15,9 +14,7 @@ from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, res
 from api.src.backend.queries.scores import evaluate_agent_for_threshold_approval
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
-from api.src.models.evaluation import Evaluation
 from api.src.utils.auth import verify_request, verify_request_public
-from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.threshold_scheduler import threshold_scheduler
 import utils.logger as logger

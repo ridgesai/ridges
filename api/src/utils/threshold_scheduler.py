@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Set
 import utils.logger as logger
-from api.src.backend.db_manager import get_transaction
 
 
 

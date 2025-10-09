@@ -4,7 +4,7 @@ from uuid import UUID
 
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from models.evaluation_run import EvaluationRun
 
 

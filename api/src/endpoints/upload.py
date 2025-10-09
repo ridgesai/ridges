@@ -6,7 +6,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 
-from api.src.backend.db_manager import get_transaction
 from api.src.backend.queries.agents import get_ban_reason
 from api.src.backend.queries.agents import get_latest_agent
 from api.src.utils.auth import verify_request_public

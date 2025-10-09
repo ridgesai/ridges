@@ -14,7 +14,6 @@ from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
 from utils.fiber import validate_signed_timestamp
 from fastapi import Depends, APIRouter, HTTPException
-from api.queries.agent import get_agent_code_by_agent_id, get_agent
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
