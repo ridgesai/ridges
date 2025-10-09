@@ -84,6 +84,8 @@ async def weights() -> Dict[str, float]:
     DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
     weights = {}  # Initialize weights dictionary
 
+    weights["5EsNzkZ3DwDqCsYmSJDeGXX51dQJd5broUCH6dbDjvkTcicD"] = 1.0
+
     treasury_hotkey = await get_treasury_hotkey()
 
     top_agent = await get_top_agent()
