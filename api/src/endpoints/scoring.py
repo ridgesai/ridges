@@ -59,37 +59,6 @@ async def get_treasury_hotkey():
         
         return treasury_hotkey
 
-@router.get("/weights", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def weights() -> Dict[str, float]:
-    """
-    Returns a dictionary of miner hotkeys to weights
-    """
-    DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
-    weights = {}  # Initialize weights dictionary
-
-    treasury_hotkey = await get_treasury_hotkey()
-
-    top_agent = await get_top_agent()
-    weights[top_agent.miner_hotkey] = 1.0
-
-    return weights
-    # Disburse to treasury to manually send to whoever should be top agent in the event of an error
-    if top_agent is None:
-        weights[treasury_hotkey] = 1.0
-
-        return weights
-
-    weight_left = 1.0 - DUST_WEIGHT
-    if top_agent.miner_hotkey.startswith("open-"):
-        weights[treasury_hotkey] = weight_left
-    else:
-        if check_if_hotkey_is_registered(top_agent.miner_hotkey):
-            weights[top_agent.miner_hotkey] = weight_left
-        else:
-            logger.error(f"Top agent {top_agent.miner_hotkey} not registered on subnet")
-            weights[treasury_hotkey] = 1.0
-
-    return weights
 
 @router.get("/screener-thresholds", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_screener_thresholds():
@@ -105,6 +74,7 @@ async def get_prune_threshold():
     """
     return {"prune_threshold": PRUNE_THRESHOLD}
 
+
 @router.post("/ban-agents", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -116,12 +86,7 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     except Exception as e:
         logger.error(f"Error banning agents: {e}")
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
-    
 
-@router.post("/trigger-weight-update", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def trigger_weight_set():
-    await tell_validators_to_set_weights()
-    return {"message": "Successfully triggered weight update"}
 
 @router.post("/approve-version", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def approve_version(agent_id: str, set_id: int, approval_password: str):
@@ -185,65 +150,6 @@ async def approve_version(agent_id: str, set_id: int, approval_password: str):
         logger.error(f"Error evaluating agent {agent_id} for threshold approval: {e}")
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
-
-@router.post("/re-eval-approved", tags=["scoring"], dependencies=[Depends(verify_request)])
-async def re_eval_approved(approval_password: str):
-    """
-    Re-evaluate approved agents with the newest evaluation set
-    by setting the agents status to screening
-    """
-    if approval_password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid approval password")
-    
-    try:
-        logger.info("Starting re-evaluation of approved agents")
-        
-        # Mark old agents as scored
-        async with get_transaction() as conn:
-            await conn.execute(f"""
-                UPDATE agents SET status = '{AgentStatus.cancelled.value}'
-                WHERE status in ('{AgentStatus.screening_1.value}', '{AgentStatus.screening_2.value}', '{AgentStatus.evaluating.value}')
-            """)
-        
-        # Reset approved agents to awaiting stage 1 screening
-        async with get_transaction() as conn:
-            # Reset approved agents to awaiting stage 1 screening
-            agent_data = await conn.fetch(f"""
-                UPDATE agents SET status = '{AgentStatus.screening_1.value}'
-                WHERE agent_id IN (SELECT agent_id FROM approved_agents WHERE approved_at <= NOW())
-                                          AND status != 'replaced'
-                AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                RETURNING *
-            """)
-            
-            agents_to_re_evaluate = [MinerAgent(**agent) for agent in agent_data]
-            logger.info(f"Reset {len(agents_to_re_evaluate)} approved agents to screening")
-        
-        if not agents_to_re_evaluate:
-            logger.info("No approved agents found for re-evaluation")
-            return {"message": "No approved agents found for re-evaluation", "agents": []}
-        
-        logger.info(f"Successfully initiated re-evaluation for {len(agents_to_re_evaluate)} approved agents")
-        return {
-            "message": f"Successfully initiated re-evaluation for {len(agents_to_re_evaluate)} approved agents",
-            "agents": [agent.model_dump(mode='json') for agent in agents_to_re_evaluate]
-        }
-
-    except Exception as e:
-        logger.error(f"Error re-evaluating approved agents: {e}")
-        raise HTTPException(status_code=500, detail="Error initiating re-evaluation of approved agents")
-
-@router.post("/refresh-scores", tags=["scoring"], dependencies=[Depends(verify_request)])
-async def refresh_scores():
-    """Manually refresh the agent_scores materialized view"""
-    try:
-        async with new_db.acquire() as conn:
-            await MinerAgentScored.refresh_materialized_view(conn)
-        logger.info("Successfully refreshed agent_scores materialized view")
-        return {"message": "Successfully refreshed agent scores"}
-    except Exception as e:
-        logger.error(f"Error refreshing agent scores: {e}")
-        raise HTTPException(status_code=500, detail="Error refreshing agent scores")
 
 @router.post("/re-evaluate-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_validators: bool = False):
@@ -346,38 +252,3 @@ async def get_threshold_function():
     except Exception as e:
         logger.error(f"Error generating threshold function: {e}")
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
-
-
-@router.get("/check-evaluation-status", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def check_evaluation_status(evaluation_id: str):
-    """Check if an evaluation has been cancelled or is still active"""
-    
-    try:
-        async with get_db_connection() as conn:
-            # Check evaluation status
-            result = await conn.fetchrow(
-                "SELECT status, finished_at FROM evaluations_hydrated WHERE evaluation_id = $1",
-                UUID(evaluation_id)
-            )
-            
-            if not result:
-                raise HTTPException(status_code=404, detail="Evaluation not found")
-            
-            status = result['status']
-            finished_at = result['finished_at']
-            
-            # If evaluation is cancelled, replaced, pruned, or error, it should be stopped
-            should_stop = status in ['cancelled', 'replaced', 'pruned', 'error']
-            
-            return {
-                "evaluation_id": evaluation_id,
-                "status": status,
-                "should_stop": should_stop,
-                "finished_at": finished_at.isoformat() if finished_at else None
-            }
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error checking evaluation status {evaluation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to check evaluation status")
