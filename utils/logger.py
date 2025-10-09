@@ -2,11 +2,17 @@ import logging
 
 
 
+# We want some loggers from third-party libraries to be quieter
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('chain_utils').setLevel(logging.WARNING)
+
+
+
 LEVEL_NAME_TO_COLOR = {
-    'DEBUG':    '\033[36m', # Cyan
-    'INFO':     '\033[32m', # Green
-    'WARNING':  '\033[33m', # Yellow
-    'ERROR':    '\033[31m'  # Red
+    'DEBUG':   '\033[36m', # Cyan
+    'INFO':    '\033[32m', # Green
+    'WARNING': '\033[33m', # Yellow
+    'ERROR':   '\033[31m'  # Red
 }
 
 GRAY = '\033[90m'
