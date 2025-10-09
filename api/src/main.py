@@ -3,8 +3,7 @@ from dotenv import load_dotenv
 
 load_dotenv("api/.env")
 
-import asyncio
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -14,8 +13,6 @@ from loggers.logging_utils import get_logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
-from api.src.endpoints.healthcheck import router as healthcheck_router
-from api.src.endpoints.system_status import router as system_status_router
 from api.src.endpoints.agents import router as agents_router
 from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.benchmarks import router as benchmarks_router
@@ -56,8 +53,6 @@ app.include_router(agents_router, prefix="/agents")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(benchmarks_router, prefix="/benchmarks")
 app.include_router(validator_router, prefix="/validator")
-app.include_router(system_status_router, prefix="/system")
-app.include_router(healthcheck_router)
 
 
 if __name__ == "__main__":
