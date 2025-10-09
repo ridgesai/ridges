@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 
 from api.src.utils.auth import verify_request_public
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from api.src.backend.entities import QuestionSolveRateStats
 from api.src.backend.db_manager import get_db_connection
 from api.src.backend.entities import MinerAgentWithScores
@@ -11,7 +11,7 @@ from models.evaluation_set import EvaluationSetGroup
 
 load_dotenv()
 
-logger = get_logger(__name__)
+
 
 async def get_solved_percentage_per_question():
     """

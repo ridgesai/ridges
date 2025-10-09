@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from api.src.models.screener import Screener
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
@@ -27,7 +27,7 @@ from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
 
 load_dotenv()
 
-logger = get_logger(__name__)
+
 
 s3_manager = S3Manager()
 

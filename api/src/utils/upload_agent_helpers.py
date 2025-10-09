@@ -1,6 +1,6 @@
 from fastapi import UploadFile, HTTPException
 from typing import Optional
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -15,7 +15,7 @@ from api.src.backend.entities import MinerAgent, Evaluation
 from api.src.utils.s3 import S3Manager
 from api.src.backend.db_manager import get_transaction
 
-logger = get_logger(__name__)
+
 s3_manager = S3Manager()
 
 def get_miner_hotkey(file_info: str) -> str:

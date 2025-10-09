@@ -20,12 +20,12 @@ from api.src.utils.auth import verify_request, verify_request_public
 from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.threshold_scheduler import threshold_scheduler
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from models.agent import AgentStatus
 
 load_dotenv()
 
-logger = get_logger(__name__)
+
 treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 

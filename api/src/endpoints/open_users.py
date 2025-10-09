@@ -11,11 +11,11 @@ from api.src.backend.queries.open_users import get_open_user, create_open_user, 
 from api.src.backend.queries.scores import get_treasury_hotkeys as db_get_treasury_hotkeys
 from api.src.backend.queries.agents import get_agent_by_agent_id as db_get_agent_by_agent_id
 from api.src.backend.entities import OpenUser, OpenUserSignInRequest
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
 load_dotenv()
 
-logger = get_logger(__name__)
+
 
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
 

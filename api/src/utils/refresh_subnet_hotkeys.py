@@ -4,9 +4,9 @@ import time
 from substrateinterface import SubstrateInterface
 from typing import List
 
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
-logger = get_logger(__name__)
+
 
 def check_if_hotkey_is_registered(hotkey: str, pathname: str = "subnet_hotkeys_cache.json") -> bool:
     try:

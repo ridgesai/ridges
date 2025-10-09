@@ -9,11 +9,11 @@ from api.src.backend.db_manager import db_operation
 from api.src.backend.entities import Inference, EvaluationStatus
 from api.src.backend.queries.agents import get_agent_approved_banned
 from api.src.utils.auth import verify_request_public
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from models.agent import AgentStatus, Agent
 from models.evaluation_run import EvaluationRunStatus
 
-logger = get_logger(__name__)
+
 
 @db_operation
 async def get_inferences_for_agent_version(conn: asyncpg.Connection, agent_id: str, set_id: Optional[int] = None, limit: int = 100) -> list[Inference]:

@@ -1,10 +1,10 @@
 from api.src.backend.queries.statistics import get_top_agents
 from api.src.utils.s3 import S3Manager
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
 s3 = S3Manager()
 
-logger = get_logger(__name__)
+
 
 async def update_top_agent_code():
     """

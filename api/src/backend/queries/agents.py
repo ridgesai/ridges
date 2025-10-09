@@ -5,10 +5,10 @@ import asyncpg
 from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from models.agent import AgentStatus
 
-logger = get_logger(__name__)
+
 
 @db_operation
 async def get_latest_agent(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[MinerAgent]:

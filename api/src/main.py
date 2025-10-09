@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from api.src.backend.db_manager import new_db
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
@@ -20,7 +20,7 @@ from api.src.endpoints.validator import router as validator_router
 from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
-logger = get_logger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

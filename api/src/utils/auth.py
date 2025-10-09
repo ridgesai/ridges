@@ -1,8 +1,8 @@
 from fastapi import Request, Header, Depends, HTTPException
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 # from fiber import constants as cst
 
-logger = get_logger(__name__)
+
 
 async def verify_request_ip_whitelist(
     request: Request,

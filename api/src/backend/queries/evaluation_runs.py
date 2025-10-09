@@ -3,9 +3,9 @@ from typing import Optional
 import asyncpg
 from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
 from api.src.backend.db_manager import db_operation, db_transaction
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
-logger = get_logger(__name__)
+
 
 
 @db_transaction

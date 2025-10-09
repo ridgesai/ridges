@@ -6,10 +6,10 @@ from typing import Optional, List
 from api.src.backend.db_manager import db_operation, new_db
 from api.src.backend.entities import MinerAgent
 from api.src.utils.s3 import S3Manager
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 import asyncpg
 
-logger = get_logger(__name__)
+
 
 # Get the API directory path
 API_DIR = Path(__file__).parent.parent.parent

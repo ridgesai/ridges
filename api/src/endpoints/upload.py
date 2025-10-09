@@ -13,12 +13,12 @@ from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import check_agent_banned, check_hotkey_registered, check_rate_limit, \
     check_replay_attack, check_if_python_file, get_miner_hotkey, check_signature, check_file_size, check_agent_code, \
     upload_agent_code_to_s3, record_upload_attempt
-from loggers.logging_utils import get_logger
-from loggers.process_tracking import process_context
+import utils.logger as logger
+
 from models.agent import AgentStatus, Agent
 
 
-logger = get_logger(__name__)
+
 
 
 prod = False

@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 import aiofiles
 
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 
 dotenv.load_dotenv()
 
-logger = get_logger(__name__)
+
 
 # Hotkeys cache
 _hotkeys_cache_file = Path("subnet_hotkeys_cache.json")
