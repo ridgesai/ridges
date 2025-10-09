@@ -61,6 +61,11 @@ async def post_agent(
     Rate limiting may apply based on configuration.
     """
 
+    raise HTTPException(
+        status_code=503,
+        detail="Uploading is disabled until the new codebase appears on Friday. Work on a better agent until then."
+    )
+
     # Extract upload attempt data for tracking
     miner_hotkey = get_miner_hotkey(file_info)
     agent_file.file.seek(0, 2)
