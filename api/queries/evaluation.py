@@ -56,7 +56,7 @@ async def create_new_evaluation_and_evaluation_runs(
         created_at=datetime.now(),
     )
     print(f"CREATING EVALUATION WITH ID: {evaluation.evaluation_id}")
-    await create_evaluation(conn, evaluation)
+    await create_evaluation(evaluation)
     print(f"FINISHED CREATING EVALUATION WITH ID: {evaluation.evaluation_id}")
 
 
@@ -72,7 +72,7 @@ async def create_new_evaluation_and_evaluation_runs(
     ]
 
     for evaluation_run in evaluation_runs:
-        await create_evaluation_run(conn, evaluation_run)
+        await create_evaluation_run(evaluation_run)
 
     return evaluation, evaluation_runs
 
