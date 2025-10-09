@@ -22,6 +22,7 @@ from models.agent import AgentStatus
 
 load_dotenv()
 
+router = APIRouter()
 
 treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
@@ -29,6 +30,7 @@ treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 ## Actual endpoints ##
 
+@router.get("/check-top-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def weight_receiving_agent():
     '''
     This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
@@ -57,6 +59,7 @@ async def get_treasury_hotkey():
         
         return treasury_hotkey
 
+@router.get("/weights", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def weights() -> Dict[str, float]:
     """
     Returns a dictionary of miner hotkeys to weights
@@ -88,18 +91,21 @@ async def weights() -> Dict[str, float]:
 
     return weights
 
+@router.get("/screener-thresholds", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_screener_thresholds():
     """
     Returns the screener thresholds
     """
     return {"stage_1_threshold": SCREENING_1_THRESHOLD, "stage_2_threshold": SCREENING_2_THRESHOLD}
 
+@router.get("/prune-threshold", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_prune_threshold():
     """
     Returns the prune threshold
     """
     return {"prune_threshold": PRUNE_THRESHOLD}
 
+@router.post("/ban-agents", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
         raise HTTPException(status_code=401, detail="Invalid ban password. Fuck you.")
@@ -112,10 +118,12 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
     
 
+@router.post("/trigger-weight-update", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def trigger_weight_set():
     await tell_validators_to_set_weights()
     return {"message": "Successfully triggered weight update"}
 
+@router.post("/approve-version", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def approve_version(agent_id: str, set_id: int, approval_password: str):
     """Approve a version ID using threshold scoring logic
     
@@ -178,6 +186,7 @@ async def approve_version(agent_id: str, set_id: int, approval_password: str):
         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
 
+@router.post("/re-eval-approved", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def re_eval_approved(approval_password: str):
     """
     Re-evaluate approved agents with the newest evaluation set
@@ -224,6 +233,7 @@ async def re_eval_approved(approval_password: str):
         logger.error(f"Error re-evaluating approved agents: {e}")
         raise HTTPException(status_code=500, detail="Error initiating re-evaluation of approved agents")
 
+@router.post("/refresh-scores", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def refresh_scores():
     """Manually refresh the agent_scores materialized view"""
     try:
@@ -235,6 +245,7 @@ async def refresh_scores():
         logger.error(f"Error refreshing agent scores: {e}")
         raise HTTPException(status_code=500, detail="Error refreshing agent scores")
 
+@router.post("/re-evaluate-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_validators: bool = False):
     """Re-evaluate an agent by resetting all validator evaluations for a agent_id back to waiting status"""
     if password != os.getenv("APPROVAL_PASSWORD"):
@@ -256,6 +267,7 @@ async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_
         logger.error(f"Error resetting validator evaluations for version {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting validator evaluations")
 
+@router.post("/re-run-evaluation", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def re_run_evaluation(password: str, evaluation_id: str):
     """Re-run an evaluation by resetting it to waiting status"""
     if password != os.getenv("APPROVAL_PASSWORD"):
@@ -270,6 +282,7 @@ async def re_run_evaluation(password: str, evaluation_id: str):
         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
+@router.post("/store-treasury-transaction", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def store_treasury_transaction(dispersion_extrinsic_code: str, agent_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
     if password != treasury_transaction_password:
         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
@@ -323,6 +336,7 @@ async def store_treasury_transaction(dispersion_extrinsic_code: str, agent_id: s
         logger.error(f"Error storing treasury transaction: {e}")
         raise HTTPException(status_code=500, detail="Error storing treasury transaction")
     
+@router.get("/threshold-function", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_threshold_function():
     """
     Returns the threshold function with additional metadata
@@ -334,6 +348,7 @@ async def get_threshold_function():
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
 
+@router.get("/check-evaluation-status", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def check_evaluation_status(evaluation_id: str):
     """Check if an evaluation has been cancelled or is still active"""
     
@@ -366,47 +381,3 @@ async def check_evaluation_status(evaluation_id: str):
     except Exception as e:
         logger.error(f"Error checking evaluation status {evaluation_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to check evaluation status")
-
-router = APIRouter()
-
-# Public scoring endpoints (read-only data)
-public_routes = [
-    ("/check-top-agent", weight_receiving_agent, ["GET"]),
-    ("/weights", weights, ["GET"]),
-    ("/screener-thresholds", get_screener_thresholds, ["GET"]),
-    ("/prune-threshold", get_prune_threshold, ["GET"]),
-    ("/threshold-function", get_threshold_function, ["GET"]),
-    ("/trigger-weight-update", trigger_weight_set, ["POST"]),
-    ("/check-evaluation-status", check_evaluation_status, ["GET"]),
-    ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
-    ("/re-run-evaluation", re_run_evaluation, ["POST"]),
-    ("/approve-version", approve_version, ["POST"]),
-]
-
-# Protected scoring endpoints (admin functions)
-protected_routes = [
-    ("/ban-agents", ban_agents, ["POST"]),
-    ("/re-eval-approved", re_eval_approved, ["POST"]),
-    ("/refresh-scores", refresh_scores, ["POST"]),
-    ("/store-treasury-transaction", store_treasury_transaction, ["POST"])
-]
-
-# Add public routes
-for path, endpoint, methods in public_routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["scoring"],
-        dependencies=[Depends(verify_request_public)],
-        methods=methods
-    )
-
-# Add protected routes
-for path, endpoint, methods in protected_routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["scoring"],
-        dependencies=[Depends(verify_request)],
-        methods=methods
-    )
