@@ -69,6 +69,11 @@ async def main():
     polyglot_suite = PolyglotSuite(datasets_path / "polyglot")
     swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
 
+    # TODO: Prebuild all SWE-Bench problem images
+    #       - Send a request to something like /api/get-latest-problem-set
+    #       - Filter out only SWE-Bench problems, filter out duplicates
+    #       - Prebuild those
+
 
 
     # Request an evaluation
