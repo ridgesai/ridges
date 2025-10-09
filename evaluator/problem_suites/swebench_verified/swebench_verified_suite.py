@@ -18,19 +18,19 @@ from validator.utils.git import clone_local_repo_at_commit, clone_repo, verify_c
 
 
 class SWEBenchVerifiedSuite(ProblemSuite):
-    def __init__(self, problem_suite_path):
-        super().__init__(problem_suite_path)
+    def __init__(self, dataset_path):
+        super().__init__(dataset_path)
 
 
 
-    def load_problems(self, problem_suite_path):
+    def load_problems(self, dataset_path):
         """Load problems from swebench_verified.json and verify directory structure."""
 
-        if not os.path.exists(problem_suite_path):
-            error(f"[SWEBENCH] Problem suite directory not found: {problem_suite_path}")
-            raise FileNotFoundError(f"Problem suite directory not found: {problem_suite_path}")
+        if not os.path.exists(dataset_path):
+            error(f"[SWEBENCH] Problem suite directory not found: {dataset_path}")
+            raise FileNotFoundError(f"Problem suite directory not found: {dataset_path}")
             
-        json_path = os.path.join(problem_suite_path, "swebench_verified.json")
+        json_path = os.path.join(dataset_path, "swebench_verified.json")
         if not os.path.exists(json_path):
             error(f"[SWEBENCH] swebench_verified.json not found at: {json_path}")
             raise FileNotFoundError(f"swebench_verified.json not found at: {json_path}")
@@ -51,7 +51,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             debug(f"[SWEBENCH] Finding {len(unique_repos)} unique repositories")
             
             # Check that all repositories exist in the repos/ directory
-            repos_dir = os.path.join(problem_suite_path, "repos")
+            repos_dir = os.path.join(dataset_path, "repos")
             if not os.path.exists(repos_dir):
                 os.makedirs(repos_dir, exist_ok=True)
             
@@ -121,7 +121,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
         # Convert repository format from "owner/name" to directory name format "owner_name"
         repo_dir_name = repo.replace("/", "_")
-        repo_path = os.path.join(self.problem_suite_path, "repos", repo_dir_name)
+        repo_path = os.path.join(self.dataset_path, "repos", repo_dir_name)
         
         # Clone the appropriate repository at the specific commit that the problem requires
         debug(f"[SWEBENCH] Cloning {repo} at commit {base_commit} to {dir} for {problem_name}")

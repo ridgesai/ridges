@@ -1,10 +1,12 @@
 import time
 import asyncio
+import pathlib
 import utils.logger as logger
 import validator.config as config
 
 from validator.http import post_ridges_platform
-from 
+from evaluator.problem_suites.polyglot import PolyglotSuite
+from evaluator.problem_suites.swebench_verified import SwebenchVerifiedSuite
 
 
 
@@ -59,7 +61,9 @@ async def main():
 
 
         # Load all problem suites
-
+        datasets_path = pathlib.Path(__file__).parent.parent / "evaluator" / "datasets"
+        polyglot_suite = PolyglotSuite(datasets_path / "polyglot")
+        swebench_verified_suite = SwebenchVerifiedSuite(datasets_path / "swebench_verified")
 
 
 

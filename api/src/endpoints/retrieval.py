@@ -20,7 +20,6 @@ from api.src.backend.queries.statistics import get_agent_scores_over_time as db_
 from api.queries.evaluation_set import get_latest_set_id
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
-from api.src.backend.internal_tools import InternalTools
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
 from api.src.backend.queries.agents import get_all_approved_agent_ids as db_get_all_approved_agent_ids
 from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_hotkeys as db_get_total_dispersed_by_treasury_hotkeys
@@ -31,7 +30,6 @@ load_dotenv()
 logger = get_logger(__name__)
 
 s3_manager = S3Manager()
-internal_tools = InternalTools()
 
 SCREENER_IP_LIST = [
     "3.89.93.137", # 1-1

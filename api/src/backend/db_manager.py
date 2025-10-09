@@ -71,11 +71,12 @@ class DBManager:
             else:
                 raise Exception("Schema file is missing")
 
-DB_USER = os.getenv("AWS_MASTER_USERNAME")
-DB_PASS = os.getenv("AWS_MASTER_PASSWORD")
-DB_HOST = os.getenv("AWS_RDS_PLATFORM_ENDPOINT")
-DB_NAME = os.getenv("AWS_RDS_PLATFORM_DB_NAME")
-DB_PORT = os.getenv("PGPORT", "5432")
+# TODO ADAM MOVE THIS TO CONFIG.PY
+DB_USER = os.getenv("DATABASE_USERNAME")
+DB_PASS = os.getenv("DATABASE_PASSWORD")
+DB_HOST = os.getenv("DATABASE_HOST")
+DB_NAME = os.getenv("DATABASE_NAME")
+DB_PORT = os.getenv("DATABASE_PORT", "5432")
 
 # Ensure all environment variables are present
 assert DB_USER is not None, "DB_USER environment variable is required"

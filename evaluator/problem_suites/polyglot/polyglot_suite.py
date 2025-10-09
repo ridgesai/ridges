@@ -6,23 +6,23 @@ import shutil
 
 from utils.diff import get_file_diff
 from utils.git import init_repo_with_initial_commit
-from abstract_agent_runner.problem_suites.problem_suite import ProblemSuite
+from evaluator.problem_suites.problem_suite import ProblemSuite
 
 
 class PolyglotSuite(ProblemSuite):
-    def __init__(self, problem_suite_path):
-        super().__init__(problem_suite_path)
+    def __init__(self, dataset_path):
+        super().__init__(dataset_path)
 
 
 
-    def load_problems(self, problem_suite_path):
+    def load_problems(self, dataset_path):
         """Load problems from polyglot.json and verify directory structure."""
         
-        if not os.path.exists(problem_suite_path):
-            error(f"[POLYGLOT] Problem suite directory not found: {problem_suite_path}")
-            raise FileNotFoundError(f"Problem suite directory not found: {problem_suite_path}")
+        if not os.path.exists(dataset_path):
+            error(f"[POLYGLOT] Problem suite directory not found: {dataset_path}")
+            raise FileNotFoundError(f"Problem suite directory not found: {dataset_path}")
             
-        json_path = os.path.join(problem_suite_path, "polyglot.json")
+        json_path = os.path.join(dataset_path, "polyglot.json")
         if not os.path.exists(json_path):
             error(f"[POLYGLOT] polyglot.json not found at: {json_path}")
             raise FileNotFoundError(f"polyglot.json not found at: {json_path}")
@@ -41,7 +41,7 @@ class PolyglotSuite(ProblemSuite):
                     error(f"[POLYGLOT] Found problem without name field")
                     raise ValueError("Found problem without name field")
                 
-                problem_dir = os.path.join(problem_suite_path, problem_name)
+                problem_dir = os.path.join(dataset_path, problem_name)
                 
                 # Verify directory exists
                 if not os.path.exists(problem_dir):
@@ -97,7 +97,7 @@ class PolyglotSuite(ProblemSuite):
             warn(f"[POLYGLOT] Problem {problem_name} not found")
             raise ValueError(f"Problem {problem_name} not found")
 
-        problem_dir = os.path.join(self.problem_suite_path, problem_name)
+        problem_dir = os.path.join(self.dataset_path, problem_name)
         
         # Always copy main.py
         shutil.copy2(os.path.join(problem_dir, "main.py"), os.path.join(dir, "main.py"))

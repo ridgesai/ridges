@@ -15,11 +15,11 @@ class ProblemSuite(ABC):
     Classes like PolyglotProblemSuite and SWEBenchProblemSuite inherit from this class.
     """
 
-    def __init__(self, problem_suite_path):
+    def __init__(self, dataset_path):
         self.problems = {}
         
-        self.problem_suite_path = problem_suite_path
-        self.load_problems(problem_suite_path)
+        self.dataset_path = dataset_path
+        self.load_problems(dataset_path)
 
 
 
@@ -44,7 +44,7 @@ class ProblemSuite(ABC):
         self.problems[name] = problem_data
 
     @abstractmethod
-    def load_problems(self, problem_suite_path):
+    def load_problems(self, dataset_path):
         """
         Load problems from the given problem suite path.
         Each inherited class must implement this method according to how their problem suite is structured.

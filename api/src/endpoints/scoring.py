@@ -18,7 +18,6 @@ from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_a
 from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
-from api.src.backend.internal_tools import InternalTools
 from api.src.backend.entities import TreasuryTransaction
 from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
@@ -30,7 +29,6 @@ load_dotenv()
 logger = get_logger(__name__)
 treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
-internal_tools = InternalTools()
 
 
 ## Actual endpoints ##
