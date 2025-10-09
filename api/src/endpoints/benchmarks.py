@@ -10,8 +10,9 @@ from models.evaluation_set import EvaluationSetGroup
 
 load_dotenv()
 
+router = APIRouter()
 
-
+@router.get("/solved-percentage-per-question", tags=["benchmarks"], dependencies=[Depends(verify_request_public)])
 async def get_solved_percentage_per_question():
     """
     Returns the percentage of runs where each question was solved, as well as the number of runs and other relevant stats
@@ -36,6 +37,7 @@ async def get_solved_percentage_per_question():
 
         return [QuestionSolveRateStats(**dict(row)) for row in solved_results]
 
+@router.get("/solving-agents", tags=["benchmarks"], dependencies=[Depends(verify_request_public)])
 async def get_top_agents_solved_for_question(problem_name: str) -> list[MinerAgentWithScores]:
     async with get_db_connection() as conn:
         solving_agents = await conn.fetch("""
@@ -52,19 +54,3 @@ async def get_top_agents_solved_for_question(problem_name: str) -> list[MinerAge
 
 
         return [MinerAgentWithScores(**dict(row)) for row in solving_agents]
-
-router = APIRouter()
-
-routes = [
-    ("/solved-percentage-per-question", get_solved_percentage_per_question, ["GET"]),
-    ("/solving-agents", get_top_agents_solved_for_question, ["GET"]),
-]
-
-for path, endpoint, methods in routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["benchmarks"],
-        dependencies=[Depends(verify_request_public)],
-        methods=methods
-    )

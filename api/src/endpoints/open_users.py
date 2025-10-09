@@ -15,10 +15,11 @@ import utils.logger as logger
 
 load_dotenv()
 
-
+router = APIRouter()
 
 open_user_password = os.getenv("OPEN_USER_PASSWORD")
 
+@router.post("/sign-in", tags=["open-users"])
 async def open_user_sign_in(request: OpenUserSignInRequest):
     auth0_user_id = request.auth0_user_id
     email = request.email
@@ -55,8 +56,7 @@ async def open_user_sign_in(request: OpenUserSignInRequest):
     logger.info(f"Open user created: {new_user.open_hotkey}")
     return {"success": True, "new_user": True, "message": "User successfully created", "user": new_user}
 
-
-
+@router.get("/get-user-by-email", tags=["open-users"])
 async def get_user_by_email(email: str, password: str):
     if password != open_user_password:
         logger.warning(f"Someone tried to get user by email with an invalid password. email: {email}, password: {password}")
@@ -76,7 +76,8 @@ async def get_user_by_email(email: str, password: str):
     except Exception as e:
         logger.error(f"Error getting user by email {email}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
+
+@router.post("/update-bittensor-hotkey", tags=["open-users"])
 async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hotkey: Optional[str] = None):
     if password != open_user_password:
         logger.warning(f"Someone tried to update bittensor hotkey with an invalid password. open_hotkey: {open_hotkey}, bittensor_hotkey: {bittensor_hotkey}, password: {password}")
@@ -91,6 +92,7 @@ async def update_bittensor_hotkey(open_hotkey: str, password: str, bittensor_hot
         logger.error(f"Error updating bittensor hotkey for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
 
+@router.get("/get-treasury-transactions-for-open-user", tags=["open-users"])
 async def get_treasury_transactions_for_open_user(open_hotkey: str, password: str):
     if password != open_user_password:
         logger.warning(f"Someone tried to get treasury transactions for open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
@@ -102,7 +104,8 @@ async def get_treasury_transactions_for_open_user(open_hotkey: str, password: st
     except Exception as e:
         logger.error(f"Error getting treasury transactions for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
+
+@router.get("/get-pending-emission-for-open-user", tags=["open-users"])
 async def get_pending_emission_for_open_user(open_hotkey: str, password: str):
     if password != open_user_password:
         logger.warning(f"Someone tried to get pending emission for open user with an invalid password. open_hotkey: {open_hotkey}, password: {password}")
@@ -120,7 +123,8 @@ async def get_pending_emission_for_open_user(open_hotkey: str, password: str):
     except Exception as e:
         logger.error(f"Error getting pending emission for open user {open_hotkey}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-    
+
+@router.get("/get-all-pending-payouts", tags=["open-users"])
 async def get_all_pending_payouts(password: str):
     if password != open_user_password:
         logger.warning(f"Someone tried to get all pending payouts with an invalid password. password: {password}")
@@ -159,17 +163,3 @@ async def get_all_pending_payouts(password: str):
     except Exception as e:
         logger.error(f"Error getting all pending payouts: {e}")
         raise HTTPException(status_code=500, detail="Internal server error. Please try again later and message us on Discord if the problem persists.")
-
-router = APIRouter()
-
-routes = [
-    ("/sign-in", open_user_sign_in, ["POST"]),
-    ("/get-user-by-email", get_user_by_email, ["GET"]),
-    ("/update-bittensor-hotkey", update_bittensor_hotkey, ["POST"]),
-    ("/get-treasury-transactions-for-open-user", get_treasury_transactions_for_open_user, ["GET"]),
-    ("/get-pending-emission-for-open-user", get_pending_emission_for_open_user, ["GET"]),
-    ("/get-all-pending-payouts", get_all_pending_payouts, ["GET"]),
-]
-
-for path, endpoint, methods in routes:
-    router.add_api_route(path, endpoint, tags=["open-users"], methods=methods)

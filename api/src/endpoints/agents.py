@@ -175,6 +175,8 @@ async def get_progress_for_agent_version(conn: asyncpg.Connection, agent_id: str
         'evaluations': evaluations
     }
 
+router = APIRouter()
+
 async def get_agent_by_version(agent_id: str) -> Agent:
     """Get agent information by version ID"""
     agent = await get_agent_by_id(UUID(agent_id))
@@ -186,6 +188,7 @@ async def get_agent_by_version(agent_id: str) -> Agent:
         )
     return agent
 
+@router.get("/{agent_id}/inferences", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_inferences(agent_id: str, set_id: Optional[int] = None, limit: int = Query(default=100, le=1000)) -> list[Inference]:
     """Get inferences made by this agent version"""
     try:
@@ -200,6 +203,7 @@ async def get_agent_inferences(agent_id: str, set_id: Optional[int] = None, limi
             detail="Internal server error while retrieving inferences. Please try again later."
         )
 
+@router.get("/{agent_id}/inference-stats", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_inference_stats(agent_id: str, set_id: Optional[int] = None) -> Dict[str, Any]:
     """Get inference statistics for this agent version"""
     try:
@@ -214,6 +218,7 @@ async def get_agent_inference_stats(agent_id: str, set_id: Optional[int] = None)
             detail="Internal server error while retrieving inference statistics. Please try again later."
         )
 
+@router.get("/{agent_id}/progress", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_progress(agent_id: str, set_id: Optional[int] = None) -> Dict[str, Any]:
     """Get progress information for this agent version"""
     try:
@@ -228,6 +233,7 @@ async def get_agent_progress(agent_id: str, set_id: Optional[int] = None) -> Dic
             detail="Internal server error while retrieving progress. Please try again later."
         )
 
+@router.get("/{agent_id}", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_status(agent_id: str) -> Dict[str, Any]:
     """Get miner agent status and metadata"""
     try:
@@ -254,8 +260,6 @@ async def get_agent_status(agent_id: str) -> Dict[str, Any]:
             status_code=500,
             detail="Internal server error while retrieving agent status. Please try again later."
         )
-
-router = APIRouter()
 
 @db_operation
 async def get_flow_data_for_agent(conn: asyncpg.Connection, agent_id: str) -> Optional[Dict[str, Any]]:
@@ -350,6 +354,7 @@ def _calculate_flow_progress(stages: list[Dict[str, Any]]) -> Dict[str, Any]:
         "is_complete": overall >= 100
     }
 
+@router.get("/{agent_id}/flow", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_flow_state(agent_id: str) -> Dict[str, Any]:
     """Get flow state for React stepper UI"""
     try:
@@ -424,6 +429,7 @@ async def get_validator_progress_for_agent(conn: asyncpg.Connection, agent_id: s
     
     return validators
 
+@router.get("/{agent_id}/validator-progress", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_validator_progress(agent_id: str) -> list[Dict[str, Any]]:
     """Get detailed progress information for each validator evaluating a specific agent version"""
     try:
@@ -485,6 +491,7 @@ async def get_agent_final_score_data(conn: asyncpg.Connection, agent_id: str) ->
         "completed_at": completion_result["completed_at"].isoformat() if completion_result and completion_result["completed_at"] else None
     }
 
+@router.get("/{agent_id}/final-score", tags=["agents"], dependencies=[Depends(verify_request_public)])
 async def get_agent_final_score(agent_id: str) -> Dict[str, Any]:
     """Get the final score for a completed agent version"""
     try:
@@ -495,22 +502,3 @@ async def get_agent_final_score(agent_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error fetching final score for {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch agent final score")
-
-routes = [
-    ("/{agent_id}", get_agent_status),
-    ("/{agent_id}/inferences", get_agent_inferences),
-    ("/{agent_id}/inference-stats", get_agent_inference_stats),
-    ("/{agent_id}/progress", get_agent_progress),
-    ("/{agent_id}/flow", get_agent_flow_state),
-    ("/{agent_id}/validator-progress", get_validator_progress),
-    ("/{agent_id}/final-score", get_agent_final_score),
-]
-
-for path, endpoint in routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["agents"],
-        dependencies=[Depends(verify_request_public)],
-        methods=["GET"]
-    )

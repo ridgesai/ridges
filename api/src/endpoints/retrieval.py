@@ -25,7 +25,7 @@ from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_h
 
 load_dotenv()
 
-
+router = APIRouter()
 
 SCREENER_IP_LIST = [
     "3.89.93.137", # 1-1
@@ -41,6 +41,7 @@ SCREENER_IP_LIST = [
     "3.91.231.29", # 2-3
 ]
 
+@router.get("/agent-version-file", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_agent_code(agent_id: str, request: Request, return_as_text: bool = False):
 
 
@@ -104,12 +105,14 @@ async def get_agent_code(agent_id: str, request: Request, return_as_text: bool =
     }
     return StreamingResponse(file_generator(), media_type='application/octet-stream', headers=headers)
 
+@router.get("/connected-validators", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_connected_validators():
     """
     Returns a list of all connected validators and screener validators
     """
     raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
 
+@router.get("/queue-info", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_queue_info(agent_id: str):
     try:
         queue_info = await db_get_queue_info(agent_id)
@@ -122,6 +125,7 @@ async def get_queue_info(agent_id: str):
     
     return queue_info
 
+@router.get("/evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_evaluations(agent_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     try:
         # If no set_id provided, use the latest set_id
@@ -138,6 +142,7 @@ async def get_evaluations(agent_id: str, set_id: Optional[int] = None) -> list[E
     
     return evaluations
 
+@router.get("/evaluations-with-usage", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_evaluations_with_usage(agent_id: str, set_id: Optional[int] = None, fast: bool = Query(default=True, description="Use fast single-query mode")) -> list[EvaluationsWithHydratedUsageRuns]:
     try:
         evaluations = await get_evaluations_with_usage_for_agent_version(agent_id, set_id, fast=fast)
@@ -150,6 +155,7 @@ async def get_evaluations_with_usage(agent_id: str, set_id: Optional[int] = None
     
     return evaluations
 
+@router.get("/screening-evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_screening_evaluations(agent_id: str, stage: int = Query(description="Screening stage (1 or 2)"), set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     """Get screening evaluations for an agent version filtered by stage"""
     try:
@@ -195,6 +201,7 @@ async def get_screening_evaluations(agent_id: str, stage: int = Query(descriptio
     
     return screening_evaluations
 
+@router.get("/evaluation-run-logs", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
     try:
         logs = await db_get_evaluation_run_logs(run_id)
@@ -207,6 +214,7 @@ async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
     
     return PlainTextResponse(content=logs)
 
+@router.get("/runs-for-evaluation", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
     try:
         runs = await db_get_runs_for_evaluation(evaluation_id)
@@ -219,6 +227,7 @@ async def get_runs_for_evaluation(evaluation_id: str) -> list[EvaluationRun]:
     
     return runs
 
+@router.get("/top-benchmark-agent-evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_top_benchmark_agent_evaluations() -> list[EvaluationRun]:
     """
     Get evaluation runs for top benchmark agents from the bench_evaluation_runs table.
@@ -238,6 +247,7 @@ async def get_top_benchmark_agent_evaluations() -> list[EvaluationRun]:
     
     return runs
 
+@router.get("/latest-agent", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_latest_agent(miner_hotkey: str = None):
     if not miner_hotkey:
         raise HTTPException(
@@ -256,6 +266,7 @@ async def get_latest_agent(miner_hotkey: str = None):
     
     return latest_agent
 
+@router.get("/network-stats", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_network_stats():
     """
     Gets statistics on the number of agents, score changes, etc. Primarily ingested by the dashboard
@@ -265,6 +276,7 @@ async def get_network_stats():
     return statistics_24_hrs
 
 from models.evaluation import EvaluationStatus, Evaluation
+@router.get("/running-evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_running_evaluations() -> list[Evaluation]:
     """
     Gets a list of currently running evaluations to display on dashboard
@@ -275,6 +287,7 @@ async def get_running_evaluations() -> list[Evaluation]:
 
     return evaluations
 
+@router.get("/top-agents", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_top_agents(num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list[MinerAgentWithScores]:
     """
     Gets a list of current high score agents
@@ -289,14 +302,17 @@ async def get_top_agents(num_agents: int = 3, search_term: Optional[str] = None,
 
     return top_agents
 
+@router.get("/agent-scores-over-time", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def agent_scores_over_time(set_id: Optional[int] = None):
     """Gets agent scores over time for charting"""
     return await db_get_agent_scores_over_time(set_id)
 
+@router.get("/miner-score-activity", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def miner_score_activity(set_id: Optional[int] = None):
     """Gets miner submissions and top scores by hour for correlation analysis"""
     return await db_get_miner_score_activity(set_id)
 
+@router.get("/queue-position-by-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidator]:
     """
     Gives a list of where an agent is in queue for every validator
@@ -305,6 +321,7 @@ async def get_queue_position(miner_hotkey: str) -> list[QueuePositionPerValidato
 
     return positions
 
+@router.get("/agent-by-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgentWithScores]:
     """
     Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
@@ -319,6 +336,7 @@ async def agent_summary_by_hotkey(miner_hotkey: str) -> list[MinerAgentWithScore
 
     return agent_versions
 
+@router.get("/inferences-by-run", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def inferences_for_run(run_id: str) -> list[Inference]:
     """
     Returns a list of every version of an agent submitted by a hotkey including its score. Used by the dashboard to render stats about the miner
@@ -333,6 +351,7 @@ async def inferences_for_run(run_id: str) -> list[Inference]:
 
     return inferences
 
+@router.get("/agents-from-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
     """
     Returns a list of all agents for a given hotkey
@@ -346,7 +365,8 @@ async def get_agents_from_hotkey(miner_hotkey: str) -> list[MinerAgent]:
             status_code=500,
             detail="Internal server error while retrieving agents"
         )
-    
+
+@router.get("/inference-provider-statistics", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_inference_provider_statistics(start_time: datetime, end_time: datetime) -> list[ProviderStatistics]:
     """
     Returns statistics on inference provider performance
@@ -360,7 +380,8 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             status_code=500,
             detail="Internal server error while retrieving inferences"
         )
-    
+
+@router.get("/emission-alpha-for-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
     Returns the emission alpha for a given hotkey
@@ -378,7 +399,8 @@ async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
             status_code=500,
             detail="Internal server error while retrieving emission alpha"
         )
-    
+
+@router.get("/approved-agent-ids", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_approved_agent_ids() -> list[str]:
     """
     Returns a list of all approved version IDs
@@ -391,7 +413,8 @@ async def get_approved_agent_ids() -> list[str]:
             status_code=500,
             detail="Internal server error while retrieving approved version IDs"
         )
-    
+
+@router.get("/time-until-next-upload-for-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
     Returns the time until the next upload for a given hotkey
@@ -408,7 +431,8 @@ async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, 
             status_code=500,
             detail="Internal server error while retrieving time until next upload"
         )
-    
+
+@router.get("/all-transactions", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_all_transactions() -> list[dict]:
     """
     Returns all transactions for a given open hotkey
@@ -422,6 +446,7 @@ async def get_all_transactions() -> list[dict]:
             detail="Internal server error while retrieving all transactions"
         )
 
+@router.get("/all-treasury-hotkeys", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_all_treasury_hotkeys() -> list[dict]:
     """
     Returns all treasury hotkeys
@@ -434,7 +459,8 @@ async def get_all_treasury_hotkeys() -> list[dict]:
             status_code=500,
             detail="Internal server error while retrieving all treasury hotkeys"
         )
-    
+
+@router.get("/pending-dispersal", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_pending_dispersal() -> dict[str, Any]:
     """
     Returns all pending dispersal from treasury hotkeys
@@ -456,6 +482,7 @@ from api.queries.agent import get_top_agents as x
 from models.evaluation_set import EvaluationSetGroup
 import uuid
 
+@router.get("/agent-scratch", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def shak_scratchpad() -> Any:
     # Queue
     # agent = await get_agents_in_queue(EvaluationSetGroup.screener_1)
@@ -467,44 +494,3 @@ async def shak_scratchpad() -> Any:
 
     # Connected validators and what theyre doing 
     pass
-
-router = APIRouter()
-
-routes = [
-    ("/agent-version-file", get_agent_code), 
-    ("/connected-validators", get_connected_validators), 
-    ("/queue-info", get_queue_info), 
-    ("/evaluations", get_evaluations),
-    ("/evaluations-with-usage", get_evaluations_with_usage),
-    ("/screening-evaluations", get_screening_evaluations),
-    ("/evaluation-run-logs", get_evaluation_run_logs),
-    ("/runs-for-evaluation", get_runs_for_evaluation),
-    ("/top-benchmark-agent-evaluations", get_top_benchmark_agent_evaluations), 
-    ("/latest-agent", get_latest_agent),
-    ("/network-stats", get_network_stats),
-    ("/running-evaluations", get_running_evaluations),
-    ("/top-agents", get_top_agents),
-    ("/agent-by-hotkey", agent_summary_by_hotkey),
-    ("/queue-position-by-hotkey", get_queue_position),
-    ("/inferences-by-run", inferences_for_run),
-    ("/agent-scores-over-time", agent_scores_over_time),
-    ("/miner-score-activity", miner_score_activity),
-    ("/agents-from-hotkey", get_agents_from_hotkey),    
-    ("/inference-provider-statistics", get_inference_provider_statistics),
-    ("/emission-alpha-for-hotkey", get_emission_alpha_for_hotkey),
-    ("/approved-agent-ids", get_approved_agent_ids),
-    ("/time-until-next-upload-for-hotkey", get_time_until_next_upload_for_hotkey),
-    ("/all-transactions", get_all_transactions),
-    ("/all-treasury-hotkeys", get_all_treasury_hotkeys),
-    ("/pending-dispersal", get_pending_dispersal),
-    ("/agent-scratch", shak_scratchpad)
-]
-
-for path, endpoint in routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["retrieval"],
-        dependencies=[Depends(verify_request_public)],
-        methods=["GET"]
-    )
