@@ -6,6 +6,7 @@ from api.src.backend.db_manager import db_operation, db_transaction
 from api.src.backend.entities import MinerAgent
 from api.src.utils.models import TopAgentHotkey
 from loggers.logging_utils import get_logger
+from models.agent import AgentStatus
 
 logger = get_logger(__name__)
 
@@ -38,7 +39,7 @@ async def get_agent_by_agent_id(conn: asyncpg.Connection, agent_id: str) -> Opti
 @db_operation
 async def get_agent_approved_banned(conn: asyncpg.Connection, agent_id: str, miner_hotkey: str) -> Tuple[Optional[datetime], bool]:
     """Get approved and banned status from database"""
-    approved_at = await conn.fetchval("""SELECT approved_at from approved_agent_ids where agent_id = $1""", agent_id)
+    approved_at = await conn.fetchval("""SELECT approved_at from approved_agents where agent_id = $1""", agent_id)
     banned = await conn.fetchval("""SELECT miner_hotkey from banned_hotkeys where miner_hotkey = $1""", miner_hotkey)
     return approved_at, banned is not None
 
@@ -104,7 +105,7 @@ async def approve_agent_version(conn: asyncpg.Connection, agent_id: str, set_id:
         approved_at = datetime.now(timezone.utc)
 
     await conn.execute("""
-        INSERT INTO approved_agent_ids (agent_id, set_id, approved_at)
+        INSERT INTO approved_agents (agent_id, set_id, approved_at)
         VALUES ($1, $2, $3)
     """, agent_id, set_id, approved_at)
     
@@ -127,13 +128,13 @@ async def set_approved_agents_to_awaiting_screening(conn: asyncpg.Connection) ->
     # Update approved agents to awaiting_screening status
     
     # Get the updated agents
-    results = await conn.fetch("""
+    results = await conn.fetch(f"""
         SELECT agent_id, miner_hotkey, name, version_num, created_at, status
         FROM agents 
         WHERE agent_id IN (
-            SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW()
+            SELECT agent_id FROM approved_agents WHERE approved_at <= NOW()
         )
-        AND status = 'awaiting_screening'
+        AND status = '{AgentStatus.screening_1}'
     """)
     
     return [MinerAgent(**dict(result)) for result in results]
@@ -143,6 +144,6 @@ async def get_all_approved_agent_ids(conn: asyncpg.Connection) -> List[str]:
     """
     Get all approved version IDs
     """
-    data = await conn.fetch("SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW()")
+    data = await conn.fetch("SELECT agent_id FROM approved_agents WHERE approved_at <= NOW()")
     return [str(row["agent_id"]) for row in data]
 

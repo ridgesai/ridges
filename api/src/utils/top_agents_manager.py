@@ -164,7 +164,7 @@ async def debug_approved_agent_ids_in_s3():
     
     # Get approved version IDs from database
     async with new_db.acquire() as conn:
-        approved_versions = await conn.fetch("SELECT agent_id FROM approved_agent_ids LIMIT 5")
+        approved_versions = await conn.fetch("SELECT agent_id FROM approved_agents LIMIT 5")
         agent_ids = [str(row['agent_id']) for row in approved_versions]
     
     print(f"Checking {len(agent_ids)} approved version IDs:")
@@ -241,7 +241,7 @@ async def test_update():
     await new_db.open()
     
     try:
-        # Debug: Check what's in approved_agent_ids
+        # Debug: Check what's in approved_agents
         print("\n=== DEBUG: Getting TOP 5 approved agents by COMPUTED SCORE (excluding outliers) from MAX SET_ID ===")
         async with new_db.acquire() as conn:
             # First get max set_id
@@ -271,7 +271,7 @@ async def test_update():
                 print(f"  Rank {i}: {row['agent_id']} (score: {row['computed_score']:.4f}, hotkey: {row['miner_hotkey']}, scores used: {row['num_scores_used']})")
             
             # Also check total approved agents
-            total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_agent_ids")
+            total_approved = await conn.fetchval("SELECT COUNT(*) FROM approved_agents")
             print(f"\nTotal approved version IDs: {total_approved}")
         
         # Test our main cache update function

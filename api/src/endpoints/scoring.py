@@ -206,7 +206,7 @@ async def re_eval_approved(approval_password: str):
             # Reset approved agents to awaiting stage 1 screening
             agent_data = await conn.fetch(f"""
                 UPDATE agents SET status = '{AgentStatus.screening_1.value}'
-                WHERE agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE approved_at <= NOW())
+                WHERE agent_id IN (SELECT agent_id FROM approved_agents WHERE approved_at <= NOW())
                                           AND status != 'replaced'
                 AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 RETURNING *

@@ -162,7 +162,7 @@ class MinerAgentScored(BaseModel):
 
         max_approved_set_id: Optional[int] = None
         if filter_for_approved:
-            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_agent_ids WHERE approved_at <= NOW()")
+            max_approved_set_id = await conn.fetchval("SELECT MAX(set_id) FROM approved_agents WHERE approved_at <= NOW()")
             if max_approved_set_id is None:
                 return []
 
@@ -186,7 +186,7 @@ class MinerAgentScored(BaseModel):
         if filter_for_approved and max_approved_set_id is not None:
             param_idx = len(params) + 1
             where_clauses.append(
-                f"agent_id IN (SELECT agent_id FROM approved_agent_ids WHERE set_id = ${param_idx} AND approved_at <= NOW())"
+                f"agent_id IN (SELECT agent_id FROM approved_agents WHERE set_id = ${param_idx} AND approved_at <= NOW())"
             )
             params.append(max_approved_set_id)
 

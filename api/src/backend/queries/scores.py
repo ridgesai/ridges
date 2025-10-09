@@ -229,7 +229,7 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     epoch_0_result = await conn.fetchrow("""
         SELECT avi.approved_at as epoch_0_time
         FROM agent_scores a
-        JOIN approved_agent_ids avi ON a.agent_id = avi.agent_id AND a.set_id = avi.set_id
+        JOIN approved_agents avi ON a.agent_id = avi.agent_id AND a.set_id = avi.set_id
         WHERE a.set_id = $1 AND a.approved = true AND avi.approved_at <= NOW()
         ORDER BY a.final_score DESC, a.created_at ASC
         LIMIT 1
