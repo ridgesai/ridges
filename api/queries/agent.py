@@ -2,9 +2,10 @@ import asyncpg
 import utils.logger as logger
 
 from uuid import UUID
-from models.agent import Agent
+from models.agent import Agent, AgentStatus
 from typing import Optional, Final
 from models.agent import Agent, AgentScored
+from models.evaluation import EvaluationStatus
 from utils.database import db_operation
 from models.evaluation_set import EvaluationSetGroup
 
@@ -29,23 +30,23 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
         """)
     else:
         result = await conn.fetchrow(
-            """
+            f"""
             WITH
                 validator_eval_counts AS (
                     SELECT
                         agent_id,
                         BOOL_OR(validator_hotkey = $1) AS already_evaluated,
-                        COUNT(*) FILTER (WHERE status = 'running') AS num_running_evals,
-                        COUNT(*) FILTER (WHERE status = 'success') AS num_finished_evals
+                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.running.value}') AS num_running_evals,
+                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.success.value}') AS num_finished_evals
                     FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.status IN ('success', 'running')
+                    WHERE evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
                       AND validator_hotkey NOT LIKE 'screener-%'
                     GROUP BY agent_id
                 ),
                 screener_2_scores AS (
                     SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
                     WHERE validator_hotkey LIKE 'screener-2%'
-                      AND evaluations_hydrated.status = 'success'
+                      AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
                     GROUP BY agent_id
                 )
             SELECT
@@ -56,7 +57,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
                  INNER JOIN screener_2_scores USING (agent_id)
                  LEFT JOIN validator_eval_counts USING (agent_id)
             WHERE
-                agents.status = 'evaluating'
+                agents.status = '{AgentStatus.evaluating.value}'
               AND NOT COALESCE(already_evaluated, false)
               AND num_running_evals + num_finished_evals < $2
             ORDER BY
