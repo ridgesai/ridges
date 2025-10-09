@@ -17,8 +17,8 @@ from loggers.logging_utils import get_logger
 from loggers.process_tracking import process_context
 from models.agent import AgentStatus, Agent
 
+
 logger = get_logger(__name__)
-open_user_password = os.getenv("OPEN_USER_PASSWORD")
 
 
 prod = False
