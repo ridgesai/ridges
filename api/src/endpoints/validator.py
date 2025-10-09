@@ -1,23 +1,23 @@
 import re
 import time
-from datetime import datetime
-from typing import Dict, List, Optional
-from uuid import UUID, uuid4
-
-from fastapi import Depends, APIRouter, HTTPException
-from fastapi.security import HTTPBearer
-from pydantic import BaseModel
-
 import utils.logger as logger
-from api.queries.agent import get_agent_code_by_agent_id
-from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation
-from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus
-from models.problem import ProblemTestResultStatus
-from utils.fiber import validate_signed_timestamp
+
+from uuid import UUID, uuid4
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Dict, List, Optional
+from fastapi.security import HTTPBearer
+from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
+from utils.fiber import validate_signed_timestamp
+from fastapi import Depends, APIRouter, HTTPException
+from api.queries.agent import get_agent_code_by_agent_id
+from models.evaluation_run import EvaluationRun, EvaluationRunStatus
+from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
+from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation
+
 
 
 # A connected validator
@@ -268,7 +268,7 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
     updated_status: EvaluationRunStatus
     
     patch: Optional[str] = None
-    test_results: Optional[List[ProblemTestResultStatus]] = None
+    test_results: Optional[List[ProblemTestResult]] = None
 
     agent_logs: Optional[str] = None
     eval_logs: Optional[str] = None
@@ -495,26 +495,28 @@ class ValidatorFinishEvaluationRequest(BaseModel):
     pass
 class ValidatorFinishEvaluationResponse(BaseModel):
     pass
+
 @router.post("/finish-evaluation")
 async def validator_finish_evaluation(
     request: ValidatorFinishEvaluationRequest,
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorFinishEvaluationResponse:
-    """
-    Mark validator as having finished evaluation in SESSION_ID_TO_VALIDATOR map.
-    """
+
+    # Make sure the validator is currently running an evaluation
     if validator.current_evaluation_id is None:
         raise HTTPException(
             status_code=409,
-            detail=f"Validator ({validator.hotkey}) is trying to finish an evaluation but the platform indicates that this validator is currently not even running an evaluation."
+            detail="This validator is not currently running an evaluation, and therefore cannot request to finish an evaluation."
         )
 
+    # Make sure that all evaluation runs have either finished or errored
     evaluation_runs = get_evaluation_runs_for_evaluation(validator.current_evaluation_id)
-    if any(evaluation_run.status != EvaluationRunStatus.finished for evaluation_run in evaluation_runs):
+    if any((evaluation_run.status != EvaluationRunStatus.finished and evaluation_run.status != EvaluationRunStatus.error) for evaluation_run in evaluation_runs):
         raise HTTPException(
             status_code=409,
-            detail="The error message is required when updating an evaluation run to error."
+            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
     validator.current_evaluation_id = None
+
     return ValidatorFinishEvaluationResponse()
