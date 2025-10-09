@@ -72,11 +72,11 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
             MIN_EVALS
         )
 
-
-    logger.debug(f"Result is: {result}, validator_hotkey: {validator_hotkey}")
     if result is None or "agent_id" not in result:
         return None
+
     return result["agent_id"]
+
 
 
 async def get_agent_code_by_agent_id(agent_id: UUID) -> str:

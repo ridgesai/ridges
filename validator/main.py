@@ -82,7 +82,6 @@ async def main():
         
         evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id)
 
-
         # If no evaluation is available, wait and try again
         if evaluation_response is None:
             logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
@@ -103,5 +102,5 @@ if __name__ == "__main__":
         asyncio.run(disconnect("Keyboard interrupt"))
     except Exception as e:
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
+        # logger.error(traceback.format_exc())
         asyncio.run(disconnect("Error in main()"))

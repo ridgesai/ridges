@@ -8,10 +8,6 @@ from fiber.chain.chain_utils import load_hotkey_keypair
 
 
 
-logging.getLogger('chain_utils').setLevel(logging.WARNING)
-
-
-
 # Load everything from .env
 load_dotenv()
 
