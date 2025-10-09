@@ -511,6 +511,7 @@ async def validator_finish_evaluation(
 
     # Make sure that all evaluation runs have either finished or errored
     evaluation_runs = get_evaluation_runs_for_evaluation(validator.current_evaluation_id)
+
     if any((evaluation_run.status != EvaluationRunStatus.finished and evaluation_run.status != EvaluationRunStatus.error) for evaluation_run in evaluation_runs):
         raise HTTPException(
             status_code=409,

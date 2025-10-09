@@ -4,19 +4,18 @@ from typing import List, Tuple
 from uuid import UUID
 
 import asyncpg
-from sqlalchemy.engine import row
 
 from api.queries.evaluation_run import create_evaluation_run
 from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_of_group_in_set
-from api.src.backend.db_manager import db_transaction
 from api.src.backend.db_manager import db_operation
+from api.src.backend.db_manager import db_transaction
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
 
 
+@db_operation
 async def create_evaluation(conn: asyncpg.connection.Connection, evaluation: Evaluation) -> None:
-    """Create an evaluation. Caller is responsible for providing connection."""
     await conn.execute(
         """
         INSERT INTO evaluations (
@@ -77,6 +76,7 @@ async def create_new_evaluation_and_evaluation_runs(
 
     return evaluation, evaluation_runs
 
+
 @db_transaction
 async def get_evaluation_runs_for_evaluation(conn: asyncpg.connection.Connection, evaluation_id: int) -> List[EvaluationRun]:
     """Get all evaluation runs for a given evaluation run_id."""
@@ -88,19 +88,27 @@ async def get_evaluation_runs_for_evaluation(conn: asyncpg.connection.Connection
         """,
         evaluation_id
     )
-    import ipdb; ipdb.set_trace()
     evaluation_runs = [
-        EvaluationRun(
-            evaluation_run_id=row["evaluation_run_id"],
-        )
-        for evaluation_run in response
+        EvaluationRun(**row) for row in response
     ]
+    return evaluation_runs
+
 
 @db_operation
-async def get_evaluations_by_status(conn: asyncpg.Connection, status: EvaluationStatus) -> list[Evaluation]:
+async def get_evaluations_by_status(conn: asyncpg.Connection, status: EvaluationStatus) -> List[Evaluation]:
     results = await conn.fetch(
         """
-        select * from evaluations_hydrated where status = $1
+        SELECT
+            evaluation_id,
+            agent_id,
+            validator_hotkey,
+            set_id,
+            created_at,
+            finished_at
+        FROM 
+            evaluations_hydrated 
+        WHERE
+            status = $1
         """,
         status.value
     )
