@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
-from api.src.models.screener import Screener
 import utils.logger as logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 
 from api.src.utils.auth import verify_request_public
-from api.src.utils.s3 import S3Manager
 from api.src.backend.entities import EvaluationRun, MinerAgent, EvaluationsWithHydratedRuns, Inference, EvaluationsWithHydratedUsageRuns, MinerAgentWithScores, ScreenerQueueByStage
 from api.src.backend.queries.agents import get_latest_agent as db_get_latest_agent, get_agent_by_agent_id, get_agents_by_hotkey
 from api.src.backend.queries.evaluations import get_evaluation_by_evaluation_id, get_evaluations_for_agent_version, get_evaluations_with_usage_for_agent_version
@@ -23,13 +21,11 @@ from api.src.backend.queries.inference import get_inference_provider_statistics 
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
 from api.src.backend.queries.agents import get_all_approved_agent_ids as db_get_all_approved_agent_ids
 from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_hotkeys as db_get_total_dispersed_by_treasury_hotkeys
-from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
+
 
 load_dotenv()
 
 
-
-s3_manager = S3Manager()
 
 SCREENER_IP_LIST = [
     "3.89.93.137", # 1-1
@@ -46,6 +42,11 @@ SCREENER_IP_LIST = [
 ]
 
 async def get_agent_code(agent_id: str, request: Request, return_as_text: bool = False):
+
+
+    # TODO ADAM: i will rewrite this. shit probably doesn't even work rn
+
+
     agent_version = await get_agent_by_agent_id(agent_id=agent_id)
     
     if not agent_version:
