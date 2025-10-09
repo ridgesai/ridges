@@ -61,6 +61,12 @@ def get_miner_hotkeys_on_subnet(netuid: int = 62, subtensor_url: str = "wss://en
         if substrate is not None:
             substrate.close()
 
+
+
+
+
+
+
 hotkeys = get_miner_hotkeys_on_subnet()
 
 if hotkeys:

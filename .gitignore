@@ -11,23 +11,12 @@ wheels/
 
 # Env files
 *.env
-*.db
-*.db.bak
 
 # MacOS
 .DS_Store
 
-
-
-# Validator generated files
-.cache/
-repos/
-repo_cache/
-agents/
-results/
+# SWE-Bench
 logs/
-
 
 # Platform cache
 subnet_hotkeys_cache.json
-.commits_cache.json
