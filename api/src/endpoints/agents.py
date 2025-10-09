@@ -4,7 +4,7 @@ from uuid import UUID
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from api.queries.agent import get_agent
+from api.queries.agent import get_agent_by_id
 from utils.database import db_operation
 from api.src.backend.entities import Inference, EvaluationStatus
 from api.src.backend.queries.agents import get_agent_approved_banned
@@ -177,7 +177,7 @@ async def get_progress_for_agent_version(conn: asyncpg.Connection, agent_id: str
 
 async def get_agent_by_version(agent_id: str) -> Agent:
     """Get agent information by version ID"""
-    agent = await get_agent(agent_id=UUID(agent_id))
+    agent = await get_agent_by_id(UUID(agent_id))
     if not agent:
         logger.info(f"Agent version {agent_id} was requested but not found in our database")
         raise HTTPException(

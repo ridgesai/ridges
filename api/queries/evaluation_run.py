@@ -1,30 +1,35 @@
 import json
-from typing import Optional
-from uuid import UUID
-
 import asyncpg
 
+from typing import Optional
+from uuid import UUID, uuid4
+from datetime import datetime
 from utils.database import db_operation
 from models.evaluation_run import EvaluationRun
+from models.evaluation_run import EvaluationRunStatus
+
 
 
 @db_operation
 async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: UUID) -> Optional[EvaluationRun]:
-    result = await conn.fetchrow("""
+    result = await conn.fetchrow(
+        """
         SELECT *
         FROM evaluation_runs
         WHERE evaluation_run_id = $1
-    """, evaluation_run_id)
+        """,
+        evaluation_run_id
+    )
 
     if not result:
         return None
     
     return EvaluationRun(**result)
 
+
+
 @db_operation
 async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:
-    # Note that evaluation_id, problem_name, and created_at are immutable (and never included in the UPDATE), since there is no reason to modify them after creation
-
     await conn.execute(
         """
         UPDATE evaluation_runs SET 
@@ -43,7 +48,7 @@ async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: 
         evaluation_run.evaluation_run_id,
         evaluation_run.status.value,
         evaluation_run.patch,
-        json.dumps([test_result.dict() for test_result in evaluation_run.test_results]) if evaluation_run.test_results else None,
+        json.dumps([test_result.model_dump() for test_result in evaluation_run.test_results]) if evaluation_run.test_results else None,
         evaluation_run.error_code,
         evaluation_run.error_message,
         evaluation_run.started_initializing_agent_at,
@@ -53,9 +58,12 @@ async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: 
         evaluation_run.finished_or_errored_at
     )
 
+
+
 @db_operation
-async def create_evaluation_run(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:
-    """Create an evaluation run. Caller is responsible for providing connection."""
+async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, problem_name: str) -> UUID:
+    evaluation_run_id = uuid4()
+
     await conn.execute(
         """
         INSERT INTO evaluation_runs (
@@ -66,9 +74,11 @@ async def create_evaluation_run(conn: asyncpg.Connection, evaluation_run: Evalua
             created_at
         ) VALUES ($1, $2, $3, $4, $5)
         """,
-        evaluation_run.evaluation_run_id,
-        evaluation_run.evaluation_id,
-        evaluation_run.problem_name,
-        evaluation_run.status.value,
-        evaluation_run.created_at,
+        evaluation_run_id,
+        evaluation_id,
+        problem_name,
+        EvaluationRunStatus.pending.value,
+        datetime.now()
     )
+
+    return evaluation_run_id

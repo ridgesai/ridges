@@ -80,14 +80,14 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
 
 
 @db_operation
-async def get_agent(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
+async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow("""
-        SELECT 
+        SELECT
             *
         FROM agents 
         WHERE agent_id = $1
         LIMIT 1
-    """, str(agent_id))
+    """, agent_id)
 
     if result is None:
         return None
