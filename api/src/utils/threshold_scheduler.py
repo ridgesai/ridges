@@ -115,7 +115,7 @@ class ThresholdScheduler:
                     agent_id = row['agent_id']
                     
                     # Evaluate each agent for threshold approval
-                    result = await evaluate_agent_for_threshold_approval(conn, agent_id, max_set_id)
+                    result = await evaluate_agent_for_threshold_approval(agent_id, max_set_id)
                     
                     if result['action'] == 'approve_now':
                         await self._approve_agent_now(agent_id, max_set_id)
