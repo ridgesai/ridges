@@ -7,17 +7,20 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from fastapi.security import HTTPBearer
+
+from models.agent import Agent
+from models.evaluation import Evaluation
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
 from utils.fiber import validate_signed_timestamp
 from fastapi import Depends, APIRouter, HTTPException
-from api.queries.agent import get_agent_code_by_agent_id
+from api.queries.agent import get_agent_code_by_agent_id, get_agent
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from api.queries.agent import get_next_agent_id_awaiting_evaluation_for_validator_hotkey
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
-from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation
-
+from api.queries.evaluation import create_new_evaluation_and_evaluation_runs, get_evaluation_runs_for_evaluation, \
+    get_evaluation_by_id
 
 
 # A connected validator
@@ -521,3 +524,42 @@ async def validator_finish_evaluation(
     validator.current_evaluation_id = None
 
     return ValidatorFinishEvaluationResponse()
+
+
+# Validator data without the session id
+class ConnectedValidatorInfo(BaseModel):
+    name: str
+    hotkey: str
+    time_connected: datetime
+
+    time_last_heartbeat: Optional[datetime] = None
+    system_metrics: SystemMetrics = SystemMetrics()
+
+    evaluation: Optional[Evaluation] = None
+    agent: Optional[Agent] = None
+
+
+@router.get("/connected-validators-info")
+async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
+    connected_validators: List[ConnectedValidatorInfo] = []
+
+    for validator in SESSION_ID_TO_VALIDATOR.values():
+
+        evaluation: Optional[Evaluation] = None
+        agent: Optional[Agent] = None
+
+        if validator.current_evaluation_id is not None:
+            evaluation = await get_evaluation_by_id(validator.current_evaluation_id)
+            agent = await get_agent(evaluation.agent_id)
+
+        connected_validators.append(ConnectedValidatorInfo(
+            name=validator.name,
+            hotkey=validator.hotkey,
+            time_connected=validator.time_connected,
+            time_last_heartbeat=validator.time_last_heartbeat,
+            system_metrics=validator.system_metrics,
+            evaluation=evaluation,
+            agent=agent,
+        ))
+
+    return connected_validators

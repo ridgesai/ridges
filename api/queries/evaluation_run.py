@@ -19,7 +19,7 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: 
     if not result:
         return None
     
-    return EvaluationRun(**dict(result))
+    return EvaluationRun(**result)
 
 @db_operation
 async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:

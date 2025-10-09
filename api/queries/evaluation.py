@@ -77,7 +77,7 @@ async def create_new_evaluation_and_evaluation_runs(
     return evaluation, evaluation_runs
 
 
-@db_transaction
+@db_operation
 async def get_evaluation_runs_for_evaluation(conn: asyncpg.connection.Connection, evaluation_id: int) -> List[EvaluationRun]:
     """Get all evaluation runs for a given evaluation run_id."""
     response = await conn.fetch(
@@ -114,3 +114,16 @@ async def get_evaluations_by_status(conn: asyncpg.Connection, status: Evaluation
     )
 
     return [Evaluation(**result) for result in results]
+
+
+@db_operation
+async def get_evaluation_by_id(conn: asyncpg.connection.Connection, evaluation_id: int) -> Evaluation:
+    response = await conn.fetchrow(
+        """
+        SELECT *
+        FROM evaluations
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id,
+    )
+    return Evaluation(**response)
