@@ -86,12 +86,14 @@ async def weights() -> Dict[str, float]:
 
     weights["5EsNzkZ3DwDqCsYmSJDeGXX51dQJd5broUCH6dbDjvkTcicD"] = 1.0
 
+    return weights
+
     treasury_hotkey = await get_treasury_hotkey()
 
     top_agent = await get_top_agent()
     weights[top_agent.miner_hotkey] = 1.0
 
-    return weights
+    
     # Disburse to treasury to manually send to whoever should be top agent in the event of an error
     if top_agent is None:
         weights[treasury_hotkey] = 1.0
