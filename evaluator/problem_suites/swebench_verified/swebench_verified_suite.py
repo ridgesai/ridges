@@ -7,7 +7,9 @@ import threading
 import traceback
 import utils.logger as logger
 
+from typing import List
 from pathlib import Path
+from utils.docker import docker_client
 from swebench.harness.constants import SWEbenchInstance
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import Problem, ProblemTest, ProblemTestCategory
@@ -17,12 +19,12 @@ from utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exis
 
 
 class SWEBenchVerifiedSuite(ProblemSuite):
-    def __init__(self, dataset_path):
+    def __init__(self, dataset_path: str):
         super().__init__(dataset_path)
 
 
 
-    def load_problems(self, dataset_path):
+    def load_problems(self, dataset_path: str):
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
@@ -64,6 +66,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Found {len(unique_repos)} unique repositories")
         
         # Process each problem
+        num_skipped_problems = 0
         for problem in problems_list:
             problem_name = problem.get("instance_id")
             
@@ -76,6 +79,12 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         
             # if not verify_commit_exists_in_local_repo(repo_path, base_commit):
             #     logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
+
+            # Skip non-arm64 problems
+            if make_test_spec(SWEbenchInstance(problem)).arch != "arm64":
+                num_skipped_problems += 1
+                logger.warning(f"Problem {problem_name} is not an arm64 problem, skipping (skipped {num_skipped_problems} problem(s) so far)")
+                continue
 
             # Convert tests to our format
             tests = []
@@ -270,41 +279,42 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     
 
 
-    def prebuild_problem_images(self, sandbox_manager, problem_names):
+    def prebuild_problem_images(self, problem_names: List[str]):
+        MAX_WORKERS = 4
+        
         test_specs = []
 
         for problem_name in problem_names:
-            problem = self.get_problem(problem_name)
-            if not problem:
-                warn(f"[SWEBENCH] Problem {problem_name} not found")
+            if not self.has_problem_name(problem_name):
                 continue
 
-            test_specs.append(make_test_spec(SWEbenchInstance(**problem.get("swebench_instance"))))
+            swebench_instance = self.get_problem(problem_name).userdata
+            test_specs.append(make_test_spec(SWEbenchInstance(swebench_instance)))
 
-        debug(f"[SWEBENCH] Prebuilding environment images for {len(test_specs)} problems")
+        logger.debug(f"Prebuilding environment images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_env_images(
-            client=sandbox_manager.docker,
+            client=docker_client,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=(os.cpu_count() or 4)-1
+            max_workers=MAX_WORKERS
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
-            warn(f"[SWEBENCH] Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
+            logger.warn(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
             raise RuntimeError(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
-        debug(f"[SWEBENCH] Successfully prebuilt environment images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
+        logger.debug(f"Successfully prebuilt environment images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
 
-        debug(f"[SWEBENCH] Prebuilding instance images for {len(test_specs)} problems")
+        logger.debug(f"Prebuilding instance images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_instance_images(
-            client=sandbox_manager.docker,
+            client=docker_client,
             dataset=test_specs, 
             force_rebuild=False,
-            max_workers=(os.cpu_count() or 4)-1
+            max_workers=MAX_WORKERS
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
-            warn(f"[SWEBENCH] Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
+            logger.warn(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
             raise RuntimeError(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
-        debug(f"[SWEBENCH] Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
+        logger.debug(f"Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")

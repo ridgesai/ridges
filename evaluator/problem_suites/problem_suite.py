@@ -45,6 +45,20 @@ class ProblemSuite(ABC):
 
         pass
 
+    def has_problem_name(self, problem_name: str) -> bool:
+        """
+        Returns True if the problem suite has a problem with the given name.
+        """
+        
+        return problem_name in self.problems
+
+    def get_problem(self, problem_name: str) -> Problem:
+        """
+        Returns the problem with the given name.
+        """
+        
+        return self.problems.get(problem_name)
+
 
 
     @abstractmethod

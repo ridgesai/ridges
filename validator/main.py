@@ -2,11 +2,13 @@ import time
 import asyncio
 import pathlib
 import traceback
+
+from modal import sandbox
 import utils.logger as logger
 import validator.config as config
 
-from validator.http import post_ridges_platform
 from evaluator.sandbox.sandbox_manager import SandboxManager
+from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
@@ -69,10 +71,14 @@ async def main():
     polyglot_suite = PolyglotSuite(datasets_path / "polyglot")
     swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
 
-    # TODO: Prebuild all SWE-Bench problem images
-    #       - Send a request to something like /api/get-latest-problem-set
-    #       - Filter out only SWE-Bench problems, filter out duplicates
-    #       - Prebuild those
+
+
+    # Get all the problems in the latest set
+    latest_set_problems = await get_ridges_platform("/evaluation-sets/all-latest-set-problems")
+    latest_set_problem_names = list({prob["problem_name"] for prob in latest_set_problems})
+    
+    # Prebuild the images for the SWE-Bench Verified problems
+    swebench_verified_suite.prebuild_problem_images(latest_set_problem_names)
 
 
 
@@ -102,5 +108,5 @@ if __name__ == "__main__":
         asyncio.run(disconnect("Keyboard interrupt"))
     except Exception as e:
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
-        # logger.error(traceback.format_exc())
+        logger.error(traceback.format_exc())
         asyncio.run(disconnect("Error in main()"))

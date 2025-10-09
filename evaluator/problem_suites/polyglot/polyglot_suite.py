@@ -17,7 +17,7 @@ class PolyglotSuite(ProblemSuite):
 
 
 
-    def load_problems(self, dataset_path):
+    def load_problems(self, dataset_path: str):
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
