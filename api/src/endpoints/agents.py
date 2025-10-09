@@ -154,7 +154,6 @@ async def get_progress_for_agent_version(conn: asyncpg.Connection, agent_id: str
             'validator_hotkey': row['validator_hotkey'],
             'status': row['evaluation_status'],
             'score': row['score'],
-            'screener_score': row['screener_score'],
             'progress': float(row['progress'])
         })
     
@@ -233,18 +232,7 @@ async def get_agent_status(agent_id: str) -> Dict[str, Any]:
     try:
         agent = await get_agent_by_version(agent_id)
         approved_at, banned = await get_agent_approved_banned(agent_id, agent.miner_hotkey)
-        
-        # Get queue position if waiting
-        queue_position = None
-        if agent.status in ['waiting', 'awaiting_screening_1', 'awaiting_screening_2']:
-            from api.src.backend.queries.statistics import get_queue_position_by_hotkey
-            try:
-                positions = await get_queue_position_by_hotkey(miner_hotkey=agent.miner_hotkey)
-                if positions:
-                    queue_position = [{'validator_hotkey': p.validator_hotkey, 'position': p.position} for p in positions]
-            except Exception as e:
-                logger.warning(f"Could not get queue position for {agent.miner_hotkey}: {e}")
-        
+
         return {
             'agent_id': str(agent.agent_id),
             'miner_hotkey': agent.miner_hotkey,
@@ -254,7 +242,6 @@ async def get_agent_status(agent_id: str) -> Dict[str, Any]:
             'status': agent.status,
             'agent_summary': agent.agent_summary,
             'ip_address': agent.ip_address,
-            'queue_position': queue_position,
             'approved_at': approved_at,
             'banned': banned,
         }
@@ -283,14 +270,14 @@ async def get_flow_data_for_agent(conn: asyncpg.Connection, agent_id: str) -> Op
     evaluations = await conn.fetch("""
         SELECT 
             e.evaluation_id, e.validator_hotkey, e.status, e.score,
-            e.created_at, e.created_at, e.finished_at,
+            e.created_at, e.finished_at,
             COUNT(er.evaluation_run_id) as total_runs,
             COUNT(CASE WHEN er.status = 'result_scored' THEN 1 END) as completed_runs
         FROM evaluations_hydrated e
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id AND er.status != 'cancelled'
         WHERE e.agent_id = $1
         GROUP BY e.evaluation_id, e.validator_hotkey, e.status, e.score,
-                 e.created_at, e.created_at, e.finished_at
+                 e.created_at, e.finished_at
         ORDER BY e.created_at ASC
     """, agent_id)
     
@@ -301,7 +288,7 @@ async def get_flow_data_for_agent(conn: asyncpg.Connection, agent_id: str) -> Op
     return {
         "agent_id": str(agent['agent_id']),
         "miner_hotkey": agent['miner_hotkey'],
-        "agent_name": agent['agent_name'],
+        "agent_name": agent['name'],
         "version_num": agent['version_num'],
         "created_at": agent['created_at'].isoformat(),
         "current_status": agent['status'],
@@ -312,8 +299,6 @@ async def get_flow_data_for_agent(conn: asyncpg.Connection, agent_id: str) -> Op
 
 def _build_flow_stages(agent_status: str, evaluations) -> list[Dict[str, Any]]:
     """Build simple stage data based on agent status"""
-    screener_evals = [e for e in evaluations if
-                     e['validator_hotkey'].startswith('screener-') or e['validator_hotkey'].startswith('i-0')]
     validator_evals = [e for e in evaluations if not
                       (e['validator_hotkey'].startswith('screener-') or e['validator_hotkey'].startswith('i-0'))]
 
@@ -430,7 +415,7 @@ async def get_validator_progress_for_agent(conn: asyncpg.Connection, agent_id: s
             "validator_name": validator_name,
             "status": status,
             "progress": progress,
-            "started_at": row["started_at"].isoformat() if row["started_at"] else None,
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
             "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
             "score": float(row["score"]) if row["score"] is not None else None
         }
@@ -487,7 +472,7 @@ async def get_agent_final_score_data(conn: asyncpg.Connection, agent_id: str) ->
     return {
         "agent_id": str(result["agent_id"]),
         "miner_hotkey": result["miner_hotkey"],
-        "agent_name": result["agent_name"],
+        "agent_name": result["name"],
         "version_num": result["version_num"],
         "created_at": result["created_at"].isoformat(),
         "status": result["status"],
