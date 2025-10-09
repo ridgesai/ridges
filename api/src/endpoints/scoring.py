@@ -1,28 +1,26 @@
-import asyncio
 import os
+from typing import Dict, List, Optional
 from uuid import UUID
-from datetime import datetime, timezone
+
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, List, Optional
 
-from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
-from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
-from api.src.models.evaluation import Evaluation
-from api.src.models.validator import Validator
-from api.src.utils.auth import verify_request, verify_request_public
-from loggers.logging_utils import get_logger
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version
-from api.src.backend.entities import MinerAgent, MinerAgentScored
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, get_agent_by_agent_id as db_get_agent_by_agent_id
-from api.src.backend.entities import MinerAgentScored
 from api.src.backend.db_manager import get_transaction, new_db, get_db_connection
-from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
+from api.src.backend.entities import MinerAgent
+from api.src.backend.entities import MinerAgentScored
 from api.src.backend.entities import TreasuryTransaction
-from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
-from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, \
+    get_agent_by_agent_id as db_get_agent_by_agent_id
+from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.backend.queries.scores import evaluate_agent_for_threshold_approval
+from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
+from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
+from api.src.models.evaluation import Evaluation
+from api.src.utils.auth import verify_request, verify_request_public
+from api.src.utils.config import PRUNE_THRESHOLD, SCREENING_1_THRESHOLD, SCREENING_2_THRESHOLD
+from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from api.src.utils.threshold_scheduler import threshold_scheduler
+from loggers.logging_utils import get_logger
 from models.agent import AgentStatus
 
 load_dotenv()
@@ -339,42 +337,6 @@ async def get_threshold_function():
         raise HTTPException(status_code=500, detail="Error generating threshold function. Please try again later.")
 
 
-async def prune_agent(agent_ids: str, approval_password: str):
-    """Prune a specific agent by setting its status to pruned and pruning all its evaluations, a comma separated list of agent_ids"""
-    if approval_password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid approval password")
-    
-    try:
-        for agent_id in agent_ids.split(","):
-            async with get_transaction() as conn:
-                # Check if agent exists
-                agent = await conn.fetchrow("SELECT * FROM agents WHERE agent_id = $1", agent_id)
-                if not agent:
-                    raise HTTPException(status_code=404, detail="Agent not found")
-                
-                # Update agent status to pruned
-                await conn.execute("UPDATE agents SET status = 'pruned' WHERE agent_id = $1", agent_id)
-                
-                # Update all evaluations for this agent to pruned status
-                evaluation_count = await conn.fetchval("""
-                    UPDATE evaluations 
-                    SET status = 'pruned', finished_at = NOW() 
-                    WHERE agent_id = $1 
-                    AND status IN ('waiting', 'running', 'error', 'completed')
-                    AND validator_hotkey NOT LIKE 'screener-%'
-                    RETURNING (SELECT COUNT(*) FROM evaluations WHERE agent_id = $1)
-                """, agent_id)
-                
-                logger.info(f"Pruned agent {agent_id} ({agent['agent_name']}) and {evaluation_count or 0} evaluations")
-                
-        return {"message": f"Successfully pruned {len(agent_ids.split(','))} agents"}
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error pruning agent {agent_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to prune agent due to internal server error")
-
 async def check_evaluation_status(evaluation_id: str):
     """Check if an evaluation has been cancelled or is still active"""
     
@@ -422,7 +384,6 @@ public_routes = [
     ("/re-evaluate-agent", re_evaluate_agent, ["POST"]),
     ("/re-run-evaluation", re_run_evaluation, ["POST"]),
     ("/approve-version", approve_version, ["POST"]),
-    ("/prune-agent", prune_agent, ["POST"])
 ]
 
 # Protected scoring endpoints (admin functions)
