@@ -250,7 +250,7 @@ async def main():
 
 
     # Start the heartbeat loop
-    asyncio.create_task(_send_heartbeat_loop())
+    asyncio.create_task(send_heartbeat_loop())
 
 
 

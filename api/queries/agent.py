@@ -119,7 +119,7 @@ async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationS
     queue_to_query = f"{queue_stage.value}_queue"
 
     queue = await conn.fetch(f"""
-        SELECT *
+        SELECT a.*
         from agents a
         join {queue_to_query} q on q.agent_id = a.agent_id
     """)
