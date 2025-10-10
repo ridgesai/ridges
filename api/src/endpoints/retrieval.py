@@ -289,7 +289,7 @@ async def get_running_evaluations() -> list[Evaluation]:
     return evaluations
 
 @router.get("/top-agents", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_top_agents(num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list[MinerAgentWithScores]:
+async def get_top_agents_old(num_agents: int = 3, search_term: Optional[str] = None, filter_for_open_user: bool = False, filter_for_registered_user: bool = False, filter_for_approved: bool = False) -> list[MinerAgentWithScores]:
     """
     Gets a list of current high score agents
     """
@@ -382,6 +382,7 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             detail="Internal server error while retrieving inferences"
         )
 
+<<<<<<< HEAD
 @router.get("/emission-alpha-for-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
     """
@@ -483,6 +484,8 @@ from api.queries.agent import get_top_agents as x
 from models.evaluation_set import EvaluationSetGroup
 import uuid
 
+=======
+>>>>>>> 90cbb43 (fix merge conflicts)
 @router.get("/agent-scratch", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def shak_scratchpad() -> Any:
     # Queue
@@ -495,3 +498,85 @@ async def shak_scratchpad() -> Any:
 
     # Connected validators and what theyre doing 
     pass
+
+import uuid
+
+from api.queries.agent import get_agents_in_queue, get_top_agents
+from models.evaluation import EvaluationStatus, Evaluation
+from models.evaluation_set import EvaluationSetGroup
+from models.agent import Agent, AgentScored
+
+async def queue(
+    stage: str
+) -> list[Agent]:
+    """
+    Gets agents presently in queue in order.
+    
+    Args:
+        stage: screener_1, screener_2, or validator.
+
+    Returns:
+        A list of Agent objects, sorted by their position in queue
+    """
+    return await get_agents_in_queue(EvaluationSetGroup(stage))
+
+async def top_agents(
+    number_of_agents: int = 15
+) -> list[AgentScored]:
+    """
+    Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
+    """
+    return await get_top_agents(
+        number_of_agents=number_of_agents
+    )
+
+async def network_statistics():
+    """
+    """
+    pass 
+
+async def evaluation_with_runs():
+    """
+    """
+    pass
+
+async def agent_by_id(agent_id: str) -> Agent:
+    pass
+
+async def miner_agents():
+    pass
+
+async def inference_statistics():
+    pass
+
+async def weight_receiving_agent():
+    pass
+
+router = APIRouter()
+
+routes = [
+    ("/agent-version-file", get_agent_code), 
+    ("/connected-validators", get_connected_validators), 
+    ("/evaluations", get_evaluations),
+    ("/screening-evaluations", get_screening_evaluations),
+    ("/runs-for-evaluation", get_runs_for_evaluation),
+    ("/network-stats", get_network_stats),
+    ("/running-evaluations", get_running_evaluations),
+    ("/top-agents", get_top_agents),
+    ("/queue-position-by-hotkey", get_queue_position),
+    ("/inferences-by-run", inferences_for_run),
+    ("/agent-scores-over-time", agent_scores_over_time),
+    ("/miner-score-activity", miner_score_activity),
+    ("/agents-from-hotkey", get_agents_from_hotkey),    
+    ("/inference-provider-statistics", get_inference_provider_statistics),
+    ("/agent-scratch", shak_scratchpad)
+]
+
+for path, endpoint in routes:
+    router.add_api_route(
+        path,
+        endpoint,
+        tags=["retrieval"],
+        dependencies=[Depends(verify_request_public)],
+        methods=["GET"]
+    )
