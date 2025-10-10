@@ -543,7 +543,6 @@ async def validator_finish_evaluation(
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
-    validator.current_evaluation_id = None
     logger.debug(
         f"Validator '{validator.name}' marking evaluation as finished for evaluation {validator.current_evaluation_id}..."
     )
@@ -551,6 +550,8 @@ async def validator_finish_evaluation(
     logger.info(
         f"Validator '{validator.name}' marked evaluation as finished for evaluation {validator.current_evaluation_id}"
     )
+
+    validator.current_evaluation_id = None
 
     return ValidatorFinishEvaluationResponse()
 

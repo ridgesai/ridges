@@ -11,7 +11,7 @@ from api.queries.agent import create_agent, record_upload_attempt
 from api.src.backend.queries.agents import get_latest_agent, get_ban_reason
 from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
-    check_rate_limit, check_replay_attack, check_signature, check_hotkey_registered, check_file_size, check_agent_code
+    check_rate_limit, check_signature, check_hotkey_registered, check_file_size, check_agent_code
 from models.agent import AgentStatus, Agent
 
 prod = False
@@ -102,7 +102,8 @@ async def post_agent(
             if latest_agent:
                 check_rate_limit(latest_agent)
 
-        check_replay_attack(latest_agent, file_info)
+        # TODO: Bring this back if needed
+        # check_replay_attack(latest_agent, file_info)
 
         if prod:
             check_signature(public_key, file_info, signature)
