@@ -126,3 +126,38 @@ async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID)
     )
 
     return [Evaluation(**evaluation) for evaluation in results]
+
+@db_operation
+async def mark_running_evaluation_runs_as_errored(conn: asyncpg.Connection, evaluation_id: int) -> None:
+    await conn.execute(
+        f"""
+        UPDATE evaluation_runs
+        SET
+            status = '{EvaluationRunStatus.error.value}',
+            error_code = CASE
+                WHEN status = '{EvaluationRunStatus.pending.value}' THEN 2010
+                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN 2020
+                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN 2030
+                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN 2040
+                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN 2050
+                ELSE 2000
+            END,
+            error_message = 'Validator disconnected while evaluation run was in process, see error code',
+            finished_or_errored_at = NOW()
+        WHERE evaluation_id = $1
+        AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
+        """,
+        evaluation_id
+    )
+
+@db_operation
+async def mark_evaluation_as_finished(conn: asyncpg.Connection, evaluation_id: int) -> None:
+    await conn.execute(
+        """
+        UPDATE evaluations
+        SET finished_at = NOW()
+        WHERE evaluation_id = $1
+        AND finished_at IS NULL
+        """,
+        evaluation_id
+    )

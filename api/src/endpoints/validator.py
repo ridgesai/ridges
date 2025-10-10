@@ -1,26 +1,27 @@
 import re
 import time
+from datetime import datetime
+from typing import Dict, List, Optional
+from uuid import UUID, uuid4
+
+from fastapi import Depends, APIRouter, HTTPException
+from fastapi.security import HTTPBearer
+from pydantic import BaseModel
+
 import api.config as config
 import utils.logger as logger
-
-from uuid import UUID, uuid4
-from datetime import datetime
-from pydantic import BaseModel
-from models.agent import Agent
-from typing import Dict, List, Optional
-from fastapi.security import HTTPBearer
-from models.evaluation import Evaluation
-from models.problem import ProblemTestResult
-from utils.system_metrics import SystemMetrics
-from utils.s3 import download_text_file_from_s3
-from utils.fiber import validate_signed_timestamp
-from fastapi import Depends, APIRouter, HTTPException
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus
-from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
-from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
 from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation import get_evaluation_by_id, create_new_evaluation_and_evaluation_runs, get_all_evaluation_runs_for_evaluation_id
-
+from api.queries.evaluation import get_evaluation_by_id, create_new_evaluation_and_evaluation_runs, \
+    get_all_evaluation_runs_for_evaluation_id, mark_running_evaluation_runs_as_errored, mark_evaluation_as_finished
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
+from models.agent import Agent
+from models.evaluation import Evaluation
+from models.evaluation_run import EvaluationRunStatus
+from models.problem import ProblemTestResult
+from utils.fiber import validate_signed_timestamp
+from utils.s3 import download_text_file_from_s3
+from utils.system_metrics import SystemMetrics
+from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
 
 
 # A connected validator
@@ -489,6 +490,23 @@ async def validator_disconnect(
     logger.info(f"Validator '{validator.name}' disconnected")
     logger.info(f"  Reason: {request.reason}")
 
+    if validator.current_evaluation_id:
+        logger.info(
+            f"Validator '{validator.name}' marking evaluation runs as cancelled for current evaluation {validator.current_evaluation_id}..."
+        )
+        await mark_running_evaluation_runs_as_errored(validator.current_evaluation_id)
+        logger.info(
+            f"Validator '{validator.name}' marked evaluation runs as cancelled for evaluation {validator.current_evaluation_id}"
+        )
+
+        logger.debug(
+            f"Validator '{validator.name}' marking evaluation as finished for evaluation {validator.current_evaluation_id}..."
+        )
+        await mark_evaluation_as_finished(validator.current_evaluation_id)
+        logger.info(
+            f"Validator '{validator.name}' marked evaluation as finished for evaluation {validator.current_evaluation_id}"
+        )
+
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
     return ValidatorDisconnectResponse()
@@ -515,13 +533,23 @@ async def validator_finish_evaluation(
 
     # Make sure that all evaluation runs have either finished or errored
     evaluation_runs = await get_all_evaluation_runs_for_evaluation_id(validator.current_evaluation_id)
-    if any((evaluation_run.status != EvaluationRunStatus.finished and evaluation_run.status != EvaluationRunStatus.error) for evaluation_run in evaluation_runs):
+    if any(
+        evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error]
+        for evaluation_run in evaluation_runs
+    ):
         raise HTTPException(
             status_code=409,
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
     validator.current_evaluation_id = None
+    logger.debug(
+        f"Validator '{validator.name}' marking evaluation as finished for evaluation {validator.current_evaluation_id}..."
+    )
+    await mark_evaluation_as_finished(validator.current_evaluation_id)
+    logger.info(
+        f"Validator '{validator.name}' marked evaluation as finished for evaluation {validator.current_evaluation_id}"
+    )
 
     return ValidatorFinishEvaluationResponse()
 
