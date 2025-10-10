@@ -9,6 +9,8 @@ from typing import List, Tuple
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, db_transaction
 from models.evaluation import Evaluation, EvaluationStatus
+from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
+from api.queries.evaluation_run import create_evaluation_run
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from api.queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
 from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
@@ -105,6 +107,20 @@ async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> 
 
 
 @db_operation
+async def get_hydrated_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> HydratedEvaluation:
+    response = await conn.fetchrow(
+        """
+        SELECT *
+        FROM evaluations_hydrated
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id,
+    )
+
+    return HydratedEvaluation(**response)
+
+
+@db_operation
 async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> list[Evaluation]:
     results = await conn.fetch(
         """
@@ -146,7 +162,7 @@ async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asy
 
 
 @db_operation
-async def mark_evaluation_as_finished(conn: asyncpg.Connection, evaluation_id: UUID) -> None:
+async def record_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id: int) -> None:
     await conn.execute(
         """
         UPDATE evaluations
@@ -155,3 +171,18 @@ async def mark_evaluation_as_finished(conn: asyncpg.Connection, evaluation_id: U
         """,
         evaluation_id
     )
+
+@db_operation
+async def get_num_successful_validator_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> int:
+    result = await conn.fetchrow(
+        f"""
+        SELECT COUNT(*) as num_successful_validator_evaluations
+        FROM evaluations_hydrated
+        WHERE 
+            agent_id = $1
+            AND status = '{EvaluationStatus.success.value}'
+            AND validator_hotkey NOT LIKE 'screener-%'
+        """,
+        agent_id,
+    )
+    return result["num_successful_validator_evaluations"]

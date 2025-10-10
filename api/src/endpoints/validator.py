@@ -11,6 +11,18 @@ from pydantic import BaseModel
 from models.agent import Agent
 from typing import Dict, List, Optional
 from fastapi.security import HTTPBearer
+from pydantic import BaseModel
+
+import api.config as config
+import utils.logger as logger
+from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey, update_agent_status
+from api.queries.evaluation import get_evaluation_by_id, create_new_evaluation_and_evaluation_runs, \
+    get_all_evaluation_runs_for_evaluation_id, mark_running_evaluation_runs_as_errored, record_evaluation_finished_at, \
+    get_hydrated_evaluation_by_id, get_num_successful_validator_evaluations_for_agent_id
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
+from models.agent import Agent, AgentStatus
+from models.evaluation import Evaluation, EvaluationStatus
+from models.evaluation_run import EvaluationRunStatus
 from models.evaluation import Evaluation
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
@@ -507,7 +519,7 @@ async def validator_disconnect(
 
     if validator.current_evaluation_id:
         await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, 'The validator disconnected while running this evaluation.')
-        await mark_evaluation_as_finished(validator.current_evaluation_id)
+        await record_evaluation_finished_at(validator.current_evaluation_id)
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
@@ -537,19 +549,72 @@ async def validator_finish_evaluation(
         )
 
     # Make sure that all evaluation runs have either finished or errored
-    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
-    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error] for evaluation_run in evaluation_runs):
+    # Middleware will mark as unfinished evaluation runs as errored automatically
+    evaluation_runs = await get_all_evaluation_runs_for_evaluation_id(validator.current_evaluation_id)
+    if any(
+        evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error]
+        for evaluation_run in evaluation_runs
+    ):
         raise HTTPException(
             status_code=409,
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
+
+    await record_evaluation_finished_at(validator.current_evaluation_id)
+
+    hydrated_evaluation = await get_hydrated_evaluation_by_id(validator.current_evaluation_id)
+    agent = await get_agent_by_id(hydrated_evaluation.agent_id)
+
+    eligible_states = [
+        AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating
+    ]
+    if agent.status not in eligible_states:
+        raise HTTPException(
+            status_code=409,
+            detail=f"The validator is trying to finish an evaluation for an agent in state "
+                   f"{agent.status}, which is not an eligible state to run evaluations in"
+        )
     await mark_evaluation_as_finished(validator.current_evaluation_id)
 
     logger.info(f"Validator '{validator.name}' finished an evaluation")
     logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
 
     validator.current_evaluation_id = None
+
+    # Transition agent state if this evaluation was successful
+    if hydrated_evaluation.status == EvaluationStatus.success:
+        new_agent_status = None
+
+        match agent.status:
+
+            case AgentStatus.screening_1:
+                if hydrated_evaluation.score >= config.SCREENER_1_THRESHOLD:
+                    new_agent_status = AgentStatus.screening_2
+                else:
+                    new_agent_status = AgentStatus.failed_screening_1
+
+            case AgentStatus.screening_2:
+                if hydrated_evaluation.score >= config.SCREENER_2_THRESHOLD:
+                    new_agent_status = AgentStatus.evaluating
+                else:
+                    new_agent_status = AgentStatus.failed_screening_2
+
+            case AgentStatus.evaluating:
+                num_validator_evaluations = await get_num_successful_validator_evaluations_for_agent_id(agent.agent_id)
+                if num_validator_evaluations >= config.NUM_EVALS_PER_AGENT:
+                    new_agent_status = AgentStatus.finished
+                else:
+                    new_agent_status = AgentStatus.evaluating
+
+            case _:
+                raise ValueError(f"Invalid agent status: {agent.status}, this should never happen")
+
+        await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+
+
+    logger.info(f"Validator '{validator.name}' finished an evaluation")
+    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
 
     return ValidatorFinishEvaluationResponse()
 

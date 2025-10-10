@@ -143,10 +143,25 @@ async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -
     return [AgentScored(**agent) for agent in results]
 
 @db_operation
+async def update_agent_status(conn: asyncpg.Connection, agent_id: UUID, status: AgentStatus) -> None:
+    """Update the status of an agent."""
+
+
+    await conn.execute(
+        """
+        UPDATE agents
+        SET status = $2
+        WHERE agent_id = $1
+        """,
+        agent_id,
+        status.value
+    )
+
+@db_operation
 async def record_upload_attempt(conn: asyncpg.Connection, upload_type: str, success: bool, **kwargs) -> None:
     # TODO ADAM: gross
-   
-   
+
+
     """Record an upload attempt in the upload_attempts table."""
     try:
         await conn.execute(
