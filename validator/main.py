@@ -68,7 +68,7 @@ async def _run_evaluation_run(evaluation_run):
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
         "updated_status": EvaluationRunStatus.initializing_agent.value
-    }, bearer_token=session_id, quiet=1)
+    }, bearer_token=session_id, quiet=2)
 
     await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
 
@@ -76,7 +76,7 @@ async def _run_evaluation_run(evaluation_run):
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
         "updated_status": EvaluationRunStatus.running_agent.value
-    }, bearer_token=session_id, quiet=1)
+    }, bearer_token=session_id, quiet=2)
 
     await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
 
@@ -86,7 +86,7 @@ async def _run_evaluation_run(evaluation_run):
         "updated_status": EvaluationRunStatus.initializing_eval.value,
         "patch": "FAKE PATCH",
         "agent_logs": "FAKE AGENT LOGS"
-    }, bearer_token=session_id, quiet=1)
+    }, bearer_token=session_id, quiet=2)
 
     await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
 
@@ -94,7 +94,7 @@ async def _run_evaluation_run(evaluation_run):
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
         "updated_status": EvaluationRunStatus.running_eval.value
-    }, bearer_token=session_id, quiet=1)
+    }, bearer_token=session_id, quiet=2)
 
     await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
 
@@ -104,7 +104,7 @@ async def _run_evaluation_run(evaluation_run):
         "updated_status": EvaluationRunStatus.finished.value,
         "test_results": [{"name": "fake_test", "category": "default", "status": "passed"}],
         "eval_logs": "FAKE EVAL LOGS"
-    }, bearer_token=session_id, quiet=1)
+    }, bearer_token=session_id, quiet=2)
 
 
     
@@ -123,15 +123,19 @@ async def _run_evaluation(request_evaluation_response):
     for evaluation_run in evaluation_runs:
         logger.info(f"    {evaluation_run['problem_name']}")
 
+
+
+    logger.info("Starting evaluation...")
+
     tasks = []
     for evaluation_run in evaluation_runs:
         tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run)))
 
     await asyncio.gather(*tasks)
 
-    await post_ridges_platform("/validator/finish-evaluation", bearer_token=session_id, quiet=1)
+    logger.info("Finished evaluation")
 
-    
+    await post_ridges_platform("/validator/finish-evaluation", bearer_token=session_id, quiet=1)
 
 
 
