@@ -75,26 +75,26 @@ async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str
 
     # Move from pending -> initializing_agent
     await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
-    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
     # Move from initializing_agent -> running_agent
     await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
-    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
     # Move from running_agent -> initializing_eval
     await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
-    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
         "patch": "FAKE PATCH",
         "agent_logs": "FAKE AGENT LOGS"
     })
 
     # Move from initializing_eval -> running_eval
     await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
-    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
     # Move from running_eval -> finished
     await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
-    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
         "test_results": [{"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}],
         "eval_logs": "FAKE EVAL LOGS"
     })
@@ -123,10 +123,39 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
         return
 
 
-
     logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
-    # TODO
+
+
+    # # Move from pending -> initializing_agent
+    # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+
+    # # Start initializing the agent sandbox
+    # try:
+    #     agent_sandbox = await problem_suite.initialize_agent_sandbox(sandbox_manager, problem_name)
+    # except Exception as e:
+    #     await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+    #         "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value,
+    #         "error_message": f"An error occurred while initializing the agent sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
+    #     })
+    #     return
+
+
+
+    # # Move from initializing_agent -> running_agent
+    # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+
+    # # Start running the agent sandbox
+    # try:
+    #     patch = await problem_suite.run_agent_sandbox(agent_sandbox, problem_name)
+    # except Exception as e:
+    #     await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+    #         "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value,
+    #         "error_message": f"An error occurred while running the agent sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
+    #     })
+    #     return
+
+
 
     logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
     
