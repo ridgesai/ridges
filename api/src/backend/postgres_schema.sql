@@ -731,8 +731,8 @@ WITH
 SELECT
     agent_id,
     status,
-    num_running_evals,
-    num_finished_evals
+    COALESCE(num_running_evals, 0) as num_running_evals,
+    COALESCE(num_finished_evals, 0) as num_finished_evals
 FROM agents
      INNER JOIN screener_2_scores USING (agent_id)
      LEFT JOIN validator_eval_counts USING (agent_id)

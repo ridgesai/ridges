@@ -45,15 +45,15 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
                 )
             SELECT
                 agent_id,
-                num_running_evals,
-                num_finished_evals
+                COALESCE(num_running_evals, 0) as num_running_evals,
+                COALESCE(num_finished_evals, 0) as num_finished_evals
             FROM agents
                  INNER JOIN screener_2_scores USING (agent_id)
                  LEFT JOIN validator_eval_counts USING (agent_id)
             WHERE
                 agents.status = '{AgentStatus.evaluating.value}'
               AND NOT COALESCE(already_evaluated, false)
-              AND num_running_evals + num_finished_evals < $2
+              AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < $2
             ORDER BY
                 screener_2_scores.score DESC,
                 agents.created_at ASC
