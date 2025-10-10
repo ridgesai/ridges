@@ -412,11 +412,6 @@ async def network_statistics():
     """
     pass 
 
-async def evaluation_with_runs():
-    """
-    """
-    pass
-
 async def agent_by_id(agent_id: str) -> Agent:
     agent = await get_agent_by_id(agent_id=uuid.UUID(agent_id))
     
@@ -454,6 +449,42 @@ async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
         for e, runs in zip(evaluations, runs_per_eval)
     ]
 
+from utils.s3 import download_text_file_from_s3
+from api.src.endpoints.validator import get_all_connected_screener_ip_addresses
+
+async def get_agent_code(agent_id: str, request: Request):
+    agent_version = await get_agent_by_id(agent_id=agent_id)
+    
+    if not agent_version:
+        logger.info(f"File for agent version {agent_id} was requested but not found in our database")
+        raise HTTPException(
+            status_code=404, 
+            detail="The requested agent version was not found. Are you sure you have the correct version ID?"
+        )
+    
+    if "screening" in agent_version.status:
+        client_ip = request.client.host
+        
+        connected_screener_ips = get_all_connected_screener_ip_addresses()
+
+        if client_ip not in connected_screener_ips:
+            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {agent_id}")
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: IP not authorized"
+            )
+    
+    try:
+        text = await download_text_file_from_s3(f"{agent_id}/agent.py")
+    except Exception as e:
+        logger.error(f"Error retrieving agent version code from S3 for version {agent_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Internal server error while retrieving agent version code. Please try again later."
+        )
+    
+    return text
+
 async def inference_statistics():
     pass
 
@@ -472,6 +503,7 @@ routes = [
     ("/network-stats", get_network_stats),
     ("/agent-scores-over-time", agent_scores_over_time),
 
+    # ("/agent-version-file", get_agent_code), 
     # ("/connected-validators", get_connected_validators), 
     # ("/evaluations", get_evaluations),
     # ("/screening-evaluations", get_screening_evaluations),
