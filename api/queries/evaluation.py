@@ -1,3 +1,4 @@
+import json
 import uuid
 import asyncpg
 import utils.logger as logger
@@ -69,6 +70,7 @@ async def create_new_evaluation_and_evaluation_runs(conn: asyncpg.Connection, ag
 
 
 
+# TODO: move to runs.py
 @db_operation
 async def get_all_evaluation_runs_for_evaluation_id(conn: asyncpg.Connection, evaluation_id: int) -> List[EvaluationRun]:
     rows = await conn.fetch(
@@ -80,7 +82,12 @@ async def get_all_evaluation_runs_for_evaluation_id(conn: asyncpg.Connection, ev
         evaluation_id
     )
 
-    return [EvaluationRun(**row) for row in rows]
+    parsed_rows = [
+        {**row, "test_results": json.loads(row["test_results"]) if row["test_results"] else None}
+        for row in rows
+    ]
+
+    return [EvaluationRun(**parsed_row) for parsed_row in parsed_rows]
 
 
 

@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from fastapi import Depends, APIRouter, HTTPException
+from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
@@ -31,6 +31,7 @@ class Validator(BaseModel):
     name: str
     hotkey: str
     time_connected: datetime
+    ip_address: str
 
     current_evaluation_id: Optional[UUID] = None
 
@@ -45,6 +46,10 @@ SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 # Returns True if a validator with the given hotkey is currently registered
 def is_validator_registered(validator_hotkey: str) -> bool:
     return validator_hotkey in [validator.hotkey for validator in SESSION_ID_TO_VALIDATOR.values()]
+
+# Returns the IP addresses of all connected screeners (both screener-1 and screener-2)
+def get_all_connected_screener_ip_addresses() -> List[str]:
+    return [validator.ip_address for validator in SESSION_ID_TO_VALIDATOR.values() if validator.hotkey.startswith("screener-")]
 
 
 
@@ -88,32 +93,33 @@ class ValidatorRegistrationResponse(BaseModel):
 
 @router.post("/register-as-validator")
 async def validator_register_as_validator(
-    request: ValidatorRegistrationRequest
+    request: Request,
+    registration_request: ValidatorRegistrationRequest
 ) -> ValidatorRegistrationResponse:
 
     # Ensure that the hotkey is in the list of acceptable validator hotkeys
-    if not is_validator_hotkey_whitelisted(request.hotkey):
+    if not is_validator_hotkey_whitelisted(registration_request.hotkey):
         raise HTTPException(
             status_code=403,
             detail="The provided hotkey is not in the list of whitelisted validator hotkeys."
         )
     
     # Check if the signed timestamp is valid (i.e., matches the raw timestamp)
-    if not validate_signed_timestamp(request.timestamp, request.signed_timestamp, request.hotkey):
+    if not validate_signed_timestamp(registration_request.timestamp, registration_request.signed_timestamp, registration_request.hotkey):
         raise HTTPException(
             status_code=401,
             detail="The provided signed timestamp does not match the provided timestamp."
         )
 
     # Ensure that the timestamp is within 1 minute of the current time
-    if abs(int(request.timestamp) - int(time.time())) > 60:
+    if abs(int(registration_request.timestamp) - int(time.time())) > 60:
         raise HTTPException(
             status_code=400,
             detail="The provided timestamp is not within 1 minute of the current time."
         )
 
     # Ensure that the validator is not already registered
-    if is_validator_registered(request.hotkey):
+    if is_validator_registered(registration_request.hotkey):
         raise HTTPException(
             status_code=409,
             detail=f"There is already a validator connected with the given hotkey."
@@ -121,15 +127,18 @@ async def validator_register_as_validator(
 
     # Register the validator with a new session ID
     session_id = uuid4()
+    ip_address = request.client.host if request.client else None
     SESSION_ID_TO_VALIDATOR[session_id] = Validator(
         session_id=session_id,
-        name=validator_hotkey_to_name(request.hotkey),
-        hotkey=request.hotkey,
-        time_connected=datetime.now()
+        name=validator_hotkey_to_name(registration_request.hotkey),
+        hotkey=registration_request.hotkey,
+        time_connected=datetime.now(),
+        ip_address=ip_address
     )
     
-    logger.info(f"Validator '{validator_hotkey_to_name(request.hotkey)}' ({request.hotkey}) was registered")
+    logger.info(f"Validator '{validator_hotkey_to_name(registration_request.hotkey)}' ({registration_request.hotkey}) was registered")
     logger.info(f"  Session ID: {session_id}")
+    logger.info(f"  IP Address: {ip_address}")
     
     return ValidatorRegistrationResponse(session_id=session_id)
 
@@ -146,18 +155,19 @@ class ScreenerRegistrationResponse(BaseModel):
 
 @router.post("/register-as-screener")
 async def validator_register_as_screener(
-    request: ScreenerRegistrationRequest
+    request: Request,
+    registration_request: ScreenerRegistrationRequest
 ) -> ScreenerRegistrationResponse:
 
     # Ensure that the name is in the format screener-CLASS-NUM
-    if not re.match(r"screener-\d-\d+", request.name):
+    if not re.match(r"screener-\d-\d+", registration_request.name):
         raise HTTPException(
             status_code=400,
             detail="The provided name is not in the format screener-CLASS-NUM."
         )
     
     # Ensure that the CLASS is either 1 or 2
-    screener_class = request.name.split("-")[1]
+    screener_class = registration_request.name.split("-")[1]
     if screener_class != "1" and screener_class != "2":
         raise HTTPException(
             status_code=400,
@@ -165,14 +175,14 @@ async def validator_register_as_screener(
         )
     
     # Ensure that the password is correct
-    if request.password != config.SCREENER_PASSWORD:
+    if registration_request.password != config.SCREENER_PASSWORD:
         raise HTTPException(
             status_code=403,
             detail="The provided password is incorrect."
         )
 
     # Ensure that the screener is not already registered
-    if is_validator_registered(request.name):
+    if is_validator_registered(registration_request.name):
         raise HTTPException(
             status_code=409,
             detail=f"There is already a screener connected with the given name."
@@ -180,15 +190,18 @@ async def validator_register_as_screener(
 
     # Register the screener with a new session ID
     session_id = uuid4()
+    ip_address = request.client.host if request.client else None
     SESSION_ID_TO_VALIDATOR[session_id] = Validator(
         session_id=session_id,
-        name=request.name,
-        hotkey=request.name,
-        time_connected=datetime.now()
+        name=registration_request.name,
+        hotkey=registration_request.name,
+        time_connected=datetime.now(),
+        ip_address=ip_address
     )
     
-    logger.info(f"Screener {request.name} was registered")
+    logger.info(f"Screener {registration_request.name} was registered")
     logger.info(f"  Session ID: {session_id}")
+    logger.info(f"  IP Address: {ip_address}")
     
     return ScreenerRegistrationResponse(session_id=session_id)
 
@@ -402,6 +415,8 @@ async def validator_update_evaluation_run(
 
 
         case EvaluationRunStatus.finished:
+            logger.warning(f"Test results: {request.test_results}")
+
             # A validator may only update an evaluation run to finished if the evaluation run is currently in the running_eval status
             if evaluation_run.status != EvaluationRunStatus.running_eval:
                 raise HTTPException(
@@ -579,7 +594,7 @@ async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
             hotkey=validator.hotkey,
             time_connected=validator.time_connected,
             time_last_heartbeat=validator.time_last_heartbeat,
-            system_metrics=validator.system_metrics
+            system_metrics=validator.system_metrics,
         )
 
         if validator.current_evaluation_id is not None:

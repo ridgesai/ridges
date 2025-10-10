@@ -8,9 +8,9 @@ from typing import Any
 
 
 
-def _pretty_print_httpx_error(url: str, e: httpx.HTTPStatusError):
+def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
     # HTTP error (4xx or 5xx)
-    logger.error(f"HTTP {e.response.status_code} {e.response.reason_phrase} during GET {url}")
+    logger.error(f"HTTP {e.response.status_code} {e.response.reason_phrase} during {method} {url}")
 
     # Try and print the response as best as we can
     try:
@@ -66,7 +66,7 @@ async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
             return response.json()
     
     except httpx.HTTPStatusError as e:
-        _pretty_print_httpx_error(url, e)
+        _pretty_print_httpx_error("GET", url, e)
         
         raise
     
@@ -120,7 +120,7 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             return response.json()
     
     except httpx.HTTPStatusError as e:
-        _pretty_print_httpx_error(url, e)
+        _pretty_print_httpx_error("POST", url, e)
         
         raise
     
