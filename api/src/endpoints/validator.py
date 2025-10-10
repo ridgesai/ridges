@@ -599,7 +599,7 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
             case AgentStatus.screening_2:
                 top_agents = await get_top_agents(number_of_agents=1)
-                top_score = top_agents[0].score if top_agents else 0
+                top_score = top_agents[0].final_score if top_agents else 0
                 pruning_threshold_score = top_score * config.PRUNE_THRESHOLD
 
                 if hydrated_evaluation.score >= max(config.SCREENER_2_THRESHOLD, pruning_threshold_score):

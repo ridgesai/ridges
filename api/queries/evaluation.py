@@ -139,12 +139,12 @@ async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asy
         SET
             status = '{EvaluationRunStatus.error.value}',
             error_code = CASE
-                WHEN status = '{EvaluationRunStatus.pending.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}'
-                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}'
-                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}'
-                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}'
-                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}'
-                ELSE '{EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value}'
+                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}
+                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
+                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
+                ELSE {EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value}
             END,
             error_message = $2,
             finished_or_errored_at = $3
