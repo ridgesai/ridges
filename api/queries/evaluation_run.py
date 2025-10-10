@@ -1,5 +1,6 @@
 import json
 import asyncpg
+import utils.logger as logger
 
 from typing import Optional
 from uuid import UUID, uuid4
@@ -80,5 +81,7 @@ async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, p
         EvaluationRunStatus.pending.value,
         datetime.now()
     )
+
+    logger.debug(f"Created evaluation run {evaluation_run_id} for evaluation {evaluation_id} with problem name {problem_name}")
 
     return evaluation_run_id

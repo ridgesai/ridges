@@ -195,12 +195,16 @@ async def validator_register_as_screener(
 
 # /validator/request-evaluation
 
+class StrippedEvaluationRun(BaseModel):
+    evaluation_run_id: UUID
+    problem_name: str
+
 class ValidatorRequestEvaluationRequest(BaseModel):
     pass
 
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
-    evaluation_runs: List[EvaluationRun]
+    evaluation_runs: List[StrippedEvaluationRun]
 
 @router.post("/request-evaluation")
 async def validator_request_evaluation(
@@ -231,7 +235,9 @@ async def validator_request_evaluation(
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
     logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
 
-    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
+    stripped_evaluation_runs = [StrippedEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
+
+    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=stripped_evaluation_runs)
 
 
 
@@ -248,8 +254,9 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorHeartbeatResponse:
 
-    logger.info(f"Validator '{validator.name}' sent a heartbeat")
-    logger.info(f"  System metrics: {request.system_metrics}")
+    # TODO: uncomment
+    # logger.info(f"Validator '{validator.name}' sent a heartbeat")
+    # logger.info(f"  System metrics: {request.system_metrics}")
 
     validator.time_last_heartbeat = datetime.now()
     validator.system_metrics = request.system_metrics

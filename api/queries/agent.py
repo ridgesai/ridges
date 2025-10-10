@@ -133,6 +133,9 @@ async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -
 
 @db_operation
 async def record_upload_attempt(conn: asyncpg.Connection, upload_type: str, success: bool, **kwargs) -> None:
+    # TODO ADAM: gross
+   
+   
     """Record an upload attempt in the upload_attempts table."""
     try:
         await conn.execute(

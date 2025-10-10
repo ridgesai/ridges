@@ -1,5 +1,6 @@
 import uuid
 import asyncpg
+import utils.logger as logger
 
 from uuid import UUID
 from datetime import datetime
@@ -34,6 +35,8 @@ async def create_evaluation(conn: asyncpg.Connection, agent_id: UUID, validator_
         datetime.now()
     )
 
+    logger.debug(f"Created evaluation {evaluation_id} for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
+
     return evaluation_id
 
 
@@ -42,9 +45,13 @@ async def create_evaluation(conn: asyncpg.Connection, agent_id: UUID, validator_
 async def create_new_evaluation_and_evaluation_runs(conn: asyncpg.Connection, agent_id: UUID, validator_hotkey: str, set_id: int = None) -> Tuple[Evaluation, List[EvaluationRun]]:
     if set_id is None:
         set_id = await get_latest_set_id()
+    
+    logger.debug(f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
 
     set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
     problem_names = await get_all_problem_names_of_group_in_set(set_id, set_group)
+
+    logger.debug(f"# of problems in set ID {set_id}, set group {set_group}: {len(problem_names)}")
 
     evaluation_id = await create_evaluation(
         agent_id,
