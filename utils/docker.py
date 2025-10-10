@@ -2,6 +2,8 @@ import docker
 import subprocess
 import utils.logger as logger
 
+from typing import Dict
+
 
 
 logger.info("Creating Docker client...")
@@ -98,31 +100,3 @@ def connect_docker_container_to_internet(container: docker.models.containers.Con
     bridge_network.connect(container)
     
     logger.info(f"Connected Docker container {container.name} to internet")
-
-
-
-def create_docker_container(*, image: str, name: str, network: str, env_vars: dict) -> docker.models.containers.Container:
-    """
-    Create a Docker container, with the given image, name, network, and environment.
-    The Docker container will run in the background, so this function will return immediately.
-
-    Args:
-        name: The name of the container
-        image: The image to use for the container
-        network: The network to connect the container to
-        env_vars: The environment variables to set for the container
-    """
-
-    logger.info(f"Creating Docker container: {name}")
-
-    container = docker_client.containers.run(
-        name=name,
-        image=image,
-        network=network,
-        environment=env_vars,
-        detach=True
-    )
-
-    logger.info(f"Created Docker container: {name}")
-
-    return container

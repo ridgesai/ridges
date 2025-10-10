@@ -17,7 +17,7 @@ class PolyglotSuite(ProblemSuite):
 
 
 
-    def load_problems(self, dataset_path: str):
+    def _load_problems(self, dataset_path: str):
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
@@ -99,7 +99,6 @@ class PolyglotSuite(ProblemSuite):
         problem: Problem,
         dir: str,
         *,
-        include_tests: bool = False,
         include_solution: bool = False
     ):
         problem_dir = os.path.join(self.dataset_path, problem.name)
@@ -107,11 +106,6 @@ class PolyglotSuite(ProblemSuite):
         # Always copy main.py
         shutil.copy2(os.path.join(problem_dir, "main.py"), os.path.join(dir, "main.py"))
         logger.debug(f"Copied main.py to {dir} for {problem.name}")
-
-        # Copy test files if requested
-        if include_tests:
-            shutil.copy2(os.path.join(problem_dir, "tests.py"), os.path.join(dir, "tests.py"))
-            logger.debug(f"Copied tests.py to {dir} for {problem.name}")
 
         # Copy solution files if requested
         if include_solution:

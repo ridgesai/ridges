@@ -478,6 +478,8 @@ async def validator_update_evaluation_run(
                     status_code=422,
                     detail="The error message is required when updating an evaluation run to error."
                 )
+
+            # TODO: Check for agent_logs and/or eval_logs
             
             # Update the evaluation run to error
             evaluation_run.status = EvaluationRunStatus.error

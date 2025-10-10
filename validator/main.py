@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 from models.problem import ProblemTestResultStatus
 from utils.system_metrics import get_system_metrics
 from evaluator.sandbox.sandbox_manager import SandboxManager
+from evaluator.problem_suites.models import EvaluationRunException
 from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
@@ -57,7 +58,7 @@ async def send_heartbeat_loop():
 # Sends an update-evaluation-run request to the Ridges platform. The extra
 # parameter is for fields that are not sent in all requests, such as agent_logs
 # and eval_logs, which are only sent on some state transitions.
-async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updated_status: EvaluationRunStatus, extra: Optional[Dict[str, Any]] = None):
+async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updated_status: EvaluationRunStatus, extra: Dict[str, Any] = {}):
     logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
@@ -123,37 +124,51 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
         return
 
 
+
     logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
 
 
-    # # Move from pending -> initializing_agent
-    # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+    try:
+        # Move from pending -> initializing_agent
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
-    # # Start initializing the agent sandbox
-    # try:
-    #     agent_sandbox = await problem_suite.initialize_agent_sandbox(sandbox_manager, problem_name)
-    # except Exception as e:
-    #     await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-    #         "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value,
-    #         "error_message": f"An error occurred while initializing the agent sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
-    #     })
-    #     return
+        # Start initializing the agent sandbox
+        agent_sandbox = await problem_suite.initialize_agent_sandbox(sandbox_manager, problem_name)
 
+        # # Move from initializing_agent -> running_agent
+        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
+        # # Start running the agent sandbox
+        # patch, agent_logs = await problem_suite.run_agent_sandbox(agent_sandbox, problem_name)
 
-    # # Move from initializing_agent -> running_agent
-    # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+        # # Move from running_agent -> initializing_eval
+        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+        #     "patch": patch,
+        #     "agent_logs": agent_logs
+        # })
 
-    # # Start running the agent sandbox
-    # try:
-    #     patch = await problem_suite.run_agent_sandbox(agent_sandbox, problem_name)
-    # except Exception as e:
-    #     await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-    #         "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value,
-    #         "error_message": f"An error occurred while running the agent sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
-    #     })
-    #     return
+        # # Start initializing the evaluation sandbox
+        # eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name)
+
+        # # Move from initializing_eval -> running_eval
+        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+
+        # # Start running the evaluation sandbox
+        # test_results, eval_logs = await problem_suite.run_eval_sandbox(eval_sandbox, problem_name)
+
+        # # Move from running_eval -> finished
+        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+        #     "test_results": test_results,
+        #     "eval_logs": eval_logs
+        # })
+
+    except EvaluationRunException as e:
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value,
+            "error_message": f"An error occurred while running the evaluation sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
+        })
+    
 
 
 

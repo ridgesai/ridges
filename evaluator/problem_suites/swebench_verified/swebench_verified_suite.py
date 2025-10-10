@@ -24,7 +24,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
 
-    def load_problems(self, dataset_path: str):
+    def _load_problems(self, dataset_path: str):
         logger.info(f"Loading problems from {dataset_path}...")
 
         # Make sure the dataset path exists
@@ -116,7 +116,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         problem: Problem,
         dir: str,
         *,
-        include_tests: bool = False,
         include_solution: bool = False
     ):
         # Get the SWE-Bench problem object
