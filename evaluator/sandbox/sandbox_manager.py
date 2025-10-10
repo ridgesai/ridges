@@ -2,16 +2,13 @@
 
 import os
 import json
-import time
 import httpx
 import shutil
-import docker
-import threading
 import utils.logger as logger
 
-from pydantic import BaseModel, ConfigDict
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Tuple, Optional, Callable
 from utils.temp import create_temp_dir, cleanup_temp_dir
+from evaluator.models import Sandbox, SandboxResult, SandboxResultWithLogs
 from utils.docker import docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
 
 
@@ -23,12 +20,6 @@ SANDBOX_PROXY_PORT = 80
 
 
 
-class Sandbox(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True) # Because of docker.models.containers.Container
-
-    name: str
-    temp_dir: str
-    container: docker.models.containers.Container
 
 
 
@@ -56,9 +47,6 @@ class SandboxManager:
         self.proxy_temp_dir = None
         build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
         self._create_sandbox_proxy(inference_gateway_url)
-        
-        # Setup watchdog
-        self._start_watchdog()
 
 
 
@@ -82,19 +70,31 @@ class SandboxManager:
 
 
 
-    def _start_watchdog(self):
-        self.watchdog_thread = threading.Thread(target=self._watchdog)
-        self.watchdog_thread.daemon = True
-        logger.info("Starting sandbox watchdog thread")
-        self.watchdog_thread.start()
+    def _create_sandbox_proxy(self, gateway_url):
+        """
+        Create the sandbox proxy server.
+        
+        This is a special sandbox that runs a proxy server (nginx).
+        This is the only sandbox that can access the internet.
+        
+        The other sandboxes cannot directly access the internet.
+        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inferencegateway.
+        """
+  
+        logger.info("Running sandbox proxy")
 
-    def _watchdog(self):
-        logger.info("Started sandbox watchdog thread")
+        self.proxy_container = docker_client.containers.run(
+            name=SANDBOX_PROXY_HOST,
+            image="sandbox-proxy-image",
+            network=SANDBOX_NETWORK_NAME,
+            environment={
+                "GATEWAY_URL": gateway_url,
+                "GATEWAY_HOST": gateway_url.split("://")[1].split(":")[0]
+            },
+            detach=True
+        )
 
-        while True:
-            time.sleep(1)
-
-            # TODO
+        connect_docker_container_to_internet(self.proxy_container)
 
 
 
@@ -154,106 +154,23 @@ class SandboxManager:
 
 
 
-
-
+    # TODO ADAM: Sandbox::run()
     def run_sandbox(
         self,
         sandbox: Sandbox,
         *,
         timeout_seconds: Optional[int] = None
-    ) -> Any:
+    ) -> SandboxResultWithLogs:
         
-        container: docker.models.containers.Container = sandbox.container
+        sandbox.container.wait(timeout=timeout_seconds)
 
-        container.wait(timeout=timeout_seconds)
+        # Load /sandbox/output.json
+        temp_output_json_path = os.path.join(sandbox.temp_dir, "output.json")
+        with open(temp_output_json_path, "r") as f:
+            output = json.load(f)
+        logger.debug(f"Loaded output.json for sandbox <{sandbox.name}>: {temp_output_json_path}")
 
+        # Get logs
+        logs = sandbox.container.logs().decode("utf-8")
 
-        pass
-
-
-
-
-
-
-
-
-
-    def _run_sandbox(self, sandbox_id):
-        """Run Docker container for the given sandbox (this runs on a background thread)."""
-       
-
-        # Try and read output.json
-        output_json_path = os.path.join(temp_dir, "output.json")
-        try:
-            with open(output_json_path, "r") as f:
-                output = json.load(f)
-            debug(f"[SANDBOX] Read output.json from <{sandbox_id}>: {output_json_path}")
-        except Exception as e:
-            finish_with_error(f"Failed to read output.json: {e}", result)
-            return
-
-
-
-        # Validate output.json structure
-        if "status" not in output:
-            finish_with_error("output.json does not contain a status field", result)
-            return
-
-        if output["status"] == "success":
-            if "output" not in output:
-                finish_with_error("output.json has status 'success' but does not contain an output field", result)
-                return
-            result["output"] = output["output"]
-        elif output["status"] == "error":
-            if "error" not in output:
-                finish_with_error("output.json has status 'error' but does not contain an error field", result)
-                return
-            
-            result["traceback"] = output.get("traceback")
-            finish_with_error(output["error"], result)
-            return
-        else:
-            finish_with_error(f"output.json contains an invalid status field: {output['status']}", result)
-            return
-        
-        try:
-            sandbox["on_finish"](result)
-        except Exception as e:
-            warn(f"[SANDBOX] on_finish() callback failed for <{sandbox_id}>: {e}")
-        finally:
-            self.cleanup_sandbox(sandbox_id)
-
-
-
-
-
-
-
-
-
-
-    def _create_sandbox_proxy(self, gateway_url):
-        """
-        Create the sandbox proxy server.
-        
-        This is a special sandbox that runs a proxy server (nginx).
-        This is the only sandbox that can access the internet.
-        
-        The other sandboxes cannot directly access the internet.
-        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inferencegateway.
-        """
-  
-        logger.info("Running sandbox proxy")
-
-        self.proxy_container = docker_client.containers.run(
-            name=SANDBOX_PROXY_HOST,
-            image="sandbox-proxy-image",
-            network=SANDBOX_NETWORK_NAME,
-            environment={
-                "GATEWAY_URL": gateway_url,
-                "GATEWAY_HOST": gateway_url.split("://")[1].split(":")[0]
-            },
-            detach=True
-        )
-
-        connect_docker_container_to_internet(self.proxy_container)
+        return SandboxResultWithLogs(**output, logs=logs)

@@ -1,3 +1,4 @@
+import utils.logger as logger
 import inference_gateway.config as config
 
 from typing import List
@@ -14,11 +15,15 @@ chutes_client = OpenAI(
 
 
 def inference(model: str, temperature: float, messages: List[InferenceMessage]) -> str:
+    logger.info(f"--> Inference request for model {model} (temperature {temperature}) with {sum(len(message.content) for message in messages)} characters")
+    
     response = chutes_client.chat.completions.create(
         model=model,
         messages=messages,
         temperature=temperature,
         stream=False
-    )
+    ).choices[0].message.content
 
-    return response.choices[0].message.content
+    logger.info(f"<-- Inference response for model {model} (temperature {temperature}) with {len(response)} characters")
+
+    return response

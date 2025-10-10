@@ -1,13 +1,17 @@
 """Base class for problem suites."""
 
 import os
+import traceback
 import utils.logger as logger
 import validator.config as config
 
-from uuid import uuid4
+from uuid import UUID
+from typing import Tuple
 from models.problem import Problem
 from abc import ABC, abstractmethod
 from utils.temp import create_temp_dir
+from evaluator.models import EvaluationRunException
+from models.evaluation_run import EvaluationRunErrorCode
 from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
 
 
@@ -82,7 +86,7 @@ class ProblemSuite(ABC):
 
 
 
-    def initialize_agent_sandbox(self, sandbox_manager: SandboxManager, problem: Problem, agent_code: str, *, include_solution: bool = False) -> Sandbox:
+    def initialize_agent_sandbox(self, sandbox_manager: SandboxManager, problem: Problem, evaluation_run_id: UUID, agent_code: str, *, include_solution: bool = False) -> Sandbox:
         def _on_mount(temp_dir: str):
             # Create /sandbox/agent.py
             with open(os.path.join(temp_dir, "agent.py"), "w") as f:
@@ -106,11 +110,30 @@ class ProblemSuite(ABC):
             name=f"agent-sandbox-{problem.name}",
             on_mount=_on_mount,
             env_vars={
-                "RUN_ID": str(uuid4())
+                "EVALUATION_RUN_ID": evaluation_run_id
             },
             python_script_path=os.path.join(os.path.dirname(__file__), "AGENT_RUNNER.py"),
             input_data={
                 "problem_statement": problem.problem_statement
-            },
-            timeout_seconds=config.AGENT_TIMEOUT_SECONDS
+            }
         )
+
+
+
+    def run_agent_sandbox(self, sandbox_manager: SandboxManager, sandbox: Sandbox) -> Tuple[str, str]:
+        try:
+            sandbox_result_with_logs = sandbox_manager.run_sandbox(sandbox, timeout_seconds=config.AGENT_TIMEOUT_SECONDS)
+
+            if not sandbox_result_with_logs.success:
+                raise EvaluationRunException(
+                    EvaluationRunErrorCode.AGENT_EXCEPTION,
+                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
+                )
+            
+            return sandbox_result_with_logs.output, sandbox_result_with_logs.logs
+
+        except Exception as e:
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT,
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            )

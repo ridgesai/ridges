@@ -14,14 +14,8 @@ class InferenceRequest(BaseModel):
     temperature: float
     messages: List[InferenceMessage]
 
-class InferenceResponse(BaseModel):
-    response: str
-
 
 
 class EmbeddingRequest(BaseModel):
     evaluation_run_id: UUID
     input: str
-
-class EmbeddingResponse(BaseModel):
-    embedding: List[float]

@@ -1,11 +1,15 @@
 import sys
 import json
+import time
 import traceback
 import importlib.util
 
 
 def main():
     print("[AGENT_RUNNER] Entered main()")
+
+    # TODO ADAM: Do not remove
+    time.sleep(3)
 
     try:
         # Read input.json
@@ -38,7 +42,7 @@ def main():
             raise Exception("agent_main() function returned a non-string value")
 
         output = {
-            "status": "success",
+            "success": True,
             "output": agent_main_return_value
         }
 
@@ -52,7 +56,7 @@ def main():
         traceback.print_exc(file=sys.stdout)
         
         output = {
-            "status": "error",
+            "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
         }

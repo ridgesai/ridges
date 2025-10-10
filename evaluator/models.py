@@ -1,5 +1,31 @@
+import docker
+
 from typing import Any, Dict, Optional
+from pydantic import BaseModel, ConfigDict
+
 from models.evaluation_run import EvaluationRunErrorCode
+
+
+
+class Sandbox(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True) # Because of docker.models.containers.Container
+
+    name: str
+    temp_dir: str
+    container: docker.models.containers.Container
+
+class SandboxResult(BaseModel):
+    success: bool
+
+    # if success
+    output: Any = None
+
+    # if not success
+    error: Optional[str] = None
+    traceback: Optional[str] = None
+
+class SandboxResultWithLogs(SandboxResult):
+    logs: str
 
 
 

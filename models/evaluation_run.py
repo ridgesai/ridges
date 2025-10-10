@@ -16,8 +16,7 @@ class EvaluationRunErrorCode(IntEnum):
         return obj
     
     # 1xxx - Agent Errors
-    AGENT_EXCEPTION          = (1000, "An exception was thrown while running the agent")
-    AGENT_WRONG_RETURN_TYPE  = (1010, "The agent_main() function did not return a string")
+    AGENT_EXCEPTION          = (1000, "An exception was raised in the agent_main() function")
     AGENT_TIMEOUT_RUNNING    = (1020, "The agent timed out while being run")
     AGENT_TIMEOUT_EVALUATING = (1030, "The agent timed out while being evaluated")
 

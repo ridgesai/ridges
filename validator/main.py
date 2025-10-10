@@ -8,9 +8,9 @@ import validator.config as config
 
 from typing import Any, Dict, Optional
 from models.problem import ProblemTestResultStatus
+from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
 from evaluator.sandbox.sandbox_manager import SandboxManager
-from evaluator.problem_suites.models import EvaluationRunException
 from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
@@ -137,25 +137,26 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
         # Start initializing the agent sandbox
-        agent_sandbox = problem_suite.initialize_agent_sandbox(sandbox_manager, problem, agent_code, include_solution=True) # TODO: Remove include_solution=True
+        agent_sandbox = problem_suite.initialize_agent_sandbox(sandbox_manager, problem, evaluation_run_id, agent_code, include_solution=True) # TODO: Remove include_solution=True
 
         # Move from initializing_agent -> running_agent
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
         # Start running the agent sandbox
-        patch, agent_logs = await problem_suite.run_agent_sandbox(agent_sandbox)
+        patch, agent_logs = problem_suite.run_agent_sandbox(sandbox_manager, agent_sandbox)
+        logger.warning(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
-        # # Move from running_agent -> initializing_eval
-        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
-        #     "patch": patch,
-        #     "agent_logs": agent_logs
-        # })
+        # Move from running_agent -> initializing_eval
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+            "patch": patch,
+            "agent_logs": agent_logs
+        })
 
-        # # Start initializing the evaluation sandbox
-        # eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name)
+        # Start initializing the evaluation sandbox
+        eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name)
 
-        # # Move from initializing_eval -> running_eval
-        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+        # Move from initializing_eval -> running_eval
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
         # # Start running the evaluation sandbox
         # test_results, eval_logs = await problem_suite.run_eval_sandbox(eval_sandbox, problem_name)
@@ -167,9 +168,19 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         # })
 
     except EvaluationRunException as e:
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e.error_code.get_error_message()}")
+
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-            "error_code": EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value,
-            "error_message": f"An error occurred while running the evaluation sandbox: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            "error_code": e.error_code.value,
+            "error_message": f"{e.error_code.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+        })
+
+    except Exception as e:
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
+            "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
         })
     
 

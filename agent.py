@@ -4,9 +4,9 @@ import requests
 
 
 
-RUN_ID = os.getenv("RUN_ID")
-if not RUN_ID:
-    print("[AGENT] WARNING: RUN_ID is not set")
+EVALUATION_RUN_ID = os.getenv("EVALUATION_RUN_ID")
+if not EVALUATION_RUN_ID:
+    print("[AGENT] WARNING: EVALUATION_RUN_ID is not set")
 
 SANDBOX_PROXY_URL = os.getenv("SANDBOX_PROXY_URL")
 if not SANDBOX_PROXY_URL:
@@ -17,7 +17,7 @@ if not SANDBOX_PROXY_URL:
 def inference(model, temperature, messages):
     try:
         payload = {
-            "run_id": RUN_ID,
+            "evaluation_run_id": EVALUATION_RUN_ID,
             "model": model,
             "temperature": temperature,
             "messages": messages
@@ -47,7 +47,7 @@ def inference(model, temperature, messages):
 def embedding(input):
     try:
         payload = {
-            "run_id": RUN_ID,
+            "evaluation_run_id": EVALUATION_RUN_ID,
             "input": input
         }
         
@@ -89,8 +89,8 @@ def agent_main(input):
 
 
 
-    print("[AGENT] Reading solution from /sandbox/repo/solution.diff")
-    with open("/sandbox/repo/solution.diff", "r") as f:
+    print("[AGENT] Reading solution from /sandbox/solution.diff")
+    with open("/sandbox/solution.diff", "r") as f:
         diff = f.read()
 
 
