@@ -123,6 +123,9 @@ async def main():
 
         _run_evaluation(request_evaluation_response)
 
+        # TODO: remove
+        await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
+
 
 
 if __name__ == "__main__":
