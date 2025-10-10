@@ -69,11 +69,6 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
     return result["agent_id"]
 
 
-
-
-
-
-
 @db_operation
 async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow("""
@@ -87,6 +82,20 @@ async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[
     if result is None:
         return None
 
+    return Agent(**result)
+
+@db_operation
+async def get_latest_agent_for_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Agent]:
+    result = await conn.fetchrow("""
+        select * from agents 
+        where miner_hotkey = $1
+        order by created_at desc
+        limit 1
+    """, miner_hotkey)
+
+    if result is None:
+        return None 
+    
     return Agent(**result)
 
 @db_operation

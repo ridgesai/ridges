@@ -115,3 +115,14 @@ async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> 
     )
 
     return Evaluation(**response)
+
+@db_operation
+async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> list[Evaluation]:
+    results = await conn.fetch(
+        """
+        select * from evaluations
+        where agent_id = $1
+        """, str(agent_id)
+    )
+
+    return [Evaluation(**evaluation) for evaluation in results]

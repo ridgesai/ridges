@@ -382,110 +382,6 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             detail="Internal server error while retrieving inferences"
         )
 
-<<<<<<< HEAD
-@router.get("/emission-alpha-for-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_emission_alpha_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
-    """
-    Returns the emission alpha for a given hotkey
-    """
-    try:
-        amount = 0
-        if miner_hotkey.startswith("open-"):
-            amount = await db_get_emission_dispersed_to_open_user(miner_hotkey)
-        else:
-            amount = await internal_tools.get_emission_alpha_for_hotkeys(miner_hotkeys=[miner_hotkey])
-        return {"amount": amount, "miner_hotkey": miner_hotkey}
-    except Exception as e:
-        logger.error(f"Error retrieving emission alpha for hotkey {miner_hotkey}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving emission alpha"
-        )
-
-@router.get("/approved-agent-ids", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_approved_agent_ids() -> list[str]:
-    """
-    Returns a list of all approved version IDs
-    """
-    try:
-        return await db_get_all_approved_agent_ids()
-    except Exception as e:
-        logger.error(f"Error retrieving approved version IDs: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving approved version IDs"
-        )
-
-@router.get("/time-until-next-upload-for-hotkey", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_time_until_next_upload_for_hotkey(miner_hotkey: str) -> dict[str, Any]:
-    """
-    Returns the time until the next upload for a given hotkey
-    """
-    try:
-        latest_agent = await db_get_latest_agent(miner_hotkey=miner_hotkey)
-        if not latest_agent:
-            return {"time_until_next_upload": 0}
-        time_until_next_upload = MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS - (datetime.now(timezone.utc) - latest_agent.created_at).total_seconds()
-        return {"time_until_next_upload": time_until_next_upload, "last_upload_at": latest_agent.created_at.isoformat(), "next_upload_at": (latest_agent.created_at + timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)).isoformat()}
-    except Exception as e:
-        logger.error(f"Error retrieving time until next upload for hotkey {miner_hotkey}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving time until next upload"
-        )
-
-@router.get("/all-transactions", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_all_transactions() -> list[dict]:
-    """
-    Returns all transactions for a given open hotkey
-    """
-    try:
-        return await db_get_all_transactions()
-    except Exception as e:
-        logger.error(f"Error retrieving all transactions: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving all transactions"
-        )
-
-@router.get("/all-treasury-hotkeys", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_all_treasury_hotkeys() -> list[dict]:
-    """
-    Returns all treasury hotkeys
-    """
-    try:
-        return await db_get_all_treasury_hotkeys()
-    except Exception as e:
-        logger.error(f"Error retrieving all treasury hotkeys: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving all treasury hotkeys"
-        )
-
-@router.get("/pending-dispersal", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_pending_dispersal() -> dict[str, Any]:
-    """
-    Returns all pending dispersal from treasury hotkeys
-    """
-    try:
-        treasury_hotkeys = await db_get_all_treasury_hotkeys()
-        total_emission_received = await internal_tools.get_emission_alpha_for_hotkeys(miner_hotkeys=[hotkey["hotkey"] for hotkey in treasury_hotkeys])
-        total_disperesed = await db_get_total_dispersed_by_treasury_hotkeys()
-        pending_dispersal = total_emission_received - total_disperesed
-        return {"pending_dispersal": pending_dispersal}
-    except Exception as e:
-        logger.error(f"Error retrieving pending dispersal: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving pending dispersal"
-        )
-
-from api.queries.agent import get_top_agents as x
-from models.evaluation_set import EvaluationSetGroup
-import uuid
-
-=======
->>>>>>> 90cbb43 (fix merge conflicts)
 @router.get("/agent-scratch", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def shak_scratchpad() -> Any:
     # Queue
@@ -500,9 +396,10 @@ async def shak_scratchpad() -> Any:
     pass
 
 import uuid
-
-from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id
-from models.evaluation import EvaluationStatus, Evaluation
+import asyncio
+from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
+from api.queries.evaluation import get_evaluations_for_agent_id, get_all_evaluation_runs_for_evaluation_id
+from models.evaluation import EvaluationStatus, Evaluation, EvaluationWithRuns
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored
 
@@ -551,8 +448,31 @@ async def agent_by_id(agent_id: str) -> Agent:
 
     return agent
 
-async def miner_agents():
-    pass
+async def agent_by_hotkey(miner_hotkey: str) -> Agent:
+    """
+    Returns the latest agent submitted by a hotkey
+    """
+    agent = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
+    
+    if agent is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found"
+        )
+
+    return agent
+
+async def evaluations_for_agent(agent_id: str) -> EvaluationWithRuns:
+    evaluations = await get_evaluations_for_agent_id(agent_id=uuid.UUID(agent_id))
+    
+    runs_per_eval = await asyncio.gather(
+        *[get_all_evaluation_runs_for_evaluation_id(evaluation_id=e.id) for e in evaluations]
+    )
+
+    return [
+        EvaluationWithRuns(evaluation=e, runs=runs)
+        for e, runs in zip(evaluations, runs_per_eval)
+    ]
 
 async def inference_statistics():
     pass
@@ -565,7 +485,9 @@ router = APIRouter()
 routes = [
     ("/queue", queue),
     ("/top-agents", top_agents),
-    ("/agent-by-id", agent_by_id)
+    ("/agent-by-id", agent_by_id),
+    ("/agent-by-hotkey", agent_by_hotkey),
+    ("/evaluations-for-agent", evaluations_for_agent)
 
     # ("/agent-version-file", get_agent_code), 
     # ("/connected-validators", get_connected_validators), 
