@@ -225,17 +225,18 @@ async def validator_request_evaluation(
     if agent_id is None:
         return None
 
-    # Get the agent code
-    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-
-    # Create a new evaluation and evaluation runs for this agent
+    # Create a new evaluation and evaluation runs for this agent & validator
     evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
+    validator.current_evaluation_id = evaluation.evaluation_id
+
+
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
     logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
 
+    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
     stripped_evaluation_runs = [StrippedEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
 
     return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=stripped_evaluation_runs)
@@ -334,7 +335,7 @@ async def validator_update_evaluation_run(
             if evaluation_run.status != EvaluationRunStatus.pending:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to initializing_agent if it is currently in the pending status."
+                    detail=f"An evaluation run can only be updated to initializing_agent if it is currently in the pending status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Update the evaluation run to initializing_agent
@@ -348,7 +349,7 @@ async def validator_update_evaluation_run(
             if evaluation_run.status != EvaluationRunStatus.initializing_agent:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to running_agent if it is currently in the initializing_agent status."
+                    detail=f"An evaluation run can only be updated to running_agent if it is currently in the initializing_agent status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Update the evaluation run to running_agent
@@ -362,7 +363,7 @@ async def validator_update_evaluation_run(
             if evaluation_run.status != EvaluationRunStatus.running_agent:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to initializing_eval if it is currently in the running_agent status."
+                    detail=f"An evaluation run can only be updated to initializing_eval if it is currently in the running_agent status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Make sure that the patch is provided
@@ -391,7 +392,7 @@ async def validator_update_evaluation_run(
             if evaluation_run.status != EvaluationRunStatus.initializing_eval:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to running_eval if it is currently in the initializing_eval status."
+                    detail=f"An evaluation run can only be updated to running_eval if it is currently in the initializing_eval status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Update the evaluation run to running_eval
@@ -402,10 +403,10 @@ async def validator_update_evaluation_run(
 
         case EvaluationRunStatus.finished:
             # A validator may only update an evaluation run to finished if the evaluation run is currently in the running_eval status
-            if evaluation_run.status != EvaluationRunStatus.initializing_eval:
+            if evaluation_run.status != EvaluationRunStatus.running_eval:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to finished if it is currently in the running_eval status."
+                    detail=f"An evaluation run can only be updated to finished if it is currently in the running_eval status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Make sure the test results are provided
@@ -439,7 +440,7 @@ async def validator_update_evaluation_run(
             ]:
                 raise HTTPException(
                     status_code=400,
-                    detail="An evaluation run can only be updated to error if it is currently in the pending, initializing_agent, running_agent, initializing_eval, or running_eval status."
+                    detail=f"An evaluation run can only be updated to error if it is currently in the pending, initializing_agent, running_agent, initializing_eval, or running_eval status.  The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}."
                 )
 
             # Make sure the error code is provided
@@ -466,7 +467,7 @@ async def validator_update_evaluation_run(
 
     await update_evaluation_run_by_id(evaluation_run)
 
-    logger.info(f"Validator '{validator.name}' updated an evaluation run to {request.updated_status}")
+    logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
     logger.info(f"  Updated status: {request.updated_status}")
 

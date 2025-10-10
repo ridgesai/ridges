@@ -1,4 +1,5 @@
 import time
+import random
 import asyncio
 import pathlib
 import traceback
@@ -6,6 +7,7 @@ import utils.logger as logger
 import validator.config as config
 
 from utils.system_metrics import get_system_metrics
+from models.evaluation_run import EvaluationRunStatus
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
@@ -48,13 +50,69 @@ async def _send_heartbeat_loop():
 
 
 
-def _run_evaluation_run(evaluation_run):
+async def _run_evaluation_run(evaluation_run):
     evaluation_run_id = evaluation_run['evaluation_run_id']
     problem_name = evaluation_run['problem_name']
 
-    
 
-def _run_evaluation(request_evaluation_response):
+
+    logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+    MAX_SLEEP_TIME = 1
+
+    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
+
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to initializing_agent...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": EvaluationRunStatus.initializing_agent.value
+    }, bearer_token=session_id, quiet=1)
+
+    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
+
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to running_agent...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": EvaluationRunStatus.running_agent.value
+    }, bearer_token=session_id, quiet=1)
+
+    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
+
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to initializing_eval...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": EvaluationRunStatus.initializing_eval.value,
+        "patch": "FAKE PATCH",
+        "agent_logs": "FAKE AGENT LOGS"
+    }, bearer_token=session_id, quiet=1)
+
+    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
+
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to running_eval...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": EvaluationRunStatus.running_eval.value
+    }, bearer_token=session_id, quiet=1)
+
+    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
+
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to finished...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": EvaluationRunStatus.finished.value,
+        "test_results": [{"name": "fake_test", "category": "default", "status": "passed"}],
+        "eval_logs": "FAKE EVAL LOGS"
+    }, bearer_token=session_id, quiet=1)
+
+
+    
+    logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+async def _run_evaluation(request_evaluation_response):
     agent_code = request_evaluation_response['agent_code']
     evaluation_runs = request_evaluation_response['evaluation_runs']
 
@@ -65,8 +123,13 @@ def _run_evaluation(request_evaluation_response):
     for evaluation_run in evaluation_runs:
         logger.info(f"    {evaluation_run['problem_name']}")
 
+    tasks = []
     for evaluation_run in evaluation_runs:
-        _run_evaluation_run(evaluation_run)
+        tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run)))
+
+    await asyncio.gather(*tasks)
+
+    await post_ridges_platform("/validator/finish-evaluation", bearer_token=session_id, quiet=1)
 
     
 
@@ -142,7 +205,7 @@ async def main():
             await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
             continue
 
-        _run_evaluation(request_evaluation_response)
+        await _run_evaluation(request_evaluation_response)
 
         await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
