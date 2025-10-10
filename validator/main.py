@@ -41,6 +41,18 @@ async def _send_heartbeat_loop():
 
 
 
+def _run_evaluation(request_evaluation_response):
+    agent_code = request_evaluation_response['agent_code']
+    evaluation_runs = request_evaluation_response['evaluation_runs']
+
+    logger.info("Received evaluation:")
+    logger.info(f"  # of lines in agent code: {len(agent_code.splitlines())}")
+    logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
+
+    for evaluation_run in evaluation_runs:
+        logger.info(f"    {evaluation_run['problem_name']}")
+
+
 
 async def main():
     global session_id
@@ -84,7 +96,7 @@ async def main():
 
 
     # Get all the problems in the latest set
-    latest_set_problems = await get_ridges_platform("/evaluation-sets/all-latest-set-problems")
+    latest_set_problems = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)
     latest_set_problem_names = list({prob["problem_name"] for prob in latest_set_problems})
     
     # Prebuild the images for the SWE-Bench Verified problems
@@ -101,17 +113,16 @@ async def main():
     while True:
         logger.info("Requesting an evaluation...")
         
-        evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id, quiet=1)
+        request_evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id, quiet=1)
 
         # If no evaluation is available, wait and try again
-        if evaluation_response is None:
+        if request_evaluation_response is None:
             logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
             continue
 
-        logger.info("Received evaluation:")
-        logger.info(f"  # of lines in agent code: {len(evaluation_response['agent_code'].splitlines())}")
-        logger.info(f"  # of evaluation runs: {len(evaluation_response['evaluation_runs'])}")
+        _run_evaluation(request_evaluation_response)
 
+        # TODO: remove
         await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
