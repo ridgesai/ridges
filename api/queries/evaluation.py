@@ -82,6 +82,7 @@ async def get_all_evaluation_runs_for_evaluation_id(conn: asyncpg.Connection, ev
         evaluation_id
     )
 
+    # TODO: Check if this is needed at all
     parsed_rows = [
         {**row, "test_results": json.loads(row["test_results"]) if row["test_results"] else None}
         for row in rows

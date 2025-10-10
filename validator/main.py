@@ -5,6 +5,7 @@ import pathlib
 import traceback
 import utils.logger as logger
 import validator.config as config
+from models.problem import ProblemTestResultStatus
 
 from utils.system_metrics import get_system_metrics
 from models.evaluation_run import EvaluationRunStatus
@@ -102,7 +103,7 @@ async def _run_evaluation_run(evaluation_run):
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
         "updated_status": EvaluationRunStatus.finished.value,
-        "test_results": [{"name": "fake_test", "category": "default", "status": "passed"}],
+        "test_results": [{"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}],
         "eval_logs": "FAKE EVAL LOGS"
     }, bearer_token=session_id, quiet=2)
 

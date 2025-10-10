@@ -16,9 +16,9 @@ class ProblemTest(BaseModel):
 
 
 class ProblemTestResultStatus(str, Enum):
-    passed = 'passed'
-    failed = 'failed'
-    skipped = 'skipped'
+    PASS = 'pass'
+    FAIL = 'fail'
+    SKIP = 'skip'
 
 class ProblemTestResult(BaseModel):
     name: str
