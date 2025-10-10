@@ -105,8 +105,8 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
         logger.debug(textwrap.indent(json.dumps(body, indent=2), "  "))
     
     try:
-        # Send the request
-        async with httpx.AsyncClient() as client:
+        # Send the request. 30 seconds for timeout since /request-evaluation can be slow.
+        async with httpx.AsyncClient(timeout=30) as client:
             headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token is not None else None
             response = await client.post(url, json=body, headers=headers)
             response.raise_for_status()
