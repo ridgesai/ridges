@@ -311,7 +311,7 @@ async def validator_update_evaluation_run(
 ) -> ValidatorUpdateEvaluationRunResponse:
 
     # TODO: Actually use the agent logs and eval logs when required
-    logger.info(f"Received update evaluation run for evaluation run {evaluation_run_id}")
+    logger.info(f"Received update evaluation run for evaluation run {request.evaluation_run_id}. Validator's current evaluation: {validator.current_evaluation_id}")
     # Make sure the validator is currently running an evaluation
     if validator.current_evaluation_id is None:
         raise HTTPException(
