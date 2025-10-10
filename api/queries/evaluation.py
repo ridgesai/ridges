@@ -89,7 +89,7 @@ async def get_evaluations_by_status(conn: asyncpg.Connection, status: Evaluation
 
 
 @db_operation
-async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> Evaluation:
+async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: UUID) -> Evaluation:
     response = await conn.fetchrow(
         """
         SELECT *
@@ -104,7 +104,7 @@ async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> 
 
 
 @db_operation
-async def get_hydrated_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> HydratedEvaluation:
+async def get_hydrated_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: UUID) -> HydratedEvaluation:
     response = await conn.fetchrow(
         """
         SELECT *
@@ -159,7 +159,7 @@ async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asy
 
 
 @db_operation
-async def record_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id: int) -> None:
+async def record_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id: UUID) -> None:
     await conn.execute(
         """
         UPDATE evaluations
