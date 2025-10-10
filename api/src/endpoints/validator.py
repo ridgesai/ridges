@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 import api.config as config
 import utils.logger as logger
+import asyncio
 from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey, \
     get_top_agents
 from api.queries.agent import update_agent_status
@@ -43,6 +44,7 @@ class Validator(BaseModel):
 
     time_last_heartbeat: Optional[datetime] = None
     system_metrics: Optional[SystemMetrics] = None
+    lock: asyncio.Lock
 
 
 
@@ -139,7 +141,8 @@ async def validator_register_as_validator(
         name=validator_hotkey_to_name(registration_request.hotkey),
         hotkey=registration_request.hotkey,
         time_connected=datetime.now(),
-        ip_address=ip_address
+        ip_address=ip_address,
+        lock=asyncio.Lock()
     )
     
     logger.info(f"Validator '{validator_hotkey_to_name(registration_request.hotkey)}' ({registration_request.hotkey}) was registered")
@@ -202,7 +205,8 @@ async def validator_register_as_screener(
         name=registration_request.name,
         hotkey=registration_request.name,
         time_connected=datetime.now(),
-        ip_address=ip_address
+        ip_address=ip_address,
+        lock=asyncio.Lock()
     )
     
     logger.info(f"Screener {registration_request.name} was registered")
