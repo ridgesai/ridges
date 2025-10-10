@@ -72,7 +72,7 @@ async def get_ridges_platform(endpoint: str) -> Any:
 
 
 
-async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: str = None) -> Any:
+async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: str = None, quiet: int = 0) -> Any:
     """
     Helper function that sends a POST request to the Ridges platform.
 
@@ -80,6 +80,10 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
         endpoint: The endpoint to send the request to. You do not need to specify the Ridges platform URL, just something like `/validator/register`.
         body: The body of the request, which will be sent as JSON. By default, this is an empty dictionary.
         bearer_token: The bearer token to use for the request, which will be sent as an `Authorization: Bearer` header. By default, this is `None`, and the header is not sent.
+        quiet: The level of quietness.
+               - 0: Print all debugging information, including the request and response bodies.
+               - 1: Print debugging information, but exclude the request and response bodies.
+               - 2: Print no debugging information, except for errors.
 
     Returns:
         The response from the Ridges platform. If the request returns a non-2xx status code, the function will print the error and exit the program.
@@ -89,8 +93,9 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
 
     url = f"{config.RIDGES_PLATFORM_URL.rstrip('/')}/{endpoint.lstrip('/')}"
 
-    logger.debug(f"Sending request for POST {url}")
-    if body != {}:
+    if quiet <= 1:
+        logger.debug(f"Sending request for POST {url}")
+    if body != {} and quiet == 0:
         logger.debug(textwrap.indent(json.dumps(body, indent=2), "  "))
     
     try:
@@ -101,8 +106,9 @@ async def post_ridges_platform(endpoint: str, body: dict = {}, *, bearer_token: 
             response.raise_for_status()
             response_json = response.json()
 
-            logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
-            if response_json != {}:
+            if quiet <= 1:
+                logger.debug(f"Received response for POST {url}: {response.status_code} {response.reason_phrase}")
+            if response_json != {} and quiet == 0:
                 logger.debug(textwrap.indent(json.dumps(response_json, indent=2), "  "))
             
             return response.json()

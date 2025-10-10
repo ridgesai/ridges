@@ -77,7 +77,12 @@ RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
 
 
 
-# Load the time to wait between requesting for a new evaluation
+# Load the time to wait between sending heartbeats
+SEND_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS"))
+if not SEND_HEARTBEAT_INTERVAL_SECONDS:
+    logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
+
+# Load the time to wait between requesting a new evaluation
 REQUEST_EVALUATION_INTERVAL_SECONDS = int(os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS"))
 if not REQUEST_EVALUATION_INTERVAL_SECONDS:
     logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")

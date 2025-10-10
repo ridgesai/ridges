@@ -2,11 +2,10 @@ import time
 import asyncio
 import pathlib
 import traceback
-
-from modal import sandbox
 import utils.logger as logger
 import validator.config as config
 
+from utils.system_metrics import get_system_metrics
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
@@ -29,6 +28,17 @@ async def disconnect(reason: str):
         logger.info("Disconnected validator")
     except Exception as e:
         logger.error(f"Error disconnecting validator: {type(e).__name__}: {e}")
+
+
+
+async def _send_heartbeat_loop():
+    logger.info("Starting send heartbeat loop...")
+    while True:
+        # logger.info("Sending heartbeat...")
+        system_metrics = await get_system_metrics()
+        await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
+        await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+
 
 
 
@@ -82,21 +92,27 @@ async def main():
 
 
 
+    # Start the heartbeat loop
+    asyncio.create_task(_send_heartbeat_loop())
+
+
+
     # Request an evaluation
     while True:
         logger.info("Requesting an evaluation...")
         
-        evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id)
+        evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id, quiet=1)
 
         # If no evaluation is available, wait and try again
         if evaluation_response is None:
             logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
-            await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
             continue
 
         logger.info("Received evaluation:")
         logger.info(f"  # of lines in agent code: {len(evaluation_response['agent_code'].splitlines())}")
         logger.info(f"  # of evaluation runs: {len(evaluation_response['evaluation_runs'])}")
+
+        await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
 
