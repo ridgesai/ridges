@@ -1,20 +1,18 @@
-import json
 import uuid
-import asyncpg
-import utils.logger as logger
-
-from uuid import UUID
+import uuid
 from datetime import datetime
 from typing import List, Tuple
-from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, db_transaction
-from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
-from api.queries.evaluation_run import create_evaluation_run
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus
+from uuid import UUID
+
+import asyncpg
+
+import utils.logger as logger
 from api.queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
 from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
-
+from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
+from models.evaluation_run import EvaluationRun, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup
+from utils.database import db_operation, db_transaction
 
 
 @db_operation

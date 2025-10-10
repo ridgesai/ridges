@@ -1,40 +1,32 @@
 import re
 import time
-import api.config as config
-import utils.logger as logger
-
-
-
-from uuid import UUID, uuid4
 from datetime import datetime
-from pydantic import BaseModel
-from models.agent import Agent
 from typing import Dict, List, Optional
+from uuid import UUID, uuid4
+
+from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import api.config as config
 import utils.logger as logger
-from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey, update_agent_status
-from api.queries.evaluation import get_evaluation_by_id, create_new_evaluation_and_evaluation_runs, \
-    get_all_evaluation_runs_for_evaluation_id, mark_running_evaluation_runs_as_errored, record_evaluation_finished_at, \
-    get_hydrated_evaluation_by_id, get_num_successful_validator_evaluations_for_agent_id
-from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
-from models.agent import Agent, AgentStatus
-from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRunStatus
-from models.evaluation import Evaluation
-from models.problem import ProblemTestResult
-from utils.system_metrics import SystemMetrics
-from utils.s3 import download_text_file_from_s3
-from utils.fiber import validate_signed_timestamp
-from models.evaluation_run import EvaluationRunStatus
-from fastapi import Depends, APIRouter, HTTPException, Request
-from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id
-from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
 from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation import get_evaluation_by_id, mark_evaluation_as_finished, get_all_evaluation_runs_in_evaluation_id, create_new_evaluation_and_evaluation_runs, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
-
+from api.queries.agent import update_agent_status
+from api.queries.evaluation import get_evaluation_by_id, \
+    create_new_evaluation_and_evaluation_runs, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
+from api.queries.evaluation import record_evaluation_finished_at, \
+    get_hydrated_evaluation_by_id, get_num_successful_validator_evaluations_for_agent_id
+from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id, \
+    get_all_evaluation_runs_in_evaluation_id
+from models.agent import Agent, AgentStatus
+from models.evaluation import Evaluation
+from models.evaluation import EvaluationStatus
+from models.evaluation_run import EvaluationRunStatus
+from models.problem import ProblemTestResult
+from utils.fiber import validate_signed_timestamp
+from utils.s3 import download_text_file_from_s3
+from utils.system_metrics import SystemMetrics
+from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
 
 
 # A connected validator
@@ -550,7 +542,7 @@ async def validator_finish_evaluation(
 
     # Make sure that all evaluation runs have either finished or errored
     # Middleware will mark as unfinished evaluation runs as errored automatically
-    evaluation_runs = await get_all_evaluation_runs_for_evaluation_id(validator.current_evaluation_id)
+    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
     if any(
         evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error]
         for evaluation_run in evaluation_runs
@@ -575,7 +567,7 @@ async def validator_finish_evaluation(
             detail=f"The validator is trying to finish an evaluation for an agent in state "
                    f"{agent.status}, which is not an eligible state to run evaluations in"
         )
-    await mark_evaluation_as_finished(validator.current_evaluation_id)
+    await record_evaluation_finished_at(validator.current_evaluation_id)
 
     logger.info(f"Validator '{validator.name}' finished an evaluation")
     logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
