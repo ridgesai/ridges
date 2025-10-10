@@ -358,9 +358,9 @@ SELECT
          WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
          ELSE 'running'
         END)::EvaluationStatus AS status,
-    COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) AS score
+    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
 FROM evaluations
-         JOIN evaluation_runs_hydrated erh USING (evaluation_id)
+    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
 GROUP BY evaluations.evaluation_id;
 
 

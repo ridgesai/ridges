@@ -555,8 +555,8 @@ async def validator_finish_evaluation(
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
-    hydrated_evaluation = await get_hydrated_evaluation_by_id(validator.current_evaluation_id)
-    agent = await get_agent_by_id(hydrated_evaluation.agent_id)
+    evaluations = await get_evaluation_by_id(validator.current_evaluation_id)
+    agent = await get_agent_by_id(evaluations.agent_id)
 
     eligible_states = [
         AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating
