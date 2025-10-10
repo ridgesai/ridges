@@ -311,7 +311,7 @@ async def validator_update_evaluation_run(
 ) -> ValidatorUpdateEvaluationRunResponse:
 
     # TODO: Actually use the agent logs and eval logs when required
-
+    logger.info(f"Received update evaluation run for evaluation run {evaluation_run_id}")
     # Make sure the validator is currently running an evaluation
     if validator.current_evaluation_id is None:
         raise HTTPException(
@@ -513,7 +513,10 @@ async def validator_disconnect(
 ) -> ValidatorDisconnectResponse:
 
     if validator.current_evaluation_id:
+        logger.error(f"Marking all evaluation runs as errored for evaluation ID {validator.current_evaluation_id}...")
         await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, 'The validator disconnected while running this evaluation.')
+        logger.error(f"Finished marking all evaluation runs as errored for evaluation ID {validator.current_evaluation_id}")
+
         await handle_evaluation_if_finished(validator.current_evaluation_id)
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
