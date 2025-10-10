@@ -118,12 +118,10 @@ async def main():
         # If no evaluation is available, wait and try again
         if request_evaluation_response is None:
             logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
+            await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
             continue
 
         _run_evaluation(request_evaluation_response)
-
-        # TODO: remove
-        await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
 
