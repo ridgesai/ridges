@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 import api.config as config
 import utils.logger as logger
-from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey, \
+    get_top_agents
 from api.queries.agent import update_agent_status
 from api.queries.evaluation import get_evaluation_by_id, \
     create_new_evaluation_and_evaluation_runs, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
@@ -511,7 +512,7 @@ async def validator_disconnect(
 
     if validator.current_evaluation_id:
         await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, 'The validator disconnected while running this evaluation.')
-        await record_evaluation_finished_at(validator.current_evaluation_id)
+        await handle_evaluation_if_finished(validator.current_evaluation_id)
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
@@ -552,9 +553,6 @@ async def validator_finish_evaluation(
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
-
-    await record_evaluation_finished_at(validator.current_evaluation_id)
-
     hydrated_evaluation = await get_hydrated_evaluation_by_id(validator.current_evaluation_id)
     agent = await get_agent_by_id(hydrated_evaluation.agent_id)
 
@@ -567,12 +565,29 @@ async def validator_finish_evaluation(
             detail=f"The validator is trying to finish an evaluation for an agent in state "
                    f"{agent.status}, which is not an eligible state to run evaluations in"
         )
-    await record_evaluation_finished_at(validator.current_evaluation_id)
+
+    await handle_evaluation_if_finished(validator.current_evaluation_id)
 
     validator.current_evaluation_id = None
 
+    logger.info(f"Validator '{validator.name}' finished an evaluation")
+    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
+
+    return ValidatorFinishEvaluationResponse()
+
+
+async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
+    """
+    Adds the finished_at field to an evaluation. If the evaluation is marked as successful
+    (all evaluation runs completed successfully), transitions the corresponding agent into the next state.
+    """
+    await record_evaluation_finished_at(evaluation_id)
+
+    hydrated_evaluation = await get_hydrated_evaluation_by_id(evaluation_id)
+
     # Transition agent state if this evaluation was successful
     if hydrated_evaluation.status == EvaluationStatus.success:
+        agent = await get_agent_by_id(hydrated_evaluation.agent_id)
         new_agent_status = None
 
         match agent.status:
@@ -583,7 +598,11 @@ async def validator_finish_evaluation(
                     new_agent_status = AgentStatus.failed_screening_1
 
             case AgentStatus.screening_2:
-                if hydrated_evaluation.score >= config.SCREENER_2_THRESHOLD:
+                top_agents = await get_top_agents(number_of_agents=1)
+                top_score = top_agents[0].score if top_agents else 0
+                pruning_threshold_score = top_score * config.PRUNE_THRESHOLD
+
+                if hydrated_evaluation.score >= max(config.SCREENER_2_THRESHOLD, pruning_threshold_score):
                     new_agent_status = AgentStatus.evaluating
                 else:
                     new_agent_status = AgentStatus.failed_screening_2
@@ -599,12 +618,6 @@ async def validator_finish_evaluation(
                 raise ValueError(f"Invalid agent status: {agent.status}, this should never happen")
 
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
-
-
-    logger.info(f"Validator '{validator.name}' finished an evaluation")
-    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
-
-    return ValidatorFinishEvaluationResponse()
 
 
 class ConnectedValidatorInfo(BaseModel):

@@ -1,14 +1,14 @@
-import asyncpg
+from typing import Optional
 from uuid import UUID
-from typing import Optional, Final
+
+import asyncpg
+
 import api.config as config
 import utils.logger as logger
-from models.agent import Agent
-from models.agent import Agent, AgentScored
-from utils.database import db_operation
+from models.agent import Agent, AgentScored, AgentStatus
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
-from models.agent import Agent, AgentScored, AgentStatus
+from utils.database import db_operation
 from utils.s3 import upload_text_file_to_s3
 
 
