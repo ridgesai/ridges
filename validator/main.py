@@ -62,7 +62,7 @@ async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updat
     await post_ridges_platform("/validator/update-evaluation-run", {
         "evaluation_run_id": evaluation_run_id,
         "updated_status": updated_status.value,
-        **extra
+        **(extra or {})
     }, bearer_token=session_id, quiet=2)
 
 
