@@ -75,7 +75,7 @@ class ProblemSuite(ABC):
         problem: Problem,
         dir: str,
         *,
-        include_solution: bool = False
+        include_tests: bool = False
     ):
         """
         Copies the problem files to the given directory.
@@ -86,7 +86,17 @@ class ProblemSuite(ABC):
 
 
 
-    def initialize_agent_sandbox(self, sandbox_manager: SandboxManager, problem: Problem, evaluation_run_id: UUID, agent_code: str, *, include_solution: bool = False) -> Sandbox:
+    def initialize_agent_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        problem: Problem,
+        evaluation_run_id: UUID,
+        agent_code: str,
+        *,
+        include_solution: bool = False
+    ) -> Sandbox:
+        # TODO ADAM: Docs
+    
         def _on_mount(temp_dir: str):
             # Create /sandbox/agent.py
             with open(os.path.join(temp_dir, "agent.py"), "w") as f:
@@ -108,19 +118,25 @@ class ProblemSuite(ABC):
 
         return sandbox_manager.initialize_sandbox(
             name=f"agent-sandbox-{problem.name}",
-            on_mount=_on_mount,
-            env_vars={
-                "EVALUATION_RUN_ID": evaluation_run_id
-            },
             python_script_path=os.path.join(os.path.dirname(__file__), "AGENT_RUNNER.py"),
             input_data={
                 "problem_statement": problem.problem_statement
-            }
+            },
+            env_vars={
+                "EVALUATION_RUN_ID": evaluation_run_id
+            },
+            on_mount=_on_mount,
         )
 
 
 
-    def run_agent_sandbox(self, sandbox_manager: SandboxManager, sandbox: Sandbox) -> Tuple[str, str]:
+    def run_agent_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        sandbox: Sandbox
+    ) -> Tuple[str, str]:
+        # TODO ADAM: Docs
+
         try:
             sandbox_result_with_logs = sandbox_manager.run_sandbox(sandbox, timeout_seconds=config.AGENT_TIMEOUT_SECONDS)
 
@@ -137,3 +153,25 @@ class ProblemSuite(ABC):
                 EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT,
                 f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
             )
+
+
+    
+    @abstractmethod
+    def initialize_eval_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        problem_name: str
+    ) -> Sandbox:
+        # TODO ADAM: Docs
+        pass
+
+
+
+    @abstractmethod
+    def run_eval_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        problem_name: str
+    ) -> Sandbox:
+        # TODO ADAM: Docs
+        pass

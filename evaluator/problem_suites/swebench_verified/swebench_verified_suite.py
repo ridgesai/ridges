@@ -9,8 +9,11 @@ import utils.logger as logger
 
 from typing import List
 from pathlib import Path
+from evaluator.models import Sandbox
 from utils.docker import docker_client
+from models.problem import ProblemTestResult
 from swebench.harness.constants import SWEbenchInstance
+from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import Problem, ProblemTest, ProblemTestCategory
 from swebench.harness.run_evaluation import make_test_spec, run_instance
@@ -116,7 +119,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         problem: Problem,
         dir: str,
         *,
-        include_solution: bool = False
+        include_tests: bool = False
     ):
         # Get the SWE-Bench problem object
         swebench_instance = problem.userdata
@@ -128,6 +131,29 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
+
+
+
+
+    def initialize_eval_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        problem_name: str
+    ) -> Sandbox:
+
+        # TODO ADAM
+
+        pass
+    
+    def run_eval_sandbox(
+        self,
+        sandbox_manager: SandboxManager,
+        sandbox: Sandbox
+    ) -> List[ProblemTestResult]:
+
+        # TODO ADAM
+
+        pass
 
 
 
@@ -196,36 +222,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
         # Need to create a test spec before calling run_instance()
         test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
-
-        # # Build environment images
-        # debug(f"[SWEBENCH] Building environment images for {problem_name}")
-        # start_time = time.time()
-        # build_successful, build_failed = build_env_images(
-        #     client=sandbox_manager.docker,
-        #     dataset=[test_spec],
-        #     force_rebuild=False,
-        #     max_workers=4
-        # )
-        # elapsed_time = time.time() - start_time
-        # if (len(build_failed) > 0):
-        #     warn(f"[SWEBENCH] Failed to build environment images for {problem_name}")
-        #     raise RuntimeError(f"Failed to build environment images for {problem_name}")
-        # debug(f"[SWEBENCH] Successfully built environment images for {problem_name} in {elapsed_time:.1f} seconds")
-
-        # # Build instance images
-        # debug(f"[SWEBENCH] Building instance images for {problem_name}")
-        # start_time = time.time()
-        # build_successful, build_failed = build_instance_images(
-        #     client=sandbox_manager.docker,
-        #     dataset=[test_spec],
-        #     force_rebuild=False,
-        #     max_workers=4
-        # )
-        # elapsed_time = time.time() - start_time
-        # if (len(build_failed) > 0):
-        #     warn(f"[SWEBENCH] Failed to build instance images for {problem_name}")
-        #     raise RuntimeError(f"Failed to build instance images for {problem_name}")
-        # debug(f"[SWEBENCH] Successfully built instance images for {problem_name} in {elapsed_time:.1f} seconds")
 
         # A "prediction" in the context of SWE-Bench is literally just a patch.
         # The model_name_or_path, model_patch, and instance_id keys are required.

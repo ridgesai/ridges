@@ -102,19 +102,20 @@ class SandboxManager:
         self,
         *,
         name: str,
-        on_mount: Callable[[str], None],
-        env_vars: Dict[str, str],
         python_script_path: str,
-        input_data: Any
+        input_data: Any,
+        env_vars: Dict[str, str] = {},
+        on_mount: Callable[[str], None] = None
     ) -> Sandbox:
         # Create temporary directory
         temp_dir = create_temp_dir()
         logger.debug(f"Created temporary directory for sandbox <{name}>: {temp_dir}")
         
-        # Call on_mount
-        logger.debug(f"Calling on_mount() for sandbox <{name}>...")
-        on_mount(temp_dir)
-        logger.debug(f"Called on_mount() for sandbox <{name}>")
+        if on_mount is not None:
+            # Call on_mount
+            logger.debug(f"Calling on_mount() for sandbox <{name}>...")
+            on_mount(temp_dir)
+            logger.debug(f"Called on_mount() for sandbox <{name}>")
 
         # Copy Python script
         python_script_name = os.path.basename(python_script_path)

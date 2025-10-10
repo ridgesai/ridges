@@ -41,7 +41,7 @@ def run_tests():
     print(f"[POLYGLOT_TEST_RUNNER] Found test class: {test_class.__name__}")
     
     # Get test methods
-    # TODO: input.json
+    # TODO ADAM: input.json
     test_methods = [method for method in dir(test_class) if method.startswith("test_")]
     print(f"[POLYGLOT_TEST_RUNNER] Found {len(test_methods)} test methods")
     
@@ -49,7 +49,7 @@ def run_tests():
 
     test_results = []
     for method_name in test_methods:
-        test_results.append({"name": method_name, "status": "skip"})
+        test_results.append({"name": method_name, "category": "default", "status": "skip"})
     
     total_tests = len(test_results)
     test_instance = test_class()

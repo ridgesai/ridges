@@ -153,13 +153,13 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         })
 
         # Start initializing the evaluation sandbox
-        eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name)
+        eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name, patch)
 
         # Move from initializing_eval -> running_eval
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
-        # # Start running the evaluation sandbox
-        # test_results, eval_logs = await problem_suite.run_eval_sandbox(eval_sandbox, problem_name)
+        # Start running the evaluation sandbox
+        test_results, eval_logs = await problem_suite.run_eval_sandbox(eval_sandbox, problem_name)
 
         # # Move from running_eval -> finished
         # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
