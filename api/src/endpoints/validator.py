@@ -569,9 +569,6 @@ async def validator_finish_evaluation(
         )
     await record_evaluation_finished_at(validator.current_evaluation_id)
 
-    logger.info(f"Validator '{validator.name}' finished an evaluation")
-    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
-
     validator.current_evaluation_id = None
 
     # Transition agent state if this evaluation was successful
@@ -579,7 +576,6 @@ async def validator_finish_evaluation(
         new_agent_status = None
 
         match agent.status:
-
             case AgentStatus.screening_1:
                 if hydrated_evaluation.score >= config.SCREENER_1_THRESHOLD:
                     new_agent_status = AgentStatus.screening_2
