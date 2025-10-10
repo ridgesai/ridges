@@ -26,6 +26,7 @@ SANDBOX_PROXY_PORT = 80
 class Sandbox(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True) # Because of docker.models.containers.Container
 
+    name: str
     temp_dir: str
     container: docker.models.containers.Container
 
@@ -104,8 +105,7 @@ class SandboxManager:
         on_mount: Callable[[str], None],
         env_vars: Dict[str, str],
         python_script_path: str,
-        input_data: Any,
-        timeout_seconds: Optional[int] = None
+        input_data: Any
     ) -> Sandbox:
         # Create temporary directory
         temp_dir = create_temp_dir()
@@ -129,7 +129,7 @@ class SandboxManager:
         logger.debug(f"Created input.json for sandbox <{name}>: {temp_input_json_path}")
 
         # Create Docker container
-        docker_client.containers.run(
+        container = docker_client.containers.run(
             name=name,
             image="sandbox-image",
             command=f"python /sandbox/{python_script_name} 2>&1",
@@ -146,9 +146,28 @@ class SandboxManager:
             detach=True
         )
 
+        return Sandbox(
+            name=name,
+            temp_dir=temp_dir,
+            container=container
+        )
 
 
-    def run_sandbox(self, sandbox: Sandbox):
+
+
+
+    def run_sandbox(
+        self,
+        sandbox: Sandbox,
+        *,
+        timeout_seconds: Optional[int] = None
+    ) -> Any:
+        
+        container: docker.models.containers.Container = sandbox.container
+
+        container.wait(timeout=timeout_seconds)
+
+
         pass
 
 

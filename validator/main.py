@@ -107,7 +107,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str
 
 
 # Run an evaluation run
-async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
+async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_code: str):
     # Figure out what problem suite this problem belongs to
     problem_suite = None
     if polyglot_suite.has_problem_name(problem_name):
@@ -123,6 +123,9 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
         })
         return
 
+    # Get the problem
+    problem = problem_suite.get_problem(problem_name)
+
 
 
     logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
@@ -134,13 +137,13 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
         # Start initializing the agent sandbox
-        agent_sandbox = await problem_suite.initialize_agent_sandbox(sandbox_manager, problem_name)
+        agent_sandbox = problem_suite.initialize_agent_sandbox(sandbox_manager, problem, agent_code, include_solution=True) # TODO: Remove include_solution=True
 
-        # # Move from initializing_agent -> running_agent
-        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+        # Move from initializing_agent -> running_agent
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
-        # # Start running the agent sandbox
-        # patch, agent_logs = await problem_suite.run_agent_sandbox(agent_sandbox, problem_name)
+        # Start running the agent sandbox
+        patch, agent_logs = await problem_suite.run_agent_sandbox(agent_sandbox)
 
         # # Move from running_agent -> initializing_eval
         # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
@@ -182,7 +185,6 @@ async def _run_evaluation(request_evaluation_response):
     evaluation_runs = request_evaluation_response['evaluation_runs']
 
     logger.info("Received evaluation:")
-    logger.info(f"  # of lines in agent code: {len(agent_code.splitlines())}")
     logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
 
     for evaluation_run in evaluation_runs:
@@ -200,7 +202,7 @@ async def _run_evaluation(request_evaluation_response):
         if config.SIMULATE_EVALUATION_RUNS:
             tasks.append(asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name)))
         else:
-            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name)))
+            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, agent_code)))
 
     await asyncio.gather(*tasks)
 

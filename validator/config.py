@@ -78,26 +78,44 @@ RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
 
 
 # Load the time to wait between sending heartbeats
-SEND_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS"))
+SEND_HEARTBEAT_INTERVAL_SECONDS = os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS")
 if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
+SEND_HEARTBEAT_INTERVAL_SECONDS = int(SEND_HEARTBEAT_INTERVAL_SECONDS) 
 
 # Load the time to wait between requesting a new evaluation
-REQUEST_EVALUATION_INTERVAL_SECONDS = int(os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS"))
+REQUEST_EVALUATION_INTERVAL_SECONDS = os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS")
 if not REQUEST_EVALUATION_INTERVAL_SECONDS:
     logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")
+REQUEST_EVALUATION_INTERVAL_SECONDS = int(REQUEST_EVALUATION_INTERVAL_SECONDS) 
 
 
 
 # Load the simulated evaluation runs configuration
-SIMULATE_EVALUATION_RUNS = bool(os.getenv("SIMULATE_EVALUATION_RUNS"))
+SIMULATE_EVALUATION_RUNS = os.getenv("SIMULATE_EVALUATION_RUNS")
 if not SIMULATE_EVALUATION_RUNS:
     logger.fatal("SIMULATE_EVALUATION_RUNS is not set in .env")
+SIMULATE_EVALUATION_RUNS = SIMULATE_EVALUATION_RUNS.lower() == "true"
 
 if SIMULATE_EVALUATION_RUNS:
-    SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = int(os.getenv("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS"))
+    SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = os.getenv("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS")
     if not SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS:
         logger.fatal("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS is not set in .env")
+    SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = int(SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+
+
+
+if not SIMULATE_EVALUATION_RUNS:
+    # Load the timeouts
+    AGENT_TIMEOUT_SECONDS = os.getenv("AGENT_TIMEOUT_SECONDS")
+    if not AGENT_TIMEOUT_SECONDS:
+        logger.fatal("AGENT_TIMEOUT_SECONDS is not set in .env")
+    AGENT_TIMEOUT_SECONDS = int(AGENT_TIMEOUT_SECONDS)
+
+    EVAL_TIMEOUT_SECONDS = os.getenv("EVAL_TIMEOUT_SECONDS")
+    if not EVAL_TIMEOUT_SECONDS:
+        logger.fatal("EVAL_TIMEOUT_SECONDS is not set in .env")
+    EVAL_TIMEOUT_SECONDS = int(EVAL_TIMEOUT_SECONDS)
 
 
 
@@ -116,7 +134,10 @@ logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
+logger.info("-------------------------------")
 if SIMULATE_EVALUATION_RUNS:
-    logger.info("-------------------------------")
     logger.warning("Simulating Evaluation Runs!")
+else:
+    logger.info(f"Agent Timeout: {AGENT_TIMEOUT_SECONDS} second(s)")
+    logger.info(f"Evaluation Timeout: {EVAL_TIMEOUT_SECONDS} second(s)")
 logger.info("===============================")

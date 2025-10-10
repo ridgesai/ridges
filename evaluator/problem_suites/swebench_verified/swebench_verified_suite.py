@@ -129,13 +129,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
 
-        # Copy solution files if requested
-        if include_solution:
-            # Write solution.diff file
-            with open(os.path.join(dir, "solution.diff"), "w") as f:
-                f.write(problem["solution_diff"])
-            logger.debug(f"Created solution.diff in {dir} for {problem.name}")
-
 
 
 

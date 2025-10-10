@@ -8,7 +8,7 @@ from uuid import uuid4
 from models.problem import Problem
 from abc import ABC, abstractmethod
 from utils.temp import create_temp_dir
-from evaluator.sandbox.sandbox_manager import SandboxManager
+from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
 
 
 
@@ -82,8 +82,12 @@ class ProblemSuite(ABC):
 
 
 
-    def initialize_agent_sandbox(self, sandbox_manager: SandboxManager, problem: Problem, agent_code: str, *, include_solution: bool = False):
+    def initialize_agent_sandbox(self, sandbox_manager: SandboxManager, problem: Problem, agent_code: str, *, include_solution: bool = False) -> Sandbox:
         def _on_mount(temp_dir: str):
+            # Create /sandbox/agent.py
+            with open(os.path.join(temp_dir, "agent.py"), "w") as f:
+                f.write(agent_code)
+            
             # Create /sandbox/repo directory
             sandbox_repo_dir = os.path.join(temp_dir, "repo")
             os.mkdir(sandbox_repo_dir)
@@ -91,21 +95,22 @@ class ProblemSuite(ABC):
             # Copy problem files to /sandbox/repo
             self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_solution=include_solution)
 
-            # Write agent code to /sandbox/agent.py
-            with open(os.path.join(temp_dir, "agent.py"), "w") as f:
-                f.write(agent_code)
+            if include_solution:
+                # Create /sandbox/solution.diff
+                with open(os.path.join(temp_dir, "solution.diff"), "w") as f:
+                    f.write(problem.solution_diff)
 
-        sandbox = sandbox_manager.initialize_sandbox(
-            name=f"polglot-agent-sandbox-{problem.name}",
+
+
+        return sandbox_manager.initialize_sandbox(
+            name=f"agent-sandbox-{problem.name}",
             on_mount=_on_mount,
             env_vars={
                 "RUN_ID": str(uuid4())
             },
             python_script_path=os.path.join(os.path.dirname(__file__), "AGENT_RUNNER.py"),
             input_data={
-                "problem_statement": problem.statement
+                "problem_statement": problem.problem_statement
             },
-            timeout_seconds=config.AGENT_SANDBOX_TIMEOUT_SECONDS
+            timeout_seconds=config.AGENT_TIMEOUT_SECONDS
         )
-
-        return sandbox

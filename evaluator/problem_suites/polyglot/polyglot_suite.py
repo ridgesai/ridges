@@ -107,16 +107,5 @@ class PolyglotSuite(ProblemSuite):
         shutil.copy2(os.path.join(problem_dir, "main.py"), os.path.join(dir, "main.py"))
         logger.debug(f"Copied main.py to {dir} for {problem.name}")
 
-        # Copy solution files if requested
-        if include_solution:
-            # Copy solution.py
-            shutil.copy2(os.path.join(problem_dir, "solution.py"), os.path.join(dir, "solution.py"))
-            logger.debug(f"Copied solution.py to {dir} for {problem.name}")
-            
-            # Write solution.diff file
-            with open(os.path.join(dir, "solution.diff"), "w") as f:
-                f.write(problem["solution_diff"])
-            logger.debug(f"Created solution.diff in {dir} for {problem.name}")
-
         # Initialize git repository with initial commit
         init_local_repo_with_initial_commit(dir, "Initial commit")
