@@ -10,7 +10,7 @@ import utils.logger as logger
 from api.queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
 from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus
+from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, db_transaction
 
@@ -140,12 +140,12 @@ async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asy
         SET
             status = '{EvaluationRunStatus.error.value}',
             error_code = CASE
-                WHEN status = '{EvaluationRunStatus.pending.value}' THEN 2010
-                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN 2020
-                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN 2030
-                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN 2040
-                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN 2050
-                ELSE 2000
+                WHEN status = '{EvaluationRunStatus.pending.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}'
+                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}'
+                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}'
+                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}'
+                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN '{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}'
+                ELSE '{EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value}'
             END,
             error_message = $2,
             finished_or_errored_at = $3
