@@ -1,9 +1,52 @@
-from enum import Enum
 from uuid import UUID
 from datetime import datetime
+from enum import Enum, IntEnum
 from pydantic import BaseModel
 from typing import List, Optional
 from models.problem import ProblemTestResult
+
+
+class EvaluationRunErrorCode(IntEnum):
+    # ADAM: Magic
+    def __new__(cls, code: int, message: str):
+        obj = int.__new__(cls, code)
+        obj._value_ = code
+        obj.message = message
+        return obj
+    
+    # 1xxx - Agent Errors
+    AGENT_EXCEPTION          = (1010, "An exception was thrown while running the agent")
+    AGENT_WRONG_RETURN_TYPE  = (1020, "The agent_main() function did not return a string")
+    AGENT_TIMEOUT_RUNNING    = (1030, "The agent timed out while being run")
+    AGENT_TIMEOUT_EVALUATING = (1040, "The agent timed out while being evaluated")
+
+    # 2xxx - Validator Errors
+    VALIDATOR_FAILED_PENDING       = (2010, "An internal error occurred on the validator while the evaluation run was pending")
+    VALIDATOR_FAILED_INIT_AGENT    = (2020, "An internal error occurred on the validator while the evaluation run was initializing the agent")
+    VALIDATOR_FAILED_RUNNING_AGENT = (2030, "An internal error occurred on the validator while the evaluation run was running the agent")
+    VALIDATOR_FAILED_INIT_EVAL     = (2040, "An internal error occurred on the validator while the evaluation run was initializing the evaluation")
+    VALIDATOR_FAILED_RUNNING_EVAL  = (2050, "An internal error occurred on the validator while the evaluation run was running the evaluation")
+    VALIDATOR_UNKNOWN_PROBLEM      = (2060, "Unknown problem")
+
+    # 3xxx - Platform Errors
+    PLATFORM_RESTARTED_WHILE_PENDING       = (3010, "The platform was restarted while the evaluation run was pending")
+    PLATFORM_RESTARTED_WHILE_INIT_AGENT    = (3020, "The platform was restarted while the evaluation run was initializing the agent")
+    PLATFORM_RESTARTED_WHILE_RUNNING_AGENT = (3030, "The platform was restarted while the evaluation run was running the agent")
+    PLATFORM_RESTARTED_WHILE_INIT_EVAL     = (3040, "The platform was restarted while the evaluation run was initializing the evaluation")
+    PLATFORM_RESTARTED_WHILE_RUNNING_EVAL  = (3050, "The platform was restarted while the evaluation run was running the evaluation")
+
+    def get_error_message(self) -> str:
+        return self.message
+    
+    def is_agent_error(self) -> bool:
+        return 1000 <= self.value < 2000
+    
+    def is_validator_error(self) -> bool:
+        return 2000 <= self.value < 3000
+
+    def is_platform_error(self) -> bool:
+        return 3000 <= self.value < 4000
+
 
 
 class EvaluationRunStatus(str, Enum):
@@ -27,7 +70,7 @@ class EvaluationRun(BaseModel):
     patch: Optional[str] = None
     test_results: Optional[List[ProblemTestResult]] = None
 
-    error_code: Optional[int] = None
+    error_code: Optional[EvaluationRunErrorCode] = None
     error_message: Optional[str] = None
 
     created_at: datetime
