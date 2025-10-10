@@ -1,24 +1,17 @@
 import os
-from typing import Dict, List, Optional
-from uuid import UUID
+from typing import List, Dict
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.src.backend.entities import MinerAgent
-from api.src.backend.entities import MinerAgentScored
-from api.src.backend.entities import TreasuryTransaction
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents, approve_agent_version, \
-    get_agent_by_agent_id as db_get_agent_by_agent_id
+import utils.logger as logger
+from api import config
+from api.queries.scores import get_weight_receiving_agent_hotkey, get_treasury_hotkey
+from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
-from api.src.backend.queries.scores import evaluate_agent_for_threshold_approval
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
-from api.src.backend.queries.scores import store_treasury_transaction as db_store_treasury_transaction
 from api.src.utils.auth import verify_request, verify_request_public
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
-from api.src.utils.threshold_scheduler import threshold_scheduler
-import utils.logger as logger
-from models.agent import AgentStatus
 
 load_dotenv()
 
@@ -41,23 +34,47 @@ async def weight_receiving_agent():
 
     return top_agent
 
-async def get_treasury_hotkey():
+async def get_treasury_hotkey_if_exists():
     """
     Returns the most recently created active treasury hotkey.
     Later, return the wallet with the least funs to mitigate risk of large wallets
     """
-    async with get_db_connection() as conn:
-        treasury_hotkey_data = await conn.fetch("""
-            SELECT hotkey FROM treasury_wallets WHERE active = TRUE ORDER BY created_at DESC LIMIT 1
-        """)
-        if not treasury_hotkey_data:
-            raise ValueError("No active treasury wallets found in database")
-        treasury_hotkey = treasury_hotkey_data[0]["hotkey"]
+    treasury_hotkey = await get_treasury_hotkey()
+    if not treasury_hotkey:
+        raise ValueError("No active treasury wallets found in database")
 
-        if not check_if_hotkey_is_registered(treasury_hotkey):
-            logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
-        
-        return treasury_hotkey
+    if not check_if_hotkey_is_registered(treasury_hotkey):
+        logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
+
+    return treasury_hotkey
+
+
+@router.get("/weights")
+async def weights() -> Dict[str, float]:
+    """
+    Returns a dictionary of miner hotkeys to weights
+    """
+    DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
+    weights = {}  # Initialize weights dictionary
+
+    treasury_hotkey = await get_treasury_hotkey_if_exists()
+
+    top_agent_hotkey = await get_weight_receiving_agent_hotkey()
+
+    # Disburse to treasury to manually send to whoever should be top agent in the event of an error
+    if top_agent_hotkey is None:
+        weights[treasury_hotkey] = 1.0
+
+        return weights
+
+    weight_left = 1.0 - DUST_WEIGHT
+    if check_if_hotkey_is_registered(top_agent_hotkey):
+        weights[top_agent_hotkey] = weight_left
+    else:
+        logger.error(f"Top agent {top_agent_hotkey} not registered on subnet")
+        weights[treasury_hotkey] = 1.0
+
+    return weights
 
 
 @router.get("/screener-thresholds", tags=["scoring"], dependencies=[Depends(verify_request_public)])
@@ -65,14 +82,14 @@ async def get_screener_thresholds():
     """
     Returns the screener thresholds
     """
-    return {"stage_1_threshold": SCREENING_1_THRESHOLD, "stage_2_threshold": SCREENING_2_THRESHOLD}
+    return {"stage_1_threshold": config.SCREENER_1_THRESHOLD, "stage_2_threshold": config.SCREENER_2_THRESHOLD}
 
 @router.get("/prune-threshold", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_prune_threshold():
     """
     Returns the prune threshold
     """
-    return {"prune_threshold": PRUNE_THRESHOLD}
+    return {"prune_threshold": config.PRUNE_THRESHOLD}
 
 
 @router.post("/ban-agents", tags=["scoring"], dependencies=[Depends(verify_request)])
@@ -88,67 +105,67 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
         raise HTTPException(status_code=500, detail="Failed to ban agent due to internal server error. Please try again later.")
 
 
-@router.post("/approve-version", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def approve_version(agent_id: str, set_id: int, approval_password: str):
-    """Approve a version ID using threshold scoring logic
-    
-    Args:
-        agent_id: The agent version to evaluate for approval
-        set_id: The evaluation set ID  
-        approval_password: Password for approval
-    """
-    if approval_password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
-    
-    agent = await db_get_agent_by_agent_id(agent_id)
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    try:
-        # Use threshold scoring logic to determine approval action
-        result = await evaluate_agent_for_threshold_approval(agent_id, set_id)
-        
-        if result['action'] == 'approve_now':
-            # Approve immediately and add to top agents history
-            await approve_agent_version(agent_id, set_id, None)
-            
-            async with get_transaction() as conn:
-                await conn.execute("""
-                    INSERT INTO approved_top_agents_history (agent_id, set_id, top_at)
-                    VALUES ($1, $2, NOW())
-                """, agent_id, set_id)
-            
-            return {
-                "message": f"Agent {agent_id} approved immediately - {result['reason']}",
-                "action": "approve_now"
-            }
-            
-        elif result['action'] == 'approve_future':
-            # Schedule future approval
-            threshold_scheduler.schedule_future_approval(
-                agent_id, 
-                set_id, 
-                result['future_approval_time']
-            )
-            
-            # Store the future approval in approved_agent_ids with future timestamp
-            await approve_agent_version(agent_id, set_id, result['future_approval_time'])
-            
-            return {
-                "message": f"Agent {agent_id} scheduled for approval at {result['future_approval_time'].isoformat()} - {result['reason']}",
-                "action": "approve_future",
-                "approval_time": result['future_approval_time'].isoformat()
-            }
-            
-        else:  # reject
-            return {
-                "message": f"Agent {agent_id} not approved - {result['reason']}",
-                "action": "reject"
-            }
-            
-    except Exception as e:
-        logger.error(f"Error evaluating agent {agent_id} for threshold approval: {e}")
-        raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
+# @router.post("/approve-version", tags=["scoring"], dependencies=[Depends(verify_request_public)])
+# async def approve_version(agent_id: str, set_id: int, approval_password: str):
+#     """Approve a version ID using threshold scoring logic
+#
+#     Args:
+#         agent_id: The agent version to evaluate for approval
+#         set_id: The evaluation set ID
+#         approval_password: Password for approval
+#     """
+#     if approval_password != os.getenv("APPROVAL_PASSWORD"):
+#         raise HTTPException(status_code=401, detail="Invalid approval password. Fucker.")
+#
+#     agent = await db_get_agent_by_agent_id(agent_id)
+#     if not agent:
+#         raise HTTPException(status_code=404, detail="Agent not found")
+#
+#     try:
+#         # Use threshold scoring logic to determine approval action
+#         result = await evaluate_agent_for_threshold_approval(agent_id, set_id)
+#
+#         if result['action'] == 'approve_now':
+#             # Approve immediately and add to top agents history
+#             await approve_agent_version(agent_id, set_id, None)
+#
+#             async with get_transaction() as conn:
+#                 await conn.execute("""
+#                     INSERT INTO approved_top_agents_history (agent_id, set_id, top_at)
+#                     VALUES ($1, $2, NOW())
+#                 """, agent_id, set_id)
+#
+#             return {
+#                 "message": f"Agent {agent_id} approved immediately - {result['reason']}",
+#                 "action": "approve_now"
+#             }
+#
+#         elif result['action'] == 'approve_future':
+#             # Schedule future approval
+#             threshold_scheduler.schedule_future_approval(
+#                 agent_id,
+#                 set_id,
+#                 result['future_approval_time']
+#             )
+#
+#             # Store the future approval in approved_agent_ids with future timestamp
+#             await approve_agent_version(agent_id, set_id, result['future_approval_time'])
+#
+#             return {
+#                 "message": f"Agent {agent_id} scheduled for approval at {result['future_approval_time'].isoformat()} - {result['reason']}",
+#                 "action": "approve_future",
+#                 "approval_time": result['future_approval_time'].isoformat()
+#             }
+#
+#         else:  # reject
+#             return {
+#                 "message": f"Agent {agent_id} not approved - {result['reason']}",
+#                 "action": "reject"
+#             }
+#
+#     except Exception as e:
+#         logger.error(f"Error evaluating agent {agent_id} for threshold approval: {e}")
+#         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
 
 @router.post("/re-evaluate-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
@@ -173,74 +190,74 @@ async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_
         logger.error(f"Error resetting validator evaluations for version {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Error resetting validator evaluations")
 
-@router.post("/re-run-evaluation", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def re_run_evaluation(password: str, evaluation_id: str):
-    """Re-run an evaluation by resetting it to waiting status"""
-    if password != os.getenv("APPROVAL_PASSWORD"):
-        raise HTTPException(status_code=401, detail="Invalid password")
+# @router.post("/re-run-evaluation", tags=["scoring"], dependencies=[Depends(verify_request_public)])
+# async def re_run_evaluation(password: str, evaluation_id: str):
+#     """Re-run an evaluation by resetting it to waiting status"""
+#     if password != os.getenv("APPROVAL_PASSWORD"):
+#         raise HTTPException(status_code=401, detail="Invalid password")
+#
+#     try:
+#         async with get_transaction() as conn:
+#             evaluation = await Evaluation.get_by_id(evaluation_id)
+#             await evaluation.reset_to_waiting(conn)
+#             return {"message": f"Successfully reset evaluation {evaluation_id}"}
+#     except Exception as e:
+#         logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
+#         raise HTTPException(status_code=500, detail="Error resetting evaluation")
     
-    try:
-        async with get_transaction() as conn:
-            evaluation = await Evaluation.get_by_id(evaluation_id)
-            await evaluation.reset_to_waiting(conn)
-            return {"message": f"Successfully reset evaluation {evaluation_id}"}
-    except Exception as e:
-        logger.error(f"Error resetting evaluation {evaluation_id}: {e}")
-        raise HTTPException(status_code=500, detail="Error resetting evaluation")
-    
-@router.post("/store-treasury-transaction", tags=["scoring"], dependencies=[Depends(verify_request)])
-async def store_treasury_transaction(dispersion_extrinsic_code: str, agent_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
-    if password != treasury_transaction_password:
-        raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
-
-    try:
-        dispersion_extrinsic_code = dispersion_extrinsic_code.strip()
-        if fee_extrinsic_code:
-            fee_extrinsic_code = fee_extrinsic_code.strip()
-
-        dispersion_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(dispersion_extrinsic_code)
-        if fee_extrinsic_code:
-            fee_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(fee_extrinsic_code)
-
-        if dispersion_extrinsic_details is None or (fee_extrinsic_code and fee_extrinsic_details is None):
-            raise HTTPException(status_code=400, detail="Invalid extrinsic code(s)")
-        
-        group_transaction_id = uuid.uuid4()
-        
-        dispersion_transaction = TreasuryTransaction(
-            group_transaction_id=group_transaction_id,
-            sender_coldkey=dispersion_extrinsic_details["sender_coldkey"],
-            destination_coldkey=dispersion_extrinsic_details["destination_coldkey"],
-            amount_alpha=dispersion_extrinsic_details["alpha_amount"],
-            fee=False,
-            agent_id=agent_id,
-            occurred_at=dispersion_extrinsic_details["occurred_at"],
-            staker_hotkey=dispersion_extrinsic_details["staker_hotkey"],
-            extrinsic_code=dispersion_extrinsic_code
-        )
-
-        if fee_extrinsic_code:
-            fee_transaction = TreasuryTransaction(
-                group_transaction_id=group_transaction_id,
-                sender_coldkey=fee_extrinsic_details["sender_coldkey"],
-                destination_coldkey=fee_extrinsic_details["destination_coldkey"],
-                amount_alpha=fee_extrinsic_details["alpha_amount"],
-                fee=True,
-                agent_id=agent_id,
-                occurred_at=fee_extrinsic_details["occurred_at"],
-                staker_hotkey=fee_extrinsic_details["staker_hotkey"],
-                extrinsic_code=fee_extrinsic_code
-            )
-
-        await db_store_treasury_transaction(dispersion_transaction)
-        if fee_extrinsic_code:
-            await db_store_treasury_transaction(fee_transaction)
-        
-        return {"message": "Successfully stored treasury transaction", "treasury_transactions": [dispersion_transaction.model_dump(mode='json')]}
-        
-    except Exception as e:
-        logger.error(f"Error storing treasury transaction: {e}")
-        raise HTTPException(status_code=500, detail="Error storing treasury transaction")
+# @router.post("/store-treasury-transaction", tags=["scoring"], dependencies=[Depends(verify_request)])
+# async def store_treasury_transaction(dispersion_extrinsic_code: str, agent_id: str, password: str, fee_extrinsic_code: Optional[str] = None):
+#     if password != treasury_transaction_password:
+#         raise HTTPException(status_code=401, detail="Invalid password. Fuck you.")
+#
+#     try:
+#         dispersion_extrinsic_code = dispersion_extrinsic_code.strip()
+#         if fee_extrinsic_code:
+#             fee_extrinsic_code = fee_extrinsic_code.strip()
+#
+#         dispersion_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(dispersion_extrinsic_code)
+#         if fee_extrinsic_code:
+#             fee_extrinsic_details = await internal_tools.get_transfer_stake_extrinsic_details(fee_extrinsic_code)
+#
+#         if dispersion_extrinsic_details is None or (fee_extrinsic_code and fee_extrinsic_details is None):
+#             raise HTTPException(status_code=400, detail="Invalid extrinsic code(s)")
+#
+#         group_transaction_id = uuid.uuid4()
+#
+#         dispersion_transaction = TreasuryTransaction(
+#             group_transaction_id=group_transaction_id,
+#             sender_coldkey=dispersion_extrinsic_details["sender_coldkey"],
+#             destination_coldkey=dispersion_extrinsic_details["destination_coldkey"],
+#             amount_alpha=dispersion_extrinsic_details["alpha_amount"],
+#             fee=False,
+#             agent_id=agent_id,
+#             occurred_at=dispersion_extrinsic_details["occurred_at"],
+#             staker_hotkey=dispersion_extrinsic_details["staker_hotkey"],
+#             extrinsic_code=dispersion_extrinsic_code
+#         )
+#
+#         if fee_extrinsic_code:
+#             fee_transaction = TreasuryTransaction(
+#                 group_transaction_id=group_transaction_id,
+#                 sender_coldkey=fee_extrinsic_details["sender_coldkey"],
+#                 destination_coldkey=fee_extrinsic_details["destination_coldkey"],
+#                 amount_alpha=fee_extrinsic_details["alpha_amount"],
+#                 fee=True,
+#                 agent_id=agent_id,
+#                 occurred_at=fee_extrinsic_details["occurred_at"],
+#                 staker_hotkey=fee_extrinsic_details["staker_hotkey"],
+#                 extrinsic_code=fee_extrinsic_code
+#             )
+#
+#         await db_store_treasury_transaction(dispersion_transaction)
+#         if fee_extrinsic_code:
+#             await db_store_treasury_transaction(fee_transaction)
+#
+#         return {"message": "Successfully stored treasury transaction", "treasury_transactions": [dispersion_transaction.model_dump(mode='json')]}
+#
+#     except Exception as e:
+#         logger.error(f"Error storing treasury transaction: {e}")
+#         raise HTTPException(status_code=500, detail="Error storing treasury transaction")
     
 @router.get("/threshold-function", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_threshold_function():
