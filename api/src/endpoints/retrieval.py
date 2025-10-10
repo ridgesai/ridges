@@ -22,6 +22,7 @@ from api.src.backend.queries.inference import get_inference_provider_statistics 
 from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
 from api.src.backend.queries.agents import get_all_approved_agent_ids as db_get_all_approved_agent_ids
 from api.src.backend.queries.open_users import get_total_dispersed_by_treasury_hotkeys as db_get_total_dispersed_by_treasury_hotkeys
+from utils.s3 import download_text_file_from_s3
 
 
 load_dotenv()
@@ -43,11 +44,13 @@ SCREENER_IP_LIST = [
 ]
 
 @router.get("/agent-version-file", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_agent_code(agent_id: str, request: Request, return_as_text: bool = False):
-
+async def get_agent_code(agent_id: str, request: Request):
+    """
+    Retrieve agent code from S3 for a given agent version.
+    Returns the Python code as plain text.
+    """
 
     # TODO ADAM: i will rewrite this. shit probably doesn't even work rn
-
 
     agent_version = await get_agent_by_agent_id(agent_id=agent_id)
     
@@ -72,39 +75,15 @@ async def get_agent_code(agent_id: str, request: Request, return_as_text: bool =
                 detail="Access denied: IP not authorized"
             )
     
-    if return_as_text:
-        try:
-            text = await s3_manager.get_file_text(f"{agent_id}/agent.py")
-        except Exception as e:
-            logger.error(f"Error retrieving agent version code from S3 for version {agent_id}: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail="Internal server error while retrieving agent version code. Please try again later."
-            )
-        
-        return text
-
     try:
-        agent_object = await s3_manager.get_file_object(f"{agent_id}/agent.py")
+        agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
+        return PlainTextResponse(content=agent_code, media_type="text/plain")
     except Exception as e:
-        logger.error(f"Error retrieving agent version file from S3 for version {agent_id}: {e}")
+        logger.error(f"Error retrieving agent version code from S3 for version {agent_id}: {e}")
         raise HTTPException(
             status_code=500,
-            detail="Internal server error while retrieving agent version file. Please try again later."
+            detail="Internal server error while retrieving agent version code. Please try again later."
         )
-    
-    async def file_generator():
-        agent_object.seek(0)
-        while True:
-            chunk = agent_object.read(8192)  # Read in 8KB chunks
-            if not chunk:
-                break
-            yield chunk
-    
-    headers = {
-        "Content-Disposition": f'attachment; filename="agent.py"'
-    }
-    return StreamingResponse(file_generator(), media_type='application/octet-stream', headers=headers)
 
 @router.get("/connected-validators", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_connected_validators():
@@ -487,9 +466,9 @@ routes = [
     ("/top-agents", top_agents),
     ("/agent-by-id", agent_by_id),
     ("/agent-by-hotkey", agent_by_hotkey),
-    ("/evaluations-for-agent", evaluations_for_agent)
+    ("/evaluations-for-agent", evaluations_for_agent),
+    ("/agent-version-file", get_agent_code)
 
-    # ("/agent-version-file", get_agent_code), 
     # ("/connected-validators", get_connected_validators), 
     # ("/evaluations", get_evaluations),
     # ("/screening-evaluations", get_screening_evaluations),
