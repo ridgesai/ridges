@@ -409,10 +409,6 @@ filtered_scores AS (
     -- Remove the lowest score for each agent version and set combination
     SELECT
         ae.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY ae.agent_id, ae.set_id
-            ORDER BY ae.score ASC
-        ) as score_rank,
         COUNT(*) OVER (
             PARTITION BY ae.agent_id, ae.set_id
         ) as total_scores
@@ -433,13 +429,11 @@ SELECT
     AVG(fs.score) AS final_score
 FROM filtered_scores fs
 WHERE fs.set_id IS NOT NULL
-    AND (
-        (fs.total_scores = 2 AND fs.score_rank > 0) OR
-        (fs.total_scores > 2 AND fs.score_rank > 1)
-    )  -- Keep all scores when only 2 exist, exclude lowest when 3+
 GROUP BY fs.agent_id, fs.miner_hotkey, fs.name, fs.version_num,
          fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved, fs.approved_at
-HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
+-- At least 2 validators
+-- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
+HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
