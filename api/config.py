@@ -91,6 +91,8 @@ NUM_EVALS_PER_AGENT = int(os.getenv("NUM_EVALS_PER_AGENT"))
 if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 
-AGENT_RATE_LIMIT_SECONDS = int(os.getenv("AGENT_RATE_LIMIT_SECONDS"))
-if not NUM_EVALS_PER_AGENT:
-    logger.fatal("AGENT_RATE_LIMIT_SECONDS is not set in .env")
+
+
+MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = int(os.getenv("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS"))
+if not MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS:
+    logger.fatal("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS is not set in .env")

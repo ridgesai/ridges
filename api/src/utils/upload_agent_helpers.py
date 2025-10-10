@@ -5,7 +5,7 @@ from fastapi import UploadFile, HTTPException
 from fiber import Keypair
 
 import utils.logger as logger
-from api.config import AGENT_RATE_LIMIT_SECONDS
+from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from api.src.backend.entities import MinerAgent
 from api.src.backend.queries.agents import check_if_agent_banned
 from api.src.backend.queries.evaluations import get_running_evaluation_by_miner_hotkey
@@ -55,14 +55,14 @@ async def check_agent_banned(miner_hotkey: str) -> None:
 def check_rate_limit(latest_agent: Agent) -> None:
     logger.debug(f"Checking if miner is rate limited...")
 
-    earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
-    logger.debug(f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)}.")
+    earliest_allowed_time = latest_agent.created_at + timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)
+    logger.debug(f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)}.")
     
     if datetime.now(timezone.utc) < earliest_allowed_time:
         logger.error(f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent.created_at} and current time is {datetime.now(timezone.utc)}.")
         raise HTTPException(
             status_code=429,
-            detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
+            detail=f"You must wait {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
         )
     
     logger.debug(f"Miner is not rate limited.")

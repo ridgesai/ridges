@@ -209,10 +209,6 @@ CREATE TABLE IF NOT EXISTS approved_agents (
     UNIQUE (agent_id, set_id)
 );
 
--- Prevent accidental deletes from approved_agents table
-CREATE OR REPLACE FUNCTION prevent_delete_approval() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Forbidden:Unapproving agents can lead to messing up treasury-owing financial data'; END; $$ LANGUAGE plpgsql;
-DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_agents;
-CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_agents FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
 
 -- Open Users table
 CREATE TABLE IF NOT EXISTS open_users (
