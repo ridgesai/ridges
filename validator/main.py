@@ -5,13 +5,14 @@ import pathlib
 import traceback
 import utils.logger as logger
 import validator.config as config
-from models.problem import ProblemTestResultStatus
 
+from typing import Any, Dict, Optional
+from models.problem import ProblemTestResultStatus
 from utils.system_metrics import get_system_metrics
-from models.evaluation_run import EvaluationRunStatus
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
+from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
 
@@ -28,6 +29,7 @@ swebench_verified_suite = None
 
 
 
+# Disconnect from the Ridges platform (called when the program exits)
 async def disconnect(reason: str):
     if session_id is None:
         return
@@ -41,7 +43,8 @@ async def disconnect(reason: str):
 
 
 
-async def _send_heartbeat_loop():
+# A loop that sends periodic heartbeats to the Ridges platform
+async def send_heartbeat_loop():
     logger.info("Starting send heartbeat loop...")
     while True:
         # logger.info("Sending heartbeat...")
@@ -51,68 +54,85 @@ async def _send_heartbeat_loop():
 
 
 
-async def _run_evaluation_run(evaluation_run):
-    evaluation_run_id = evaluation_run['evaluation_run_id']
-    problem_name = evaluation_run['problem_name']
+# Sends an update-evaluation-run request to the Ridges platform. The extra
+# parameter is for fields that are not sent in all requests, such as agent_logs
+# and eval_logs, which are only sent on some state transitions.
+async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updated_status: EvaluationRunStatus, extra: Optional[Dict[str, Any]] = None):
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": updated_status.value,
+        **extra
+    }, bearer_token=session_id, quiet=2)
+
+
+
+# Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
+async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str):
+    logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+    # Move from pending -> initializing_agent
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+
+    # Move from initializing_agent -> running_agent
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+
+    # Move from running_agent -> initializing_eval
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+        "patch": "FAKE PATCH",
+        "agent_logs": "FAKE AGENT LOGS"
+    })
+
+    # Move from initializing_eval -> running_eval
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+
+    # Move from running_eval -> finished
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+        "test_results": [{"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}],
+        "eval_logs": "FAKE EVAL LOGS"
+    })
+
+
+    
+    logger.info(f"Finished simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+# Run an evaluation run
+async def _run_evaluation_run(evaluation_run_id: str, problem_name: str):
+    # Figure out what problem suite this problem belongs to
+    problem_suite = None
+    if polyglot_suite.has_problem_name(problem_name):
+        problem_suite = polyglot_suite
+    elif swebench_verified_suite.has_problem_name(problem_name):
+        problem_suite = swebench_verified_suite
+
+    # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
+    if problem_suite is None:
+        update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+            "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
+        })
+        return
 
 
 
     logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
+    # TODO
 
-
-    MAX_SLEEP_TIME = 1
-
-    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
-
-    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to initializing_agent...")
-    await post_ridges_platform("/validator/update-evaluation-run", {
-        "evaluation_run_id": evaluation_run_id,
-        "updated_status": EvaluationRunStatus.initializing_agent.value
-    }, bearer_token=session_id, quiet=2)
-
-    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
-
-    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to running_agent...")
-    await post_ridges_platform("/validator/update-evaluation-run", {
-        "evaluation_run_id": evaluation_run_id,
-        "updated_status": EvaluationRunStatus.running_agent.value
-    }, bearer_token=session_id, quiet=2)
-
-    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
-
-    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to initializing_eval...")
-    await post_ridges_platform("/validator/update-evaluation-run", {
-        "evaluation_run_id": evaluation_run_id,
-        "updated_status": EvaluationRunStatus.initializing_eval.value,
-        "patch": "FAKE PATCH",
-        "agent_logs": "FAKE AGENT LOGS"
-    }, bearer_token=session_id, quiet=2)
-
-    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
-
-    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to running_eval...")
-    await post_ridges_platform("/validator/update-evaluation-run", {
-        "evaluation_run_id": evaluation_run_id,
-        "updated_status": EvaluationRunStatus.running_eval.value
-    }, bearer_token=session_id, quiet=2)
-
-    await asyncio.sleep(random.random() * MAX_SLEEP_TIME)
-
-    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to finished...")
-    await post_ridges_platform("/validator/update-evaluation-run", {
-        "evaluation_run_id": evaluation_run_id,
-        "updated_status": EvaluationRunStatus.finished.value,
-        "test_results": [{"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}],
-        "eval_logs": "FAKE EVAL LOGS"
-    }, bearer_token=session_id, quiet=2)
-
-
-    
     logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
+    
 
 
-
+# Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
 async def _run_evaluation(request_evaluation_response):
     agent_code = request_evaluation_response['agent_code']
     evaluation_runs = request_evaluation_response['evaluation_runs']
@@ -130,7 +150,13 @@ async def _run_evaluation(request_evaluation_response):
 
     tasks = []
     for evaluation_run in evaluation_runs:
-        tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run)))
+        evaluation_run_id = evaluation_run['evaluation_run_id']
+        problem_name = evaluation_run['problem_name']
+
+        if config.SIMULATE_EVALUATION_RUNS:
+            tasks.append(asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name)))
+        else:
+            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name)))
 
     await asyncio.gather(*tasks)
 
@@ -140,6 +166,7 @@ async def _run_evaluation(request_evaluation_response):
 
 
 
+# Main loop
 async def main():
     global session_id
     global sandbox_manager

@@ -89,6 +89,18 @@ if not REQUEST_EVALUATION_INTERVAL_SECONDS:
 
 
 
+# Load the simulated evaluation runs configuration
+SIMULATE_EVALUATION_RUNS = bool(os.getenv("SIMULATE_EVALUATION_RUNS"))
+if not SIMULATE_EVALUATION_RUNS:
+    logger.fatal("SIMULATE_EVALUATION_RUNS is not set in .env")
+
+if SIMULATE_EVALUATION_RUNS:
+    SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = int(os.getenv("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS"))
+    if not SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS:
+        logger.fatal("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS is not set in .env")
+
+
+
 # Print out the configuration
 logger.info("=== Validator Configuration ===")
 logger.info(f"Mode: {MODE}")
@@ -98,6 +110,13 @@ if MODE == "validator":
     logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY.ss58_address}")
 elif MODE == "screener":
     logger.info(f"Screener Name: {SCREENER_NAME}")
+logger.info("-------------------------------")
 logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
 logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
+logger.info("-------------------------------")
+logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
+if SIMULATE_EVALUATION_RUNS:
+    logger.info("-------------------------------")
+    logger.warning("Simulating Evaluation Runs!")
 logger.info("===============================")

@@ -30,6 +30,10 @@ SANDBOX_PROXY_PORT = 80
 
 
 
+# class Sandbox(BaseModel):
+#     temp_dir: str
+#     sandbox_id: str
+
 
 
 
