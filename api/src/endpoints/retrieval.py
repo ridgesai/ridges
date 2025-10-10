@@ -501,7 +501,7 @@ async def shak_scratchpad() -> Any:
 
 import uuid
 
-from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent
+from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id
 from models.evaluation import EvaluationStatus, Evaluation
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored
@@ -541,7 +541,7 @@ async def evaluation_with_runs():
     pass
 
 async def agent_by_id(agent_id: str) -> Agent:
-    agent = await get_agent(agent_id=uuid.UUID(agent_id))
+    agent = await get_agent_by_id(agent_id=uuid.UUID(agent_id))
     
     if agent is None:
         raise HTTPException(
