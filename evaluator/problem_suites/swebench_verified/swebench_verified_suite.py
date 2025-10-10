@@ -6,19 +6,32 @@ import time
 import threading
 import traceback
 import utils.logger as logger
+import validator.config as config
 
+from uuid import UUID
 from pathlib import Path
 from typing import List, Tuple
-from evaluator.models import Sandbox
+from pydantic import BaseModel
 from utils.docker import docker_client
-from models.problem import ProblemTestResult
+from models.problem import ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
+from models.evaluation_run import EvaluationRunErrorCode
+from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import Problem, ProblemTest, ProblemTestCategory
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
 from utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exists_in_local_repo
+
+
+
+class SWEBenchVerifiedEvaluationSandbox(BaseModel):
+    evaluation_run_id: UUID
+    test_spec: TestSpec
+    pred: dict
+
 
 
 class SWEBenchVerifiedSuite(ProblemSuite):
@@ -120,7 +133,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         dir: str,
         *,
         include_tests: bool = False
-    ):
+    ) -> None:
         # Get the SWE-Bench problem object
         swebench_instance = problem.userdata
         repo = swebench_instance.get("repo")
@@ -138,135 +151,70 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem_name: str,
+        problem: Problem,
+        evaluation_run_id: UUID,
         patch: str
-    ) -> Sandbox:
+    ) -> SWEBenchVerifiedEvaluationSandbox:
+        try:
+            swebench_instance = problem.userdata
 
-        # TODO ADAM
-        raise NotImplementedError("initialize_eval_sandbox is not implemented for SWE-Bench Verified")
+            test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
 
-        pass
+            pred = {
+                "model_name_or_path": evaluation_run_id,
+                "model_patch": patch,
+                "instance_id": problem.name
+            }
+
+            return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred)
+        except Exception as e:
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            )
+
     
+
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        sandbox: Sandbox
+        eval_sandbox: SWEBenchVerifiedEvaluationSandbox
     ) -> Tuple[List[ProblemTestResult], str]:
+        try:
+            instance_id, report = run_instance(
+                test_spec=eval_sandbox.test_spec,
+                pred=eval_sandbox.pred,
+                rm_image=False,
+                force_rebuild=False,
+                client=docker_client,
+                run_id=str(eval_sandbox.evaluation_run_id),
+                timeout=config.EVAL_TIMEOUT_SECONDS
+            )
 
-        # TODO ADAM
-        raise NotImplementedError("run_eval_sandbox is not implemented for SWE-Bench Verified")
+            test_results = []
+            
+            tests_status = report[instance_id]["tests_status"]
+            
+            for test_name in tests_status["FAIL_TO_PASS"]["success"]:
+                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.PASS))
+            for test_name in tests_status["FAIL_TO_PASS"]["failure"]:
+                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.FAIL))
+            
+            for test_name in tests_status["PASS_TO_PASS"]["success"]:
+                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.PASS))
+            for test_name in tests_status["PASS_TO_PASS"]["failure"]:
+                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.FAIL))
+            
+            # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
+            eval_logs = "No evaluation logs available"
 
-        pass
+            return test_results, eval_logs
 
-
-
-
-    def evaluate_solution_diff(self, sandbox_manager, run_id, problem_name, solution_diff, on_finish, *, timeout=None):
-        def _run_evaluation():
-            try:
-                report = self.run_swebench_evaluation(sandbox_manager, run_id, problem_name, solution_diff, timeout=timeout)
-
-                # Convert to our format
-                report = report[problem_name]
-
-                test_results = []
-                for category, tests in report["tests_status"].items():
-                    for test_name in tests["success"]:
-                        test_results.append({
-                            "name": test_name,
-                            "category": category.lower(),
-                            "status": "pass"
-                        })
-                    for test_name in tests["failure"]:
-                        test_results.append({
-                            "name": test_name,
-                            "category": category.lower(),
-                            "status": "fail"
-                        })
-                
-                on_finish({
-                    "status": "success",
-                    "test_results": test_results,
-                    "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
-                })
-            except Exception as e:
-                warn(f"[SWEBENCH] Failed to run evaluation for {problem_name}: {e}")
-                on_finish({
-                    "status": "error",
-                    "error": str(e),
-                    "traceback": traceback.format_exc(),
-                    "logs": None # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
-                })
-        
-        thread = threading.Thread(target=_run_evaluation, daemon=True)
-        thread.start()
-
-
-
- 
-    
-
-    def run_swebench_evaluation(self, sandbox_manager, run_id, problem_name, diff, *, timeout=None):
-        """
-        Runs a SWE-Bench evaluation for the given instance ID on the given patch.
-        This is a blocking function.
-        Returns the SWE-Bench report.
-        """
-
-        problem = self.get_problem(problem_name)
-        if not problem:
-            warn(f"[SWEBENCH] Problem {problem_name} not found")
-            raise ValueError(f"Problem {problem_name} not found")
-
-
-
-        # This would be the object that you'd find in swebench_verified.json
-        swebench_instance = problem.get("swebench_instance")
-
-        # Need to create a test spec before calling run_instance()
-        test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
-
-        # A "prediction" in the context of SWE-Bench is literally just a patch.
-        # The model_name_or_path, model_patch, and instance_id keys are required.
-        pred = {
-            "model_name_or_path": run_id,
-            "model_patch": diff,
-            "instance_id": problem_name
-        }
-
-
-
-        # Run the instance using SWE-Bench
-        # This actually builds a Docker image for the specific problem.
-        # That Docker image has a name similar to "sweb.eval.x86_64.astropy__astropy-12907" (4 GB).
-        debug(f"[SWEBENCH] Running evaluation for {problem_name}")
-        start_time = time.time()
-        result = run_instance(
-            test_spec=test_spec,
-            pred=pred,
-            rm_image=False,
-            force_rebuild=False,
-            client=sandbox_manager.docker,
-            run_id=run_id,
-            timeout=timeout,
-            rewrite_reports=False
-        )
-
-        IS_SWEBENCH_VERSION_LESS_THAN_4_1_0 = True
-        if not IS_SWEBENCH_VERSION_LESS_THAN_4_1_0:
-            if not result["completed"]:
-                warn(f"[SWEBENCH] Evaluation for {problem_name} was not completed")
-                raise RuntimeError(f"Evaluation for {problem_name} was not completed")
-        
-        elapsed_time = time.time() - start_time
-        debug(f"[SWEBENCH] Successfully ran evaluation for {problem_name} in {elapsed_time:.1f} seconds")
-
-        # Read the report
-        report_path = Path("logs/run_evaluation") / run_id / run_id / problem_name / "report.json"
-        with open(report_path) as f:
-            report = json.load(f)
-
-        return report
+        except Exception as e:
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL,
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            )
     
 
 

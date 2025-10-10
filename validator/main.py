@@ -137,13 +137,24 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
         # Start initializing the agent sandbox
-        agent_sandbox = problem_suite.initialize_agent_sandbox(sandbox_manager, problem, evaluation_run_id, agent_code, include_solution=True) # TODO: Remove include_solution=True
+        agent_sandbox = await asyncio.to_thread(
+            problem_suite.initialize_agent_sandbox,
+            sandbox_manager,
+            problem,
+            evaluation_run_id,
+            agent_code,
+            include_solution=True # TODO: Remove include_solution=True
+        )
 
         # Move from initializing_agent -> running_agent
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
         # Start running the agent sandbox
-        patch, agent_logs = problem_suite.run_agent_sandbox(sandbox_manager, agent_sandbox)
+        patch, agent_logs = await asyncio.to_thread(
+            problem_suite.run_agent_sandbox,
+            sandbox_manager,
+            agent_sandbox
+        )
         logger.warning(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
         # Move from running_agent -> initializing_eval
@@ -153,17 +164,29 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         })
 
         # Start initializing the evaluation sandbox
-        eval_sandbox = problem_suite.initialize_eval_sandbox(sandbox_manager, problem, patch)
+        eval_sandbox = await asyncio.to_thread(
+            problem_suite.initialize_eval_sandbox,
+            sandbox_manager,
+            problem,
+            evaluation_run_id,
+            patch
+        )
 
         # Move from initializing_eval -> running_eval
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
         # Start running the evaluation sandbox
-        test_results, eval_logs = problem_suite.run_eval_sandbox(sandbox_manager, eval_sandbox)
+        test_results, eval_logs = await asyncio.to_thread(
+            problem_suite.run_eval_sandbox,
+            sandbox_manager,
+            eval_sandbox
+        )
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
         num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
         logger.warning(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
+        if num_failed > 0:
+            logger.error(f"!!!")
 
         # Move from running_eval -> finished
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
@@ -172,12 +195,11 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         })
 
     except EvaluationRunException as e:
-        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e.error_code.get_error_message()}: {e}")
-        logger.error(traceback.format_exc())
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
 
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
             "error_code": e.error_code.value,
-            "error_message": f"{e.error_code.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            "error_message": e.error_message
         })
 
     except Exception as e:

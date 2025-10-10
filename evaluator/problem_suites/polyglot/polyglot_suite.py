@@ -7,6 +7,7 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
+from uuid import UUID
 from typing import List, Tuple
 from evaluator.models import Sandbox
 from models.problem import ProblemTestResult
@@ -108,7 +109,7 @@ class PolyglotSuite(ProblemSuite):
         dir: str,
         *,
         include_tests: bool = False
-    ):
+    ) -> None:
         problem_dir = os.path.join(self.dataset_path, problem.name)
         
         # Copy main.py
@@ -129,37 +130,44 @@ class PolyglotSuite(ProblemSuite):
         self,
         sandbox_manager: SandboxManager,
         problem: Problem,
+        evaluation_run_id: UUID,
         patch: str
     ) -> Sandbox:
-        def _on_mount(temp_dir: str):
-            # Create /sandbox/repo directory
-            sandbox_repo_dir = os.path.join(temp_dir, "repo")
-            os.mkdir(sandbox_repo_dir)
+        try:
+            def _on_mount(temp_dir: str):
+                # Create /sandbox/repo directory
+                sandbox_repo_dir = os.path.join(temp_dir, "repo")
+                os.mkdir(sandbox_repo_dir)
 
-            # Copy problem files to /sandbox/repo
-            self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_tests=True)
+                # Copy problem files to /sandbox/repo
+                self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_tests=True)
 
-            # Apply the patch
-            apply_diff_to_local_repo(patch, sandbox_repo_dir)
+                # Apply the patch
+                apply_diff_to_local_repo(patch, sandbox_repo_dir)
 
 
 
-        return sandbox_manager.initialize_sandbox(
-            name=f"eval-sandbox-{problem.name}",
-            python_script_path=os.path.join(os.path.dirname(__file__), "TEST_RUNNER.py"),
-            input_data=[test.model_dump() for test in problem.tests],
-            on_mount=_on_mount
-        )
+            return sandbox_manager.initialize_sandbox(
+                name=f"eval-sandbox-{problem.name}",
+                python_script_path=os.path.join(os.path.dirname(__file__), "TEST_RUNNER.py"),
+                input_data=[test.model_dump() for test in problem.tests],
+                on_mount=_on_mount
+            )
+        except Exception as e:
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            )
 
 
 
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        sandbox: Sandbox
+        eval_sandbox: Sandbox
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
-            sandbox_result_with_logs = sandbox_manager.run_sandbox(sandbox, timeout_seconds=config.EVAL_TIMEOUT_SECONDS)
+            sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=config.EVAL_TIMEOUT_SECONDS)
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(
