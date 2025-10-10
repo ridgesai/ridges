@@ -72,7 +72,7 @@ async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
     
     except Exception as e:
         # Internal error (timeout, DNS error, etc.)
-        logger.error(f"{type(e).__name__} during POST {url}")
+        logger.error(f"{type(e).__name__} during GET {url}")
 
         raise
 

@@ -425,6 +425,7 @@ async def validator_update_evaluation_run(
 
             # Update the evaluation run to finished
             evaluation_run.status = EvaluationRunStatus.finished
+            evaluation_run.test_results = request.test_results
             evaluation_run.finished_or_errored_at = datetime.now()
         
 
