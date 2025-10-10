@@ -80,7 +80,7 @@ def main():
         test_results = run_tests()
 
         print("[POLYGLOT_TEST_RUNNER] Test results:")
-        print(test_results)
+        print(json.dumps(test_results, indent=2))
         
         tests_passed = sum(1 for test in test_results if test["status"] == "pass")
         tests_failed = sum(1 for test in test_results if test["status"] == "fail")
@@ -90,7 +90,10 @@ def main():
 
         print("[POLYGLOT_TEST_RUNNER] Writing output.json")
         with open("/sandbox/output.json", "w") as f:
-            json.dump({"status": "success", "output": test_results}, f, indent=2)
+            json.dump({
+                "success": True,
+                "output": test_results
+            }, f, indent=2)
         print("[POLYGLOT_TEST_RUNNER] Wrote output.json")
 
     except Exception as e:
@@ -98,7 +101,7 @@ def main():
         traceback.print_exc(file=sys.stdout)
         
         output = {
-            "status": "error",
+            "success": False,
             "error": str(e),
             "traceback": traceback.format_exc()
         }

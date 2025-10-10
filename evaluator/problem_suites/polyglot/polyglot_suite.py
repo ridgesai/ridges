@@ -7,14 +7,14 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
-from typing import List
-from utils.diff import get_file_diff
+from typing import List, Tuple
 from evaluator.models import Sandbox
 from models.problem import ProblemTestResult
 from evaluator.models import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode
 from utils.git import init_local_repo_with_initial_commit
 from evaluator.sandbox.sandbox_manager import SandboxManager
+from utils.diff import get_file_diff, apply_diff_to_local_repo
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import Problem, ProblemTest, ProblemTestCategory
 
@@ -139,12 +139,15 @@ class PolyglotSuite(ProblemSuite):
             # Copy problem files to /sandbox/repo
             self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_tests=True)
 
+            # Apply the patch
+            apply_diff_to_local_repo(patch, sandbox_repo_dir)
+
 
 
         return sandbox_manager.initialize_sandbox(
-            name=f"agent-sandbox-{problem.name}",
+            name=f"eval-sandbox-{problem.name}",
             python_script_path=os.path.join(os.path.dirname(__file__), "TEST_RUNNER.py"),
-            input_data=problem.tests,
+            input_data=[test.model_dump() for test in problem.tests],
             on_mount=_on_mount
         )
 
@@ -154,7 +157,7 @@ class PolyglotSuite(ProblemSuite):
         self,
         sandbox_manager: SandboxManager,
         sandbox: Sandbox
-    ) -> List[ProblemTestResult]:
+    ) -> Tuple[List[ProblemTestResult], str]:
         try:
             sandbox_result_with_logs = sandbox_manager.run_sandbox(sandbox, timeout_seconds=config.EVAL_TIMEOUT_SECONDS)
 
@@ -164,7 +167,7 @@ class PolyglotSuite(ProblemSuite):
                     f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
                 )
             
-            return sandbox_result_with_logs.output, sandbox_result_with_logs.logs
+            return [ProblemTestResult(**test) for test in sandbox_result_with_logs.output], sandbox_result_with_logs.logs
 
         except Exception as e:
             raise EvaluationRunException(

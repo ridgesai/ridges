@@ -7,8 +7,8 @@ import threading
 import traceback
 import utils.logger as logger
 
-from typing import List
 from pathlib import Path
+from typing import List, Tuple
 from evaluator.models import Sandbox
 from utils.docker import docker_client
 from models.problem import ProblemTestResult
@@ -138,10 +138,12 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem_name: str
+        problem_name: str,
+        patch: str
     ) -> Sandbox:
 
         # TODO ADAM
+        raise NotImplementedError("initialize_eval_sandbox is not implemented for SWE-Bench Verified")
 
         pass
     
@@ -149,9 +151,10 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         self,
         sandbox_manager: SandboxManager,
         sandbox: Sandbox
-    ) -> List[ProblemTestResult]:
+    ) -> Tuple[List[ProblemTestResult], str]:
 
         # TODO ADAM
+        raise NotImplementedError("run_eval_sandbox is not implemented for SWE-Bench Verified")
 
         pass
 

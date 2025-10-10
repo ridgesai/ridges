@@ -34,7 +34,7 @@ class ColoredFormatter(logging.Formatter):
 
 
 logger = logging.getLogger('ridges')
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
 formatter = ColoredFormatter(
     '%(asctime)s.%(msecs)03d - %(filename)s:%(lineno)d - %(levelname)s - %(message)s',

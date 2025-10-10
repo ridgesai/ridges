@@ -6,10 +6,11 @@ import utils.logger as logger
 import validator.config as config
 
 from uuid import UUID
-from typing import Tuple
+from typing import List, Tuple
 from models.problem import Problem
 from abc import ABC, abstractmethod
 from utils.temp import create_temp_dir
+from models.problem import ProblemTestResult
 from evaluator.models import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode
 from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
@@ -107,7 +108,7 @@ class ProblemSuite(ABC):
             os.mkdir(sandbox_repo_dir)
 
             # Copy problem files to /sandbox/repo
-            self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_solution=include_solution)
+            self.copy_problem_files_to_directory(problem, sandbox_repo_dir)
 
             if include_solution:
                 # Create /sandbox/solution.diff
@@ -160,7 +161,8 @@ class ProblemSuite(ABC):
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem_name: str
+        problem_name: str,
+        patch: str
     ) -> Sandbox:
         # TODO ADAM: Docs
         pass
@@ -171,7 +173,7 @@ class ProblemSuite(ABC):
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem_name: str
-    ) -> Sandbox:
+        sandbox: Sandbox
+    ) -> Tuple[List[ProblemTestResult], str]:
         # TODO ADAM: Docs
         pass

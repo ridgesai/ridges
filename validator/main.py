@@ -153,22 +153,27 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         })
 
         # Start initializing the evaluation sandbox
-        eval_sandbox = await problem_suite.initialize_eval_sandbox(sandbox_manager, problem_name, patch)
+        eval_sandbox = problem_suite.initialize_eval_sandbox(sandbox_manager, problem, patch)
 
         # Move from initializing_eval -> running_eval
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
         # Start running the evaluation sandbox
-        test_results, eval_logs = await problem_suite.run_eval_sandbox(eval_sandbox, problem_name)
+        test_results, eval_logs = problem_suite.run_eval_sandbox(sandbox_manager, eval_sandbox)
+        num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
+        num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
+        num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
+        logger.warning(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
 
-        # # Move from running_eval -> finished
-        # await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
-        #     "test_results": test_results,
-        #     "eval_logs": eval_logs
-        # })
+        # Move from running_eval -> finished
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+            "test_results": [test.model_dump() for test in test_results],
+            "eval_logs": eval_logs
+        })
 
     except EvaluationRunException as e:
-        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e.error_code.get_error_message()}")
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e.error_code.get_error_message()}: {e}")
+        logger.error(traceback.format_exc())
 
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
             "error_code": e.error_code.value,
@@ -177,6 +182,7 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
 
     except Exception as e:
         logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+        logger.error(traceback.format_exc())
 
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
             "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,

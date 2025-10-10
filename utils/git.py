@@ -43,21 +43,21 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir) -> None:
     abs_local_repo_dir = os.path.abspath(local_repo_dir)
     
     # Clone the local repository directly to the target directory
-    logger.info(f"Cloning local repository from {local_repo_dir} to {target_dir}...")
+    logger.debug(f"Cloning local repository from {local_repo_dir} to {target_dir}...")
     
-    result = subprocess.run(
+    subprocess.run(
         ["git", "clone", abs_local_repo_dir, target_dir],
         capture_output=True,
         text=True,
         check=True
     )
     
-    logger.info(f"Cloned local repository from {local_repo_dir} to {target_dir}")
+    logger.debug(f"Cloned local repository from {local_repo_dir} to {target_dir}")
 
     # Checkout the specific commit
-    logger.info(f"Checking out commit {commit_hash} in {target_dir}...")
+    logger.debug(f"Checking out commit {commit_hash} in {target_dir}...")
 
-    result = subprocess.run(
+    subprocess.run(
         ["git", "checkout", commit_hash],
         capture_output=True,
         text=True,
@@ -65,7 +65,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir) -> None:
         cwd=target_dir
     )
     
-    logger.info(f"Checked out commit {commit_hash} in {target_dir}")
+    logger.debug(f"Checked out commit {commit_hash} in {target_dir}")
 
 
 
@@ -110,7 +110,7 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
     """
 
     # Initialize git repository
-    logger.info(f"Initializing git repository in {local_repo_dir}")
+    logger.debug(f"Initializing git repository in {local_repo_dir}")
     subprocess.run(
         ['git', 'init'],
         capture_output=True,
@@ -118,10 +118,10 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
         check=True,
         cwd=local_repo_dir
     )
-    logger.info(f"Initialized git repository in {local_repo_dir}")
+    logger.debug(f"Initialized git repository in {local_repo_dir}")
 
     # Add all files
-    logger.info(f"Adding all files in {local_repo_dir}")
+    logger.debug(f"Adding all files in {local_repo_dir}")
     subprocess.run(
         ['git', 'add', '.'],
         capture_output=True,
@@ -129,10 +129,10 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
         check=True,
         cwd=local_repo_dir
     )
-    logger.info(f"Added all files in {local_repo_dir}")
+    logger.debug(f"Added all files in {local_repo_dir}")
     
     # Make initial commit
-    logger.info(f"Making initial commit in {local_repo_dir}: {commit_message}")
+    logger.debug(f"Making initial commit in {local_repo_dir}: {commit_message}")
     subprocess.run(
         ['git', 'commit', '-m', commit_message],
         capture_output=True,
@@ -140,4 +140,4 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
         check=True,
         cwd=local_repo_dir
     )
-    logger.info(f"Made initial commit in {local_repo_dir}: {commit_message}")
+    logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
