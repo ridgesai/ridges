@@ -462,11 +462,11 @@ async def agent_by_hotkey(miner_hotkey: str) -> Agent:
 
     return agent
 
-async def evaluations_for_agent(agent_id: str) -> EvaluationWithRuns:
-    evaluations = await get_evaluations_for_agent_id(agent_id=uuid.UUID(agent_id))
+async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
+    evaluations: list[Evaluation] = await get_evaluations_for_agent_id(agent_id=uuid.UUID(agent_id))
     
     runs_per_eval = await asyncio.gather(
-        *[get_all_evaluation_runs_for_evaluation_id(evaluation_id=e.id) for e in evaluations]
+        *[get_all_evaluation_runs_for_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
 
     return [
