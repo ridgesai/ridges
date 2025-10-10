@@ -24,9 +24,11 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: 
 
     if not result:
         return None
-    
-    return EvaluationRun(**result)
 
+    return EvaluationRun(**{
+        **result,
+        "test_results": json.loads(result["test_results"]) if result["test_results"] else None
+    })
 
 
 @db_operation
