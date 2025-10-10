@@ -29,12 +29,16 @@ def _pretty_print_httpx_error(url: str, e: httpx.HTTPStatusError):
 
 
 
-async def get_ridges_platform(endpoint: str) -> Any:
+async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
     """
     Helper function that sends a GET request to the Ridges platform.
 
     Args:
         endpoint: The endpoint to send the request to. You do not need to specify the Ridges platform URL, just something like `/evaluation-sets/all-latest-set-problems`.
+        quiet: The level of quietness.
+               - 0: Print all debugging information, including the request and response bodies.
+               - 1: Print debugging information, but exclude the request and response bodies.
+               - 2: Print no debugging information, except for errors.
 
     Returns:
         The response from the Ridges platform. If the request returns a non-2xx status code, the function will print the error and exit the program.
@@ -44,7 +48,8 @@ async def get_ridges_platform(endpoint: str) -> Any:
 
     url = f"{config.RIDGES_PLATFORM_URL.rstrip('/')}/{endpoint.lstrip('/')}"
 
-    logger.debug(f"Sending request for GET {url}")
+    if quiet <= 1:
+        logger.debug(f"Sending request for GET {url}")
 
     try:
         # Send the request
@@ -53,8 +58,9 @@ async def get_ridges_platform(endpoint: str) -> Any:
             response.raise_for_status()
             response_json = response.json()
 
-            logger.debug(f"Received response for GET {url}: {response.status_code} {response.reason_phrase}")
-            if response_json != {}:
+            if quiet <= 1:
+                logger.debug(f"Received response for GET {url}: {response.status_code} {response.reason_phrase}")
+            if response_json != {} and quiet == 0:
                 logger.debug(textwrap.indent(json.dumps(response_json, indent=2), "  "))
             
             return response.json()
