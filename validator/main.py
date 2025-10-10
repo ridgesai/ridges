@@ -18,6 +18,13 @@ session_id = None
 
 
 
+# The sandbox manager and problem suites
+sandbox_manager = None
+polyglot_suite = None
+swebench_verified_suite = None
+
+
+
 async def disconnect(reason: str):
     if session_id is None:
         return
@@ -41,6 +48,12 @@ async def _send_heartbeat_loop():
 
 
 
+def _run_evaluation_run(evaluation_run):
+    evaluation_run_id = evaluation_run['evaluation_run_id']
+    problem_name = evaluation_run['problem_name']
+
+    
+
 def _run_evaluation(request_evaluation_response):
     agent_code = request_evaluation_response['agent_code']
     evaluation_runs = request_evaluation_response['evaluation_runs']
@@ -52,10 +65,18 @@ def _run_evaluation(request_evaluation_response):
     for evaluation_run in evaluation_runs:
         logger.info(f"    {evaluation_run['problem_name']}")
 
+    for evaluation_run in evaluation_runs:
+        _run_evaluation_run(evaluation_run)
+
+    
+
 
 
 async def main():
     global session_id
+    global sandbox_manager
+    global polyglot_suite
+    global swebench_verified_suite
 
 
 
@@ -123,7 +144,6 @@ async def main():
 
         _run_evaluation(request_evaluation_response)
 
-        # TODO: remove
         await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
