@@ -14,7 +14,7 @@ async def get_latest_set_id(conn: asyncpg.Connection) -> int:
 
 
 @db_operation
-async def get_all_problem_names_of_group_in_set(conn: asyncpg.Connection, set_id: int, set_group: EvaluationSetGroup) -> List[str]:
+async def get_all_problem_names_in_set_group_in_set_id(conn: asyncpg.Connection, set_id: int, set_group: EvaluationSetGroup) -> List[str]:
     results = await conn.fetch(
         """
         SELECT problem_name
@@ -25,12 +25,13 @@ async def get_all_problem_names_of_group_in_set(conn: asyncpg.Connection, set_id
         set_id,
         set_group.value
     )
+    
     return [row["problem_name"] for row in results]
 
 
 
 @db_operation
-async def get_all_problems_in_latest_set(conn: asyncpg.Connection) -> List[EvaluationSetProblem]:
+async def get_all_evaluation_set_problems_in_latest_set_id(conn: asyncpg.Connection) -> List[EvaluationSetProblem]:
     results = await conn.fetch(
         """
         SELECT set_id, set_group, problem_name
@@ -38,4 +39,5 @@ async def get_all_problems_in_latest_set(conn: asyncpg.Connection) -> List[Evalu
         WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
         """
     )
+
     return [EvaluationSetProblem(**result) for result in results]

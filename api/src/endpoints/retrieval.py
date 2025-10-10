@@ -398,7 +398,7 @@ async def shak_scratchpad() -> Any:
 import uuid
 import asyncio
 from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
-from api.queries.evaluation import get_evaluations_for_agent_id, get_all_evaluation_runs_for_evaluation_id
+from api.queries.evaluation import get_evaluations_for_agent_id, get_all_evaluation_runs_in_evaluation_id
 from models.evaluation import EvaluationStatus, Evaluation, EvaluationWithRuns
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored
@@ -466,7 +466,7 @@ async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
     evaluations: list[Evaluation] = await get_evaluations_for_agent_id(agent_id=uuid.UUID(agent_id))
     
     runs_per_eval = await asyncio.gather(
-        *[get_all_evaluation_runs_for_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
+        *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
 
     return [

@@ -198,7 +198,7 @@ async def main():
 
 
 
-    # Request an evaluation
+    # Loop forever, just keep requesting evaluations and running them
     while True:
         logger.info("Requesting an evaluation...")
         
@@ -211,8 +211,6 @@ async def main():
             continue
 
         await _run_evaluation(request_evaluation_response)
-
-        await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
 

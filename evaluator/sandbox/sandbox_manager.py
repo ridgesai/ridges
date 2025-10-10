@@ -29,26 +29,37 @@ SANDBOX_PROXY_PORT = 80
 
 
 
+
+
+
+
+
 class SandboxManager:
     """Manages Docker sandbox creation and execution."""
 
 
 
     def __init__(self, inference_gateway_url: str):
+        # Setup inference gateway
         self._check_inference_gateway(inference_gateway_url)
 
+        # Setup Docker
         stop_and_delete_all_docker_containers()
 
-        build_docker_image(os.path.dirname(__file__), "sandbox-image")
-        self.sandboxes = {}
-        
+        # Setup sandbox-network
         create_internal_docker_network(SANDBOX_NETWORK_NAME)
 
+        # Setup sandbox-image
+        build_docker_image(os.path.dirname(__file__), "sandbox-image")
+        self.sandboxes = {}
+
+        # Setup sandbox-proxy
         self.proxy_container = None
         self.proxy_temp_dir = None
         build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
         self._create_sandbox_proxy(inference_gateway_url)
-
+        
+        # Setup watchdog
         self._start_watchdog()
 
 
@@ -59,6 +70,9 @@ class SandboxManager:
         valid = False
         try:
             httpx.get(inference_gateway_url)
+
+            # TODO ADAM: Send inference & embedding requests
+
             valid = True
         except Exception as e:
             pass

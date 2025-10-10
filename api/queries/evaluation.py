@@ -9,9 +9,9 @@ from typing import List, Tuple
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, db_transaction
 from models.evaluation import Evaluation, EvaluationStatus
-from api.queries.evaluation_run import create_evaluation_run
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
-from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_of_group_in_set
+from api.queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
+from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
 
 
 
@@ -50,7 +50,7 @@ async def create_new_evaluation_and_evaluation_runs(conn: asyncpg.Connection, ag
     logger.debug(f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
 
     set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
-    problem_names = await get_all_problem_names_of_group_in_set(set_id, set_group)
+    problem_names = await get_all_problem_names_in_set_group_in_set_id(set_id, set_group)
 
     logger.debug(f"# of problems in set ID {set_id}, set group {set_group}: {len(problem_names)}")
 
@@ -66,29 +66,7 @@ async def create_new_evaluation_and_evaluation_runs(conn: asyncpg.Connection, ag
             problem_name
         )
 
-    return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_for_evaluation_id(evaluation_id)
-
-
-
-# TODO: move to runs.py
-@db_operation
-async def get_all_evaluation_runs_for_evaluation_id(conn: asyncpg.Connection, evaluation_id: int) -> List[EvaluationRun]:
-    rows = await conn.fetch(
-        """
-        SELECT *
-        FROM evaluation_runs
-        WHERE evaluation_id = $1
-        """,
-        evaluation_id
-    )
-
-    # TODO: Check if this is needed at all
-    parsed_rows = [
-        {**row, "test_results": json.loads(row["test_results"]) if row["test_results"] else None}
-        for row in rows
-    ]
-
-    return [EvaluationRun(**parsed_row) for parsed_row in parsed_rows]
+    return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
 
 
 
@@ -124,19 +102,24 @@ async def get_evaluation_by_id(conn: asyncpg.Connection, evaluation_id: int) -> 
 
     return Evaluation(**response)
 
+
+
 @db_operation
 async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> list[Evaluation]:
     results = await conn.fetch(
         """
-        select * from evaluations
-        where agent_id = $1
-        """, str(agent_id)
+        SELECT * FROM evaluations
+        WHERE agent_id = $1
+        """,
+        agent_id
     )
 
     return [Evaluation(**evaluation) for evaluation in results]
 
+
+
 @db_operation
-async def mark_running_evaluation_runs_as_errored(conn: asyncpg.Connection, evaluation_id: int) -> None:
+async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asyncpg.Connection, evaluation_id: UUID, error_message: str) -> None:
     await conn.execute(
         f"""
         UPDATE evaluation_runs
@@ -150,22 +133,25 @@ async def mark_running_evaluation_runs_as_errored(conn: asyncpg.Connection, eval
                 WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN 2050
                 ELSE 2000
             END,
-            error_message = 'Validator disconnected while evaluation run was in process, see error code',
-            finished_or_errored_at = NOW()
+            error_message = $2,
+            finished_or_errored_at = $3
         WHERE evaluation_id = $1
         AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
         """,
-        evaluation_id
+        evaluation_id,
+        error_message,
+        datetime.now()
     )
 
+
+
 @db_operation
-async def mark_evaluation_as_finished(conn: asyncpg.Connection, evaluation_id: int) -> None:
+async def mark_evaluation_as_finished(conn: asyncpg.Connection, evaluation_id: UUID) -> None:
     await conn.execute(
         """
         UPDATE evaluations
         SET finished_at = NOW()
         WHERE evaluation_id = $1
-        AND finished_at IS NULL
         """,
         evaluation_id
     )

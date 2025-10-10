@@ -2,18 +2,27 @@ import json
 import asyncpg
 import utils.logger as logger
 
-from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime
+from typing import List, Optional
 from utils.database import db_operation
 from models.evaluation_run import EvaluationRun
 from models.evaluation_run import EvaluationRunStatus
 
 
 
+def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:
+    # test_results is a jsonb column, as such, it is returned from asyncpg as a
+    # string. We need to parse it for pydantic to be able to use it.
+    row_dict = dict(row)
+    row_dict["test_results"] = json.loads(row_dict["test_results"]) if row_dict["test_results"] else None
+    return EvaluationRun(**row_dict)
+
+
+
 @db_operation
 async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: UUID) -> Optional[EvaluationRun]:
-    result = await conn.fetchrow(
+    row = await conn.fetchrow(
         """
         SELECT *
         FROM evaluation_runs
@@ -22,13 +31,26 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: 
         evaluation_run_id
     )
 
-    if not result:
+    if not row:
         return None
 
-    return EvaluationRun(**{
-        **result,
-        "test_results": json.loads(result["test_results"]) if result["test_results"] else None
-    })
+    return _parse_evaluation_run_from_row(row)
+
+
+
+@db_operation
+async def get_all_evaluation_runs_in_evaluation_id(conn: asyncpg.Connection, evaluation_id: int) -> List[EvaluationRun]:
+    rows = await conn.fetch(
+        """
+        SELECT *
+        FROM evaluation_runs
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id
+    )
+
+    return [_parse_evaluation_run_from_row(row) for row in rows]
+
 
 
 @db_operation
