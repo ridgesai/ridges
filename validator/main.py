@@ -7,6 +7,8 @@ import utils.logger as logger
 import validator.config as config
 
 from typing import Any, Dict, Optional
+
+from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
@@ -109,7 +111,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str
 # Run an evaluation run
 async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_code: str):
     # Figure out what problem suite this problem belongs to
-    problem_suite = None
+    problem_suite: Optional[ProblemSuite] = None
     if polyglot_suite.has_problem_name(problem_name):
         problem_suite = polyglot_suite
     elif swebench_verified_suite.has_problem_name(problem_name):
@@ -117,7 +119,7 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
 
     # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
     if problem_suite is None:
-        update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
             "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
             "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
         })
