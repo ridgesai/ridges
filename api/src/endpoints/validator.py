@@ -421,8 +421,6 @@ async def validator_update_evaluation_run(
 
 
         case EvaluationRunStatus.finished:
-            logger.warning(f"Test results: {request.test_results}")
-
             # A validator may only update an evaluation run to finished if the evaluation run is currently in the running_eval status
             if evaluation_run.status != EvaluationRunStatus.running_eval:
                 raise HTTPException(

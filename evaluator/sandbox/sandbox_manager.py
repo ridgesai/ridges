@@ -175,6 +175,6 @@ class SandboxManager:
         logs = sandbox.container.logs().decode("utf-8")
 
         # Remove the container
-        # sandbox.container.remove()
+        sandbox.container.remove()
 
         return SandboxResultWithLogs(**output, logs=logs)
