@@ -733,6 +733,8 @@ FROM agents
      LEFT JOIN validator_eval_counts USING (agent_id)
 WHERE
     agents.status = 'evaluating'
+--   TODO: Make into a constant, same as config.NUM_EVALS_PER_AGENT
+    AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < 3
 ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
