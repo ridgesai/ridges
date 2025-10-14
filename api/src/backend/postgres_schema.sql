@@ -159,11 +159,12 @@ DO $$
 CREATE TABLE IF NOT EXISTS evaluation_run_logs
 (
     -- Identifies the evaluation run these logs are for
-    evaluation_run_id UUID NOT NULL PRIMARY KEY,
+    evaluation_run_id UUID NOT NULL,
     -- The logs
     logs TEXT,
     -- Whether the logs were produced by the agent or the eval system
-    type EvaluationRunLogType
+    type EvaluationRunLogType,
+    PRIMARY KEY (evaluation_run_id, type)
 );
 
 
