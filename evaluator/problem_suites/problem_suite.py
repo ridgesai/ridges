@@ -140,12 +140,13 @@ class ProblemSuite(ABC):
     def run_agent_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        agent_sandbox: Sandbox
+        agent_sandbox: Sandbox,
+        timeout_seconds: int
     ) -> Tuple[str, str]:
         # TODO ADAM: Docs
 
         try:
-            sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=config.AGENT_TIMEOUT_SECONDS)
+            sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(

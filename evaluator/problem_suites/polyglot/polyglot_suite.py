@@ -164,10 +164,11 @@ class PolyglotSuite(ProblemSuite):
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        eval_sandbox: Sandbox
+        eval_sandbox: Sandbox,
+        timeout_seconds: int
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
-            sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=config.EVAL_TIMEOUT_SECONDS)
+            sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=timeout_seconds)
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(

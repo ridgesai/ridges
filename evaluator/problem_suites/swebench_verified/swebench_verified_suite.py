@@ -178,7 +178,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        eval_sandbox: SWEBenchVerifiedEvaluationSandbox
+        eval_sandbox: SWEBenchVerifiedEvaluationSandbox,
+        timeout_seconds: int
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
             instance_id, report = run_instance(
@@ -188,7 +189,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 force_rebuild=False,
                 client=docker_client,
                 run_id=str(eval_sandbox.evaluation_run_id),
-                timeout=config.EVAL_TIMEOUT_SECONDS
+                timeout=timeout_seconds
             )
 
             test_results = []

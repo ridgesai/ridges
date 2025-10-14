@@ -22,6 +22,9 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 # The session ID for this validator
 session_id = None
+running_agent_timeout_seconds = None
+running_eval_timeout_seconds = None
+
 
 
 
@@ -163,7 +166,8 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         patch, agent_logs = await asyncio.to_thread(
             problem_suite.run_agent_sandbox,
             sandbox_manager,
-            agent_sandbox
+            agent_sandbox,
+            running_agent_timeout_seconds
         )
         logger.warning(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
@@ -189,7 +193,8 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         test_results, eval_logs = await asyncio.to_thread(
             problem_suite.run_eval_sandbox,
             sandbox_manager,
-            eval_sandbox
+            eval_sandbox,
+            running_eval_timeout_seconds
         )
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
@@ -264,6 +269,8 @@ async def _run_evaluation(request_evaluation_response):
 # Main loop
 async def main():
     global session_id
+    global running_agent_timeout_seconds
+    global running_eval_timeout_seconds
     global sandbox_manager
     global polyglot_suite
     global swebench_verified_suite
@@ -291,6 +298,8 @@ async def main():
         })
     
     session_id = register_response["session_id"]
+    running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]
+    running_eval_timeout_seconds = register_response["running_eval_timeout_seconds"]
 
     logger.info(f"Registered validator. Session ID: {session_id}")
 

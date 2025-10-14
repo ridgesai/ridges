@@ -83,6 +83,7 @@ if not PRUNE_THRESHOLD:
     logger.fatal("PRUNE_THRESHOLD is not set in .env")
 
 
+
 # Load validator configuration
 VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS = int(os.getenv("VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS"))
 if not VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS:
@@ -105,9 +106,12 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 
 
+
 MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = int(os.getenv("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS"))
 if not MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS:
     logger.fatal("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS is not set in .env")
+
+
 
 logger.info("=== API Configuration ===")
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
@@ -127,6 +131,9 @@ logger.info(f"Prune Threshold: {PRUNE_THRESHOLD}")
 logger.info("-------------------------")
 logger.info(f"Validator Heartbeat Timeout: {VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Heartbeat Timeout Interval: {VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Validator Running Agent Timeout: {VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS} second(s)")
+logger.info(f"Validator Running Evaluation Timeout: {VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS} second(s)")
+logger.info("-------------------------")
 logger.info(f"Number of Evaluations Per Agent: {NUM_EVALS_PER_AGENT}")
 logger.info("-------------------------")
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
