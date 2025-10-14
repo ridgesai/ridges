@@ -141,7 +141,7 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
     """Get agent scores over time for charting"""
     # Use max set_id if not provided
     if set_id is None:
-        set_id_query = "SELECT MAX(set_id) FROM evaluations"
+        set_id_query = "SELECT MAX(set_id) FROM evaluation_sets"
         set_id = await conn.fetchval(set_id_query)
     
     # Get comprehensive data from agents and evaluations
@@ -153,9 +153,9 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
                 ma.agent_id,
                 e.score
             FROM agents ma
-            LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
+            LEFT JOIN evaluations_hydrated e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
-                AND e.status = 'completed' 
+                AND e.status = 'success' 
                 AND e.score IS NOT NULL
                 AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
@@ -199,7 +199,7 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
     """Get miner submissions and top scores by hour for correlation analysis"""
     # Use max set_id if not provided
     if set_id is None:
-        set_id_query = "SELECT MAX(set_id) FROM agent_scores"
+        set_id_query = "SELECT MAX(set_id) FROM evaluation_sets"
         set_id = await conn.fetchval(set_id_query)
     
     query = """
@@ -225,9 +225,9 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 AVG(e.score) as hour_max_score
             FROM agents ma
-            LEFT JOIN evaluations e ON ma.agent_id = e.agent_id 
+            LEFT JOIN evaluations_hydrated e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
-                AND e.status = 'completed' 
+                AND e.status = 'success' 
                 AND e.score IS NOT NULL
                 AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
