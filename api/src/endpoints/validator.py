@@ -2,9 +2,10 @@ import asyncio
 import re
 
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
+
 
 from http import HTTPStatus
 from fastapi import Depends, APIRouter, HTTPException, Request
@@ -70,12 +71,22 @@ async def delete_validator(validator: Validator, reason: str) -> None:
     logger.info(f"  Reason: {reason}")
 
     if validator.current_evaluation_id:
-        await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, reason)
+        await update_unfinished_evaluation_runs_in_evaluation_id_to_errored(validator.current_evaluation_id, reason)
         await handle_evaluation_if_finished(validator.current_evaluation_id)
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
     logger.info(f"Deleted validator {validator.name} ({validator.hotkey})")
+
+# Deletes all validators that have not sent a heartbeat in long enough
+async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
+    _validators = list(SESSION_ID_TO_VALIDATOR.values())
+    for validator in _validators:
+        time_last_heartbeat = validator.time_last_heartbeat or validator.time_connected
+        if time_last_heartbeat + timedelta(seconds=config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS) < datetime.now():
+            async with validator._lock:
+                if validator.session_id in SESSION_ID_TO_VALIDATOR:
+                    await delete_validator(validator, f"The validator was disconnected because it did not send a heartbeat in {config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} seconds.")
 
 
 
@@ -124,7 +135,7 @@ def handle_validator_http_exceptions(func):
             return await func(*args, **kwargs)
         except HTTPException as e:
             logger.error(f"Validator HTTP exception: {e.status_code} {e.detail}")
-            delete_validator(..., f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}")
+            await delete_validator(..., f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}")
             raise
     return wrapper
 
@@ -581,7 +592,7 @@ async def validator_disconnect(
     validator: Validator = Depends(get_request_validator_with_lock)
 ) -> ValidatorDisconnectResponse:
 
-    delete_validator(validator, f"The validator disconnected while running this evaluation. Reason: {request.reason}")
+    await delete_validator(validator, f"The validator disconnected. Reason: {request.reason}")
 
     logger.info(f"Validator '{validator.name}' disconnected")
     logger.info(f"  Reason: {request.reason}")

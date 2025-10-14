@@ -1,12 +1,13 @@
 # TODO ADAM: slowly fixing this
 
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
-
+from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 
 
 import utils.logger as logger
@@ -37,6 +38,7 @@ from utils.database import initialize_database, deinitialize_database
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Database setup
     await initialize_database(
         username=config.DATABASE_USERNAME,
         password=config.DATABASE_PASSWORD,
@@ -45,12 +47,16 @@ async def lifespan(app: FastAPI):
         name=config.DATABASE_NAME
     )
 
+    # S3 setup
     await initialize_s3(
         _bucket=config.S3_BUCKET_NAME,
         region=config.AWS_REGION,
         access_key_id=config.AWS_ACCESS_KEY_ID,
         secret_access_key=config.AWS_SECRET_ACCESS_KEY
     )
+
+    # Loop setup
+    asyncio.create_task(validator_heartbeat_timeout_loop())
 
 
 
