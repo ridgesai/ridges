@@ -632,12 +632,12 @@ async def validator_finish_evaluation(
 
 
 
-    current_evaluation_id = validator.current_evaluation_id
-
-    await handle_evaluation_if_finished(current_evaluation_id)
+    await handle_evaluation_if_finished(validator.current_evaluation_id)
 
     logger.info(f"Validator '{validator.name}' finished an evaluation")
-    logger.info(f"  Evaluation ID: {current_evaluation_id}")
+    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
+
+    validator.current_evaluation_id = None
 
     return ValidatorFinishEvaluationResponse()
 
