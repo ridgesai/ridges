@@ -126,7 +126,8 @@ async def create_evaluation_run_log(conn: asyncpg.Connection, evaluation_run_id:
         logs
     )
 
-    logger.debug(f"Created evaluation run log for evaluation run {evaluation_run_id} with type {type}, {len(logs.split('\n'))} lines, {len(logs)} characters")
+    num_lines = len(logs.split('\n'))
+    logger.debug(f"Created evaluation run log for evaluation run {evaluation_run_id} with type {type}, {num_lines} lines, {len(logs)} characters")
 
 
 
@@ -142,5 +143,5 @@ async def check_if_evaluation_run_logs_exist(conn: asyncpg.Connection, evaluatio
         evaluation_run_id,
         type.value
     )
-    
+
     return result['exists']
