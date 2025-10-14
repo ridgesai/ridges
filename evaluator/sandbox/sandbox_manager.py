@@ -163,18 +163,19 @@ class SandboxManager:
         timeout_seconds: Optional[int] = None
     ) -> SandboxResultWithLogs:
         
-        sandbox.container.wait(timeout=timeout_seconds)
+        try:
+            sandbox.container.wait(timeout=timeout_seconds)
 
-        # Load /sandbox/output.json
-        temp_output_json_path = os.path.join(sandbox.temp_dir, "output.json")
-        with open(temp_output_json_path, "r") as f:
-            output = json.load(f)
-        logger.debug(f"Loaded output.json for sandbox <{sandbox.name}>: {temp_output_json_path}")
+            # Load /sandbox/output.json
+            temp_output_json_path = os.path.join(sandbox.temp_dir, "output.json")
+            with open(temp_output_json_path, "r") as f:
+                output = json.load(f)
+            logger.debug(f"Loaded output.json for sandbox <{sandbox.name}>: {temp_output_json_path}")
 
-        # Get logs
-        logs = sandbox.container.logs().decode("utf-8")
+            # Get logs
+            logs = sandbox.container.logs().decode("utf-8")
 
-        # Remove the container
-        sandbox.container.remove()
-
-        return SandboxResultWithLogs(**output, logs=logs)
+            return SandboxResultWithLogs(**output, logs=logs)
+        finally:
+            # Remove the container
+            sandbox.container.remove()
