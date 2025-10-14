@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Any
 from fastapi.responses import StreamingResponse, PlainTextResponse
+from api.queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
@@ -124,15 +125,6 @@ async def get_latest_agent(miner_hotkey: str = None):
         )
     
     return latest_agent
-
-@router.get("/network-stats", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_network_stats():
-    """
-    Gets statistics on the number of agents, score changes, etc. Primarily ingested by the dashboard
-    """
-    statistics_24_hrs = await get_24_hour_statistics()
-
-    return statistics_24_hrs
 
 from models.evaluation import EvaluationStatus, Evaluation
 @router.get("/running-evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
@@ -274,11 +266,6 @@ async def top_agents(
         number_of_agents=number_of_agents
     )
 
-async def network_statistics():
-    """
-    """
-    pass 
-
 async def agent_by_id(agent_id: str) -> Agent:
     agent = await get_agent_by_id(agent_id=uuid.UUID(agent_id))
     
@@ -352,11 +339,20 @@ async def get_agent_code(agent_id: str, request: Request):
     
     return text
 
-async def inference_statistics():
-    pass
-
-async def weight_receiving_agent():
-    pass
+async def network_statistics():
+    """
+    Gets network statistics for the dashboard
+    """
+    score_improvement, agents_created, top_score_value = await asyncio.gather(
+        score_improvement_24_hrs(),
+        agents_created_24_hrs(),
+        top_score()
+    )
+    return {
+        "score_improvement_24_hrs": score_improvement,
+        "agents_created_24_hrs": agents_created,
+        "top_score": top_score_value
+    }
 
 router = APIRouter()
 
@@ -367,8 +363,8 @@ routes = [
     ("/agent-by-hotkey", agent_by_hotkey),
     ("/evaluations-for-agent", evaluations_for_agent),
     ("/agent-version-file", get_agent_code),
-    ("/network-stats", get_network_stats),
     ("/agent-scores-over-time", agent_scores_over_time),
+    ("/network-statistics", network_statistics),
 ]
 
 for path, endpoint in routes:
