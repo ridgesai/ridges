@@ -414,12 +414,21 @@ def run(no_auto_update: bool):
     
     if no_auto_update:
         console.print(" Starting proxy server...", style="yellow")
-        run_cmd("uv run -m proxy.main", capture=False)
+        run_cmd("python -m inference_gateway.main", capture=False)
         return
 
+    # Get port from inference gateway config
+    try:
+        import inference_gateway.config as gateway_config
+        port = gateway_config.PORT
+        port_msg = f"Running on port {port}"
+    except Exception:
+        port_msg = "Running"
+
+
     # Start proxy with PM2
-    if run_cmd(f"pm2 start 'uv run -m proxy.main' --name ridges-proxy", capture=False)[0] == 0:
-        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] Running on port 8001", title="✨ Success", border_style="green"))
+    if run_cmd(f"pm2 start 'python -m inference_gateway.main' --name ridges-proxy", capture=False)[0] == 0:
+        console.print(Panel(f"[bold green]🎉 Proxy started![/bold green] {port_msg}", title="✨ Success", border_style="green"))
         console.print(" Showing proxy logs...", style="cyan")
         run_cmd("pm2 logs ridges-proxy", capture=False)
     else:
