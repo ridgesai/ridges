@@ -6,8 +6,7 @@ from uuid import UUID, uuid4
 from datetime import datetime
 from typing import List, Optional
 from utils.database import db_operation
-from models.evaluation_run import EvaluationRun
-from models.evaluation_run import EvaluationRunStatus
+from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunLogType
 
 
 
@@ -109,3 +108,39 @@ async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, p
     logger.debug(f"Created evaluation run {evaluation_run_id} for evaluation {evaluation_id} with problem name {problem_name}")
 
     return evaluation_run_id
+
+
+
+@db_operation
+async def create_evaluation_run_log(conn: asyncpg.Connection, evaluation_run_id: UUID, type: EvaluationRunLogType, logs: str) -> None:
+    await conn.execute(
+        """
+        INSERT INTO evaluation_run_logs (
+            evaluation_run_id,
+            type,
+            logs
+        ) VALUES ($1, $2, $3)
+        """,
+        evaluation_run_id,
+        type,
+        logs
+    )
+
+    logger.debug(f"Created evaluation run log for evaluation run {evaluation_run_id} with type {type}, {len(logs.split('\n'))} lines, {len(logs)} characters")
+
+
+
+@db_operation
+async def check_if_evaluation_run_logs_exist(conn: asyncpg.Connection, evaluation_run_id: UUID, type: EvaluationRunLogType) -> bool:
+    result = await conn.fetchrow(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM evaluation_run_logs
+            WHERE evaluation_run_id = $1 AND type = $2
+        )
+        """,
+        evaluation_run_id,
+        type.value
+    )
+    
+    return result['exists']

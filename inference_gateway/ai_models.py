@@ -1,6 +1,3 @@
-
-
-
 def is_model_supported_for_inference(model: str) -> bool:
     # TODO
     return True

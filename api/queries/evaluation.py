@@ -169,6 +169,8 @@ async def record_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id:
         evaluation_id
     )
 
+
+
 @db_operation
 async def get_num_successful_validator_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> int:
     result = await conn.fetchrow(

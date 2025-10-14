@@ -15,8 +15,13 @@ wheels/
 # MacOS
 .DS_Store
 
+
 # SWE-Bench
 logs/
 
 # Platform cache
 subnet_hotkeys_cache.json
+
+
+# Adam's stuff
+gui/

@@ -11,19 +11,13 @@ from pydantic import BaseModel
 
 import api.config as config
 import utils.logger as logger
-from api.queries.agent import get_agent_by_id, get_next_agent_id_awaiting_evaluation_for_validator_hotkey, \
-    get_top_agents
-from api.queries.agent import update_agent_status
-from api.queries.evaluation import get_evaluation_by_id, \
-    create_new_evaluation_and_evaluation_runs, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
-from api.queries.evaluation import record_evaluation_finished_at, \
-    get_hydrated_evaluation_by_id, get_num_successful_validator_evaluations_for_agent_id
+from api.queries.agent import get_top_agents, get_agent_by_id, update_agent_status, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
+from api.queries.evaluation import get_evaluation_by_id, get_hydrated_evaluation_by_id, record_evaluation_finished_at, create_new_evaluation_and_evaluation_runs, get_num_successful_validator_evaluations_for_agent_id, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id, \
-    get_all_evaluation_runs_in_evaluation_id
+    get_all_evaluation_runs_in_evaluation_id, create_evaluation_run_log, check_if_evaluation_run_logs_exist
 from models.agent import Agent, AgentStatus
-from models.evaluation import Evaluation
-from models.evaluation import EvaluationStatus
-from models.evaluation_run import EvaluationRunStatus
+from models.evaluation import Evaluation, EvaluationStatus
+from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
 from models.problem import ProblemTestResult
 from utils.fiber import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
@@ -222,17 +216,15 @@ async def validator_register_as_screener(
 
 
 # /validator/request-evaluation
-
-class StrippedEvaluationRun(BaseModel):
-    evaluation_run_id: UUID
-    problem_name: str
-
 class ValidatorRequestEvaluationRequest(BaseModel):
     pass
 
+class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel): # :(
+    evaluation_run_id: UUID
+    problem_name: str
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
-    evaluation_runs: List[StrippedEvaluationRun]
+    evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
 
 @router.post("/request-evaluation")
 async def validator_request_evaluation(
@@ -272,8 +264,8 @@ async def validator_request_evaluation(
         logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
         logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
 
-        agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-        stripped_evaluation_runs = [StrippedEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
+    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
+    stripped_evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
 
         return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=stripped_evaluation_runs)
 
@@ -292,7 +284,6 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorHeartbeatResponse:
 
-    # TODO: uncomment
     # logger.info(f"Validator '{validator.name}' sent a heartbeat")
     # logger.info(f"  System metrics: {request.system_metrics}")
 
@@ -327,23 +318,14 @@ async def validator_update_evaluation_run(
     validator: Validator = Depends(get_request_validator)
 ) -> ValidatorUpdateEvaluationRunResponse:
 
-    # Use the validator's operation lock to prevent race conditions with disconnect
-    async with validator._operation_lock:
-        # Re-check that the validator still exists in the session map after acquiring the lock
-        # This prevents race conditions where disconnect removes the validator while update is waiting
-        if validator.session_id not in SESSION_ID_TO_VALIDATOR:
-            raise HTTPException(
-                status_code=401,
-                detail="Validator session expired or disconnected during operation."
-            )
-        # TODO: Actually use the agent logs and eval logs when required
-
-        # Make sure the validator is currently running an evaluation
-        if validator.current_evaluation_id is None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"This validator is not currently running an evaluation, and therefore cannot update an evaluation run."
-            )
+    logger.info(f"Received update evaluation run for evaluation run {request.evaluation_run_id}. Validator's current evaluation: {validator.current_evaluation_id}")
+    
+    # Make sure the validator is currently running an evaluation
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This validator is not currently running an evaluation, and therefore cannot update an evaluation run."
+        )
 
         # Get the evaluation run with the provided evaluation_run_id
         evaluation_run = await get_evaluation_run_by_id(request.evaluation_run_id)
@@ -430,6 +412,9 @@ async def validator_update_evaluation_run(
                 evaluation_run.patch = request.patch
                 evaluation_run.started_initializing_eval_at = datetime.now()
 
+            # Create an evaluation run log
+            await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
+
         
 
             case EvaluationRunStatus.running_eval:
@@ -468,10 +453,13 @@ async def validator_update_evaluation_run(
                         detail="The eval logs are required when updating an evaluation run to finished."
                     )
 
-                # Update the evaluation run to finished
-                evaluation_run.status = EvaluationRunStatus.finished
-                evaluation_run.test_results = request.test_results
-                evaluation_run.finished_or_errored_at = datetime.now()
+            # Update the evaluation run to finished
+            evaluation_run.status = EvaluationRunStatus.finished
+            evaluation_run.test_results = request.test_results
+            evaluation_run.finished_or_errored_at = datetime.now()
+
+            # Create an evaluation run log
+            await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
         
 
 
@@ -503,14 +491,32 @@ async def validator_update_evaluation_run(
                         detail="The error message is required when updating an evaluation run to error."
                     )
 
-                # TODO: Check for agent_logs and/or eval_logs
-                
-                # Update the evaluation run to error
-                evaluation_run.status = EvaluationRunStatus.error
-                evaluation_run.error_code = request.error_code
-                evaluation_run.error_message = request.error_message
-                evaluation_run.finished_or_errored_at = datetime.now()
+            # Agent logs can only be provided if none already exist
+            if request.agent_logs is not None and await check_if_evaluation_run_logs_exist(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent):
+                raise HTTPException(
+                    status_code=422,
+                    detail="The agent logs can only be provided if none already exist."
+                )
 
+            # Evaluation logs can only be provided if none already exist
+            if request.eval_logs is not None and await check_if_evaluation_run_logs_exist(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval):
+                raise HTTPException(
+                    status_code=422,
+                    detail="The agent logs can only be provided if none already exist."
+                )
+
+            # Update the evaluation run to error
+            evaluation_run.status = EvaluationRunStatus.error
+            evaluation_run.error_code = request.error_code
+            evaluation_run.error_message = request.error_message
+            evaluation_run.finished_or_errored_at = datetime.now()
+
+            # Create evaluation run log(s)
+            if request.agent_logs is not None:
+                await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
+            if request.eval_logs is not None:
+                await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
+    
 
 
         await update_evaluation_run_by_id(evaluation_run)
@@ -550,6 +556,7 @@ async def validator_disconnect(
         return ValidatorDisconnectResponse()
 
 
+
 # /validator/finish-evaluation
 class ValidatorFinishEvaluationRequest(BaseModel):
     pass
@@ -578,17 +585,13 @@ async def validator_finish_evaluation(
                 detail="This validator is not currently running an evaluation, and therefore cannot request to finish an evaluation."
             )
 
-        # Make sure that all evaluation runs have either finished or errored
-        # Middleware will mark as unfinished evaluation runs as errored automatically
-        evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
-        if any(
-            evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error]
-            for evaluation_run in evaluation_runs
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
-            )
+    # Make sure that all evaluation runs have either finished or errored
+    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
+    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error] for evaluation_run in evaluation_runs):
+        raise HTTPException(
+            status_code=409,
+            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
+        )
 
         evaluations = await get_evaluation_by_id(validator.current_evaluation_id)
         agent = await get_agent_by_id(evaluations.agent_id)
@@ -657,6 +660,8 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
 
 
+
+# /validator/connected-validators-info
 class ConnectedValidatorInfo(BaseModel):
     name: str
     hotkey: str

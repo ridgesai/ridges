@@ -80,3 +80,9 @@ class EvaluationRun(BaseModel):
     started_initializing_eval_at: Optional[datetime] = None
     started_running_eval_at: Optional[datetime] = None
     finished_or_errored_at: Optional[datetime] = None
+
+
+
+class EvaluationRunLogType(str, Enum):
+    agent = 'agent'
+    eval = 'eval'
