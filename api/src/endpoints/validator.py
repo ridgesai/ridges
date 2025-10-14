@@ -155,6 +155,8 @@ class ValidatorRegistrationRequest(BaseModel):
 
 class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
+    running_agent_timeout_seconds: int = config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS
+    running_eval_timeout_seconds: int = config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS
 
 @router.post("/register-as-validator")
 async def validator_register_as_validator(
@@ -217,6 +219,8 @@ class ScreenerRegistrationRequest(BaseModel):
 
 class ScreenerRegistrationResponse(BaseModel):
     session_id: UUID
+    running_agent_timeout_seconds: int = config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS
+    running_eval_timeout_seconds: int = config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS
 
 @router.post("/register-as-screener")
 async def validator_register_as_screener(
