@@ -14,6 +14,7 @@ from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, db_transaction
 
 
+
 @db_operation
 async def create_evaluation(conn: asyncpg.Connection, agent_id: UUID, validator_hotkey: str, set_id: int) -> UUID:
     evaluation_id = uuid.uuid4()
@@ -26,13 +27,12 @@ async def create_evaluation(conn: asyncpg.Connection, agent_id: UUID, validator_
             validator_hotkey,
             set_id,
             created_at
-        ) VALUES ($1, $2, $3, $4, $5)
+        ) VALUES ($1, $2, $3, $4, NOW())
         """,
         evaluation_id,
         agent_id,
         validator_hotkey,
-        set_id,
-        datetime.now()
+        set_id
     )
 
     logger.debug(f"Created evaluation {evaluation_id} for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
@@ -117,6 +117,7 @@ async def get_hydrated_evaluation_by_id(conn: asyncpg.Connection, evaluation_id:
     return HydratedEvaluation(**response)
 
 
+
 @db_operation
 async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID) -> list[Evaluation]:
     results = await conn.fetch(
@@ -132,7 +133,7 @@ async def get_evaluations_for_agent_id(conn: asyncpg.Connection, agent_id: UUID)
 
 
 @db_operation
-async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asyncpg.Connection, evaluation_id: UUID, error_message: str) -> None:
+async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(conn: asyncpg.Connection, evaluation_id: UUID, error_message: str) -> None:
     await conn.execute(
         f"""
         UPDATE evaluation_runs
@@ -144,22 +145,21 @@ async def mark_all_running_evaluation_runs_in_evaluation_id_as_errored(conn: asy
                 WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
                 WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
                 WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
-                ELSE {EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value}
+                ELSE {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value}
             END,
             error_message = $2,
-            finished_or_errored_at = $3
+            finished_or_errored_at = NOW()
         WHERE evaluation_id = $1
         AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
         """,
         evaluation_id,
-        error_message,
-        datetime.now()
+        error_message
     )
 
 
 
 @db_operation
-async def record_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id: UUID) -> None:
+async def update_evaluation_finished_at(conn: asyncpg.Connection, evaluation_id: UUID) -> None:
     await conn.execute(
         """
         UPDATE evaluations

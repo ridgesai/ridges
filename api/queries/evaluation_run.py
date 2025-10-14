@@ -96,13 +96,12 @@ async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, p
             problem_name,
             status,
             created_at
-        ) VALUES ($1, $2, $3, $4, $5)
+        ) VALUES ($1, $2, $3, $4, NOW())
         """,
         evaluation_run_id,
         evaluation_id,
         problem_name,
-        EvaluationRunStatus.pending.value,
-        datetime.now()
+        EvaluationRunStatus.pending.value
     )
 
     logger.debug(f"Created evaluation run {evaluation_run_id} for evaluation {evaluation_id} with problem name {problem_name}")

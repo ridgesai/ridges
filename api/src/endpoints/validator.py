@@ -1,18 +1,20 @@
 import asyncio
 import re
+
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
+from http import HTTPStatus
 from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
-
+from functools import wraps
 import api.config as config
 import utils.logger as logger
 from api.queries.agent import get_top_agents, get_agent_by_id, update_agent_status, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
-from api.queries.evaluation import get_evaluation_by_id, get_hydrated_evaluation_by_id, record_evaluation_finished_at, create_new_evaluation_and_evaluation_runs, get_num_successful_validator_evaluations_for_agent_id, mark_all_running_evaluation_runs_in_evaluation_id_as_errored
+from api.queries.evaluation import get_evaluation_by_id, get_hydrated_evaluation_by_id, update_evaluation_finished_at, create_new_evaluation_and_evaluation_runs, get_num_successful_validator_evaluations_for_agent_id, update_unfinished_evaluation_runs_in_evaluation_id_to_errored
 from api.queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_run_by_id, \
     get_all_evaluation_runs_in_evaluation_id, create_evaluation_run_log, check_if_evaluation_run_logs_exist
 from models.agent import Agent, AgentStatus
@@ -62,6 +64,21 @@ def get_all_connected_screener_ip_addresses() -> List[str]:
 
 
 
+# Deletes a validator from the SESSION_ID_TO_VALIDATOR map, and cleans up its associated state
+async def delete_validator(validator: Validator, reason: str) -> None:
+    logger.info(f"Deleting validator {validator.name} ({validator.hotkey})...")
+    logger.info(f"  Reason: {reason}")
+
+    if validator.current_evaluation_id:
+        await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, reason)
+        await handle_evaluation_if_finished(validator.current_evaluation_id)
+
+    del SESSION_ID_TO_VALIDATOR[validator.session_id]
+
+    logger.info(f"Deleted validator {validator.name} ({validator.hotkey})")
+
+
+
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header
 # See validator_request_evaluation() and other endpoints for usage examples
@@ -96,6 +113,20 @@ async def get_request_validator_with_lock(validator: Validator = Depends(get_req
             )
         
         yield validator
+
+
+
+# Catches HTTP exceptions and cleans up the associated validator
+def handle_validator_http_exceptions(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except HTTPException as e:
+            logger.error(f"Validator HTTP exception: {e.status_code} {e.detail}")
+            delete_validator(..., f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}")
+            raise
+    return wrapper
 
 
 
@@ -243,6 +274,7 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
 
 @router.post("/request-evaluation")
+@handle_validator_http_exceptions
 async def validator_request_evaluation(
     request: ValidatorRequestEvaluationRequest,
     validator: Validator = Depends(get_request_validator_with_lock)
@@ -321,6 +353,7 @@ class ValidatorUpdateEvaluationRunResponse(BaseModel):
     pass
 
 @router.post("/update-evaluation-run")
+@handle_validator_http_exceptions
 async def validator_update_evaluation_run(
     request: ValidatorUpdateEvaluationRunRequest,
     validator: Validator = Depends(get_request_validator_with_lock)
@@ -548,11 +581,7 @@ async def validator_disconnect(
     validator: Validator = Depends(get_request_validator_with_lock)
 ) -> ValidatorDisconnectResponse:
 
-    if validator.current_evaluation_id:
-        await mark_all_running_evaluation_runs_in_evaluation_id_as_errored(validator.current_evaluation_id, 'The validator disconnected while running this evaluation.')
-        await handle_evaluation_if_finished(validator.current_evaluation_id)
-
-    del SESSION_ID_TO_VALIDATOR[validator.session_id]
+    delete_validator(validator, f"The validator disconnected while running this evaluation. Reason: {request.reason}")
 
     logger.info(f"Validator '{validator.name}' disconnected")
     logger.info(f"  Reason: {request.reason}")
@@ -568,6 +597,7 @@ class ValidatorFinishEvaluationResponse(BaseModel):
     pass
 
 @router.post("/finish-evaluation")
+@handle_validator_http_exceptions
 async def validator_finish_evaluation(
     request: ValidatorFinishEvaluationRequest,
     validator: Validator = Depends(get_request_validator_with_lock)
@@ -588,18 +618,29 @@ async def validator_finish_evaluation(
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
-    evaluations = await get_evaluation_by_id(validator.current_evaluation_id)
-    agent = await get_agent_by_id(evaluations.agent_id)
+    # I do not think we need this check
+    # This feels like out of the scope of the validator, the validator
+    #    runs whatever it is told to run
+    #    informs us when it is finished
+    #    if it finished an eval and the agent status has changed to something inappropriate, that is NOT on the validator
+    #    the validator doesn't even have a way to set agent statuses directly
+    #    so this should be a 5xx error
+    #
+    #    notice handle_finish_evaluation() throws ValueError if the agent status is not eligible, so we get the 500 for free.
+    #
+    # TODO: remove
+    # evaluations = await get_evaluation_by_id(validator.current_evaluation_id)
+    # agent = await get_agent_by_id(evaluations.agent_id)
 
-    eligible_states = [
-        AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating
-    ]
-    if agent.status not in eligible_states:
-        raise HTTPException(
-            status_code=409,
-            detail=f"The validator is trying to finish an evaluation for an agent in state "
-                    f"{agent.status}, which is not an eligible state to run evaluations in"
-        )
+    # eligible_states = [
+    #     AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating
+    # ]
+    # if agent.status not in eligible_states:
+    #     raise HTTPException(
+    #         status_code=409,
+    #         detail=f"The validator is trying to finish an evaluation for an agent in state "
+    #                 f"{agent.status}, which is not an eligible state to run evaluations in"
+    #     )
 
     await handle_evaluation_if_finished(validator.current_evaluation_id)
 
@@ -609,6 +650,12 @@ async def validator_finish_evaluation(
     validator.current_evaluation_id = None
 
     return ValidatorFinishEvaluationResponse()
+
+
+
+
+
+
 
 
 
@@ -655,7 +702,7 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
     Adds the finished_at field to an evaluation. If the evaluation is marked as successful
     (all evaluation runs completed successfully), transitions the corresponding agent into the next state.
     """
-    await record_evaluation_finished_at(evaluation_id)
+    await update_evaluation_finished_at(evaluation_id)
 
     hydrated_evaluation = await get_hydrated_evaluation_by_id(evaluation_id)
 
