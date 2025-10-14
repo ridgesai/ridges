@@ -324,7 +324,6 @@ ON agents (miner_hotkey, agent_id);
 CREATE INDEX IF NOT EXISTS idx_treasury_transactions_version
 ON treasury_transactions (agent_id);
 
-DROP MATERIALIZED VIEW IF EXISTS evaluations_hydrated CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS evaluation_runs_hydrated CASCADE;
 
 -- Create EvaluationStatus enum type if it doesn't exist
@@ -349,20 +348,6 @@ SELECT
         ELSE false
     END AS solved
 FROM evaluation_runs;
-
--- Second view: evaluations with aggregated status and average score
-CREATE MATERIALIZED VIEW evaluations_hydrated AS
-SELECT
-    evaluations.*,
-    (CASE
-         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
-         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
-         ELSE 'running'
-        END)::EvaluationStatus AS status,
-    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
-FROM evaluations
-    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
-GROUP BY evaluations.evaluation_id;
 
 
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
@@ -469,7 +454,6 @@ CREATE OR REPLACE FUNCTION refresh_evaluations_and_scores()
 RETURNS TRIGGER AS $$
 BEGIN
     REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
-    REFRESH MATERIALIZED VIEW evaluations_hydrated;
     REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
 END;
@@ -739,3 +723,18 @@ ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
     num_finished_evals DESC
+
+-- Evaluations hydrated view
+-- Evaluations with aggregated status and average score
+CREATE OR REPLACE VIEW evaluations_hydrated AS
+SELECT
+    evaluations.*,
+    (CASE
+         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
+         ELSE 'running'
+        END)::EvaluationStatus AS status,
+    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
+FROM evaluations
+    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
+GROUP BY evaluations.evaluation_id;
