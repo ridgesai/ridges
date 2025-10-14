@@ -44,30 +44,30 @@ app = FastAPI(
 async def inference(request: InferenceRequest) -> str:
     if not config.USE_DATABASE:
         # Get the status of the evaluation run
-        evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
+        evaluation_run_status = await get_evaluation_run_status_by_id(request.run_id)
         
         # Make sure the evaluation run actually exists
         if evaluation_run_status is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}."
+                detail=f"No evaluation run exists with the given evaluation run ID {request.run_id}."
             )
         
         # Make sure the evaluation run is in the running_agent state
         if evaluation_run_status != EvaluationRunStatus.running_agent:
             raise HTTPException(
                 status_code=400,
-                detail=f"The evaluation run with ID {request.evaluation_run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
+                detail=f"The evaluation run with ID {request.run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
             )
 
         # TODO ADAM
         #
         # # Make sure the evaluation run has not already made too many requests
-        # num_inferences = await get_number_of_inferences_for_evaluation_run(request.evaluation_run_id)
+        # num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
         # if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
         #     raise HTTPException(
         #         status_code=429,
-        #         detail=f"The evaluation run with ID {request.evaluation_run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
+        #         detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
         #     )
 
     # TODO ADAM
