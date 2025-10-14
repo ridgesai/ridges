@@ -184,4 +184,12 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: asyncpg.Co
         """,
         agent_id,
     )
+
     return result["num_successful_validator_evaluations"]
+
+
+
+@db_operation
+async def get_all_hydrated_evaluations(conn: asyncpg.Connection) -> List[HydratedEvaluation]:
+    results = await conn.fetch("""SELECT * FROM evaluations_hydrated""")
+    return [HydratedEvaluation(**result) for result in results]

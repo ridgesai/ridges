@@ -220,6 +220,15 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
     def prebuild_problem_images(self, problem_names: List[str]):
         MAX_WORKERS = 4
+
+        problem_names = sorted({name for name in problem_names if self.has_problem_name(name)})
+
+        if len(problem_names) == 0:
+            return
+
+        logger.info(f"Prebuilding problem images:")
+        for problem_name in problem_names:
+            logger.info(f"  {problem_name}")
         
         test_specs = []
 

@@ -112,6 +112,11 @@ if SIMULATE_EVALUATION_RUNS:
 
 
 if not SIMULATE_EVALUATION_RUNS:
+    INCLUDE_SOLUTIONS = os.getenv("INCLUDE_SOLUTIONS")
+    if not INCLUDE_SOLUTIONS:
+        logger.fatal("INCLUDE_SOLUTIONS is not set in .env")
+    INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
+    
     # Load the timeouts
     AGENT_TIMEOUT_SECONDS = os.getenv("AGENT_TIMEOUT_SECONDS")
     if not AGENT_TIMEOUT_SECONDS:
@@ -145,6 +150,10 @@ logger.info("-------------------------------")
 if SIMULATE_EVALUATION_RUNS:
     logger.warning("Simulating Evaluation Runs!")
 else:
+    if INCLUDE_SOLUTIONS:
+        logger.warning("Including Solutions!")
+    else:
+        logger.info("Not Including Solutions")
     logger.info(f"Agent Timeout: {AGENT_TIMEOUT_SECONDS} second(s)")
     logger.info(f"Evaluation Timeout: {EVAL_TIMEOUT_SECONDS} second(s)")
 logger.info("===============================")

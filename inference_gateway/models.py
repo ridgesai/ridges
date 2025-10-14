@@ -9,7 +9,9 @@ class InferenceMessage(BaseModel):
     content: str
 
 class InferenceRequest(BaseModel):
-    evaluation_run_id: UUID
+    # TODO
+    # evaluation_run_id: UUID
+    run_id: UUID
     model: str
     temperature: float
     messages: List[InferenceMessage]
@@ -17,5 +19,7 @@ class InferenceRequest(BaseModel):
 
 
 class EmbeddingRequest(BaseModel):
-    evaluation_run_id: UUID
+    # TODO
+    # evaluation_run_id: UUID
+    run_id: UUID
     input: str

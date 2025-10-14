@@ -65,7 +65,6 @@ async def set_weights_loop():
         
 
 
-
 # Sends an update-evaluation-run request to the Ridges platform. The extra
 # parameter is for fields that are not sent in all requests, such as agent_logs
 # and eval_logs, which are only sent on some state transitions.
@@ -154,7 +153,7 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
             problem,
             evaluation_run_id,
             agent_code,
-            include_solution=True # TODO: Remove include_solution=True
+            include_solution=config.INCLUDE_SOLUTIONS
         )
 
         # Move from initializing_agent -> running_agent
