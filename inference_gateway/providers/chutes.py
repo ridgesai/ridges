@@ -17,7 +17,8 @@ chutes_client = OpenAI(
 def inference(model: str, temperature: float, messages: List[InferenceMessage]) -> str:
     NUM_CHARS_TO_LOG = 30
 
-    logger.info(f"--> Inference request for model {model} (temperature {temperature}) with {sum(len(message.content) for message in messages)} characters; first {NUM_CHARS_TO_LOG} chars of last message: '{messages[-1].content[:NUM_CHARS_TO_LOG] if messages else ''}'")
+    request_first_chars = messages[-1].content.replace('\n', '')[:NUM_CHARS_TO_LOG] if messages else ''
+    logger.info(f"--> Inference request for model {model} (temperature {temperature}) with {sum(len(message.content) for message in messages)} characters; first {NUM_CHARS_TO_LOG} chars of last message: '{request_first_chars}'")
     
     response = chutes_client.chat.completions.create(
         model=model,
@@ -26,6 +27,7 @@ def inference(model: str, temperature: float, messages: List[InferenceMessage]) 
         stream=False
     ).choices[0].message.content
 
-    logger.info(f"<-- Inference response for model {model} (temperature {temperature}) with {len(response)} characters; first {NUM_CHARS_TO_LOG} chars: '{response[:NUM_CHARS_TO_LOG]}'")
+    response_first_chars = response.replace('\n', '')[:NUM_CHARS_TO_LOG]
+    logger.info(f"<-- Inference response for model {model} (temperature {temperature}) with {len(response)} characters; first {NUM_CHARS_TO_LOG} chars: '{response_first_chars}'")
 
     return response
