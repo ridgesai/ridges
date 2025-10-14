@@ -73,6 +73,7 @@ async def delete_validator(validator: Validator, reason: str) -> None:
     if validator.current_evaluation_id:
         await update_unfinished_evaluation_runs_in_evaluation_id_to_errored(validator.current_evaluation_id, reason)
         await handle_evaluation_if_finished(validator.current_evaluation_id)
+        validator.current_evaluation_id = None
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
@@ -135,7 +136,7 @@ def handle_validator_http_exceptions(func):
             return await func(*args, **kwargs)
         except HTTPException as e:
             logger.error(f"Validator HTTP exception: {e.status_code} {e.detail}")
-            await delete_validator(..., f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}")
+            await delete_validator(kwargs['validator'], f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}")
             raise
     return wrapper
 
@@ -629,36 +630,14 @@ async def validator_finish_evaluation(
             detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
-    # I do not think we need this check
-    # This feels like out of the scope of the validator, the validator
-    #    runs whatever it is told to run
-    #    informs us when it is finished
-    #    if it finished an eval and the agent status has changed to something inappropriate, that is NOT on the validator
-    #    the validator doesn't even have a way to set agent statuses directly
-    #    so this should be a 5xx error
-    #
-    #    notice handle_finish_evaluation() throws ValueError if the agent status is not eligible, so we get the 500 for free.
-    #
-    # TODO: remove
-    # evaluations = await get_evaluation_by_id(validator.current_evaluation_id)
-    # agent = await get_agent_by_id(evaluations.agent_id)
 
-    # eligible_states = [
-    #     AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating
-    # ]
-    # if agent.status not in eligible_states:
-    #     raise HTTPException(
-    #         status_code=409,
-    #         detail=f"The validator is trying to finish an evaluation for an agent in state "
-    #                 f"{agent.status}, which is not an eligible state to run evaluations in"
-    #     )
 
-    await handle_evaluation_if_finished(validator.current_evaluation_id)
+    current_evaluation_id = validator.current_evaluation_id
+
+    await handle_evaluation_if_finished(current_evaluation_id)
 
     logger.info(f"Validator '{validator.name}' finished an evaluation")
-    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
-
-    validator.current_evaluation_id = None
+    logger.info(f"  Evaluation ID: {current_evaluation_id}")
 
     return ValidatorFinishEvaluationResponse()
 

@@ -83,6 +83,12 @@ if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
 SEND_HEARTBEAT_INTERVAL_SECONDS = int(SEND_HEARTBEAT_INTERVAL_SECONDS) 
 
+# Load the time to wait between setting weights
+SET_WEIGHTS_INTERVAL_SECONDS = os.getenv("SET_WEIGHTS_INTERVAL_SECONDS")
+if not SET_WEIGHTS_INTERVAL_SECONDS:
+    logger.fatal("SET_WEIGHTS_INTERVAL_SECONDS is not set in .env")
+SET_WEIGHTS_INTERVAL_SECONDS = int(SET_WEIGHTS_INTERVAL_SECONDS) 
+
 # Load the time to wait between requesting a new evaluation
 REQUEST_EVALUATION_INTERVAL_SECONDS = os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS")
 if not REQUEST_EVALUATION_INTERVAL_SECONDS:
@@ -133,6 +139,7 @@ logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
 logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
 logger.info("-------------------------------")
 if SIMULATE_EVALUATION_RUNS:

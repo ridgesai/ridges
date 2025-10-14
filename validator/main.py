@@ -50,10 +50,19 @@ async def disconnect(reason: str):
 async def send_heartbeat_loop():
     logger.info("Starting send heartbeat loop...")
     while True:
-        # logger.info("Sending heartbeat...")
+        logger.info("Sending heartbeat...")
         system_metrics = await get_system_metrics()
         await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
         await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+
+# A loop that periodically sets weights
+async def set_weights_loop():
+    logger.info("Starting set weights loop...")
+    while True:
+        # TODO
+
+        await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
+        
 
 
 

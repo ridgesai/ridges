@@ -12,4 +12,4 @@ async def validator_heartbeat_timeout_loop():
     while True:
         await delete_validators_that_have_not_sent_a_heartbeat()
 
-        await asyncio.sleep(config.VALIDATOR_HEARTBEAT_TIMEOUT_LOOP_INTERVAL_SECONDS)
+        await asyncio.sleep(config.VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS)

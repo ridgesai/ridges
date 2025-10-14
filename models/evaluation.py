@@ -1,11 +1,10 @@
-from datetime import datetime
 from enum import Enum
-from typing import Optional
 from uuid import UUID
-
+from datetime import datetime
 from pydantic import BaseModel
-
+from typing import List, Optional
 from models.evaluation_run import EvaluationRun
+
 
 
 class EvaluationStatus(str, Enum):
@@ -27,7 +26,6 @@ class Evaluation(BaseModel):
 class HydratedEvaluation(Evaluation):
     status: EvaluationStatus
     score: float
-
 
 class EvaluationWithRuns(BaseModel):
     evaluation: Evaluation

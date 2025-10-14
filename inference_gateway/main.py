@@ -40,10 +40,6 @@ app = FastAPI(
 
 
 
-
-
-
-
 @app.post("/api/inference")
 async def inference(request: InferenceRequest) -> str:
     if not config.USE_DATABASE:
