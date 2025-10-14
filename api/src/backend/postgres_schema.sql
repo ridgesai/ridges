@@ -349,6 +349,20 @@ SELECT
     END AS solved
 FROM evaluation_runs;
 
+-- Second view: Evaluations hydrated view
+-- Evaluations with aggregated status and average score
+CREATE OR REPLACE VIEW evaluations_hydrated AS
+SELECT
+    evaluations.*,
+    (CASE
+         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
+         ELSE 'running'
+        END)::EvaluationStatus AS status,
+    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
+FROM evaluations
+    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
+GROUP BY evaluations.evaluation_id;
 
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
 
@@ -723,18 +737,3 @@ ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
     num_finished_evals DESC
-
--- Evaluations hydrated view
--- Evaluations with aggregated status and average score
-CREATE OR REPLACE VIEW evaluations_hydrated AS
-SELECT
-    evaluations.*,
-    (CASE
-         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
-         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
-         ELSE 'running'
-        END)::EvaluationStatus AS status,
-    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
-FROM evaluations
-    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
-GROUP BY evaluations.evaluation_id;
