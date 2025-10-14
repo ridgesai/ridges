@@ -29,81 +29,6 @@ load_dotenv()
 
 router = APIRouter()
 
-SCREENER_IP_LIST = [
-    "3.89.93.137", # 1-1
-    "35.174.155.46", # 1-2
-    "3.82.227.252", # 1-3
-    "34.207.95.225", # 1-4
-    "44.204.233.125", # 1-5
-    "13.221.244.67", # 1-6
-    "13.221.159.150", # 1-7
-    "44.212.65.240", # 1-8
-    "184.73.11.250", # 2-1
-    "18.212.35.108", # 2-2
-    "3.91.231.29", # 2-3
-]
-
-@router.get("/agent-version-file", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_agent_code(agent_id: str, request: Request):
-    """
-    Retrieve agent code from S3 for a given agent version.
-    Returns the Python code as plain text.
-    """
-
-    # TODO ADAM: i will rewrite this. shit probably doesn't even work rn
-
-    agent_version = await get_agent_by_agent_id(agent_id=agent_id)
-    
-    if not agent_version:
-        logger.info(f"File for agent version {agent_id} was requested but not found in our database")
-        raise HTTPException(
-            status_code=404, 
-            detail="The requested agent version was not found. Are you sure you have the correct version ID?"
-        )
-    
-    # TODO: Code hiding should not be implemented like this, we should have the IP list be dynamically generated from the list of currently connected screeners.
-    # If status is screening, verify that it is a screener requesting
-    if "screening" in agent_version.status:
-        # Get client IP address
-        client_ip = request.client.host
-        
-        # Check if IP is in whitelist (add your allowed IPs to SCREENER_IP_LIST)
-        if client_ip not in SCREENER_IP_LIST:
-            logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {agent_id}")
-            raise HTTPException(
-                status_code=403,
-                detail="Access denied: IP not authorized"
-            )
-    
-    try:
-        agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-        return PlainTextResponse(content=agent_code, media_type="text/plain")
-    except Exception as e:
-        logger.error(f"Error retrieving agent version code from S3 for version {agent_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving agent version code. Please try again later."
-        )
-
-@router.get("/connected-validators", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_connected_validators():
-    """
-    Returns a list of all connected validators and screener validators
-    """
-    raise NotImplementedError("WE REMOVED THIS FORSAKEN FUNCTION DO NOT CALL IT")
-
-@router.get("/queue-info", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_queue_info(agent_id: str):
-    try:
-        queue_info = await db_get_queue_info(agent_id)
-    except Exception as e:
-        logger.error(f"Error retrieving queue info for version {agent_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving queue info. Please try again later."
-        )
-    
-    return queue_info
 
 @router.get("/evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_evaluations(agent_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
@@ -134,52 +59,6 @@ async def get_evaluations_with_usage(agent_id: str, set_id: Optional[int] = None
         )
     
     return evaluations
-
-@router.get("/screening-evaluations", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def get_screening_evaluations(agent_id: str, stage: int = Query(description="Screening stage (1 or 2)"), set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
-    """Get screening evaluations for an agent version filtered by stage"""
-    try:
-        # Validate stage parameter
-        if stage not in [1, 2]:
-            raise HTTPException(
-                status_code=400,
-                detail="Stage must be 1 or 2"
-            )
-        
-        # If no set_id provided, use the latest set_id
-        if set_id is None:
-            set_id = await get_latest_set_id()
-        
-        evaluations = await get_evaluations_for_agent_version(agent_id, set_id)
-        
-        # Filter to only screening evaluations (screener- or i-0 prefixed validator hotkeys)
-        screening_evaluations = [
-            eval for eval in evaluations 
-            if eval.validator_hotkey.startswith('screener-') or eval.validator_hotkey.startswith('i-0')
-        ]
-        
-        # Filter by stage
-        # Stage 1: screener-1 or similar patterns
-        # Stage 2: screener-2 or similar patterns
-        stage_filtered = []
-        for eval in screening_evaluations:
-            hotkey = eval.validator_hotkey
-            if stage == 1 and ('screener-1' in hotkey or 'stage-1' in hotkey or (hotkey.startswith('i-0') and '1' in hotkey)):
-                stage_filtered.append(eval)
-            elif stage == 2 and ('screener-2' in hotkey or 'stage-2' in hotkey or (hotkey.startswith('i-0') and '2' in hotkey)):
-                stage_filtered.append(eval)
-        screening_evaluations = stage_filtered
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error retrieving screening evaluations for version {agent_id}: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail="Internal server error while retrieving screening evaluations. Please try again later."
-        )
-    
-    return screening_evaluations
 
 @router.get("/evaluation-run-logs", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def get_evaluation_run_logs(run_id: str) -> PlainTextResponse:
@@ -361,18 +240,6 @@ async def get_inference_provider_statistics(start_time: datetime, end_time: date
             detail="Internal server error while retrieving inferences"
         )
 
-@router.get("/agent-scratch", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
-async def shak_scratchpad() -> Any:
-    # Queue
-    # agent = await get_agents_in_queue(EvaluationSetGroup.screener_1)
-    # return agent
-
-    # top agents 
-    # agents = await x()
-    # return agents
-
-    # Connected validators and what theyre doing 
-    pass
 
 import uuid
 import asyncio
@@ -502,20 +369,6 @@ routes = [
     ("/agent-version-file", get_agent_code),
     ("/network-stats", get_network_stats),
     ("/agent-scores-over-time", agent_scores_over_time),
-
-    # ("/agent-version-file", get_agent_code), 
-    # ("/connected-validators", get_connected_validators), 
-    # ("/evaluations", get_evaluations),
-    # ("/screening-evaluations", get_screening_evaluations),
-    # ("/runs-for-evaluation", get_runs_for_evaluation),
-    # ("/running-evaluations", get_running_evaluations),
-    # ("/top-agents", get_top_agents),
-    # ("/queue-position-by-hotkey", get_queue_position),
-    # ("/inferences-by-run", inferences_for_run),
-    # ("/miner-score-activity", miner_score_activity),
-    # ("/agents-from-hotkey", get_agents_from_hotkey),    
-    # ("/inference-provider-statistics", get_inference_provider_statistics),
-    # ("/agent-scratch", shak_scratchpad)
 ]
 
 for path, endpoint in routes:
