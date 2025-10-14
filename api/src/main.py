@@ -11,6 +11,7 @@ from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_lo
 
 
 import utils.logger as logger
+from api.queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
@@ -58,6 +59,9 @@ async def lifespan(app: FastAPI):
     # Loop setup
     asyncio.create_task(validator_heartbeat_timeout_loop())
 
+    await set_all_unfinished_evaluation_runs_to_errored(
+        error_message="Platform crashed while running this evaluation"
+    )
 
 
     yield

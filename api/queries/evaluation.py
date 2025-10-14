@@ -140,12 +140,11 @@ async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(conn: as
         SET
             status = '{EvaluationRunStatus.error.value}',
             error_code = CASE
-                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}
-                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
-                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
-                ELSE {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value}
+                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_PENDING.value}
+                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_EVAL.value}
+                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_EVAL.value}
             END,
             error_message = $2,
             finished_or_errored_at = NOW()
@@ -156,6 +155,29 @@ async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(conn: as
         error_message
     )
 
+# Used to perform cleanup after a platform crash
+@db_operation
+async def set_all_unfinished_evaluation_runs_to_errored(conn: asyncpg.Connection, error_message: str) -> None:
+    await conn.execute(
+        f"""
+        UPDATE evaluation_runs
+        SET
+            status = '{EvaluationRunStatus.error.value}',
+            error_code = CASE
+                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}
+                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
+                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
+                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
+                ELSE {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value}
+            END,
+            error_message = $1,
+            finished_or_errored_at = NOW()
+        WHERE
+            status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
+        """,
+        error_message
+    )
 
 
 @db_operation
