@@ -152,13 +152,13 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
         """
             WITH inf AS (
                 SELECT
-                    run_id,
-                    SUM(cost)          AS cost,
-                    SUM(total_tokens)  AS total_tokens,
+                    evaluation_run_id  AS run_id,
+                    SUM(cost_usd)      AS cost,
+                    SUM(COALESCE(num_input_tokens, 0) + COALESCE(num_output_tokens, 0)) AS total_tokens,
                     COUNT(*)           AS num_inference_calls,
                     MAX(model)         AS model        -- assumes a run uses one model
                 FROM inferences
-                GROUP BY run_id
+                GROUP BY evaluation_run_id
             )
             SELECT
                 e.run_id,

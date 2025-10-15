@@ -23,19 +23,20 @@ async def get_inferences_for_agent_version(conn: asyncpg.Connection, agent_id: s
     
     inferences = await conn.fetch(f"""
         SELECT DISTINCT
-            i.id, i.evaluation_run_id, 
+            i.inference_id as id, i.evaluation_run_id,
             (SELECT message->>'content' FROM jsonb_array_elements(i.messages) WITH ORDINALITY AS t(message, index) 
              WHERE message->>'role' = 'user' 
              ORDER BY index DESC LIMIT 1) as message, 
-            i.temperature, i.model, i.cost, i.response, i.total_tokens, 
-            i.created_at, i.finished_at, i.provider, i.status_code
+            i.temperature, i.model, i.cost_usd as cost, i.response,
+            (COALESCE(i.num_input_tokens, 0) + COALESCE(i.num_output_tokens, 0)) as total_tokens,
+            i.request_received_at as created_at, i.response_sent_at as finished_at, i.provider, i.status_code
         FROM inferences i
         JOIN evaluation_runs er ON i.evaluation_run_id = er.evaluation_run_id
         JOIN evaluations e ON er.evaluation_id = e.evaluation_id
         WHERE e.agent_id = $1
         AND e.set_id = $2
         AND er.status != '{EvaluationRunStatus.error.value}'
-        ORDER BY i.created_at DESC
+        ORDER BY i.request_received_at DESC
         LIMIT $3
     """, agent_id, set_id, limit)
     
@@ -49,12 +50,12 @@ async def get_inference_stats_for_agent_version(conn: asyncpg.Connection, agent_
     
     stats = await conn.fetchrow(f"""
         SELECT 
-            COUNT(i.id) as total_inferences,
-            SUM(i.cost) as total_cost,
-            SUM(i.total_tokens) as total_tokens,
-            AVG(i.cost) as avg_cost_per_inference,
-            AVG(i.total_tokens) as avg_tokens_per_inference,
-            AVG(EXTRACT(EPOCH FROM (i.finished_at - i.created_at))) as avg_time_per_inference,
+            COUNT(i.inference_id) as total_inferences,
+            SUM(i.cost_usd) as total_cost,
+            SUM(COALESCE(i.num_input_tokens, 0) + COALESCE(i.num_output_tokens, 0)) as total_tokens,
+            AVG(i.cost_usd) as avg_cost_per_inference,
+            AVG(COALESCE(i.num_input_tokens, 0) + COALESCE(i.num_output_tokens, 0)) as avg_tokens_per_inference,
+            AVG(EXTRACT(EPOCH FROM (i.response_sent_at - i.request_received_at))) as avg_time_per_inference,
             COUNT(DISTINCT i.provider) as providers_used,
             COUNT(DISTINCT i.model) as models_used,
             COUNT(CASE WHEN i.status_code = 200 THEN 1 END) as successful_inferences,
@@ -65,7 +66,7 @@ async def get_inference_stats_for_agent_version(conn: asyncpg.Connection, agent_
         WHERE e.agent_id = $1
         AND e.set_id = $2
         AND er.status != '{EvaluationRunStatus.error.value}'
-        AND i.finished_at IS NOT NULL
+        AND i.response_sent_at IS NOT NULL
     """, agent_id, set_id)
     
     if stats is None:

@@ -198,9 +198,9 @@ CREATE TABLE IF NOT EXISTS inferences (
 
 -- Performance optimization indices for inferences queries
 CREATE INDEX IF NOT EXISTS idx_inferences_created_provider_range
-ON inferences (response_sent_at, provider)
-INCLUDE (request_received_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
-WHERE request_received_at IS NOT NULL AND provider IS NOT NULL;
+ON inferences (request_received_at, provider)
+INCLUDE (response_sent_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
+WHERE response_sent_at IS NOT NULL AND provider IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS approved_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
