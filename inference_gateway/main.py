@@ -1,11 +1,10 @@
-import random
 import uvicorn
-import requests
 import utils.logger as logger
 import inference_gateway.config as config
 import inference_gateway.providers.chutes as chutes
 
 from typing import List
+from functools import wraps
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
@@ -51,7 +50,20 @@ app = FastAPI(
 
 
 
+def handle_http_exceptions(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except HTTPException as e:
+            logger.error(f"HTTP exception: {e.status_code} {e.detail}")
+            raise
+    return wrapper
+
+
+
 @app.post("/api/inference")
+@handle_http_exceptions
 async def inference(request: InferenceRequest) -> str:
     if config.USE_DATABASE:
         # Get the status of the evaluation run
@@ -114,6 +126,7 @@ async def inference(request: InferenceRequest) -> str:
 
 
 @app.post("/api/embedding")
+@handle_http_exceptions
 async def embedding(request: EmbeddingRequest) -> List[float]:
     # TODO ADAM
     raise HTTPException(status_code=501, detail="TODO ADAM")
