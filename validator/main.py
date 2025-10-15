@@ -1,63 +1,360 @@
+import time
+import random
 import asyncio
-import docker
-import subprocess
-import shutil
-from pathlib import Path
+import pathlib
+import traceback
+import utils.logger as logger
+import validator.config as config
 
-from dotenv import load_dotenv
-load_dotenv("validator/.env")
+from typing import Any, Dict, Optional
 
-# Internal package imports
-from validator.socket.websocket_app import WebsocketApp
-from loggers.logging_utils import get_logger
-from validator.utils.logger import enable_verbose
-from validator.sandbox.sandbox_manager import SandboxManager
-from validator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
-from validator.config import RIDGES_PROXY_URL
+from evaluator.problem_suites.problem_suite import ProblemSuite
+from models.problem import ProblemTestResultStatus
+from evaluator.models import EvaluationRunException
+from utils.system_metrics import get_system_metrics
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from validator.http import get_ridges_platform, post_ridges_platform
+from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
+from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
+from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
-logger = get_logger(__name__)
 
 
-def init_all_images():
-    SWEBENCH_VERIFIED_PROBLEMS = [
-        "astropy__astropy-13398", "astropy__astropy-13579", "django__django-11138",
-        "django__django-11400", "django__django-12325", "django__django-12708",
-        "django__django-13128", "django__django-13212", "django__django-13449",
-        "django__django-13837", "django__django-14007", "django__django-14011",
-        "django__django-14631", "django__django-15268", "django__django-15503",
-        "django__django-15629", "django__django-15957", "django__django-16263",
-        "django__django-16560", "django__django-16631", "pytest-dev__pytest-5787",
-        "pytest-dev__pytest-6197", "pytest-dev__pytest-10356",
-        "sphinx-doc__sphinx-9461", "sphinx-doc__sphinx-11510"
-    ]
-    manager = SandboxManager(RIDGES_PROXY_URL)
-    swebench_verified_suite = SWEBenchVerifiedSuite(Path(__file__).parent / "datasets" / "swebench_verified")
-    swebench_verified_suite.prebuild_problem_images(manager, SWEBENCH_VERIFIED_PROBLEMS)
+# The session ID for this validator
+session_id = None
+running_agent_timeout_seconds = None
+running_eval_timeout_seconds = None
 
 
 
 
-async def main():
-    """
-    This starts up the validator websocket, which connects to the Ridges platform 
-    It receives and sends events like new agents to evaluate, eval status, scores, etc
-    """
+# The sandbox manager and problem suites
+sandbox_manager = None
+polyglot_suite = None
+swebench_verified_suite = None
 
-    # enable_verbose()
 
-    init_all_images()
 
-    websocket_app = WebsocketApp()
-    websocket_app.status_running = False
+# Disconnect from the Ridges platform (called when the program exits)
+async def disconnect(reason: str):
+    if session_id is None:
+        return
+    
     try:
-        await websocket_app.start()
-    except KeyboardInterrupt:
-        logger.info("Shutting down")
-        await websocket_app.shutdown()
-        logger.info("Shutdown complete")
+        logger.info("Disconnecting validator...")
+        await post_ridges_platform("/validator/disconnect", {"reason": reason}, bearer_token=session_id)
+        logger.info("Disconnected validator")
+    except Exception as e:
+        logger.error(f"Error disconnecting validator: {type(e).__name__}: {e}")
+
+
+
+# A loop that sends periodic heartbeats to the Ridges platform
+async def send_heartbeat_loop():
+    logger.info("Starting send heartbeat loop...")
+    while True:
+        logger.info("Sending heartbeat...")
+        system_metrics = await get_system_metrics()
+        await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
+        await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+
+# A loop that periodically sets weights
+async def set_weights_loop():
+    logger.info("Starting set weights loop...")
+    while True:
+        # TODO
+
+        await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
+        
+
+
+# Sends an update-evaluation-run request to the Ridges platform. The extra
+# parameter is for fields that are not sent in all requests, such as agent_logs
+# and eval_logs, which are only sent on some state transitions.
+async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updated_status: EvaluationRunStatus, extra: Dict[str, Any] = {}):
+    logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
+    await post_ridges_platform("/validator/update-evaluation-run", {
+        "evaluation_run_id": evaluation_run_id,
+        "updated_status": updated_status.value,
+        **(extra or {})
+    }, bearer_token=session_id, quiet=2)
+
+
+
+# Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
+async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str):
+    logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+    # Move from pending -> initializing_agent
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+
+    # Move from initializing_agent -> running_agent
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+
+    # Move from running_agent -> initializing_eval
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+        "patch": "FAKE PATCH",
+        "agent_logs": "FAKE AGENT LOGS"
+    })
+
+    # Move from initializing_eval -> running_eval
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+
+    # Move from running_eval -> finished
+    await asyncio.sleep(random.random() * config.SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+    await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+        "test_results": [{"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}],
+        "eval_logs": "FAKE EVAL LOGS"
+    })
+
+
+    
+    logger.info(f"Finished simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+# Run an evaluation run
+async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_code: str):
+    # Figure out what problem suite this problem belongs to
+    problem_suite: Optional[ProblemSuite] = None
+    if polyglot_suite.has_problem_name(problem_name):
+        problem_suite = polyglot_suite
+    elif swebench_verified_suite.has_problem_name(problem_name):
+        problem_suite = swebench_verified_suite
+
+    # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
+    if problem_suite is None:
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+            "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
+        })
+        return
+
+    # Get the problem
+    problem = problem_suite.get_problem(problem_name)
+
+
+
+    logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+
+
+    try:
+        # Move from pending -> initializing_agent
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+
+        # Start initializing the agent sandbox
+        agent_sandbox = await asyncio.to_thread(
+            problem_suite.initialize_agent_sandbox,
+            sandbox_manager,
+            problem,
+            evaluation_run_id,
+            agent_code,
+            include_solution=config.INCLUDE_SOLUTIONS
+        )
+
+        # Move from initializing_agent -> running_agent
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+
+        # Start running the agent sandbox
+        patch, agent_logs = await asyncio.to_thread(
+            problem_suite.run_agent_sandbox,
+            sandbox_manager,
+            agent_sandbox,
+            running_agent_timeout_seconds
+        )
+        logger.warning(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
+
+        # Move from running_agent -> initializing_eval
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+            "patch": patch,
+            "agent_logs": agent_logs
+        })
+
+        # Start initializing the evaluation sandbox
+        eval_sandbox = await asyncio.to_thread(
+            problem_suite.initialize_eval_sandbox,
+            sandbox_manager,
+            problem,
+            evaluation_run_id,
+            patch
+        )
+
+        # Move from initializing_eval -> running_eval
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+
+        # Start running the evaluation sandbox
+        test_results, eval_logs = await asyncio.to_thread(
+            problem_suite.run_eval_sandbox,
+            sandbox_manager,
+            eval_sandbox,
+            running_eval_timeout_seconds
+        )
+        num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
+        num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
+        num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
+        logger.warning(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
+        if num_failed > 0:
+            logger.error(f"!!!")
+
+        # Move from running_eval -> finished
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+            "test_results": [test.model_dump() for test in test_results],
+            "eval_logs": eval_logs
+        })
+
+    except EvaluationRunException as e:
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": e.error_code.value,
+            "error_message": e.error_message
+        })
+
+    except Exception as e:
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+        logger.error(traceback.format_exc())
+
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+            "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
+            "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+        })
+    
+
+
+
+    logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
+    
+
+
+# Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
+async def _run_evaluation(request_evaluation_response):
+    agent_code = request_evaluation_response['agent_code']
+    evaluation_runs = request_evaluation_response['evaluation_runs']
+
+    logger.info("Received evaluation:")
+    logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
+
+    for evaluation_run in evaluation_runs:
+        logger.info(f"    {evaluation_run['problem_name']}")
+
+
+
+    logger.info("Starting evaluation...")
+
+    tasks = []
+    for evaluation_run in evaluation_runs:
+        evaluation_run_id = evaluation_run['evaluation_run_id']
+        problem_name = evaluation_run['problem_name']
+
+        if config.SIMULATE_EVALUATION_RUNS:
+            tasks.append(asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name)))
+        else:
+            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, agent_code)))
+
+    await asyncio.gather(*tasks)
+
+    logger.info("Finished evaluation")
+
+    await post_ridges_platform("/validator/finish-evaluation", bearer_token=session_id, quiet=1)
+
+
+
+# Main loop
+async def main():
+    global session_id
+    global running_agent_timeout_seconds
+    global running_eval_timeout_seconds
+    global sandbox_manager
+    global polyglot_suite
+    global swebench_verified_suite
+
+
+
+    # Register with the Ridges platform, yielding us a session ID
+    logger.info("Registering validator...")
+
+    if config.MODE == "validator":
+        # Get the current timestamp, and sign it with the validator hotkey
+        timestamp = int(time.time())
+        signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
+        
+        register_response = await post_ridges_platform("/validator/register-as-validator", {
+            "timestamp": timestamp,
+            "signed_timestamp": signed_timestamp,
+            "hotkey": config.VALIDATOR_HOTKEY.ss58_address
+        })
+    
+    elif config.MODE == "screener":
+        register_response = await post_ridges_platform("/validator/register-as-screener", {
+            "name": config.SCREENER_NAME,
+            "password": config.SCREENER_PASSWORD
+        })
+    
+    session_id = register_response["session_id"]
+    running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]
+    running_eval_timeout_seconds = register_response["running_eval_timeout_seconds"]
+
+    logger.info("Registered validator:")
+    logger.info(f"  Session ID: {session_id}")
+    logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} second(s)")
+    logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
+
+
+
+    # Create the sandbox manager
+    sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
+
+    # Load all problem suites
+    datasets_path = pathlib.Path(__file__).parent.parent / "evaluator" / "datasets"
+    polyglot_suite = PolyglotSuite(datasets_path / "polyglot")
+    swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
+
+
+
+    # Get all the problems in the latest set
+    latest_set_problems = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)
+    latest_set_problem_names = list({prob["problem_name"] for prob in latest_set_problems})
+    
+    # Prebuild the images for the SWE-Bench Verified problems
+    swebench_verified_suite.prebuild_problem_images(latest_set_problem_names)
+
+
+
+    # Start the heartbeat loop
+    asyncio.create_task(send_heartbeat_loop())
+
+
+
+    # Loop forever, just keep requesting evaluations and running them
+    while True:
+        logger.info("Requesting an evaluation...")
+        
+        request_evaluation_response = await post_ridges_platform("/validator/request-evaluation", bearer_token=session_id, quiet=1)
+
+        # If no evaluation is available, wait and try again
+        if request_evaluation_response is None:
+            logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
+            await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
+            continue
+
+        await _run_evaluation(request_evaluation_response)
+
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Shutting down")
+        logger.warning("Keyboard interrupt")
+        asyncio.run(disconnect("Keyboard interrupt"))
+    except Exception as e:
+        logger.error(f"Error in main(): {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        asyncio.run(disconnect("Error in main()"))

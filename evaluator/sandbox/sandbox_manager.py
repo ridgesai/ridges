@@ -1,0 +1,182 @@
+"""SandboxManager class for creating and managing Docker sandboxes."""
+
+import os
+import json
+import httpx
+import shutil
+import utils.logger as logger
+
+from typing import Any, Dict, Tuple, Optional, Callable
+from utils.temp import create_temp_dir, cleanup_temp_dir
+from evaluator.models import Sandbox, SandboxResult, SandboxResultWithLogs
+from utils.docker import docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
+
+
+
+SANDBOX_NETWORK_NAME = "sandbox-network"
+
+SANDBOX_PROXY_HOST = "sandbox_proxy"
+SANDBOX_PROXY_PORT = 80
+
+
+
+
+
+
+class SandboxManager:
+    """Manages Docker sandbox creation and execution."""
+
+
+
+    def __init__(self, inference_gateway_url: str):
+        # Setup inference gateway
+        self._check_inference_gateway(inference_gateway_url)
+
+        # Setup Docker
+        stop_and_delete_all_docker_containers()
+
+        # Setup sandbox-network
+        create_internal_docker_network(SANDBOX_NETWORK_NAME)
+
+        # Setup sandbox-image
+        build_docker_image(os.path.dirname(__file__), "sandbox-image")
+        self.sandboxes = {}
+
+        # Setup sandbox-proxy
+        self.proxy_container = None
+        self.proxy_temp_dir = None
+        build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
+        self._create_sandbox_proxy(inference_gateway_url)
+
+
+
+    def _check_inference_gateway(self, inference_gateway_url):
+        logger.info(f"Checking inference gateway URL: {inference_gateway_url}")
+
+        valid = False
+        try:
+            httpx.get(inference_gateway_url)
+
+            # TODO ADAM: Send inference & embedding requests
+
+            valid = True
+        except Exception as e:
+            pass
+
+        if not valid:
+            logger.fatal(f"Inference gateway URL {inference_gateway_url} is invalid")
+        
+        logger.info(f"Inference gateway URL {inference_gateway_url} is valid")
+
+
+
+    def _create_sandbox_proxy(self, gateway_url):
+        """
+        Create the sandbox proxy server.
+        
+        This is a special sandbox that runs a proxy server (nginx).
+        This is the only sandbox that can access the internet.
+        
+        The other sandboxes cannot directly access the internet.
+        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inferencegateway.
+        """
+  
+        logger.info("Running sandbox proxy")
+
+        self.proxy_container = docker_client.containers.run(
+            name=SANDBOX_PROXY_HOST,
+            image="sandbox-proxy-image",
+            network=SANDBOX_NETWORK_NAME,
+            environment={
+                "GATEWAY_URL": gateway_url,
+                "GATEWAY_HOST": gateway_url.split("://")[1].split(":")[0]
+            },
+            detach=True
+        )
+
+        connect_docker_container_to_internet(self.proxy_container)
+
+
+
+    def initialize_sandbox(
+        self,
+        *,
+        name: str,
+        python_script_path: str,
+        input_data: Any,
+        env_vars: Dict[str, str] = {},
+        on_mount: Callable[[str], None] = None
+    ) -> Sandbox:
+        # Create temporary directory
+        temp_dir = create_temp_dir()
+        logger.debug(f"Created temporary directory for sandbox <{name}>: {temp_dir}")
+        
+        if on_mount is not None:
+            # Call on_mount
+            logger.debug(f"Calling on_mount() for sandbox <{name}>...")
+            on_mount(temp_dir)
+            logger.debug(f"Called on_mount() for sandbox <{name}>")
+
+        # Copy Python script
+        python_script_name = os.path.basename(python_script_path)
+        temp_python_script_path = os.path.join(temp_dir, python_script_name)
+        shutil.copy2(python_script_path, temp_python_script_path)
+        logger.debug(f"Copied Python script for sandbox <{name}>: {python_script_path} --> {temp_python_script_path}")
+        
+        # Create input.json
+        temp_input_json_path = os.path.join(temp_dir, "input.json")
+        with open(temp_input_json_path, "w") as f:
+            json.dump(input_data, f, indent=2)
+        logger.debug(f"Created input.json for sandbox <{name}>: {temp_input_json_path}")
+
+        # Create Docker container
+        container = docker_client.containers.run(
+            name=name,
+            image="sandbox-image",
+            command=f"python /sandbox/{python_script_name} 2>&1",
+            volumes={
+                temp_dir: {"bind": "/sandbox", "mode": "rw"}
+            },
+            environment={
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONDONTWRITEBYTECODE": "1", # No __pycache__
+                "SANDBOX_PROXY_URL": f"http://{SANDBOX_PROXY_HOST}:{SANDBOX_PROXY_PORT}",
+                **env_vars
+            },
+            network=SANDBOX_NETWORK_NAME,
+            detach=True
+        )
+
+        return Sandbox(
+            name=name,
+            temp_dir=temp_dir,
+            container=container
+        )
+
+
+
+    # TODO ADAM: Sandbox::run()
+    def run_sandbox(
+        self,
+        sandbox: Sandbox,
+        *,
+        timeout_seconds: Optional[int] = None
+    ) -> SandboxResultWithLogs:
+        
+        try:
+            sandbox.container.wait(timeout=timeout_seconds)
+
+            # Load /sandbox/output.json
+            temp_output_json_path = os.path.join(sandbox.temp_dir, "output.json")
+            with open(temp_output_json_path, "r") as f:
+                output = json.load(f)
+            logger.debug(f"Loaded output.json for sandbox <{sandbox.name}>: {temp_output_json_path}")
+
+            # Get logs
+            logs = sandbox.container.logs().decode("utf-8")
+
+            return SandboxResultWithLogs(**output, logs=logs)
+        finally:
+            # Remove the container
+            sandbox.container.stop()
+            sandbox.container.remove()

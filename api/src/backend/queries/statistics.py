@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from uuid import UUID
 import asyncpg
 
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from api.src.backend.entities import MinerAgent, Inference, MinerAgentWithScores
 
 @db_operation
@@ -18,7 +18,7 @@ async def get_24_hour_statistics(conn: asyncpg.Connection) -> dict[str, Any]:
     return await MinerAgentScored.get_24_hour_statistics(conn)
 
 class RunningEvaluation(BaseModel):
-    version_id: UUID
+    agent_id: UUID
     validator_hotkey: str
     started_at: datetime
     agent_name: str
@@ -31,7 +31,7 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
     results = await conn.fetch("""
         select 
             e.evaluation_id,
-            e.version_id, 
+            e.agent_id, 
             e.validator_hotkey, 
             e.started_at, 
             a.agent_name, 
@@ -49,11 +49,11 @@ async def get_currently_running_evaluations(conn: asyncpg.Connection) -> list[Ru
                 END
             ), 0.0) as progress
         from evaluations e
-        left join miner_agents a on a.version_id = e.version_id
+        left join agents a on a.agent_id = e.agent_id
         left join evaluation_runs r on r.evaluation_id = e.evaluation_id 
             and r.status not in ('cancelled')
         where e.status = 'running'
-        group by e.evaluation_id, e.version_id, e.validator_hotkey, e.started_at, 
+        group by e.evaluation_id, e.agent_id, e.validator_hotkey, e.started_at, 
                  a.agent_name, a.miner_hotkey, a.version_num;
     """)
 
@@ -88,8 +88,8 @@ class QueuePositionPerValidator(BaseModel):
 async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> list[QueuePositionPerValidator]:
     results = await conn.fetch("""
         WITH latest_version AS (
-            SELECT version_id
-            FROM   miner_agents
+            SELECT agent_id
+            FROM   agents
             WHERE  miner_hotkey = $1
             ORDER  BY version_num DESC
             LIMIT  1
@@ -104,7 +104,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
                     ORDER BY     e.screener_score DESC NULLS LAST, e.created_at
                 ) AS queue_position
             FROM   evaluations   e
-            JOIN   miner_agents  ma ON ma.version_id = e.version_id
+            JOIN   agents  ma ON ma.agent_id = e.agent_id
             WHERE  e.status = 'waiting'                -- only items still in the queue
             AND  ma.miner_hotkey NOT IN (SELECT miner_hotkey
                                         FROM banned_hotkeys)  -- skip banned miners
@@ -115,7 +115,7 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
             w.queue_position
         FROM   waiting_queue w
         JOIN   evaluations  e  ON e.evaluation_id = w.evaluation_id
-        JOIN   latest_version lv ON lv.version_id  = e.version_id
+        JOIN   latest_version lv ON lv.agent_id  = e.agent_id
         ORDER  BY w.validator_hotkey;
     """, miner_hotkey)
 
@@ -125,13 +125,15 @@ async def get_queue_position_by_hotkey(conn: asyncpg.Connection, miner_hotkey: s
 async def get_inference_details_for_run(conn: asyncpg.Connection, run_id: str) -> list[Inference]:
     runs = await conn.fetch("""
         select 
-            id, run_id, 
+            inference_id as id, evaluation_run_id as run_id,
             (SELECT message->>'content' FROM jsonb_array_elements(messages) WITH ORDINALITY AS t(message, index) 
              WHERE message->>'role' = 'user' 
              ORDER BY index DESC LIMIT 1) as message, 
-            temperature, model, cost, response, total_tokens, created_at, finished_at, provider, status_code
-        from inferences 
-        where run_id = $1;
+            temperature, model, cost_usd as cost, response,
+            (COALESCE(num_input_tokens, 0) + COALESCE(num_output_tokens, 0)) as total_tokens,
+            request_received_at as created_at, response_sent_at as finished_at, provider, status_code
+        from inferences
+        where evaluation_run_id = $1;
     """, run_id)
 
     return [Inference(**dict(run)) for run in runs]
@@ -141,21 +143,21 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
     """Get agent scores over time for charting"""
     # Use max set_id if not provided
     if set_id is None:
-        set_id_query = "SELECT MAX(set_id) FROM evaluations"
+        set_id_query = "SELECT MAX(set_id) FROM evaluation_sets"
         set_id = await conn.fetchval(set_id_query)
     
-    # Get comprehensive data from miner_agents and evaluations
+    # Get comprehensive data from agents and evaluations
     query = """
         WITH hourly_data AS (
             SELECT 
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 ma.miner_hotkey,
-                ma.version_id,
+                ma.agent_id,
                 e.score
-            FROM miner_agents ma
-            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+            FROM agents ma
+            LEFT JOIN evaluations_hydrated e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
-                AND e.status = 'completed' 
+                AND e.status = 'success' 
                 AND e.score IS NOT NULL
                 AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'
@@ -199,15 +201,15 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
     """Get miner submissions and top scores by hour for correlation analysis"""
     # Use max set_id if not provided
     if set_id is None:
-        set_id_query = "SELECT MAX(set_id) FROM agent_scores"
+        set_id_query = "SELECT MAX(set_id) FROM evaluation_sets"
         set_id = await conn.fetchval(set_id_query)
     
     query = """
         WITH hourly_submissions AS (
             SELECT 
                 DATE_TRUNC('hour', created_at) as hour,
-                COUNT(DISTINCT version_id) as miner_submissions
-            FROM miner_agents
+                COUNT(DISTINCT agent_id) as miner_submissions
+            FROM agents
             WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             GROUP BY DATE_TRUNC('hour', created_at)
         ),
@@ -224,10 +226,10 @@ async def get_miner_score_activity(conn: asyncpg.Connection, set_id: Optional[in
             SELECT 
                 DATE_TRUNC('hour', ma.created_at) as hour,
                 AVG(e.score) as hour_max_score
-            FROM miner_agents ma
-            LEFT JOIN evaluations e ON ma.version_id = e.version_id 
+            FROM agents ma
+            LEFT JOIN evaluations_hydrated e ON ma.agent_id = e.agent_id 
                 AND e.set_id = $1 
-                AND e.status = 'completed' 
+                AND e.status = 'success' 
                 AND e.score IS NOT NULL
                 AND e.validator_hotkey NOT LIKE 'screener-%' 
                 AND e.validator_hotkey NOT LIKE 'i-0%'

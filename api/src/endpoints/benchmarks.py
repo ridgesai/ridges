@@ -2,23 +2,25 @@ from dotenv import load_dotenv
 from fastapi import APIRouter, Depends
 
 from api.src.utils.auth import verify_request_public
-from loggers.logging_utils import get_logger
+import utils.logger as logger
 from api.src.backend.entities import QuestionSolveRateStats
-from api.src.backend.db_manager import get_db_connection
 from api.src.backend.entities import MinerAgentWithScores
+from models.evaluation_run import EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup
 
 load_dotenv()
 
-logger = get_logger(__name__)
+router = APIRouter()
 
+@router.get("/solved-percentage-per-question", tags=["benchmarks"], dependencies=[Depends(verify_request_public)])
 async def get_solved_percentage_per_question():
     """
     Returns the percentage of runs where each question was solved, as well as the number of runs and other relevant stats
     """
     async with get_db_connection() as conn:
-        solved_results = await conn.fetch("""
+        solved_results = await conn.fetch(f"""
             SELECT
-                swebench_instance_id,
+                problem_name,
                     ROUND(
                     (COUNT(CASE WHEN solved = true THEN 1 END) * 100.0 / COUNT(*)), 2
                 ) as solved_percentage,
@@ -27,43 +29,28 @@ async def get_solved_percentage_per_question():
                 COUNT(CASE WHEN NOT solved THEN 1 END) as not_solved_runs
             FROM evaluation_runs
             WHERE solved IS NOT NULL
-                AND status != 'cancelled'  -- exclude cancelled runs
-                AND swebench_instance_id in (select es.swebench_instance_id from evaluation_sets es where set_id = 3 and type='validator')
-            GROUP BY swebench_instance_id
+                AND status != '{EvaluationRunStatus.error}'  -- exclude errored runs
+                AND problem_name in (select es.problem_name from evaluation_sets es where set_id = 3 and set_group='{EvaluationSetGroup.validator.value}')
+            GROUP BY problem_name
             ORDER BY solved_percentage DESC, total_runs DESC;
         """)
 
         return [QuestionSolveRateStats(**dict(row)) for row in solved_results]
 
-async def get_top_agents_solved_for_question(swebench_instance_id: str) -> list[MinerAgentWithScores]:
+@router.get("/solving-agents", tags=["benchmarks"], dependencies=[Depends(verify_request_public)])
+async def get_top_agents_solved_for_question(problem_name: str) -> list[MinerAgentWithScores]:
     async with get_db_connection() as conn:
         solving_agents = await conn.fetch("""
-            SELECT a.version_id, a.miner_hotkey, a.agent_name, a.version_num, a.created_at, a.status, e.set_id, ass.final_score as score
-                FROM evaluation_runs r
+            SELECT a.agent_id, a.miner_hotkey, a.name, a.version_num, a.created_at, a.status, e.set_id, ass.final_score as score
+                FROM evaluation_runs_hydrated r
             LEFT JOIN evaluations e ON e.evaluation_id = r.evaluation_id
-            RIGHT JOIN miner_agents a ON a.version_id = e.version_id
-            LEFT JOIN agent_scores ass ON a.version_id = ass.version_id
-                WHERE r.swebench_instance_id = $1
+            RIGHT JOIN agents a ON a.agent_id = e.agent_id
+            LEFT JOIN agent_scores ass ON a.agent_id = ass.agent_id
+                WHERE r.problem_name = $1
                 AND solved = true
             ORDER BY ass.final_score DESC
             LIMIT 5;                         
-        """, swebench_instance_id)
+        """, problem_name)
 
 
         return [MinerAgentWithScores(**dict(row)) for row in solving_agents]
-
-router = APIRouter()
-
-routes = [
-    ("/solved-percentage-per-question", get_solved_percentage_per_question, ["GET"]),
-    ("/solving-agents", get_top_agents_solved_for_question, ["GET"]),
-]
-
-for path, endpoint, methods in routes:
-    router.add_api_route(
-        path,
-        endpoint,
-        tags=["benchmarks"],
-        dependencies=[Depends(verify_request_public)],
-        methods=methods
-    )

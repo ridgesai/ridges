@@ -13,29 +13,50 @@ INSERT INTO threshold_config (key, value) VALUES
 ('improvement_weight', 0.30)
 ON CONFLICT (key) DO NOTHING;
 
--- Agent Versions table
-CREATE TABLE IF NOT EXISTS miner_agents (
-    version_id UUID PRIMARY KEY NOT NULL,
+-- Create AgentStatus enum type if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
+        CREATE TYPE AgentStatus AS ENUM (
+            'cancelled',
+            'screening_1',
+            'failed_screening_1',
+            'screening_2',
+            'failed_screening_2',
+            'evaluating',
+            'finished'
+        );
+    END IF;
+END $$;
+
+-- Agents table
+CREATE TABLE IF NOT EXISTS agents
+(
+    -- Uniquely identifies this agent
+    agent_id UUID NOT NULL PRIMARY KEY,
+    -- Identifies the Bittensor miner that owns this agent
     miner_hotkey TEXT NOT NULL,
-    agent_name TEXT NOT NULL,
-    version_num INT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL,
-    status TEXT,
+
+    -- The name of this agent
+    name TEXT NOT NULL,
+    -- The version number of this agent (goes up for successive submissions from
+    -- the same miner_hotkey, and starts at 1)
+    version_num INTEGER NOT NULL,
+
+    -- The current status of the agent
+    status AgentStatus,
+
     agent_summary TEXT,
-    ip_address TEXT,
+
+    -- State transition time
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+
+    -- The IP address that this agent was uploaded from
+    ip_address TEXT NOT NULL,
+
     innovation DOUBLE PRECISION
 );
 
--- Add agent_summary column if it doesn't exist (for existing tables)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'miner_agents' AND column_name = 'agent_summary'
-    ) THEN
-        ALTER TABLE miner_agents ADD COLUMN agent_summary TEXT;
-    END IF;
-END $$;
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
@@ -43,53 +64,114 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS evaluation_sets (
-    set_id INT NOT NULL,
-    type TEXT NOT NULL, -- validator, screener
-    swebench_instance_id TEXT NOT NULL,
-    PRIMARY KEY (set_id, type, swebench_instance_id)
+-- Create EvaluationSetGroup enum type if it doesn't exist
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationsetgroup') THEN
+            CREATE TYPE EvaluationSetGroup AS ENUM (
+                'screener_1',
+                'screener_2',
+                'validator'
+            );
+        END IF;
+    END $$;
+
+CREATE TABLE IF NOT EXISTS evaluation_sets
+(
+    -- Identifies the set ID (which starts at 1) that this problem belongs to
+    set_id INTEGER NOT NULL,
+    -- Indicates the type of problem this is
+    set_group EvaluationSetGroup NOT NULL,
+    -- The actual problem name (SWE-Bench or Polyglot)
+    problem_name TEXT,
+    PRIMARY KEY (set_id, set_group, problem_name)
 );
 
-CREATE TABLE IF NOT EXISTS evaluations (
-    evaluation_id UUID PRIMARY KEY NOT NULL,
-    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+
+CREATE TABLE IF NOT EXISTS evaluations
+(
+    -- Uniquely identifies this evaluation
+    evaluation_id UUID NOT NULL PRIMARY KEY,
+    -- Identifies the agent this evaluation is for
+    agent_id UUID NOT NULL REFERENCES agents,
+    -- Identifies the validator/screener this evaluation is assigned to
     validator_hotkey TEXT NOT NULL,
-    set_id INT NOT NULL,
-    status TEXT NOT NULL, -- Possible values: waiting, running, replaced, error, completed
-    terminated_reason TEXT,
-    created_at TIMESTAMPTZ NOT NULL,
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    score FLOAT,
-    screener_score FLOAT
+    -- The set ID that this evaluation is using
+    set_id INTEGER NOT NULL,
+    -- Timestamp tracking
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    finished_at TIMESTAMP WITH TIME ZONE
 );
+
+-- Create EvaluationRunStatus enum type if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationrunstatus') THEN
+        CREATE TYPE EvaluationRunStatus AS ENUM (
+            'pending',
+            'initializing_agent',
+            'running_agent',
+            'initializing_eval',
+            'running_eval',
+            'finished',
+            'error'
+        );
+    END IF;
+END $$;
 
 -- Evaluation Runs table
-CREATE TABLE IF NOT EXISTS evaluation_runs (
-    run_id UUID PRIMARY KEY NOT NULL,
-    evaluation_id UUID NOT NULL REFERENCES evaluations(evaluation_id),
-    swebench_instance_id TEXT NOT NULL,
-    response TEXT,
-    error TEXT,
-    pass_to_fail_success TEXT,
-    fail_to_pass_success TEXT,
-    pass_to_pass_success TEXT,
-    fail_to_fail_success TEXT,
-    solved BOOLEAN,
-    status TEXT NOT NULL, -- Possible values: started, sandbox_created, patch_generated, eval_started, result_scored, cancelled
-    started_at TIMESTAMPTZ NOT NULL,
-    sandbox_created_at TIMESTAMPTZ,
-    patch_generated_at TIMESTAMPTZ,
-    eval_started_at TIMESTAMPTZ,
-    result_scored_at TIMESTAMPTZ,
-    cancelled_at TIMESTAMPTZ,
-    logs TEXT -- Complete Docker container logs for debugging and analysis
+CREATE TABLE IF NOT EXISTS evaluation_runs
+(
+    -- Uniquely identifies this evaluation run
+    evaluation_run_id UUID NOT NULL PRIMARY KEY,
+    -- Identifies the evaluation this evaluation run is part of
+    evaluation_id UUID NOT NULL REFERENCES evaluations,
+    -- Identifies the problem this evaluation run is for (SWE-bench or Polyglot ID)
+    problem_name TEXT NOT NULL,
+    -- The current status of the evaluation run
+    status EvaluationRunStatus,
+    -- The patch generated by the evaluation run (if any)
+    patch TEXT,
+    -- The test results generated by the evaluation run (if any)
+    test_results JSONB,
+    -- Error information (significant only if status == "error")
+    error_code INTEGER,
+    error_message TEXT,
+    -- State transition times
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    started_initializing_agent_at TIMESTAMP WITH TIME ZONE,
+    started_running_agent_at TIMESTAMP WITH TIME ZONE,
+    started_initializing_eval_at TIMESTAMP WITH TIME ZONE,
+    started_running_eval_at TIMESTAMP WITH TIME ZONE,
+    finished_or_errored_at TIMESTAMP WITH TIME ZONE
 );
+
+DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationrunlogtype') THEN
+            CREATE TYPE EvaluationRunLogType AS ENUM (
+                'agent',
+                'eval'
+            );
+        END IF;
+    END $$;
+
+CREATE TABLE IF NOT EXISTS evaluation_run_logs
+(
+    -- Identifies the evaluation run these logs are for
+    evaluation_run_id UUID NOT NULL,
+    -- The logs
+    logs TEXT,
+    -- Whether the logs were produced by the agent or the eval system
+    type EvaluationRunLogType,
+    PRIMARY KEY (evaluation_run_id, type)
+);
+
 
 -- Embeddings table
 CREATE TABLE IF NOT EXISTS embeddings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id UUID NOT NULL REFERENCES evaluation_runs(run_id),
+    evaluation_run_id UUID NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
     input_text TEXT NOT NULL,
     cost FLOAT,
     response JSONB,
@@ -99,38 +181,35 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 -- Inference table
 CREATE TABLE IF NOT EXISTS inferences (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    run_id UUID NOT NULL,
-    messages JSONB NOT NULL,
-    temperature FLOAT NOT NULL,
+    inference_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    evaluation_run_id UUID NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
+    provider TEXT NOT NULL,
     model TEXT NOT NULL,
-    cost FLOAT,
+    temperature FLOAT NOT NULL,
+    messages JSONB NOT NULL,
+    status_code INT,
     response TEXT,
-    total_tokens INT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    finished_at TIMESTAMPTZ,
-    provider TEXT,
-    status_code INT
+    num_input_tokens INT,
+    num_output_tokens INT,
+    cost_usd FLOAT,
+    request_received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    response_sent_at TIMESTAMPTZ
 );
 
 -- Performance optimization indices for inferences queries
 CREATE INDEX IF NOT EXISTS idx_inferences_created_provider_range
-ON inferences (created_at, provider)
-INCLUDE (finished_at, status_code, total_tokens)
-WHERE finished_at IS NOT NULL AND provider IS NOT NULL;
+ON inferences (request_received_at, provider)
+INCLUDE (response_sent_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
+WHERE response_sent_at IS NOT NULL AND provider IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS approved_version_ids (
+CREATE TABLE IF NOT EXISTS approved_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    version_id UUID REFERENCES miner_agents(version_id),
+    agent_id UUID REFERENCES agents(agent_id),
     set_id INT NOT NULL,
     approved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (version_id, set_id)
+    UNIQUE (agent_id, set_id)
 );
 
--- Prevent accidental deletes from approved_version_ids table
-CREATE OR REPLACE FUNCTION prevent_delete_approval() RETURNS TRIGGER AS $$ BEGIN RAISE EXCEPTION 'Forbidden:Unapproving agents can lead to messing up treasury-owing financial data'; END; $$ LANGUAGE plpgsql;
-DROP TRIGGER IF EXISTS no_delete_approval_trigger ON approved_version_ids;
-CREATE TRIGGER no_delete_approval_trigger BEFORE DELETE ON approved_version_ids FOR EACH ROW EXECUTE FUNCTION prevent_delete_approval();
 
 -- Open Users table
 CREATE TABLE IF NOT EXISTS open_users (
@@ -171,12 +250,12 @@ CREATE TABLE IF NOT EXISTS open_user_bittensor_hotkeys (
 -- Top agents table
 CREATE TABLE IF NOT EXISTS top_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    version_id UUID REFERENCES miner_agents(version_id),
+    agent_id UUID REFERENCES agents(agent_id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Ensure version_id is nullable to allow recording periods with no top agent
-ALTER TABLE top_agents ALTER COLUMN version_id DROP NOT NULL;
+-- Ensure agent_id is nullable to allow recording periods with no top agent
+ALTER TABLE top_agents ALTER COLUMN agent_id DROP NOT NULL;
 
 CREATE TABLE IF NOT EXISTS treasury_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -185,54 +264,23 @@ CREATE TABLE IF NOT EXISTS treasury_transactions (
     destination_coldkey TEXT NOT NULL,
     staker_hotkey TEXT NOT NULL,
     amount_alpha_rao BIGINT NOT NULL,
-    version_id UUID NOT NULL REFERENCES miner_agents(version_id),
+    agent_id UUID NOT NULL REFERENCES agents(agent_id),
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     extrinsic_code TEXT NOT NULL UNIQUE,
     fee BOOLEAN NOT NULL DEFAULT FALSE
 );
 
--- Trigger functions and triggers for automatic score updates
-
--- Function to update evaluation score when evaluation runs are updated
-CREATE OR REPLACE FUNCTION update_evaluation_score()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Update the score for the associated evaluation based on average of solved runs
-    UPDATE evaluations 
-    SET score = (
-        SELECT AVG(CASE WHEN solved THEN 1.0 ELSE 0.0 END)
-        FROM evaluation_runs 
-        WHERE evaluation_id = NEW.evaluation_id
-        AND status != 'cancelled'
-    )
-    WHERE evaluation_id = NEW.evaluation_id;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Drop existing triggers if they exist
-DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-DROP TRIGGER IF EXISTS tr_check_evaluation_recent_version ON evaluations;
-DROP TRIGGER IF EXISTS tr_update_miner_agent_score ON miner_agents;
-
--- Trigger to update evaluation score when evaluation runs are inserted or updated
-DROP TRIGGER IF EXISTS tr_update_evaluation_score ON evaluation_runs;
-CREATE TRIGGER tr_update_evaluation_score
-    AFTER INSERT OR UPDATE OF solved ON evaluation_runs
-    FOR EACH ROW
-    EXECUTE FUNCTION update_evaluation_score();
 
 -- Performance optimization indices for evaluations queries
 
--- Primary composite index for main query filtering and ordering
-CREATE INDEX IF NOT EXISTS idx_evaluations_version_set_created 
-ON evaluations (version_id, set_id, created_at DESC);
+-- -- Primary composite index for main query filtering and ordering
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_version_set_created
+-- ON evaluations (agent_id, set_id, created_at DESC);
 
--- Composite index optimized for screener evaluations in CTE
-CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup 
-ON evaluations (version_id, set_id, validator_hotkey, created_at DESC) 
-WHERE (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-%');
+-- -- Composite index optimized for screener evaluations in CTE
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_screener_lookup
+-- ON evaluations (agent_id, set_id, validator_hotkey, created_at DESC)
+-- WHERE (validator_hotkey LIKE 'screener-1-%' OR validator_hotkey LIKE 'screener-2-%' OR validator_hotkey LIKE 'i-%');
 
 -- Index for evaluation_id lookups (used in IN clause)
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
@@ -241,42 +289,81 @@ CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern 
 ON evaluations (validator_hotkey text_pattern_ops);
 
--- Partial index for non-screener evaluations
-CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener 
-ON evaluations (version_id, set_id, created_at DESC) 
-WHERE (validator_hotkey NOT LIKE 'screener-1-%' AND validator_hotkey NOT LIKE 'screener-2-%' AND validator_hotkey NOT LIKE 'i-%');
+-- -- Partial index for non-screener evaluations
+-- CREATE INDEX IF NOT EXISTS idx_evaluations_non_screener
+-- ON evaluations (agent_id, set_id, created_at DESC)
+-- WHERE (validator_hotkey NOT LIKE 'screener-1-%' AND validator_hotkey NOT LIKE 'screener-2-%' AND validator_hotkey NOT LIKE 'i-%');
 
 -- NEW INDICES FOR OPTIMIZED get_evaluations_with_usage_for_agent_version QUERY
 
--- Critical index for evaluation_runs JOIN and filtering
--- Covers: JOIN ON evaluation_id, WHERE status != 'cancelled', ORDER BY started_at
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_status_started 
-ON evaluation_runs (evaluation_id, status, started_at) 
-WHERE status != 'cancelled';
-
--- Optimized index for non-cancelled runs only (partial index for better performance)
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled 
-ON evaluation_runs (evaluation_id, started_at) 
-WHERE status != 'cancelled';
+-- -- Critical index for evaluation_runs JOIN and filtering
+-- -- Covers: JOIN ON evaluation_id, WHERE status != 'cancelled', ORDER BY started_at
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_status_started
+-- ON evaluation_runs (evaluation_id, status, started_at)
+-- WHERE status != 'cancelled';
+--
+-- -- Optimized index for non-cancelled runs only (partial index for better performance)
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_eval_started_non_cancelled
+-- ON evaluation_runs (evaluation_id, started_at)
+-- WHERE status != 'cancelled';
 
 -- General index for evaluation_runs foreign key if it doesn't exist
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id 
 ON evaluation_runs (evaluation_id);
 
--- Optimized index for innovation score calculations
-CREATE INDEX IF NOT EXISTS idx_evaluation_runs_innovation_fast
-ON evaluation_runs (swebench_instance_id, started_at, solved, run_id)
-WHERE status = 'result_scored' AND solved = true;
+-- -- Optimized index for innovation score calculations
+-- CREATE INDEX IF NOT EXISTS idx_evaluation_runs_innovation_fast
+-- ON evaluation_runs_hydrated (problem_name, started_at, solved, evaluation_run_id)
+-- WHERE status = 'result_scored' AND solved = true;
 
--- Speeds up filtering to the miner’s version_ids
-CREATE INDEX IF NOT EXISTS idx_miner_agents_miner_hotkey_version
-ON miner_agents (miner_hotkey, version_id);
+-- Speeds up filtering to the miner’s agent_ids
+CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey_version
+ON agents (miner_hotkey, agent_id);
 
 -- Speeds up the join lookup from tt to ma
 CREATE INDEX IF NOT EXISTS idx_treasury_transactions_version
-ON treasury_transactions (version_id);
+ON treasury_transactions (agent_id);
 
--- Drop and recreate materialized view to ensure clean state for concurrent refresh
+DROP MATERIALIZED VIEW IF EXISTS evaluation_runs_hydrated CASCADE;
+
+-- Create EvaluationStatus enum type if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationstatus') THEN
+        CREATE TYPE EvaluationStatus AS ENUM ('running', 'success', 'failure');
+    END IF;
+END $$;
+
+-- First view: evaluation_runs with solved status
+CREATE MATERIALIZED VIEW evaluation_runs_hydrated AS
+SELECT
+    evaluation_runs.*,
+    CASE
+        WHEN evaluation_runs.test_results IS NULL THEN NULL
+        WHEN jsonb_array_length(evaluation_runs.test_results) = 0 THEN NULL
+        WHEN (
+            SELECT COUNT(*) FILTER (WHERE test->>'status' = 'pass')
+            FROM jsonb_array_elements(evaluation_runs.test_results) AS test
+        ) = jsonb_array_length(evaluation_runs.test_results) THEN true
+        ELSE false
+    END AS solved
+FROM evaluation_runs;
+
+-- Second view: Evaluations hydrated view
+-- Evaluations with aggregated status and average score
+CREATE OR REPLACE VIEW evaluations_hydrated AS
+SELECT
+    evaluations.*,
+    (CASE
+         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
+         ELSE 'running'
+        END)::EvaluationStatus AS status,
+    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
+FROM evaluations
+    INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
+GROUP BY evaluations.evaluation_id;
+
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
 
 -- Recreate the materialized view
@@ -284,22 +371,22 @@ CREATE MATERIALIZED VIEW agent_scores AS
 WITH all_agents AS (
     -- Get all agent versions from non-banned hotkeys
     SELECT
-        version_id,
+        agent_id,
         miner_hotkey,
-        agent_name,
+        name,
         version_num,
         created_at,
         status,
         agent_summary
-    FROM miner_agents
+    FROM agents
     WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
 ),
 agent_evaluations AS (
     -- Get all evaluations for all agent versions
     SELECT
-        aa.version_id,
+        aa.agent_id,
         aa.miner_hotkey,
-        aa.agent_name,
+        aa.name,
         aa.version_num,
         aa.created_at,
         aa.status,
@@ -307,36 +394,30 @@ agent_evaluations AS (
         e.set_id,
         e.score,
         e.validator_hotkey,
-        (avi.version_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
+        (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
         avi.approved_at
     FROM all_agents aa
-    INNER JOIN evaluations e ON aa.version_id = e.version_id
-        AND e.status = 'completed' 
+    INNER JOIN evaluations_hydrated e ON aa.agent_id = e.agent_id
+        AND e.status = 'success'
         AND e.score IS NOT NULL
         AND e.score > 0
-        AND e.validator_hotkey NOT LIKE 'screener-1-%'
-        AND e.validator_hotkey NOT LIKE 'screener-2-%'
-        AND e.validator_hotkey NOT LIKE 'i-0%'
+        AND e.validator_hotkey NOT LIKE 'screener-%'
         AND e.set_id IS NOT NULL
-    LEFT JOIN approved_version_ids avi ON aa.version_id = avi.version_id AND e.set_id = avi.set_id
+    LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
 ),
 filtered_scores AS (
     -- Remove the lowest score for each agent version and set combination
     SELECT
         ae.*,
-        ROW_NUMBER() OVER (
-            PARTITION BY ae.version_id, ae.set_id
-            ORDER BY ae.score ASC
-        ) as score_rank,
         COUNT(*) OVER (
-            PARTITION BY ae.version_id, ae.set_id
+            PARTITION BY ae.agent_id, ae.set_id
         ) as total_scores
     FROM agent_evaluations ae
 )
 SELECT
-    fs.version_id,
+    fs.agent_id,
     fs.miner_hotkey,
-    fs.agent_name,
+    fs.name,
     fs.version_num,
     fs.created_at,
     fs.status,
@@ -348,51 +429,67 @@ SELECT
     AVG(fs.score) AS final_score
 FROM filtered_scores fs
 WHERE fs.set_id IS NOT NULL
-    AND (
-        (fs.total_scores = 2 AND fs.score_rank > 0) OR
-        (fs.total_scores > 2 AND fs.score_rank > 1)
-    )  -- Keep all scores when only 2 exist, exclude lowest when 3+
-GROUP BY fs.version_id, fs.miner_hotkey, fs.agent_name, fs.version_num, 
+GROUP BY fs.agent_id, fs.miner_hotkey, fs.name, fs.version_num,
          fs.created_at, fs.status, fs.agent_summary, fs.set_id, fs.approved, fs.approved_at
-HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2  -- At least 2 validators
+-- At least 2 validators
+-- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
+HAVING COUNT(DISTINCT fs.validator_hotkey) >= 2
 ORDER BY final_score DESC, created_at ASC;
 
 -- Create indexes for fast querying on the materialized view
--- CRITICAL: This unique index enables CONCURRENT refresh
 DROP INDEX IF EXISTS idx_agent_scores_unique;
-CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (version_id, set_id);
+CREATE UNIQUE INDEX idx_agent_scores_unique ON agent_scores (agent_id, set_id);
 CREATE INDEX idx_agent_scores_set_score ON agent_scores (set_id, final_score DESC, created_at ASC);
-CREATE INDEX idx_agent_scores_version ON agent_scores (version_id);
+CREATE INDEX idx_agent_scores_version ON agent_scores (agent_id);
 CREATE INDEX idx_agent_scores_hotkey ON agent_scores (miner_hotkey);
 CREATE INDEX idx_agent_scores_approved ON agent_scores (approved, set_id, final_score DESC);
 
--- Function to refresh the agent_scores materialized view
-CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
+-- Function to refresh evaluation_runs_hydrated
+CREATE OR REPLACE FUNCTION refresh_evaluation_runs_hydrated()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores;
+    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to refresh materialized view when evaluations are updated
+-- Function to refresh only agent_scores materialized view
+CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW agent_scores;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to refresh materialized views when evaluations table changes
+-- Refreshes in dependency order to ensure fresh data
+CREATE OR REPLACE FUNCTION refresh_evaluations_and_scores()
+RETURNS TRIGGER AS $$
+BEGIN
+    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
+    REFRESH MATERIALIZED VIEW agent_scores;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;
 CREATE TRIGGER tr_refresh_agent_scores
     AFTER INSERT OR UPDATE OR DELETE ON evaluations
     FOR EACH STATEMENT
-    EXECUTE FUNCTION refresh_agent_scores_view();
+    EXECUTE FUNCTION refresh_evaluations_and_scores();
 
 -- Trigger to refresh materialized view when agent status changes
-DROP TRIGGER IF EXISTS tr_refresh_agent_scores_agents ON miner_agents;
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_agents ON agents;
 CREATE TRIGGER tr_refresh_agent_scores_agents
-    AFTER UPDATE OF status ON miner_agents
+    AFTER UPDATE OF status ON agents
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
 
 -- Trigger to refresh materialized view when approved agents change
-DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved ON approved_version_ids;
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved ON approved_agents;
 CREATE TRIGGER tr_refresh_agent_scores_approved
-    AFTER INSERT OR DELETE ON approved_version_ids
+    AFTER INSERT OR DELETE ON approved_agents
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
 
@@ -403,17 +500,34 @@ CREATE TRIGGER tr_refresh_agent_scores_banned
     FOR EACH STATEMENT
     EXECUTE FUNCTION refresh_agent_scores_view();
 
+-- Trigger to refresh evaluation_runs_hydrated when evaluation_runs change
+DROP TRIGGER IF EXISTS tr_refresh_evaluation_runs_views ON evaluation_runs;
+CREATE TRIGGER tr_refresh_evaluation_runs_views
+    AFTER INSERT OR UPDATE OR DELETE ON evaluation_runs
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION refresh_evaluation_runs_hydrated();
+
 -- Trigger function to update top_agents when an evaluation is marked as completed
 CREATE OR REPLACE FUNCTION set_top_agent_on_completed_evaluation()
 RETURNS TRIGGER AS $$
 DECLARE
+    evaluation_status TEXT;
     latest_set_id INT;
     latest_top_version UUID;
     current_top_version UUID;
     has_current BOOLEAN;
 BEGIN
-    -- Only act when status is set to completed
-    IF NEW.status <> 'completed' THEN
+    -- Compute the evaluation status by querying evaluation_runs
+    SELECT CASE
+        WHEN EVERY(status = 'finished') THEN 'success'
+        WHEN EVERY(status IN ('finished', 'error')) THEN 'failure'
+        ELSE 'running'
+    END INTO evaluation_status
+    FROM evaluation_runs
+    WHERE evaluation_id = NEW.evaluation_id;
+
+    -- Only act when status is 'success'
+    IF evaluation_status <> 'success' THEN
         RETURN NEW;
     END IF;
 
@@ -424,14 +538,14 @@ BEGIN
     END IF;
 
     -- Get the current top agent from the materialized view for the latest set
-    SELECT version_id INTO latest_top_version
+    SELECT agent_id INTO latest_top_version
     FROM agent_scores
     WHERE set_id = latest_set_id
     ORDER BY final_score DESC, created_at ASC
     LIMIT 1;
 
     -- Fetch the most recent entry from top_agents
-    SELECT version_id INTO current_top_version
+    SELECT agent_id INTO current_top_version
     FROM top_agents
     ORDER BY created_at DESC
     LIMIT 1;
@@ -440,7 +554,7 @@ BEGIN
     -- Insert a new top agent entry if there is no previous entry or if it differs
     -- Note: latest_top_version can be NULL if no agents qualify, which is valid
     IF NOT has_current OR current_top_version IS DISTINCT FROM latest_top_version THEN
-        INSERT INTO top_agents (version_id) VALUES (latest_top_version);
+        INSERT INTO top_agents (agent_id) VALUES (latest_top_version);
     END IF;
 
     RETURN NEW;
@@ -450,16 +564,16 @@ $$ LANGUAGE plpgsql;
 -- Trigger to invoke the above function when an evaluation completes
 DROP TRIGGER IF EXISTS tr_set_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations
+    AFTER UPDATE OF finished_at ON evaluations
     FOR EACH ROW
-    WHEN (NEW.status = 'completed')
+    WHEN (NEW.finished_at IS NOT NULL AND OLD.finished_at IS NULL)
     EXECUTE FUNCTION set_top_agent_on_completed_evaluation();
 
 -- Approved Top Agents History
 -- Table to store history of the approved top agent for the latest set_id
 CREATE TABLE IF NOT EXISTS approved_top_agents_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    version_id UUID REFERENCES miner_agents(version_id),
+    agent_id UUID REFERENCES agents(agent_id),
     top_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     set_id INT NOT NULL
 );
@@ -487,17 +601,17 @@ BEGIN
     latest_set_id := GREATEST(COALESCE(latest_set_id_from_sets, 0), COALESCE(latest_set_id_from_evals, 0));
 
     -- Identify the top approved agent for the latest set_id
-    SELECT a.version_id INTO latest_top_version
+    SELECT a.agent_id INTO latest_top_version
     FROM agent_scores a
     WHERE a.set_id = latest_set_id
-      AND a.version_id IN (
-          SELECT version_id FROM approved_version_ids WHERE set_id = latest_set_id AND approved_at <= NOW()
+      AND a.agent_id IN (
+          SELECT agent_id FROM approved_agents WHERE set_id = latest_set_id AND approved_at <= NOW()
       )
     ORDER BY a.final_score DESC, a.created_at ASC
     LIMIT 1;
 
     -- Get the most recent history entry
-    SELECT set_id, version_id INTO last_record_set_id, last_record_version
+    SELECT set_id, agent_id INTO last_record_set_id, last_record_version
     FROM approved_top_agents_history
     ORDER BY top_at DESC
     LIMIT 1;
@@ -508,7 +622,7 @@ BEGIN
     IF NOT has_current
        OR last_record_set_id IS DISTINCT FROM latest_set_id
        OR last_record_version IS DISTINCT FROM latest_top_version THEN
-        INSERT INTO approved_top_agents_history (version_id, set_id)
+        INSERT INTO approved_top_agents_history (agent_id, set_id)
         VALUES (latest_top_version, latest_set_id);
     END IF;
 
@@ -520,15 +634,15 @@ $$ LANGUAGE plpgsql;
 -- 1) When an evaluation completes (same as top_agents)
 DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_completed_evaluation ON evaluations;
 CREATE TRIGGER tr_set_approved_top_agent_on_completed_evaluation
-    AFTER UPDATE OF status ON evaluations
+    AFTER UPDATE OF finished_at ON evaluations
     FOR EACH ROW
-    WHEN (NEW.status = 'completed')
+    WHEN (NEW.finished_at IS NOT NULL AND OLD.finished_at IS NULL)
     EXECUTE FUNCTION set_approved_top_agent_if_changed();
 
 -- 2) When an agent is approved for a set
-DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_approval ON approved_version_ids;
+DROP TRIGGER IF EXISTS tr_set_approved_top_agent_on_approval ON approved_agents;
 CREATE TRIGGER tr_set_approved_top_agent_on_approval
-    AFTER INSERT ON approved_version_ids
+    AFTER INSERT ON approved_agents
     FOR EACH ROW
     EXECUTE FUNCTION set_approved_top_agent_if_changed();
 
@@ -553,6 +667,73 @@ CREATE TABLE IF NOT EXISTS upload_attempts (
     error_message TEXT,
     ban_reason TEXT,
     http_status_code INT,
-    version_id UUID,
+    agent_id UUID,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Screener 1 queue view
+-- Returns agents in screening_1 status that haven't been successfully evaluated by a screener-1 validator yet
+CREATE OR REPLACE VIEW screener_1_queue AS
+SELECT agents.agent_id, agents.status
+FROM agents
+WHERE agents.status = 'screening_1'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM evaluations_hydrated
+    WHERE evaluations_hydrated.agent_id = agents.agent_id
+      AND evaluations_hydrated.status IN ('success', 'running')
+      AND evaluations_hydrated.validator_hotkey LIKE 'screener-1%'
+  )
+ORDER BY agents.created_at ASC;
+
+-- Screener 2 queue view
+-- Returns agents in screening_2 status that haven't been successfully evaluated by a screener-2 validator yet
+CREATE OR REPLACE VIEW screener_2_queue AS
+SELECT agents.agent_id, agents.status
+FROM agents
+WHERE agents.status = 'screening_2'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM evaluations_hydrated
+    WHERE evaluations_hydrated.agent_id = agents.agent_id
+      AND evaluations_hydrated.status IN ('success', 'running')
+      AND evaluations_hydrated.validator_hotkey LIKE 'screener-2%'
+  )
+ORDER BY agents.created_at ASC;
+
+-- Validator queue view
+-- Returns agents in evaluating status, from highest to lowest sc2 score
+CREATE OR REPLACE VIEW validator_queue AS
+WITH
+    validator_eval_counts AS (
+        SELECT
+            agent_id,
+            COUNT(*) FILTER (WHERE status = 'running') AS num_running_evals,
+            COUNT(*) FILTER (WHERE status = 'success') AS num_finished_evals
+        FROM evaluations_hydrated
+        WHERE evaluations_hydrated.status IN ('success', 'running')
+          AND validator_hotkey NOT LIKE 'screener%'
+        GROUP BY agent_id
+    ),
+    screener_2_scores AS (
+        SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
+        WHERE validator_hotkey LIKE 'screener-2%'
+          AND evaluations_hydrated.status = 'success'
+        GROUP BY agent_id
+    )
+SELECT
+    agent_id,
+    status,
+    COALESCE(num_running_evals, 0) as num_running_evals,
+    COALESCE(num_finished_evals, 0) as num_finished_evals
+FROM agents
+     INNER JOIN screener_2_scores USING (agent_id)
+     LEFT JOIN validator_eval_counts USING (agent_id)
+WHERE
+    agents.status = 'evaluating'
+--   TODO: Make into a constant, same as config.NUM_EVALS_PER_AGENT
+    AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < 3
+ORDER BY
+    screener_2_scores.score DESC,
+    agents.created_at ASC,
+    num_finished_evals DESC

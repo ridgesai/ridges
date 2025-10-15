@@ -1,33 +1,44 @@
 from uuid import UUID
-from typing import List
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List, Optional
 
 
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix='PROXY_', env_file='.env')
-    
-    HOST: str
-    PORT: int
-    CHUTES_BASE_URL: str
-    CHUTES_API_KEY: str
-    CHUTES_EMBEDDING_URL: str
+class ModelInfo(BaseModel):
+    name: str
+    cost_usd_per_million_input_tokens: float
+    cost_usd_per_million_output_tokens: float
+
+    def get_cost_usd(self, num_input_tokens: int, num_output_tokens: int) -> float:
+        return (num_input_tokens / 1000000) * self.cost_usd_per_million_input_tokens + (num_output_tokens / 1000000) * self.cost_usd_per_million_output_tokens
 
 
 
-class Message(BaseModel):
+class InferenceResult(BaseModel):
+    status_code: int
+    response: str
+    num_input_tokens: Optional[int] = None
+    num_output_tokens: Optional[int] = None
+    cost_usd: Optional[float] = None
+
+
+
+class InferenceMessage(BaseModel):
     role: str
     content: str
 
 class InferenceRequest(BaseModel):
+    # TODO
+    # evaluation_run_id: UUID
     run_id: UUID
     model: str
     temperature: float
-    messages: List[Message]
+    messages: List[InferenceMessage]
 
 
 
 class EmbeddingRequest(BaseModel):
+    # TODO
+    # evaluation_run_id: UUID
     run_id: UUID
     input: str

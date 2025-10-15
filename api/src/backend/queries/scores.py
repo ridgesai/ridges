@@ -2,16 +2,16 @@ from datetime import timezone
 import logging
 from uuid import UUID
 import asyncpg
-from api.src.backend.db_manager import db_operation
+from utils.database import db_operation
 from api.src.backend.entities import MinerAgentScored, TreasuryTransaction
 
 
 logger = logging.getLogger(__name__)
 
 @db_operation
-async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -> dict:
+async def check_for_new_high_score(conn: asyncpg.Connection, agent_id: UUID) -> dict:
     """
-    Check if version_id scored higher than all approved agents within the same set_id.
+    Check if agent_id scored higher than all approved agents within the same set_id.
     Uses the agent_scores materialized view for performance.
     
     Returns dict with:
@@ -19,14 +19,14 @@ async def check_for_new_high_score(conn: asyncpg.Connection, version_id: UUID) -
     - agent details if high score detected
     - reason if no high score detected
     """
-    logger.debug(f"Checking for new high score for version {version_id} using agent_scores materialized view.")
+    logger.debug(f"Checking for new high score for version {agent_id} using agent_scores materialized view.")
     
-    result = await MinerAgentScored.check_for_new_high_score(conn, version_id)
+    result = await MinerAgentScored.check_for_new_high_score(conn, agent_id)
     
     if result["high_score_detected"]:
         logger.info(f"🎯 HIGH SCORE DETECTED: {result['agent_name']} scored {result['new_score']:.4f} vs previous max {result['previous_max_score']:.4f} on set_id {result['set_id']}")
     else:
-        logger.debug(f"No high score detected for version {version_id}: {result['reason']}")
+        logger.debug(f"No high score detected for version {agent_id}: {result['reason']}")
     
     return result
 
@@ -46,12 +46,12 @@ async def store_treasury_transaction(conn: asyncpg.Connection, transaction: Trea
     Stores a treasury transaction in the database.
     """
     await conn.execute("""
-        INSERT INTO treasury_transactions (group_transaction_id, sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha_rao, occurred_at, version_id, extrinsic_code, fee)
+        INSERT INTO treasury_transactions (group_transaction_id, sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha_rao, occurred_at, agent_id, extrinsic_code, fee)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.version_id, transaction.extrinsic_code, transaction.fee)
+    """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.agent_id, transaction.extrinsic_code, transaction.fee)
 
 @db_operation
-async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, version_id: str, set_id: int) -> dict:
+async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, agent_id: str, set_id: int) -> dict:
     """
     Evaluate an agent for threshold-based approval.
     
@@ -66,8 +66,8 @@ async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, versio
     # Get agent's score
     agent_result = await conn.fetchrow("""
         SELECT final_score FROM agent_scores 
-        WHERE version_id = $1 AND set_id = $2
-    """, version_id, set_id)
+        WHERE agent_id = $1 AND set_id = $2
+    """, agent_id, set_id)
     
     if not agent_result:
         return {"action": "reject", "reason": "Agent not found or no valid score"}
@@ -100,8 +100,8 @@ async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, versio
     # Get current top score (not necessarily approved), excluding the agent being evaluated
     top_score_result = await conn.fetchrow("""
         SELECT MAX(final_score) as top_score FROM agent_scores 
-        WHERE set_id = $1 AND version_id != $2
-    """, set_id, version_id)
+        WHERE set_id = $1 AND agent_id != $2
+    """, set_id, agent_id)
     top_score = top_score_result['top_score'] if top_score_result else 0.0
     
     if agent_score >= current_threshold:
@@ -180,11 +180,11 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
 
     history_rows = await conn.fetch(
         """
-        SELECT h.version_id, h.set_id, s.final_score
+        SELECT h.agent_id, h.set_id, s.final_score
         FROM approved_top_agents_history h
         LEFT JOIN agent_scores s
-          ON s.version_id = h.version_id AND s.set_id = h.set_id
-        WHERE h.version_id IS NOT NULL
+          ON s.agent_id = h.agent_id AND s.set_id = h.set_id
+        WHERE h.agent_id IS NOT NULL
         ORDER BY h.top_at DESC
         LIMIT 2
         """
@@ -192,19 +192,19 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
 
     CURR_SCORE = 0.0
     PREV_SCORE = 0.0
-    latest_version_id = None
+    latest_agent_id = None
 
     if len(history_rows) >= 1:
-        latest_version_id = history_rows[0]["version_id"]
+        latest_agent_id = history_rows[0]["agent_id"]
         CURR_SCORE = float(history_rows[0]["final_score"] or 0.0)
     if len(history_rows) >= 2:
         PREV_SCORE = float(history_rows[1]["final_score"] or 0.0)
 
     INNOVATION_SCALE = 0.0
-    if latest_version_id is not None:
+    if latest_agent_id is not None:
         innovation_row = await conn.fetchrow(
-            "SELECT innovation FROM miner_agents WHERE version_id = $1",
-            latest_version_id,
+            "SELECT innovation FROM agents WHERE agent_id = $1",
+            latest_agent_id,
         )
         if innovation_row and innovation_row["innovation"] is not None:
             INNOVATION_SCALE = float(innovation_row["innovation"])
@@ -229,7 +229,7 @@ async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     epoch_0_result = await conn.fetchrow("""
         SELECT avi.approved_at as epoch_0_time
         FROM agent_scores a
-        JOIN approved_version_ids avi ON a.version_id = avi.version_id AND a.set_id = avi.set_id
+        JOIN approved_agents avi ON a.agent_id = avi.agent_id AND a.set_id = avi.set_id
         WHERE a.set_id = $1 AND a.approved = true AND avi.approved_at <= NOW()
         ORDER BY a.final_score DESC, a.created_at ASC
         LIMIT 1

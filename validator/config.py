@@ -1,68 +1,162 @@
-from datetime import timedelta
 import os
-import subprocess
-import platform
+import re
+import utils.logger as logger
 
-# External package imports
+from dotenv import load_dotenv
 from fiber.chain.chain_utils import load_hotkey_keypair
 
-# Set Docker platform for Apple Silicon compatibility
-if platform.machine() == 'arm64' and not os.getenv('DOCKER_DEFAULT_PLATFORM'):
-    os.environ['DOCKER_DEFAULT_PLATFORM'] = 'linux/arm64'
 
-SCREENER_MODE = os.getenv("SCREENER_MODE", "false") == "true"
 
-# Load validator config from env
-NETUID = int(os.getenv("NETUID", "1"))
-SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK", "test")
-SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS", "ws://127.0.0.1:9945")
+# Load everything from .env
+load_dotenv()
 
-# Validator configuration
-HOTKEY_NAME = os.getenv("HOTKEY_NAME", "default")
-WALLET_NAME = os.getenv("WALLET_NAME", "validator")
-MIN_STAKE_THRESHOLD = float(os.getenv("MIN_STAKE_THRESHOLD", "2"))
 
-VERSION_KEY = 6
-VERSION_COMMIT_HASH = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
 
-# Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-RIDGES_API_URL = os.getenv("RIDGES_API_URL", None) 
-if RIDGES_API_URL is None:
-    print("RIDGES_API_URL must be set in validator/.env")
-    exit(1)
-if RIDGES_API_URL == "http://<YOUR_LOCAL_IP>:8000":
-    print("Set your local IP address in validator/.env")
-    exit(1)
-if RIDGES_API_URL in ["http://127.0.0.1:8000", "http://localhost:8000", "http://0.0.0.0:8000"]:
-    print("You are running the validator on a loopback address. This will cause 502 connection errors while proxying. Please use your local IP address.")
-    exit(1)
-RIDGES_PROXY_URL = os.getenv("RIDGES_PROXY_URL", "http://52.1.119.189:8001")
+# Bittensor configuration
+NETUID = os.getenv("NETUID")
+if not NETUID:
+    logger.fatal("NETUID is not set in .env")
+NETUID = int(NETUID)
 
-LOG_DRAIN_FREQUENCY = timedelta(minutes=10)
+SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
-# Log initial configuration
-from loggers.logging_utils import get_logger
-logger = get_logger(__name__)
+SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
-logger.info("Validator Configuration:")
-logger.info(f"Network: {SUBTENSOR_NETWORK}")
-logger.info(f"Netuid: {NETUID}")
-logger.info(f"Min stake threshold: {MIN_STAKE_THRESHOLD}")
-logger.info(f"Log level: {LOG_LEVEL}")
 
-validator_hotkey = None
-screener_hotkey = None
-if SCREENER_MODE:
-    screener_hotkey = os.getenv("SCREENER_HOTKEY")
-    # Check for screener password
-    screener_password = os.getenv("SCREENER_PASSWORD")
-    if not screener_password:
-        logger.warning("WARNING: Screener mode is enabled but SCREENER_PASSWORD is not set!")
-        logger.warning("WARNING: The screener will not be able to authenticate with the proxy for inference/embedding requests!")
-        logger.warning("WARNING: Please set SCREENER_PASSWORD environment variable.")
+
+# Load the mode
+MODE = os.getenv("MODE")
+if not MODE:
+    logger.fatal("MODE is not set in .env")
+
+if MODE != "screener" and MODE != "validator":
+    logger.fatal("MODE must be either 'screener' or 'validator'")
+
+
+
+if MODE == "validator":
+    # Load wallet name and hotkey name
+    VALIDATOR_WALLET_NAME = os.getenv("VALIDATOR_WALLET_NAME")
+    if not VALIDATOR_WALLET_NAME:
+        logger.fatal("VALIDATOR_WALLET_NAME is not set in .env")
+
+    VALIDATOR_HOTKEY_NAME = os.getenv("VALIDATOR_HOTKEY_NAME")
+    if not VALIDATOR_HOTKEY_NAME:
+        logger.fatal("VALIDATOR_HOTKEY_NAME is not set in .env")
+
+    # Load the hotkey
+    try:
+        VALIDATOR_HOTKEY = load_hotkey_keypair(VALIDATOR_WALLET_NAME, VALIDATOR_HOTKEY_NAME)
+    except Exception as e:
+        logger.fatal(f"Error loading hotkey: {e}")
+
+
+
+elif MODE == "screener":
+    # Load the screener name
+    SCREENER_NAME = os.getenv("SCREENER_NAME")
+    if not SCREENER_NAME:
+        logger.fatal("SCREENER_NAME is not set in .env")
+
+    # Ensure that the screener name is in the format screener-CLASS-NUM
+    if not re.match(r"screener-\d-\d+", SCREENER_NAME):
+        logger.fatal("SCREENER_NAME must be in the format screener-CLASS-NUM")
+
+    # Ensure that CLASS is either 1 or 2
+    screener_class = SCREENER_NAME.split("-")[1]
+    if screener_class != "1" and screener_class != "2":
+        logger.fatal("SCREENER_NAME must be in the format screener-CLASS-NUM where CLASS is 1 or 2")
+
+    # Load the screener password
+    SCREENER_PASSWORD = os.getenv("SCREENER_PASSWORD")
+    if not SCREENER_PASSWORD:
+        logger.fatal("SCREENER_PASSWORD is not set in .env")
+
+
+
+# Load URLs (and strip trailing slashes)
+RIDGES_PLATFORM_URL = os.getenv("RIDGES_PLATFORM_URL")
+if not RIDGES_PLATFORM_URL:
+    logger.fatal("RIDGES_PLATFORM_URL is not set in .env")
+
+RIDGES_PLATFORM_URL = RIDGES_PLATFORM_URL.rstrip("/")
+
+RIDGES_INFERENCE_GATEWAY_URL = os.getenv("RIDGES_INFERENCE_GATEWAY_URL")
+if not RIDGES_INFERENCE_GATEWAY_URL:
+    logger.fatal("RIDGES_INFERENCE_GATEWAY_URL is not set in .env")
+
+RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
+
+
+
+# Load the time to wait between sending heartbeats
+SEND_HEARTBEAT_INTERVAL_SECONDS = os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS")
+if not SEND_HEARTBEAT_INTERVAL_SECONDS:
+    logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
+SEND_HEARTBEAT_INTERVAL_SECONDS = int(SEND_HEARTBEAT_INTERVAL_SECONDS) 
+
+# Load the time to wait between setting weights
+SET_WEIGHTS_INTERVAL_SECONDS = os.getenv("SET_WEIGHTS_INTERVAL_SECONDS")
+if not SET_WEIGHTS_INTERVAL_SECONDS:
+    logger.fatal("SET_WEIGHTS_INTERVAL_SECONDS is not set in .env")
+SET_WEIGHTS_INTERVAL_SECONDS = int(SET_WEIGHTS_INTERVAL_SECONDS) 
+
+# Load the time to wait between requesting a new evaluation
+REQUEST_EVALUATION_INTERVAL_SECONDS = os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS")
+if not REQUEST_EVALUATION_INTERVAL_SECONDS:
+    logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")
+REQUEST_EVALUATION_INTERVAL_SECONDS = int(REQUEST_EVALUATION_INTERVAL_SECONDS) 
+
+
+
+# Load the simulated evaluation runs configuration
+SIMULATE_EVALUATION_RUNS = os.getenv("SIMULATE_EVALUATION_RUNS")
+if not SIMULATE_EVALUATION_RUNS:
+    logger.fatal("SIMULATE_EVALUATION_RUNS is not set in .env")
+SIMULATE_EVALUATION_RUNS = SIMULATE_EVALUATION_RUNS.lower() == "true"
+
+SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = os.getenv("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS")
+if not SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS:
+    logger.fatal("SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS is not set in .env")
+SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS = int(SIMULATE_EVALUATION_RUN_MAX_TIME_PER_STAGE_SECONDS)
+
+INCLUDE_SOLUTIONS = os.getenv("INCLUDE_SOLUTIONS")
+if not INCLUDE_SOLUTIONS:
+    logger.fatal("INCLUDE_SOLUTIONS is not set in .env")
+INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
+
+
+
+# Print out the configuration
+logger.info("=== Validator Configuration ===")
+logger.info(f"Network ID: {NETUID}")
+logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
+logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
+logger.info("-------------------------------")
+logger.info(f"Mode: {MODE}")
+if MODE == "validator":
+    logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")
+    logger.info(f"Validator Hotkey Name: {VALIDATOR_HOTKEY_NAME}")
+    logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY.ss58_address}")
+elif MODE == "screener":
+    logger.info(f"Screener Name: {SCREENER_NAME}")
+logger.info("-------------------------------")
+logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
+logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
+logger.info("-------------------------------")
+logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
+logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
+logger.info("-------------------------------")
+if SIMULATE_EVALUATION_RUNS:
+    logger.warning("Simulating Evaluation Runs!")
 else:
-    validator_hotkey = load_hotkey_keypair(WALLET_NAME, HOTKEY_NAME)
-
-AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "2400"))
-EVAL_TIMEOUT = int(os.getenv("EVAL_TIMEOUT", "600"))
+    if INCLUDE_SOLUTIONS:
+        logger.warning("Including Solutions!")
+    else:
+        logger.info("Not Including Solutions")
+logger.info("===============================")

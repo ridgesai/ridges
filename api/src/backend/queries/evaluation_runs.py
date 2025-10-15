@@ -2,10 +2,10 @@ from typing import Optional
 
 import asyncpg
 from api.src.backend.entities import EvaluationRun, EvaluationRunWithUsageDetails
-from api.src.backend.db_manager import db_operation, db_transaction
-from loggers.logging_utils import get_logger
+from utils.database import db_operation, db_transaction
+import utils.logger as logger
 
-logger = get_logger(__name__)
+
 
 
 @db_transaction
@@ -152,13 +152,13 @@ async def get_runs_with_usage_for_evaluation(conn: asyncpg.Connection, evaluatio
         """
             WITH inf AS (
                 SELECT
-                    run_id,
-                    SUM(cost)          AS cost,
-                    SUM(total_tokens)  AS total_tokens,
+                    evaluation_run_id  AS run_id,
+                    SUM(cost_usd)      AS cost,
+                    SUM(COALESCE(num_input_tokens, 0) + COALESCE(num_output_tokens, 0)) AS total_tokens,
                     COUNT(*)           AS num_inference_calls,
                     MAX(model)         AS model        -- assumes a run uses one model
                 FROM inferences
-                GROUP BY run_id
+                GROUP BY evaluation_run_id
             )
             SELECT
                 e.run_id,
@@ -282,39 +282,39 @@ async def get_evaluation_run_logs(conn: asyncpg.Connection, run_id: str) -> str:
     return logs or ""  # Return empty string if logs is NULL
 
 @db_operation
-async def fully_reset_evaluations(conn: asyncpg.Connection, version_id: str):
+async def fully_reset_evaluations(conn: asyncpg.Connection, agent_id: str):
     """Deletes all evaluations and sets an agent back to screening 1"""
 
     # Delete all evaluations related to this agent
     await conn.execute(
         """
-        DELETE * FROM evaluations WHERE version_id = $1
+        DELETE * FROM evaluations WHERE agent_id = $1
         """,
-        version_id
+        agent_id
     )
 
     # Set status back to awaiting_screening_1
     await conn.execute(
         """
-        update miner_agents 
+        update agents 
         set status = 'awaiting_screening_1'
-        where version_id = $1
+        where agent_id = $1
         """,
-        version_id
+        agent_id
     )
 
 @db_operation
-async def reset_validator_evaluations(conn: asyncpg.Connection, version_id: str):
+async def reset_validator_evaluations(conn: asyncpg.Connection, agent_id: str):
     """Resets only validator evaluations back to waiting"""
-    # Set all vali evaluations on that version id back to waiting
+    # Set all vali evaluations on that agent id back to waiting
     evaluations_set_to_waiting = await conn.fetch("""
         UPDATE evaluations
         SET status = 'waiting', started_at = NULL
-        WHERE version_id = $1
+        WHERE agent_id = $1
           AND validator_hotkey NOT LIKE 'screener-%'
           AND validator_hotkey NOT LIKE 'i-0%'
         RETURNING evaluation_id
-    """, version_id)
+    """, agent_id)
 
     # Cancel any associated eval runs
     evaluation_ids_to_cancel = [row["evaluation_id"] for row in evaluations_set_to_waiting]

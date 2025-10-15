@@ -1,10 +1,11 @@
 from typing import Optional, List
 import logging
 import json
+import uuid
 
 import asyncpg
 
-from api.src.backend.db_manager import db_operation, db_transaction
+from utils.database import db_operation, db_transaction
 from api.src.backend.entities import Evaluation, EvaluationRun, EvaluationsWithHydratedRuns, EvaluationsWithHydratedUsageRuns, EvaluationRunWithUsageDetails, AgentStatus
 from api.src.backend.queries.evaluation_runs import get_runs_with_usage_for_evaluation
 from api.src.backend.entities import EvaluationStatus
@@ -29,24 +30,24 @@ async def get_evaluation_by_evaluation_id(conn: asyncpg.Connection, evaluation_i
     return Evaluation(**dict(result))
     
 @db_operation
-async def get_evaluations_by_version_id(conn: asyncpg.Connection, version_id: str) -> List[Evaluation]:
+async def get_evaluations_by_agent_id(conn: asyncpg.Connection, agent_id: str) -> List[Evaluation]:
     result = await conn.fetch(
         "SELECT * "
-        "FROM evaluations WHERE version_id = $1 ORDER BY created_at DESC",
-        version_id
+        "FROM evaluations WHERE agent_id = $1 ORDER BY created_at DESC",
+        agent_id
     )
 
     return [Evaluation(**dict(row)) for row in result]
 
 @db_operation
-async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
+async def get_evaluations_for_agent_version(conn: asyncpg.Connection, agent_id: str, set_id: Optional[int] = None) -> list[EvaluationsWithHydratedRuns]:
     if set_id is None:
         set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
 
     evaluation_rows = await conn.fetch("""
         SELECT 
             e.evaluation_id,
-            e.version_id,
+            e.agent_id,
             e.validator_hotkey,
             e.set_id,
             e.status,
@@ -82,7 +83,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
             ) as evaluation_runs
         FROM evaluations e
         LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
-        WHERE e.version_id = $1
+        WHERE e.agent_id = $1
         AND e.set_id = $2
         -- AND (
         --     (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
@@ -91,9 +92,9 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         --         AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
         --     )
         -- )
-        GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+        GROUP BY e.evaluation_id, e.agent_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
         ORDER BY e.created_at DESC
-    """, version_id, set_id)
+    """, agent_id, set_id)
     
     evaluations = []
     for row in evaluation_rows:
@@ -124,7 +125,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
         
         hydrated_evaluation = EvaluationsWithHydratedRuns(
             evaluation_id=row[0],
-            version_id=row[1],
+            agent_id=row[1],
             validator_hotkey=row[2],
             set_id=row[3],
             status=row[4],
@@ -141,7 +142,7 @@ async def get_evaluations_for_agent_version(conn: asyncpg.Connection, version_id
     return evaluations
 
 @db_operation
-async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, version_id: str, set_id: Optional[int] = None, fast: bool = False) -> list[EvaluationsWithHydratedUsageRuns]:
+async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection, agent_id: str, set_id: Optional[int] = None, fast: bool = False) -> list[EvaluationsWithHydratedUsageRuns]:
     if set_id is None:
         set_id = await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
 
@@ -150,17 +151,17 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         evaluation_rows = await conn.fetch("""
             WITH inf AS (
                 SELECT
-                    run_id,
-                    SUM(cost)          AS cost,
-                    SUM(total_tokens)  AS total_tokens,
+                    evaluation_run_id  AS run_id,
+                    SUM(cost_usd)      AS cost,
+                    SUM(COALESCE(num_input_tokens, 0) + COALESCE(num_output_tokens, 0)) AS total_tokens,
                     COUNT(*)           AS num_inference_calls,
                     MAX(model)         AS model
                 FROM inferences
-                GROUP BY run_id
+                GROUP BY evaluation_run_id
             )
             SELECT 
                 e.evaluation_id,
-                e.version_id,
+                e.agent_id,
                 e.validator_hotkey,
                 e.set_id,
                 e.status,
@@ -201,7 +202,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             FROM evaluations e
             LEFT JOIN evaluation_runs er ON e.evaluation_id = er.evaluation_id 
             LEFT JOIN inf i ON er.run_id = i.run_id
-            WHERE e.version_id = $1
+            WHERE e.agent_id = $1
             AND e.set_id = $2
             -- AND (
             --     (e.validator_hotkey NOT LIKE 'screener-%' AND e.validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
@@ -210,9 +211,9 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             --         AND e.status IN ('completed', 'pruned', 'running')  -- Only successful/running screener evaluations
             --     )
             -- )
-            GROUP BY e.evaluation_id, e.version_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
+            GROUP BY e.evaluation_id, e.agent_id, e.validator_hotkey, e.set_id, e.status, e.terminated_reason, e.created_at, e.started_at, e.finished_at, e.score
             ORDER BY e.created_at DESC
-        """, version_id, set_id)
+        """, agent_id, set_id)
         
         evaluations = []
         for row in evaluation_rows:
@@ -247,7 +248,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             
             hydrated_evaluation = EvaluationsWithHydratedUsageRuns(
                 evaluation_id=row[0],
-                version_id=row[1],
+                agent_id=row[1],
                 validator_hotkey=row[2],
                 set_id=row[3],
                 status=row[4],
@@ -271,7 +272,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
             -- Get all non-screener evaluations
             SELECT 
                 evaluation_id,
-                version_id,
+                agent_id,
                 validator_hotkey,
                 set_id,
                 status,
@@ -282,7 +283,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
                 score,
                 screener_score
             FROM evaluations 
-            WHERE version_id = $1
+            WHERE agent_id = $1
             AND set_id = $2
             -- AND (
             --     (validator_hotkey NOT LIKE 'screener-%' AND validator_hotkey NOT LIKE 'i-0%')  -- Non-screener evaluations
@@ -299,7 +300,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         --     -- Get only the latest screener evaluation
         --     SELECT 
         --         evaluation_id,
-        --         version_id,
+        --         agent_id,
         --         validator_hotkey,
         --         set_id,
         --         status,
@@ -310,7 +311,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         --         score,
         --         screener_score
         --     FROM evaluations 
-        --     WHERE version_id = $1
+        --     WHERE agent_id = $1
         --     AND set_id = $2
         --     AND (validator_hotkey LIKE 'screener-%' OR validator_hotkey LIKE 'i-0%')
         --     AND status NOT IN ('completed', 'running')  -- Only errored screener evaluations
@@ -319,7 +320,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
         -- )
         ORDER BY created_at DESC
         """,
-        version_id, set_id
+        agent_id, set_id
     )
     
     for evaluation_row in evaluation_rows:
@@ -329,7 +330,7 @@ async def get_evaluations_with_usage_for_agent_version(conn: asyncpg.Connection,
 
         hydrated_evaluation = EvaluationsWithHydratedUsageRuns(
             evaluation_id=evaluation_id,
-            version_id=evaluation_row[1],
+            agent_id=evaluation_row[1],
             validator_hotkey=evaluation_row[2],
             set_id=evaluation_row[3],
             status=evaluation_row[4],
@@ -393,7 +394,7 @@ async def get_running_evaluation_by_miner_hotkey(conn: asyncpg.Connection, miner
         """
         SELECT e.*
         FROM evaluations e
-        JOIN miner_agents ma ON e.version_id = ma.version_id
+        JOIN agents ma ON e.agent_id = ma.agent_id
         WHERE ma.miner_hotkey = $1
         AND e.status = 'running'
         ORDER BY e.created_at ASC
@@ -424,29 +425,34 @@ async def get_queue_info(conn: asyncpg.Connection, validator_hotkey: str, length
     return [Evaluation(**dict(row)) for row in result]
 
 @db_operation
-async def get_agent_name_from_version_id(conn: asyncpg.Connection, version_id: str) -> Optional[str]:
-    """Get agent name for a given version_id"""
+async def get_agent_name_from_agent_id(conn: asyncpg.Connection, agent_id: str) -> Optional[str]:
+    """Get agent name for a given agent_id"""
     return await conn.fetchval("""
         SELECT agent_name 
-        FROM miner_agents 
-        WHERE version_id = $1
-    """, version_id)
+        FROM agents 
+        WHERE agent_id = $1
+    """, agent_id)
 
 @db_operation
-async def get_miner_hotkey_from_version_id(conn: asyncpg.Connection, version_id: str) -> Optional[str]:
-    """Get miner hotkey for a given version_id"""
+async def get_miner_hotkey_from_agent_id(conn: asyncpg.Connection, agent_id: str) -> Optional[str]:
+    """Get miner hotkey for a given agent_id"""
     return await conn.fetchval("""
         SELECT miner_hotkey 
-        FROM miner_agents 
-        WHERE version_id = $1
-    """, version_id)
+        FROM agents 
+        WHERE agent_id = $1
+    """, agent_id)
 
-@db_operation
-async def is_screener_running_evaluation(conn: asyncpg.Connection, validator_hotkey: str) -> bool:
-    """Check if a screener is running an evaluation"""
-    return await conn.fetchval(
-        """
-        SELECT EXISTS(SELECT 1 FROM evaluations WHERE validator_hotkey = $1 AND status = 'running')
-        """,
-        validator_hotkey
-    )
+
+
+
+
+
+
+
+
+
+
+# -------------------------------------------------------------------
+# NEW FUNCTIONS
+# -------------------------------------------------------------------
+

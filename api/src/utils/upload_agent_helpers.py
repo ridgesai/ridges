@@ -1,25 +1,18 @@
-from fastapi import UploadFile, HTTPException
-from typing import Optional
-from api.src.socket.websocket_manager import WebSocketManager
-from loggers.logging_utils import get_logger
-import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
+from fastapi import UploadFile, HTTPException
 from fiber import Keypair
 
-from api.src.backend.queries.evaluations import get_running_evaluation_by_miner_hotkey
-from api.src.utils.config import AGENT_RATE_LIMIT_SECONDS
-from api.src.utils.subtensor import get_subnet_hotkeys
-from api.src.utils.code_checks import AgentCodeChecker, CheckError
+import utils.logger as logger
+from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
+from api.src.backend.entities import MinerAgent
 from api.src.backend.queries.agents import check_if_agent_banned
-from api.src.backend.entities import MinerAgent, Evaluation
-from api.src.utils.s3 import S3Manager
-from api.src.utils.similarity_checker import SimilarityChecker
-from api.src.backend.db_manager import get_transaction
+from api.src.backend.queries.evaluations import get_running_evaluation_by_miner_hotkey
+from api.src.utils.code_checks import AgentCodeChecker, CheckError
+from api.src.utils.subtensor import get_subnet_hotkeys
+from models.agent import Agent
 
-logger = get_logger(__name__)
-s3_manager = S3Manager()
-ws = WebSocketManager.get_instance()
 
 def get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Getting miner hotkey from file info: {file_info}.")
@@ -35,7 +28,7 @@ def get_miner_hotkey(file_info: str) -> str:
     logger.debug(f"Miner hotkey successfully extracted: {miner_hotkey}.")
     return miner_hotkey
 
-def check_if_python_file(filename: str) -> bool:
+def check_if_python_file(filename: str) -> None:
     logger.debug(f"Checking if the file is a python file...")
 
     if not filename.endswith(".py"):
@@ -59,17 +52,17 @@ async def check_agent_banned(miner_hotkey: str) -> None:
     
     logger.debug(f"Miner hotkey {miner_hotkey} is not banned.")
 
-def check_rate_limit(latest_agent: MinerAgent) -> None:
+def check_rate_limit(latest_agent: Agent) -> None:
     logger.debug(f"Checking if miner is rate limited...")
 
-    earliest_allowed_time = latest_agent.created_at + timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)
-    logger.debug(f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=AGENT_RATE_LIMIT_SECONDS)}.")
+    earliest_allowed_time = latest_agent.created_at + timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)
+    logger.debug(f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)}.")
     
     if datetime.now(timezone.utc) < earliest_allowed_time:
         logger.error(f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent.created_at} and current time is {datetime.now(timezone.utc)}.")
         raise HTTPException(
             status_code=429,
-            detail=f"You must wait {AGENT_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
+            detail=f"You must wait {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"
         )
     
     logger.debug(f"Miner is not rate limited.")
@@ -137,20 +130,21 @@ async def check_file_size(agent_file: UploadFile) -> str:
     else:
         return content
 
-async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
-    logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
-
-    similarity_checker = SimilarityChecker()
-    is_valid, error_msg = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
-
-    if not is_valid:
-        logger.error(error_msg)
-        raise HTTPException(
-            status_code=400, 
-            detail=error_msg
-        )
-
-    logger.debug(f"The uploaded code is not similar to the miner's previous version or top agents.")
+# TODO: Uncomment this once similarity check is done
+# async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
+#     logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
+#
+#     similarity_checker = SimilarityChecker()
+#     is_valid, error_msg = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
+#
+#     if not is_valid:
+#         logger.error(error_msg)
+#         raise HTTPException(
+#             status_code=400,
+#             detail=error_msg
+#         )
+#
+#     logger.debug(f"The uploaded code is not similar to the miner's previous version or top agents.")
 
 def check_agent_code(file_content: str) -> None:
     logger.debug(f"Checking if the agent code is valid...")
@@ -186,36 +180,4 @@ async def check_eval_running_for_hotkey(miner_hotkey: str) -> None:
             status_code=400,
             detail="An evaluation is currently running for the latest agent for this miner. Please wait for it to finish before uploading a new version."
         )
-
-
-async def upload_agent_code_to_s3(version_id: str, agent_file: UploadFile) -> None:
-    logger.debug(f"Uploading agent code for version {version_id} to S3...")
-
-    try:
-        await s3_manager.upload_file_object(agent_file.file, f"{version_id}/agent.py")
-    except Exception as e:
-        logger.error(f"Failed to upload agent code to S3. Version ID: {version_id}. Error: {e}.")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to store agent in our database. Please try again later."
-        )
-    
-    logger.debug(f"Successfully uploaded agent code for version {version_id} to S3.")
-
-async def record_upload_attempt(upload_type: str, success: bool, **kwargs) -> None:
-    """Record an upload attempt in the upload_attempts table."""
-    try:
-        async with get_transaction() as conn:
-            await conn.execute(
-                """INSERT INTO upload_attempts (upload_type, success, hotkey, agent_name, filename, 
-                file_size_bytes, ip_address, error_type, error_message, ban_reason, http_status_code, version_id) 
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-                upload_type, success, kwargs.get('hotkey'), kwargs.get('agent_name'), kwargs.get('filename'),
-                kwargs.get('file_size_bytes'), kwargs.get('ip_address'), kwargs.get('error_type'),
-                kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('version_id')
-            )
-        logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
-    except Exception as e:
-        logger.error(f"Failed to record upload attempt: {e}")
-
 

@@ -11,39 +11,17 @@ wheels/
 
 # Env files
 *.env
-*.db
-*.db.bak
 
 # MacOS
 .DS_Store
 
-# Logging
-logs.json
-logs_mineshaft/
 
-# IDEs
-.idea/
-
-# Validator generated files
-.cache/
-repos/
-repo_cache/
-agents/
-validator/datasets/swebench_verified/repos/
-results/
+# SWE-Bench
 logs/
-
-# Miner installations and submodules
-SWE-agent/*
-.gitmodules
-
-LOCAL_NOTES.md
-LOCAL_NOTES.md
-conversation.jsonc
 
 # Platform cache
 subnet_hotkeys_cache.json
-.commits_cache.json
 
-# IP name mappings (local config)
-whitelist.json
+
+# Adam's stuff
+gui/
