@@ -301,7 +301,10 @@ async def main():
     running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]
     running_eval_timeout_seconds = register_response["running_eval_timeout_seconds"]
 
-    logger.info(f"Registered validator. Session ID: {session_id}")
+    logger.info("Registered validator:")
+    logger.info(f"  Session ID: {session_id}")
+    logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} seconds")
+    logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} seconds")
 
 
 

@@ -79,7 +79,7 @@ async def inference(request: InferenceRequest) -> str:
     #         detail="The model specified is not supported by Ridges for inference."
     #     )
 
-    return chutes.inference(request.model, request.temperature, request.messages)
+    return await chutes.inference(request.model, request.temperature, request.messages)
 
 
 
