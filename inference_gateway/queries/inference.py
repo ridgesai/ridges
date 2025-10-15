@@ -62,7 +62,7 @@ async def update_inference_by_id(
     response: Optional[str] = None,
     num_input_tokens: Optional[int] = None,
     num_output_tokens: Optional[int] = None,
-    cost: Optional[float] = None
+    cost_usd: Optional[float] = None
 ) -> None:
     await conn.execute(
         """
@@ -72,7 +72,7 @@ async def update_inference_by_id(
             response = $3,
             num_input_tokens = $4,
             num_output_tokens = $5,
-            cost = $6
+            cost_usd = $6
 
             response_sent_at = NOW()
         WHERE inference_id = $1
@@ -82,7 +82,7 @@ async def update_inference_by_id(
         response,
         num_input_tokens,
         num_output_tokens,
-        cost
+        cost_usd
     )
 
 

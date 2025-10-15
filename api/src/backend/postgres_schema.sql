@@ -183,7 +183,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE TABLE IF NOT EXISTS inferences (
     inference_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     evaluation_run_id UUID NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
-    provider TEXT,
+    provider TEXT NOT NULL,
     model TEXT NOT NULL,
     temperature FLOAT NOT NULL,
     messages JSONB NOT NULL,
