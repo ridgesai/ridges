@@ -192,6 +192,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 timeout=timeout_seconds
             )
 
+            # TODO ADAM: timeout
+
             test_results = []
             
             tests_status = report[instance_id]["tests_status"]

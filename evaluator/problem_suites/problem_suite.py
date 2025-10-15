@@ -1,6 +1,7 @@
 """Base class for problem suites."""
 
 import os
+import requests
 import traceback
 import utils.logger as logger
 import validator.config as config
@@ -148,7 +149,13 @@ class ProblemSuite(ABC):
         try:
             try:
                 sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
-            except TimeoutError:
+                timed_out = False
+            # TODO ADAM: Docker bug
+            # except TimeoutError:
+            except requests.exceptions.ConnectionError:
+                timed_out = True
+
+            if timed_out:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT,
                     f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT.get_error_message()}: The agent exceeded the timeout of {timeout_seconds} seconds."
@@ -161,6 +168,9 @@ class ProblemSuite(ABC):
                 )
             
             return sandbox_result_with_logs.output, sandbox_result_with_logs.logs
+
+        except EvaluationRunException:
+            raise
 
         except Exception as e:
             raise EvaluationRunException(

@@ -3,6 +3,7 @@
 import os
 import json
 import shutil
+import requests
 import traceback
 import utils.logger as logger
 import validator.config as config
@@ -170,7 +171,13 @@ class PolyglotSuite(ProblemSuite):
         try:
             try:
                 sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=timeout_seconds)
-            except TimeoutError:
+                timed_out = False
+            # TODO ADAM: Docker bug
+            # except TimeoutError:
+            except requests.exceptions.ConnectionError:
+                timed_out = True
+
+            if timed_out:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL,
                     f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL.get_error_message()}: The agent exceeded the timeout of {timeout_seconds} seconds."
@@ -183,6 +190,9 @@ class PolyglotSuite(ProblemSuite):
                 )
             
             return [ProblemTestResult(**test) for test in sandbox_result_with_logs.output], sandbox_result_with_logs.logs
+
+        except EvaluationRunException:
+            raise
 
         except Exception as e:
             raise EvaluationRunException(
