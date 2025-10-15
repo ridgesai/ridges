@@ -12,6 +12,22 @@ load_dotenv()
 
 
 
+# Bittensor configuration
+NETUID = os.getenv("NETUID")
+if not NETUID:
+    logger.fatal("NETUID is not set in .env")
+NETUID = int(NETUID)
+
+SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+
+SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+
+
+
 # Load the mode
 MODE = os.getenv("MODE")
 if not MODE:
@@ -113,22 +129,14 @@ if not INCLUDE_SOLUTIONS:
     logger.fatal("INCLUDE_SOLUTIONS is not set in .env")
 INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
 
-NETUID = os.getenv("NETUID")
-if not NETUID:
-    logger.fatal("NETUID is not set in .env")
-INCLUDE_SOLUTIONS = int(NETUID)
-
-SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
-if not SUBTENSOR_ADDRESS:
-    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
-
-SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
-if not SUBTENSOR_ADDRESS:
-    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
 
 # Print out the configuration
 logger.info("=== Validator Configuration ===")
+logger.info(f"Network ID: {NETUID}")
+logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
+logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
+logger.info("-------------------------------")
 logger.info(f"Mode: {MODE}")
 if MODE == "validator":
     logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")

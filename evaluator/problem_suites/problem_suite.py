@@ -126,7 +126,7 @@ class ProblemSuite(ABC):
                     "problem_statement": problem.problem_statement
                 },
                 env_vars={
-                    "EVALUATION_RUN_ID": evaluation_run_id
+                    "RUN_ID": evaluation_run_id
                 },
                 on_mount=_on_mount,
             )
