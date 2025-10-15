@@ -116,7 +116,9 @@ async def get_request_validator(token: str = Depends(HTTPBearer())) -> Validator
 # Exactly the same as get_request_validator, but locks the validator
 # The significance of this is that specific endpoints can use this dependency to prevent race conditions
 async def get_request_validator_with_lock(validator: Validator = Depends(get_request_validator)):
+    logger.info(f"Waiting to acquire lock on request validator {validator.hotkey} ...")
     async with validator._lock:
+        logger.info(f"Lock acquired for validator {validator.hotkey}")
         # Make sure the session_id is still associated with a validator
         if validator.session_id not in SESSION_ID_TO_VALIDATOR:
             raise HTTPException(
@@ -125,6 +127,7 @@ async def get_request_validator_with_lock(validator: Validator = Depends(get_req
             )
         
         yield validator
+        logger.info(f"Validator lock released for {validator.hotkey}")
 
 
 
@@ -296,7 +299,9 @@ async def validator_request_evaluation(
     validator: Validator = Depends(get_request_validator_with_lock)
 ) -> Optional[ValidatorRequestEvaluationResponse]:
 
+    logger.info("Waiting for validator_request_evaluation_lock...")
     async with validator_request_evaluation_lock:
+        logger.info("validator_request_evaluation_lock acquired")
         # Make sure the validator is not already running an evaluation
         if validator.current_evaluation_id is not None:
             raise HTTPException(
