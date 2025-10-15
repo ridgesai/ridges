@@ -303,8 +303,8 @@ async def main():
 
     logger.info("Registered validator:")
     logger.info(f"  Session ID: {session_id}")
-    logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} seconds")
-    logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} seconds")
+    logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} second(s)")
+    logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
 
 
 
