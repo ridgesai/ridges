@@ -62,7 +62,12 @@ async def send_heartbeat_loop():
 async def set_weights_loop():
     logger.info("Starting set weights loop...")
     while True:
-        # TODO
+        # TODO ADAM: this is scuffed, need to redo the entire set_weights file properly
+
+        weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
+
+        from validator.set_weights import set_weights_from_mapping # importing here because this is probably gonna be removed/renamed
+        await set_weights_from_mapping(weights_mapping)
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
@@ -327,8 +332,12 @@ async def main():
 
 
 
-    # Start the heartbeat loop
+    # Start the send heartbeat loop
     asyncio.create_task(send_heartbeat_loop())
+
+    if config.MODE == "validator":
+        # Start the set weights loop
+        asyncio.create_task(set_weights_loop())
 
 
 
