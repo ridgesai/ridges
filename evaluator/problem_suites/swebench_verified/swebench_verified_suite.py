@@ -96,12 +96,12 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             # if not verify_commit_exists_in_local_repo(repo_path, base_commit):
             #     logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
 
-            # Skip non-arm64 problems
-            architecture = make_test_spec(SWEbenchInstance(problem)).arch
-            if architecture != "arm64":
-                num_skipped_problems += 1
-                logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
-                continue
+            # # Skip non-arm64 problems
+            # architecture = make_test_spec(SWEbenchInstance(problem)).arch
+            # if architecture != "arm64":
+            #     num_skipped_problems += 1
+            #     logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
+            #     continue
 
             # Convert tests to our format
             tests = []
