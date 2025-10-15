@@ -19,6 +19,7 @@ class EvaluationRunErrorCode(IntEnum):
     AGENT_EXCEPTION             = (1000, "An exception was raised in the agent_main() function")
     AGENT_TIMEOUT_RUNNING_AGENT = (1020, "The agent timed out while being run")
     AGENT_TIMEOUT_RUNNING_EVAL  = (1030, "The agent timed out while being evaluated")
+    AGENT_INVALID_PATCH         = (1040, "The agent returned an invalid patch")
 
     # 2xxx - Validator Errors
     VALIDATOR_INTERNAL_ERROR       = (2000, "An internal error occurred on the validator")

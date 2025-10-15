@@ -167,6 +167,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 "instance_id": problem.name
             }
 
+            # TODO ADAM: Validate the patch
+
             return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred)
         except Exception as e:
             raise EvaluationRunException(
