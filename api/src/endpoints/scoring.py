@@ -66,9 +66,10 @@ async def weights() -> Dict[str, float]:
         if check_if_hotkey_is_registered(top_agent_hotkey):
             weights[top_agent_hotkey] = 1.0
         else:
-            logger.error(f"Top agent {top_agent_hotkey} not registered on subnet")
+            logger.error(f"Top agent {top_agent_hotkey} not registered on subnet. Setting weight to {owner_hotkey}")
             weights[owner_hotkey] = 1.0
     else:
+        logger.info(f"No top agent found. Setting weight to {owner_hotkey}")
         weights[owner_hotkey] = 1.0
 
     return weights
