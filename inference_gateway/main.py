@@ -107,29 +107,30 @@ async def inference(request: InferenceRequest) -> str:
             cost_usd=response.cost_usd
         )
         
-        return response
+        return response.response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-    return 
 
 
 
 @app.post("/api/embedding")
 async def embedding(request: EmbeddingRequest) -> List[float]:
-    try:
-        response = requests.post(
-            config.CHUTES_EMBEDDING_URL,
-            headers={"Authorization": f"Bearer {config.CHUTES_API_KEY}"},
-            json={
-                "inputs": request.input,
-                "seed": random.randint(0, 2 ** 32 - 1)
-            }
-        )
-        response.raise_for_status()
-        return EmbeddingResponse(response=response.json()[0])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # TODO ADAM
+    raise HTTPException(status_code=501, detail="TODO ADAM")
+
+    # try:
+    #     response = requests.post(
+    #         config.CHUTES_EMBEDDING_URL,
+    #         headers={"Authorization": f"Bearer {config.CHUTES_API_KEY}"},
+    #         json={
+    #             "inputs": request.input,
+    #             "seed": random.randint(0, 2 ** 32 - 1)
+    #         }
+    #     )
+    #     response.raise_for_status()
+    #     return EmbeddingResponse(response=response.json()[0])
+    # except Exception as e:
+    #     raise HTTPException(status_code=500, detail=str(e))
 
 
 
