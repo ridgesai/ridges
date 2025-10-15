@@ -45,7 +45,7 @@ async def create_new_inference(
         provider,
         model,
         temperature,
-        json.dumps(messages)
+        json.dumps([message.model_dump() for message in messages]),
     )
 
     return inference_id
@@ -73,7 +73,7 @@ async def update_inference_by_id(
             num_input_tokens = $4,
             num_output_tokens = $5,
             cost = $6
-            
+
             response_sent_at = NOW()
         WHERE inference_id = $1
         """,
