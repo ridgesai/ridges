@@ -55,17 +55,21 @@ async def weights() -> Dict[str, float]:
     Returns a dictionary of miner hotkeys to weights
     If no top agent, don't set weights
     """
-    DUST_WEIGHT = 1/65535 # 1/(2^16 - 1), smallest weight possible
-    weights = {}  # Initialize weights dictionary
+    weights: Dict[str, float] = {}
 
     top_agent_hotkey = await get_weight_receiving_agent_hotkey()
 
+    # For cases where there is no top miner, or the top miner is not registered on the subnet
+    owner_hotkey = "5EsNzkZ3DwDqCsYmSJDeGXX51dQJd5broUCH6dbDjvkTcicD"
+
     if top_agent_hotkey is not None:
-        weight_left = 1.0 - DUST_WEIGHT
         if check_if_hotkey_is_registered(top_agent_hotkey):
-            weights[top_agent_hotkey] = weight_left
+            weights[top_agent_hotkey] = 1.0
         else:
             logger.error(f"Top agent {top_agent_hotkey} not registered on subnet")
+            weights[owner_hotkey] = 1.0
+    else:
+        weights[owner_hotkey] = 1.0
 
     return weights
 
