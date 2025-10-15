@@ -5,7 +5,7 @@ from substrateinterface import SubstrateInterface
 from typing import List
 
 import utils.logger as logger
-
+from api import config
 
 
 def check_if_hotkey_is_registered(hotkey: str, pathname: str = "subnet_hotkeys_cache.json") -> bool:
@@ -17,7 +17,7 @@ def check_if_hotkey_is_registered(hotkey: str, pathname: str = "subnet_hotkeys_c
         logger.error(f"Error checking if hotkey is registered: {e}")
         return False
 
-def get_miner_hotkeys_on_subnet(netuid: int = 62, subtensor_url: str = "wss://entrypoint-finney.opentensor.ai:443") -> List[str]:
+def get_miner_hotkeys_on_subnet(netuid: int, subtensor_url: str) -> List[str]:
     substrate = None
 
     try:
@@ -67,7 +67,10 @@ def get_miner_hotkeys_on_subnet(netuid: int = 62, subtensor_url: str = "wss://en
 
 
 
-hotkeys = get_miner_hotkeys_on_subnet()
+hotkeys = get_miner_hotkeys_on_subnet(
+    netuid=config.NETUID,
+    subtensor_url=config.SUBTENSOR_ADDRESS
+)
 
 if hotkeys:
     with open("subnet_hotkeys_cache.json", 'w') as f:

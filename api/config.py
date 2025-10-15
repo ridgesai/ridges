@@ -9,6 +9,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+NETUID = os.getenv("NETUID")
+if not NETUID:
+    logger.fatal("NETUID is not set in .env")
+NETUID = int(NETUID)
+
+SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+
+SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+
+
+
 
 # Load the environment configuration
 ENV = os.getenv("ENV")
