@@ -87,29 +87,28 @@ async def inference(request: InferenceRequest) -> str:
     #         detail="The model specified is not supported by Ridges for inference."
     #     )
 
-    try:
-        inference_id = await create_new_inference(
-            evaluation_run_id=request.run_id,
-            provider="chutes",
-            model=request.model,
-            temperature=request.temperature,
-            messages=request.message
-        )
+    inference_id = await create_new_inference(
+        evaluation_run_id=request.run_id,
 
-        response = await chutes.inference(request.model, request.temperature, request.messages)
+        provider="chutes",
+        model=request.model,
+        temperature=request.temperature,
+        messages=request.messages
+    )
 
-        await update_inference_by_id(
-            inference_id=inference_id,
-            status_code=response.status_code,
-            response=response.response,
-            num_input_tokens=response.num_input_tokens,
-            num_output_tokens=response.num_output_tokens,
-            cost_usd=response.cost_usd
-        )
-        
-        return response.response
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    response = await chutes.inference(request.model, request.temperature, request.messages)
+
+    await update_inference_by_id(
+        inference_id=inference_id,
+
+        status_code=response.status_code,
+        response=response.response,
+        num_input_tokens=response.num_input_tokens,
+        num_output_tokens=response.num_output_tokens,
+        cost_usd=response.cost_usd
+    )
+    
+    return response.response
 
 
 
