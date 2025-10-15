@@ -113,6 +113,18 @@ if not INCLUDE_SOLUTIONS:
     logger.fatal("INCLUDE_SOLUTIONS is not set in .env")
 INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
 
+NETUID = os.getenv("NETUID")
+if not NETUID:
+    logger.fatal("NETUID is not set in .env")
+INCLUDE_SOLUTIONS = int(NETUID)
+
+SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+
+SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
+if not SUBTENSOR_ADDRESS:
+    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
 
 # Print out the configuration

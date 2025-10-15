@@ -3,16 +3,19 @@
 # It is way too needlessly complicated.
 
 
+import asyncio
+from typing import List
+from typing import Tuple, Optional
+
 import numpy as np
-from typing import Tuple, List, Optional
-
-import utils.logger as logger
-
 from fiber import SubstrateInterface
+from fiber.chain import chain_utils, interface, weights
 from fiber.chain.fetch_nodes import get_nodes_for_netuid
 
+import utils.logger as logger
+from validator import config
 
-
+VERSION_KEY = 6
 
 U32_MAX = 4294967295
 U16_MAX = 65535
@@ -242,34 +245,6 @@ def process_weights_for_netuid(
     return node_ids, node_weights
 
 
-
-
-
-
-
-
-
-
-
-
-import asyncio
-from typing import List
-
-from fiber import SubstrateInterface
-from fiber.chain import chain_utils, interface, metagraph, weights
-from fiber.chain.fetch_nodes import get_nodes_for_netuid
-import numpy as np
-
-from validator.config import (
-    NETUID, 
-    SUBTENSOR_NETWORK, 
-    SUBTENSOR_ADDRESS,
-    WALLET_NAME,
-    HOTKEY_NAME,
-    VERSION_KEY,
-)
-
-
 async def _set_weights_with_timeout(
     substrate,
     keypair,
@@ -289,7 +264,7 @@ async def _set_weights_with_timeout(
                 keypair,
                 node_ids,
                 node_weights,
-                NETUID,
+                config.NETUID,
                 validator_node_id,
                 version_key,
                 True,  # wait_for_inclusion
@@ -305,17 +280,17 @@ async def _set_weights_with_timeout(
         return False
 
 def query_node_id(substrate: SubstrateInterface) -> int | None:
-    keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
-    node_id_query = substrate.query("SubtensorModule", "Uids", [NETUID, keypair.ss58_address])
+    keypair = chain_utils.load_hotkey_keypair(wallet_name=config.VALIDATOR_WALLET_NAME, hotkey_name=config.VALIDATOR_HOTKEY_NAME)
+    node_id_query = substrate.query("SubtensorModule", "Uids", [config.NETUID, keypair.ss58_address])
     if node_id_query is None:
         logger.error(f"Failed to get validator node ID for {keypair.ss58_address}")
         return
     return node_id_query.value
 
 def query_version_key(substrate: SubstrateInterface) -> int | None:
-    version_key_query = substrate.query("SubtensorModule", "WeightsVersionKey", [NETUID])
+    version_key_query = substrate.query("SubtensorModule", "WeightsVersionKey", [config.NETUID])
     if version_key_query is None:
-        logger.error(f"Failed to get subnet version key for {NETUID}")
+        logger.error(f"Failed to get subnet version key for {config.NETUID}")
         return
     return version_key_query.value
 
@@ -327,8 +302,8 @@ async def set_weights_from_mapping(weights_mapping: dict[str, float]):
         weights_mapping: Dictionary mapping hotkey strings to float weights
     """
     try:
-        keypair = chain_utils.load_hotkey_keypair(wallet_name=WALLET_NAME, hotkey_name=HOTKEY_NAME)
-        substrate = interface.get_substrate(SUBTENSOR_NETWORK, SUBTENSOR_ADDRESS)
+        keypair = chain_utils.load_hotkey_keypair(wallet_name=config.VALIDATOR_WALLET_NAME, hotkey_name=config.VALIDATOR_HOTKEY_NAME)
+        substrate = interface.get_substrate(config.SUBTENSOR_NETWORK, config.SUBTENSOR_ADDRESS)
 
         validator_node_id = query_node_id(substrate)
         version_key = VERSION_KEY
@@ -339,7 +314,7 @@ async def set_weights_from_mapping(weights_mapping: dict[str, float]):
             logger.error("Failed to get validator node ID – aborting weight update")
             return
 
-        nodes = get_nodes_for_netuid(substrate, NETUID)
+        nodes = get_nodes_for_netuid(substrate, config.NETUID)
         scores = np.zeros(len(nodes), dtype=np.float32)
 
         # Create mapping from hotkey to node index
@@ -365,7 +340,7 @@ async def set_weights_from_mapping(weights_mapping: dict[str, float]):
             node_ids, node_weights = process_weights_for_netuid(
                 uids=uids,
                 weights=scores,
-                netuid=NETUID,
+                netuid=config.NETUID,
                 substrate=substrate,
                 nodes=nodes,
                 exclude_quantile=0
