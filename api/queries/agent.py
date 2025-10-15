@@ -118,6 +118,16 @@ async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) 
 async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
     queue_to_query = f"{queue_stage.value}_queue"
 
+    if queue_stage == EvaluationSetGroup.screener_1:
+        queue = await conn.fetch(f"""
+            SELECT a.*
+            from agents a
+            join {queue_to_query} q on q.agent_id = a.agent_id
+            order by q.created_at asc
+        """)
+
+        return [Agent(**agent) for agent in queue]
+
     queue = await conn.fetch(f"""
         SELECT a.*
         from agents a
