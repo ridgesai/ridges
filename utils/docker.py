@@ -56,9 +56,11 @@ def stop_and_delete_all_docker_containers():
     Stop and delete all Docker containers.
     """
     
-    logger.info("Stopping and deleting all containers")
+    logger.info("Stopping and deleting all containers...")
     
     for container in docker_client.containers.list(all=True):
+        logger.info(f"Stopping and deleting container {container.name}...")
+
         try:
             container.stop(timeout=3)
         except Exception as e:
@@ -68,6 +70,8 @@ def stop_and_delete_all_docker_containers():
             container.remove(force=True)
         except Exception as e:
             logger.warning(f"Could not remove container {container.name}: {e}")
+
+        logger.info(f"Stopped and deleted container {container.name}")
 
     docker_client.containers.prune()
     

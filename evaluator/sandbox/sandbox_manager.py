@@ -178,4 +178,5 @@ class SandboxManager:
             return SandboxResultWithLogs(**output, logs=logs)
         finally:
             # Remove the container
+            sandbox.container.stop()
             sandbox.container.remove()

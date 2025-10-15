@@ -146,7 +146,13 @@ class ProblemSuite(ABC):
         # TODO ADAM: Docs
 
         try:
-            sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
+            try:
+                sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
+            except TimeoutError:
+                raise EvaluationRunException(
+                    EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT,
+                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT.get_error_message()}: The agent exceeded the timeout of {timeout_seconds} seconds."
+                )
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(
