@@ -12,6 +12,8 @@ WHITELISTED_VALIDATORS = [
     # Developer validators, used for testing
     {"name": "Adam's Validator",      "hotkey": "5Dy9FDg5jshHS7MirAFrRsKiFa6GPRMaiHC4Zng4HAgyi8yf"},
     {"name": "Alex's Validator",      "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
+    {"name": "Alex's Validator2",      "hotkey": "5HNpAXVzWaW4yD9UqH5sXFPt1gPFqNTViDy61NdiViyDQiTQ"},
+    {"name": "Alex's Validator3",      "hotkey": "5GgqnYQ3QwnCcmxiGatXS3rrHGmkqU3cMSjQFSdLKHDmxyB6"},
     {"name": "Shak's Validator",      "hotkey": "5F26aNVC3rZVNbH36DWdZzxPVH17iBNGD14Wtb4nQem742Q7"}
 ]
 
