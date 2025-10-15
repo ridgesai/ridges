@@ -181,26 +181,26 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 -- Inference table
 CREATE TABLE IF NOT EXISTS inferences (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    inference_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     evaluation_run_id UUID NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
-    messages JSONB NOT NULL,
-    temperature FLOAT NOT NULL,
-    model TEXT NOT NULL,
-    cost FLOAT,
-    response TEXT,
-    total_tokens INT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    finished_at TIMESTAMPTZ,
     provider TEXT,
-    status_code INT
+    model TEXT NOT NULL,
+    temperature FLOAT NOT NULL,
+    messages JSONB NOT NULL,
+    status_code INT,
+    response TEXT,
+    num_input_tokens INT,
+    num_output_tokens INT,
+    cost_usd FLOAT,
+    request_received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    response_sent_at TIMESTAMPTZ
 );
 
 -- Performance optimization indices for inferences queries
 CREATE INDEX IF NOT EXISTS idx_inferences_created_provider_range
-ON inferences (created_at, provider)
-INCLUDE (finished_at, status_code, total_tokens)
-WHERE finished_at IS NOT NULL AND provider IS NOT NULL;
-
+ON inferences (response_sent_at, provider)
+INCLUDE (request_received_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
+WHERE request_received_at IS NOT NULL AND provider IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS approved_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
