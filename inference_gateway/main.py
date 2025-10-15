@@ -29,7 +29,8 @@ async def lifespan(app: FastAPI):
 
 
 
-    await chutes.test_all_models()
+    # TODO ADAM: uncomment
+    # await chutes.test_all_models()
 
 
 
