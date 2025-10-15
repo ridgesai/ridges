@@ -198,8 +198,8 @@ class PolyglotSuite(ProblemSuite):
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(
-                    EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL,
-                    f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
+                    EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL,
+                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
                 )
             
             return [ProblemTestResult(**test) for test in sandbox_result_with_logs.output], sandbox_result_with_logs.logs

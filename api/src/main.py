@@ -59,6 +59,9 @@ async def lifespan(app: FastAPI):
     # Loop setup
     asyncio.create_task(validator_heartbeat_timeout_loop())
 
+
+
+    # TODO ADAM: fix this, the error message isn't useful and it sets it to a 2xxx error when it should be a 3xxx error
     await set_all_unfinished_evaluation_runs_to_errored(
         error_message="Platform crashed while running this evaluation"
     )

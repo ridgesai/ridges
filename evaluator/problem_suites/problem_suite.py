@@ -163,8 +163,8 @@ class ProblemSuite(ABC):
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(
-                    EvaluationRunErrorCode.AGENT_EXCEPTION,
-                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
+                    EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_AGENT,
+                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_AGENT.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
                 )
             
             return sandbox_result_with_logs.output, sandbox_result_with_logs.logs
