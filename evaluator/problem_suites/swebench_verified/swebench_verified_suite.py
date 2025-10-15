@@ -97,9 +97,10 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             #     logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
 
             # Skip non-arm64 problems
-            if make_test_spec(SWEbenchInstance(problem)).arch != "arm64":
+            architecture = make_test_spec(SWEbenchInstance(problem)).arch
+            if architecture != "arm64":
                 num_skipped_problems += 1
-                logger.warning(f"Problem {problem_name} is not an arm64 problem, skipping (skipped {num_skipped_problems} problem(s) so far)")
+                logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
                 continue
 
             # Convert tests to our format
