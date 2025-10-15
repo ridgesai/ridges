@@ -1,3 +1,4 @@
+import json
 import asyncpg
 
 from typing import List
@@ -19,9 +20,7 @@ async def create_new_inference(
     provider: str,
     model: str,
     temperature: float,
-    messages: List[InferenceMessage],
-
-    request_received_at: Optional[datetime] = None
+    messages: List[InferenceMessage]
 ) -> UUID:
 
     inference_id = uuid4()
@@ -38,7 +37,7 @@ async def create_new_inference(
             messages,
 
             request_received_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
         """,
         inference_id,
         evaluation_run_id,
@@ -46,9 +45,7 @@ async def create_new_inference(
         provider,
         model,
         temperature,
-        messages,
-
-        request_received_at
+        json.dumps(messages)
     )
 
     return inference_id
@@ -56,7 +53,7 @@ async def create_new_inference(
 
 
 @db_operation
-async def update_inference(
+async def update_inference_by_id(
     conn: asyncpg.Connection,
     *,
     inference_id: UUID,
@@ -65,9 +62,7 @@ async def update_inference(
     response: Optional[str] = None,
     num_input_tokens: Optional[int] = None,
     num_output_tokens: Optional[int] = None,
-    cost: Optional[float] = None,
-
-    response_sent_at: Optional[datetime] = None
+    cost: Optional[float] = None
 ) -> None:
     await conn.execute(
         """
@@ -77,9 +72,9 @@ async def update_inference(
             response = $3,
             num_input_tokens = $4,
             num_output_tokens = $5,
-            cost = $6,
-
-            response_sent_at = $7
+            cost = $6
+            
+            response_sent_at = NOW()
         WHERE inference_id = $1
         """,
         inference_id,
@@ -87,9 +82,7 @@ async def update_inference(
         response,
         num_input_tokens,
         num_output_tokens,
-        cost,
-        
-        response_sent_at
+        cost
     )
 
 

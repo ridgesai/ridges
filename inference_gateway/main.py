@@ -12,7 +12,7 @@ from models.evaluation_run import EvaluationRunStatus
 from utils.database import initialize_database, deinitialize_database
 from inference_gateway.models import InferenceRequest, EmbeddingRequest
 from inference_gateway.queries.evaluation_run import get_evaluation_run_status_by_id
-from inference_gateway.queries.inference import create_new_inference, get_number_of_inferences_for_evaluation_run
+from inference_gateway.queries.inference import create_new_inference, update_inference_by_id, get_number_of_inferences_for_evaluation_run
 
 
 
@@ -88,9 +88,24 @@ async def inference(request: InferenceRequest) -> str:
     #     )
 
     try:
-        
+        inference_id = await create_new_inference(
+            evaluation_run_id=request.run_id,
+            provider="chutes",
+            model=request.model,
+            temperature=request.temperature,
+            messages=request.message
+        )
 
         response = await chutes.inference(request.model, request.temperature, request.messages)
+
+        await update_inference_by_id(
+            inference_id=inference_id,
+            status_code=response.status_code,
+            response=response.response,
+            num_input_tokens=response.num_input_tokens,
+            num_output_tokens=response.num_output_tokens,
+            cost_usd=response.cost_usd
+        )
         
         return response
     except Exception as e:
