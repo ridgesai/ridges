@@ -21,15 +21,7 @@ async def create_new_inference(
     temperature: float,
     messages: List[InferenceMessage],
 
-    status_code: Optional[int] = None,
-    response: Optional[str] = None,
-
-    input_tokens: int = None,
-    output_tokens: Optional[int] = None,
-    cost: Optional[float] = None,
-
-    request_received_at: Optional[datetime] = None,
-    response_sent_at: Optional[datetime] = None
+    request_received_at: Optional[datetime] = None
 ) -> UUID:
 
     inference_id = uuid4()
@@ -45,16 +37,8 @@ async def create_new_inference(
             temperature,
             messages,
 
-            status_code,
-            response,
-
-            input_tokens,
-            output_tokens,
-            cost,
-            
-            request_received_at,
-            response_sent_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            request_received_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         """,
         inference_id,
         evaluation_run_id,
@@ -63,19 +47,50 @@ async def create_new_inference(
         model,
         temperature,
         messages,
-        
-        status_code,
-        response,
-        
-        input_tokens,
-        output_tokens,
-        cost,
-        
-        request_received_at,
-        response_sent_at
+
+        request_received_at
     )
 
     return inference_id
+
+
+
+@db_operation
+async def update_inference(
+    conn: asyncpg.Connection,
+    *,
+    inference_id: UUID,
+
+    status_code: Optional[int] = None,
+    response: Optional[str] = None,
+    num_input_tokens: Optional[int] = None,
+    num_output_tokens: Optional[int] = None,
+    cost: Optional[float] = None,
+
+    response_sent_at: Optional[datetime] = None
+) -> None:
+    await conn.execute(
+        """
+        UPDATE inferences
+        SET
+            status_code = $2,
+            response = $3,
+            num_input_tokens = $4,
+            num_output_tokens = $5,
+            cost = $6,
+
+            response_sent_at = $7
+        WHERE inference_id = $1
+        """,
+        inference_id,
+        status_code,
+        response,
+        num_input_tokens,
+        num_output_tokens,
+        cost,
+        
+        response_sent_at
+    )
 
 
 

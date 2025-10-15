@@ -1,6 +1,7 @@
 import random
 import uvicorn
 import requests
+import utils.logger as logger
 import inference_gateway.config as config
 import inference_gateway.providers.chutes as chutes
 
@@ -10,9 +11,8 @@ from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
 from utils.database import initialize_database, deinitialize_database
 from inference_gateway.models import InferenceRequest, EmbeddingRequest
-from inference_gateway.ai_models import is_model_supported_for_inference
 from inference_gateway.queries.evaluation_run import get_evaluation_run_status_by_id
-from inference_gateway.queries.inference import get_number_of_inferences_for_evaluation_run
+from inference_gateway.queries.inference import create_new_inference, get_number_of_inferences_for_evaluation_run
 
 
 
@@ -26,11 +26,21 @@ async def lifespan(app: FastAPI):
             port=config.DATABASE_PORT,
             name=config.DATABASE_NAME
         )
-    
+
+
+
+    await chutes.test_all_models()
+
+
+
     yield
     
+
+
     if config.USE_DATABASE:
         await deinitialize_database()
+
+
 
 app = FastAPI(
     title="Inference Gateway", 
@@ -42,7 +52,7 @@ app = FastAPI(
 
 @app.post("/api/inference")
 async def inference(request: InferenceRequest) -> str:
-    if not config.USE_DATABASE:
+    if config.USE_DATABASE:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.run_id)
         
@@ -60,15 +70,13 @@ async def inference(request: InferenceRequest) -> str:
                 detail=f"The evaluation run with ID {request.run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
             )
 
-        # TODO ADAM
-        #
-        # # Make sure the evaluation run has not already made too many requests
-        # num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
-        # if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
-        #     raise HTTPException(
-        #         status_code=429,
-        #         detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
-        #     )
+        # Make sure the evaluation run has not already made too many requests
+        num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
+        if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
+            raise HTTPException(
+                status_code=429,
+                detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
+            )
 
     # TODO ADAM
     #
@@ -79,7 +87,16 @@ async def inference(request: InferenceRequest) -> str:
     #         detail="The model specified is not supported by Ridges for inference."
     #     )
 
-    return await chutes.inference(request.model, request.temperature, request.messages)
+    try:
+        
+
+        response = await chutes.inference(request.model, request.temperature, request.messages)
+        
+        return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return 
 
 
 
