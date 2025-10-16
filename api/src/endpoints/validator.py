@@ -59,9 +59,9 @@ SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 def is_validator_registered(validator_hotkey: str) -> bool:
     return validator_hotkey in [validator.hotkey for validator in SESSION_ID_TO_VALIDATOR.values()]
 
-# Returns the IP addresses of all connected screeners (both screener-1 and screener-2)
-def get_all_connected_screener_ip_addresses() -> List[str]:
-    return [validator.ip_address for validator in SESSION_ID_TO_VALIDATOR.values() if validator.hotkey.startswith("screener-")]
+# Returns the IP addresses of all connected screeners and validators
+def get_all_connected_validator_ip_addresses() -> List[str]:
+    return [validator.ip_address for validator in SESSION_ID_TO_VALIDATOR.values()]
 
 
 
