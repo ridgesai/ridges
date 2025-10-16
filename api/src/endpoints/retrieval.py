@@ -16,6 +16,7 @@ from api.src.backend.queries.evaluation_runs import get_runs_for_evaluation as d
 from api.src.backend.queries.statistics import get_24_hour_statistics, get_currently_running_evaluations, RunningEvaluation, get_agent_summary_by_hotkey
 from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time, get_miner_score_activity as db_get_miner_score_activity
+from api.src.backend.queries.statistics import get_top_scores_over_last_week as db_get_top_scores_over_last_week
 from api.queries.evaluation_set import get_latest_set_id
 from api.src.backend.entities import ProviderStatistics
 from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
@@ -138,6 +139,11 @@ async def get_top_agents_old(num_agents: int = 3, search_term: Optional[str] = N
 async def agent_scores_over_time(set_id: Optional[int] = None):
     """Gets agent scores over time for charting"""
     return await db_get_agent_scores_over_time(set_id)
+
+@router.get("/top-scores-over-time", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
+async def agent_scores_over_time():
+    """Gets agent scores over time for charting"""
+    return await db_get_top_scores_over_last_week()
 
 @router.get("/miner-score-activity", tags=["retrieval"], dependencies=[Depends(verify_request_public)])
 async def miner_score_activity(set_id: Optional[int] = None):
