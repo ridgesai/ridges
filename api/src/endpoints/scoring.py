@@ -6,8 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 
 import utils.logger as logger
 from api import config
-from api.queries.scores import get_weight_receiving_agent_hotkey, get_treasury_hotkey
-from api.src.backend.queries.agents import get_top_agent, ban_agents as db_ban_agents
+from api.queries.scores import get_weight_receiving_agent_hotkey
+# from api.queries.scores import get_treasury_hotkey
+# from api.src.backend.queries.agents import get_top_agent
+from api.src.backend.queries.agents import ban_agents as db_ban_agents
 from api.src.backend.queries.evaluation_runs import fully_reset_evaluations, reset_validator_evaluations
 from api.src.backend.queries.scores import generate_threshold_function as db_generate_threshold_function
 from api.src.utils.auth import verify_request, verify_request_public
@@ -23,30 +25,32 @@ treasury_transaction_password = os.getenv("TREASURY_TRANSACTION_PASSWORD")
 
 ## Actual endpoints ##
 
-@router.get("/check-top-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def weight_receiving_agent():
-    '''
-    This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
-    The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
-    This will be deprecated shortly in favor of validators posting weight themselves
-    ''' 
-    top_agent = await get_top_agent()
+# USED IN FRONTEND OLD ENDPOINTS
+# @router.get("/check-top-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
+# async def weight_receiving_agent():
+#     '''
+#     This is used to compute the current best agent. Validators can rely on this or keep a local database to compute this themselves.
+#     The method looks at the highest scored agents that have been considered by at least two validators. If they are within 3% of each other, it returns the oldest one
+#     This will be deprecated shortly in favor of validators posting weight themselves
+#     ''' 
+#     top_agent = await get_top_agent()
 
-    return top_agent
+#     return top_agent
 
-async def get_treasury_hotkey_if_exists():
-    """
-    Returns the most recently created active treasury hotkey.
-    Later, return the wallet with the least funs to mitigate risk of large wallets
-    """
-    treasury_hotkey = await get_treasury_hotkey()
-    if not treasury_hotkey:
-        raise ValueError("No active treasury wallets found in database")
+# COMPLETELY USELESS
+# async def get_treasury_hotkey_if_exists():
+#     """
+#     Returns the most recently created active treasury hotkey.
+#     Later, return the wallet with the least funs to mitigate risk of large wallets
+#     """
+#     treasury_hotkey = await get_treasury_hotkey()
+#     if not treasury_hotkey:
+#         raise ValueError("No active treasury wallets found in database")
 
-    if not check_if_hotkey_is_registered(treasury_hotkey):
-        logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
+#     if not check_if_hotkey_is_registered(treasury_hotkey):
+#         logger.error(f"Treasury hotkey {treasury_hotkey} not registered on subnet")
 
-    return treasury_hotkey
+#     return treasury_hotkey
 
 
 @router.get("/weights")
@@ -74,14 +78,16 @@ async def weights() -> Dict[str, float]:
 
     return weights
 
+# USED IN FRONTEND OLD ENDPOINTS
+# @router.get("/screener-thresholds", tags=["scoring"], dependencies=[Depends(verify_request_public)])
+# async def get_screener_thresholds():
+#     """
+#     Returns the screener thresholds
+#     """
+#     return {"stage_1_threshold": config.SCREENER_1_THRESHOLD, "stage_2_threshold": config.SCREENER_2_THRESHOLD}
 
-@router.get("/screener-thresholds", tags=["scoring"], dependencies=[Depends(verify_request_public)])
-async def get_screener_thresholds():
-    """
-    Returns the screener thresholds
-    """
-    return {"stage_1_threshold": config.SCREENER_1_THRESHOLD, "stage_2_threshold": config.SCREENER_2_THRESHOLD}
 
+# USED IN ROUTE.TS FRONTEND
 @router.get("/prune-threshold", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_prune_threshold():
     """
@@ -90,6 +96,7 @@ async def get_prune_threshold():
     return {"prune_threshold": config.PRUNE_THRESHOLD}
 
 
+# USED IN ROUTE.TS FRONTEND
 @router.post("/ban-agents", tags=["scoring"], dependencies=[Depends(verify_request)])
 async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
     if ban_password != os.getenv("BAN_PASSWORD"):
@@ -166,6 +173,7 @@ async def ban_agents(agent_ids: List[str], reason: str, ban_password: str):
 #         raise HTTPException(status_code=500, detail="Failed to approve version due to internal server error. Please try again later.")
 
 
+# USED IN ROUTE.TS FRONTEND
 @router.post("/re-evaluate-agent", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_validators: bool = False):
     """Re-evaluate an agent by resetting all validator evaluations for a agent_id back to waiting status"""
@@ -256,7 +264,8 @@ async def re_evaluate_agent(password: str, agent_id: str, re_eval_screeners_and_
 #     except Exception as e:
 #         logger.error(f"Error storing treasury transaction: {e}")
 #         raise HTTPException(status_code=500, detail="Error storing treasury transaction")
-    
+
+# USED IN FRONTEND OLD ENDPOINTS
 @router.get("/threshold-function", tags=["scoring"], dependencies=[Depends(verify_request_public)])
 async def get_threshold_function():
     """

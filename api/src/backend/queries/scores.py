@@ -3,33 +3,34 @@ import logging
 from uuid import UUID
 import asyncpg
 from utils.database import db_operation
-from api.src.backend.entities import MinerAgentScored, TreasuryTransaction
+# from api.src.backend.entities import MinerAgentScored, TreasuryTransaction
 
 
 logger = logging.getLogger(__name__)
 
-@db_operation
-async def check_for_new_high_score(conn: asyncpg.Connection, agent_id: UUID) -> dict:
-    """
-    Check if agent_id scored higher than all approved agents within the same set_id.
-    Uses the agent_scores materialized view for performance.
+# @db_operation
+# async def check_for_new_high_score(conn: asyncpg.Connection, agent_id: UUID) -> dict:
+#     """
+#     Check if agent_id scored higher than all approved agents within the same set_id.
+#     Uses the agent_scores materialized view for performance.
     
-    Returns dict with:
-    - high_score_detected: bool
-    - agent details if high score detected
-    - reason if no high score detected
-    """
-    logger.debug(f"Checking for new high score for version {agent_id} using agent_scores materialized view.")
+#     Returns dict with:
+#     - high_score_detected: bool
+#     - agent details if high score detected
+#     - reason if no high score detected
+#     """
+#     logger.debug(f"Checking for new high score for version {agent_id} using agent_scores materialized view.")
     
-    result = await MinerAgentScored.check_for_new_high_score(conn, agent_id)
+#     result = await MinerAgentScored.check_for_new_high_score(conn, agent_id)
     
-    if result["high_score_detected"]:
-        logger.info(f"🎯 HIGH SCORE DETECTED: {result['agent_name']} scored {result['new_score']:.4f} vs previous max {result['previous_max_score']:.4f} on set_id {result['set_id']}")
-    else:
-        logger.debug(f"No high score detected for version {agent_id}: {result['reason']}")
+#     if result["high_score_detected"]:
+#         logger.info(f"🎯 HIGH SCORE DETECTED: {result['agent_name']} scored {result['new_score']:.4f} vs previous max {result['previous_max_score']:.4f} on set_id {result['set_id']}")
+#     else:
+#         logger.debug(f"No high score detected for version {agent_id}: {result['reason']}")
     
-    return result
+#     return result
 
+# TODO: ADAM - used in endpoints/open_users.py
 @db_operation
 async def get_treasury_hotkeys(conn: asyncpg.Connection) -> list[str]:
     """
@@ -40,106 +41,108 @@ async def get_treasury_hotkeys(conn: asyncpg.Connection) -> list[str]:
     """)
     return [r["hotkey"] for r in rows]
 
-@db_operation
-async def store_treasury_transaction(conn: asyncpg.Connection, transaction: TreasuryTransaction):
-    """
-    Stores a treasury transaction in the database.
-    """
-    await conn.execute("""
-        INSERT INTO treasury_transactions (group_transaction_id, sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha_rao, occurred_at, agent_id, extrinsic_code, fee)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-    """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.agent_id, transaction.extrinsic_code, transaction.fee)
+# @db_operation
+# async def store_treasury_transaction(conn: asyncpg.Connection, transaction: TreasuryTransaction):
+#     """
+#     Stores a treasury transaction in the database.
+#     """
+#     await conn.execute("""
+#         INSERT INTO treasury_transactions (group_transaction_id, sender_coldkey, destination_coldkey, staker_hotkey, amount_alpha_rao, occurred_at, agent_id, extrinsic_code, fee)
+#         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+#     """, transaction.group_transaction_id, transaction.sender_coldkey, transaction.destination_coldkey, transaction.staker_hotkey, transaction.amount_alpha, transaction.occurred_at, transaction.agent_id, transaction.extrinsic_code, transaction.fee)
 
-@db_operation
-async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, agent_id: str, set_id: int) -> dict:
-    """
-    Evaluate an agent for threshold-based approval.
+# USED IN THRESHOLD_SCHEDULER.PY (USELESS)
+# @db_operation
+# async def evaluate_agent_for_threshold_approval(conn: asyncpg.Connection, agent_id: str, set_id: int) -> dict:
+#     """
+#     Evaluate an agent for threshold-based approval.
     
-    Returns dict with:
-    - action: 'approve_now' | 'approve_future' | 'reject'
-    - future_approval_time: datetime if action is 'approve_future'
-    - reason: explanation of the decision
-    """
-    from datetime import datetime, timedelta
-    import math
+#     Returns dict with:
+#     - action: 'approve_now' | 'approve_future' | 'reject'
+#     - future_approval_time: datetime if action is 'approve_future'
+#     - reason: explanation of the decision
+#     """
+#     from datetime import datetime, timedelta
+#     import math
     
-    # Get agent's score
-    agent_result = await conn.fetchrow("""
-        SELECT final_score FROM agent_scores 
-        WHERE agent_id = $1 AND set_id = $2
-    """, agent_id, set_id)
+#     # Get agent's score
+#     agent_result = await conn.fetchrow("""
+#         SELECT final_score FROM agent_scores 
+#         WHERE agent_id = $1 AND set_id = $2
+#     """, agent_id, set_id)
     
-    if not agent_result:
-        return {"action": "reject", "reason": "Agent not found or no valid score"}
+#     if not agent_result:
+#         return {"action": "reject", "reason": "Agent not found or no valid score"}
     
-    agent_score = agent_result['final_score']
+#     agent_score = agent_result['final_score']
     
-    # Get threshold function parameters
-    threshold_data = await generate_threshold_function()
-    current_time = datetime.now(timezone.utc)
+#     # Get threshold function parameters
+#     threshold_data = await generate_threshold_function()
+#     current_time = datetime.now(timezone.utc)
     
-    # Calculate current threshold value
-    if threshold_data['epoch_0_time']:
-        epoch_minutes = (current_time - threshold_data['epoch_0_time']).total_seconds() / 60
-        epochs_passed = epoch_minutes / threshold_data['epoch_length_minutes']
-    else:
-        epochs_passed = 0
+#     # Calculate current threshold value
+#     if threshold_data['epoch_0_time']:
+#         epoch_minutes = (current_time - threshold_data['epoch_0_time']).total_seconds() / 60
+#         epochs_passed = epoch_minutes / threshold_data['epoch_length_minutes']
+#     else:
+#         epochs_passed = 0
     
-    # Parse threshold function: "floor + (t0 - floor) * Math.exp(-k * x)"
-    threshold_func = threshold_data['threshold_function']
-    parts = threshold_func.split(' + (')
-    floor = float(parts[0])
-    # Extract t0 (first number after opening parenthesis)
-    t0_part = parts[1].split(' - ')[0]
-    t0 = float(t0_part)
-    k_part = parts[1].split('* Math.exp(-')[1].split(' * x)')[0]
-    k = float(k_part)
+#     # Parse threshold function: "floor + (t0 - floor) * Math.exp(-k * x)"
+#     threshold_func = threshold_data['threshold_function']
+#     parts = threshold_func.split(' + (')
+#     floor = float(parts[0])
+#     # Extract t0 (first number after opening parenthesis)
+#     t0_part = parts[1].split(' - ')[0]
+#     t0 = float(t0_part)
+#     k_part = parts[1].split('* Math.exp(-')[1].split(' * x)')[0]
+#     k = float(k_part)
     
-    current_threshold = floor + (t0 - floor) * math.exp(-k * epochs_passed)
+#     current_threshold = floor + (t0 - floor) * math.exp(-k * epochs_passed)
     
-    # Get current top score (not necessarily approved), excluding the agent being evaluated
-    top_score_result = await conn.fetchrow("""
-        SELECT MAX(final_score) as top_score FROM agent_scores 
-        WHERE set_id = $1 AND agent_id != $2
-    """, set_id, agent_id)
-    top_score = top_score_result['top_score'] if top_score_result else 0.0
+#     # Get current top score (not necessarily approved), excluding the agent being evaluated
+#     top_score_result = await conn.fetchrow("""
+#         SELECT MAX(final_score) as top_score FROM agent_scores 
+#         WHERE set_id = $1 AND agent_id != $2
+#     """, set_id, agent_id)
+#     top_score = top_score_result['top_score'] if top_score_result else 0.0
     
-    if agent_score >= current_threshold:
-        return {
-            "action": "approve_now",
-            "reason": f"Score {agent_score:.4f} exceeds current threshold {current_threshold:.4f}"
-        }
-    elif agent_score > top_score:
-        # Calculate when threshold will decay to agent's score
-        if k == 0 or t0 <= floor:
-            return {"action": "reject", "reason": "Threshold will never decay to agent score"}
+#     if agent_score >= current_threshold:
+#         return {
+#             "action": "approve_now",
+#             "reason": f"Score {agent_score:.4f} exceeds current threshold {current_threshold:.4f}"
+#         }
+#     elif agent_score > top_score:
+#         # Calculate when threshold will decay to agent's score
+#         if k == 0 or t0 <= floor:
+#             return {"action": "reject", "reason": "Threshold will never decay to agent score"}
         
-        # Solve: agent_score = floor + (t0 - floor) * exp(-k * x)
-        # x = -ln((agent_score - floor) / (t0 - floor)) / k
-        if agent_score <= floor:
-            return {"action": "reject", "reason": "Agent score below threshold floor"}
+#         # Solve: agent_score = floor + (t0 - floor) * exp(-k * x)
+#         # x = -ln((agent_score - floor) / (t0 - floor)) / k
+#         if agent_score <= floor:
+#             return {"action": "reject", "reason": "Agent score below threshold floor"}
         
-        ratio = (agent_score - floor) / (t0 - floor)
-        if ratio <= 0:
-            return {"action": "reject", "reason": "Invalid threshold calculation"}
+#         ratio = (agent_score - floor) / (t0 - floor)
+#         if ratio <= 0:
+#             return {"action": "reject", "reason": "Invalid threshold calculation"}
         
-        future_epochs = -math.log(ratio) / k
-        future_minutes = future_epochs * threshold_data['epoch_length_minutes']
-        future_approval_time = threshold_data['epoch_0_time'] + timedelta(minutes=future_minutes)
+#         future_epochs = -math.log(ratio) / k
+#         future_minutes = future_epochs * threshold_data['epoch_length_minutes']
+#         future_approval_time = threshold_data['epoch_0_time'] + timedelta(minutes=future_minutes)
         
-        return {
-            "action": "approve_future", 
-            "future_approval_time": future_approval_time,
-            "reason": f"Score {agent_score:.4f} > top score {top_score:.4f} but < threshold {current_threshold:.4f}"
-        }
-    else:
-        return {
-            "action": "reject",
-            "reason": f"Score {agent_score:.4f} not competitive (top: {top_score:.4f}, threshold: {current_threshold:.4f})"
-        }
+#         return {
+#             "action": "approve_future", 
+#             "future_approval_time": future_approval_time,
+#             "reason": f"Score {agent_score:.4f} > top score {top_score:.4f} but < threshold {current_threshold:.4f}"
+#         }
+#     else:
+#         return {
+#             "action": "reject",
+#             "reason": f"Score {agent_score:.4f} not competitive (top: {top_score:.4f}, threshold: {current_threshold:.4f})"
+#         }
 
 
 
+# USED IN SCORING.PY -> OLD FRONTEND ENDPOINTS
 @db_operation
 async def generate_threshold_function(conn: asyncpg.Connection) -> dict:
     """
