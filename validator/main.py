@@ -7,13 +7,12 @@ import utils.logger as logger
 import validator.config as config
 
 from typing import Any, Dict, Optional
-
-from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
 from evaluator.sandbox.sandbox_manager import SandboxManager
-from validator.http import get_ridges_platform, post_ridges_platform
+from evaluator.problem_suites.problem_suite import ProblemSuite
+from validator.http_utils import get_ridges_platform, post_ridges_platform
 from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
