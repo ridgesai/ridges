@@ -1,5 +1,7 @@
+import asyncio
 import utils.logger as logger
 
+from http import HTTPStatus
 from typing import List, Optional
 from abc import ABC, abstractmethod
 from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessage
@@ -35,15 +37,15 @@ class Provider(ABC):
     async def inference(self, model_name: str, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
         # Log the request
         request_first_chars = messages[-1].content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ''
-        logger.info(f"--> Inference request for model {model_name} with {sum(len(message.content) for message in messages)} characters; first {NUM_CHARS_TO_LOG} chars of last message: '{request_first_chars}'")
+        logger.info(f"--> Inference request for model {model_name} with {sum(len(message.content) for message in messages)} characters; first {NUM_INFERENCE_CHARS_TO_LOG} chars of last message: '{request_first_chars}'")
 
-        response = await self._inference(self.get_inference_model_info_by_name(model_name), temperature=temperature, messages=messages)
+        response = await self._inference(self.get_inference_model_info_by_name(model_name), temperature, messages)
 
         # Log the response
         if response.status_code == 200:
             # 200 OK
             response_first_chars = response.response.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG]
-            logger.info(f"<-- Inference response for model {model_name} with {len(response)} characters; first {NUM_INFERENCE_CHARS_TO_LOG} chars: '{response_first_chars}'")
+            logger.info(f"<-- Inference response for model {model_name} with {len(response.response)} characters; first {NUM_INFERENCE_CHARS_TO_LOG} chars: '{response_first_chars}'")
         elif response.status_code != -1:
             # 4xx or 5xx
             logger.warning(f"<-- Inference response for model {model_name}: {response.status_code} {HTTPStatus(response.status_code).phrase}: {response.response}")
@@ -68,11 +70,25 @@ class Provider(ABC):
         return next((model for model in self.inference_models if model.name == model_name), None)
 
     async def test_all_inference_models(self):
-        # TODO ADAM: slow
-        for model in self.inference_models:
-            logger.info(f"Testing {model.name}...")
-            await self.inference(model=model.name, temperature=0.5, messages=[InferenceMessage(role="user", content="What is 2+2?")])
+        async def test_inference_model(model_name):
+            response = await self.inference(
+                model_name=model_name,
+                temperature=0.5,
+                messages=[InferenceMessage(role="user", content="What is 2+2?")]
+            )
 
+            return response.status_code == 200
+        
+        logger.info(f"Testing all inference models...")
+
+        tasks = [test_inference_model(model.name) for model in self.inference_models]
+        results = await asyncio.gather(*tasks)
+
+        if all(results):
+            logger.info("Tested all inference models")
+        else:
+            logger.fatal(f"Failed to test inference models: {', '.join([model.name for model, result in zip(self.inference_models, results) if not result])}")
+        
 
 
     # Embedding

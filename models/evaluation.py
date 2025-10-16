@@ -1,8 +1,8 @@
 from enum import Enum
 from uuid import UUID
+from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel
-from typing import List, Optional
 from models.evaluation_run import EvaluationRun
 
 
@@ -11,7 +11,6 @@ class EvaluationStatus(str, Enum):
     success = 'success'
     running = 'running'
     failure = 'failure'
-
 
 class Evaluation(BaseModel):
     evaluation_id: UUID

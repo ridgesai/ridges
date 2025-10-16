@@ -66,5 +66,6 @@ def error(message: str):
         logger.error(LEVEL_NAME_TO_COLOR['ERROR'] + line + RESET, stacklevel=2)
 
 def fatal(message: str):
-    error(message)
+    for line in message.split('\n'):
+        logger.error(LEVEL_NAME_TO_COLOR['ERROR'] + line + RESET, stacklevel=2)
     raise Exception(message)

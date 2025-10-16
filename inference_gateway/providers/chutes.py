@@ -10,7 +10,6 @@ from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessag
 
 
 
-
 CHUTES_MODELS_URL = "https://llm.chutes.ai/v1/models"
 
 
@@ -28,7 +27,7 @@ WHITELISTED_CHUTES_INFERENCE_MODELS = [
     WhitelistedChutesModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
     WhitelistedChutesModel(name="zai-org/GLM-4.5-FP8"),
     WhitelistedChutesModel(name="deepseek-ai/DeepSeek-V3-0324"),
-    WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="Kimi-K2-Instruct-0905"),
+    WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="moonshotai/Kimi-K2-Instruct-0905"),
     WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8")
 ]
 
@@ -49,7 +48,8 @@ class ChutesProvider(Provider):
 
         # Fetch Chutes models
         logger.info(f"Fetching {CHUTES_MODELS_URL}...")
-        chutes_models_response = await httpx.get(CHUTES_MODELS_URL)
+        async with httpx.AsyncClient() as client:
+            chutes_models_response = await client.get(CHUTES_MODELS_URL)
         chutes_models_response.raise_for_status()
         chutes_models = chutes_models_response.json()["data"]
         logger.info(f"Fetched {CHUTES_MODELS_URL}")
@@ -57,20 +57,25 @@ class ChutesProvider(Provider):
 
 
         # Add whitelisted inference models
-        for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:
+        for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:     
             chutes_model = next((chutes_model for chutes_model in chutes_models if chutes_model["id"] == whitelisted_chutes_model.chutes_name), None)
             if not chutes_model:
-                logger.warning(f"Whitelisted Chutes inference model {whitelisted_chutes_model.name} is not supported by Chutes")
-                continue
+                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
 
             chutes_model_pricing = chutes_model["pricing"]
+            cost_usd_per_million_input_tokens = chutes_model_pricing['prompt']
+            cost_usd_per_million_output_tokens = chutes_model_pricing['completion']
 
             self.inference_models.append(ModelInfo(
                 name=whitelisted_chutes_model.name,
                 external_name=whitelisted_chutes_model.chutes_name,
-                cost_usd_per_million_input_tokens=chutes_model_pricing['prompt'],
-                cost_usd_per_million_output_tokens=chutes_model_pricing['completion']
+                cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens,
+                cost_usd_per_million_output_tokens=cost_usd_per_million_output_tokens
             ))
+
+            logger.info(f"Found whitelisted Chutes inference model {whitelisted_chutes_model.name}:")
+            logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
+            logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
 
         # TODO ADAM: embedding
 
@@ -80,6 +85,10 @@ class ChutesProvider(Provider):
             base_url=config.CHUTES_BASE_URL,
             api_key=config.CHUTES_API_KEY
         )
+
+
+
+        return self
         
 
 
