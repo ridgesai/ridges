@@ -335,7 +335,7 @@ BEGIN
 END $$;
 
 -- First view: evaluation_runs with solved status
-CREATE MATERIALIZED VIEW evaluation_runs_hydrated AS
+CREATE VIEW evaluation_runs_hydrated AS
 SELECT
     evaluation_runs.*,
     CASE
@@ -367,7 +367,7 @@ GROUP BY evaluations.evaluation_id;
 DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
 
 -- Recreate the materialized view
-CREATE MATERIALIZED VIEW agent_scores AS
+CREATE VIEW agent_scores AS
 WITH all_agents AS (
     -- Get all agent versions from non-banned hotkeys
     SELECT
@@ -448,7 +448,7 @@ CREATE INDEX idx_agent_scores_approved ON agent_scores (approved, set_id, final_
 CREATE OR REPLACE FUNCTION refresh_evaluation_runs_hydrated()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
+    -- REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -457,7 +457,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW agent_scores;
+    -- REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -467,8 +467,8 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION refresh_evaluations_and_scores()
 RETURNS TRIGGER AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
-    REFRESH MATERIALIZED VIEW agent_scores;
+    -- REFRESH MATERIALIZED VIEW evaluation_runs_hydrated;
+    -- REFRESH MATERIALIZED VIEW agent_scores;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
