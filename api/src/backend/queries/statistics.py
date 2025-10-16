@@ -159,8 +159,6 @@ async def get_agent_scores_over_time(conn: asyncpg.Connection, set_id: Optional[
                 AND e.set_id = $1 
                 AND e.status = 'success' 
                 AND e.score IS NOT NULL
-                AND e.validator_hotkey NOT LIKE 'screener-%' 
-                AND e.validator_hotkey NOT LIKE 'i-0%'
             WHERE ma.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         ),
         hourly_stats AS (
