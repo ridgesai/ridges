@@ -34,22 +34,6 @@ async def create_open_user(conn: asyncpg.Connection, open_user: OpenUser) -> Non
         open_user.registered_at
     )
 
-# @db_operation
-# async def get_open_user_by_hotkey(conn: asyncpg.Connection, open_hotkey: str) -> Optional[OpenUser]:
-#     result = await conn.fetchrow(
-#         """
-#             SELECT * FROM open_users WHERE open_hotkey = $1
-#         """,
-#         open_hotkey
-#     )
-
-#     if not result:
-#         return None
-    
-#     return OpenUser(**dict(result))
-
-
-
 @db_operation
 async def get_open_user_by_email(conn: asyncpg.Connection, email: str) -> Optional[OpenUser]:
     result = await conn.fetchrow(
@@ -192,77 +176,6 @@ async def get_treasury_transactions_for_open_user(conn: asyncpg.Connection, open
         }
         for row in rows
     ]
-
-# @db_operation
-# async def get_all_transactions(conn: asyncpg.Connection) -> list[dict]:
-#     rows = await conn.fetch(
-#         """
-#         SELECT 
-#             tt.sender_coldkey,
-#             tt.destination_coldkey,
-#             tt.staker_hotkey,
-#             tt.amount_alpha_rao,
-#             tt.agent_id AS transaction_agent_id,
-#             tt.occurred_at,
-#             tt.extrinsic_code,
-#             tt.fee,
-#             ma.agent_id AS agent_id,
-#             ma.miner_hotkey,
-#             ma.agent_name,
-#             ma.version_num,
-#             ma.created_at
-#         FROM treasury_transactions tt
-#         INNER JOIN agents ma ON ma.agent_id = tt.agent_id
-#         ORDER BY tt.occurred_at DESC
-#         """,
-#     )
-
-#     return [
-#         {
-#             "sender_coldkey": str(row["sender_coldkey"]),
-#             "destination_coldkey": str(row["destination_coldkey"]),
-#             "staker_hotkey": str(row["staker_hotkey"]),
-#             "amount_alpha": int(row["amount_alpha_rao"]),
-#             "transaction_agent_id": str(row["transaction_agent_id"]),
-#             "occurred_at": str(row["occurred_at"]),
-#             "extrinsic_code": str(row["extrinsic_code"]),
-#             "fee": bool(row["fee"]),
-#             "agent_id": str(row["agent_id"]),
-#             "miner_hotkey": str(row["miner_hotkey"]),
-#             "agent_name": str(row["agent_name"]),
-#             "version_num": int(row["version_num"]),
-#             "created_at": str(row["created_at"]),
-#         }
-#         for row in rows
-#     ]
-
-# @db_operation
-# async def get_all_treasury_hotkeys(conn: asyncpg.Connection) -> list[dict]:
-#     rows = await conn.fetch(
-#         """
-#         SELECT hotkey, active, created_at FROM treasury_wallets WHERE active = TRUE
-#         """
-#     )
-
-#     return [
-#         {
-#             "hotkey": str(row["hotkey"]),
-#             "active": bool(row["active"]),
-#             "created_at": str(row["created_at"]),
-#         }
-#         for row in rows
-#     ]
-
-# @db_operation
-# async def get_total_dispersed_by_treasury_hotkeys(conn: asyncpg.Connection) -> int:
-#     total = await conn.fetchval(
-#         """
-#         SELECT COALESCE(SUM(amount_alpha_rao), 0)
-#         FROM treasury_transactions
-#         """,
-#     )
-
-#     return int(total) if total is not None else 0
 
 @db_operation
 async def get_total_payouts_by_agent_ids(conn: asyncpg.Connection, agent_ids: list[str]) -> dict[str, int]:
