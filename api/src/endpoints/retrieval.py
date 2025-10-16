@@ -17,7 +17,8 @@ from api.src.utils.auth import verify_request_public
 # from api.src.backend.queries.statistics import get_top_agents as db_get_top_agents, get_queue_position_by_hotkey, QueuePositionPerValidator, get_inference_details_for_run
 from api.src.backend.queries.statistics import get_agent_scores_over_time as db_get_agent_scores_over_time 
 # from api.src.backend.queries.statistics import get_miner_score_activity as db_get_miner_score_activity
-# from api.queries.evaluation_set import get_latest_set_id
+# from api.src.backend.queries.statistics import get_top_scores_over_last_week as db_get_top_scores_over_last_week
+from api.queries.evaluation_set import get_latest_set_id
 # from api.src.backend.entities import ProviderStatistics
 # from api.src.backend.queries.inference import get_inference_provider_statistics as db_get_inference_provider_statistics
 # from api.src.backend.queries.open_users import get_emission_dispersed_to_open_user as db_get_emission_dispersed_to_open_user, get_all_transactions as db_get_all_transactions, get_all_treasury_hotkeys as db_get_all_treasury_hotkeys
