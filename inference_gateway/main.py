@@ -35,8 +35,9 @@ async def lifespan(app: FastAPI):
     global chutes_provider
     chutes_provider = await ChutesProvider().init()
 
-    await chutes_provider.test_all_inference_models()
-    await chutes_provider.test_all_embedding_models()
+    # TODO ADAM: uncomment this
+    # await chutes_provider.test_all_inference_models()
+    # await chutes_provider.test_all_embedding_models()
 
 
 
