@@ -204,8 +204,6 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
         num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
         logger.warning(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
-        if num_failed > 0:
-            logger.error(f"!!!")
 
         # Move from running_eval -> finished
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
