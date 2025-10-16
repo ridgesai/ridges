@@ -116,6 +116,8 @@ async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) 
 
 @db_operation
 async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
+    # TODO ALEX from ADAM: Modify this in the view itself rather than branching explicitly here.
+    # The view apparently does not sort by created_at.
     queue_to_query = f"{queue_stage.value}_queue"
 
     if queue_stage == EvaluationSetGroup.screener_1:
@@ -123,7 +125,7 @@ async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationS
             SELECT a.*
             from agents a
             join {queue_to_query} q on q.agent_id = a.agent_id
-            order by q.created_at asc
+            order by a.created_at asc
         """)
 
         return [Agent(**agent) for agent in queue]
