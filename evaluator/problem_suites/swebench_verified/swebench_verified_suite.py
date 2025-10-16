@@ -255,7 +255,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
-            logger.warn(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
+            logger.warning(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
             raise RuntimeError(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
         logger.debug(f"Successfully prebuilt environment images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
 
@@ -269,6 +269,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
-            logger.warn(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
+            logger.warning(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
             raise RuntimeError(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
         logger.debug(f"Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
