@@ -23,9 +23,10 @@ PORT = int(PORT)
 
 
 # Load database configuration
-USE_DATABASE = bool(os.getenv("USE_DATABASE"))
+USE_DATABASE = os.getenv("USE_DATABASE")
 if not USE_DATABASE:
     logger.fatal("USE_DATABASE is not set in .env")
+USE_DATABASE = USE_DATABASE.lower() == "true"
 
 if USE_DATABASE:
     DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")

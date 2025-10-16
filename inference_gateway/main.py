@@ -1,7 +1,6 @@
 import uvicorn
 import utils.logger as logger
 import inference_gateway.config as config
-import inference_gateway.providers.chutes as chutes
 
 from typing import List
 from functools import wraps
@@ -109,26 +108,28 @@ async def inference(request: InferenceRequest) -> str:
             detail="The model specified is not supported by Ridges for inference."
         )
 
-    inference_id = await create_new_inference(
-        evaluation_run_id=request.run_id,
+    if config.USE_DATABASE:
+        inference_id = await create_new_inference(
+            evaluation_run_id=request.run_id,
 
-        provider="chutes",
-        model=request.model,
-        temperature=request.temperature,
-        messages=request.messages
-    )
+            provider="chutes",
+            model=request.model,
+            temperature=request.temperature,
+            messages=request.messages
+        )
 
-    response = await chutes.inference(request.model, request.temperature, request.messages)
+    response = await chutes_provider.inference(request.model, request.temperature, request.messages)
 
-    await update_inference_by_id(
-        inference_id=inference_id,
+    if config.USE_DATABASE:
+        await update_inference_by_id(
+            inference_id=inference_id,
 
-        status_code=response.status_code,
-        response=response.response,
-        num_input_tokens=response.num_input_tokens,
-        num_output_tokens=response.num_output_tokens,
-        cost_usd=response.cost_usd
-    )
+            status_code=response.status_code,
+            response=response.response,
+            num_input_tokens=response.num_input_tokens,
+            num_output_tokens=response.num_output_tokens,
+            cost_usd=response.cost_usd
+        )
     
     return response.response
 
