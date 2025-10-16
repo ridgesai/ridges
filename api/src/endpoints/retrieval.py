@@ -282,6 +282,8 @@ async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
         for e, runs in zip(evaluations, runs_per_eval)
     ]
 
+from utils.s3 import download_text_file_from_s3
+from api.src.endpoints.validator import get_all_connected_validator_ip_addresses
 
 async def get_agent_code(agent_id: str, request: Request):
     agent_version = await get_agent_by_id(agent_id=agent_id)
@@ -293,12 +295,12 @@ async def get_agent_code(agent_id: str, request: Request):
             detail="The requested agent version was not found. Are you sure you have the correct version ID?"
         )
     
-    if agent_version.status in [AgentStatus.screening_1, AgentStatus.screening_2]:
+    if agent_version.status in [AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating]:
         client_ip = request.client.host
         
-        connected_screener_ips = get_all_connected_screener_ip_addresses()
+        connected_validator_ips = get_all_connected_validator_ip_addresses()
 
-        if client_ip not in connected_screener_ips:
+        if client_ip not in connected_validator_ips:
             logger.warning(f"Unauthorized IP {client_ip} attempted to access agent code for version {agent_id}")
             raise HTTPException(
                 status_code=403,
