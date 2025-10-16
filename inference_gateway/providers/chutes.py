@@ -1,114 +1,125 @@
+import httpx
 import utils.logger as logger
 import inference_gateway.config as config
 
 from typing import List
-from http import HTTPStatus
+from pydantic import BaseModel
 from openai import AsyncOpenAI, APIStatusError
+from inference_gateway.providers.provider import Provider
 from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessage
 
 
 
-chutes_client = AsyncOpenAI(
-    base_url=config.CHUTES_BASE_URL,
-    api_key=config.CHUTES_API_KEY
-)
+
+CHUTES_MODELS_URL = "https://llm.chutes.ai/v1/models"
 
 
 
-SUPPORTED_MODEL_INFO = [
-    ModelInfo(
-        name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
-        cost_usd_per_million_input_tokens=0.22,
-        cost_usd_per_million_output_tokens=0.95
-    ),
-    ModelInfo(
-        name="zai-org/GLM-4.5-FP8",
-        cost_usd_per_million_input_tokens=0.35,
-        cost_usd_per_million_output_tokens=1.55
-    ),
-    ModelInfo(
-        name="deepseek-ai/DeepSeek-V3-0324",
-        cost_usd_per_million_input_tokens=0.24,
-        cost_usd_per_million_output_tokens=0.84
-    ),
-    ModelInfo(
-        name="moonshotai/Kimi-K2-Instruct", # moonshotai/Kimi-K2-Instruct-0905
-        cost_usd_per_million_input_tokens=0.39,
-        cost_usd_per_million_output_tokens=1.9
-    ),
-    ModelInfo(
-        name="zai-org/GLM-4.6-FP8",
-        cost_usd_per_million_input_tokens=0.5,
-        cost_usd_per_million_output_tokens=1.75
-    )
+class WhitelistedChutesModel(BaseModel):
+    name: str
+    chutes_name: str = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.chutes_name is None:
+            self.chutes_name = self.name
+
+WHITELISTED_CHUTES_INFERENCE_MODELS = [
+    WhitelistedChutesModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
+    WhitelistedChutesModel(name="zai-org/GLM-4.5-FP8"),
+    WhitelistedChutesModel(name="deepseek-ai/DeepSeek-V3-0324"),
+    WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="Kimi-K2-Instruct-0905"),
+    WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8")
+]
+
+WHITELISTED_CHUTES_EMBEDDING_MODELS = [
+    # TODO
 ]
 
 
 
-def is_model_supported_for_inference(model: str) -> bool:
-    return model in [model.name for model in SUPPORTED_MODEL_INFO]
+class ChutesProvider(Provider):
+    chutes_client: AsyncOpenAI = None
 
-async def inference(model: str, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
-    NUM_CHARS_TO_LOG = 30
 
-    try:
-        model_info = next((model_info for model_info in SUPPORTED_MODEL_INFO if model_info.name == model), None)
+    
+    async def init(self) -> "ChutesProvider":
+        # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8")'
+        # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8") | .pricing'
 
-        request_first_chars = messages[-1].content.replace('\n', '')[:NUM_CHARS_TO_LOG] if messages else ''
-        logger.info(f"--> Inference request for model {model} with {sum(len(message.content) for message in messages)} characters; first {NUM_CHARS_TO_LOG} chars of last message: '{request_first_chars}'")
+        # Fetch Chutes models
+        logger.info(f"Fetching {CHUTES_MODELS_URL}...")
+        chutes_models_response = await httpx.get(CHUTES_MODELS_URL)
+        chutes_models_response.raise_for_status()
+        chutes_models = chutes_models_response.json()["data"]
+        logger.info(f"Fetched {CHUTES_MODELS_URL}")
 
+
+
+        # Add whitelisted inference models
+        for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:
+            chutes_model = next((chutes_model for chutes_model in chutes_models if chutes_model["id"] == whitelisted_chutes_model.chutes_name), None)
+            if not chutes_model:
+                logger.warning(f"Whitelisted Chutes inference model {whitelisted_chutes_model.name} is not supported by Chutes")
+                continue
+
+            chutes_model_pricing = chutes_model["pricing"]
+
+            self.inference_models.append(ModelInfo(
+                name=whitelisted_chutes_model.name,
+                external_name=whitelisted_chutes_model.chutes_name,
+                cost_usd_per_million_input_tokens=chutes_model_pricing['prompt'],
+                cost_usd_per_million_output_tokens=chutes_model_pricing['completion']
+            ))
+
+        # TODO ADAM: embedding
+
+
+
+        self.chutes_client = AsyncOpenAI(
+            base_url=config.CHUTES_BASE_URL,
+            api_key=config.CHUTES_API_KEY
+        )
+        
+
+
+    async def _inference(self, model_info: ModelInfo, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
         try:
-            chat_completion = await chutes_client.chat.completions.create(
+            chat_completion = await self.chutes_client.chat.completions.create(
                 messages=messages,
-                model=model,
+                model=model_info.external_name,
                 temperature=temperature
             )
+            
+            response = chat_completion.choices[0].message.content
+
+            num_input_tokens = chat_completion.usage.prompt_tokens
+            num_output_tokens = chat_completion.usage.completion_tokens
+            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens) if model_info else None
+
+            return InferenceResult(
+                status_code=200,
+                response=response,
+                num_input_tokens=num_input_tokens,
+                num_output_tokens=num_output_tokens,
+                cost_usd=cost_usd
+            )
+
         except APIStatusError as e:
             # Chutes returned 4xx or 5xx
-            logger.info(f"<-- Inference response for model {model}: {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.response.text}")
-
             return InferenceResult(
                 status_code=e.status_code,
                 response=e.response.text
             )
-        
-        response = chat_completion.choices[0].message.content
 
-        num_input_tokens = chat_completion.usage.prompt_tokens
-        num_output_tokens = chat_completion.usage.completion_tokens
-        cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens) if model_info else None
-
-        response_first_chars = response.replace('\n', '')[:NUM_CHARS_TO_LOG]
-        logger.info(f"<-- Inference response for model {model} with {len(response)} characters; first {NUM_CHARS_TO_LOG} chars: '{response_first_chars}'")
-
-        return InferenceResult(
-            status_code=200,
-            response=response,
-            num_input_tokens=num_input_tokens,
-            num_output_tokens=num_output_tokens,
-            cost_usd=cost_usd
-        )
-
-    except Exception as e:
-        logger.info(f"<-- Inference response for model {model}: Error in chutes.inference() {e.response.text}")
-        return InferenceResult(
-            status_code=-1,
-            response=f"Error in chutes.inference(): {type(e).__name__}: {str(e)}"
-        )
+        except Exception as e:
+            return InferenceResult(
+                status_code=-1,
+                response=f"Error in chutes.inference(): {type(e).__name__}: {str(e)}"
+            )
 
 
 
-def is_model_supported_for_embedding(model: str) -> bool:
-    # TODO
-    return False
-
-async def embedding(model: str, input: str) -> List[float]:
-    # TODO
-    pass
-
-
-
-async def test_all_models():
-    for model in SUPPORTED_MODEL_INFO:
-        logger.info(f"Testing {model.name}...")
-        response = await inference(model=model.name, temperature=0.5, messages=[InferenceMessage(role="user", content="What is 2+2?")])
+    async def _embedding(self, model_info: ModelInfo, input: str) -> List[float]:
+        # TODO ADAM
+        pass
