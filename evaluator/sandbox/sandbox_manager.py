@@ -6,9 +6,9 @@ import httpx
 import shutil
 import utils.logger as logger
 
-from typing import Any, Dict, Tuple, Optional, Callable
-from utils.temp import create_temp_dir, cleanup_temp_dir
-from evaluator.models import Sandbox, SandboxResult, SandboxResultWithLogs
+from typing import Any, Dict, Optional, Callable
+from utils.temp import create_temp_dir, delete_temp_dir
+from evaluator.models import Sandbox, SandboxResultWithLogs
 from utils.docker import docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
 
 
@@ -17,9 +17,6 @@ SANDBOX_NETWORK_NAME = "sandbox-network"
 
 SANDBOX_PROXY_HOST = "sandbox_proxy"
 SANDBOX_PROXY_PORT = 80
-
-
-
 
 
 
@@ -133,17 +130,16 @@ class SandboxManager:
         container = docker_client.containers.run(
             name=name,
             image="sandbox-image",
-            command=f"python /sandbox/{python_script_name} 2>&1",
-            volumes={
-                temp_dir: {"bind": "/sandbox", "mode": "rw"}
-            },
+            volumes={temp_dir: {"bind": "/sandbox", "mode": "rw"}},
+            network=SANDBOX_NETWORK_NAME,
+            user=f"{os.getuid()}:{os.getgid()}",
             environment={
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONDONTWRITEBYTECODE": "1", # No __pycache__
                 "SANDBOX_PROXY_URL": f"http://{SANDBOX_PROXY_HOST}:{SANDBOX_PROXY_PORT}",
                 **env_vars
             },
-            network=SANDBOX_NETWORK_NAME,
+            command=f"python /sandbox/{python_script_name} 2>&1",
             detach=True
         )
 
@@ -177,6 +173,9 @@ class SandboxManager:
 
             return SandboxResultWithLogs(**output, logs=logs)
         finally:
-            # Remove the container
+            # Remove Docker container
             sandbox.container.stop()
             sandbox.container.remove()
+
+            # Remove temporary directory
+            delete_temp_dir(sandbox.temp_dir)
