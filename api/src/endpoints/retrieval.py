@@ -221,7 +221,7 @@ from api.queries.evaluation import get_evaluations_for_agent_id
 from api.queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from models.evaluation import EvaluationStatus, Evaluation, EvaluationWithRuns
 from models.evaluation_set import EvaluationSetGroup
-from models.agent import Agent, AgentScored
+from models.agent import Agent, AgentScored, AgentStatus
 
 async def queue(
     stage: str
@@ -297,7 +297,7 @@ async def get_agent_code(agent_id: str, request: Request):
             detail="The requested agent version was not found. Are you sure you have the correct version ID?"
         )
     
-    if "screening" in agent_version.status:
+    if agent_version.status in [AgentStatus.screening_1, AgentStatus.screening_2]:
         client_ip = request.client.host
         
         connected_screener_ips = get_all_connected_screener_ip_addresses()
