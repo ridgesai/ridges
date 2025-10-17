@@ -42,9 +42,7 @@ async def get_system_metrics() -> SystemMetrics:
         metrics.disk_percent = disk.percent
         metrics.disk_total_gb = disk.total / (1000 ** 3)
 
-        # TODO ADAM: uncomment
-        # metrics.num_containers = get_num_docker_containers()
-        metrics.num_containers = -1
+        metrics.num_containers = get_num_docker_containers()
 
     except Exception as e:
         logger.warning(f"Error in get_system_metrics(): {e}")

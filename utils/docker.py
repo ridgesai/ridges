@@ -46,7 +46,7 @@ def get_num_docker_containers():
     """
 
     # This is equivalent to `docker ps -q | wc -l`
-    result = subprocess.run(["docker", "ps", "-q"], capture_output=True, text=True)
+    result = subprocess.run(["docker", "ps", "-q"], capture_output=True, text=True, timeout=1)
     return len([line for line in result.stdout.strip().split('\n') if line.strip()])
 
 
