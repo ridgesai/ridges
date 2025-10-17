@@ -5,7 +5,7 @@ import utils.logger as logger
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request_public
-from api.src.backend.queries.statistics import get_top_scores_over_last_week as db_get_top_scores_over_last_week
+from api.src.backend.queries.statistics import get_top_scores_over_time as db_get_top_scores_over_time
 
 
 load_dotenv()
@@ -122,7 +122,7 @@ async def get_agent_code(agent_id: str, request: Request):
 
 async def top_scores_over_time():
     """Gets agent scores over time for charting"""
-    return await db_get_top_scores_over_last_week()
+    return await db_get_top_scores_over_time()
 
 async def network_statistics():
     """
