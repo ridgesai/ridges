@@ -51,6 +51,7 @@ def get_num_docker_containers():
 
 
 
+# TODO ADAM
 def stop_and_delete_all_docker_containers():
     """
     Stop and delete all Docker containers.

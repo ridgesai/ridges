@@ -328,14 +328,17 @@ async def validator_request_evaluation(
     validator: Validator = Depends(get_request_validator_with_lock)
 ) -> Optional[ValidatorRequestEvaluationResponse]:
 
-    async with validator_request_evaluation_lock:
-        # Make sure the validator is not already running an evaluation
-        if validator.current_evaluation_id is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"This validator is already running an evaluation, and validators may only run one evaluation at a time."
-            )
+    # Make sure the validator is not already running an evaluation
+    if validator.current_evaluation_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This validator is already running an evaluation, and validators may only run one evaluation at a time."
+        )
 
+    # TODO ADAM: remove
+    logger.info(f"Waiting to lock request evaluation lock...")
+    async with validator_request_evaluation_lock:
+        logger.info(f"Locked request evaluation lock")
         # Find the next agent awaiting an evaluation from this validator
         agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
         if agent_id is None:
@@ -343,21 +346,23 @@ async def validator_request_evaluation(
 
         # Create a new evaluation and evaluation runs for this agent & validator
         evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
-        validator.current_evaluation_id = evaluation.evaluation_id
-        validator.current_evaluation = evaluation
-        validator.current_agent = await get_agent_by_id(agent_id)
+    logger.info(f"Unlocked request evaluation lock")
+
+    validator.current_evaluation_id = evaluation.evaluation_id
+    validator.current_evaluation = evaluation
+    validator.current_agent = await get_agent_by_id(agent_id)
 
 
 
-        logger.info(f"Validator '{validator.name}' requested an evaluation")
-        logger.info(f"  Agent ID: {agent_id}")
-        logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
-        logger.info(f"  # of evaluation runs: {len(evaluation_runs)}")
+    logger.info(f"Validator '{validator.name}' requested an evaluation")
+    logger.info(f"  Agent ID: {agent_id}")
+    logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
+    logger.info(f"  # of Evaluation Runs: {len(evaluation_runs)}")
 
-        agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-        evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
+    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
+    evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
 
-        return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
+    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
 
 
 
