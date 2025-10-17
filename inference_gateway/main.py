@@ -23,16 +23,16 @@ providers = []
 
 
 def get_provider_that_supports_model_for_inference(model_name: str) -> Provider:
-    providers = [provider for provider in providers if provider.is_model_supported_for_inference(model_name)]  
-    if not providers:
+    inference_providers = [provider for provider in providers if provider.is_model_supported_for_inference(model_name)]  
+    if not inference_providers:
         return None
-    return random.choice(providers)
+    return random.choice(inference_providers)
 
 def get_provider_that_supports_model_for_embedding(model_name: str) -> Provider:
-    providers = [provider for provider in providers if provider.is_model_supported_for_embedding(model_name)]
-    if not providers:
+    embedding_providers = [provider for provider in providers if provider.is_model_supported_for_embedding(model_name)]
+    if not embedding_providers:
         return None
-    return random.choice(providers)
+    return random.choice(embedding_providers)
 
 
 
@@ -53,9 +53,10 @@ async def lifespan(app: FastAPI):
     providers.append(await ChutesProvider().init())
     providers.append(await TargonProvider().init())
 
-    for provider in providers:
-        await provider.test_all_inference_models()
-        await provider.test_all_embedding_models()
+    # TODO ADAM: uncomment
+    # for provider in providers:
+    #     await provider.test_all_inference_models()
+    #     await provider.test_all_embedding_models()
 
 
 
