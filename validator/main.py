@@ -49,7 +49,9 @@ async def disconnect(reason: str):
         await post_ridges_platform("/validator/disconnect", {"reason": reason}, bearer_token=session_id)
         logger.info("Disconnected validator")
     except Exception as e:
-        logger.error(f"Error disconnecting validator: {type(e).__name__}: {e}")
+        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        os._exit(1)
 
 
 
@@ -63,7 +65,7 @@ async def send_heartbeat_loop():
             await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
-        logger.error(f"Error in send heartbeat loop: {type(e).__name__}: {e}")
+        logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
 
@@ -141,112 +143,118 @@ async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str
 
 # Run an evaluation run
 async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_code: str):
-    # Figure out what problem suite this problem belongs to
-    problem_suite: Optional[ProblemSuite] = None
-    if polyglot_suite.has_problem_name(problem_name):
-        problem_suite = polyglot_suite
-    elif swebench_verified_suite.has_problem_name(problem_name):
-        problem_suite = swebench_verified_suite
-
-    # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
-    if problem_suite is None:
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-            "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
-            "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
-        })
-        return
-
-    # Get the problem
-    problem = problem_suite.get_problem(problem_name)
-
-
-
-    logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
-
-
-
     try:
-        # Move from pending -> initializing_agent
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+        # Figure out what problem suite this problem belongs to
+        problem_suite: Optional[ProblemSuite] = None
+        if polyglot_suite.has_problem_name(problem_name):
+            problem_suite = polyglot_suite
+        elif swebench_verified_suite.has_problem_name(problem_name):
+            problem_suite = swebench_verified_suite
 
-        # Start initializing the agent sandbox
-        agent_sandbox = await asyncio.to_thread(
-            problem_suite.initialize_agent_sandbox,
-            sandbox_manager,
-            problem,
-            evaluation_run_id,
-            agent_code,
-            include_solution=config.INCLUDE_SOLUTIONS
-        )
+        # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
+        if problem_suite is None:
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+                "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
+            })
+            return
 
-        # Move from initializing_agent -> running_agent
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+        # Get the problem
+        problem = problem_suite.get_problem(problem_name)
 
-        # Start running the agent sandbox
-        patch, agent_logs = await asyncio.to_thread(
-            problem_suite.run_agent_sandbox,
-            sandbox_manager,
-            agent_sandbox,
-            running_agent_timeout_seconds
-        )
-        logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
-        # Move from running_agent -> initializing_eval
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
-            "patch": patch,
-            "agent_logs": truncate_logs_if_required(agent_logs)
-        })
 
-        # Start initializing the evaluation sandbox
-        eval_sandbox = await asyncio.to_thread(
-            problem_suite.initialize_eval_sandbox,
-            sandbox_manager,
-            problem,
-            evaluation_run_id,
-            patch
-        )
+        logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
-        # Move from initializing_eval -> running_eval
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
-        # Start running the evaluation sandbox
-        test_results, eval_logs = await asyncio.to_thread(
-            problem_suite.run_eval_sandbox,
-            sandbox_manager,
-            eval_sandbox,
-            running_eval_timeout_seconds
-        )
-        num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
-        num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
-        num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
-        logger.info(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
 
-        # Move from running_eval -> finished
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
-            "test_results": [test.model_dump() for test in test_results],
-            "eval_logs": truncate_logs_if_required(eval_logs)
-        })
+        try:
+            # Move from pending -> initializing_agent
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
-    except EvaluationRunException as e:
-        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+            # Start initializing the agent sandbox
+            agent_sandbox = await asyncio.to_thread(
+                problem_suite.initialize_agent_sandbox,
+                sandbox_manager,
+                problem,
+                evaluation_run_id,
+                agent_code,
+                include_solution=config.INCLUDE_SOLUTIONS
+            )
 
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-            "error_code": e.error_code.value,
-            "error_message": e.error_message
-        })
+            # Move from initializing_agent -> running_agent
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+
+            # Start running the agent sandbox
+            patch, agent_logs = await asyncio.to_thread(
+                problem_suite.run_agent_sandbox,
+                sandbox_manager,
+                agent_sandbox,
+                running_agent_timeout_seconds
+            )
+            logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
+
+            # Move from running_agent -> initializing_eval
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+                "patch": patch,
+                "agent_logs": truncate_logs_if_required(agent_logs)
+            })
+
+            # Start initializing the evaluation sandbox
+            eval_sandbox = await asyncio.to_thread(
+                problem_suite.initialize_eval_sandbox,
+                sandbox_manager,
+                problem,
+                evaluation_run_id,
+                patch
+            )
+
+            # Move from initializing_eval -> running_eval
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+
+            # Start running the evaluation sandbox
+            test_results, eval_logs = await asyncio.to_thread(
+                problem_suite.run_eval_sandbox,
+                sandbox_manager,
+                eval_sandbox,
+                running_eval_timeout_seconds
+            )
+            num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
+            num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
+            num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
+            logger.info(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
+
+            # Move from running_eval -> finished
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+                "test_results": [test.model_dump() for test in test_results],
+                "eval_logs": truncate_logs_if_required(eval_logs)
+            })
+
+        except EvaluationRunException as e:
+            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                "error_code": e.error_code.value,
+                "error_message": e.error_message
+            })
+
+        except Exception as e:
+            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+            logger.error(traceback.format_exc())
+
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
+                "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+            })
+
+
+
+        logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
 
     except Exception as e:
-        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+        logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
-
-        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-            "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
-            "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
-        })
-
-
-
-    logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}...")
+        os._exit(1)
     
 
 

@@ -90,12 +90,12 @@ async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
     for validator in _validators:
         time_last_heartbeat = validator.time_last_heartbeat or validator.time_connected
         if time_last_heartbeat + timedelta(seconds=config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS) < datetime.now():
-            logger.info(f"Waiting to lock validator {validator.name} ({validator.hotkey})...")
+            logger.info(f"LOCKS: Waiting to lock validator {validator.name} ({validator.hotkey})...")
             async with validator._lock:
-                logger.info(f"Locked validator {validator.name} ({validator.hotkey})")
+                logger.info(f"LOCKS: Locked validator {validator.name} ({validator.hotkey})")
                 if validator.session_id in SESSION_ID_TO_VALIDATOR:
                     await delete_validator(validator, f"The validator was disconnected because it did not send a heartbeat in {config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} seconds.")
-            logger.info(f"Unlocked validator {validator.name} ({validator.hotkey})")
+            logger.info(f"LOCKS: Unlocked validator {validator.name} ({validator.hotkey})")
 
     logger.info("Deleted validators that have not sent a heartbeat")
 
@@ -126,7 +126,10 @@ async def get_request_validator(token: str = Depends(HTTPBearer())) -> Validator
 # Exactly the same as get_request_validator, but locks the validator
 # The significance of this is that specific endpoints can use this dependency to prevent race conditions
 async def get_request_validator_with_lock(validator: Validator = Depends(get_request_validator)):
+    # TODO ADAM: remove
+    logger.info(f"LOCKS: Waiting to lock validator {validator.name} ({validator.hotkey})...")
     async with validator._lock:
+        logger.info(f"LOCKS: Locked validator {validator.name} ({validator.hotkey})")
         # Make sure the session_id is still associated with a validator
         if validator.session_id not in SESSION_ID_TO_VALIDATOR:
             raise HTTPException(
@@ -135,6 +138,7 @@ async def get_request_validator_with_lock(validator: Validator = Depends(get_req
             )
         
         yield validator
+    logger.info(f"LOCKS: Unlocked validator {validator.name} ({validator.hotkey})")
 
 
 
@@ -332,9 +336,9 @@ async def validator_request_evaluation(
         )
 
     # TODO ADAM: remove
-    logger.info(f"Waiting to lock request evaluation lock...")
+    logger.info(f"LOCKS: Waiting to lock request evaluation lock...")
     async with validator_request_evaluation_lock:
-        logger.info(f"Locked request evaluation lock")
+        logger.info(f"LOCKS: Locked request evaluation lock")
         # Find the next agent awaiting an evaluation from this validator
         agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
         if agent_id is None:
@@ -342,7 +346,7 @@ async def validator_request_evaluation(
 
         # Create a new evaluation and evaluation runs for this agent & validator
         evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
-    logger.info(f"Unlocked request evaluation lock")
+    logger.info(f"LOCKS: Unlocked request evaluation lock")
 
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
