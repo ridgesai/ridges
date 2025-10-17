@@ -126,13 +126,6 @@ class RidgesCLI:
         self.api_url = api_url or DEFAULT_API_BASE_URL
         self.config = Config()
     
-    def get_keypair(self, coldkey_name: Optional[str] = None, hotkey_name: Optional[str] = None):
-        coldkey = coldkey_name or self.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-        hotkey = hotkey_name or self.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
-        return load_hotkey_keypair(coldkey, hotkey)
-    
-    def get_agent_path(self) -> str:
-        return self.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "miner/agent.py")
 
 @click.group()
 @click.version_option(version="1.0.0")
@@ -148,66 +141,56 @@ def cli(ctx, url):
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
 @click.pass_context
-def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: Optional[str]):
+def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: Optional[str]):
     """Upload a miner agent to the Ridges API."""
     ridges = RidgesCLI(ctx.obj.get('url'))
     
-    file = file or ridges.get_agent_path()
+    coldkey = coldkey_name or ridges.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+    hotkey = hotkey_name or ridges.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    keypair = load_hotkey_keypair(coldkey, hotkey)
+    
+    file = file or ridges.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
     if not os.path.exists(file) or os.path.basename(file) != "agent.py":
-        console.print("💥 File must be named 'agent.py' and exist", style="bold red")
+        console.print("File must be named 'agent.py' and exist", style="bold red")
         return
     
-    console.print(Panel(f"[bold cyan] Uploading Agent[/bold cyan]\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="🚀 Upload", border_style="cyan"))
+    console.print(Panel(f"[bold cyan]Uploading Agent[/bold cyan]\n[yellow]Hotkey:[/yellow] {keypair.ss58_address}\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="Upload", border_style="cyan"))
     
     try:
         with open(file, 'rb') as f:
-            files = {'agent_file': ('agent.py', f, 'text/plain')}
-            content_hash = hashlib.sha256(f.read()).hexdigest()
-            keypair = ridges.get_keypair(coldkey_name, hotkey_name)
-            public_key = keypair.public_key.hex()
+            file_content = f.read()
+        
+        content_hash = hashlib.sha256(file_content).hexdigest()
+        public_key = keypair.public_key.hex()
+        
+        with httpx.Client() as client:
+            response = client.get(f"{ridges.api_url}/retrieval/agent-by-hotkey?miner_hotkey={keypair.ss58_address}")
             
-            name_and_prev_version = get_name_and_prev_version(ridges.api_url, keypair.ss58_address)
-            if name_and_prev_version is None:
-                name = Prompt.ask("Enter a name for your miner agent")
-                version_num = -1
+            if response.status_code == 200 and response.json():
+                latest_agent = response.json()
+                name = latest_agent.get("name")
+                version_num = latest_agent.get("version_num", -1) + 1
             else:
-                name, prev_version_num = name_and_prev_version
-                version_num = prev_version_num + 1
+                name = Prompt.ask("Enter a name for your miner agent")
+                version_num = 0
 
             file_info = f"{keypair.ss58_address}:{content_hash}:{version_num}"
             signature = keypair.sign(file_info).hex()
             payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
+            files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
-                progress.add_task("🔐 Signing and uploading...", total=None)
-
-                with httpx.Client() as client:
-                    response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
-                
-                if response.status_code == 200:
-                    console.print(Panel(f"[bold green]🎉 Upload Complete[/bold green]\n[cyan]Miner '{name}' uploaded successfully![/cyan]", title="✨ Success", border_style="green"))
-                else:
-                    error = response.json().get('detail', 'Unknown error') if response.headers.get('content-type', '').startswith('application/json') else response.text
-                    console.print(f"💥 Upload failed: {error}", style="bold red")
+                progress.add_task("Signing and uploading...", total=None)
+                response = client.post(f"{ridges.api_url}/upload/agent", files=files, data=payload, timeout=120)
+            
+            if response.status_code == 200:
+                console.print(Panel(f"[bold green]Upload Complete[/bold green]\n[cyan]Miner '{name}' uploaded successfully![/cyan]", title="Success", border_style="green"))
+            else:
+                error = response.json().get('detail', 'Unknown error') if response.headers.get('content-type', '').startswith('application/json') else response.text
+                console.print(f"Upload failed: {error}", style="bold red")
                     
     except Exception as e:
-        console.print(f"💥 Error: {e}", style="bold red")
-
-def get_name_and_prev_version(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
-    try:
-        with httpx.Client() as client:
-            response = client.get(f"{url}/retrieval/agent-by-hotkey?miner_hotkey={miner_hotkey}")
-            if response.status_code == 404:
-                return None
-            if response.status_code == 200:
-                latest_agent = response.json()
-                if latest_agent:
-                    return latest_agent.get("name"), latest_agent.get("version_num")
-    except Exception as e:
-        console.print(f"💥 Error: {e}", style="bold red")
-        exit(1)
-
-
+        console.print(f"Error: {e}", style="bold red")
 
 @cli.group()
 def validator():
