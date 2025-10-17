@@ -144,3 +144,16 @@ async def check_if_evaluation_run_logs_exist(conn: asyncpg.Connection, evaluatio
     )
 
     return result['exists']
+
+
+
+@db_operation
+async def get_evaluation_run_status_by_id(conn: asyncpg.Connection, evaluation_run_id: UUID) -> Optional[EvaluationRunStatus]:
+    status = await conn.fetchval("""
+        SELECT status FROM evaluation_runs WHERE evaluation_run_id = $1
+    """, evaluation_run_id)
+
+    if status is None:
+        return None
+
+    return EvaluationRunStatus(status)

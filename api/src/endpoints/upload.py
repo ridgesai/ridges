@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, B
 from pydantic import BaseModel, Field
 
 import utils.logger as logger
-from api.queries.agent import create_agent, record_upload_attempt
+from queries.agent import create_agent, record_upload_attempt
 from api.src.backend.queries.agents import get_latest_agent, get_ban_reason
 from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
