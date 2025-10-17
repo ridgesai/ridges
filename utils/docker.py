@@ -45,6 +45,9 @@ def get_num_docker_containers():
     Get the number of Docker containers running.
     """
 
+    # TESTING
+    return 999
+
     # This is equivalent to `docker ps -q | wc -l`
     result = subprocess.run(["docker", "ps", "-q"], capture_output=True, text=True, timeout=1)
     return len([line for line in result.stdout.strip().split('\n') if line.strip()])
