@@ -40,7 +40,7 @@ async def queue(
 
 async def top_agents(
     number_of_agents: int = 5,
-    page: Optional[int] = 1
+    page: int = 1
 ) -> list[AgentScored]:
     """
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
