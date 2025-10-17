@@ -159,6 +159,7 @@ class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
     running_agent_timeout_seconds: int = config.VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS
     running_eval_timeout_seconds: int = config.VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS
+    max_evaluation_run_log_size_bytes: int = config.VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES
 
 @router.post("/register-as-validator")
 async def validator_register_as_validator(
