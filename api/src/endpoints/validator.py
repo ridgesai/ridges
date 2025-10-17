@@ -250,7 +250,7 @@ async def validator_register_as_screener(
 ) -> ScreenerRegistrationResponse:
 
     # Ensure that the commit hash matches
-    if registration_request.commit_hash != COMMIT_HASH + "x":
+    if registration_request.commit_hash != COMMIT_HASH:
         raise HTTPException(
             status_code=426,
             detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again."
