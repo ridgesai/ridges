@@ -1,6 +1,7 @@
 """Git utilities for managing repository operations."""
 
 import os
+import pathlib
 import subprocess
 import utils.logger as logger
 
@@ -74,7 +75,7 @@ def verify_commit_exists_in_local_repo(local_repo_dir, commit_hash) -> bool:
     Verify that a specific commit exists in the repository.
     
     Args:
-        local_repo_dir: Path to the repository
+        local_repo_dir: Path to the local repository
         commit_hash: The commit hash to verify
         
     Returns:
@@ -141,3 +142,19 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
         cwd=local_repo_dir
     )
     logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
+
+
+
+def get_local_repo_commit_hash(local_repo_dir) -> str:
+    """
+    Get the commit hash of the current commit in the local repository.
+    
+    Args:
+        local_repo_dir: Path to the local repository
+    """
+    
+    return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=local_repo_dir).stdout.strip()
+
+
+
+COMMIT_HASH = get_local_repo_commit_hash(pathlib.Path(__file__).parent.parent)
