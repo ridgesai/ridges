@@ -6,8 +6,8 @@ from uuid import UUID
 import asyncpg
 
 import utils.logger as logger
-from api.queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
-from api.queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
+from queries.evaluation_run import create_evaluation_run, get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
 from models.evaluation_set import EvaluationSetGroup
@@ -66,25 +66,6 @@ async def create_new_evaluation_and_evaluation_runs(conn: asyncpg.Connection, ag
         )
 
     return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
-
-
-
-@db_operation
-async def get_evaluations_by_status(conn: asyncpg.Connection, status: EvaluationStatus) -> List[Evaluation]:
-    results = await conn.fetch(
-        """
-        SELECT
-            evaluation_id,
-            agent_id,
-            validator_hotkey,
-            set_id
-        FROM evaluations_hydrated 
-        WHERE status = $1
-        """,
-        status.value
-    )
-
-    return [Evaluation(**result) for result in results]
 
 
 
@@ -208,10 +189,3 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: asyncpg.Co
     )
 
     return result["num_successful_validator_evaluations"]
-
-
-
-@db_operation
-async def get_all_hydrated_evaluations(conn: asyncpg.Connection) -> List[HydratedEvaluation]:
-    results = await conn.fetch("""SELECT * FROM evaluations_hydrated""")
-    return [HydratedEvaluation(**result) for result in results]

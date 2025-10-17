@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 
 import utils.logger as logger
-from api.queries.scores import get_weight_receiving_agent_hotkey
+from queries.scores import get_weight_receiving_agent_hotkey
 from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 
 load_dotenv()

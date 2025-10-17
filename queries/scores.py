@@ -27,6 +27,7 @@ async def get_weight_receiving_agent_hotkey(conn: asyncpg.Connection) -> Optiona
         return None
     return current_leader["miner_hotkey"]
 
+# NOTE: ADAM - Not used anywhere, very similar function (get_treasury_hotkeys) in src/backend/queries/scores.py -> used for endpoints/open_users.py
 @db_operation
 async def get_treasury_hotkey(conn: asyncpg.Connection) -> Optional[str]:
     treasury_hotkey_data = await conn.fetchrow(
