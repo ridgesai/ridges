@@ -65,10 +65,6 @@ CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL")
 if not CHUTES_BASE_URL:
     logger.fatal("CHUTES_BASE_URL is not set in .env")
 
-CHUTES_EMBEDDING_URL = os.getenv("CHUTES_EMBEDDING_URL")
-if not CHUTES_EMBEDDING_URL:
-    logger.fatal("CHUTES_EMBEDDING_URL is not set in .env")
-
 CHUTES_API_KEY = os.getenv("CHUTES_API_KEY")
 if not CHUTES_API_KEY:
     logger.fatal("CHUTES_API_KEY is not set in .env")
@@ -79,10 +75,6 @@ if not CHUTES_API_KEY:
 TARGON_BASE_URL = os.getenv("TARGON_BASE_URL")
 if not TARGON_BASE_URL:
     logger.fatal("TARGON_BASE_URL is not set in .env")
-
-TARGON_EMBEDDING_URL = os.getenv("TARGON_EMBEDDING_URL")
-if not TARGON_EMBEDDING_URL:
-    logger.fatal("TARGON_EMBEDDING_URL is not set in .env")
 
 TARGON_API_KEY = os.getenv("TARGON_API_KEY")
 if not TARGON_API_KEY:
@@ -101,8 +93,6 @@ logger.info(f"Database Port: {DATABASE_PORT}")
 logger.info(f"Database Name: {DATABASE_NAME}")
 logger.info("---------------------------------------")
 logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
-logger.info(f"Chutes Embedding URL: {CHUTES_EMBEDDING_URL}")
 logger.info("---------------------------------------")
 logger.info(f"Targon Base URL: {TARGON_BASE_URL}")
-logger.info(f"Targon Embedding URL: {TARGON_EMBEDDING_URL}")
 logger.info("=======================================")

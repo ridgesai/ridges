@@ -1,3 +1,4 @@
+import random
 import uvicorn
 import utils.logger as logger
 import inference_gateway.config as config
@@ -7,6 +8,7 @@ from functools import wraps
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
+from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.chutes import ChutesProvider
 from inference_gateway.providers.targon import TargonProvider
 from utils.database import initialize_database, deinitialize_database
@@ -16,7 +18,21 @@ from inference_gateway.queries.inference import create_new_inference, update_inf
 
 
 
-chutes_provider = None
+providers = []
+
+
+
+def get_provider_that_supports_model_for_inference(model_name: str) -> Provider:
+    providers = [provider for provider in providers if provider.is_model_supported_for_inference(model_name)]  
+    if not providers:
+        return None
+    return random.choice(providers)
+
+def get_provider_that_supports_model_for_embedding(model_name: str) -> Provider:
+    providers = [provider for provider in providers if provider.is_model_supported_for_embedding(model_name)]
+    if not providers:
+        return None
+    return random.choice(providers)
 
 
 
@@ -33,12 +49,13 @@ async def lifespan(app: FastAPI):
 
 
 
-    global chutes_provider
-    chutes_provider = await ChutesProvider().init()
+    global providers
+    providers.append(await ChutesProvider().init())
+    providers.append(await TargonProvider().init())
 
-    # TODO ADAM: uncomment this
-    await chutes_provider.test_all_inference_models()
-    # await chutes_provider.test_all_embedding_models()
+    for provider in providers:
+        await provider.test_all_inference_models()
+        await provider.test_all_embedding_models()
 
 
 
@@ -104,7 +121,8 @@ async def inference(request: InferenceRequest) -> str:
             )
 
     # Make sure we support the model for inference
-    if not chutes_provider.is_model_supported_for_inference(request.model):
+    provider = get_provider_that_supports_model_for_inference(request.model)
+    if not provider:
         raise HTTPException(
             status_code=404,
             detail="The model specified is not supported by Ridges for inference."
@@ -114,13 +132,13 @@ async def inference(request: InferenceRequest) -> str:
         inference_id = await create_new_inference(
             evaluation_run_id=request.run_id,
 
-            provider="chutes",
+            provider=provider.name,
             model=request.model,
             temperature=request.temperature,
             messages=request.messages
         )
 
-    response = await chutes_provider.inference(request.model, request.temperature, request.messages)
+    response = await provider.inference(request.model, request.temperature, request.messages)
 
     if config.USE_DATABASE:
         await update_inference_by_id(
@@ -141,7 +159,7 @@ async def inference(request: InferenceRequest) -> str:
 @handle_http_exceptions
 async def embedding(request: EmbeddingRequest) -> List[float]:
     # TODO ADAM
-    raise HTTPException(status_code=501, detail="Embedding is unimplemented")
+    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 

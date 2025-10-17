@@ -41,7 +41,11 @@ class TargonProvider(Provider):
 
     
     async def init(self) -> "TargonProvider":
-        # Fetch Chutes models
+        self.name = "targon"
+
+
+        
+        # Fetch Targon models
         logger.info(f"Fetching {TARGON_MODELS_URL}...")
         async with httpx.AsyncClient() as client:
             targon_models_response = await client.get(TARGON_MODELS_URL, headers={"Authorization": f"Bearer {config.TARGON_API_KEY}"})
@@ -120,7 +124,7 @@ class TargonProvider(Provider):
         except Exception as e:
             return InferenceResult(
                 status_code=-1,
-                response=f"Error in chutes.inference(): {type(e).__name__}: {str(e)}"
+                response=f"Error in TargonProvider._inference(): {type(e).__name__}: {str(e)}"
             )
 
 

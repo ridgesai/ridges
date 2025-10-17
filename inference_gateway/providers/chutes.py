@@ -43,6 +43,10 @@ class ChutesProvider(Provider):
 
     
     async def init(self) -> "ChutesProvider":
+        self.name = "chutes"
+
+
+
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8")'
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8") | .pricing'
 
@@ -125,7 +129,7 @@ class ChutesProvider(Provider):
         except Exception as e:
             return InferenceResult(
                 status_code=-1,
-                response=f"Error in chutes.inference(): {type(e).__name__}: {str(e)}"
+                response=f"Error in ChutesProvider._inference(): {type(e).__name__}: {str(e)}"
             )
 
 

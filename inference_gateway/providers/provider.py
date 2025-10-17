@@ -14,6 +14,8 @@ NUM_INFERENCE_CHARS_TO_LOG = 30
 
 # my_provider = Provider().init()
 class Provider(ABC):
+    name: str = None
+    
     inference_models: List[ModelInfo] = []
     embedding_models: List[ModelInfo] = []
 
