@@ -38,6 +38,8 @@ class Validator(BaseModel):
     ip_address: str
 
     current_evaluation_id: Optional[UUID] = None
+    current_evaluation: Optional[Evaluation] = None
+    current_agent: Optional[Agent] = None
 
     time_last_heartbeat: Optional[datetime] = None
     system_metrics: Optional[SystemMetrics] = None
@@ -312,6 +314,8 @@ async def validator_request_evaluation(
         # Create a new evaluation and evaluation runs for this agent & validator
         evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
         validator.current_evaluation_id = evaluation.evaluation_id
+        validator.current_evaluation = evaluation
+        validator.current_agent = await get_agent_by_id(agent_id)
 
 
 
@@ -618,7 +622,7 @@ async def validator_finish_evaluation(
     request: ValidatorFinishEvaluationRequest,
     validator: Validator = Depends(get_request_validator_with_lock)
 ) -> ValidatorFinishEvaluationResponse:
-        
+
     # Make sure the validator is currently running an evaluation
     if validator.current_evaluation_id is None:
         raise HTTPException(
@@ -679,9 +683,9 @@ async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
             system_metrics=validator.system_metrics,
         )
 
-        if validator.current_evaluation_id is not None:
-            connected_validator.evaluation = await get_evaluation_by_id(validator.current_evaluation_id)
-            connected_validator.agent = await get_agent_by_id(connected_validator.evaluation.agent_id)
+        if validator.current_evaluation is not None:
+            connected_validator.evaluation = validator.current_evaluation
+            connected_validator.agent = validator.current_agent
 
         connected_validators.append(connected_validator)
 
