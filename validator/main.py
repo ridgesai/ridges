@@ -66,7 +66,7 @@ async def send_heartbeat_loop():
     except Exception as e:
         logger.error(f"Error in send heartbeat loop: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
-        os.exit(1)
+        os._exit(1)
 
 # A loop that periodically sets weights
 async def set_weights_loop():
