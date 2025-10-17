@@ -43,7 +43,7 @@ class ChutesProvider(Provider):
 
     
     async def init(self) -> "ChutesProvider":
-        self.name = "chutes"
+        self.name = "Chutes"
 
 
 

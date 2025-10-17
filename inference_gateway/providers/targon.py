@@ -41,7 +41,7 @@ class TargonProvider(Provider):
 
     
     async def init(self) -> "TargonProvider":
-        self.name = "targon"
+        self.name = "Targon"
 
 
         

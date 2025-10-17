@@ -132,7 +132,7 @@ async def inference(request: InferenceRequest) -> str:
         inference_id = await create_new_inference(
             evaluation_run_id=request.run_id,
 
-            provider=provider.name,
+            provider=provider.name.lower(),
             model=request.model,
             temperature=request.temperature,
             messages=request.messages
