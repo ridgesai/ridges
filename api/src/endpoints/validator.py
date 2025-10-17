@@ -669,7 +669,8 @@ class ConnectedValidatorInfo(BaseModel):
 async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
     connected_validators: List[ConnectedValidatorInfo] = []
 
-    for validator in SESSION_ID_TO_VALIDATOR.values():
+    _validators = list(SESSION_ID_TO_VALIDATOR.values())
+    for validator in _validators:
         connected_validator = ConnectedValidatorInfo(
             name=validator.name,
             hotkey=validator.hotkey,
