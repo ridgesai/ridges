@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import Optional
-from api.queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
+from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
 
@@ -15,9 +15,9 @@ router = APIRouter()
 
 import uuid
 import asyncio
-from api.queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
-from api.queries.evaluation import get_evaluations_for_agent_id
-from api.queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
+from queries.evaluation import get_evaluations_for_agent_id
+from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from models.evaluation import Evaluation, EvaluationWithRuns
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored, AgentStatus

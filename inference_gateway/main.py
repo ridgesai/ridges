@@ -13,8 +13,8 @@ from inference_gateway.providers.chutes import ChutesProvider
 from inference_gateway.providers.targon import TargonProvider
 from utils.database import initialize_database, deinitialize_database
 from inference_gateway.models import InferenceRequest, EmbeddingRequest
-from inference_gateway.queries.evaluation_run import get_evaluation_run_status_by_id
-from inference_gateway.queries.inference import create_new_inference, update_inference_by_id, get_number_of_inferences_for_evaluation_run
+from queries.evaluation_run import get_evaluation_run_status_by_id
+from queries.inference import create_new_inference, update_inference_by_id, get_number_of_inferences_for_evaluation_run
 
 
 

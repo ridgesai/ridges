@@ -196,7 +196,7 @@ def upload(ctx, hotkey_name: Optional[str], file: Optional[str], coldkey_name: O
 def get_name_and_prev_version(url: str, miner_hotkey: str) -> Optional[tuple[str, int]]:
     try:
         with httpx.Client() as client:
-            response = client.get(f"{url}/retrieval/latest-agent?miner_hotkey={miner_hotkey}")
+            response = client.get(f"{url}/retrieval/agent-by-hotkey?miner_hotkey={miner_hotkey}")
             if response.status_code == 404:
                 return None
             if response.status_code == 200:
