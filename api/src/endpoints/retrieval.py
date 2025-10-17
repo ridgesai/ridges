@@ -5,7 +5,7 @@ import utils.logger as logger
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request_public
-from queries.statistics import get_top_scores_over_last_week
+from queries.statistics import get_top_scores_over_time
 
 
 load_dotenv()
@@ -160,7 +160,7 @@ async def top_scores_over_time():
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_top_scores_over_last_week()
+    cache_data[cache_key] = await get_top_scores_over_time()
     cache_timestamps[cache_key] = time.time()
     recalculating_cache[cache_key] = False
     return cache_data[cache_key]
