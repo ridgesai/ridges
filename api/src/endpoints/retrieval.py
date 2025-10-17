@@ -47,7 +47,7 @@ async def top_agents(
     """
     return await get_top_agents(
         number_of_agents=number_of_agents,
-        page=1
+        page=page
     )
 
 async def agent_by_id(agent_id: str) -> Agent:
