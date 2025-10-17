@@ -23,6 +23,7 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 session_id = None
 running_agent_timeout_seconds = None
 running_eval_timeout_seconds = None
+max_evaluation_run_log_size_bytes = None
 
 
 
@@ -82,6 +83,12 @@ async def update_evaluation_run(evaluation_run_id: str, problem_name: str, updat
         "updated_status": updated_status.value,
         **(extra or {})
     }, bearer_token=session_id, quiet=2)
+
+# Truncates a log if required
+def truncate_logs_if_required(log: str) -> str:
+    if len(log) > max_evaluation_run_log_size_bytes:
+        return f"<truncated {len(log) - max_evaluation_run_log_size_bytes} chars>\n\n" + log[-max_evaluation_run_log_size_bytes:]
+    return log
 
 
 
@@ -173,12 +180,12 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
             agent_sandbox,
             running_agent_timeout_seconds
         )
-        logger.warning(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
+        logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
         # Move from running_agent -> initializing_eval
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
             "patch": patch,
-            "agent_logs": agent_logs
+            "agent_logs": truncate_logs_if_required(agent_logs)
         })
 
         # Start initializing the evaluation sandbox
@@ -203,12 +210,12 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
         num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
-        logger.warning(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
+        logger.info(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
 
         # Move from running_eval -> finished
         await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
             "test_results": [test.model_dump() for test in test_results],
-            "eval_logs": eval_logs
+            "eval_logs": truncate_logs_if_required(eval_logs)
         })
 
     except EvaluationRunException as e:
@@ -227,7 +234,6 @@ async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_c
             "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
             "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
         })
-    
 
 
 
@@ -273,6 +279,7 @@ async def main():
     global session_id
     global running_agent_timeout_seconds
     global running_eval_timeout_seconds
+    global max_evaluation_run_log_size_bytes
     global sandbox_manager
     global polyglot_suite
     global swebench_verified_suite
@@ -302,11 +309,13 @@ async def main():
     session_id = register_response["session_id"]
     running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]
     running_eval_timeout_seconds = register_response["running_eval_timeout_seconds"]
+    max_evaluation_run_log_size_bytes = register_response["max_evaluation_run_log_size_bytes"]
 
     logger.info("Registered validator:")
     logger.info(f"  Session ID: {session_id}")
     logger.info(f"  Running Agent Timeout: {running_agent_timeout_seconds} second(s)")
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
+    logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
 
 
 

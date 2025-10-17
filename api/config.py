@@ -116,6 +116,9 @@ if not VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS:
     logger.fatal("VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS is not set in .env")
 VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS = int(VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS)
 
+
+
+# Load validator configuration (sent to validator upon registration)
 VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS = os.getenv("VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS")
 if not VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS:
     logger.fatal("VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS is not set in .env")
@@ -126,10 +129,10 @@ if not VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS:
     logger.fatal("VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS is not set in .env")
 VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS = int(VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS)
 
-NUM_EVALS_PER_AGENT = os.getenv("NUM_EVALS_PER_AGENT")
-if not NUM_EVALS_PER_AGENT:
-    logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
-NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
+VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES = os.getenv("VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES")
+if not VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES:
+    logger.fatal("VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES is not set in .env")
+VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES = int(VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES)
 
 
 
@@ -137,6 +140,11 @@ MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = os.getenv("MINER_AGENT_UPLOAD_RATE_LIMIT
 if not MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS:
     logger.fatal("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS is not set in .env")
 MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = int(MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)
+
+NUM_EVALS_PER_AGENT = os.getenv("NUM_EVALS_PER_AGENT")
+if not NUM_EVALS_PER_AGENT:
+    logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
+NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
 
 
@@ -158,10 +166,11 @@ logger.info(f"Prune Threshold: {PRUNE_THRESHOLD}")
 logger.info("-------------------------")
 logger.info(f"Validator Heartbeat Timeout: {VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Heartbeat Timeout Interval: {VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS} second(s)")
+logger.info("-------------------------")
 logger.info(f"Validator Running Agent Timeout: {VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Running Evaluation Timeout: {VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS} second(s)")
-logger.info("-------------------------")
-logger.info(f"Number of Evaluations Per Agent: {NUM_EVALS_PER_AGENT}")
+logger.info(f"Validator Max Evaluation Run Log Size: {VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES} byte(s)")
 logger.info("-------------------------")
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
+logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
 logger.info("=========================")
