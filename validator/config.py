@@ -170,8 +170,10 @@ else:
     else:
         logger.info("Not Including Solutions")
 logger.info("-------------------------------")
-if UPDATE_AUTOMATICALLY:
-    logger.info("Updating Automatically")
-else:
-    logger.warning("Not Updating Automatically")
+# TODO ADAM
+
+# if UPDATE_AUTOMATICALLY:
+#     logger.info("Updating Automatically")
+# else:
+#     logger.warning("Not Updating Automatically")
 logger.info("===============================")
