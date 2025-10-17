@@ -138,18 +138,22 @@ async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationS
 
     return [Agent(**agent) for agent in queue]
 
-
-
-
 @db_operation
-async def get_top_agents(conn: asyncpg.Connection, number_of_agents: int = 10) -> list[AgentScored]:
+async def get_top_agents(
+    conn: asyncpg.Connection, 
+    number_of_agents: int = 10,
+    page: int = 1
+) -> list[AgentScored]:
+
+    offset = (page - 1) * number_of_agents
+
     results = await conn.fetch(
         """
         select * from agent_scores 
         where set_id = (select max(set_id) from evaluation_sets)
-        order by final_score desc
-        limit $1
-        """, number_of_agents
+        order by final_score desc, agent_id asc
+        limit $1 offset $2
+        """, number_of_agents, offset
     )
 
     return [AgentScored(**agent) for agent in results]

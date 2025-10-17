@@ -39,13 +39,15 @@ async def queue(
     return await get_agents_in_queue(EvaluationSetGroup(stage))
 
 async def top_agents(
-    number_of_agents: int = 15
+    number_of_agents: int = 5,
+    page: int = 1
 ) -> list[AgentScored]:
     """
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
     """
     return await get_top_agents(
-        number_of_agents=number_of_agents
+        number_of_agents=number_of_agents,
+        page=page
     )
 
 async def agent_by_id(agent_id: str) -> Agent:
