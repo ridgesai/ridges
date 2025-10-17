@@ -730,6 +730,8 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                     new_agent_status = AgentStatus.evaluating
 
             case _:
-                raise ValueError(f"Invalid agent status: {agent.status}, this should never happen")
+                # TODO ADAM: this could actually happen if someone manually messed with the database. we need to handle this better
+                # raise ValueError(f"Invalid agent status: {agent.status}, this should never happen")
+                return
 
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
