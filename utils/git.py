@@ -153,7 +153,7 @@ def get_local_repo_commit_hash(local_repo_dir) -> str:
         local_repo_dir: Path to the local repository
     """
     
-    return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=local_repo_dir).stdout.strip()
+    return subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True, cwd=local_repo_dir).stdout.strip()
 
 
 

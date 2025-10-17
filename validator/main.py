@@ -1,4 +1,5 @@
 import time
+import httpx
 import random
 import asyncio
 import pathlib
@@ -6,6 +7,7 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
+from utils.git import COMMIT_HASH
 from typing import Any, Dict, Optional
 from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
@@ -289,22 +291,29 @@ async def main():
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
 
-    if config.MODE == "validator":
-        # Get the current timestamp, and sign it with the validator hotkey
-        timestamp = int(time.time())
-        signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
+    try:
+        if config.MODE == "validator":
+            # Get the current timestamp, and sign it with the validator hotkey
+            timestamp = int(time.time())
+            signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
+            
+            register_response = await post_ridges_platform("/validator/register-as-validator", {
+                "timestamp": timestamp,
+                "signed_timestamp": signed_timestamp,
+                "hotkey": config.VALIDATOR_HOTKEY.ss58_address,
+                "commit_hash": COMMIT_HASH
+            })
         
-        register_response = await post_ridges_platform("/validator/register-as-validator", {
-            "timestamp": timestamp,
-            "signed_timestamp": signed_timestamp,
-            "hotkey": config.VALIDATOR_HOTKEY.ss58_address
-        })
+        elif config.MODE == "screener":
+            register_response = await post_ridges_platform("/validator/register-as-screener", {
+                "name": config.SCREENER_NAME,
+                "password": config.SCREENER_PASSWORD,
+                "commit_hash": COMMIT_HASH
+            })
     
-    elif config.MODE == "screener":
-        register_response = await post_ridges_platform("/validator/register-as-screener", {
-            "name": config.SCREENER_NAME,
-            "password": config.SCREENER_PASSWORD
-        })
+    except httpx.HTTPStatusError:
+        # TODO ADAM
+        raise
     
     session_id = register_response["session_id"]
     running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]
@@ -372,4 +381,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
-        asyncio.run(disconnect("Error in main()"))
+        asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))

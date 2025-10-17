@@ -9,14 +9,12 @@ from utils.docker import get_num_docker_containers
 
 class SystemMetrics(BaseModel):
     """
-    System metrics.
-
-    cpu_percent: CPU usage percentage (0-100)
-    ram_percent: RAM usage percentage (0-100)
+    cpu_percent: CPU percentage (0-100)
+    ram_percent: RAM percentage (0-100)
     ram_total_gb: Total RAM in GB
-    disk_percent: Disk usage percentage (0-100)
-    disk_total_gb: Total disk space in GB
-    num_containers: Number of Docker containers running
+    disk_percent: Disk percentage (0-100)
+    disk_total_gb: Total disk in GB
+    num_containers: Number of Docker containers
     """
 
     cpu_percent: Optional[float] = None

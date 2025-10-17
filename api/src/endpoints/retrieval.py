@@ -75,6 +75,7 @@ async def agent_by_hotkey(miner_hotkey: str) -> Agent:
 
     return agent
 
+# TODO ADAM: optimize that
 async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
     evaluations: list[Evaluation] = await get_evaluations_for_agent_id(agent_id=uuid.UUID(agent_id))
     

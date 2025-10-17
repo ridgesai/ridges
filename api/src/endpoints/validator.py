@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 
+from utils.git import COMMIT_HASH
 from http import HTTPStatus
 from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -83,13 +84,20 @@ async def delete_validator(validator: Validator, reason: str) -> None:
 
 # Deletes all validators that have not sent a heartbeat in long enough
 async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
+    logger.info("Deleting validators that have not sent a heartbeat...")
+
     _validators = list(SESSION_ID_TO_VALIDATOR.values())
     for validator in _validators:
         time_last_heartbeat = validator.time_last_heartbeat or validator.time_connected
         if time_last_heartbeat + timedelta(seconds=config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS) < datetime.now():
+            logger.info(f"Waiting to lock validator {validator.name} ({validator.hotkey})...")
             async with validator._lock:
+                logger.info(f"Locked validator {validator.name} ({validator.hotkey})")
                 if validator.session_id in SESSION_ID_TO_VALIDATOR:
                     await delete_validator(validator, f"The validator was disconnected because it did not send a heartbeat in {config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} seconds.")
+            logger.info(f"Unlocked validator {validator.name} ({validator.hotkey})")
+
+    logger.info("Deleted validators that have not sent a heartbeat")
 
 
 
@@ -154,6 +162,7 @@ class ValidatorRegistrationRequest(BaseModel):
     timestamp: int
     signed_timestamp: str
     hotkey: str
+    commit_hash: str
 
 class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
@@ -166,6 +175,15 @@ async def validator_register_as_validator(
     request: Request,
     registration_request: ValidatorRegistrationRequest
 ) -> ValidatorRegistrationResponse:
+
+    # TODO ADAM
+
+    # # Ensure that the commit hash matches
+    # if registration_request.commit_hash != COMMIT_HASH:
+    #     raise HTTPException(
+    #         status_code=426,
+    #         detail=f"The provided validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your validator, and try again."
+    #     )
 
     # Ensure that the hotkey is in the list of acceptable validator hotkeys
     if not is_validator_hotkey_whitelisted(registration_request.hotkey):
@@ -219,6 +237,7 @@ async def validator_register_as_validator(
 class ScreenerRegistrationRequest(BaseModel):
     name: str
     password: str
+    commit_hash: str
 
 class ScreenerRegistrationResponse(BaseModel):
     session_id: UUID
@@ -231,6 +250,15 @@ async def validator_register_as_screener(
     request: Request,
     registration_request: ScreenerRegistrationRequest
 ) -> ScreenerRegistrationResponse:
+
+    # TODO ADAM
+
+    # # Ensure that the commit hash matches
+    # if registration_request.commit_hash != COMMIT_HASH + "x":
+    #     raise HTTPException(
+    #         status_code=426,
+    #         detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again."
+    #     )
 
     # Ensure that the name is in the format screener-CLASS-NUM
     if not re.match(r"screener-\d-\d+", registration_request.name):
