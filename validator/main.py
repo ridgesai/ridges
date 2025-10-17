@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 import httpx
 import random
@@ -7,8 +9,8 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
-from utils.git import COMMIT_HASH
 from typing import Any, Dict, Optional
+from utils.git import COMMIT_HASH, pull_local_repo
 from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
@@ -53,12 +55,18 @@ async def disconnect(reason: str):
 
 # A loop that sends periodic heartbeats to the Ridges platform
 async def send_heartbeat_loop():
-    logger.info("Starting send heartbeat loop...")
-    while True:
-        logger.info("Sending heartbeat...")
-        system_metrics = await get_system_metrics()
-        await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
-        await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+    try:
+        logger.info("Starting send heartbeat loop...")
+        while True:
+            logger.info("Sending heartbeat...")
+            system_metrics = await get_system_metrics()
+            await post_ridges_platform("/validator/heartbeat", {"system_metrics": system_metrics.model_dump()}, bearer_token=session_id, quiet=2)
+            await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+            raise Exception("Test exception")
+    except Exception as e:
+        logger.error(f"Error in send heartbeat loop: {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        os.exit(1)
 
 # A loop that periodically sets weights
 async def set_weights_loop():
@@ -311,9 +319,14 @@ async def main():
                 "commit_hash": COMMIT_HASH
             })
     
-    except httpx.HTTPStatusError:
-        # TODO ADAM
-        raise
+    except httpx.HTTPStatusError as e:
+        if config.UPDATE_AUTOMATICALLY and e.response.status_code == 426:
+            # TODO ADAM
+            logger.info("Updating...")
+            pull_local_repo(pathlib.Path(__file__).parent.parent)
+            sys.exit(0)
+        else:
+            raise e
     
     session_id = register_response["session_id"]
     running_agent_timeout_seconds = register_response["running_agent_timeout_seconds"]

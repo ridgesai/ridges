@@ -131,13 +131,11 @@ INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
 
 
 
-# TODO ADAM
-
-# # Load the update automatically configuration
-# UPDATE_AUTOMATICALLY = os.getenv("UPDATE_AUTOMATICALLY")
-# if not UPDATE_AUTOMATICALLY:
-#     logger.fatal("UPDATE_AUTOMATICALLY is not set in .env")
-# UPDATE_AUTOMATICALLY = UPDATE_AUTOMATICALLY.lower() == "true"
+# Load the update automatically configuration
+UPDATE_AUTOMATICALLY = os.getenv("UPDATE_AUTOMATICALLY")
+if not UPDATE_AUTOMATICALLY:
+    logger.fatal("UPDATE_AUTOMATICALLY is not set in .env")
+UPDATE_AUTOMATICALLY = UPDATE_AUTOMATICALLY.lower() == "true"
 
 
 
@@ -170,10 +168,8 @@ else:
     else:
         logger.info("Not Including Solutions")
 logger.info("-------------------------------")
-# TODO ADAM
-
-# if UPDATE_AUTOMATICALLY:
-#     logger.info("Updating Automatically")
-# else:
-#     logger.warning("Not Updating Automatically")
+if UPDATE_AUTOMATICALLY:
+    logger.info("Updating Automatically")
+else:
+    logger.warning("Not Updating Automatically")
 logger.info("===============================")

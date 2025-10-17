@@ -145,6 +145,20 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
 
 
 
+def pull_local_repo(local_repo_dir) -> None:
+    """
+    Pull the latest changes from the remote repository to the local repository.
+    
+    Args:
+        local_repo_dir: Path to the local repository
+    """
+    
+    logger.info(f"Pulling local repository {local_repo_dir}...")
+    subprocess.run(["git", "pull"], text=True, check=True, cwd=local_repo_dir)
+    logger.info(f"Pulled local repository {local_repo_dir}")
+
+
+
 def get_local_repo_commit_hash(local_repo_dir) -> str:
     """
     Get the commit hash of the current commit in the local repository.

@@ -176,14 +176,12 @@ async def validator_register_as_validator(
     registration_request: ValidatorRegistrationRequest
 ) -> ValidatorRegistrationResponse:
 
-    # TODO ADAM
-
-    # # Ensure that the commit hash matches
-    # if registration_request.commit_hash != COMMIT_HASH:
-    #     raise HTTPException(
-    #         status_code=426,
-    #         detail=f"The provided validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your validator, and try again."
-    #     )
+    # Ensure that the commit hash matches
+    if registration_request.commit_hash != COMMIT_HASH:
+        raise HTTPException(
+            status_code=426,
+            detail=f"The provided validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your validator, and try again."
+        )
 
     # Ensure that the hotkey is in the list of acceptable validator hotkeys
     if not is_validator_hotkey_whitelisted(registration_request.hotkey):
@@ -251,14 +249,12 @@ async def validator_register_as_screener(
     registration_request: ScreenerRegistrationRequest
 ) -> ScreenerRegistrationResponse:
 
-    # TODO ADAM
-
-    # # Ensure that the commit hash matches
-    # if registration_request.commit_hash != COMMIT_HASH + "x":
-    #     raise HTTPException(
-    #         status_code=426,
-    #         detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again."
-    #     )
+    # Ensure that the commit hash matches
+    if registration_request.commit_hash != COMMIT_HASH + "x":
+        raise HTTPException(
+            status_code=426,
+            detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again."
+        )
 
     # Ensure that the name is in the format screener-CLASS-NUM
     if not re.match(r"screener-\d-\d+", registration_request.name):
