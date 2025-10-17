@@ -10,7 +10,7 @@ from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessag
 
 
 
-CHUTES_MODELS_URL = "https://llm.chutes.ai/v1/models"
+CHUTES_MODELS_URL = f"{config.CHUTES_BASE_URL}/models"
 
 
 
@@ -95,9 +95,10 @@ class ChutesProvider(Provider):
     async def _inference(self, model_info: ModelInfo, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
         try:
             chat_completion = await self.chutes_client.chat.completions.create(
-                messages=messages,
                 model=model_info.external_name,
-                temperature=temperature
+                temperature=temperature,
+                messages=messages,
+                stream=False
             )
             
             response = chat_completion.choices[0].message.content

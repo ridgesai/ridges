@@ -75,6 +75,21 @@ if not CHUTES_API_KEY:
 
 
 
+# Load Targon configuration
+TARGON_BASE_URL = os.getenv("TARGON_BASE_URL")
+if not TARGON_BASE_URL:
+    logger.fatal("TARGON_BASE_URL is not set in .env")
+
+TARGON_EMBEDDING_URL = os.getenv("TARGON_EMBEDDING_URL")
+if not TARGON_EMBEDDING_URL:
+    logger.fatal("TARGON_EMBEDDING_URL is not set in .env")
+
+TARGON_API_KEY = os.getenv("TARGON_API_KEY")
+if not TARGON_API_KEY:
+    logger.fatal("TARGON_API_KEY is not set in .env")
+
+
+
 # Print out the configuration
 logger.info("=== Inference Gateway Configuration ===")
 logger.info(f"Host: {HOST}")
@@ -87,4 +102,7 @@ logger.info(f"Database Name: {DATABASE_NAME}")
 logger.info("---------------------------------------")
 logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
 logger.info(f"Chutes Embedding URL: {CHUTES_EMBEDDING_URL}")
+logger.info("---------------------------------------")
+logger.info(f"Targon Base URL: {TARGON_BASE_URL}")
+logger.info(f"Targon Embedding URL: {TARGON_EMBEDDING_URL}")
 logger.info("=======================================")

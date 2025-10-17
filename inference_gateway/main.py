@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
 from inference_gateway.providers.chutes import ChutesProvider
+from inference_gateway.providers.targon import TargonProvider
 from utils.database import initialize_database, deinitialize_database
 from inference_gateway.models import InferenceRequest, EmbeddingRequest
 from inference_gateway.queries.evaluation_run import get_evaluation_run_status_by_id
@@ -36,7 +37,7 @@ async def lifespan(app: FastAPI):
     chutes_provider = await ChutesProvider().init()
 
     # TODO ADAM: uncomment this
-    # await chutes_provider.test_all_inference_models()
+    await chutes_provider.test_all_inference_models()
     # await chutes_provider.test_all_embedding_models()
 
 
