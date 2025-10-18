@@ -113,13 +113,14 @@ async def inference(request: InferenceRequest) -> str:
                 detail=f"The evaluation run with ID {request.run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
             )
 
-        # Make sure the evaluation run has not already made too many requests
-        num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
-        if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
-            raise HTTPException(
-                status_code=429,
-                detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
-            )
+        # TODO ADAM: slow
+        # # Make sure the evaluation run has not already made too many requests
+        # num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
+        # if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
+        #     raise HTTPException(
+        #         status_code=429,
+        #         detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
+        #     )
 
     # Make sure we support the model for inference
     provider = get_provider_that_supports_model_for_inference(request.model)
