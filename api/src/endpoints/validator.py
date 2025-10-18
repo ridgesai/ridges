@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 
 from utils.git import COMMIT_HASH
-from utils.debug_lock import DebugLock, DEBUG_LOCKS
+from utils.debug_lock import DebugLock, get_debug_locks_info
 from http import HTTPStatus
 from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
@@ -776,6 +776,6 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
 
 
-@router.get("/debug-locks")
-async def validator_debug_locks():
-    return DEBUG_LOCKS
+@router.get("/debug-locks-info")
+async def validator_debug_locks_info():
+    return get_debug_locks_info()
