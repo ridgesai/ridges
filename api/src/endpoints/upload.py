@@ -1,3 +1,4 @@
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -6,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 
+from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
 from queries.agent import get_latest_agent_for_hotkey, get_ban_reason
@@ -13,6 +15,15 @@ from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size, check_agent_code
 from models.agent import AgentStatus, Agent
+
+# We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
+hotkey_locks: dict[str, asyncio.Lock] = {}
+hotkey_locks_lock = asyncio.Lock()
+async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
+    async with hotkey_locks_lock:
+        if hotkey not in hotkey_locks:
+            hotkey_locks[hotkey] = asyncio.Lock()
+        return hotkey_locks[hotkey]
 
 prod = False
 if os.getenv("ENV") == "prod":
@@ -85,38 +96,35 @@ async def post_agent(
         logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
         check_if_python_file(agent_file.filename)
-        latest_agent: Optional[Agent] = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
-
-        agent = Agent(
-            agent_id=uuid.uuid4(),
-            miner_hotkey=miner_hotkey,
-            name=name if not latest_agent else latest_agent.name,
-            version_num=latest_agent.version_num + 1 if latest_agent else 0,
-            created_at=datetime.now(),
-            status=AgentStatus.screening_1,
-            ip_address=request.client.host if request.client else None,
-        )
-
-        if prod:
-            await check_agent_banned(miner_hotkey=miner_hotkey)
-            if latest_agent:
-                check_rate_limit(latest_agent)
-
-        # TODO: Bring this back if needed
-        # check_replay_attack(latest_agent, file_info)
 
         if prod:
             check_signature(public_key, file_info, signature)
             await check_hotkey_registered(miner_hotkey)
-        file_content = await check_file_size(agent_file)
-
-        # TODO: Uncomment this when embedding similarity check is done
-        # if prod: await check_code_similarity(file_content, miner_hotkey)
-        check_agent_code(file_content)
+            await check_agent_banned(miner_hotkey=miner_hotkey) 
+            file_content = await check_file_size(agent_file)
+            check_agent_code(file_content)
+            # TODO: Bring this back if needed
+            # check_replay_attack(latest_agent, file_info)
+            # TODO: Uncomment this when embedding similarity check is done
+            # if prod: await check_code_similarity(file_content, miner_hotkey)
 
         agent_text = (await agent_file.read()).decode("utf-8")
-        await create_agent(agent, agent_text)
 
+        hotkey_lock = await get_hotkey_lock(miner_hotkey)
+        async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
+            latest_agent: Optional[Agent] = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
+            if prod and latest_agent:
+                check_rate_limit(latest_agent)
+            agent = Agent(
+                agent_id=uuid.uuid4(),
+                miner_hotkey=miner_hotkey,
+                name=name if not latest_agent else latest_agent.name,
+                version_num=latest_agent.version_num + 1 if latest_agent else 0,
+                created_at=datetime.now(),
+                status=AgentStatus.screening_1,
+                ip_address=request.client.host if request.client else None,
+            )
+            await create_agent(agent, agent_text)
 
         logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
 
