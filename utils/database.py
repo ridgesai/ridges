@@ -137,13 +137,14 @@ def db_operation(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         global ACTIVE_CONNECTIONS, ACTIVE_REUSED_CONNECTIONS
-        
+
         conn = _per_context_conn.get()
         if conn:
             ACTIVE_REUSED_CONNECTIONS += 1
-            result = await func(conn, *args, **kwargs)
-            ACTIVE_REUSED_CONNECTIONS -= 1
-            return result
+            try:
+                return await func(conn, *args, **kwargs)
+            finally:
+                ACTIVE_REUSED_CONNECTIONS -= 1
 
         async with pool.acquire() as _conn:
             ACTIVE_CONNECTIONS += 1
