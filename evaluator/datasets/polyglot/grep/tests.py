@@ -4,11 +4,16 @@
 
 import io
 import unittest
+import sys
 
-from main import (
+from solution import (
     grep,
 )
 from unittest import mock
+
+# Make 'grep' module available for mock.patch("grep.open")
+import solution
+sys.modules['grep'] = solution
 
 FILE_TEXT = {
     "iliad.txt": """Achilles sing, O Goddess! Peleus' son;
