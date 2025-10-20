@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 
 from utils.git import COMMIT_HASH
-from utils.debug_lock import DebugLock, get_debug_locks_info
+from utils.debug_lock import DebugLock
 from http import HTTPStatus
 from fastapi import Depends, APIRouter, HTTPException, Request
 from fastapi.security import HTTPBearer
