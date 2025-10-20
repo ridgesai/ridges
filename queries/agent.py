@@ -98,6 +98,16 @@ async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: st
     return Agent(**result)
 
 @db_operation
+async def get_all_agents_by_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> list[Agent]:
+    result = await conn.fetch("""
+        select * from agents 
+        where miner_hotkey = $1
+        order by created_at desc
+    """, miner_hotkey)
+    
+    return [Agent(**agent) for agent in result]
+
+@db_operation
 async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) -> None:
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
