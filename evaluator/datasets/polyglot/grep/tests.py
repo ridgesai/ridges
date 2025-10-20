@@ -11,9 +11,12 @@ from solution import (
 )
 from unittest import mock
 
-# Make 'grep' module available for mock.patch("grep.open")
-import solution
-sys.modules['grep'] = solution
+# Generalized: Make the module containing grep available as 'grep' for mock.patch
+# This finds which module 'grep' came from and aliases it
+if 'grep' not in sys.modules:
+    grep_module = sys.modules.get(grep.__module__)
+    if grep_module:
+        sys.modules['grep'] = grep_module
 
 FILE_TEXT = {
     "iliad.txt": """Achilles sing, O Goddess! Peleus' son;
