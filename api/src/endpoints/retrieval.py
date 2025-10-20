@@ -22,7 +22,7 @@ from models.evaluation import Evaluation, EvaluationWithRuns
 from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored, AgentStatus
 from utils.s3 import download_text_file_from_s3
-from api.src.endpoints.validator import get_all_connected_validator_ip_addresses
+from api.endpoints.validator import get_all_connected_validator_ip_addresses
 
 async def queue(
     stage: str
