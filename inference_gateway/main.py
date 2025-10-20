@@ -11,9 +11,9 @@ from models.evaluation_run import EvaluationRunStatus
 from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.chutes import ChutesProvider
 from inference_gateway.providers.targon import TargonProvider
-from utils.database import initialize_database, deinitialize_database
-from inference_gateway.models import InferenceRequest, EmbeddingRequest
 from queries.evaluation_run import get_evaluation_run_status_by_id
+from inference_gateway.models import InferenceRequest, EmbeddingRequest
+from utils.database import initialize_database, get_debug_query_info, deinitialize_database
 from queries.inference import create_new_inference, update_inference_by_id, get_number_of_inferences_for_evaluation_run
 
 
@@ -162,6 +162,12 @@ async def inference(request: InferenceRequest) -> str:
 async def embedding(request: EmbeddingRequest) -> List[float]:
     # TODO ADAM
     raise HTTPException(status_code=501, detail="Not implemented")
+
+
+
+@app.get("/debug/query-info")
+async def debug_query_info():
+    return get_debug_query_info()
 
 
 

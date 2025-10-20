@@ -40,7 +40,7 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
 
 
 # @db_transaction
-# TODO this probably needs to be a real transaction
+# TODO ADAM: this probably needs to be a real transaction
 @db_operation
 async def create_new_evaluation_and_evaluation_runs(conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None) -> Tuple[Evaluation, List[EvaluationRun]]:
     if set_id is None:
