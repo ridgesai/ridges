@@ -3,19 +3,17 @@
 import os
 import json
 import time
-import threading
 import traceback
 import utils.logger as logger
-import validator.config as config
 
 from uuid import UUID
-from pathlib import Path
 from typing import List, Tuple
 from pydantic import BaseModel
 from utils.docker import docker_client
-from models.problem import ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
+from utils.temp import create_temp_dir, delete_temp_dir
 from models.evaluation_run import EvaluationRunErrorCode
 from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
@@ -23,7 +21,8 @@ from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import Problem, ProblemTest, ProblemTestCategory
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
-from utils.git import clone_local_repo_at_commit, clone_repo, verify_commit_exists_in_local_repo
+from models.problem import ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from utils.git import clone_repo, clone_local_repo_at_commit, verify_commit_exists_in_local_repo
 
 
 
@@ -148,7 +147,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
 
-
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
@@ -157,6 +155,22 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         patch: str
     ) -> SWEBenchVerifiedEvaluationSandbox:
         try:
+            # Create temporary directory
+            temp_dir = create_temp_dir()
+
+            # Copy problem files to temporary directory
+            self.copy_problem_files_to_directory(problem, temp_dir, include_tests=True)
+
+            # Validate the patch
+            is_valid, error_message = validate_diff_for_local_repo(patch, temp_dir)
+            if not is_valid:
+                raise EvaluationRunException(
+                    EvaluationRunErrorCode.AGENT_INVALID_PATCH,
+                    f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
+                )
+
+
+
             swebench_instance = problem.userdata
 
             test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
@@ -175,6 +189,9 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
                 f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
             )
+        finally:
+            # Delete temporary directory
+            delete_temp_dir(temp_dir)
 
     
 
