@@ -710,7 +710,7 @@ async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
             system_metrics=validator.system_metrics,
         )
 
-        if validator.current_evaluation is not None:
+        if validator.current_evaluation_id is not None:
             connected_validator.evaluation = validator.current_evaluation
             connected_validator.agent = validator.current_agent
 
