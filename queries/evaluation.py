@@ -9,7 +9,7 @@ from queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_s
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
 from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, db_transaction, DatabaseConnection
+from utils.database import db_operation, DatabaseConnection
 
 
 
