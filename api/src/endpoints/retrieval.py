@@ -130,15 +130,15 @@ async def network_statistics():
     """
     Gets network statistics for the dashboard
     """
-    score_improvement, agents_created, top_score_value = await asyncio.gather(
-        score_improvement_24_hrs(),
-        agents_created_24_hrs(),
-        top_score()
-    )
+    # score_improvement, agents_created, top_score_value = await asyncio.gather(
+    #     score_improvement_24_hrs(),
+    #     agents_created_24_hrs(),
+    #     top_score()
+    # )
     return {
-        "score_improvement_24_hrs": score_improvement,
-        "agents_created_24_hrs": agents_created,
-        "top_score": top_score_value
+        "score_improvement_24_hrs": None,
+        "agents_created_24_hrs": None,
+        "top_score": None
     }
 
 router = APIRouter()
