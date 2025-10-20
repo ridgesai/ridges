@@ -123,7 +123,8 @@ async def get_agent_code(agent_id: str, request: Request):
 
 async def top_scores_over_time():
     """Gets agent scores over time for charting"""
-    return await db_get_top_scores_over_last_week()
+    # return await db_get_top_scores_over_last_week()
+    return None
 
 async def network_statistics():
     """
