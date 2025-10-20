@@ -23,8 +23,8 @@ if not SUBTENSOR_ADDRESS:
     logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
-if not SUBTENSOR_ADDRESS:
-    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+if not SUBTENSOR_NETWORK:
+    logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
 
 
