@@ -16,7 +16,7 @@ router = APIRouter()
 import uuid
 import asyncio
 import time
-from queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
+from queries.agent import get_agents_in_queue, get_all_agents_by_hotkey, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
 from queries.evaluation import get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from models.evaluation import Evaluation, EvaluationWithRuns
@@ -89,6 +89,10 @@ async def agent_by_hotkey(miner_hotkey: str) -> Agent:
         )
 
     return agent
+
+async def all_agents_by_hotkey(miner_hotkey: str) -> list[Agent]:
+    agents = await get_all_agents_by_hotkey(miner_hotkey=miner_hotkey)
+    return agents
 
 # TODO ADAM: optimize that
 async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
@@ -176,6 +180,7 @@ routes = [
     ("/agent-version-file", get_agent_code),
     ("/top-scores-over-time", top_scores_over_time),
     ("/network-statistics", network_statistics),
+    ("/all-agents-by-hotkey", all_agents_by_hotkey),
 ]
 
 for path, endpoint in routes:
