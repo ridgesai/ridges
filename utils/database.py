@@ -1,3 +1,4 @@
+import re
 import time
 import asyncio
 import asyncpg
@@ -46,7 +47,7 @@ async def _begin_db_operation(label: str, query: str):
     running_entry = {
         "id": id,
         "label": label,
-        "query": query,
+        "query": re.sub(r'\s+', ' ', query).strip(),
         "start_time": time.time()
     }
     async with DEBUG_QUERIES_LOCK:
@@ -67,13 +68,15 @@ async def _end_db_operation(id: UUID):
 def get_debug_query_info():
     now = time.time()
 
+    running_sorted = sorted(DEBUG_QUERIES["running"],  key=lambda entry: now - entry["start_time"], reverse=True)
     running_info = []
-    for entry in DEBUG_QUERIES["running"]:
+    for entry in running_sorted:
         seconds_running = now - entry["start_time"]
         running_info.append(f"{entry['label']} - {entry['query']} - {seconds_running:.2f} s")
 
+    slow_sorted = sorted(DEBUG_QUERIES["slow"], key=lambda entry: entry["end_time"] - entry["start_time"], reverse=True)
     slow_info = []
-    for entry in DEBUG_QUERIES["slow"]:
+    for entry in slow_sorted:
         seconds_to_run = entry["end_time"] - entry["start_time"]
         slow_info.append(f"{entry['label']} - {entry['query']} - {seconds_to_run:.2f} s")
 
@@ -81,6 +84,7 @@ def get_debug_query_info():
         "running": running_info,
         "slow": slow_info
     }
+
 
 
 class DatabaseConnection:
