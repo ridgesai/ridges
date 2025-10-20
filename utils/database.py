@@ -2,6 +2,7 @@ import re
 import time
 import asyncio
 import asyncpg
+import contextvars
 import utils.logger as logger
 
 from typing import Optional
@@ -40,6 +41,11 @@ DEBUG_QUERIES = {
 }
 
 DEBUG_QUERIES_LOCK = asyncio.Lock()
+
+
+
+ACTIVE_CONNECTIONS = 0
+ACTIVE_REUSED_CONNECTIONS = 0
 
 
 
@@ -82,6 +88,8 @@ def get_debug_query_info():
         slow_info.append(f"{entry['label']} - {entry['query']} - {seconds_to_run:.2f} s")
 
     return {
+        "active_connections": ACTIVE_CONNECTIONS,
+        "active_reused_connections": ACTIVE_REUSED_CONNECTIONS,
         "running": running_info,
         "slow": slow_info
     }
@@ -123,10 +131,28 @@ class DatabaseConnection:
 
 
 
+_per_context_conn: contextvars.ContextVar[Optional[DatabaseConnection]] = contextvars.ContextVar('db_connection', default=None)
+
 def db_operation(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
+        global ACTIVE_CONNECTIONS, ACTIVE_REUSED_CONNECTIONS
+        
+        conn = _per_context_conn.get()
+        if conn:
+            ACTIVE_REUSED_CONNECTIONS += 1
+            result = await func(conn, *args, **kwargs)
+            ACTIVE_REUSED_CONNECTIONS -= 1
+            return result
+
         async with pool.acquire() as _conn:
-            return await func(DatabaseConnection(_conn, f"{func.__name__}()"), *args, **kwargs)
+            ACTIVE_CONNECTIONS += 1
+            conn = DatabaseConnection(_conn, f"{func.__name__}()")
+            token = _per_context_conn.set(conn)
+            try:
+                return await func(conn, *args, **kwargs)
+            finally:
+                _per_context_conn.reset(token)
+                ACTIVE_CONNECTIONS -= 1
     
     return wrapper
