@@ -92,7 +92,6 @@ async def agent_by_hotkey(miner_hotkey: str) -> Agent:
 
 async def all_agents_by_hotkey(miner_hotkey: str) -> list[Agent]:
     agents = await get_all_agents_by_hotkey(miner_hotkey=miner_hotkey)
-    logger.info(f"OMAR: All agents by hotkey {miner_hotkey}: {agents}")
     return agents
 
 # TODO ADAM: optimize that

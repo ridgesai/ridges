@@ -100,9 +100,9 @@ async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: st
 @db_operation
 async def get_all_agents_by_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> list[Agent]:
     result = await conn.fetch("""
-        select * from agents 
-        where miner_hotkey = $1
-        order by created_at desc
+        SELECT * FROM AGENTS 
+        WHERE miner_hotkey = $1
+        ORDER BY created_at DESC
     """, miner_hotkey)
     
     return [Agent(**agent) for agent in result]
