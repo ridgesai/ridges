@@ -122,7 +122,7 @@ async def create_evaluation_run_log(conn: DatabaseConnection, evaluation_run_id:
         """,
         evaluation_run_id,
         type,
-        logs
+        logs.replace('\x00', '')
     )
 
     num_lines = len(logs.split('\n'))
