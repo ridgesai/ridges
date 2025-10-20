@@ -10,8 +10,8 @@ import utils.logger as logger
 import validator.config as config
 
 from typing import Any, Dict, Optional
-from utils.git import COMMIT_HASH, pull_local_repo
 from models.problem import ProblemTestResultStatus
+from utils.git import COMMIT_HASH, reset_local_repo
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
 from evaluator.sandbox.sandbox_manager import SandboxManager
@@ -329,7 +329,7 @@ async def main():
     except httpx.HTTPStatusError as e:
         if config.UPDATE_AUTOMATICALLY and e.response.status_code == 426:
             logger.info("Updating...")
-            pull_local_repo(pathlib.Path(__file__).parent.parent)
+            reset_local_repo(pathlib.Path(__file__).parent.parent, e.response.headers["X-Commit-Hash"])
             sys.exit(0)
         else:
             raise e

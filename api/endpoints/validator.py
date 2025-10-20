@@ -178,7 +178,8 @@ async def validator_register_as_validator(
     if registration_request.commit_hash != COMMIT_HASH:
         raise HTTPException(
             status_code=426,
-            detail=f"The provided validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your validator, and try again."
+            detail=f"The provided validator commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your validator, and try again.",
+            headers={"X-Commit-Hash": COMMIT_HASH}
         )
 
     # Ensure that the hotkey is in the list of acceptable validator hotkeys
@@ -251,7 +252,8 @@ async def validator_register_as_screener(
     if registration_request.commit_hash != COMMIT_HASH:
         raise HTTPException(
             status_code=426,
-            detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again."
+            detail=f"The provided screener commit hash ({registration_request.commit_hash}) does not match the platform commit hash ({COMMIT_HASH}). Run `git pull` to update your screener, and try again.",
+            headers={"X-Commit-Hash": COMMIT_HASH}
         )
 
     # Ensure that the name is in the format screener-CLASS-NUM

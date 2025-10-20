@@ -2,7 +2,6 @@ import re
 import time
 import asyncio
 import asyncpg
-import contextvars
 import utils.logger as logger
 
 from typing import Optional
@@ -124,21 +123,10 @@ class DatabaseConnection:
 
 
 
-_per_context_conn: contextvars.ContextVar[Optional[DatabaseConnection]] = contextvars.ContextVar('db_connection', default=None)
-
 def db_operation(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        conn = _per_context_conn.get()
-        if conn:
-            return await func(conn, *args, **kwargs)
-
         async with pool.acquire() as _conn:
-            conn = DatabaseConnection(_conn, f"{func.__name__}()")
-            token = _per_context_conn.set(conn)
-            try:
-                return await func(conn, *args, **kwargs)
-            finally:
-                _per_context_conn.reset(token)
+            return await func(DatabaseConnection(_conn, f"{func.__name__}()"), *args, **kwargs)
     
     return wrapper

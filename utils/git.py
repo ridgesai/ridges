@@ -7,7 +7,7 @@ import utils.logger as logger
 
 
 
-def clone_repo(repo_url, target_dir) -> None:
+def clone_repo(repo_url: str, target_dir: str) -> None:
     """
     Clone a repository from a URL into the target directory.
     
@@ -26,7 +26,7 @@ def clone_repo(repo_url, target_dir) -> None:
 
 
 
-def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir) -> None:
+def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir: str) -> None:
     """
     Clone a local repository at a specific commit into the target directory.
     
@@ -70,7 +70,7 @@ def clone_local_repo_at_commit(local_repo_dir, commit_hash, target_dir) -> None:
 
 
 
-def verify_commit_exists_in_local_repo(local_repo_dir, commit_hash) -> bool:
+def verify_commit_exists_in_local_repo(local_repo_dir: str, commit_hash: str) -> bool:
     """
     Verify that a specific commit exists in the repository.
     
@@ -101,7 +101,7 @@ def verify_commit_exists_in_local_repo(local_repo_dir, commit_hash) -> bool:
 
 
 
-def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial commit") -> None:
+def init_local_repo_with_initial_commit(local_repo_dir: str, commit_message: str = "Initial commit") -> None:
     """
     Initialize a Git repository in the given directory and make an initial commit with all the files in the directory.
     
@@ -145,21 +145,26 @@ def init_local_repo_with_initial_commit(local_repo_dir, commit_message="Initial 
 
 
 
-def pull_local_repo(local_repo_dir) -> None:
+def reset_local_repo(local_repo_dir: str, commit_hash: str) -> None:
     """
-    Pull the latest changes from the remote repository to the local repository.
+    Resets the local repository to the specified commit hash.
     
     Args:
         local_repo_dir: Path to the local repository
+        commit_hash: The commit hash to reset to
     """
-    
-    logger.info(f"Pulling local repository {local_repo_dir}...")
-    subprocess.run(["git", "pull"], text=True, check=True, cwd=local_repo_dir)
-    logger.info(f"Pulled local repository {local_repo_dir}")
+
+    logger.info(f"Fetching repository at {local_repo_dir}...")
+    subprocess.run(["git", "fetch"], text=True, check=True, cwd=local_repo_dir)
+    logger.info(f"Fetched repository at {local_repo_dir}")
+
+    logger.info(f"Resetting {local_repo_dir} to commit {commit_hash}...")
+    subprocess.run(["git", "reset", "--hard", commit_hash], text=True, check=True, cwd=local_repo_dir)
+    logger.info(f"Reset {local_repo_dir} to commit {commit_hash}")
 
 
 
-def get_local_repo_commit_hash(local_repo_dir) -> str:
+def get_local_repo_commit_hash(local_repo_dir: str) -> str:
     """
     Get the commit hash of the current commit in the local repository.
     
