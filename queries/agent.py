@@ -189,5 +189,26 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
     except Exception as e:
         logger.error(f"Failed to record upload attempt: {e}")
 
+# used in upload_agent_helpers.py
+@db_operation
+async def check_if_agent_banned(conn: DatabaseConnection, miner_hotkey: str) -> bool:
+    exists = await conn.fetchval("""
+    SELECT EXISTS(
+        SELECT 1 FROM banned_hotkeys
+        WHERE miner_hotkey = $1
+    );
+    """, miner_hotkey)
 
+    if exists:
+        return True
+    
+    return False
 
+# used in src/endpoints/upload.py
+@db_operation
+async def get_ban_reason(conn: DatabaseConnection, miner_hotkey: str) -> Optional[str]:
+    """Get the ban reason for a given miner hotkey"""
+    return await conn.fetchval("""
+        SELECT banned_reason FROM banned_hotkeys
+        WHERE miner_hotkey = $1
+    """, miner_hotkey)

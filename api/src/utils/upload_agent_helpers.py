@@ -1,14 +1,11 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 from fastapi import UploadFile, HTTPException
 from fiber import Keypair
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
-from api.src.backend.entities import MinerAgent
-from api.src.backend.queries.agents import check_if_agent_banned
-from api.src.backend.queries.evaluations import get_running_evaluation_by_miner_hotkey
+from queries.agent import check_if_agent_banned
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
 from api.src.utils.subtensor import get_subnet_hotkeys
 from models.agent import Agent
@@ -66,21 +63,6 @@ def check_rate_limit(latest_agent: Agent) -> None:
         )
     
     logger.debug(f"Miner is not rate limited.")
-
-def check_replay_attack(latest_agent: Optional[MinerAgent], file_info: str) -> None:
-    logger.debug(f"Checking if this is a replay attack...")
-
-    version_num = int(file_info.split(":")[-1])
-    logger.debug(f"Latest agent number: {latest_agent.version_num if latest_agent else None}, Attempted version number: {version_num}.")
-
-    if latest_agent and version_num != latest_agent.version_num + 1:
-        logger.error(f"A miner attempted to upload an agent with a version number that is not the next version. Latest agent version is {latest_agent.version_num} and the attempted version is {version_num}")
-        raise HTTPException(
-            status_code=409,
-            detail="This upload request has already been processed"
-        )
-    
-    logger.debug(f"This is not a replay attack.")
 
 def check_signature(public_key: str, file_info: str, signature: str) -> None:
     logger.debug(f"Checking if the signature is valid...")
@@ -170,14 +152,3 @@ def check_agent_code(file_content: str) -> None:
         )
     
     logger.debug(f"The agent code is valid.")
-    
-async def check_eval_running_for_hotkey(miner_hotkey: str) -> None:
-    logger.debug(f"Checking if an evaluation is currently running for the latest agent for miner {miner_hotkey}...")
-
-    if await get_running_evaluation_by_miner_hotkey(miner_hotkey):
-        logger.error(f"An evaluation is currently running for the latest agent for miner {miner_hotkey}.")
-        raise HTTPException(
-            status_code=400,
-            detail="An evaluation is currently running for the latest agent for this miner. Please wait for it to finish before uploading a new version."
-        )
-
