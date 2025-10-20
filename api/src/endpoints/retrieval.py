@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
-from typing import Optional
+from typing import Any
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
@@ -15,6 +15,7 @@ router = APIRouter()
 
 import uuid
 import asyncio
+import time
 from queries.agent import get_agents_in_queue, get_top_agents, get_agent_by_id, get_latest_agent_for_hotkey
 from queries.evaluation import get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
@@ -23,6 +24,20 @@ from models.evaluation_set import EvaluationSetGroup
 from models.agent import Agent, AgentScored, AgentStatus
 from utils.s3 import download_text_file_from_s3
 from api.endpoints.validator import get_all_connected_validator_ip_addresses
+
+
+# TODO: Hacky cache implementation. We should use a proper cache library
+CACHE_EXPIRATION = 900 # 15 minutes
+cache_timestamps: dict[str, float] = {}
+cache_data: dict[str, Any] = {}
+
+def is_cache_valid(cache_key: str) -> bool:
+    if cache_key not in cache_timestamps:
+        return False
+    return time.time() - cache_timestamps[cache_key] < CACHE_EXPIRATION
+
+def update_cache_timestamp(cache_key: str):
+    cache_timestamps[cache_key] = time.time()
 
 async def queue(
     stage: str
@@ -123,23 +138,27 @@ async def get_agent_code(agent_id: str, request: Request):
 
 async def top_scores_over_time():
     """Gets agent scores over time for charting"""
-    # return await db_get_top_scores_over_last_week()
-    return []
+    if is_cache_valid("top_scores_over_time"):
+        return cache_data["top_scores_over_time"]
+
+    cache_timestamps["top_scores_over_time"] = time.time()
+    cache_data["top_scores_over_time"] = await db_get_top_scores_over_last_week()
+    return cache_data["top_scores_over_time"]
 
 async def network_statistics():
     """
     Gets network statistics for the dashboard
     """
-    # score_improvement, agents_created, top_score_value = await asyncio.gather(
-    #     score_improvement_24_hrs(),
-    #     agents_created_24_hrs(),
-    #     top_score()
-    # )
-    return {
-        "score_improvement_24_hrs": None,
-        "agents_created_24_hrs": None,
-        "top_score": None
-    }
+    if is_cache_valid("network_statistics"):
+        return cache_data["network_statistics"]
+
+    cache_timestamps["network_statistics"] = time.time()
+    cache_data["network_statistics"] = await asyncio.gather(
+        score_improvement_24_hrs(),
+        agents_created_24_hrs(),
+        top_score()
+    )
+    return cache_data["network_statistics"]
 
 router = APIRouter()
 
