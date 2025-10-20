@@ -37,20 +37,28 @@ class DebugLock:
             "waiting_at": self.waiting_at,
             "acquired_at": self.acquired_at
         }
-        elapsed = self.acquired_at - self.waiting_at
         async with DEBUG_LOCKS_LOCK:
             DEBUG_LOCKS["waiting"] = [x for x in DEBUG_LOCKS["waiting"] if not (x["label"] == self.label and x["waiting_at"] == self.waiting_at)]
             DEBUG_LOCKS["locked"].append(acquired_entry)
-            if elapsed > 5:
-                DEBUG_LOCKS["slow"].append(acquired_entry)
-        logger.info(f"[DebugLock] {self.label}: Lock acquired after {elapsed:.2f} seconds")
+        elapsed = self.acquired_at - self.waiting_at
+        logger.info(f"[DebugLock] {self.label}: Lock acquired after waiting for {elapsed:.2f} seconds")
         return self
 
     async def __aexit__(self, exc_type, exc_value, traceback):
         self.lock.release()
+        self.released_at = time.time()
+        elapsed = self.released_at - self.acquired_at
+        slow_entry = {
+            "label": self.label,
+            "waiting_at": self.waiting_at,
+            "acquired_at": self.acquired_at,
+            "released_at": self.released_at
+        }
         async with DEBUG_LOCKS_LOCK:
             DEBUG_LOCKS["locked"] = [x for x in DEBUG_LOCKS["locked"] if not (x["label"] == self.label and x["waiting_at"] == self.waiting_at)]
-        logger.info(f"[DebugLock] {self.label}: Lock released")
+            if elapsed > 5:
+                DEBUG_LOCKS["slow"].append(slow_entry)
+        logger.info(f"[DebugLock] {self.label}: Lock released after being locked for {elapsed:.2f} seconds")
 
 
 
@@ -69,8 +77,8 @@ def get_debug_lock_info():
 
     slow_info = []
     for entry in DEBUG_LOCKS["slow"]:
-        seconds_to_lock = entry["acquired_at"] - entry["waiting_at"]
-        slow_info.append(f"{entry["label"]} - {seconds_to_lock:.2f} s")
+        seconds_locked = entry["released_at"] - entry["acquired_at"]
+        slow_info.append(f"{entry["label"]} - {seconds_locked:.2f} s")
 
     return {
         "waiting": waiting_info,
