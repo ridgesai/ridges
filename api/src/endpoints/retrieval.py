@@ -153,11 +153,16 @@ async def network_statistics():
         return cache_data["network_statistics"]
 
     cache_timestamps["network_statistics"] = time.time()
-    cache_data["network_statistics"] = await asyncio.gather(
+    score_improvement, agents_created, top_score_value = await asyncio.gather(
         score_improvement_24_hrs(),
         agents_created_24_hrs(),
         top_score()
     )
+    cache_data["network_statistics"] = {
+        "score_improvement_24_hrs": score_improvement,
+        "agents_created_24_hrs": agents_created,
+        "top_score": top_score_value
+    }
     return cache_data["network_statistics"]
 
 router = APIRouter()
