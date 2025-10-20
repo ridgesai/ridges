@@ -6,7 +6,7 @@ import io
 import unittest
 import sys
 
-from solution import (
+from main import (
     grep,
 )
 from unittest import mock
