@@ -145,8 +145,9 @@ async def top_scores_over_time():
     if is_cache_valid("top_scores_over_time"):
         return cache_data["top_scores_over_time"]
 
-    cache_timestamps["top_scores_over_time"] = time.time()
+    
     cache_data["top_scores_over_time"] = await db_get_top_scores_over_last_week()
+    cache_timestamps["top_scores_over_time"] = time.time()
     return cache_data["top_scores_over_time"]
 
 async def network_statistics():
