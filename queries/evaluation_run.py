@@ -1,11 +1,11 @@
-import json
 import asyncpg
+import json
 import utils.logger as logger
 
 from uuid import UUID, uuid4
 from datetime import datetime
 from typing import List, Optional
-from utils.database import db_operation
+from utils.database import db_operation, DatabaseConnection
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunLogType
 
 
@@ -20,7 +20,7 @@ def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:
 
 
 @db_operation
-async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: UUID) -> Optional[EvaluationRun]:
+async def get_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[EvaluationRun]:
     row = await conn.fetchrow(
         """
         SELECT *
@@ -38,7 +38,7 @@ async def get_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run_id: 
 
 
 @db_operation
-async def get_all_evaluation_runs_in_evaluation_id(conn: asyncpg.Connection, evaluation_id: int) -> List[EvaluationRun]:
+async def get_all_evaluation_runs_in_evaluation_id(conn: DatabaseConnection, evaluation_id: int) -> List[EvaluationRun]:
     rows = await conn.fetch(
         """
         SELECT *
@@ -53,7 +53,7 @@ async def get_all_evaluation_runs_in_evaluation_id(conn: asyncpg.Connection, eva
 
 
 @db_operation
-async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: EvaluationRun) -> None:
+async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: EvaluationRun) -> None:
     await conn.execute(
         """
         UPDATE evaluation_runs SET 
@@ -85,7 +85,7 @@ async def update_evaluation_run_by_id(conn: asyncpg.Connection, evaluation_run: 
 
 
 @db_operation
-async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, problem_name: str) -> UUID:
+async def create_evaluation_run(conn: DatabaseConnection, evaluation_id: UUID, problem_name: str) -> UUID:
     evaluation_run_id = uuid4()
 
     await conn.execute(
@@ -111,7 +111,7 @@ async def create_evaluation_run(conn: asyncpg.Connection, evaluation_id: UUID, p
 
 
 @db_operation
-async def create_evaluation_run_log(conn: asyncpg.Connection, evaluation_run_id: UUID, type: EvaluationRunLogType, logs: str) -> None:
+async def create_evaluation_run_log(conn: DatabaseConnection, evaluation_run_id: UUID, type: EvaluationRunLogType, logs: str) -> None:
     await conn.execute(
         """
         INSERT INTO evaluation_run_logs (
@@ -131,7 +131,7 @@ async def create_evaluation_run_log(conn: asyncpg.Connection, evaluation_run_id:
 
 
 @db_operation
-async def check_if_evaluation_run_logs_exist(conn: asyncpg.Connection, evaluation_run_id: UUID, type: EvaluationRunLogType) -> bool:
+async def check_if_evaluation_run_logs_exist(conn: DatabaseConnection, evaluation_run_id: UUID, type: EvaluationRunLogType) -> bool:
     result = await conn.fetchrow(
         """
         SELECT EXISTS (
@@ -148,7 +148,7 @@ async def check_if_evaluation_run_logs_exist(conn: asyncpg.Connection, evaluatio
 
 
 @db_operation
-async def get_evaluation_run_status_by_id(conn: asyncpg.Connection, evaluation_run_id: UUID) -> Optional[EvaluationRunStatus]:
+async def get_evaluation_run_status_by_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[EvaluationRunStatus]:
     status = await conn.fetchval("""
         SELECT status FROM evaluation_runs WHERE evaluation_run_id = $1
     """, evaluation_run_id)

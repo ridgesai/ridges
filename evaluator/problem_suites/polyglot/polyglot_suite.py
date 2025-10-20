@@ -185,7 +185,7 @@ class PolyglotSuite(ProblemSuite):
             try:
                 sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=timeout_seconds)
                 timed_out = False
-            # TODO ADAM: Docker bug
+            # NOTE ADAM: Docker bug
             # except TimeoutError:
             except requests.exceptions.ConnectionError:
                 timed_out = True

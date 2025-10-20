@@ -1,20 +1,18 @@
-import asyncpg
-
 from typing import List
-from utils.database import db_operation
+from utils.database import db_operation, DatabaseConnection
 from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
 
 
 
 @db_operation
-async def get_latest_set_id(conn: asyncpg.Connection) -> int:
+async def get_latest_set_id(conn: DatabaseConnection) -> int:
     result = await conn.fetchrow("SELECT MAX(set_id) as latest_set_id FROM evaluation_sets")
     return result["latest_set_id"]
 
 
 
 @db_operation
-async def get_all_problem_names_in_set_group_in_set_id(conn: asyncpg.Connection, set_id: int, set_group: EvaluationSetGroup) -> List[str]:
+async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection, set_id: int, set_group: EvaluationSetGroup) -> List[str]:
     results = await conn.fetch(
         """
         SELECT problem_name
@@ -31,7 +29,7 @@ async def get_all_problem_names_in_set_group_in_set_id(conn: asyncpg.Connection,
 
 
 @db_operation
-async def get_all_evaluation_set_problems_in_latest_set_id(conn: asyncpg.Connection) -> List[EvaluationSetProblem]:
+async def get_all_evaluation_set_problems_in_latest_set_id(conn: DatabaseConnection) -> List[EvaluationSetProblem]:
     results = await conn.fetch(
         """
         SELECT set_id, set_group, problem_name

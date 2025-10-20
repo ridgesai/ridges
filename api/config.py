@@ -26,7 +26,6 @@ if not SUBTENSOR_ADDRESS:
 
 
 
-
 # Load the environment configuration
 ENV = os.getenv("ENV")
 if not ENV:

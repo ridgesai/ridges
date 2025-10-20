@@ -15,10 +15,12 @@ from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
 from api.src.endpoints.open_users import router as open_user_router
-from api.src.endpoints.validator import router as validator_router
 from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
+# NEW fixed endpoints
+from api.endpoints.validator import router as validator_router
+from api.endpoints.debug import router as debug_router
 
 
 
@@ -103,6 +105,7 @@ app.include_router(scoring_router, prefix="/scoring")
 app.include_router(open_user_router, prefix="/open-users")
 app.include_router(validator_router, prefix="/validator")
 app.include_router(evaluation_sets_router, prefix="/evaluation-sets")
+app.include_router(debug_router, prefix="/debug")
 
 
 if __name__ == "__main__":

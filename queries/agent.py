@@ -1,19 +1,18 @@
 from typing import Optional
 from uuid import UUID
 
-import asyncpg
-
 import api.config as config
 import utils.logger as logger
 from models.agent import Agent, AgentScored, AgentStatus
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation
+from utils.database import db_operation, DatabaseConnection
 from utils.s3 import upload_text_file_to_s3
 
 
+
 @db_operation
-async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: asyncpg.Connection, validator_hotkey: str) -> Optional[UUID]:
+async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: DatabaseConnection, validator_hotkey: str) -> Optional[UUID]:
     if validator_hotkey.startswith("screener-1"):
         result = await conn.fetchrow("""
             SELECT agent_id FROM screener_1_queue LIMIT 1
@@ -70,7 +69,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: async
 
 
 @db_operation
-async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[Agent]:
+async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow("""
         SELECT
             *
@@ -85,7 +84,7 @@ async def get_agent_by_id(conn: asyncpg.Connection, agent_id: UUID) -> Optional[
     return Agent(**result)
 
 @db_operation
-async def get_latest_agent_for_hotkey(conn: asyncpg.Connection, miner_hotkey: str) -> Optional[Agent]:
+async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
     result = await conn.fetchrow("""
         select * from agents 
         where miner_hotkey = $1
@@ -99,7 +98,7 @@ async def get_latest_agent_for_hotkey(conn: asyncpg.Connection, miner_hotkey: st
     return Agent(**result)
 
 @db_operation
-async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) -> None:
+async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) -> None:
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
     await conn.execute(
@@ -115,7 +114,7 @@ async def create_agent(conn: asyncpg.Connection, agent: Agent, agent_text: str) 
     )
 
 @db_operation
-async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationSetGroup) -> list[Agent]:
+async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: EvaluationSetGroup) -> list[Agent]:
     # TODO ALEX from ADAM: Modify this in the view itself rather than branching explicitly here.
     # The view apparently does not sort by created_at.
     queue_to_query = f"{queue_stage.value}_queue"
@@ -140,7 +139,7 @@ async def get_agents_in_queue(conn: asyncpg.Connection, queue_stage: EvaluationS
 
 @db_operation
 async def get_top_agents(
-    conn: asyncpg.Connection, 
+    conn: DatabaseConnection, 
     number_of_agents: int = 10,
     page: int = 1
 ) -> list[AgentScored]:
@@ -159,7 +158,7 @@ async def get_top_agents(
     return [AgentScored(**agent) for agent in results]
 
 @db_operation
-async def update_agent_status(conn: asyncpg.Connection, agent_id: UUID, status: AgentStatus) -> None:
+async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: AgentStatus) -> None:
     """Update the status of an agent."""
     await conn.execute(
         """
@@ -172,7 +171,7 @@ async def update_agent_status(conn: asyncpg.Connection, agent_id: UUID, status: 
     )
 
 @db_operation
-async def record_upload_attempt(conn: asyncpg.Connection, upload_type: str, success: bool, **kwargs) -> None:
+async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, success: bool, **kwargs) -> None:
     # TODO ADAM: gross
 
 

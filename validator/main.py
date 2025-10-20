@@ -328,7 +328,6 @@ async def main():
     
     except httpx.HTTPStatusError as e:
         if config.UPDATE_AUTOMATICALLY and e.response.status_code == 426:
-            # TODO ADAM
             logger.info("Updating...")
             pull_local_repo(pathlib.Path(__file__).parent.parent)
             sys.exit(0)

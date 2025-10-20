@@ -1,11 +1,10 @@
 import json
-import asyncpg
 
 from typing import List
 from typing import Optional
 from uuid import UUID, uuid4
 from datetime import datetime
-from utils.database import db_operation
+from utils.database import db_operation, DatabaseConnection
 from models.evaluation_run import EvaluationRunStatus
 from inference_gateway.models import InferenceMessage
 
@@ -13,7 +12,7 @@ from inference_gateway.models import InferenceMessage
 
 @db_operation
 async def create_new_inference(
-    conn: asyncpg.Connection,
+    conn: DatabaseConnection,
     *,
     evaluation_run_id: UUID,
 
@@ -54,7 +53,7 @@ async def create_new_inference(
 
 @db_operation
 async def update_inference_by_id(
-    conn: asyncpg.Connection,
+    conn: DatabaseConnection,
     *,
     inference_id: UUID,
 
@@ -88,7 +87,7 @@ async def update_inference_by_id(
 
 
 @db_operation
-async def get_number_of_inferences_for_evaluation_run(conn: asyncpg.Connection, evaluation_run_id: UUID) -> int:
+async def get_number_of_inferences_for_evaluation_run(conn: DatabaseConnection, evaluation_run_id: UUID) -> int:
     return await conn.fetchval("""
         SELECT COUNT(*) FROM inferences WHERE evaluation_run_id = $1
     """, evaluation_run_id)

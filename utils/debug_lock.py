@@ -54,23 +54,23 @@ class DebugLock:
 
 
 
-def get_debug_locks_info():
+def get_debug_lock_info():
     now = time.time()
 
     waiting_info = []
     for entry in DEBUG_LOCKS["waiting"]:
         seconds_waiting = now - entry["waiting_at"]
-        waiting_info.append([entry["label"], f"{seconds_waiting:.2f} s"])
+        waiting_info.append(f"{entry["label"]} - {seconds_waiting:.2f} s")
 
     locked_info = []
     for entry in DEBUG_LOCKS["locked"]:
         seconds_locked = now - entry["acquired_at"]
-        locked_info.append([entry["label"], f"{seconds_locked:.2f} s"])
+        locked_info.append(f"{entry["label"]} - {seconds_locked:.2f} s")
 
     slow_info = []
     for entry in DEBUG_LOCKS["slow"]:
         seconds_to_lock = entry["acquired_at"] - entry["waiting_at"]
-        slow_info.append([entry["label"], f"{seconds_to_lock:.2f} s"])
+        slow_info.append(f"{entry["label"]} - {seconds_to_lock:.2f} s")
 
     return {
         "waiting": waiting_info,

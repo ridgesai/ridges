@@ -8,7 +8,6 @@ import importlib.util
 def main():
     print("[AGENT_RUNNER] Entered main()")
 
-    # TODO ADAM: Do not remove
     time.sleep(3)
 
     try:

@@ -765,17 +765,3 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 return
 
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
-
-
-
-
-
-
-
-
-
-
-
-@router.get("/debug-locks-info")
-async def validator_debug_locks_info():
-    return get_debug_locks_info()
