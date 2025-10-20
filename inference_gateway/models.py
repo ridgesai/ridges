@@ -7,6 +7,7 @@ from typing import List, Optional
 class ModelInfo(BaseModel):
     name: str
     external_name: str
+    max_input_tokens: int
     cost_usd_per_million_input_tokens: float
     cost_usd_per_million_output_tokens: float
 

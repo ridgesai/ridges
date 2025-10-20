@@ -67,17 +67,20 @@ class ChutesProvider(Provider):
                 logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
 
             chutes_model_pricing = chutes_model["pricing"]
-            cost_usd_per_million_input_tokens = chutes_model_pricing['prompt']
-            cost_usd_per_million_output_tokens = chutes_model_pricing['completion']
+            max_input_tokens = chutes_model["context_length"]
+            cost_usd_per_million_input_tokens = chutes_model_pricing["prompt"]
+            cost_usd_per_million_output_tokens = chutes_model_pricing["completion"]
 
             self.inference_models.append(ModelInfo(
                 name=whitelisted_chutes_model.name,
                 external_name=whitelisted_chutes_model.chutes_name,
+                max_input_tokens=max_input_tokens,
                 cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens,
                 cost_usd_per_million_output_tokens=cost_usd_per_million_output_tokens
             ))
 
             logger.info(f"Found whitelisted Chutes inference model {whitelisted_chutes_model.name}:")
+            logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
 

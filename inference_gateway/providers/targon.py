@@ -62,17 +62,20 @@ class TargonProvider(Provider):
                 logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} is not supported by Targon")
 
             targon_model_pricing = targon_model["pricing"]
-            cost_usd_per_million_input_tokens = targon_model_pricing['prompt']
-            cost_usd_per_million_output_tokens = targon_model_pricing['completion']
+            max_input_tokens = targon_model["context_length"]
+            cost_usd_per_million_input_tokens = targon_model_pricing["prompt"]
+            cost_usd_per_million_output_tokens = targon_model_pricing["completion"]
 
             self.inference_models.append(ModelInfo(
                 name=whitelisted_targon_model.name,
                 external_name=whitelisted_targon_model.targon_name,
+                max_input_tokens=max_input_tokens,
                 cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens,
                 cost_usd_per_million_output_tokens=cost_usd_per_million_output_tokens
             ))
 
             logger.info(f"Found whitelisted Targon inference model {whitelisted_targon_model.name}:")
+            logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
 
