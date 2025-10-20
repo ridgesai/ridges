@@ -5,7 +5,7 @@ import utils.logger as logger
 from dotenv import load_dotenv
 
 from api.src.utils.auth import verify_request_public
-from api.src.backend.queries.statistics import get_top_scores_over_last_week as db_get_top_scores_over_last_week
+from queries.statistics import get_top_scores_over_last_week as db_get_top_scores_over_last_week
 
 
 load_dotenv()

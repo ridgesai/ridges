@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
-from api.src.backend.queries.agents import get_latest_agent, get_ban_reason
+from queries.agent import get_latest_agent_for_hotkey, get_ban_reason
 from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size, check_agent_code
@@ -85,7 +85,7 @@ async def post_agent(
         logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
         check_if_python_file(agent_file.filename)
-        latest_agent: Optional[Agent] = await get_latest_agent(miner_hotkey=miner_hotkey)
+        latest_agent: Optional[Agent] = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
 
         agent = Agent(
             agent_id=uuid.uuid4(),

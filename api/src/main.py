@@ -14,7 +14,6 @@ from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
-from api.src.endpoints.open_users import router as open_user_router
 from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
@@ -102,7 +101,6 @@ app.add_middleware(
 app.include_router(upload_router, prefix="/upload")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
-app.include_router(open_user_router, prefix="/open-users")
 app.include_router(validator_router, prefix="/validator")
 app.include_router(evaluation_sets_router, prefix="/evaluation-sets")
 app.include_router(debug_router, prefix="/debug")

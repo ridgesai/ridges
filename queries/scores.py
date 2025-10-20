@@ -24,15 +24,3 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
     if current_leader is None or "miner_hotkey" not in current_leader:
         return None
     return current_leader["miner_hotkey"]
-
-# NOTE: ADAM - Not used anywhere, very similar function (get_treasury_hotkeys) in src/backend/queries/scores.py -> used for endpoints/open_users.py :)
-@db_operation
-async def get_treasury_hotkey(conn: DatabaseConnection) -> Optional[str]:
-    treasury_hotkey_data = await conn.fetchrow(
-        """
-        SELECT hotkey FROM treasury_wallets WHERE active = TRUE ORDER BY created_at DESC LIMIT 1
-        """
-    )
-    if not treasury_hotkey_data or "hotkey" not in treasury_hotkey_data:
-        return None
-    return treasury_hotkey_data["hotkey"]
