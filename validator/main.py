@@ -401,3 +401,4 @@ if __name__ == "__main__":
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))
+        raise e
