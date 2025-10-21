@@ -32,6 +32,6 @@ class Agent(BaseModel):
 class AgentScored(Agent):
     set_id: int
 
-    approved: bool 
+    approved: bool
     validator_count: int
     final_score: float

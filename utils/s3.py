@@ -28,12 +28,12 @@ async def deinitialize_s3():
 
 
 
-async def upload_text_file_to_s3(path: str, content: str):
+async def upload_text_file_to_s3(path: str, text: str):
     global session, bucket
     
     async with session.client('s3') as s3_client:
         logger.info(f"Uploading text file to s3://{bucket}/{path}")
-        await s3_client.put_object(Bucket=bucket, Key=path, Body=content.encode('utf-8'))
+        await s3_client.put_object(Bucket=bucket, Key=path, Body=text.encode('utf-8'))
         logger.info(f"Successfully uploaded text file to s3://{bucket}/{path}")
 
 async def download_text_file_from_s3(path: str) -> str:

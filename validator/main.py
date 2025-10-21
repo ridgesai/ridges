@@ -397,7 +397,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.warning("Keyboard interrupt")
         asyncio.run(disconnect("Keyboard interrupt"))
+        os._exit(1)
     except Exception as e:
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))
+        os._exit(1)
