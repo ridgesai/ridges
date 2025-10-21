@@ -124,6 +124,7 @@ async def run_agent_on_problem(suite, problem_name=None):
 async def run_single_problem(suite, problem_name):
     """Run a single problem using the existing run_agent_on_problem function"""
     try:
+        print(f"Starting to run problem: {problem_name}")
         diff, test_results = await run_agent_on_problem(suite, problem_name)
         print(f"Successfully ran problem: {problem_name}")
 
@@ -135,7 +136,7 @@ async def run_single_problem(suite, problem_name):
         }
         
     except Exception as e:
-        print(f"Failed problem: {problem_name} - {e}")
+        print(f"Failed to run problem: {problem_name} with error: {e}")
         return {
             "problem_name": problem_name,
             "error": str(e),
