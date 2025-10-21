@@ -3,9 +3,7 @@ import json
 from typing import List
 from typing import Optional
 from uuid import UUID, uuid4
-from datetime import datetime
 from utils.database import db_operation, DatabaseConnection
-from models.evaluation_run import EvaluationRunStatus
 from inference_gateway.models import InferenceMessage
 
 

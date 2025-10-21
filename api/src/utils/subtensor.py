@@ -1,4 +1,3 @@
-from substrateinterface import SubstrateInterface
 import dotenv
 import json
 from pathlib import Path

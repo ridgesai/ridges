@@ -2,9 +2,6 @@ import docker
 import subprocess
 import utils.logger as logger
 
-from typing import Dict
-
-
 
 logger.info("Creating Docker client...")
 try:
