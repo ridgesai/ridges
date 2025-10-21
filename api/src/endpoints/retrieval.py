@@ -61,7 +61,7 @@ async def top_agents(
     """
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
     """
-    cache_key = "top_agents"
+    cache_key = f"top_agents_{number_of_agents}_{page}"
     if is_cache_valid(cache_key):
         return cache_data[cache_key]
 
