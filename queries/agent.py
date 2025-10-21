@@ -68,13 +68,14 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
     return result["agent_id"]
 
 
+# TODO ADAM: fix this
 @db_operation
 async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[Agent] | Optional[AgentScored]:
-    scoredResult = await conn.fetchrow("""
-        SELECT * FROM agent_scores WHERE agent_id = $1 LIMIT 1
-    """, agent_id)
-    if scoredResult is not None:
-        return AgentScored(**scoredResult)
+    # scoredResult = await conn.fetchrow("""
+    #     SELECT * FROM agent_scores WHERE agent_id = $1 LIMIT 1
+    # """, agent_id)
+    # if scoredResult is not None:
+    #     return AgentScored(**scoredResult)
 
     result = await conn.fetchrow("""
         SELECT
@@ -89,13 +90,14 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
 
     return Agent(**result)
 
+# TODO ADAM: fix this
 @db_operation
 async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent] | Optional[AgentScored]:
-    scoredResult = await conn.fetchrow("""
-        SELECT * FROM agent_scores WHERE miner_hotkey = $1 ORDER BY created_at DESC LIMIT 1
-    """, miner_hotkey)
-    if scoredResult is not None:
-        return AgentScored(**scoredResult)
+    # scoredResult = await conn.fetchrow("""
+    #     SELECT * FROM agent_scores WHERE miner_hotkey = $1 ORDER BY created_at DESC LIMIT 1
+    # """, miner_hotkey)
+    # if scoredResult is not None:
+    #     return AgentScored(**scoredResult)
 
     result = await conn.fetchrow("""
         select * from agents 
