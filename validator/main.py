@@ -289,6 +289,7 @@ async def _run_evaluation(request_evaluation_response):
 
     await post_ridges_platform("/validator/finish-evaluation", bearer_token=session_id, quiet=1)
 
+tasks: list[asyncio.Task] = []
 
 
 # Main loop
@@ -300,6 +301,7 @@ async def main():
     global sandbox_manager
     global polyglot_suite
     global swebench_verified_suite
+    global tasks
 
 
 
@@ -367,13 +369,11 @@ async def main():
 
 
     # Start the send heartbeat loop
-    asyncio.create_task(send_heartbeat_loop())
+    tasks.append(asyncio.create_task(send_heartbeat_loop()))
 
     if config.MODE == "validator":
         # Start the set weights loop
-        asyncio.create_task(set_weights_loop())
-
-
+        tasks.append(asyncio.create_task(set_weights_loop()))
 
     # Loop forever, just keep requesting evaluations and running them
     while True:
@@ -401,4 +401,5 @@ if __name__ == "__main__":
         logger.error(f"Error in main(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         asyncio.run(disconnect(f"Error in main(): {type(e).__name__}: {e}"))
-        raise e
+        for task in tasks:
+            task.cancel()
