@@ -4,7 +4,6 @@ import os
 import requests
 import traceback
 import utils.logger as logger
-import validator.config as config
 
 from uuid import UUID
 from models.problem import Problem

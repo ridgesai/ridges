@@ -6,7 +6,6 @@ import shutil
 import requests
 import traceback
 import utils.logger as logger
-import validator.config as config
 
 from uuid import UUID
 from typing import List, Tuple
