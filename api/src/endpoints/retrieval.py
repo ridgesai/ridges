@@ -60,10 +60,15 @@ async def top_agents(
     """
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
     """
-    return await get_top_agents(
+    if is_cache_valid("top_agents"):
+        return cache_data["top_agents"]
+    
+    cache_data["top_agents"] = await get_top_agents(
         number_of_agents=number_of_agents,
         page=page
     )
+    cache_timestamps["top_agents"] = time.time()
+    return cache_data["top_agents"]
 
 async def agent_by_id(agent_id: str) -> Agent:
     agent = await get_agent_by_id(agent_id=uuid.UUID(agent_id))
