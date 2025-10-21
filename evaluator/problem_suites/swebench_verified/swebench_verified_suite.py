@@ -184,11 +184,16 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             # TODO ADAM: Validate the patch
 
             return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred)
+        
+        except EvaluationRunException:
+            raise
+        
         except Exception as e:
             raise EvaluationRunException(
                 EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
                 f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
             )
+        
         finally:
             # Delete temporary directory
             delete_temp_dir(temp_dir)
