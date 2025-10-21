@@ -18,19 +18,13 @@ async def score_improvement_24_hrs(conn: DatabaseConnection):
 
 @db_operation
 async def get_top_scores_over_last_week(conn: DatabaseConnection) -> list[dict]:
+    # TODO: Hardcoded start time since it's slow to get the minimum date from the agent_scores view. We don't have indexes
     query = """
         WITH
         time_series AS (
             SELECT
             generate_series(
-                (
-                SELECT
-                    MIN(DATE_TRUNC('hour', created_at))
-                FROM
-                    agent_scores
-                WHERE
-                    final_score IS NOT NULL
-                ),
+                '2025-10-15 22:00:00.000000 +00:00',
                 DATE_TRUNC('hour', NOW()),
                 '1 hour'::interval
             ) as hour
