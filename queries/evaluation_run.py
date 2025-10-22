@@ -11,8 +11,8 @@ from models.evaluation_run import EvaluationRun, EvaluationRunStatus, Evaluation
 
 
 def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:
-    # test_results is a jsonb column, as such, it is returned from asyncpg as a
-    # string. We need to parse it for pydantic to be able to use it.
+    # test_results is a JSONB column, as such, it is returned from asyncpg as a string.
+    # We need to parse it for Pydantic to be able to use it.
     row_dict = dict(row)
     row_dict["test_results"] = json.loads(row_dict["test_results"]) if row_dict["test_results"] else None
     return EvaluationRun(**row_dict)

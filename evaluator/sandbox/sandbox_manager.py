@@ -9,7 +9,7 @@ import utils.logger as logger
 from typing import Any, Dict, Optional, Callable
 from utils.temp import create_temp_dir, delete_temp_dir
 from evaluator.models import Sandbox, SandboxResultWithLogs
-from utils.docker import docker_client, build_docker_image, initialize_docker, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
+from utils.docker import get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
 
 
 
@@ -30,7 +30,6 @@ class SandboxManager:
         self._check_inference_gateway(inference_gateway_url)
 
         # Setup Docker
-        initialize_docker()
         stop_and_delete_all_docker_containers()
 
         # Setup sandbox-network
@@ -81,7 +80,7 @@ class SandboxManager:
   
         logger.info("Running sandbox proxy")
 
-        self.proxy_container = docker_client.containers.run(
+        self.proxy_container = get_docker_client().containers.run(
             name=SANDBOX_PROXY_HOST,
             image="sandbox-proxy-image",
             network=SANDBOX_NETWORK_NAME,
@@ -128,7 +127,7 @@ class SandboxManager:
         logger.debug(f"Created input.json for sandbox <{name}>: {temp_input_json_path}")
 
         # Create Docker container
-        container = docker_client.containers.run(
+        container = get_docker_client().containers.run(
             name=name,
             image="sandbox-image",
             volumes={temp_dir: {"bind": "/sandbox", "mode": "rw"}},

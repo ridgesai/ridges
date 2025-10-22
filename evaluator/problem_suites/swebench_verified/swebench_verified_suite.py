@@ -9,7 +9,7 @@ import utils.logger as logger
 from uuid import UUID
 from typing import List, Tuple
 from pydantic import BaseModel
-from utils.docker import docker_client
+from utils.docker import get_docker_client
 from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
@@ -210,7 +210,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 pred=eval_sandbox.pred,
                 rm_image=False,
                 force_rebuild=False,
-                client=docker_client,
+                client=get_docker_client(),
                 run_id=str(eval_sandbox.evaluation_run_id),
                 timeout=timeout_seconds
             )
@@ -268,7 +268,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Prebuilding environment images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_env_images(
-            client=docker_client,
+            client=get_docker_client(),
             dataset=test_specs, 
             force_rebuild=False,
             max_workers=MAX_WORKERS
@@ -282,7 +282,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Prebuilding instance images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_instance_images(
-            client=docker_client,
+            client=get_docker_client(),
             dataset=test_specs, 
             force_rebuild=False,
             max_workers=MAX_WORKERS

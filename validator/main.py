@@ -145,7 +145,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: str, problem_name: str
 async def _run_evaluation_run(evaluation_run_id: str, problem_name: str, agent_code: str):
     try:
         # Figure out what problem suite this problem belongs to
-        problem_suite: Optional[ProblemSuite] = None
+        problem_suite = None
         if polyglot_suite.has_problem_name(problem_name):
             problem_suite = polyglot_suite
         elif swebench_verified_suite.has_problem_name(problem_name):
@@ -274,6 +274,7 @@ async def _run_evaluation(request_evaluation_response):
     logger.info("Starting evaluation...")
 
     tasks = []
+    
     for evaluation_run in evaluation_runs:
         evaluation_run_id = evaluation_run['evaluation_run_id']
         problem_name = evaluation_run['problem_name']
