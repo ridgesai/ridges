@@ -3,12 +3,19 @@ import subprocess
 import utils.logger as logger
 
 
-logger.info("Creating Docker client...")
-try:
-    docker_client = docker.from_env()
-    logger.info("Created Docker client")
-except Exception as e:
-    logger.fatal(f"Failed to create Docker client: {e}")
+
+docker_client = None
+
+
+
+def initialize_docker():
+    logger.info("Initializing Docker...")
+    try:
+        global docker_client
+        docker_client = docker.from_env()
+        logger.info("Initialized Docker")
+    except Exception as e:
+        logger.fatal(f"Failed to initialize Docker: {e}")
 
 
 

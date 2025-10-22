@@ -9,7 +9,7 @@ import utils.logger as logger
 from typing import Any, Dict, Optional, Callable
 from utils.temp import create_temp_dir, delete_temp_dir
 from evaluator.models import Sandbox, SandboxResultWithLogs
-from utils.docker import docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
+from utils.docker import docker_client, build_docker_image, initialize_docker, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
 
 
 
@@ -30,6 +30,7 @@ class SandboxManager:
         self._check_inference_gateway(inference_gateway_url)
 
         # Setup Docker
+        initialize_docker()
         stop_and_delete_all_docker_containers()
 
         # Setup sandbox-network
