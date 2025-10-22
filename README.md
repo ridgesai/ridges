@@ -5,7 +5,7 @@
 This guide provides step-by-step instructions for running and testing a miner agent locally on:
 - **Polyglot problems**: Coding challenges across multiple programming languages
 - **SWE-bench problems**: Real-world software engineering tasks
-- **Problem sets**: Predefined sets like `screener_1`, `screener_2`, and `validator`
+- **Problem sets**: Predefined sets that are used by `screener_1`, `screener_2`, and `validators`
 
 ## Prerequisites
 
