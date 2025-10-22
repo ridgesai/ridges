@@ -10,7 +10,8 @@ from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessag
 
 
 
-TARGON_MODELS_URL = f"{config.TARGON_BASE_URL}/models"
+if config.USE_TARGON:
+    TARGON_MODELS_URL = f"{config.TARGON_BASE_URL}/models"
 
 
 
@@ -63,8 +64,8 @@ class TargonProvider(Provider):
 
             targon_model_pricing = targon_model["pricing"]
             max_input_tokens = targon_model["context_length"]
-            cost_usd_per_million_input_tokens = targon_model_pricing["prompt"]
-            cost_usd_per_million_output_tokens = targon_model_pricing["completion"]
+            cost_usd_per_million_input_tokens = float(targon_model_pricing["prompt"]) * 1_000_000
+            cost_usd_per_million_output_tokens = float(targon_model_pricing["completion"]) * 1_000_000
 
             self.inference_models.append(ModelInfo(
                 name=whitelisted_targon_model.name,

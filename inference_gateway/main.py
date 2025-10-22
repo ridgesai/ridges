@@ -50,8 +50,10 @@ async def lifespan(app: FastAPI):
 
 
     global providers
-    providers.append(await ChutesProvider().init())
-    providers.append(await TargonProvider().init())
+    if config.USE_CHUTES:
+        providers.append(await ChutesProvider().init())
+    if config.USE_TARGON:
+        providers.append(await TargonProvider().init())
 
     # TODO ADAM: uncomment
     # for provider in providers:

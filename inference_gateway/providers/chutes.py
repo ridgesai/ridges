@@ -10,7 +10,8 @@ from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessag
 
 
 
-CHUTES_MODELS_URL = f"{config.CHUTES_BASE_URL}/models"
+if config.USE_CHUTES:
+    CHUTES_MODELS_URL = f"{config.CHUTES_BASE_URL}/models"
 
 
 

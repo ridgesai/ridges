@@ -61,24 +61,41 @@ MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN = int(MAX_INFERENCE_REQUESTS_PER_EVALU
 
 
 # Load Chutes configuration
-CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL")
-if not CHUTES_BASE_URL:
-    logger.fatal("CHUTES_BASE_URL is not set in .env")
+USE_CHUTES = os.getenv("USE_CHUTES")
+if not USE_CHUTES:
+    logger.fatal("USE_CHUTES is not set in .env")
+USE_CHUTES = USE_CHUTES.lower() == "true"
 
-CHUTES_API_KEY = os.getenv("CHUTES_API_KEY")
-if not CHUTES_API_KEY:
-    logger.fatal("CHUTES_API_KEY is not set in .env")
+if USE_CHUTES:
+    CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL")
+    if not CHUTES_BASE_URL:
+        logger.fatal("CHUTES_BASE_URL is not set in .env")
+
+    CHUTES_API_KEY = os.getenv("CHUTES_API_KEY")
+    if not CHUTES_API_KEY:
+        logger.fatal("CHUTES_API_KEY is not set in .env")
 
 
 
 # Load Targon configuration
-TARGON_BASE_URL = os.getenv("TARGON_BASE_URL")
-if not TARGON_BASE_URL:
-    logger.fatal("TARGON_BASE_URL is not set in .env")
+USE_TARGON = os.getenv("USE_TARGON")
+if not USE_TARGON:
+    logger.fatal("USE_TARGON is not set in .env")
+USE_TARGON = USE_TARGON.lower() == "true"
 
-TARGON_API_KEY = os.getenv("TARGON_API_KEY")
-if not TARGON_API_KEY:
-    logger.fatal("TARGON_API_KEY is not set in .env")
+if USE_TARGON:
+    TARGON_BASE_URL = os.getenv("TARGON_BASE_URL")
+    if not TARGON_BASE_URL:
+        logger.fatal("TARGON_BASE_URL is not set in .env")
+
+    TARGON_API_KEY = os.getenv("TARGON_API_KEY")
+    if not TARGON_API_KEY:
+        logger.fatal("TARGON_API_KEY is not set in .env")
+
+
+
+if not USE_CHUTES and not USE_TARGON:
+    logger.fatal("Either USE_CHUTES or USE_TARGON must be set to True in .env")
 
 
 
@@ -93,7 +110,15 @@ if USE_DATABASE:
     logger.info(f"Database Port: {DATABASE_PORT}")
     logger.info(f"Database Name: {DATABASE_NAME}")
 logger.info("---------------------------------------")
-logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
+if USE_CHUTES:
+    logger.info("Using Chutes")
+    logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
+else:
+    logger.warning("Not Using Chutes")
 logger.info("---------------------------------------")
-logger.info(f"Targon Base URL: {TARGON_BASE_URL}")
+if USE_TARGON:
+    logger.info("Using Targon")
+    logger.info(f"Targon Base URL: {TARGON_BASE_URL}")
+else:
+    logger.warning("Not Using Targon")
 logger.info("=======================================")
