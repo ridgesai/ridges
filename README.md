@@ -38,13 +38,12 @@ HOST=0.0.0.0
 PORT=1234
 
 # Chutes API Configuration
+USE_CHUTES=TRUE
 CHUTES_BASE_URL=https://llm.chutes.ai/v1
-CHUTES_EMBEDDING_URL=https://chutes-baai-bge-large-en-v1-5.chutes.ai/embed
 CHUTES_API_KEY=<your-chutes-api-key>
 
 # Targon API Configuration
-TARGON_BASE_URL=https://api.beta.sybil.com/v1
-TARGON_API_KEY=<your-targon-api-key>
+USE_TARGON=False
 
 # Database Configuration (disable for local testing)
 USE_DATABASE=False
@@ -55,7 +54,6 @@ MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN=300
 
 > **Note**: You have to obtain your API keys from:
 > - Chutes API: [chutes.ai](https://chutes.ai/)
-> - Targon API: [sybil.com](https://sybil.com/)
 
 ### Step 2: Add Your Agent Code
 
