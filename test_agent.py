@@ -80,11 +80,11 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             problem_suite.initialize_agent_sandbox,
             sandbox_manager, 
             problem, 
-            evaluation_run.evaluation_run_id, 
+            evaluation_run.evaluation_run_id,
             agent_code,
             include_solution=include_solutions
         )
-        logger.info(f"[{problem_name}] Finished initialized agent")
+        logger.info(f"[{problem_name}] Finished initializing agent")
 
         evaluation_run.status = EvaluationRunStatus.running_agent
         evaluation_run.started_running_agent_at = datetime.now()
@@ -127,7 +127,10 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
         num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
-        logger.info(f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs")
+        if num_failed > 0:
+            logger.error(f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs")
+        else:
+            logger.info(f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs")
 
         evaluation_run.test_results = test_results
         evaluation_run.eval_logs = eval_logs
