@@ -158,7 +158,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
 
 
 
-    test_agent_result_dir = TEST_AGENT_RESULTS_DIR / f"{datetime.now().strftime('%Y-%m-%d')}__{evaluation_run.evaluation_id}" / f"{evaluation_run.evaluation_run_id}__{problem_name}"
+    test_agent_result_dir = TEST_AGENT_RESULTS_DIR / f"{datetime.now().strftime('%Y-%m-%d')}__{evaluation_run.evaluation_id}" / f"{problem_name}__{evaluation_run.evaluation_run_id}"
 
     logger.info(f"[{problem_name}] Saving results to {test_agent_result_dir}...")
     
