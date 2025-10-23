@@ -70,7 +70,7 @@ uv venv --python 3.13
 source .venv/bin/activate
 
 # Install dependencies from requirements.txt
-uv pip install -r requirements.txt
+uv pip install -e .
 ```
 
 ### Step 4: Start the Inference Gateway
