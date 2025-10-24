@@ -114,7 +114,10 @@ python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-ag
 ### Running a single Polyglot/SWE-Bench Problem
 ```bash
 # Run a specific polyglot/swe-bench problem
-python test_agent.py --ip --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> test-problem <problem-name>
+python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> test-problem <problem-name>
+
+# Run a specific problem multiple times
+python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> test-problem <problem-name> --num-runs 5
 ```
 
 **Available Polyglot Problems:**
@@ -147,9 +150,18 @@ You can customize the behavior of `test_agent.py` with these optional flags:
 - Sets the maximum time allowed for running the evaluation tests
 - Example: `--eval-timeout 900` (15 minutes)
 
-**Complete Example:**
+**`--num-runs`** (default: 1, only applicable to `test-problem` command)
+- Sets the number of times to run a single problem
+- Useful for testing agent consistency across multiple runs
+- Example: `--num-runs 5` (run the problem 5 times)
+
+**Complete Examples:**
 ```bash
+# Run problem set with custom timeouts
 python test_agent.py --inference-url http://<your-ip>:1234 --agent-path ./agent.py --agent-timeout 3600 --eval-timeout 900 test-problem-set screener-1
+
+# Run a single problem multiple times
+python test_agent.py --inference-url http://<your-ip>:1234 --agent-path ./agent.py test-problem beer-song --num-runs 3
 ```
 
 ## Understanding the Output
@@ -166,8 +178,8 @@ When running tests, you'll see detailed logs for each problem:
 [beer-song] Finished initializing evaluation
 [beer-song] Running evaluation...
 [beer-song] Finished running evaluation: 12 passed, 0 failed, 0 skipped, 25 line(s) of eval logs
-[beer-song] Saving results to test_agent_results/2025-10-23__abc123.../beer-song__def456...
-[beer-song] Saved results to test_agent_results/2025-10-23__abc123.../beer-song__def456...
+[beer-song] Saving results to test_agent_results/2025-10-23__agent.py__abc123.../beer-song__def456...
+[beer-song] Saved results to test_agent_results/2025-10-23__agent.py__abc123.../beer-song__def456...
 ```
 
 **Status Indicators:**
@@ -181,7 +193,8 @@ All evaluation results are automatically saved to the `test_agent_results/` dire
 
 ```
 test_agent_results/
-  └── <date>__<evaluation-id>/
+  └── <date>__<agent-filename>__<evaluation-id>/
+      ├── <agent-filename>           # Copy of your agent code
       └── <problem-name>__<evaluation-run-id>/
           ├── evaluation_run.json    # Metadata (status, timestamps, test results)
           ├── agent_logs.txt         # Complete agent execution logs

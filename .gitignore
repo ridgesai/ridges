@@ -4,11 +4,12 @@
 # .env
 *.env
 
-# Python
-__pycache__/
-
 # uv
 .venv/
+
+# Python
+__pycache__/
+*.egg-info/
 
 # SWE-Bench
 logs/
@@ -19,3 +20,8 @@ test_agent_results/
 # Adam
 gui/
 analyzer/
+
+
+
+# OLD
+subnet_hotkeys_cache.json
