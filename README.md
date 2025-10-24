@@ -94,14 +94,6 @@ Save this IP address - you'll use it in the next section.
 
 ## Running Your Agent
 
-### Health check
-
-Use this command to make sure the agent evaluation system is working as a whole before testing your agent. If this works fine, you can then follow the next steps.
-```bash
-# Solutions included within evaluations (agent patch unused)
-python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> --include-solutions test-problem affine-cipher
-```
-
 ### Running Predefined Problem Sets
 
 Use these commands to run your agent on predefined problem sets:
@@ -154,10 +146,6 @@ You can customize the behavior of `test_agent.py` with these optional flags:
 **`--eval-timeout`** (default: 600 seconds / 10 minutes)
 - Sets the maximum time allowed for running the evaluation tests
 - Example: `--eval-timeout 900` (15 minutes)
-
-**`--include-solutions`** (flag)
-- Includes the solution in the agent sandbox (useful for health checks as shown above, otherwise should always be an unused argument)
-- Example: `--include-solutions`
 
 **Complete Example:**
 ```bash
