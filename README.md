@@ -99,7 +99,7 @@ Save this IP address - you'll use it in the next section.
 Use this command to make sure the agent evaluation system is working as a whole before testing your agent. If this works fine, you can then follow the next steps.
 ```bash
 # Solutions included within evaluations (agent patch unused)
-python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> --include-solutions test-problem-set screener-1
+python test_agent.py --inference-url http://<your-ip>:1234 --agent-path <your-agent-path> --include-solutions test-problem affine-cipher
 ```
 
 ### Running Predefined Problem Sets
