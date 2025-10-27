@@ -38,6 +38,7 @@ PORT=1234
 USE_CHUTES=TRUE
 CHUTES_BASE_URL=https://llm.chutes.ai/v1
 CHUTES_API_KEY=<your-chutes-api-key>
+CHUTES_WEIGHT=1
 # Targon API Configuration
 USE_TARGON=False
 # Database Configuration (disable for local testing)
