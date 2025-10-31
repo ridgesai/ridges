@@ -36,8 +36,6 @@ async def weights() -> Dict[str, float]:
 
 
 
-
-
     top_agent_hotkey = await get_weight_receiving_agent_hotkey()
 
     
