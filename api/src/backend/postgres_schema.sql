@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_reason TEXT,
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_banned_hotkeys_miner_hotkey ON banned_hotkeys (miner_hotkey);
 
 CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
@@ -302,6 +303,7 @@ WHERE agents.status = 'screening_1'
       AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.validator_hotkey LIKE 'screener-1%'
   )
+  AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
 ORDER BY agents.created_at ASC;
 
 -- Screener 2 queue view
@@ -317,6 +319,7 @@ WHERE agents.status = 'screening_2'
       AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.validator_hotkey LIKE 'screener-2%'
   )
+  AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
 ORDER BY agents.created_at ASC;
 
 -- Validator queue view
@@ -351,6 +354,7 @@ WHERE
     agents.status = 'evaluating'
 --   TODO: Make into a constant, same as config.NUM_EVALS_PER_AGENT
     AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < 3
+    AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
 ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
