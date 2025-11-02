@@ -91,6 +91,9 @@ if not RIDGES_INFERENCE_GATEWAY_URL:
 
 RIDGES_INFERENCE_GATEWAY_URL = RIDGES_INFERENCE_GATEWAY_URL.rstrip("/")
 
+if RIDGES_INFERENCE_GATEWAY_URL.contains("localhost") or RIDGES_INFERENCE_GATEWAY_URL.contains("127.0.0.1"):
+    logger.fatal("RIDGES_INFERENCE_GATEWAY_URL must be set to a local IP address, not localhost/127.0.0.1.")
+
 
 
 # Load the time to wait between sending heartbeats
