@@ -5,7 +5,6 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 """
 
 import hashlib
-import time
 from fiber.chain.chain_utils import load_hotkey_keypair
 import httpx
 import os
@@ -19,14 +18,8 @@ from rich.prompt import Prompt
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform-v2.ridges.ai"
-CONFIG_FILE = "miner/.env"
 
-load_dotenv(CONFIG_FILE)
 load_dotenv(".env")
-
-validator_tracing = False
-if os.getenv("DD_API_KEY") and os.getenv("DD_APP_KEY") and os.getenv("DD_HOSTNAME") and os.getenv("DD_SITE") and os.getenv("DD_ENV") and os.getenv("DD_SERVICE"):
-    validator_tracing = True
 
 def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
     """Run command and return (code, stdout, stderr)"""
@@ -56,75 +49,16 @@ def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
 run_cmd("uv add click")
 import click
 
-def check_docker(image: str) -> bool:
-    """Check if Docker image exists"""
-    code, output, _ = run_cmd(f"docker images -q {image}")
-    return code == 0 and output.strip() != ""
-
-def build_docker(path: str, tag: str) -> bool:
-    """Build Docker image"""
-    console.print(f"🔨 Building {tag}...", style="yellow")
-    return run_cmd(f"docker build -t {tag} {path}", capture=False)[0] == 0
-
-def check_pm2(process: str = "ridges-validator") -> tuple[bool, str]:
-    """Check if PM2 process is running"""
-    code, output, _ = run_cmd("pm2 list")
-    if code != 0:
-        return False, ""
-    
-    # Parse PM2 list output to find exact process name
-    lines = output.strip().split('\n')
-    for line in lines:
-        if '│' in line and process in line:
-            # Split by │ and get the name column (index 2, after id and │)
-            parts = line.split('│')
-            if len(parts) >= 3:
-                process_name = parts[2].strip()
-                if process_name == process:
-                    return True, "running"
-    return False, ""
-
-def get_logs(process: str = "ridges-validator", lines: int = 15) -> str:
-    """Get PM2 logs"""
-    return run_cmd(f"pm2 logs {process} --lines {lines} --nostream")[1]
-
-class Config:
-    def __init__(self):
-        self.file = CONFIG_FILE
-        if os.path.exists(self.file):
-            load_dotenv(self.file)
-    
-    def save(self, key: str, value: str):
-        lines = []
-        if os.path.exists(self.file):
-            with open(self.file, 'r') as f:
-                lines = f.readlines()
-        
-        found = False
-        for i, line in enumerate(lines):
-            if line.strip().startswith(f"{key}="):
-                lines[i] = f"{key}={value}\n"
-                found = True
-                break
-        
-        if not found:
-            lines.append(f"{key}={value}\n")
-        
-        with open(self.file, 'w') as f:
-            f.writelines(lines)
-        os.environ[key] = value
-    
-    def get_or_prompt(self, key: str, prompt: str, default: Optional[str] = None) -> str:
-        value = os.getenv(key)
-        if not value:
-            value = Prompt.ask(f"🎯 {prompt}", default=default) if default else Prompt.ask(f"🎯 {prompt}")
-            self.save(key, value)
-        return value
+def get_or_prompt(key: str, prompt: str, default: Optional[str] = None) -> str:
+    """Get value from environment or prompt user."""
+    value = os.getenv(key)
+    if not value:
+        value = Prompt.ask(f"🎯 {prompt}", default=default) if default else Prompt.ask(f"🎯 {prompt}")
+    return value
 
 class RidgesCLI:
     def __init__(self, api_url: Optional[str] = None):
         self.api_url = api_url or DEFAULT_API_BASE_URL
-        self.config = Config()
     
 
 @click.group()
@@ -145,11 +79,11 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
     """Upload a miner agent to the Ridges API."""
     ridges = RidgesCLI(ctx.obj.get('url'))
     
-    coldkey = coldkey_name or ridges.config.get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-    hotkey = hotkey_name or ridges.config.get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+    hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
     keypair = load_hotkey_keypair(coldkey, hotkey)
     
-    file = file or ridges.config.get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
+    file = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
     if not os.path.exists(file) or os.path.basename(file) != "agent.py":
         console.print("File must be named 'agent.py' and exist", style="bold red")
         return
