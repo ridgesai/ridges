@@ -8,13 +8,14 @@ from functools import wraps
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
+from inference_gateway.cost_hash_map import CostHashMap
 from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.chutes import ChutesProvider
 from inference_gateway.providers.targon import TargonProvider
 from queries.evaluation_run import get_evaluation_run_status_by_id
 from inference_gateway.models import InferenceRequest, EmbeddingRequest
+from queries.inference import create_new_inference, update_inference_by_id
 from utils.database import initialize_database, get_debug_query_info, deinitialize_database
-from queries.inference import create_new_inference, update_inference_by_id, get_number_of_inferences_for_evaluation_run
 
 
 
@@ -98,6 +99,10 @@ def handle_http_exceptions(func):
 
 
 
+cost_hash_map = CostHashMap()
+
+
+
 # NOTE ADAM: inference@main.py -> Handles HTTP exceptions and database
 #            inference@providers/provider.py -> Handles logging
 #            inference@providers/*.py -> Handles inference
@@ -122,14 +127,15 @@ async def inference(request: InferenceRequest) -> str:
                 detail=f"The evaluation run with ID {request.run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
             )
 
-        # TODO ADAM: slow
-        # # Make sure the evaluation run has not already made too many requests
-        # num_inferences = await get_number_of_inferences_for_evaluation_run(request.run_id)
-        # if num_inferences >= config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN:
-        #     raise HTTPException(
-        #         status_code=429,
-        #         detail=f"The evaluation run with ID {request.run_id} has already made too many requests (maximum is {config.MAX_INFERENCE_REQUESTS_PER_EVALUATION_RUN})."
-        #     )
+        # Make sure the evaluation run has not reached or exceeded its cost limit
+        cost = cost_hash_map.get_cost(request.run_id)
+        if cost >= config.MAX_COST_PER_EVALUATION_RUN_USD:
+            raise HTTPException(
+                status_code=429,
+                detail=f"The evaluation run with ID {request.run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD)."
+            )
+
+        
 
     # Make sure we support the model for inference
     provider = get_provider_that_supports_model_for_inference(request.model)
@@ -161,6 +167,8 @@ async def inference(request: InferenceRequest) -> str:
             num_output_tokens=response.num_output_tokens,
             cost_usd=response.cost_usd
         )
+
+        cost_hash_map.add_cost(request.run_id, response.cost_usd)
     
     return response.response
 
