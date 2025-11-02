@@ -33,7 +33,7 @@ class SandboxResultWithLogs(SandboxResult):
 #
 # The extra field is used to pass along additional information to the
 # validator. For example, if an exception occurs while running the agent
-# sandbox, the validator can pass along the partial agent logs to the
+# sandbox, the evaluator can pass along the partial agent logs to the
 # validator. The only keys that could be in the extra field are "agent_logs" or
 # "eval_logs".
 class EvaluationRunException(Exception):
