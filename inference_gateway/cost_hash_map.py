@@ -1,3 +1,10 @@
+# NOTE ADAM: We used to use the database as the source of truth for determining
+#            how expensive a given evaluation run is by summing the individual
+#            costs of all inferences/embeddings associated with that evaluation
+#            run. This is actually quite a slow query, so instead, since we
+#            only have one inference gateway to begin with, the cost
+#            information is tracked here in memory.
+
 import time
 
 from uuid import UUID
