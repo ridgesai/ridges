@@ -10,6 +10,18 @@ load_dotenv()
 
 
 
+# Load host and port
+HOST = os.getenv("HOST")
+if not HOST:
+    logger.fatal("HOST is not set in .env")
+
+PORT = os.getenv("PORT")
+if not PORT:
+    logger.fatal("PORT is not set in .env")
+PORT = int(PORT)
+
+
+
 # TODO ADAM: fix up the file where this is used
 NETUID = os.getenv("NETUID")
 if not NETUID:
@@ -148,6 +160,9 @@ NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
 
 logger.info("=== API Configuration ===")
+logger.info(f"Host: {HOST}")
+logger.info(f"Port: {PORT}")
+logger.info("-------------------------")
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
 logger.info(f"AWS Region: {AWS_REGION}")

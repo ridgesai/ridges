@@ -95,8 +95,6 @@ class ProblemSuite(ABC):
         *,
         include_solution: bool = False
     ) -> Sandbox:
-        # TODO ADAM: Docs
-    
         try:
             def _on_mount(temp_dir: str):
                 # Create /sandbox/agent.py
@@ -142,13 +140,11 @@ class ProblemSuite(ABC):
         agent_sandbox: Sandbox,
         timeout_seconds: int
     ) -> Tuple[str, str]:
-        # TODO ADAM: Docs
-
         try:
             try:
                 sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
                 timed_out = False
-            # TODO ADAM: Docker bug
+            # NOTE ADAM: Docker bug
             # except TimeoutError:
             except requests.exceptions.ConnectionError:
                 timed_out = True
@@ -186,7 +182,6 @@ class ProblemSuite(ABC):
         evaluation_run_id: UUID,
         patch: str
     ) -> Any:
-        # TODO ADAM: Docs
         pass
 
 
@@ -197,5 +192,4 @@ class ProblemSuite(ABC):
         sandbox_manager: SandboxManager,
         eval_sandbox: Any
     ) -> Tuple[List[ProblemTestResult], str]:
-        # TODO ADAM: Docs
         pass
