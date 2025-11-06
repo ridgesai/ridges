@@ -202,8 +202,7 @@ FROM evaluations
     INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
 GROUP BY evaluations.evaluation_id;
 
-DROP MATERIALIZED VIEW IF EXISTS agent_scores CASCADE;
-CREATE MATERIALIZED VIEW agent_scores AS
+CREATE OR REPLACE VIEW agent_scores AS
 WITH all_agents AS (
     -- Get all agent versions from non-banned hotkeys
     SELECT
@@ -258,43 +257,6 @@ GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
 -- At least 2 validators
 -- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
 HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_scores_agent_id ON agent_scores (agent_id);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_final_score ON agent_scores (final_score);
-CREATE INDEX IF NOT EXISTS idx_agent_scores_created_at ON agent_scores (created_at);
-
-CREATE OR REPLACE FUNCTION refresh_agent_scores_view()
-RETURNS TRIGGER AS $$
-BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY agent_scores;
-    RETURN NULL;
-END;
-$$ LANGUAGE plpgsql;
-
-drop trigger if exists tr_refresh_agent_scores_view on evaluations;
-create trigger tr_refresh_agent_scores_view
-after insert or update or delete or truncate
-on evaluations for each statement 
-execute procedure refresh_agent_scores_view();
-
-drop trigger if exists tr_refresh_agent_scores_view_approved_agents on approved_agents;
-create trigger tr_refresh_agent_scores_view_approved_agents
-after insert or update or delete or truncate
-on approved_agents for each statement 
-execute procedure refresh_agent_scores_view();
-
-drop trigger if exists tr_refresh_agent_scores_view_banned_hotkeys on banned_hotkeys;
-create trigger tr_refresh_agent_scores_view_banned_hotkeys
-after insert or update or delete or truncate
-on banned_hotkeys for each statement 
-execute procedure refresh_agent_scores_view();
-
--- Don't bother with adding agents since they have no score
-drop trigger if exists tr_refresh_agent_scores_view_delete_agents on agents;
-create trigger tr_refresh_agent_scores_view_delete_agents
-after update or delete or truncate
-on agents for each statement 
-execute procedure refresh_agent_scores_view();
 
 -- Screener 1 queue view
 -- Returns agents in screening_1 status that haven't been successfully evaluated by a screener-1 validator yet
@@ -368,3 +330,13 @@ ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
     num_finished_evals DESC;
+
+CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
+SELECT
+  er.*,
+  COALESCE(SUM(i.cost_usd), 0) AS total_cost
+FROM
+  evaluation_runs er
+  LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
+GROUP BY
+  er.evaluation_run_id;
