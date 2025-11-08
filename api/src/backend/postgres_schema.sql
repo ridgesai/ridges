@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_set_group EvaluationSetGroup NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
+CREATE INDEX IF NOT EXISTS idx_evaluations_agent_id ON evaluations (agent_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern ON evaluations (validator_hotkey text_pattern_ops);
 
 CREATE TABLE IF NOT EXISTS evaluation_runs (
@@ -202,62 +203,6 @@ FROM evaluations
     INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
 GROUP BY evaluations.evaluation_id;
 
-CREATE OR REPLACE VIEW agent_scores AS
-WITH all_agents AS (
-    -- Get all agent versions from non-banned hotkeys
-    SELECT
-        agent_id,
-        miner_hotkey,
-        name,
-        version_num,
-        created_at,
-        status
-    FROM agents
-    WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-),
-agent_evaluations AS (
-    -- Get all evaluations for all agent versions
-    SELECT
-        aa.agent_id,
-        aa.miner_hotkey,
-        aa.name,
-        aa.version_num,
-        aa.created_at,
-        aa.status,
-        e.set_id,
-        e.score,
-        e.validator_hotkey,
-        (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
-        avi.approved_at
-    FROM all_agents aa
-    INNER JOIN evaluations_hydrated e ON aa.agent_id = e.agent_id
-        AND e.status = 'success'
-        AND e.score IS NOT NULL
-        AND e.score > 0
-        AND evaluations_hydrated.evaluation_set_group = 'validator'::EvaluationSetGroup
-        AND e.set_id IS NOT NULL
-    LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
-)
-SELECT
-    ae.agent_id,
-    ae.miner_hotkey,
-    ae.name,
-    ae.version_num,
-    ae.created_at,
-    ae.status,
-    ae.set_id,
-    ae.approved,
-    ae.approved_at,
-    COUNT(DISTINCT ae.validator_hotkey) AS validator_count,
-    AVG(ae.score) AS final_score
-FROM agent_evaluations ae
-WHERE ae.set_id IS NOT NULL
-GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
-         ae.created_at, ae.status, ae.set_id, ae.approved, ae.approved_at
--- At least 2 validators
--- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
-HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2;
-
 -- Screener 1 queue view
 -- Returns agents in screening_1 status that haven't been successfully evaluated by a screener-1 validator yet
 CREATE OR REPLACE VIEW screener_1_queue AS
@@ -340,3 +285,208 @@ FROM
   LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
 GROUP BY
   er.evaluation_run_id;
+
+CREATE TABLE IF NOT EXISTS agent_scores (
+    agent_id UUID PRIMARY KEY,
+    miner_hotkey TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version_num INT4 NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    status AgentStatus NOT NULL,
+    set_id INT4 NOT NULL,
+    approved BOOLEAN,
+    approved_at TIMESTAMPTZ,
+    validator_count INT4 NOT NULL,
+    final_score FLOAT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_scores_agent_id ON agent_scores (agent_id);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_final_score ON agent_scores (final_score);
+CREATE INDEX IF NOT EXISTS idx_agent_scores_created_at ON agent_scores (created_at);
+
+CREATE OR REPLACE FUNCTION refresh_agent_scores_for_agent(target_agent_id UUID)
+RETURNS VOID AS $$
+BEGIN
+    DELETE FROM agent_scores WHERE agent_id = target_agent_id;
+    INSERT INTO agent_scores (
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
+    )
+    WITH agent_evaluations AS (
+        SELECT
+            a.agent_id,
+            a.miner_hotkey,
+            a.name,
+            a.version_num,
+            a.created_at,
+            a.status,
+            e.set_id,
+            e.score,
+            e.validator_hotkey,
+            (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
+            avi.approved_at
+        FROM agents a
+        INNER JOIN evaluations_hydrated e ON a.agent_id = e.agent_id
+            AND e.status = 'success'
+            AND e.score IS NOT NULL
+            AND e.score > 0
+            AND e.validator_hotkey NOT LIKE 'screener-%'
+            AND e.set_id IS NOT NULL
+        LEFT JOIN approved_agents avi ON a.agent_id = avi.agent_id AND e.set_id = avi.set_id
+        WHERE a.agent_id = target_agent_id
+          AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+    )
+    SELECT
+        ae.agent_id,
+        ae.miner_hotkey,
+        ae.name,
+        ae.version_num,
+        ae.created_at,
+        ae.status,
+        ae.set_id,
+        ae.approved,
+        ae.approved_at,
+        COUNT(DISTINCT ae.validator_hotkey) AS validator_count,
+        AVG(ae.score) AS final_score
+    FROM agent_evaluations ae
+    WHERE ae.set_id IS NOT NULL
+    GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
+             ae.created_at, ae.status, ae.set_id, ae.approved, ae.approved_at
+    -- At least 2 validators
+    -- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
+    HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION populate_agent_scores()
+RETURNS VOID AS $$
+BEGIN
+    TRUNCATE TABLE agent_scores;
+    INSERT INTO agent_scores (
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
+    )
+    WITH all_agents AS (
+        SELECT
+            agent_id,
+            miner_hotkey,
+            name,
+            version_num,
+            created_at,
+            status
+        FROM agents
+        WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+    ),
+    agent_evaluations AS (
+        SELECT
+            aa.agent_id,
+            aa.miner_hotkey,
+            aa.name,
+            aa.version_num,
+            aa.created_at,
+            aa.status,
+            e.set_id,
+            e.score,
+            e.validator_hotkey,
+            (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
+            avi.approved_at
+        FROM all_agents aa
+        INNER JOIN evaluations_hydrated e ON aa.agent_id = e.agent_id
+            AND e.status = 'success'
+            AND e.score IS NOT NULL
+            AND e.score > 0
+            AND e.validator_hotkey NOT LIKE 'screener-%'
+            AND e.set_id IS NOT NULL
+        LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
+    )
+    SELECT
+        ae.agent_id,
+        ae.miner_hotkey,
+        ae.name,
+        ae.version_num,
+        ae.created_at,
+        ae.status,
+        ae.set_id,
+        ae.approved,
+        ae.approved_at,
+        COUNT(DISTINCT ae.validator_hotkey) AS validator_count,
+        AVG(ae.score) AS final_score
+    FROM agent_evaluations ae
+    WHERE ae.set_id IS NOT NULL
+    GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
+             ae.created_at, ae.status, ae.set_id, ae.approved, ae.approved_at
+    -- At least 2 validators
+    -- NOTE: THIS PARAMETER IS TIED TO NUM_EVALS_PER_AGENT in api/config.py
+    HAVING COUNT(DISTINCT ae.validator_hotkey) >= 2;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION refresh_agent_scores()
+RETURNS TRIGGER AS $$
+DECLARE
+    affected_agent_id UUID;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF TG_TABLE_NAME = 'evaluations' THEN
+            affected_agent_id := OLD.agent_id;
+        ELSIF TG_TABLE_NAME = 'agents' THEN
+            DELETE FROM agent_scores WHERE agent_id = OLD.agent_id;
+            RETURN OLD;
+        ELSIF TG_TABLE_NAME = 'approved_agents' THEN
+            affected_agent_id := OLD.agent_id;
+        ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN
+            DELETE FROM agent_scores 
+            WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = OLD.miner_hotkey);
+            RETURN OLD;
+        END IF;
+    ELSIF TG_OP = 'TRUNCATE' THEN
+        PERFORM populate_agent_scores();
+        RETURN NULL;
+    ELSE
+        IF TG_TABLE_NAME = 'evaluations' THEN
+            affected_agent_id := NEW.agent_id;
+        ELSIF TG_TABLE_NAME = 'agents' THEN
+            affected_agent_id := NEW.agent_id;
+        ELSIF TG_TABLE_NAME = 'approved_agents' THEN
+            affected_agent_id := NEW.agent_id;
+        ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN
+            DELETE FROM agent_scores 
+            WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = NEW.miner_hotkey);
+            RETURN NEW;
+        END IF;
+    END IF;
+    
+    IF affected_agent_id IS NOT NULL THEN
+        PERFORM refresh_agent_scores_for_agent(affected_agent_id);
+    END IF;
+    
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;
+CREATE TRIGGER tr_refresh_agent_scores
+AFTER INSERT OR UPDATE OR DELETE
+ON evaluations FOR EACH ROW 
+EXECUTE PROCEDURE refresh_agent_scores();
+
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved_agents ON approved_agents;
+CREATE TRIGGER tr_refresh_agent_scores_approved_agents
+AFTER INSERT OR UPDATE OR DELETE
+ON approved_agents FOR EACH ROW 
+EXECUTE PROCEDURE refresh_agent_scores();
+
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;
+CREATE TRIGGER tr_refresh_agent_scores_banned_hotkeys
+AFTER INSERT OR UPDATE OR DELETE
+ON banned_hotkeys FOR EACH ROW 
+EXECUTE PROCEDURE refresh_agent_scores();
+
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;
+CREATE TRIGGER tr_refresh_agent_scores_delete_agents
+AFTER INSERT OR UPDATE OR DELETE
+ON agents FOR EACH ROW 
+EXECUTE PROCEDURE refresh_agent_scores();
