@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import UploadFile, HTTPException
-from fiber import Keypair
+from bittensor_wallet.wallet import Wallet
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
@@ -68,8 +68,8 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
     logger.debug(f"Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
 
-    keypair = Keypair(public_key=bytes.fromhex(public_key), ss58_format=42)
-    if not keypair.verify(file_info, bytes.fromhex(signature)):
+    wallet = Wallet(name=public_key)
+    if not wallet.hotkey.verify(file_info, bytes.fromhex(signature)):
         logger.error(f"A miner attempted to upload an agent with an invalid signature. Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
         raise HTTPException(
             status_code=400, 

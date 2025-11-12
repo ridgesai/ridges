@@ -24,7 +24,7 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
 from models.problem import ProblemTestResult
-from utils.fiber import validate_signed_timestamp
+from bittensor_wallet.keypair import Keypair
 from utils.s3 import download_text_file_from_s3
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
@@ -179,7 +179,7 @@ async def validator_register_as_validator(
         )
     
     # Check if the signed timestamp is valid (i.e., matches the raw timestamp)
-    if not validate_signed_timestamp(registration_request.timestamp, registration_request.signed_timestamp, registration_request.hotkey):
+    if not Keypair(ss58_address=registration_request.hotkey).verify(str(registration_request.timestamp), bytes.fromhex(registration_request.signed_timestamp)):
         raise HTTPException(
             status_code=401,
             detail="The provided signed timestamp does not match the provided timestamp."

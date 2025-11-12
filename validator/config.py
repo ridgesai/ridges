@@ -3,8 +3,7 @@ import re
 import utils.logger as logger
 
 from dotenv import load_dotenv
-from fiber.chain.chain_utils import load_hotkey_keypair
-
+from bittensor_wallet.wallet import Wallet
 
 
 # Load everything from .env
@@ -44,13 +43,9 @@ if MODE == "validator":
     if not VALIDATOR_WALLET_NAME:
         logger.fatal("VALIDATOR_WALLET_NAME is not set in .env")
 
-    VALIDATOR_HOTKEY_NAME = os.getenv("VALIDATOR_HOTKEY_NAME")
-    if not VALIDATOR_HOTKEY_NAME:
-        logger.fatal("VALIDATOR_HOTKEY_NAME is not set in .env")
-
     # Load the hotkey
     try:
-        VALIDATOR_HOTKEY = load_hotkey_keypair(VALIDATOR_WALLET_NAME, VALIDATOR_HOTKEY_NAME)
+        VALIDATOR_HOTKEY = Wallet(name=VALIDATOR_WALLET_NAME).hotkey
     except Exception as e:
         logger.fatal(f"Error loading hotkey: {e}")
 
@@ -151,7 +146,6 @@ logger.info("-------------------------------")
 logger.info(f"Mode: {MODE}")
 if MODE == "validator":
     logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")
-    logger.info(f"Validator Hotkey Name: {VALIDATOR_HOTKEY_NAME}")
     logger.info(f"Validator Hotkey: {VALIDATOR_HOTKEY.ss58_address}")
 elif MODE == "screener":
     logger.info(f"Screener Name: {SCREENER_NAME}")
