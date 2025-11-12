@@ -12,7 +12,8 @@ class ModelInfo(BaseModel):
     cost_usd_per_million_output_tokens: float
 
     def get_cost_usd(self, num_input_tokens: int, num_output_tokens: int) -> float:
-        return (num_input_tokens / 1000000) * self.cost_usd_per_million_input_tokens + (num_output_tokens / 1000000) * self.cost_usd_per_million_output_tokens
+        return (num_input_tokens / 1000000) * self.cost_usd_per_million_input_tokens + \
+               (num_output_tokens / 1000000) * self.cost_usd_per_million_output_tokens
 
 
 
