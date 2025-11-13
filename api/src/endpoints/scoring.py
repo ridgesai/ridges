@@ -6,7 +6,7 @@ from fastapi import APIRouter
 
 import utils.logger as logger
 from queries.scores import get_weight_receiving_agent_hotkey
-from api.src.utils.bittensor import check_if_hotkey_is_registered
+from utils.bittensor import check_if_hotkey_is_registered
 
 load_dotenv()
 

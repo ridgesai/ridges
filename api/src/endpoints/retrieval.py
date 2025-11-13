@@ -4,7 +4,6 @@ from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, 
 import utils.logger as logger
 from dotenv import load_dotenv
 
-from api.src.utils.auth import verify_request_public
 from queries.statistics import get_top_scores_over_time
 
 
@@ -209,6 +208,5 @@ for path, endpoint in routes:
         path,
         endpoint,
         tags=["retrieval"],
-        dependencies=[Depends(verify_request_public)],
         methods=["GET"]
     )

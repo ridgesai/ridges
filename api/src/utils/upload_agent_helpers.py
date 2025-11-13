@@ -6,8 +6,7 @@ from bittensor_wallet.keypair import Keypair
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.agent import check_if_agent_banned
-from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.utils.bittensor import check_if_hotkey_is_registered
+from utils.bittensor import check_if_hotkey_is_registered
 from models.agent import Agent
 
 
@@ -111,44 +110,3 @@ async def check_file_size(agent_file: UploadFile) -> str:
         return content.decode('utf-8')
     else:
         return content
-
-# TODO: Uncomment this once similarity check is done
-# async def check_code_similarity(uploaded_code: str, miner_hotkey: str) -> None:
-#     logger.debug(f"Checking if the uploaded code is similar to the miner's previous version or top agents...")
-#
-#     similarity_checker = SimilarityChecker()
-#     is_valid, error_msg = await similarity_checker.validate_upload(uploaded_code, miner_hotkey)
-#
-#     if not is_valid:
-#         logger.error(error_msg)
-#         raise HTTPException(
-#             status_code=400,
-#             detail=error_msg
-#         )
-#
-#     logger.debug(f"The uploaded code is not similar to the miner's previous version or top agents.")
-
-def check_agent_code(file_content: str) -> None:
-    logger.debug(f"Checking if the agent code is valid...")
-
-    try:
-        # AgentCodeChecker expects bytes, so ensure we have bytes
-        if isinstance(file_content, str):
-            file_content_bytes = file_content.encode('utf-8')
-        else:
-            file_content_bytes = file_content  # Already bytes
-        AgentCodeChecker(file_content_bytes).run()
-    except CheckError as e:
-        logger.error(f"A miner attempted to upload an agent with invalid code. Error: {e}.")
-        raise HTTPException(
-                status_code=400, 
-                detail=str(e)
-            )
-    except Exception as e:
-        logger.error(f"Error running static code safety checks: {e}")
-        raise HTTPException(
-            status_code=500, 
-            detail="Static code safety checks failed. Please try again later."
-        )
-    
-    logger.debug(f"The agent code is valid.")

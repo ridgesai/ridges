@@ -11,7 +11,6 @@ from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
 from queries.agent import get_latest_agent_for_hotkey, get_ban_reason
-from api.src.utils.auth import verify_request_public
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size, check_agent_code
 from models.agent import AgentStatus, Agent
@@ -46,7 +45,6 @@ router = APIRouter()
 @router.post(
     "/agent",
     tags=["upload"],
-    dependencies=[Depends(verify_request_public)],
     response_model=AgentUploadResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
