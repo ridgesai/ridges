@@ -1,3 +1,4 @@
+from enum import Enum
 from uuid import UUID
 from pydantic import BaseModel
 from typing import List, Optional
@@ -30,18 +31,36 @@ class InferenceMessage(BaseModel):
     role: str
     content: str
 
+# TODO ADAM
+class InferenceToolParameterType(Enum):
+    string = "string"
+    integer = "integer"
+    float = "float"
+    boolean = "boolean"
+class InferenceToolParameter(BaseModel):
+    name: str
+    type: InferenceToolParameterType
+    description: str
+    required: bool
+class InferenceTool(BaseModel):
+    name: str
+    description: str
+    parameters: List[InferenceToolParameter]
+
+class InferenceToolMode(Enum):
+    auto = "auto"
+    required = "required"
+    none = "none"
 class InferenceRequest(BaseModel):
-    # TODO
-    # evaluation_run_id: UUID
-    run_id: UUID
+    run_id: UUID # TODO ADAM: evaluation_run_id: UUID
     model: str
     temperature: float
     messages: List[InferenceMessage]
+    # tools: Optional[List[InferenceTool]] = None
+    # tool_mode: Optional[InferenceToolMode] = InferenceToolMode.auto
 
 
 
 class EmbeddingRequest(BaseModel):
-    # TODO
-    # evaluation_run_id: UUID
-    run_id: UUID
+    run_id: UUID # TODO ADAM: evaluation_run_id: UUID
     input: str
