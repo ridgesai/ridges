@@ -7,7 +7,7 @@ import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.agent import check_if_agent_banned
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
+from api.src.utils.bittensor import check_if_hotkey_is_registered
 from models.agent import Agent
 
 
