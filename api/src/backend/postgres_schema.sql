@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
 );
 CREATE INDEX IF NOT EXISTS idx_banned_hotkeys_miner_hotkey ON banned_hotkeys (miner_hotkey);
 
+CREATE TABLE IF NOT EXISTS unapproved_agent_ids (
+    agent_id UUID NOT NULL REFERENCES agents(agent_id),
+    unapproved_reason TEXT,
+    unapproved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unapproved_agent_ids_agent_id ON unapproved_agent_ids (agent_id);
+
 CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
     set_group EvaluationSetGroup NOT NULL,
@@ -212,6 +219,7 @@ WHERE agents.status = 'screening_1'
       AND evaluations_hydrated.evaluation_set_group = 'screener_1'::EvaluationSetGroup
   )
   AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+  AND agents.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
 ORDER BY agents.created_at ASC;
 
 -- Screener 2 queue view
@@ -228,6 +236,7 @@ WHERE agents.status = 'screening_2'
       AND evaluations_hydrated.evaluation_set_group = 'screener_2'::EvaluationSetGroup
   )
   AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+  AND agents.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
 ORDER BY agents.created_at ASC;
 
 -- Validator queue view
@@ -263,6 +272,7 @@ WHERE
 --   TODO: Make into a constant, same as config.NUM_EVALS_PER_AGENT
     AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < 3
     AND agents.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+    AND agents.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
 ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
@@ -326,6 +336,7 @@ BEGIN
         LEFT JOIN approved_agents avi ON a.agent_id = avi.agent_id AND e.set_id = avi.set_id
         WHERE a.agent_id = target_agent_id
           AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+          AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
     )
     SELECT
         ae.agent_id,
@@ -367,6 +378,7 @@ BEGIN
             status
         FROM agents
         WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+          AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
     ),
     agent_evaluations AS (
         SELECT
@@ -429,6 +441,8 @@ BEGIN
             DELETE FROM agent_scores 
             WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = OLD.miner_hotkey);
             RETURN OLD;
+        ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN
+            affected_agent_id := OLD.agent_id;
         END IF;
     ELSIF TG_OP = 'TRUNCATE' THEN
         PERFORM populate_agent_scores();
@@ -443,6 +457,9 @@ BEGIN
         ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN
             DELETE FROM agent_scores 
             WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = NEW.miner_hotkey);
+            RETURN NEW;
+        ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN
+            DELETE FROM agent_scores WHERE agent_id = NEW.agent_id;
             RETURN NEW;
         END IF;
     END IF;
@@ -481,4 +498,10 @@ DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;
 CREATE TRIGGER tr_refresh_agent_scores_delete_agents
 AFTER INSERT OR UPDATE OR DELETE
 ON agents FOR EACH ROW 
+EXECUTE PROCEDURE refresh_agent_scores();
+
+DROP TRIGGER IF EXISTS tr_refresh_agent_scores_unapproved_agent_ids ON unapproved_agent_ids;
+CREATE TRIGGER tr_refresh_agent_scores_unapproved_agent_ids
+AFTER INSERT OR UPDATE OR DELETE
+ON unapproved_agent_ids FOR EACH ROW
 EXECUTE PROCEDURE refresh_agent_scores();
