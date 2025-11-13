@@ -3,8 +3,7 @@ import re
 import utils.logger as logger
 
 from dotenv import load_dotenv
-from fiber.chain.chain_utils import load_hotkey_keypair
-
+from bittensor_wallet.wallet import Wallet
 
 
 # Load everything from .env
@@ -50,7 +49,7 @@ if MODE == "validator":
 
     # Load the hotkey
     try:
-        VALIDATOR_HOTKEY = load_hotkey_keypair(VALIDATOR_WALLET_NAME, VALIDATOR_HOTKEY_NAME)
+        VALIDATOR_HOTKEY = Wallet(name=VALIDATOR_WALLET_NAME, hotkey=VALIDATOR_HOTKEY_NAME).hotkey
     except Exception as e:
         logger.fatal(f"Error loading hotkey: {e}")
 

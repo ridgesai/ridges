@@ -5,7 +5,7 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 """
 
 import hashlib
-from fiber.chain.chain_utils import load_hotkey_keypair
+from bittensor_wallet.wallet import Wallet
 import httpx
 import os
 import subprocess
@@ -81,24 +81,24 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
     
     coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
     hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
-    keypair = load_hotkey_keypair(coldkey, hotkey)
-    
+    wallet = Wallet(name=coldkey, hotkey=hotkey)
+
     file = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
     if not os.path.exists(file) or os.path.basename(file) != "agent.py":
         console.print("File must be named 'agent.py' and exist", style="bold red")
         return
     
-    console.print(Panel(f"[bold cyan]Uploading Agent[/bold cyan]\n[yellow]Hotkey:[/yellow] {keypair.ss58_address}\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="Upload", border_style="cyan"))
+    console.print(Panel(f"[bold cyan]Uploading Agent[/bold cyan]\n[yellow]Hotkey:[/yellow] {wallet.hotkey.ss58_address}\n[yellow]File:[/yellow] {file}\n[yellow]API:[/yellow] {ridges.api_url}", title="Upload", border_style="cyan"))
     
     try:
         with open(file, 'rb') as f:
             file_content = f.read()
         
         content_hash = hashlib.sha256(file_content).hexdigest()
-        public_key = keypair.public_key.hex()
+        public_key = wallet.hotkey.public_key.hex()
         
         with httpx.Client() as client:
-            response = client.get(f"{ridges.api_url}/retrieval/agent-by-hotkey?miner_hotkey={keypair.ss58_address}")
+            response = client.get(f"{ridges.api_url}/retrieval/agent-by-hotkey?miner_hotkey={wallet.hotkey.ss58_address}")
             
             if response.status_code == 200 and response.json():
                 latest_agent = response.json()
@@ -108,8 +108,8 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = 0
 
-            file_info = f"{keypair.ss58_address}:{content_hash}:{version_num}"
-            signature = keypair.sign(file_info).hex()
+            file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
+            signature = wallet.hotkey.sign(file_info).hex()
             payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
             files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 

@@ -1,6 +1,6 @@
 import utils.logger as logger
 
-from fiber import Keypair
+from bittensor_wallet.keypair import Keypair
 
 
 
