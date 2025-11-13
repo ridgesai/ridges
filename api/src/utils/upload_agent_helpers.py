@@ -81,7 +81,7 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
 async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")
 
-    if not check_if_hotkey_is_registered(miner_hotkey):
+    if not await check_if_hotkey_is_registered(miner_hotkey):
         logger.error(f"A miner attempted to upload an agent with a hotkey that is not registered on subnet: {miner_hotkey}.")
         raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
     

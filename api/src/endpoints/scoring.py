@@ -41,7 +41,7 @@ async def weights() -> Dict[str, float]:
     
 
     if top_agent_hotkey is not None:
-        if check_if_hotkey_is_registered(top_agent_hotkey):
+        if await check_if_hotkey_is_registered(top_agent_hotkey):
             weights[top_agent_hotkey] = 1.0
         else:
             logger.error(f"Top agent {top_agent_hotkey} not registered on subnet. Setting weight to owner hotkey ({OWNER_HOTKEY})")
