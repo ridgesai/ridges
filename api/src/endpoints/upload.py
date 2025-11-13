@@ -10,9 +10,9 @@ from pydantic import BaseModel, Field
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
-from queries.agent import get_latest_agent_for_hotkey, get_ban_reason
+from queries.agent import get_latest_agent_for_hotkey, get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
-    check_rate_limit, check_signature, check_hotkey_registered, check_file_size, check_agent_code
+    check_rate_limit, check_signature, check_hotkey_registered, check_file_size
 from models.agent import AgentStatus, Agent
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
@@ -105,7 +105,6 @@ async def post_agent(
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey) 
             file_content = await check_file_size(agent_file)
-            check_agent_code(file_content)
             # TODO: Bring this back if needed
             # check_replay_attack(latest_agent, file_info)
             # TODO: Uncomment this when embedding similarity check is done
@@ -148,7 +147,7 @@ async def post_agent(
         # Determine error type and get ban reason if applicable
         error_type = 'banned' if e.status_code == 403 and 'banned' in e.detail.lower() else \
                     'rate_limit' if e.status_code == 429 else 'validation_error'
-        ban_reason = await get_ban_reason(miner_hotkey) if error_type == 'banned' and miner_hotkey else None
+        banned_hotkey = await get_banned_hotkey(miner_hotkey) if error_type == 'banned' and miner_hotkey else None
         
         # Record failed upload attempt
         await record_upload_attempt(
@@ -156,7 +155,7 @@ async def post_agent(
             success=False,
             error_type=error_type,
             error_message=e.detail,
-            ban_reason=ban_reason,
+            ban_reason=banned_hotkey.banned_reason if banned_hotkey else None,
             http_status_code=e.status_code,
             **upload_data
         )

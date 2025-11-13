@@ -5,7 +5,7 @@ from bittensor_wallet.keypair import Keypair
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
-from queries.agent import check_if_agent_banned
+from queries.agent import get_banned_hotkey
 from utils.bittensor import check_if_hotkey_is_registered
 from models.agent import Agent
 
@@ -39,7 +39,7 @@ def check_if_python_file(filename: str) -> None:
 async def check_agent_banned(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is banned...")
 
-    if await check_if_agent_banned(miner_hotkey):
+    if await get_banned_hotkey(miner_hotkey) is not None:
         logger.error(f"A miner attempted to upload an agent with a banned hotkey: {miner_hotkey}.")
         raise HTTPException(
             status_code=403,
