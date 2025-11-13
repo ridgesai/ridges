@@ -75,7 +75,7 @@ Added typing to `translate()`, as it is unclear what the parameter type should b
 
 ## poker
 
-Added typing to `best_hands()` with comments clarifying the hand format and poker hand rankings. The instructions only link to Wikipedia for poker rules, which agents cannot access, making this problem unsolvable without explicitly listing the hand rankings. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `best_hands()`. Added explicit card format documentation specifying that the rank for ten is `10` (two characters) rather than `T`, since many LLMs are trained on standard poker notation that uses single-character ranks, which could cause confusion. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## pov
 
