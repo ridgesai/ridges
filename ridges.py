@@ -79,8 +79,9 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
     """Upload a miner agent to the Ridges API."""
     ridges = RidgesCLI(ctx.obj.get('url'))
     
+    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
     hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
-    wallet = Wallet(name=coldkey_name, wallet_name=hotkey_name)
+    wallet = Wallet(name=coldkey, hotkey=hotkey)
 
     file = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
     if not os.path.exists(file) or os.path.basename(file) != "agent.py":
@@ -94,7 +95,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
             file_content = f.read()
         
         content_hash = hashlib.sha256(file_content).hexdigest()
-        public_key = Wallet(name=hotkey).hotkey.public_key.hex()
+        public_key = wallet.hotkey.public_key.hex()
         
         with httpx.Client() as client:
             response = client.get(f"{ridges.api_url}/retrieval/agent-by-hotkey?miner_hotkey={wallet.hotkey.ss58_address}")

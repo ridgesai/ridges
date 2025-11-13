@@ -15,7 +15,6 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from functools import wraps
 import api.config as config
-from utils.bittensor import validate_signed_timestamp
 import utils.logger as logger
 from queries.agent import get_top_agents, get_agent_by_id, update_agent_status, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
 from queries.evaluation import get_hydrated_evaluation_by_id, update_evaluation_finished_at, create_new_evaluation_and_evaluation_runs, get_num_successful_validator_evaluations_for_agent_id, update_unfinished_evaluation_runs_in_evaluation_id_to_errored
@@ -25,7 +24,7 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
 from models.problem import ProblemTestResult
-from bittensor_wallet.keypair import Keypair
+from api.src.utils.bittensor import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
