@@ -50,25 +50,16 @@ For more details on the DSL's expected design and the expected error types and m
 
 Sometimes it is necessary to [raise an exception](https://docs.python.org/3/tutorial/errors.html#raising-exceptions). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging. For situations where you know that the error source will be a certain type, you can choose to raise one of the [built in error types](https://docs.python.org/3/library/exceptions.html#base-classes), but should still include a meaningful message.
 
-This particular exercise requires that you use the [raise statement](https://docs.python.org/3/reference/simple_stmts.html#the-raise-statement) to "throw" a `TypeError` for when a `Graph` is malformed, and a `ValueError` when an `Edge`, `Node`, or `attribute` is malformed. The tests will only pass if you both `raise` the `exception` and include a message with it.
+This particular exercise requires that you use the [raise statement](https://docs.python.org/3/reference/simple_stmts.html#the-raise-statement) to "throw" a `TypeError` for when a `Graph` or graph item is malformed, and a `ValueError` for unknown item types. The tests will only pass if you both `raise` the `exception` and include a message with it.
 
 To raise an error with a message, write the message as an argument to the `exception` type:
 
 ```python
-# Graph is malformed
+# Graph is malformed (not a list)
 raise TypeError("Graph data malformed")
 
-# Graph item is incomplete (empty or incomplete tuple)
-raise TypeError("Graph item incomplete")
-
-# Attribute has incorrect values
-raise ValueError("Attribute is malformed")
-
-# Node has incorrect values
-raise ValueError("Node is malformed")
-
-# Edge has incorrect values
-raise ValueError("Edge is malformed")
+# Graph item is malformed (wrong number of elements in tuple)
+raise TypeError("Graph item malformed")
 
 # Unknown item type
 raise ValueError("Unknown item")
