@@ -8,9 +8,7 @@ from api import config
 
 async def check_if_hotkey_is_registered(hotkey: str) -> bool:
     subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)
-    metagraph = await subtensor.metagraph(netuid=config.NETUID)
-    registered_hotkeys = {neuron.hotkey for neuron in metagraph.neurons}
-    return hotkey in registered_hotkeys
+    return await subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
 
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
     """
