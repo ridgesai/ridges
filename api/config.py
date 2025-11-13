@@ -22,7 +22,6 @@ PORT = int(PORT)
 
 
 
-# TODO ADAM: fix up the file where this is used
 NETUID = os.getenv("NETUID")
 if not NETUID:
     logger.fatal("NETUID is not set in .env")
