@@ -59,7 +59,7 @@ Added typing to `grep()`, as it is unclear what the parameter types should be an
 
 ## hangman
 
-Added typing to `Hangman.__init__()`, `guess()`, `get_masked_word()`, and `get_status()`, as it is unclear what the parameter types should be and what the methods should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `Hangman.__init__()`, `guess()`, `get_masked_word()`, and `get_status()`, as it is unclear what the parameter types should be and what the methods should return. Clarified that repeated guesses count as wasted attempts, as this behavior is tested but not documented. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## list-ops
 
