@@ -15,6 +15,7 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from functools import wraps
 import api.config as config
+from utils.bittensor import validate_signed_timestamp
 import utils.logger as logger
 from queries.agent import get_top_agents, get_agent_by_id, update_agent_status, get_next_agent_id_awaiting_evaluation_for_validator_hotkey
 from queries.evaluation import get_hydrated_evaluation_by_id, update_evaluation_finished_at, create_new_evaluation_and_evaluation_runs, get_num_successful_validator_evaluations_for_agent_id, update_unfinished_evaluation_runs_in_evaluation_id_to_errored
@@ -179,7 +180,7 @@ async def validator_register_as_validator(
         )
     
     # Check if the signed timestamp is valid (i.e., matches the raw timestamp)
-    if not Keypair(ss58_address=registration_request.hotkey).verify(str(registration_request.timestamp), bytes.fromhex(registration_request.signed_timestamp)):
+    if not validate_signed_timestamp(registration_request.timestamp, registration_request.signed_timestamp, registration_request.hotkey):
         raise HTTPException(
             status_code=401,
             detail="The provided signed timestamp does not match the provided timestamp."

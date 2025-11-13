@@ -1,13 +1,13 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import UploadFile, HTTPException
-from bittensor_wallet.wallet import Wallet
+from bittensor_wallet.keypair import Keypair
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.agent import check_if_agent_banned
 from api.src.utils.code_checks import AgentCodeChecker, CheckError
-from api.src.utils.subtensor import get_subnet_hotkeys
+from api.src.utils.refresh_subnet_hotkeys import check_if_hotkey_is_registered
 from models.agent import Agent
 
 
@@ -68,8 +68,8 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
     logger.debug(f"Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
 
-    wallet = Wallet(name=public_key)
-    if not wallet.hotkey.verify(file_info, bytes.fromhex(signature)):
+    keypair = Keypair(public_key=public_key)
+    if not keypair.verify(file_info, bytes.fromhex(signature)):
         logger.error(f"A miner attempted to upload an agent with an invalid signature. Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
         raise HTTPException(
             status_code=400, 
@@ -81,7 +81,7 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
 async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")
 
-    if miner_hotkey not in await get_subnet_hotkeys():
+    if not check_if_hotkey_is_registered(miner_hotkey):
         logger.error(f"A miner attempted to upload an agent with a hotkey that is not registered on subnet: {miner_hotkey}.")
         raise HTTPException(status_code=400, detail=f"Hotkey not registered on subnet")
     
