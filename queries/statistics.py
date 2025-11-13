@@ -14,6 +14,7 @@ async def agents_created_24_hrs(conn: DatabaseConnection):
 
 @db_operation
 async def score_improvement_24_hrs(conn: DatabaseConnection):
+    # TODO ADAM: format query impossible to read rn
     return await conn.fetchval("SELECT COALESCE((SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)) - COALESCE((SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets) - 1), 0), 0)")
 
 @db_operation
@@ -37,6 +38,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
                     agent_scores.final_score IS NOT NULL
                     AND agent_scores.set_id = (SELECT set_id FROM max_set)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 ),
                 DATE_TRUNC('hour', NOW()),
                 '1 hour'::interval
@@ -57,6 +59,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
                 AND agent_scores.created_at <= ts.hour
                 AND agent_scores.set_id = (SELECT set_id FROM max_set)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             ),
             0
         ) as top_score
@@ -66,4 +69,5 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
         ts.hour
     """
     rows = await conn.fetch(query)
+    # TODO ADAM: since when do we return dict[any,any] ._.
     return [dict(row) for row in rows]

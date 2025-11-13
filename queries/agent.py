@@ -217,6 +217,7 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
         logger.error(f"Failed to record upload attempt: {e}")
 
 # used in upload_agent_helpers.py
+# TODO ADAM: stupid name, its checking if the hotkey is banned... we will redo the call site of this and fix it then
 @db_operation
 async def check_if_agent_banned(conn: DatabaseConnection, miner_hotkey: str) -> bool:
     exists = await conn.fetchval("""
@@ -232,6 +233,7 @@ async def check_if_agent_banned(conn: DatabaseConnection, miner_hotkey: str) -> 
     return False
 
 # used in src/endpoints/upload.py
+# TODO ADAM: coalesce this with the check_if_agent_banned call, idk why it's done in two separate calls.......
 @db_operation
 async def get_ban_reason(conn: DatabaseConnection, miner_hotkey: str) -> Optional[str]:
     """Get the ban reason for a given miner hotkey"""
