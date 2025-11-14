@@ -5,7 +5,7 @@
 #       You don't need to build this Docker image manually anymore.
 #       Using a SandboxManager will automatically build and use the image for you.
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Install system dependencies in a single layer
 RUN apt-get update && \
