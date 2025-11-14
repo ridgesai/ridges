@@ -24,7 +24,7 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
 from models.problem import ProblemTestResult
-from api.src.utils.bittensor import validate_signed_timestamp
+from utils.bittensor import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
