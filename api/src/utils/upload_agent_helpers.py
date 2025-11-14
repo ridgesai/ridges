@@ -5,7 +5,7 @@ from bittensor_wallet.keypair import Keypair
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
-from queries.agent import get_banned_hotkey
+from queries.banned_hotkey import get_banned_hotkey
 from utils.bittensor import check_if_hotkey_is_registered
 from models.agent import Agent
 

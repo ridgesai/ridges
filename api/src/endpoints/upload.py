@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
-from queries.agent import get_latest_agent_for_hotkey, get_banned_hotkey
+from queries.agent import get_latest_agent_for_hotkey
+from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size
 from models.agent import AgentStatus, Agent

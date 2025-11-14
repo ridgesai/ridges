@@ -216,14 +216,3 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
         logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
     except Exception as e:
         logger.error(f"Failed to record upload attempt: {e}")
-
-@db_operation
-async def get_banned_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[BannedHotkey]:
-    banned_hotkey = await conn.fetchrow("""
-    SELECT * FROM banned_hotkeys WHERE miner_hotkey = $1
-    """, miner_hotkey)
-
-    if banned_hotkey:
-        return BannedHotkey(**banned_hotkey)
-    
-    return None
