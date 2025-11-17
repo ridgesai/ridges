@@ -108,9 +108,20 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = 0
 
+            # Send payment for evaluation
+
+
             file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
             signature = wallet.hotkey.sign(file_info).hex()
-            payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
+            payload = {
+                'public_key': public_key, 
+                'file_info': file_info, 
+                'signature': signature, 
+                'name': name,
+                'coldkey': wallet.coldkey.ss58_address,
+                'payment_transaction_hash': ''
+            }
+            
             files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:

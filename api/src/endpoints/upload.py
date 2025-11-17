@@ -7,13 +7,14 @@ from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 
+from api.src.utils.request_cache import hourly_cache
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
 from queries.agent import get_latest_agent_for_hotkey
 from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
-    check_rate_limit, check_signature, check_hotkey_registered, check_file_size
+    check_rate_limit, check_signature, check_hotkey_registered, check_file_size, get_tao_price
 from models.agent import AgentStatus, Agent
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
@@ -173,3 +174,32 @@ async def post_agent(
             **upload_data
         )
         raise
+
+
+class UploadPriceResponse(BaseModel):
+    """Response model for successful agent upload"""
+    amount: int = Field(..., description="Amount to send for evaluation (in RAO)")
+    send_address: str = Field(..., description="TAO address to send evaluation payment to")
+
+@router.get(
+    "/eval-pricing",
+    tags=["eval-pricing"],
+    response_model=UploadPriceResponse
+)
+@hourly_cache()
+async def get_upload_price() -> UploadPriceResponse:
+    SEND_ADDRESS = "5DUMMYADDRESS"
+    TAO_PRICE = await get_tao_price() 
+    
+    eval_cost_usd = 60
+
+    # Get the amount of tao required per eval
+    eval_cost_tao = eval_cost_usd / TAO_PRICE
+
+    # Add a 10% buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
+    amount_rao = int(eval_cost_tao * 1e9 * 1.4)
+
+    return UploadPriceResponse(
+        amount=amount_rao,
+        send_address=SEND_ADDRESS
+    )

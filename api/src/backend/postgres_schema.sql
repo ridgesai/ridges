@@ -154,6 +154,15 @@ CREATE TABLE IF NOT EXISTS upload_attempts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_payments (
+    tx_hash TEXT NOT NULL PRIMARY KEY,
+    agent_id UUID NOT NULL REFERENCES agents(agent_id),
+    miner_hotkey TEXT NOT NULL,
+    miner_coldkey TEXT NOT NULL,
+    amount_rao INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- First view: evaluation_runs with solved status
 CREATE OR REPLACE VIEW evaluation_runs_hydrated AS
 SELECT
