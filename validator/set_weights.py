@@ -4,10 +4,17 @@ from bittensor_wallet import Wallet
 import utils.logger as logger
 from validator import config
 
-validator_wallet = Wallet(name=config.VALIDATOR_WALLET_NAME, hotkey=config.VALIDATOR_HOTKEY_NAME)
+validator_wallet = None
+if config.MODE == "validator":
+    validator_wallet = Wallet(name=config.VALIDATOR_WALLET_NAME, hotkey=config.VALIDATOR_HOTKEY_NAME)
+
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=[config.SUBTENSOR_ADDRESS])
 
 async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
+    if validator_wallet is None:
+        logger.error("Cannot set weights: validator_wallet is not initialized (MODE is not 'validator')")
+        return
+        
     if len(weights_mapping.keys()) < 1:
         logger.warning("Expected at least one top miner, but got 0")
         return
