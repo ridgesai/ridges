@@ -178,7 +178,7 @@ async def get_top_agents(
         """
         select * from agent_scores 
         where set_id = (select max(set_id) from evaluation_sets)
-        order by final_score desc
+        order by final_score desc, created_at asc
         limit $1 offset $2
         """, number_of_agents, offset
     )
