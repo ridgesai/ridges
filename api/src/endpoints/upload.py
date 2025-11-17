@@ -122,6 +122,15 @@ async def post_agent(
 
         payment_extrinsic = payment_block['extrinsics'][payment_extrinsic_index]
 
+        # Verify amount, where it was sent
+        payment_cost = get_upload_price()
+
+        if payment_extrinsic['amount'] != payment_cost.amount_rao:
+            return ""
+        
+        # Make sure coldkey is the same as hotkeys owner coldkey
+
+
         check_if_python_file(agent_file.filename)
 
         if prod:
@@ -129,10 +138,6 @@ async def post_agent(
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey) 
             file_content = await check_file_size(agent_file)
-            # TODO: Bring this back if needed
-            # check_replay_attack(latest_agent, file_info)
-            # TODO: Uncomment this when embedding similarity check is done
-            # if prod: await check_code_similarity(file_content, miner_hotkey)
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
