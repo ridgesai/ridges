@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from bittensor import Subtensor
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
+from numpy import meshgrid
 from pydantic import BaseModel, Field
 
 from api.src.utils.request_cache import hourly_cache
@@ -50,6 +52,7 @@ router = APIRouter()
     response_model=AgentUploadResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Bad Request - Invalid input or validation failed"},
+        402: {"model": ErrorResponse, "description": "Payment Required - Payment failed or insufficient funds"},
         409: {"model": ErrorResponse, "description": "Conflict - Upload request already processed"},
         429: {"model": ErrorResponse, "description": "Too Many Requests - Rate limit exceeded"},
         500: {"model": ErrorResponse, "description": "Internal Server Error - Server-side processing failed"},
@@ -63,6 +66,9 @@ async def post_agent(
     file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
+    payment_block_hash: str = Form(..., "Block hash in which payment was made"),
+    payment_block_number: int = Form(..., "Block number in which payment was made"),
+    payment_extrinsic_index: str = Form(..., "Index in the block for payment extrinsic"),
     background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> AgentUploadResponse:
     """
@@ -100,6 +106,22 @@ async def post_agent(
     try:
         logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
+
+        # Verify payment
+        subtensor = Subtensor(network="finney")
+
+        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=payment_block)
+
+        payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+
+        if payment_block is None:
+            return HTTPException(
+                status_code=402,
+                detail="Payment could not be verified"
+            )
+
+        payment_extrinsic = payment_block['extrinsics'][payment_extrinsic_index]
+
         check_if_python_file(agent_file.filename)
 
         if prod:
@@ -178,7 +200,7 @@ async def post_agent(
 
 class UploadPriceResponse(BaseModel):
     """Response model for successful agent upload"""
-    amount: int = Field(..., description="Amount to send for evaluation (in RAO)")
+    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
     send_address: str = Field(..., description="TAO address to send evaluation payment to")
 
 @router.get(
@@ -196,10 +218,11 @@ async def get_upload_price() -> UploadPriceResponse:
     # Get the amount of tao required per eval
     eval_cost_tao = eval_cost_usd / TAO_PRICE
 
-    # Add a 10% buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
+    # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
+    # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
     amount_rao = int(eval_cost_tao * 1e9 * 1.4)
 
     return UploadPriceResponse(
-        amount=amount_rao,
+        amount_rao=amount_rao,
         send_address=SEND_ADDRESS
     )

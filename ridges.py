@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
+from bittensor import Subtensor
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform-v2.ridges.ai"
@@ -109,7 +110,26 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 version_num = 0
 
             # Send payment for evaluation
+            payment_method_details = client.get(f"{ridges.api_url}/upload/eval-pricing")
 
+            if payment_method_details.status_code != 200:
+                console.print("Error fetching evaluation cost", style="bold red")
+                return
+
+            subtensor = Subtensor(network="finney")
+
+            # Transfer
+            payment_payload = subtensor.substrate.compose_call(
+                call_module="Balances",
+                call_function="transfer_keep_alive",
+                call_params={
+                    'dest': payment_method_details['send_address'], 
+                    'value': payment_method_details['amount_rao'],
+                }
+            )
+
+            payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
+            receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
 
             file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
             signature = wallet.hotkey.sign(file_info).hex()
@@ -118,10 +138,11 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 'file_info': file_info, 
                 'signature': signature, 
                 'name': name,
-                'coldkey': wallet.coldkey.ss58_address,
-                'payment_transaction_hash': ''
+                'payment_block_hash': receipt.block_hash,
+                'payment_block_number': receipt.block_number,
+                'payment_extrinsic_index': receipt.extrinsic_idx
             }
-            
+
             files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
