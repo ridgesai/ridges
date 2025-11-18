@@ -7,7 +7,7 @@ from typing import List
 from pydantic import BaseModel
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import EmbeddingResult, InferenceResult, InferenceMessage, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice
 
 
 
@@ -76,14 +76,14 @@ class ChutesProvider(Provider):
                 logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
 
             if not "text" in chutes_model["input_modalities"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.targon_name} does not support text input")
+                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text input")
             if not "text" in chutes_model["output_modalities"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.targon_name} does not support text output")
+                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text output")
 
             if not "CHAT" in chutes_model["supported_endpoints"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.targon_name} does not support chat endpoints")
+                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support chat endpoints")
             if not "COMPLETION" in chutes_model["supported_endpoints"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.targon_name} does not support completion endpoints")
+                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support completion endpoints")
 
             chutes_model_pricing = chutes_model["pricing"]
             max_input_tokens = chutes_model["context_length"]
@@ -149,24 +149,34 @@ class ChutesProvider(Provider):
         
 
 
-    async def _inference(self, model_info: InferenceModelInfo, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
+    async def _inference(
+        self,
+        *,
+        model_info: InferenceModelInfo,
+        temperature: float,
+        messages: List[InferenceMessage],
+        tools: List[InferenceTool] = None,
+        tool_mode: InferenceToolMode = InferenceToolMode.auto
+    ) -> InferenceResult:
         try:
             chat_completion = await self.chutes_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
+                tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
+                tools=inference_tools_to_openai_tools(tools),
                 stream=False
             )
-            
-            response = chat_completion.choices[0].message.content
+
+            output = chat_completion.choices[0].message.content
 
             num_input_tokens = chat_completion.usage.prompt_tokens
             num_output_tokens = chat_completion.usage.completion_tokens
-            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens) if model_info else None
+            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
 
             return InferenceResult(
                 status_code=200,
-                output=response,
+                output=output,
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
                 cost_usd=cost_usd
@@ -209,7 +219,7 @@ class ChutesProvider(Provider):
             )
 
         except APIStatusError as e:
-            # Targon returned 4xx or 5xx
+            # Chutes returned 4xx or 5xx
             return EmbeddingResult(
                 status_code=e.status_code,
                 error_message=e.response.text
@@ -218,5 +228,5 @@ class ChutesProvider(Provider):
         except Exception as e:
             return EmbeddingResult(
                 status_code=-1,
-                error_message=f"Error in TargonProvider._embedding(): {type(e).__name__}: {str(e)}"
+                error_message=f"Error in ChutesProvider._embedding(): {type(e).__name__}: {str(e)}"
             )

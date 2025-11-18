@@ -67,7 +67,7 @@ async def update_embedding_by_id(
             status_code = $2,
             response = $3,
             num_input_tokens = $4,
-            cost_usd = $6,
+            cost_usd = $5,
 
             response_sent_at = NOW()
         WHERE embedding_id = $1

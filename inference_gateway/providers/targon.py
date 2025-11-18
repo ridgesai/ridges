@@ -7,7 +7,7 @@ from typing import List
 from pydantic import BaseModel
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice
 
 
 
@@ -149,8 +149,8 @@ class TargonProvider(Provider):
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
-                tools=_tools_to_openai_tools(tools),
-                tool_choice=_tool_mode_to_openai_tool_choice(tool_mode),
+                tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
+                tools=inference_tools_to_openai_tools(tools),
                 stream=False
             )
 
@@ -158,7 +158,7 @@ class TargonProvider(Provider):
 
             num_input_tokens = chat_completion.usage.prompt_tokens
             num_output_tokens = chat_completion.usage.completion_tokens
-            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens) if model_info else None
+            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
 
             return InferenceResult(
                 status_code=200,
