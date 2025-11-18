@@ -87,7 +87,7 @@ def inference_tool_parameters_to_openai_parameters(parameters: List[InferenceToo
                 "description": parameter.description
             } for parameter in parameters
         },
-        required={parameter.name for parameter in parameters}
+        required=[parameter.name for parameter in parameters]
     )
 
 class InferenceTool(BaseModel):
