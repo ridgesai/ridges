@@ -59,7 +59,7 @@ Added typing to `grep()`, as it is unclear what the parameter types should be an
 
 ## hangman
 
-Added typing to `Hangman.__init__()`, `guess()`, `get_masked_word()`, and `get_status()`, as it is unclear what the parameter types should be and what the methods should return. Clarified that repeated guesses count as wasted attempts, as this behavior is tested but not documented. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `Hangman.__init__()`, `guess()`, `get_masked_word()`, and `get_status()`, as it is unclear what the parameter types should be and what the methods should return. Clarified that repeated guesses count as wasted attempts, as this behavior is tested but not documented. Fixed ambiguity in the number of allowed failures: changed `remaining_guesses` from starting at 9 to starting at 10, and changed the lose condition from `remaining_guesses < 0` to `remaining_guesses <= 0`, so that the variable name accurately reflects the game state (you lose when you have 0 remaining guesses, not when it goes negative). This makes the logic more intuitive while maintaining the original behavior of allowing 10 total incorrect guesses before losing. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## list-ops
 
