@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
 
 
 
@@ -172,8 +172,10 @@ class ChutesProvider(Provider):
 
             return InferenceResult(
                 status_code=200,
+
                 content=message.content,
-                tool_calls=message.tool_calls,
+                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else None,
+
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
                 cost_usd=cost_usd
@@ -208,14 +210,16 @@ class ChutesProvider(Provider):
             )
             end_time = time()
 
-            output = create_embedding_response.data[0].embedding
+            embedding = create_embedding_response.data[0].embedding
 
             num_input_tokens = create_embedding_response.usage.prompt_tokens
             cost_usd = model_info.get_cost_usd(num_input_tokens, end_time - start_time)
 
             return EmbeddingResult(
                 status_code=200,
-                output=output,
+
+                embedding=embedding,
+                
                 num_input_tokens=num_input_tokens,
                 cost_usd=cost_usd
             )

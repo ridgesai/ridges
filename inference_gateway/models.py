@@ -1,3 +1,5 @@
+import json
+
 from enum import Enum
 from uuid import UUID
 from pydantic import BaseModel
@@ -6,6 +8,7 @@ from openai.types.chat import ChatCompletionToolChoiceOptionParam
 from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.shared_params.function_parameters import FunctionParameters
 from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCallUnion
 
 
 
@@ -47,6 +50,24 @@ class InferenceToolCallArgument(BaseModel):
 class InferenceToolCall(BaseModel):
     name: str
     arguments: List[InferenceToolCallArgument]
+
+def openai_tool_calls_to_inference_tool_calls(openai_tool_calls: List[ChatCompletionMessageToolCallUnion]) -> List[InferenceToolCall]:
+    inference_tool_calls = []
+    
+    for openai_tool_call in openai_tool_calls:
+        try:
+            arguments_dict = json.loads(openai_tool_call.function.arguments)
+        except json.JSONDecodeError:
+            # TODO ADAM
+            arguments_dict = []
+        
+        inference_tool_calls.append(InferenceToolCall(
+            name=openai_tool_call.function.name,
+            arguments=[InferenceToolCallArgument(name=name, value=value) for name, value in arguments_dict.items()]
+        ))
+    
+    return inference_tool_calls
+
 class InferenceResult(BaseModel):
     status_code: int
 
