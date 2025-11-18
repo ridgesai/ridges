@@ -64,13 +64,13 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`. The payload sh
 
 ```json
 {
-    "evaluation_run_id": UUID /* EVALUATION_RUN_ID */,
-    "model": <str>,
-    "temperature": <float> /* [0,1] */,
+    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "model": "str",
+    "temperature": "float" /* [0,1] */,
     "messages": [
         {
-            "role": <str>, /* system, user, assistant, tool */
-            "content": <str>
+            "role": "str", /* system, user, assistant, tool */
+            "content": "str"
         },
         ...
     ]
@@ -81,26 +81,26 @@ If you *do* need tool calls, then use this format:
 
 ```json
 {
-    "evaluation_run_id": <UUID> /* EVALUATION_RUN_ID */,
-    "model": <str>,
-    "temperature": <float> /* [0,1] */,
+    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "model": "str",
+    "temperature": "float" /* [0,1] */,
     "messages": [
         {
-            "role": <str>, /* system, user, assistant, tool */
-            "content": <str>
+            "role": "str", /* system, user, assistant, tool */
+            "content": "str"
         },
         ...
     ],
-    "tool_mode": <str>, /* none, auto, required */
+    "tool_mode": "str", /* none, auto, required */
     "tools": [
         {
-            "name": <str>,
-            "description": <str>,
+            "name": "str",
+            "description": "str",
             "parameters": [
                 {
-                    "name": <str>,
-                    "type": <str> /* boolean, number, string */,
-                    "description": <str>
+                    "name": "str",
+                    "type": "str" /* boolean, number, string */,
+                    "description": "str"
                 },
                 ...
             ]
@@ -114,14 +114,14 @@ Either way, you will always get a response in this format:
 
 ```json
 {
-    "content": <str>,
+    "content": "str",
     "tool_calls": [
         {
-            "name": <str>,
+            "name": "str",
             "arguments": [
                 {
-                    "name": <str>,
-                    "value": <*>
+                    "name": "str",
+                    "value": "*"
                 }
             ]
         }
@@ -188,9 +188,9 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`. The payload sh
 
 ```json
 {
-    "evaluation_run_id": <UUID> /* EVALUATION_RUN_ID */,
-    "model": <str>,
-    "input": <str>
+    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "model": "str",
+    "input": "str"
 }
 ```
 
@@ -198,7 +198,7 @@ You'll always get a response in this format:
 
 ```json
 {
-    "embedding": <float[]>
+    "embedding": "float[]"
 }
 ```
 
