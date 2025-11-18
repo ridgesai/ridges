@@ -122,7 +122,7 @@ class InferenceRequest(BaseModel):
     temperature: float
     messages: List[InferenceMessage]
     tools: Optional[List[InferenceTool]] = None
-    tool_mode: Optional[InferenceToolMode] = InferenceToolMode.auto
+    tool_mode: Optional[InferenceToolMode] = InferenceToolMode.AUTO
 
 class InferenceResponse(BaseModel):
     output: str

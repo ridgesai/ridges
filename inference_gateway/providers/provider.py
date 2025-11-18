@@ -37,7 +37,7 @@ class Provider(ABC):
         temperature: float,
         messages: List[InferenceMessage],
         tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.auto
+        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
     ) -> InferenceResult:
         pass
 

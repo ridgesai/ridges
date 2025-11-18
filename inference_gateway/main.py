@@ -13,9 +13,9 @@ from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.chutes import ChutesProvider
 from inference_gateway.providers.targon import TargonProvider
 from queries.evaluation_run import get_evaluation_run_status_by_id
-from inference_gateway.models import InferenceRequest, EmbeddingRequest
 from queries.embedding import create_new_embedding, update_embedding_by_id
 from queries.inference import create_new_inference, update_inference_by_id
+from inference_gateway.models import EmbeddingRequest, InferenceRequest, InferenceToolMode
 from utils.database import initialize_database, get_debug_query_info, deinitialize_database
 
 
@@ -109,6 +109,16 @@ cost_hash_map = CostHashMap()
 @app.post("/api/inference")
 @handle_http_exceptions
 async def inference(request: InferenceRequest) -> str:
+    # Reject requests that specify a tool mode of InferenceToolMode.REQUIRED,
+    # yet do not specify any tools
+    if request.tool_mode == InferenceToolMode.REQUIRED and not request.tools:
+        raise HTTPException(
+            status_code=422,
+            detail="If you specify a tool mode of REQUIRED, you must specify at least one tool."
+        )
+
+
+
     if config.USE_DATABASE:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
