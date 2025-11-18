@@ -59,7 +59,7 @@ def openai_tool_calls_to_inference_tool_calls(openai_tool_calls: List[ChatComple
             arguments_dict = json.loads(openai_tool_call.function.arguments)
         except json.JSONDecodeError:
             # TODO ADAM
-            arguments_dict = []
+            arguments_dict = {}
         
         inference_tool_calls.append(InferenceToolCall(
             name=openai_tool_call.function.name,
