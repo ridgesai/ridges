@@ -241,7 +241,7 @@ async def get_upload_price() -> UploadPriceResponse:
 
     # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
     # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
-    amount_rao = int(eval_cost_tao * 1e9 * 1.4)
+    amount_rao = int(eval_cost_tao  * 1.4)
 
     return UploadPriceResponse(
         amount_rao=amount_rao,
