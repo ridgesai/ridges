@@ -15,8 +15,8 @@ from inference_gateway.providers.targon import TargonProvider
 from queries.evaluation_run import get_evaluation_run_status_by_id
 from queries.embedding import create_new_embedding, update_embedding_by_id
 from queries.inference import create_new_inference, update_inference_by_id
-from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode
 from utils.database import initialize_database, get_debug_query_info, deinitialize_database
+from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
 
 
 
@@ -272,6 +272,18 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     return EmbeddingResponse(
         embedding=response.embedding
     )
+
+
+
+@app.get("/api/inference-models")
+@handle_http_exceptions
+async def inference_models() -> List[InferenceModelInfo]:
+    return [model for wp in providers for model in wp.provider.inference_models]
+
+@app.get("/api/embedding-models")
+@handle_http_exceptions
+async def embedding_models() -> List[EmbeddingModelInfo]:
+    return [model for wp in providers for model in wp.provider.embedding_models]
 
 
 
