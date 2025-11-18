@@ -1,15 +1,17 @@
 import asyncio
 import os
+import pprint
 import uuid
 from datetime import datetime
 from typing import Optional
 
 from bittensor import Subtensor
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 from numpy import meshgrid
 from pydantic import BaseModel, Field
 
 from api.src.utils.request_cache import hourly_cache
+from queries.payments import retrieve_payment_by_hash
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
@@ -67,9 +69,7 @@ async def post_agent(
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
     payment_block_hash: str = Form(..., "Block hash in which payment was made"),
-    payment_block_number: int = Form(..., "Block number in which payment was made"),
     payment_extrinsic_index: str = Form(..., "Index in the block for payment extrinsic"),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -108,11 +108,24 @@ async def post_agent(
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
         # Verify payment
+
+        # Check if payment has already been used for an agent
+        existing_payment = await retrieve_payment_by_hash(
+            payment_block_hash=payment_block_hash,
+            payment_extrinsic_index=payment_extrinsic_index
+        )
+
+        if existing_payment is not None:
+            return HTTPException(
+                status_code=402,
+                detail="Payment already used"
+            )
+
+        # Retrieve payment details from the chain
         subtensor = Subtensor(network="finney")
 
-        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=payment_block)
-
         payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=payment_block)
 
         if payment_block is None:
             return HTTPException(
@@ -123,12 +136,15 @@ async def post_agent(
         payment_extrinsic = payment_block['extrinsics'][payment_extrinsic_index]
 
         # Verify amount, where it was sent
-        payment_cost = get_upload_price()
+        payment_cost = await get_upload_price()
 
-        if payment_extrinsic['amount'] != payment_cost.amount_rao:
-            return ""
+        # if payment_extrinsic['amount'] != payment_cost.amount_rao:
+        #     return ""
         
         # Make sure coldkey is the same as hotkeys owner coldkey
+        pprint(payment_block)
+        print("EXTRINSIC -____________-")
+        pprint(payment_extrinsic)
 
 
         check_if_python_file(agent_file.filename)
