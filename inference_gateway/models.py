@@ -101,8 +101,11 @@ class InferenceMessage(BaseModel):
 
 class InferenceToolParameterType(Enum):
     BOOLEAN = "boolean"
+    INTEGER = "integer"
     NUMBER = "number"
     STRING = "string"
+    ARRAY = "array"
+    OBJECT = "object"
     
 class InferenceToolParameter(BaseModel):
     name: str

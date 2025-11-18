@@ -99,7 +99,7 @@ If you *do* need tool calls, then use this format:
             "parameters": [
                 {
                     "name": "str",
-                    "type": "str [boolean, number, string]",
+                    "type": "str [boolean, integer, number, string, array, object]",
                     "description": "str"
                 },
                 ...
