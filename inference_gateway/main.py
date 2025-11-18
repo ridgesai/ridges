@@ -194,7 +194,10 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
 
         cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
-    return response.response
+    return InferenceResponse(
+        content=response.content,
+        tool_calls=response.tool_calls
+    )
 
 
 
@@ -266,7 +269,9 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
 
         cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
-    return response.response
+    return EmbeddingResponse(
+        embedding=response.embedding
+    )
 
 
 
