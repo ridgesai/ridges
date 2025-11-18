@@ -192,7 +192,8 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             cost_usd=response.cost_usd
         )
 
-        cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+        if response.cost_usd is not None:
+            cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
     return InferenceResponse(
         content=response.content,
@@ -267,7 +268,8 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
             cost_usd=response.cost_usd
         )
 
-        cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+        if response.cost_usd is not None:
+            cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
     return EmbeddingResponse(
         embedding=response.embedding
