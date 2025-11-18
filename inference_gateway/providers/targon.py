@@ -109,7 +109,7 @@ class TargonProvider(Provider):
                 logger.fatal(f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support embedding endpoints")
 
             max_input_tokens = targon_model["context_length"]
-            cost_usd_per_million_input_tokens = float(targon_model["pricing"]["prompt"])
+            cost_usd_per_million_input_tokens = float(targon_model["pricing"]["prompt"]) * 1_000_000
 
             self.embedding_models.append(EmbeddingModelInfo(
                 name=whitelisted_targon_model.name,
