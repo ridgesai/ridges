@@ -2,11 +2,12 @@ import httpx
 import utils.logger as logger
 import inference_gateway.config as config
 
+from time import time
 from typing import List
 from pydantic import BaseModel
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import ModelInfo, InferenceResult, InferenceMessage
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
 
 
 
@@ -32,7 +33,7 @@ WHITELISTED_TARGON_INFERENCE_MODELS = [
 ]
 
 WHITELISTED_TARGON_EMBEDDING_MODELS = [
-    # TODO
+    WhitelistedTargonModel(name="Qwen3-Embedding-8B")
 ]
 
 
@@ -63,12 +64,22 @@ class TargonProvider(Provider):
             if not targon_model:
                 logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} is not supported by Targon")
 
+            if not "text" in targon_model["input_modalities"]:
+                logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support text input")
+            if not "text" in targon_model["output_modalities"]:
+                logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support text output")
+
+            if not "CHAT" in targon_model["supported_endpoints"]:
+                logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support chat endpoints")
+            if not "COMPLETION" in targon_model["supported_endpoints"]:
+                logger.fatal(f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support completion endpoints")
+
             targon_model_pricing = targon_model["pricing"]
             max_input_tokens = targon_model["context_length"]
             cost_usd_per_million_input_tokens = float(targon_model_pricing["prompt"]) * 1_000_000
             cost_usd_per_million_output_tokens = float(targon_model_pricing["completion"]) * 1_000_000
 
-            self.inference_models.append(ModelInfo(
+            self.inference_models.append(InferenceModelInfo(
                 name=whitelisted_targon_model.name,
                 external_name=whitelisted_targon_model.targon_name,
                 max_input_tokens=max_input_tokens,
@@ -81,7 +92,35 @@ class TargonProvider(Provider):
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
 
-        # TODO ADAM: embedding
+
+
+        # Add whitelisted embedding models
+        for whitelisted_targon_model in WHITELISTED_TARGON_EMBEDDING_MODELS:
+            targon_model = next((targon_model for targon_model in targon_models if targon_model["id"] == whitelisted_targon_model.targon_name), None)
+            if not targon_model:
+                logger.fatal(f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} is not supported by Targon")
+
+            if not "text" in targon_model["input_modalities"]:
+                logger.fatal(f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support text input")
+            if not "embedding" in targon_model["output_modalities"]:
+                logger.fatal(f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support embedding output")
+
+            if not "EMBEDDING" in targon_model["supported_endpoints"]:
+                logger.fatal(f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support embedding endpoints")
+
+            max_input_tokens = targon_model["context_length"]
+            cost_usd_per_million_input_tokens = float(targon_model["pricing"]["prompt"])
+
+            self.embedding_models.append(EmbeddingModelInfo(
+                name=whitelisted_targon_model.name,
+                external_name=whitelisted_targon_model.targon_name,
+                max_input_tokens=max_input_tokens,
+                cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens
+            ))
+
+            logger.info(f"Found whitelisted Targon embedding model {whitelisted_targon_model.name}:")
+            logger.info(f"  Max input tokens: {max_input_tokens}")
+            logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
 
 
 
@@ -96,16 +135,26 @@ class TargonProvider(Provider):
         
 
 
-    async def _inference(self, model_info: ModelInfo, temperature: float, messages: List[InferenceMessage]) -> InferenceResult:
+    async def _inference(
+        self,
+        *,
+        model_info: InferenceModelInfo,
+        temperature: float,
+        messages: List[InferenceMessage],
+        tools: List[InferenceTool] = None,
+        tool_mode: InferenceToolMode = InferenceToolMode.auto
+    ) -> InferenceResult:
         try:
             chat_completion = await self.targon_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
+                tools=_tools_to_openai_tools(tools),
+                tool_choice=_tool_mode_to_openai_tool_choice(tool_mode),
                 stream=False
             )
 
-            response = chat_completion.choices[0].message.content
+            output = chat_completion.choices[0].message.content
 
             num_input_tokens = chat_completion.usage.prompt_tokens
             num_output_tokens = chat_completion.usage.completion_tokens
@@ -113,7 +162,7 @@ class TargonProvider(Provider):
 
             return InferenceResult(
                 status_code=200,
-                response=response,
+                output=output,
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
                 cost_usd=cost_usd
@@ -123,17 +172,47 @@ class TargonProvider(Provider):
             # Targon returned 4xx or 5xx
             return InferenceResult(
                 status_code=e.status_code,
-                response=e.response.text
+                error_message=e.response.text
             )
 
         except Exception as e:
             return InferenceResult(
                 status_code=-1,
-                response=f"Error in TargonProvider._inference(): {type(e).__name__}: {str(e)}"
+                error_message=f"Error in TargonProvider._inference(): {type(e).__name__}: {str(e)}"
             )
 
 
 
-    async def _embedding(self, model_info: ModelInfo, input: str) -> List[float]:
-        # TODO ADAM
-        pass
+    async def _embedding(self, model_info: EmbeddingModelInfo, input: str) -> EmbeddingResult:
+        try:
+            start_time = time()
+            create_embedding_response = await self.targon_client.embeddings.create(
+                model=model_info.external_name,
+                input=input
+            )
+            end_time = time()
+
+            output = create_embedding_response.data[0].embedding
+
+            num_input_tokens = create_embedding_response.usage.prompt_tokens
+            cost_usd = model_info.get_cost_usd(num_input_tokens, end_time - start_time)
+
+            return EmbeddingResult(
+                status_code=200,
+                output=output,
+                num_input_tokens=num_input_tokens,
+                cost_usd=cost_usd
+            )
+
+        except APIStatusError as e:
+            # Targon returned 4xx or 5xx
+            return EmbeddingResult(
+                status_code=e.status_code,
+                error_message=e.response.text
+            )
+
+        except Exception as e:
+            return EmbeddingResult(
+                status_code=-1,
+                error_message=f"Error in TargonProvider._embedding(): {type(e).__name__}: {str(e)}"
+            )

@@ -187,7 +187,6 @@ async def get_top_agents(
 
 @db_operation
 async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: AgentStatus) -> None:
-    """Update the status of an agent."""
     await conn.execute(
         """
         UPDATE agents

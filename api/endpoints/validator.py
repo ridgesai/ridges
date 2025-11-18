@@ -660,7 +660,7 @@ async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
             hotkey=validator.hotkey,
             time_connected=validator.time_connected,
             time_last_heartbeat=validator.time_last_heartbeat,
-            system_metrics=validator.system_metrics,
+            system_metrics=validator.system_metrics
         )
 
         if validator.current_evaluation_id is not None:

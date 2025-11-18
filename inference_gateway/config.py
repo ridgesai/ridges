@@ -67,6 +67,11 @@ if not USE_CHUTES:
 USE_CHUTES = USE_CHUTES.lower() == "true"
 
 if USE_CHUTES:
+    USE_CHUTES_ONLY_KIMI = os.getenv("USE_CHUTES_ONLY_KIMI")
+    if not USE_CHUTES_ONLY_KIMI:
+        logger.fatal("USE_CHUTES_ONLY_KIMI is not set in .env")
+    USE_CHUTES_ONLY_KIMI = USE_CHUTES_ONLY_KIMI.lower() == "true"
+
     CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL")
     if not CHUTES_BASE_URL:
         logger.fatal("CHUTES_BASE_URL is not set in .env")
@@ -122,6 +127,8 @@ if USE_DATABASE:
 logger.info("---------------------------------------")
 if USE_CHUTES:
     logger.info("Using Chutes")
+    if USE_CHUTES_ONLY_KIMI:
+        logger.warning("Using Chutes Only moonshotai/Kimi-K2-Instruct")
     logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
     logger.info(f"Chutes Weight: {CHUTES_WEIGHT}")
 else:
