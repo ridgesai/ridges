@@ -32,23 +32,30 @@ if USE_DATABASE:
     DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
     if not DATABASE_USERNAME:
         logger.fatal("DATABASE_USERNAME is not set in .env")
-        
+    
     DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
     if not DATABASE_PASSWORD:
         logger.fatal("DATABASE_PASSWORD is not set in .env")
-        
+    
     DATABASE_HOST = os.getenv("DATABASE_HOST")
     if not DATABASE_HOST:
         logger.fatal("DATABASE_HOST is not set in .env")
-        
+    
     DATABASE_PORT = os.getenv("DATABASE_PORT")
     if not DATABASE_PORT:
         logger.fatal("DATABASE_PORT is not set in .env")
     DATABASE_PORT = int(DATABASE_PORT)
-        
+    
     DATABASE_NAME = os.getenv("DATABASE_NAME")
     if not DATABASE_NAME:
         logger.fatal("DATABASE_NAME is not set in .env")
+
+
+
+    CHECK_EVALUATION_RUN_IDS = os.getenv("CHECK_EVALUATION_RUN_IDS")
+    if not CHECK_EVALUATION_RUN_IDS:
+        logger.fatal("CHECK_EVALUATION_RUN_IDS is not set in .env")
+    CHECK_EVALUATION_RUN_IDS = CHECK_EVALUATION_RUN_IDS.lower() == "true"
 
 
 
@@ -124,6 +131,9 @@ if USE_DATABASE:
     logger.info(f"Database Host: {DATABASE_HOST}")
     logger.info(f"Database Port: {DATABASE_PORT}")
     logger.info(f"Database Name: {DATABASE_NAME}")
+    if not CHECK_EVALUATION_RUN_IDS:
+        logger.info("---------------------------------------")
+        logger.warning("Not Checking Evaluation Run IDs")
 logger.info("---------------------------------------")
 if USE_CHUTES:
     logger.info("Using Chutes")
