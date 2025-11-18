@@ -64,12 +64,12 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`. The payload sh
 
 ```json
 {
-    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
     "model": "str",
-    "temperature": "float" /* [0,1] */,
+    "temperature": "float [0,1]",
     "messages": [
         {
-            "role": "str", /* system, user, assistant, tool */
+            "role": "str [system, user, assistant, tool]",
             "content": "str"
         },
         ...
@@ -81,17 +81,17 @@ If you *do* need tool calls, then use this format:
 
 ```json
 {
-    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
     "model": "str",
-    "temperature": "float" /* [0,1] */,
+    "temperature": "float [0,1]",
     "messages": [
         {
-            "role": "str", /* system, user, assistant, tool */
+            "role": "str [system, user, assistant, tool]",
             "content": "str"
         },
         ...
     ],
-    "tool_mode": "str", /* none, auto, required */
+    "tool_mode": "str [none, auto, required]",
     "tools": [
         {
             "name": "str",
@@ -99,7 +99,7 @@ If you *do* need tool calls, then use this format:
             "parameters": [
                 {
                     "name": "str",
-                    "type": "str" /* boolean, number, string */,
+                    "type": "str [boolean, number, string]",
                     "description": "str"
                 },
                 ...
@@ -188,7 +188,7 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`. The payload sh
 
 ```json
 {
-    "evaluation_run_id": "UUID" /* EVALUATION_RUN_ID */,
+    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
     "model": "str",
     "input": "str"
 }
