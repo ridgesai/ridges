@@ -110,11 +110,13 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 version_num = 0
 
             # Send payment for evaluation
-            payment_method_details = client.get(f"{ridges.api_url}/upload/eval-pricing")
+            payment_response = client.get(f"{ridges.api_url}/upload/eval-pricing")
 
-            if payment_method_details.status_code != 200:
+            if payment_response.status_code != 200:
                 console.print("Error fetching evaluation cost", style="bold red")
                 return
+            
+            payment_method_details = payment_response.json()
 
             subtensor = Subtensor(network="finney")
 
@@ -157,6 +159,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                     
     except Exception as e:
         console.print(f"Error: {e}", style="bold red")
+        raise e
 
 
 if __name__ == "__main__":

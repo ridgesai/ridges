@@ -68,8 +68,8 @@ async def post_agent(
     file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
-    payment_block_hash: str = Form(..., "Block hash in which payment was made"),
-    payment_extrinsic_index: str = Form(..., "Index in the block for payment extrinsic"),
+    payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
+    payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
