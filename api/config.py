@@ -22,6 +22,7 @@ PORT = int(PORT)
 
 
 
+# Load Bittensor configuration
 NETUID = os.getenv("NETUID")
 if not NETUID:
     logger.fatal("NETUID is not set in .env")
@@ -32,8 +33,19 @@ if not SUBTENSOR_ADDRESS:
     logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
 
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
-if not SUBTENSOR_ADDRESS:
-    logger.fatal("SUBTENSOR_ADDRESS is not set in .env")
+if not SUBTENSOR_NETWORK:
+    logger.fatal("SUBTENSOR_NETWORK is not set in .env")
+
+
+
+OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
+if not OWNER_HOTKEY:
+    logger.fatal("OWNER_HOTKEY is not set in .env")
+
+BURN = os.getenv("BURN")
+if not BURN:
+    logger.fatal("BURN is not set in .env")
+BURN = BURN.lower() == "true"
 
 
 
@@ -161,6 +173,13 @@ NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 logger.info("=== API Configuration ===")
 logger.info(f"Host: {HOST}")
 logger.info(f"Port: {PORT}")
+logger.info("-------------------------")
+logger.info(f"Network ID: {NETUID}")
+logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
+logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
+logger.info(f"Owner Hotkey: {OWNER_HOTKEY}")
+if BURN:
+    logger.warning("Burning")
 logger.info("-------------------------")
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
