@@ -98,9 +98,10 @@ If you *do* need tool calls, then use this format:
             "description": "str",
             "parameters": [
                 {
-                    "name": "str",
                     "type": "str [boolean, integer, number, string, array, object]",
-                    "description": "str"
+                    "name": "str",
+                    "description": "str",
+                    "required": "bool"
                 },
                 ...
             ]
