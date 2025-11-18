@@ -99,8 +99,8 @@ class Provider(ABC):
             model_info=self.get_inference_model_info_by_name(model_name),
             temperature=temperature,
             messages=messages,
-            tools=tools,
-            tool_mode=tool_mode
+            tool_mode=tool_mode,
+            tools=tools
         )
 
         # Log the response

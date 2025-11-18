@@ -52,10 +52,10 @@ if USE_DATABASE:
 
 
 
-    CHECK_EVALUATION_RUN_IDS = os.getenv("CHECK_EVALUATION_RUN_IDS")
-    if not CHECK_EVALUATION_RUN_IDS:
-        logger.fatal("CHECK_EVALUATION_RUN_IDS is not set in .env")
-    CHECK_EVALUATION_RUN_IDS = CHECK_EVALUATION_RUN_IDS.lower() == "true"
+    CHECK_EVALUATION_RUNS = os.getenv("CHECK_EVALUATION_RUNS")
+    if not CHECK_EVALUATION_RUNS:
+        logger.fatal("CHECK_EVALUATION_RUNS is not set in .env")
+    CHECK_EVALUATION_RUNS = CHECK_EVALUATION_RUNS.lower() == "true"
 
 
 
@@ -131,9 +131,9 @@ if USE_DATABASE:
     logger.info(f"Database Host: {DATABASE_HOST}")
     logger.info(f"Database Port: {DATABASE_PORT}")
     logger.info(f"Database Name: {DATABASE_NAME}")
-    if not CHECK_EVALUATION_RUN_IDS:
+    if not CHECK_EVALUATION_RUNS:
         logger.info("---------------------------------------")
-        logger.warning("Not Checking Evaluation Run IDs")
+        logger.warning("Not Checking Evaluation Runs")
 logger.info("---------------------------------------")
 if USE_CHUTES:
     logger.info("Using Chutes")

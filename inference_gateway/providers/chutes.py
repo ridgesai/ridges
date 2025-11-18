@@ -159,7 +159,7 @@ class ChutesProvider(Provider):
                 temperature=temperature,
                 messages=messages,
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
-                tools=inference_tools_to_openai_tools(tools),
+                tools=inference_tools_to_openai_tools(tools) if tools else None,
                 stream=False
             )
 

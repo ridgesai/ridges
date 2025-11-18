@@ -125,7 +125,7 @@ async def inference(request: InferenceRequest) -> str:
 
 
 
-    if config.USE_DATABASE:
+    if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
         
@@ -202,7 +202,7 @@ async def inference(request: InferenceRequest) -> str:
 @app.post("/api/embedding")
 @handle_http_exceptions
 async def embedding(request: EmbeddingRequest) -> List[float]:
-    if config.USE_DATABASE:
+    if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
         

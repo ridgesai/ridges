@@ -142,7 +142,7 @@ class TargonProvider(Provider):
         temperature: float,
         messages: List[InferenceMessage],
         tool_mode: InferenceToolMode,
-        tools: Optional[List[InferenceTool]] = None
+        tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
             chat_completion = await self.targon_client.chat.completions.create(
@@ -150,7 +150,7 @@ class TargonProvider(Provider):
                 temperature=temperature,
                 messages=messages,
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
-                tools=inference_tools_to_openai_tools(tools),
+                tools=inference_tools_to_openai_tools(tools) if tools else None,
                 stream=False
             )
 
