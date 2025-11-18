@@ -153,9 +153,10 @@ class InferenceRequest(BaseModel):
     messages: List[InferenceMessage]
     tool_mode: Optional[InferenceToolMode] = InferenceToolMode.NONE
     tools: Optional[List[InferenceTool]] = None
+
 class InferenceResponse(BaseModel):
     content: str
-    tool_calls: Optional[List[InferenceToolCall]] = None
+    tool_calls: List[InferenceToolCall]
 
 
 

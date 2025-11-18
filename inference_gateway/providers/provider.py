@@ -118,7 +118,6 @@ class Provider(ABC):
             # 200 OK
             result_first_chars = result.content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG]
             logger.info(f"<-- Inference Response {self.name}:{model_name} ({len(result.content)} char(s), {len(result.tool_calls)} tool call(s)): '{result_first_chars}'...")
-            logger.info(f"  Tool calls: {result.tool_calls}")
         elif result.status_code != -1:
             # 4xx or 5xx
             logger.warning(f"<-- Inference External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}")
