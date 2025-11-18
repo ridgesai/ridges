@@ -174,7 +174,7 @@ class ChutesProvider(Provider):
                 status_code=200,
 
                 content=message.content if message.content else "",
-                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else None,
+                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else [],
 
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
