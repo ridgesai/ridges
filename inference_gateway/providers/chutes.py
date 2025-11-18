@@ -13,7 +13,7 @@ from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceRe
 
 if config.USE_CHUTES:
     CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_BASE_URL}/models" # https://llm.chutes.ai/v1/models
-    CHUTES_EMBEDDING_MODELS_URL = f"{config.CHUTES_BASE_URL[:-3]}/chutes/?template=embedding" # https://llm.chutes.ai/chutes/?template=embedding
+    CHUTES_EMBEDDING_MODELS_URL = "https://llm.chutes.ai/chutes/?template=embedding" # TODO ADAM
 
 
 
