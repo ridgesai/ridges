@@ -33,7 +33,7 @@ WHITELISTED_TARGON_INFERENCE_MODELS = [
 ]
 
 WHITELISTED_TARGON_EMBEDDING_MODELS = [
-    WhitelistedTargonModel(name="Qwen3-Embedding-8B")
+    WhitelistedTargonModel(name="Qwen/Qwen3-Embedding-8B")
 ]
 
 
@@ -142,7 +142,7 @@ class TargonProvider(Provider):
         temperature: float,
         messages: List[InferenceMessage],
         tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.auto
+        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
     ) -> InferenceResult:
         try:
             chat_completion = await self.targon_client.chat.completions.create(

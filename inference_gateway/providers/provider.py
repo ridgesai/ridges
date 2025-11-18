@@ -88,7 +88,7 @@ class Provider(ABC):
         temperature: float,
         messages: List[InferenceMessage],
         tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.auto
+        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
     ) -> InferenceResult:
         # Log the request
         request_first_chars = messages[-1].content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ''

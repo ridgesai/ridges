@@ -12,8 +12,8 @@ from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceRe
 
 
 if config.USE_CHUTES:
-    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_BASE_URL}/models"
-    CHUTES_EMBEDDING_MODELS_URL = f"{config.CHUTES_BASE_URL}/embedding"
+    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_BASE_URL}/models" # https://llm.chutes.ai/v1/models
+    CHUTES_EMBEDDING_MODELS_URL = f"{config.CHUTES_BASE_URL[:-3]}/chutes/?template=embedding" # https://llm.chutes.ai/chutes/?template=embedding
 
 
 
@@ -79,11 +79,6 @@ class ChutesProvider(Provider):
                 logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text input")
             if not "text" in chutes_model["output_modalities"]:
                 logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text output")
-
-            if not "CHAT" in chutes_model["supported_endpoints"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support chat endpoints")
-            if not "COMPLETION" in chutes_model["supported_endpoints"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support completion endpoints")
 
             chutes_model_pricing = chutes_model["pricing"]
             max_input_tokens = chutes_model["context_length"]
@@ -156,7 +151,7 @@ class ChutesProvider(Provider):
         temperature: float,
         messages: List[InferenceMessage],
         tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.auto
+        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
     ) -> InferenceResult:
         try:
             chat_completion = await self.chutes_client.chat.completions.create(
