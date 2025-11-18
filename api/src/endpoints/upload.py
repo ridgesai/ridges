@@ -231,7 +231,7 @@ class UploadPriceResponse(BaseModel):
 )
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
-    SEND_ADDRESS = "5DUMMYADDRESS"
+    SEND_ADDRESS = "5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4"
     TAO_PRICE = await get_tao_price() 
     
     eval_cost_usd = 60
