@@ -49,7 +49,8 @@ if MODE == "validator":
 
     # Load the hotkey
     try:
-        VALIDATOR_HOTKEY = Wallet(name=VALIDATOR_WALLET_NAME, hotkey=VALIDATOR_HOTKEY_NAME).hotkey
+        VALIDATOR_WALLET = Wallet(name=VALIDATOR_WALLET_NAME, hotkey=VALIDATOR_HOTKEY_NAME)
+        VALIDATOR_HOTKEY = VALIDATOR_WALLET.hotkey
     except Exception as e:
         logger.fatal(f"Error loading hotkey: {e}")
 
