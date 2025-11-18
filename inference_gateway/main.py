@@ -65,8 +65,10 @@ async def lifespan(app: FastAPI):
         providers.append(WeightedProvider(await TargonProvider().init(), weight=config.TARGON_WEIGHT))
 
     for wp in providers:
-        await wp.provider.test_all_inference_models()
-        await wp.provider.test_all_embedding_models()
+        if config.TEST_INFERENCE_MODELS:
+            await wp.provider.test_all_inference_models()
+        if config.TEST_EMBEDDING_MODELS:
+            await wp.provider.test_all_embedding_models()
 
 
 
@@ -184,7 +186,7 @@ async def inference(request: InferenceRequest) -> str:
             inference_id=inference_id,
 
             status_code=response.status_code,
-            response=response.output if response.status_code == 200 else response.error_message,
+            response=response.content if response.status_code == 200 else response.error_message,
             num_input_tokens=response.num_input_tokens,
             num_output_tokens=response.num_output_tokens,
             cost_usd=response.cost_usd
@@ -257,7 +259,7 @@ async def embedding(request: EmbeddingRequest) -> List[float]:
             embedding_id=embedding_id,
 
             status_code=response.status_code,
-            response=response.output if response.status_code == 200 else response.error_message,
+            response=response.embedding if response.status_code == 200 else response.error_message,
             num_input_tokens=response.num_input_tokens,
             cost_usd=response.cost_usd
         )

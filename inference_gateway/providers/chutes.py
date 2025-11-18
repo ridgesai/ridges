@@ -41,7 +41,8 @@ if config.USE_CHUTES:
         ]
 
 WHITELISTED_CHUTES_EMBEDDING_MODELS = [
-    WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")
+    # TODO ADAM
+    # WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")
 ]
 
 
@@ -163,7 +164,7 @@ class ChutesProvider(Provider):
                 stream=False
             )
 
-            output = chat_completion.choices[0].message.content
+            message = chat_completion.choices[0].message
 
             num_input_tokens = chat_completion.usage.prompt_tokens
             num_output_tokens = chat_completion.usage.completion_tokens
@@ -171,7 +172,8 @@ class ChutesProvider(Provider):
 
             return InferenceResult(
                 status_code=200,
-                output=output,
+                content=message.content,
+                tool_calls=message.tool_calls,
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
                 cost_usd=cost_usd

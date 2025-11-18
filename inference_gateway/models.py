@@ -1,7 +1,7 @@
 from enum import Enum
 from uuid import UUID
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, List, Optional
 from openai.types.chat import ChatCompletionToolChoiceOptionParam
 from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.shared_params.function_parameters import FunctionParameters
@@ -41,11 +41,20 @@ class EmbeddingModelInfo(BaseModel):
 
 
 # Results
+class InferenceToolCallArgument(BaseModel):
+    name: str
+    value: Any
+class InferenceToolCall(BaseModel):
+    name: str
+    arguments: List[InferenceToolCallArgument]
 class InferenceResult(BaseModel):
     status_code: int
 
-    output: Optional[str] = None # if status_code == 200
-    error_message: Optional[str] = None # if status_code != 200
+    # if status_code == 200
+    content: Optional[str] = None
+    tool_calls: Optional[List[InferenceToolCall]] = None
+    # if status_code != 200
+    error_message: Optional[str] = None
     
     num_input_tokens: Optional[int] = None
     num_output_tokens: Optional[int] = None
@@ -54,7 +63,7 @@ class InferenceResult(BaseModel):
 class EmbeddingResult(BaseModel):
     status_code: int
     
-    output: Optional[List[float]] = None # if status_code == 200
+    embedding: Optional[List[float]] = None # if status_code == 200
     error_message: Optional[str] = None # if status_code != 200
     
     num_input_tokens: Optional[int] = None
@@ -123,9 +132,9 @@ class InferenceRequest(BaseModel):
     messages: List[InferenceMessage]
     tool_mode: Optional[InferenceToolMode] = InferenceToolMode.NONE
     tools: Optional[List[InferenceTool]] = None
-
 class InferenceResponse(BaseModel):
-    output: str
+    content: str
+    tool_calls: Optional[List[InferenceToolCall]] = None
 
 
 
@@ -135,4 +144,4 @@ class EmbeddingRequest(BaseModel):
     input: str
 
 class EmbeddingResponse(BaseModel):
-    output: List[float]
+    embedding: List[float]

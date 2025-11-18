@@ -121,6 +121,18 @@ if not USE_CHUTES and not USE_TARGON:
 
 
 
+TEST_INFERENCE_MODELS = os.getenv("TEST_INFERENCE_MODELS")
+if not TEST_INFERENCE_MODELS:
+    logger.fatal("TEST_INFERENCE_MODELS is not set in .env")
+TEST_INFERENCE_MODELS = TEST_INFERENCE_MODELS.lower() == "true"
+
+TEST_EMBEDDING_MODELS = os.getenv("TEST_EMBEDDING_MODELS")
+if not TEST_EMBEDDING_MODELS:
+    logger.fatal("TEST_EMBEDDING_MODELS is not set in .env")
+TEST_EMBEDDING_MODELS = TEST_EMBEDDING_MODELS.lower() == "true"
+
+
+
 # Print out the configuration
 logger.info("=== Inference Gateway Configuration ===")
 logger.info(f"Host: {HOST}")

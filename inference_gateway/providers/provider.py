@@ -4,7 +4,7 @@ import utils.logger as logger
 from http import HTTPStatus
 from typing import List, Optional
 from abc import ABC, abstractmethod
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, InferenceToolParameter, InferenceToolParameterType
 
 
 
@@ -65,7 +65,17 @@ class Provider(ABC):
             response = await self.inference(
                 model_name=model_name,
                 temperature=0.5,
-                messages=[InferenceMessage(role="user", content="What is 2+2?")]
+                messages=[InferenceMessage(role="user", content="Please use the print(str) tool to say something cool.")],
+                tool_mode=InferenceToolMode.REQUIRED,
+                tools=[InferenceTool(
+                    name="print",
+                    description="Print a string",
+                    parameters=[InferenceToolParameter(
+                        name="str",
+                        description="The string to print",
+                        type=InferenceToolParameterType.STRING
+                    )]
+                )]
             )
 
             return response.status_code == 200
@@ -128,15 +138,30 @@ class Provider(ABC):
         return next((model for model in self.embedding_models if model.name == model_name), None)
 
     async def test_all_embedding_models(self):
-        # TODO ADAM
-        pass
+        async def test_embedding_model(model_name):
+            response = await self.embedding(
+                model_name=model_name,
+                input="Hello, world!"
+            )
+
+            return response.status_code == 200
+        
+        logger.info(f"Testing all {self.name} embedding models...")
+
+        tasks = [test_embedding_model(model.name) for model in self.embedding_models]
+        results = await asyncio.gather(*tasks)
+
+        if all(results):
+            logger.info(f"Tested all {self.name} embedding models")
+        else:
+            logger.fatal(f"Failed to test {self.name} embedding models: {', '.join([model.name for model, result in zip(self.embedding_models, results) if not result])}")
 
     async def embedding(
         self,
         *,
         model_name: str,
         input: str
-    ) -> List[float]:
+    ) -> EmbeddingResult:
         # Log the request
         logger.info(f"--> Embedding Request {self.name}:{model_name} ({len(input)} char(s)): '{input[:NUM_INFERENCE_CHARS_TO_LOG]}'...")
 
@@ -155,3 +180,5 @@ class Provider(ABC):
         else:
             # -1
             logger.error(f"<-- Embedding Internal Error {self.name}:{model_name}: {result.error_message}")
+
+        return result
