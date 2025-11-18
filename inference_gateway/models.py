@@ -106,12 +106,12 @@ def inference_tools_to_openai_tools(tools: List[InferenceTool]) -> List[ChatComp
     ) for tool in tools]
 
 class InferenceToolMode(Enum):
+    NONE = "none"
     AUTO = "auto"
     REQUIRED = "required"
-    NONE = "none"
 
 def inference_tool_mode_to_openai_tool_choice(tool_mode: InferenceToolMode) -> ChatCompletionToolChoiceOptionParam:
-    return ChatCompletionToolChoiceOptionParam(tool_mode.value)
+    return tool_mode.value
 
 
 
@@ -121,8 +121,8 @@ class InferenceRequest(BaseModel):
     model: str
     temperature: float
     messages: List[InferenceMessage]
+    tool_mode: Optional[InferenceToolMode] = InferenceToolMode.NONE
     tools: Optional[List[InferenceTool]] = None
-    tool_mode: Optional[InferenceToolMode] = InferenceToolMode.AUTO
 
 class InferenceResponse(BaseModel):
     output: str

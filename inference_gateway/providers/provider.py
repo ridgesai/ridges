@@ -36,8 +36,8 @@ class Provider(ABC):
         model_info: InferenceModelInfo,
         temperature: float,
         messages: List[InferenceMessage],
-        tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
+        tool_mode: InferenceToolMode,
+        tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         pass
 
@@ -84,11 +84,12 @@ class Provider(ABC):
 
     async def inference(
         self,
+        *,
         model_name: str,
         temperature: float,
         messages: List[InferenceMessage],
-        tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
+        tool_mode: InferenceToolMode = InferenceToolMode.NONE,
+        tools: Optional[List[InferenceTool]] = None
     ) -> InferenceResult:
         # Log the request
         request_first_chars = messages[-1].content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ''
@@ -130,7 +131,12 @@ class Provider(ABC):
         # TODO ADAM
         pass
 
-    async def embedding(self, model_name: str, input: str) -> List[float]:
+    async def embedding(
+        self,
+        *,
+        model_name: str,
+        input: str
+    ) -> List[float]:
         # Log the request
         logger.info(f"--> Embedding Request {self.name}:{model_name} ({len(input)} char(s)): '{input[:NUM_INFERENCE_CHARS_TO_LOG]}'...")
 

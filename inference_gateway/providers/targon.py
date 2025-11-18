@@ -3,8 +3,8 @@ import utils.logger as logger
 import inference_gateway.config as config
 
 from time import time
-from typing import List
 from pydantic import BaseModel
+from typing import List, Optional
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
 from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice
@@ -141,8 +141,8 @@ class TargonProvider(Provider):
         model_info: InferenceModelInfo,
         temperature: float,
         messages: List[InferenceMessage],
-        tools: List[InferenceTool] = None,
-        tool_mode: InferenceToolMode = InferenceToolMode.AUTO
+        tool_mode: InferenceToolMode,
+        tools: Optional[List[InferenceTool]] = None
     ) -> InferenceResult:
         try:
             chat_completion = await self.targon_client.chat.completions.create(
@@ -183,7 +183,12 @@ class TargonProvider(Provider):
 
 
 
-    async def _embedding(self, model_info: EmbeddingModelInfo, input: str) -> EmbeddingResult:
+    async def _embedding(
+        self,
+        *,
+        model_info: EmbeddingModelInfo,
+        input: str
+    ) -> EmbeddingResult:
         try:
             start_time = time()
             create_embedding_response = await self.targon_client.embeddings.create(

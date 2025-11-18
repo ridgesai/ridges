@@ -109,8 +109,14 @@ cost_hash_map = CostHashMap()
 @app.post("/api/inference")
 @handle_http_exceptions
 async def inference(request: InferenceRequest) -> str:
-    # Reject requests that specify a tool mode of InferenceToolMode.REQUIRED,
-    # yet do not specify any tools
+    # If you specify a tool mode of NONE, you must not specify any tools
+    if request.tool_mode == InferenceToolMode.NONE and request.tools:
+        raise HTTPException(
+            status_code=422,
+            detail="If you specify a tool mode of NONE, you must not specify any tools."
+        )
+
+    # If you specify a tool mode of REQUIRED, you must specify at least one tool
     if request.tool_mode == InferenceToolMode.REQUIRED and not request.tools:
         raise HTTPException(
             status_code=422,
@@ -165,7 +171,13 @@ async def inference(request: InferenceRequest) -> str:
             messages=request.messages
         )
 
-    response = await provider.inference(request.model, request.temperature, request.messages)
+    response = await provider.inference(
+        model_name=request.model,
+        temperature=request.temperature,
+        messages=request.messages,
+        tool_mode=request.tool_mode,
+        tools=request.tools
+    )
 
     if config.USE_DATABASE:
         await update_inference_by_id(
@@ -235,7 +247,10 @@ async def embedding(request: EmbeddingRequest) -> List[float]:
             input=request.input
         )
 
-    response = await provider.embedding(request.model, request.input)
+    response = await provider.embedding(
+        model_name=request.model,
+        input=request.input
+    )
 
     if config.USE_DATABASE:
         await update_embedding_by_id(
