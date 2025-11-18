@@ -14,7 +14,6 @@ from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from api.src.endpoints.upload import router as upload_router
 from api.src.endpoints.retrieval import router as retrieval_router
 from api.src.endpoints.scoring import router as scoring_router
-from api.src.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
 # NEW fixed endpoints
@@ -23,7 +22,7 @@ from api.endpoints.debug import router as debug_router
 from api.endpoints.agent import router as agent_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluations import router as evaluations_router
-
+from api.endpoints.evaluation_sets import router as evaluation_sets_router
 
 
 
