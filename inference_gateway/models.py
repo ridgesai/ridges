@@ -110,15 +110,15 @@ class InferenceToolParameter(BaseModel):
     description: str
 
 def inference_tool_parameters_to_openai_parameters(parameters: List[InferenceToolParameter]) -> FunctionParameters:
-    return FunctionParameters(
-        properties={
+    return {
+        "properties": {
             parameter.name: {
                 "type": parameter.type.value,
                 "description": parameter.description
             } for parameter in parameters
         },
-        required=[parameter.name for parameter in parameters]
-    )
+        "required": [parameter.name for parameter in parameters]
+    }
 
 class InferenceTool(BaseModel):
     name: str

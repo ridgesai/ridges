@@ -173,7 +173,7 @@ class ChutesProvider(Provider):
             return InferenceResult(
                 status_code=200,
 
-                content=message.content,
+                content=message.content if message.content else "",
                 tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else None,
 
                 num_input_tokens=num_input_tokens,
@@ -219,7 +219,7 @@ class ChutesProvider(Provider):
                 status_code=200,
 
                 embedding=embedding,
-                
+
                 num_input_tokens=num_input_tokens,
                 cost_usd=cost_usd
             )

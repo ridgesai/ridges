@@ -15,7 +15,7 @@ from inference_gateway.providers.targon import TargonProvider
 from queries.evaluation_run import get_evaluation_run_status_by_id
 from queries.embedding import create_new_embedding, update_embedding_by_id
 from queries.inference import create_new_inference, update_inference_by_id
-from inference_gateway.models import EmbeddingRequest, InferenceRequest, InferenceToolMode
+from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode
 from utils.database import initialize_database, get_debug_query_info, deinitialize_database
 
 
@@ -110,7 +110,7 @@ cost_hash_map = CostHashMap()
 #            inference@providers/*.py -> Handles inference
 @app.post("/api/inference")
 @handle_http_exceptions
-async def inference(request: InferenceRequest) -> str:
+async def inference(request: InferenceRequest) -> InferenceResponse:
     # If you specify a tool mode of NONE, you must not specify any tools
     if request.tool_mode == InferenceToolMode.NONE and request.tools:
         raise HTTPException(
@@ -203,7 +203,7 @@ async def inference(request: InferenceRequest) -> str:
 #            embedding@providers/*.py -> Handles embedding
 @app.post("/api/embedding")
 @handle_http_exceptions
-async def embedding(request: EmbeddingRequest) -> List[float]:
+async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)

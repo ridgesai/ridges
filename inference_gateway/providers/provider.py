@@ -116,8 +116,9 @@ class Provider(ABC):
         # Log the response
         if result.status_code == 200:
             # 200 OK
-            result_first_chars = result.output.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG]
-            logger.info(f"<-- Inference Response {self.name}:{model_name} ({len(result.output)} char(s)): '{result_first_chars}'...")
+            result_first_chars = result.content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG]
+            logger.info(f"<-- Inference Response {self.name}:{model_name} ({len(result.content)} char(s), {len(result.tool_calls)} tool call(s)): '{result_first_chars}'...")
+            logger.info(f"  Tool calls: {result.tool_calls}")
         elif result.status_code != -1:
             # 4xx or 5xx
             logger.warning(f"<-- Inference External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}")
@@ -173,7 +174,7 @@ class Provider(ABC):
         # Log the response
         if result.status_code == 200:
             # 200 OK
-            logger.info(f"<-- Embedding Response {self.name}:{model_name}: {len(result.output)} dimension(s)")
+            logger.info(f"<-- Embedding Response {self.name}:{model_name}: {len(result.embedding)} dimension(s)")
         elif result.status_code != -1:
             # 4xx or 5xx
             logger.warning(f"<-- Embedding External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}")
