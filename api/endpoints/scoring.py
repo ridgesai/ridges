@@ -12,6 +12,7 @@ router = APIRouter()
 
 
 
+# /scoring/weights
 @router.get("/weights")
 async def weights() -> Dict[str, float]:
     if config.BURN:
@@ -32,6 +33,7 @@ async def weights() -> Dict[str, float]:
 
 
 
+# /scoring/thresholds
 class ScoringThresholdsResponse(BaseModel):
     screener_1_threshold: float
     screener_2_threshold: float
