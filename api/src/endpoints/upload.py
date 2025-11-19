@@ -21,7 +21,7 @@ from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size
 from models.agent import AgentStatus, Agent
-from utils.tao_to_usd import get_tao_price
+from utils.coingecko import get_tao_price
 from api import config 
 
 # TODO STEPHEN: we should have a global singleton
