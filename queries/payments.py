@@ -36,7 +36,7 @@ async def retrieve_payment_by_hash(
     payment_extrinsic_index: str,
 ) -> Optional[Payment]:
     result = await conn.fetchrow("""
-        select * from agents 
+        select * from evaluation_payments
         where payment_block_hash = $1
         and payment_extrinsic_index = $2
         order by created_at desc

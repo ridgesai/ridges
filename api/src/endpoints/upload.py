@@ -1,3 +1,5 @@
+from bittensor import Subtensor
+
 import asyncio
 import os
 import pprint
@@ -5,7 +7,6 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from bittensor import Subtensor
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
 from numpy import meshgrid
 from pydantic import BaseModel, Field
@@ -20,6 +21,10 @@ from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size, get_tao_price
 from models.agent import AgentStatus, Agent
+from api import config 
+
+# TODO STEPHEN: we should have a global singleton
+subtensor = Subtensor(network=config.SUBTENSOR_NETWORK)
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -122,18 +127,31 @@ async def post_agent(
             )
 
         # Retrieve payment details from the chain
-        subtensor = Subtensor(network="finney")
+        print("PAYMENT BLOCK HASH -____________-")
+        pprint.pprint(payment_block_hash)
+        print("PAYMENT BLOCK HASH -____________-")
+        print("PAYMENT EXTRINSIC INDEX -____________-")
+        pprint.pprint(payment_extrinsic_index)
+        print("PAYMENT EXTRINSIC INDEX -____________-")
 
         payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
-        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=payment_block)
+        print("PAYMENT BLOCK -____________-")
+        pprint.pprint(payment_block)
+        print("PAYMENT BLOCK -____________-")
 
         if payment_block is None:
             return HTTPException(
                 status_code=402,
                 detail="Payment could not be verified"
             )
+        block_number = payment_block['header']['number']
+        print("BLOCK NUMBER -____________-")
+        pprint.pprint(block_number)
+        print("BLOCK NUMBER -____________-")
+        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
+        payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
-        payment_extrinsic = payment_block['extrinsics'][payment_extrinsic_index]
+        pprint.pprint(payment_extrinsic)
 
         # Verify amount, where it was sent
         payment_cost = await get_upload_price()
@@ -142,9 +160,7 @@ async def post_agent(
         #     return ""
         
         # Make sure coldkey is the same as hotkeys owner coldkey
-        pprint(payment_block)
-        print("EXTRINSIC -____________-")
-        pprint(payment_extrinsic)
+
 
 
         check_if_python_file(agent_file.filename)
