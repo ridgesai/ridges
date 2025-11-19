@@ -4,8 +4,6 @@
 Ridges CLI - Elegant command-line interface for managing Ridges miners and validators
 """
 
-from utils.tao_to_usd import get_tao_price
-
 import hashlib
 from bittensor_wallet.wallet import Wallet
 import httpx
