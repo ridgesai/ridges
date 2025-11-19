@@ -4,6 +4,7 @@ from typing import List, Optional
 from utils.database import db_operation, DatabaseConnection
 from evaluator.datasets.problem_statistics import ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty, get_problem_statistics_by_problem_name
 
+from models.top_scores_over_time import TopScoreOverTime
 
 
 @db_operation
@@ -32,7 +33,7 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
     )
 
 @db_operation
-async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
+async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOverTime]:
     query = """
         WITH
         max_set AS (
@@ -83,8 +84,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
         ts.hour
     """
     rows = await conn.fetch(query)
-    # TODO ADAM: since when do we return dict[any,any] ._.
-    return [dict(row) for row in rows]
+    return [TopScoreOverTime(**row) for row in rows]
 
 
 
