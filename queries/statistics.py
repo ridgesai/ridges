@@ -104,8 +104,7 @@ class ProblemStatistics(BaseModel):
     num_errored_evaluation_runs: int
     pass_rate: float
     average_time: float
-    # TODO ADAM
-    # average_cost: float
+    average_cost: float
 
 @cached(ttl=300)
 @db_operation
@@ -120,12 +119,14 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             COUNT(*) FILTER (WHERE erh.status = 'finished' AND NOT erh.solved) AS num_finished_failed_evaluation_runs,
             COUNT(*) FILTER (WHERE erh.status = 'error') AS num_errored_evaluation_runs,
             COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved)::FLOAT / NULLIF(COUNT(*) FILTER (WHERE erh.status = 'finished'), 0) AS pass_rate,
-            AVG(EXTRACT(EPOCH FROM (erh.started_initializing_eval_at - erh.started_running_agent_at))) AS average_time
+            AVG(EXTRACT(EPOCH FROM (erh.started_initializing_eval_at - erh.started_running_agent_at))) AS average_time,
+            AVG(erwc.total_cost_usd) AS average_cost
         FROM evaluation_runs_hydrated erh
-        INNER JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+        JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
+        JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
         WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
         GROUP BY erh.problem_name
-        """
+    """
     )
 
     return [ProblemStatistics(**row) for row in rows]
