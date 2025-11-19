@@ -67,7 +67,7 @@ Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `
 
 ## phone-number
 
-Added typing to `PhoneNumber.__init__()` and `pretty()`. Added the missing `pretty()` method stub, as it is required by the tests but was not present in the `main.py` file.
+Added typing to `PhoneNumber.__init__()` and `pretty()`. Added the missing `pretty()` method stub, as it is required by the tests but was not present in the `main.py` file. Added type hints and comments for the `number` and `area_code` attributes to clarify the expected class interface, as these are tested but never documented in the instructions. Added a comment showing the expected format `(XXX)-XXX-XXXX` for the `pretty()` method.
 
 ## pig-latin
 
