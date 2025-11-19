@@ -112,6 +112,13 @@ async def post_agent(
         logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
+        if prod:
+            check_signature(public_key, file_info, signature)
+            await check_hotkey_registered(miner_hotkey)
+            await check_agent_banned(miner_hotkey=miner_hotkey) 
+            # file_content = await check_file_size(agent_file)
+        check_if_python_file(agent_file.filename)
+        
         # Verify payment
 
         # Check if payment has already been used for an agent
@@ -127,16 +134,21 @@ async def post_agent(
             )
 
         # Retrieve payment details from the chain
-        print("PAYMENT BLOCK HASH -____________-")
-        pprint.pprint(payment_block_hash)
-        print("PAYMENT BLOCK HASH -____________-")
-        print("PAYMENT EXTRINSIC INDEX -____________-")
-        pprint.pprint(payment_extrinsic_index)
-        print("PAYMENT EXTRINSIC INDEX -____________-")
-
         payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
         print("PAYMENT BLOCK -____________-")
         pprint.pprint(payment_block)
+        """ example payment block:
+        {'extrinsics': [<GenericExtrinsic(value={'extrinsic_hash': '0x6b6f2be8e0d0e7721fab46da881d894dafa221b4df73ebb2b69a8c0aa5aeb01b', 'extrinsic_length': 10, 'call': {'call_index': '0x0200', 'call_function': 'set', 'call_module': 'Timestamp', 'call_args': [{'name': 'now', 'type': 'Moment', 'value': 1763573265504}], 'call_hash': '0x5cad44676af19a09d4ae5354e08570778c06b75257a932db8183b90910d0c33e'}})>,
+                <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>],
+ 'header': {'digest': {'logs': [<scale_info::17(value={'PreRuntime': ('0x61757261', '0x46f877a401000000')})>,
+                                <scale_info::17(value={'Consensus': ('0x66726f6e', '0x012f7e87441378c60d18e9b676246e74ca17064ff510b10dfed2a48191648a1a9400')})>,
+                                <scale_info::17(value={'Seal': ('0x61757261', '0x44729c195bda22d4e9dce35ed7e43fd1652e7782cb38cf27cc8489fb0460af1f4c97621e5e29c19e730051df736441d3359799c7002eb81350e169bb9fcecb80')})>]},
+            'extrinsicsRoot': '0x980d155f4b5a6f08d287c54e0a32380839cdfc0a5977200e33aa5787b48ec669',
+            'hash': '0xb9958e4374c182785bfa4467ceb971e23882079f48524e27c08e8f5b95d8b8d8',
+            'number': 13579,
+            'parentHash': '0x1065e83a02ff961d45ac34a6990477de3cba102bbba2322950815e5d59f23135',
+            'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
+        """
         print("PAYMENT BLOCK -____________-")
 
         if payment_block is None:
@@ -145,33 +157,45 @@ async def post_agent(
                 detail="Payment could not be verified"
             )
         block_number = payment_block['header']['number']
-        print("BLOCK NUMBER -____________-")
-        pprint.pprint(block_number)
-        print("BLOCK NUMBER -____________-")
         coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
         print(f"PAYMENT EXTRINSIC -____________-")
         pprint.pprint(payment_extrinsic)
+        """
+        Example payment extrinsic:
+        <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>
+        """
         print(f"PAYMENT EXTRINSIC -____________-")
 
         # Verify amount, where it was sent
+        # TODO STEPHEN: possible race condition. What if the cache expires??
         payment_cost = await get_upload_price()
 
-        # if payment_extrinsic['amount'] != payment_cost.amount_rao:
-        #     return ""
+        payment_value = None
+        for arg in payment_extrinsic.value['call']['call_args']:
+            if arg['name'] == 'value':
+                payment_value = arg['value']
+                break
+        
+        if payment_value is None:
+            return HTTPException(
+                status_code=402,
+                detail="Payment value not found"
+            )
+
+        if payment_value != payment_cost.amount_rao:
+            return HTTPException(
+                status_code=402,
+                detail="Payment amount does not match"
+            )
         
         # Make sure coldkey is the same as hotkeys owner coldkey
-
-
-
-        check_if_python_file(agent_file.filename)
-
-        if prod:
-            check_signature(public_key, file_info, signature)
-            await check_hotkey_registered(miner_hotkey)
-            await check_agent_banned(miner_hotkey=miner_hotkey) 
-            file_content = await check_file_size(agent_file)
+        if coldkey != payment_extrinsic['address']:
+            return HTTPException(
+                status_code=402,
+                detail="Coldkey does not match"
+            )
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
@@ -249,6 +273,7 @@ class UploadPriceResponse(BaseModel):
 )
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
+    # TODO STEPHEN: should be from config as an environment variable
     SEND_ADDRESS = "5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4"
     TAO_PRICE = await get_tao_price() 
     
