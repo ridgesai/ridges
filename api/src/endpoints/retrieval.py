@@ -189,6 +189,13 @@ async def network_statistics():
     recalculating_cache[cache_key] = False
     return cache_data[cache_key]
 
+
+
+async def problem_statistics():
+    from queries.statistics import get_problem_statistics
+    return await get_problem_statistics()
+
+
 router = APIRouter()
 
 routes = [
@@ -201,6 +208,7 @@ routes = [
     ("/top-scores-over-time", top_scores_over_time),
     ("/network-statistics", network_statistics),
     ("/all-agents-by-hotkey", all_agents_by_hotkey),
+    ("/problem-statistics", problem_statistics)
 ]
 
 for path, endpoint in routes:
