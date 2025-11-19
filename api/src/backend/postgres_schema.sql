@@ -154,6 +154,17 @@ CREATE TABLE IF NOT EXISTS upload_attempts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS evaluation_payments (
+    payment_block_hash TEXT NOT NULL,
+    payment_extrinsic_index TEXT NOT NULL,
+    agent_id UUID NOT NULL REFERENCES agents(agent_id),
+    miner_hotkey TEXT NOT NULL,
+    miner_coldkey TEXT NOT NULL,
+    amount_rao INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (payment_block_hash, payment_extrinsic_index)
+);
+
 -- First view: evaluation_runs with solved status
 CREATE OR REPLACE VIEW evaluation_runs_hydrated AS
 SELECT

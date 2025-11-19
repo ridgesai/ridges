@@ -4,6 +4,8 @@
 Ridges CLI - Elegant command-line interface for managing Ridges miners and validators
 """
 
+from utils.tao_to_usd import get_tao_price
+
 import hashlib
 from bittensor_wallet.wallet import Wallet
 import httpx
@@ -15,6 +17,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
+from bittensor import Subtensor
+import time
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform-v2.ridges.ai"
@@ -108,9 +112,56 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = 0
 
+            # Send payment for evaluation
+            payment_time_start = time.time()
+            payment_response = client.get(f"{ridges.api_url}/upload/eval-pricing")
+
+            if payment_response.status_code != 200:
+                console.print("Error fetching evaluation cost", style="bold red")
+                return
+            
+            payment_method_details = payment_response.json()
+            
+            confirm_payment = Prompt.ask(
+                f"\n[bold yellow]Proceed with payment of {payment_method_details['amount_rao']} RAO ({payment_method_details['amount_rao'] / 1e9} TAO) to {payment_method_details['send_address']}?[/bold yellow]", 
+                choices=["y", "n"], 
+                default="n"
+            )
+            if confirm_payment.lower() != "y":
+                console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
+                return
+
+            subtensor = Subtensor(network=os.environ.get('SUBTENSOR_NETWORK', 'finney'))
+
+            # Transfer
+            payment_payload = subtensor.substrate.compose_call(
+                call_module="Balances",
+                call_function="transfer_keep_alive",
+                call_params={
+                    'dest': payment_method_details['send_address'], 
+                    'value': payment_method_details['amount_rao'],
+                }
+            )
+
+            payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
+            receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
+
             file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
             signature = wallet.hotkey.sign(file_info).hex()
-            payload = {'public_key': public_key, 'file_info': file_info, 'signature': signature, 'name': name}
+            payload = {
+                'public_key': public_key, 
+                'file_info': file_info, 
+                'signature': signature, 
+                'name': name,
+                'payment_block_hash': receipt.block_hash,
+                'payment_extrinsic_index': receipt.extrinsic_idx,
+                'payment_time': payment_time_start
+            }
+
+            console.print(f"\n[yellow]Payment successful. If something goes wrong with the upload, you can use these information to get a refund[/yellow]")
+            console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
+            console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_idx}\n")
+
             files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 
             with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), console=console, transient=True) as progress:
@@ -125,6 +176,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                     
     except Exception as e:
         console.print(f"Error: {e}", style="bold red")
+        raise e
 
 
 if __name__ == "__main__":
