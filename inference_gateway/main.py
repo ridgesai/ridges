@@ -291,10 +291,20 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
 
 
 
+class UsageResponse(BaseModel):
+    used_cost_usd: float
+    remaining_cost_usd: float
+    max_cost_usd: float
+
 @app.get("/api/usage")
 @handle_http_exceptions
 async def usage(evaluation_run_id: UUID) -> float:
-    return cost_hash_map.get_cost(evaluation_run_id)
+    used_cost_usd = cost_hash_map.get_cost(evaluation_run_id)
+    return UsageResponse(
+        used_cost_usd=used_cost_usd,
+        remaining_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD - used_cost_usd,
+        max_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD
+    )
 
 
 
