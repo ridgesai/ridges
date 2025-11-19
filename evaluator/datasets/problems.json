@@ -1,0 +1,2134 @@
+{
+    "astropy__astropy-12907": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-13033": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-13236": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-13398": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "astropy__astropy-13453": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-13579": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "astropy__astropy-13977": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14096": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14182": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14309": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "astropy__astropy-14365": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14369": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "astropy__astropy-14508": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14539": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14598": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-14995": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "astropy__astropy-7166": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "astropy__astropy-7336": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "astropy__astropy-7606": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-7671": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-8707": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "astropy__astropy-8872": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-10097": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-10554": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-10880": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-10914": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-10973": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-10999": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11066": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11087": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11095": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11099": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11119": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11133": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11138": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-11141": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11149": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11163": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11179": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11206": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11211": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11239": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11265": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11276": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11292": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11299": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11333": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11400": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-11433": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11451": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11477": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11490": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11532": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11551": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11555": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11603": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11728": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11734": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11740": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11749": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11790": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11815": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11820": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11848": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-11880": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11885": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-11951": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11964": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-11999": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12039": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12050": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12125": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12143": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12155": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12193": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12209": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12262": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12273": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12276": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12304": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12308": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12325": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-12406": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12419": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12663": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12708": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-12713": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12741": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-12754": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12774": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12858": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-12965": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13012": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13023": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13028": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13033": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13089": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13109": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13112": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13121": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13128": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-13158": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13195": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13212": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-13279": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13297": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13315": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13343": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13344": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-13346": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13363": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13401": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13406": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13410": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13417": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13449": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-13512": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13513": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13516": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13551": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13568": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13569": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13590": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13658": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13670": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13741": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13786": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13794": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13807": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13809": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13810": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13820": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13821": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13837": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-13925": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-13933": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-13964": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14007": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-14011": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-14017": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14034": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14053": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14089": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14122": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14140": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14155": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14170": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14238": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14311": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14315": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14349": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14351": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14373": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14376": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14404": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14434": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14493": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14500": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14534": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14539": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14559": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14580": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14608": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14631": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-14672": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14725": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14752": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14765": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14771": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-14787": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14792": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14855": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14915": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-14999": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15022": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15037": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15098": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15103": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15104": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15127": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15128": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-15161": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15252": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15268": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-15277": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15278": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15280": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15315": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15368": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15375": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15380": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15382": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15467": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15499": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15503": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-15525": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15554": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15561": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15563": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15569": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15572": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15629": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-15695": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15731": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15732": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15741": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15814": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15851": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15863": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15916": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15930": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-15957": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-15973": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-15987": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16032": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16082": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16100": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16116": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16136": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16139": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16145": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16255": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16256": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16263": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-16315": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16333": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16429": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16454": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16485": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16493": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16502": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16527": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16560": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-16569": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16595": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16612": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16631": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "django__django-16642": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16661": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16662": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16667": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16801": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16819": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16877": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16899": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-16901": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16938": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-16950": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-17029": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-17084": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-17087": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "django__django-7530": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "django__django-9296": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-13989": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-14623": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-20488": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-20676": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-20826": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-20859": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-21568": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-22719": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-22865": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-22871": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-23299": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-23314": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-23412": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-23476": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-24026": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-24149": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-24177": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-24570": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-24627": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-24637": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-24870": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-24970": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-25122": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-25287": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-25311": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-25332": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-25479": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-25775": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-25960": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-26113": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-26208": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "matplotlib__matplotlib-26291": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-26342": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "matplotlib__matplotlib-26466": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "mwaskom__seaborn-3069": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "mwaskom__seaborn-3187": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pallets__flask-5014": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-1142": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-1724": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-1766": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-1921": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-2317": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-2931": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "psf__requests-5414": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "psf__requests-6028": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-2905": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-3095": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-3151": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-3305": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-3677": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-3993": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pydata__xarray-4075": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pydata__xarray-4094": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pydata__xarray-4356": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pydata__xarray-4629": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pydata__xarray-4687": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-4695": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-4966": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-6461": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pydata__xarray-6599": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-6721": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-6744": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-6938": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-6992": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "impossible"
+    },
+    "pydata__xarray-7229": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-7233": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pydata__xarray-7393": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-4551": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pylint-dev__pylint-4604": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-4661": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-4970": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pylint-dev__pylint-6386": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-6528": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-6903": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pylint-dev__pylint-7080": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pylint-dev__pylint-7277": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pylint-dev__pylint-8898": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pytest-dev__pytest-10051": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-10081": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-10356": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pytest-dev__pytest-5262": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-5631": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-5787": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pytest-dev__pytest-5809": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-5840": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-6197": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "pytest-dev__pytest-6202": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-7205": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-7236": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-7324": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-7432": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-7490": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-7521": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-7571": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "pytest-dev__pytest-7982": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "pytest-dev__pytest-8399": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-10297": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-10844": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-10908": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-11310": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-11578": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-12585": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-12682": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-12973": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-13124": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-13135": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-13142": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-13328": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-13439": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-13496": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-13779": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-14053": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-14087": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-14141": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-14496": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-14629": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-14710": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-14894": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-14983": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-15100": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-25102": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "scikit-learn__scikit-learn-25232": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-25747": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-25931": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-25973": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "scikit-learn__scikit-learn-26194": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-26323": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "scikit-learn__scikit-learn-9288": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-10323": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-10435": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-10449": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-10466": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-10614": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-10673": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-11445": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-11510": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sphinx-doc__sphinx-7440": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-7454": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-7462": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-7590": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "impossible"
+    },
+    "sphinx-doc__sphinx-7748": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-7757": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-7889": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-7910": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-7985": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8035": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8056": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8120": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8265": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8269": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-8459": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-8475": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-8548": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sphinx-doc__sphinx-8551": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8593": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8595": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-8621": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-8638": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-8721": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9229": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sphinx-doc__sphinx-9230": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9258": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9281": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9320": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9367": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9461": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sphinx-doc__sphinx-9591": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9602": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-9658": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-9673": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sphinx-doc__sphinx-9698": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sphinx-doc__sphinx-9711": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-11618": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-12096": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-12419": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-12481": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-12489": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-13031": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13091": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13372": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-13480": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-13551": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13615": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13647": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13757": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13798": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13852": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-13877": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-13878": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "impossible"
+    },
+    "sympy__sympy-13974": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-14248": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-14531": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-14711": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-14976": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-15017": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-15345": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-15349": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-15599": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-15809": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-15875": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-15976": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-16450": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-16597": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-16766": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-16792": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-16886": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-17139": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-17318": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-17630": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-17655": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-18189": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-18199": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "hard"
+    },
+    "sympy__sympy-18211": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-18698": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-18763": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-19040": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-19346": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-19495": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-19637": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-19783": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-19954": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-20154": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-20428": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-20438": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-20590": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-20801": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-20916": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-21379": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-21596": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-21612": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-21847": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-21930": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-22080": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-22456": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-22714": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-22914": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-23262": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-23413": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-23534": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-23824": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-23950": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-24066": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-24213": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-24443": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "sympy__sympy-24539": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-24562": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "easy"
+    },
+    "sympy__sympy-24661": {
+        "problem_suite": "swebench_verified",
+        "problem_difficulty": "medium"
+    },
+    "affine-cipher": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "beer-song": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "book-store": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "bottle-song": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "bowling": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "connect": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "dominoes": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "dot-dsl": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "food-chain": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "forth": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "go-counting": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "grade-school": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "grep": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "hangman": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "list-ops": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "phone-number": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "pig-latin": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "poker": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "pov": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "proverb": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "react": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "rest-api": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "robot-name": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "scale-generator": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "sgf-parsing": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "simple-linked-list": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "transpose": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "tree-building": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "two-bucket": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "variable-length-quantity": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "wordy": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "zebra-puzzle": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    },
+    "zipper": {
+        "problem_suite": "polyglot",
+        "problem_difficulty": null
+    }
+}
