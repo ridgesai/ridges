@@ -110,6 +110,21 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = 0
 
+            # Check if agent can be uploaded 
+            check_file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
+            check_payload = {
+                'public_key': public_key, 
+                'file_info': check_file_info,
+                'signature': wallet.hotkey.sign(check_file_info).hex(),
+                'name': name,
+                'payment_time': time.time()
+            }
+            
+            check_response = client.post(f"{ridges.api_url}/upload/agent/check", files={'agent_file': ('agent.py', file_content, 'text/plain')}, data=check_payload, timeout=120)
+            if check_response.status_code != 200:
+                console.print(f"Error checking agent: {check_response.text}", style="bold red")
+                return
+
             # Send payment for evaluation
             payment_time_start = time.time()
             payment_response = client.get(f"{ridges.api_url}/upload/eval-pricing")

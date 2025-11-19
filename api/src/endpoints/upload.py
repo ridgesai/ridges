@@ -55,6 +55,41 @@ class ErrorResponse(BaseModel):
 router = APIRouter()
 
 @router.post(
+    "/agent/check",
+    tags=["upload"],
+    response_model=AgentUploadResponse
+)
+async def check_agent_post(
+    request: Request,
+    agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
+    public_key: str = Form(..., description="Public key of the miner in hex format"),
+    file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
+    signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
+    name: str = Form(..., description="Name of the agent"),
+    payment_time: float = Form(..., description="Timestamp of the payment"),
+) -> AgentUploadResponse:
+    miner_hotkey = get_miner_hotkey(file_info)
+    agent_file.file.seek(0, 2)
+    file_size_bytes = agent_file.file.tell()
+    agent_file.file.seek(0)
+    check_signature(public_key, file_info, signature)
+    await check_hotkey_registered(miner_hotkey)
+    await check_agent_banned(miner_hotkey=miner_hotkey) 
+    check_if_python_file(agent_file.filename)
+    coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
+    miner_balance = subtensor.get_balance(address=coldkey).rao
+    payment_cost = await get_upload_price(cache_time=payment_time)
+    if payment_cost.amount_rao > miner_balance:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO."
+        )
+    return AgentUploadResponse(
+        status="success",
+        message=f"Agent check successful"
+    )
+
+@router.post(
     "/agent",
     tags=["upload"],
     response_model=AgentUploadResponse,
@@ -160,6 +195,13 @@ async def post_agent(
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
         payment_cost = await get_upload_price(cache_time=payment_time)
+
+        miner_balance = subtensor.get_balance(address=coldkey).rao
+        if miner_balance < payment_cost.amount_rao:
+            raise HTTPException(
+                status_code=402,
+                detail="Insufficient balance"
+            )
 
         # Example payment extrinsic:
         """
