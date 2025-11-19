@@ -12,7 +12,7 @@ from numpy import meshgrid
 from pydantic import BaseModel, Field
 
 from api.src.utils.request_cache import hourly_cache
-from queries.payments import retrieve_payment_by_hash
+from queries.payments import retrieve_payment_by_hash, record_evaluation_payment
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
@@ -219,6 +219,15 @@ async def post_agent(
                 ip_address=request.client.host if request.client else None,
             )
             await create_agent(agent, agent_text)
+
+        await record_evaluation_payment(
+            payment_block_hash=payment_block_hash,
+            payment_extrinsic_index=payment_extrinsic_index,
+            amount_rao=payment_value,
+            agent_id=agent.agent_id,
+            miner_hotkey=miner_hotkey,
+            miner_coldkey=coldkey
+        )
 
         logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
 
