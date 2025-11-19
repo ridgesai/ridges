@@ -197,10 +197,16 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         if response.cost_usd is not None:
             cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
-    return InferenceResponse(
-        content=response.content,
-        tool_calls=response.tool_calls
-    )
+    if response.status_code == 200:
+        return InferenceResponse(
+            content=response.content,
+            tool_calls=response.tool_calls
+        )
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.error_message
+        )
 
 
 
@@ -273,9 +279,15 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
         if response.cost_usd is not None:
             cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
     
-    return EmbeddingResponse(
-        embedding=response.embedding
-    )
+    if response.status_code == 200:
+        return EmbeddingResponse(
+            embedding=response.embedding
+        )
+    else:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=response.error_message
+        )
 
 
 
