@@ -116,11 +116,9 @@ async def post_agent(
             check_signature(public_key, file_info, signature)
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey) 
-            # file_content = await check_file_size(agent_file)
         check_if_python_file(agent_file.filename)
         
         # Verify payment
-
         # Check if payment has already been used for an agent
         existing_payment = await retrieve_payment_by_hash(
             payment_block_hash=payment_block_hash,
@@ -273,32 +271,17 @@ class UploadPriceResponse(BaseModel):
 )
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
-    # TODO STEPHEN: should be from config as an environment variable
-    SEND_ADDRESS = "5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4"
     TAO_PRICE = await get_tao_price() 
-    
-    print(f"TAO_PRICE -____________-")
-    print(TAO_PRICE)
-    print(f"TAO_PRICE -____________-")
     eval_cost_usd = 60
 
     # Get the amount of tao required per eval
     eval_cost_tao = eval_cost_usd / TAO_PRICE
-    print(f"EVAL_COST_TAO -____________-")
-    print(eval_cost_tao)
-    print(f"EVAL_COST_TAO -____________-")
-    print(f"EVAL_COST_USD -____________-")
-    print(eval_cost_usd)
-    print(f"EVAL_COST_USD -____________-")
 
     # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
     # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
     amount_rao = int(eval_cost_tao * 1e9 * 1.4)
-    print(f"AMOUNT_RAO -____________-")
-    print(amount_rao)
-    print(f"AMOUNT_RAO -____________-")
 
     return UploadPriceResponse(
         amount_rao=amount_rao,
-        send_address=SEND_ADDRESS
+        send_address=config.UPLOAD_SEND_ADDRESS
     )

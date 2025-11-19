@@ -117,9 +117,15 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 return
             
             payment_method_details = payment_response.json()
-            print("PAYMENT METHOD DETAILS -____________-")
-            print(payment_method_details)
-            print("PAYMENT METHOD DETAILS -____________-")
+            
+            confirm_payment = Prompt.ask(
+                f"\n[bold yellow]Proceed with payment of {payment_method_details['amount_rao']} RAO ({payment_method_details['amount_rao'] / 1e9} TAO) to {payment_method_details['send_address']}?[/bold yellow]", 
+                choices=["y", "n"], 
+                default="n"
+            )
+            if confirm_payment.lower() != "y":
+                console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
+                return
 
             subtensor = Subtensor(network=os.environ.get('SUBTENSOR_NETWORK', 'finney'))
 

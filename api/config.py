@@ -42,6 +42,10 @@ OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
     logger.fatal("OWNER_HOTKEY is not set in .env")
 
+UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
+if not UPLOAD_SEND_ADDRESS:
+    logger.fatal("UPLOAD_SEND_ADDRESS is not set in .env")
+
 BURN = os.getenv("BURN")
 if not BURN:
     logger.fatal("BURN is not set in .env")
