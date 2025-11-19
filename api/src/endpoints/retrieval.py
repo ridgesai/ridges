@@ -192,6 +192,7 @@ async def network_statistics():
 
 
 async def problem_statistics():
+    # TODO ADAM: we're redoing this file anyway
     from queries.statistics import get_problem_statistics
     return await get_problem_statistics()
 
