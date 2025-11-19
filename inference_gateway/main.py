@@ -298,7 +298,7 @@ class UsageResponse(BaseModel):
 
 @app.get("/api/usage")
 @handle_http_exceptions
-async def usage(evaluation_run_id: UUID) -> float:
+async def usage(evaluation_run_id: UUID) -> UsageResponse:
     used_cost_usd = cost_hash_map.get_cost(evaluation_run_id)
     return UsageResponse(
         used_cost_usd=used_cost_usd,
