@@ -291,13 +291,10 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
 
 
 
-class UsageRequest(BaseModel):
-    evaluation_run_id: UUID
-
 @app.get("/api/usage")
 @handle_http_exceptions
-async def usage(request: UsageRequest) -> float:
-    return cost_hash_map.get_cost(request.evaluation_run_id)
+async def usage(evaluation_run_id: UUID) -> float:
+    return cost_hash_map.get_cost(evaluation_run_id)
 
 
 
