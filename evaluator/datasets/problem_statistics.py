@@ -2,7 +2,7 @@ import json
 import pathlib
 
 from enum import Enum
-from typing import Tuple, Optional
+from typing import Tuple
 
 
 
@@ -14,6 +14,7 @@ class ProblemStatisticsProblemDifficulty(str, Enum):
     easy = "easy"
     medium = "medium"
     hard = "hard"
+    impossible = "impossible"
 
 
 
@@ -22,7 +23,7 @@ with open(pathlib.Path(__file__).parent / "problem_statistics.json", "r") as f:
 
 
 
-def get_problem_statistics_by_problem_name(problem_name: str) -> Optional[Tuple[ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty]]:
+def get_problem_statistics_by_problem_name(problem_name: str) -> Tuple[ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty]:
     if not problem_name in problem_statistics_json:
         return None
 

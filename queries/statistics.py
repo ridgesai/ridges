@@ -2,6 +2,7 @@ from typing import List
 from aiocache import cached
 from pydantic import BaseModel
 from utils.database import db_operation, DatabaseConnection
+from evaluator.datasets.problem_statistics import ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty, get_problem_statistics_by_problem_name
 
 
 
@@ -97,6 +98,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
 
 class ProblemStatistics(BaseModel):
     problem_name: str
+    problem_suite: ProblemStatisticsProblemSuite
+    problem_difficulty: ProblemStatisticsProblemDifficulty
     total_num_evaluation_runs: int
     num_finished_evaluation_runs: int
     num_finished_passed_evaluation_runs: int
@@ -104,14 +107,20 @@ class ProblemStatistics(BaseModel):
     num_errored_evaluation_runs: int
     pass_rate: float
     average_time: float
-    average_cost: float
+    average_cost_usd: float
+
+    def __init__(self, **data):
+        problem_suite, problem_difficulty = get_problem_statistics_by_problem_name(data["problem_name"])
+        data["problem_suite"] = problem_suite
+        data["problem_difficulty"] = problem_difficulty
+        super().__init__(**data)
 
 @cached(ttl=300)
 @db_operation
 async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
     rows = await conn.fetch(
         """
-        SELECT 
+        SELECT
             erh.problem_name,
             COUNT(*) AS total_num_evaluation_runs,
             COUNT(*) FILTER (WHERE erh.status = 'finished') AS num_finished_evaluation_runs,
@@ -119,14 +128,14 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             COUNT(*) FILTER (WHERE erh.status = 'finished' AND NOT erh.solved) AS num_finished_failed_evaluation_runs,
             COUNT(*) FILTER (WHERE erh.status = 'error') AS num_errored_evaluation_runs,
             COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved)::FLOAT / NULLIF(COUNT(*) FILTER (WHERE erh.status = 'finished'), 0) AS pass_rate,
-            AVG(EXTRACT(EPOCH FROM (erh.started_initializing_eval_at - erh.started_running_agent_at))) AS average_time,
-            AVG(erwc.total_cost_usd) AS average_cost
+            AVG(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_initializing_agent_at))) AS average_time,
+            AVG(erwc.total_cost_usd) AS average_cost_usd
         FROM evaluation_runs_hydrated erh
         JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
         JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
         WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-        GROUP BY erh.problem_name
-    """
+        GROUP BY erh.problem_name;
+        """
     )
 
     return [ProblemStatistics(**row) for row in rows]
