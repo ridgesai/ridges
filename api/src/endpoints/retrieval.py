@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request
 from typing import Any
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
 
-from queries.statistics import get_top_scores_over_time
-
+from queries.statistics import get_top_scores_over_time, get_problem_statistics
 
 load_dotenv()
 
@@ -192,8 +191,6 @@ async def network_statistics():
 
 
 async def problem_statistics():
-    # TODO ADAM: we're redoing this file anyway
-    from queries.statistics import get_problem_statistics
     return await get_problem_statistics()
 
 
