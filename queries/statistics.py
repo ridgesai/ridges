@@ -1,6 +1,6 @@
-from typing import List
 from aiocache import cached
 from pydantic import BaseModel
+from typing import List, Optional
 from utils.database import db_operation, DatabaseConnection
 from evaluator.datasets.problem_statistics import ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty, get_problem_statistics_by_problem_name
 
@@ -99,7 +99,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
 class ProblemStatistics(BaseModel):
     problem_name: str
     problem_suite: ProblemStatisticsProblemSuite
-    problem_difficulty: ProblemStatisticsProblemDifficulty
+    problem_difficulty: Optional[ProblemStatisticsProblemDifficulty]
     total_num_evaluation_runs: int
     num_finished_evaluation_runs: int
     num_finished_passed_evaluation_runs: int
