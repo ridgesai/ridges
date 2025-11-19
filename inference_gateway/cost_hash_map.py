@@ -40,7 +40,7 @@ class CostHashMap:
             self.cost_hash_map[uuid].last_accessed_at = time.time()
             return self.cost_hash_map[uuid].cost
         else:
-            self.cost_hash_map[uuid] = CostHashMapEntry(cost=0, last_accessed_at=time.time())
+            # TODO ADAM: db
             return 0
 
     def add_cost(self, uuid: UUID, cost: float):

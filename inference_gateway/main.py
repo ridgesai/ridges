@@ -3,8 +3,10 @@ import uvicorn
 import utils.logger as logger
 import inference_gateway.config as config
 
+from uuid import UUID
 from typing import List
 from functools import wraps
+from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
@@ -274,6 +276,16 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     return EmbeddingResponse(
         embedding=response.embedding
     )
+
+
+
+class UsageRequest(BaseModel):
+    evaluation_run_id: UUID
+
+@app.get("/api/usage")
+@handle_http_exceptions
+async def usage(request: UsageRequest) -> float:
+    return cost_hash_map.get_cost(request.evaluation_run_id)
 
 
 
