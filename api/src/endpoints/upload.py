@@ -19,8 +19,9 @@ from queries.agent import create_agent, record_upload_attempt
 from queries.agent import get_latest_agent_for_hotkey
 from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
-    check_rate_limit, check_signature, check_hotkey_registered, check_file_size, get_tao_price
+    check_rate_limit, check_signature, check_hotkey_registered, check_file_size
 from models.agent import AgentStatus, Agent
+from utils.coingecko import get_tao_price
 from api import config 
 
 # TODO STEPHEN: we should have a global singleton
@@ -127,16 +128,16 @@ async def post_agent(
         )
 
         if existing_payment is not None:
-            return HTTPException(
+            raise HTTPException(
                 status_code=402,
                 detail="Payment already used"
             )
 
         # Retrieve payment details from the chain
-        payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
-
-        if payment_block is None:
-            return HTTPException(
+        try:
+            payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+        except Exception:
+            raise HTTPException(
                 status_code=402,
                 detail="Payment could not be verified"
             )
@@ -171,22 +172,34 @@ async def post_agent(
                 break
         
         if payment_value is None:
-            return HTTPException(
+            raise HTTPException(
                 status_code=402,
                 detail="Payment value not found"
             )
 
         if payment_value != payment_cost.amount_rao:
-            return HTTPException(
+            raise HTTPException(
                 status_code=402,
                 detail="Payment amount does not match"
             )
         
         # Make sure coldkey is the same as hotkeys owner coldkey
         if coldkey != payment_extrinsic['address']:
-            return HTTPException(
+            raise HTTPException(
                 status_code=402,
                 detail="Coldkey does not match"
+            )
+
+        # Make sure destination is our upload send address
+        destination = None
+        for arg in payment_extrinsic.value['call']['call_args']:
+            if arg['name'] == 'dest':
+                destination = arg['value']
+                break
+        if destination != config.UPLOAD_SEND_ADDRESS:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
             )
 
         agent_text = (await agent_file.read()).decode("utf-8")
