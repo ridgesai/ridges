@@ -157,7 +157,7 @@ async def post_agent(
         coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
-        payment_cost = await get_upload_price()
+        payment_cost = await get_upload_price(cache_time=datetime.now().timestamp())
 
         # Example payment extrinsic:
         """

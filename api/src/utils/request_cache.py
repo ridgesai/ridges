@@ -1,32 +1,28 @@
 import time
 import asyncio
+from datetime import datetime
 from functools import wraps
+from typing import Any
 
-def hourly_cache(ttl: int = 3600):
+def hourly_cache():
     def decorator(func):
-        last_value = None
-        last_ts = 0.0
         lock = asyncio.Lock()
+        # Cache format: {"YYYY-MM-DD:HH": cached_result}
+        hourly_bucket_cache: dict[str, Any] = {}
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            nonlocal last_value, last_ts
-            now = time.time()
+            nonlocal hourly_bucket_cache
 
-            # Fast path: still fresh
-            if last_value is not None and now - last_ts < ttl:
-                return last_value
+            cache_time = kwargs.pop('cache_time', time.time())
+            hour_bucket = datetime.fromtimestamp(cache_time).strftime("%Y-%m-%d:%H")
 
-            # Slow path: refresh under a lock
+            if hour_bucket in hourly_bucket_cache:
+                return hourly_bucket_cache[hour_bucket]
+
             async with lock:
-                # Double-check inside lock
-                now = time.time()
-                if last_value is not None and now - last_ts < ttl:
-                    return last_value
-
                 result = await func(*args, **kwargs)
-                last_value = result
-                last_ts = now
+                hourly_bucket_cache[hour_bucket] = result
                 return result
 
         return wrapper

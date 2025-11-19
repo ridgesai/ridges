@@ -150,9 +150,12 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 'signature': signature, 
                 'name': name,
                 'payment_block_hash': receipt.block_hash,
-                'payment_block_number': receipt.block_number,
                 'payment_extrinsic_index': receipt.extrinsic_idx
             }
+
+            console.print(f"\n[yellow]If something goes wrong with the upload, you can use these information to get a refund[/yellow]")
+            console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
+            console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_idx}\n")
 
             files = {'agent_file': ('agent.py', file_content, 'text/plain')}
 
