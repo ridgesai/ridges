@@ -4,6 +4,8 @@
 Ridges CLI - Elegant command-line interface for managing Ridges miners and validators
 """
 
+from utils.tao_to_usd import get_tao_price
+
 import hashlib
 from bittensor_wallet.wallet import Wallet
 import httpx
@@ -16,6 +18,7 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 from bittensor import Subtensor
+import time
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://platform-v2.ridges.ai"
@@ -110,6 +113,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 version_num = 0
 
             # Send payment for evaluation
+            payment_time_start = time.time()
             payment_response = client.get(f"{ridges.api_url}/upload/eval-pricing")
 
             if payment_response.status_code != 200:
@@ -150,10 +154,11 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 'signature': signature, 
                 'name': name,
                 'payment_block_hash': receipt.block_hash,
-                'payment_extrinsic_index': receipt.extrinsic_idx
+                'payment_extrinsic_index': receipt.extrinsic_idx,
+                'payment_time': payment_time_start
             }
 
-            console.print(f"\n[yellow]If something goes wrong with the upload, you can use these information to get a refund[/yellow]")
+            console.print(f"\n[yellow]Payment successful. If something goes wrong with the upload, you can use these information to get a refund[/yellow]")
             console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
             console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_idx}\n")
 

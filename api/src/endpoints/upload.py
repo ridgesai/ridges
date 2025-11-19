@@ -75,6 +75,7 @@ async def post_agent(
     name: str = Form(..., description="Name of the agent"),
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
+    payment_time: float = Form(..., description="Timestamp of the payment"),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -157,7 +158,7 @@ async def post_agent(
         coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
-        payment_cost = await get_upload_price(cache_time=datetime.now().timestamp())
+        payment_cost = await get_upload_price(cache_time=payment_time)
 
         # Example payment extrinsic:
         """
