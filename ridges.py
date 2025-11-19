@@ -117,8 +117,11 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 return
             
             payment_method_details = payment_response.json()
+            print("PAYMENT METHOD DETAILS -____________-")
+            print(payment_method_details)
+            print("PAYMENT METHOD DETAILS -____________-")
 
-            subtensor = Subtensor(network="finney")
+            subtensor = Subtensor(network=os.environ.get('SUBTENSOR_NETWORK', 'finney'))
 
             # Transfer
             payment_payload = subtensor.substrate.compose_call(

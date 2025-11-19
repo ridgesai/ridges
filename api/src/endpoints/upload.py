@@ -151,7 +151,9 @@ async def post_agent(
         coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
+        print(f"PAYMENT EXTRINSIC -____________-")
         pprint.pprint(payment_extrinsic)
+        print(f"PAYMENT EXTRINSIC -____________-")
 
         # Verify amount, where it was sent
         payment_cost = await get_upload_price()
@@ -250,14 +252,26 @@ async def get_upload_price() -> UploadPriceResponse:
     SEND_ADDRESS = "5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4"
     TAO_PRICE = await get_tao_price() 
     
+    print(f"TAO_PRICE -____________-")
+    print(TAO_PRICE)
+    print(f"TAO_PRICE -____________-")
     eval_cost_usd = 60
 
     # Get the amount of tao required per eval
     eval_cost_tao = eval_cost_usd / TAO_PRICE
+    print(f"EVAL_COST_TAO -____________-")
+    print(eval_cost_tao)
+    print(f"EVAL_COST_TAO -____________-")
+    print(f"EVAL_COST_USD -____________-")
+    print(eval_cost_usd)
+    print(f"EVAL_COST_USD -____________-")
 
     # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
     # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
-    amount_rao = int(eval_cost_tao  * 1.4)
+    amount_rao = int(eval_cost_tao * 1e9 * 1.4)
+    print(f"AMOUNT_RAO -____________-")
+    print(amount_rao)
+    print(f"AMOUNT_RAO -____________-")
 
     return UploadPriceResponse(
         amount_rao=amount_rao,
