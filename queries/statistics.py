@@ -13,9 +13,19 @@ async def agents_created_24_hrs(conn: DatabaseConnection):
     return await conn.fetchval("SELECT COUNT(*) FROM agents WHERE created_at >= NOW() - INTERVAL '24 hours'")
 
 @db_operation
-async def score_improvement_24_hrs(conn: DatabaseConnection):
-    # TODO ADAM: format query impossible to read rn
-    return await conn.fetchval("SELECT COALESCE((SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)) - COALESCE((SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets) - 1), 0), 0)")
+async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
+    return await conn.fetchval("""
+        WITH score_data AS (
+            SELECT
+                MAX(final_score) as current_score,
+                MAX(final_score) FILTER (WHERE created_at <= NOW() - INTERVAL '24 hours') as past_score
+            FROM agent_scores
+            WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+        )
+        SELECT
+            COALESCE(current_score - past_score, 0)
+        FROM score_data;
+    """)
 
 @db_operation
 async def get_top_scores_over_time(conn: DatabaseConnection) -> list[dict]:
