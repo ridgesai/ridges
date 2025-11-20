@@ -120,10 +120,12 @@ class Provider(ABC):
             logger.info(f"<-- Inference Response {self.name}:{model_name} ({len(result.content)} char(s), {len(result.tool_calls)} tool call(s)): '{result_first_chars}'...")
         elif result.status_code != -1:
             # 4xx or 5xx
-            logger.warning(f"<-- Inference External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}")
+            result.error_message = f"Inference External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}"
+            logger.warning(f"<-- {result.error_message}")
         else:
             # -1
-            logger.error(f"<-- Inference Internal Error {self.name}:{model_name}: {result.error_message}")
+            result.error_message = f"Inference Internal Error {self.name}:{model_name}: {result.error_message}"
+            logger.error(f"<-- {result.error_message}")
 
         return result
         
@@ -176,9 +178,11 @@ class Provider(ABC):
             logger.info(f"<-- Embedding Response {self.name}:{model_name}: {len(result.embedding)} dimension(s)")
         elif result.status_code != -1:
             # 4xx or 5xx
-            logger.warning(f"<-- Embedding External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}")
+            result.error_message = f"Embedding External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}"
+            logger.warning(f"<-- {result.error_message}")
         else:
             # -1
-            logger.error(f"<-- Embedding Internal Error {self.name}:{model_name}: {result.error_message}")
+            result.error_message = f"Embedding Internal Error {self.name}:{model_name}: {result.error_message}"
+            logger.error(f"<-- {result.error_message}")
 
         return result
