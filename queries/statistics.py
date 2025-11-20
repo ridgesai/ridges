@@ -1,9 +1,9 @@
 from pydantic import BaseModel
+from datetime import datetime
 from typing import List, Optional
 from utils.database import db_operation, DatabaseConnection
 from evaluator.datasets.problem_statistics import ProblemStatisticsProblemSuite, ProblemStatisticsProblemDifficulty, get_problem_statistics_by_problem_name
 
-from models.top_scores_over_time import TopScoreOverTime
 
 
 @db_operation
@@ -30,6 +30,10 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
         FROM score_data
         """
     )
+
+class TopScoreOverTime(BaseModel):
+    hour: datetime
+    top_score: float
 
 @db_operation
 async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOverTime]:
