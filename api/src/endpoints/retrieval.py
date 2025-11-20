@@ -3,7 +3,6 @@ from typing import Any
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
-from aiocache import cached
 
 from queries.statistics import get_top_scores_over_time, get_problem_statistics
 
@@ -190,9 +189,19 @@ async def network_statistics():
     return cache_data[cache_key]
 
 
-@cached(ttl=300)
 async def problem_statistics():
-    return await get_problem_statistics()
+    """Gets problem statistics"""
+    cache_key = "problem_statistics"
+    if is_cache_valid(cache_key):
+        return cache_data[cache_key]
+
+    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
+        return cache_data[cache_key]
+    recalculating_cache[cache_key] = True
+    cache_data[cache_key] = await get_problem_statistics()
+    cache_timestamps[cache_key] = time.time()
+    recalculating_cache[cache_key] = False
+    return cache_data[cache_key]
 
 
 router = APIRouter()
