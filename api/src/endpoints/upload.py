@@ -69,9 +69,6 @@ async def check_agent_post(
     payment_time: float = Form(..., description="Timestamp of the payment"),
 ) -> AgentUploadResponse:
     miner_hotkey = get_miner_hotkey(file_info)
-    agent_file.file.seek(0, 2)
-    file_size_bytes = agent_file.file.tell()
-    agent_file.file.seek(0)
     check_signature(public_key, file_info, signature)
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey) 
@@ -171,7 +168,8 @@ async def post_agent(
         # Retrieve payment details from the chain
         try:
             payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error retrieving payment block: {e}")
             raise HTTPException(
                 status_code=402,
                 detail="Payment could not be verified"
@@ -195,13 +193,6 @@ async def post_agent(
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
         payment_cost = await get_upload_price(cache_time=payment_time)
-
-        miner_balance = subtensor.get_balance(address=coldkey).rao
-        if miner_balance < payment_cost.amount_rao:
-            raise HTTPException(
-                status_code=402,
-                detail="Insufficient balance"
-            )
 
         # Example payment extrinsic:
         """
@@ -243,6 +234,22 @@ async def post_agent(
                 status_code=402,
                 detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
             )
+
+        # Check if payment was successful
+        # see https://github.com/ridgesai/ridges/pull/212 to an example of a failed or successful extrinsic events
+        # TODO STEPHEN: There is probably a more robust way
+        events = subtensor.substrate.get_events(block_hash=payment_block_hash)
+        for event in events:
+            if event.get('attributes', {}).get('dispatch_error', {}).get('Token') == 'FundsUnavailable':
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Payment failed. Insufficient funds."
+                )
+            if event['module_id'] == 'System' and event['event_id'] == 'ExtrinsicFailed':
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Payment failed"
+                )
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
