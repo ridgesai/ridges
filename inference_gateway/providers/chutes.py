@@ -27,18 +27,13 @@ class WhitelistedChutesModel(BaseModel):
             self.chutes_name = self.name
 
 if config.USE_CHUTES:
-    if config.USE_CHUTES_ONLY_KIMI:
-        WHITELISTED_CHUTES_INFERENCE_MODELS = [
-            WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="moonshotai/Kimi-K2-Instruct-0905")
-        ]
-    else:
-        WHITELISTED_CHUTES_INFERENCE_MODELS = [
-            WhitelistedChutesModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
-            WhitelistedChutesModel(name="zai-org/GLM-4.5-FP8", chutes_name="zai-org/GLM-4.5"),
-            WhitelistedChutesModel(name="deepseek-ai/DeepSeek-V3-0324"),
-            WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="moonshotai/Kimi-K2-Instruct-0905"),
-            WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8", chutes_name="zai-org/GLM-4.6")
-        ]
+    WHITELISTED_CHUTES_INFERENCE_MODELS = [
+        WhitelistedChutesModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
+        WhitelistedChutesModel(name="zai-org/GLM-4.5-FP8", chutes_name="zai-org/GLM-4.5"),
+        WhitelistedChutesModel(name="deepseek-ai/DeepSeek-V3-0324"),
+        WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="moonshotai/Kimi-K2-Instruct-0905"),
+        WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8", chutes_name="zai-org/GLM-4.6")
+    ]
 
 WHITELISTED_CHUTES_EMBEDDING_MODELS = [
     # TODO ADAM
