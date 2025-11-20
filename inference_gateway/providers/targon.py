@@ -80,6 +80,11 @@ class TargonProvider(Provider):
             cost_usd_per_million_input_tokens = float(targon_model_pricing["prompt"]) * 1_000_000
             cost_usd_per_million_output_tokens = float(targon_model_pricing["completion"]) * 1_000_000
 
+            # TODO ADAM: remove
+            if whitelisted_targon_model.name == "moonshotai/Kimi-K2-Instruct":
+                cost_usd_per_million_input_tokens = 0.39
+                cost_usd_per_million_output_tokens = 1.90
+
             self.inference_models.append(InferenceModelInfo(
                 name=whitelisted_targon_model.name,
                 external_name=whitelisted_targon_model.targon_name,
