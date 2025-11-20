@@ -55,6 +55,38 @@ class ErrorResponse(BaseModel):
 router = APIRouter()
 
 @router.post(
+    "/agent/check",
+    tags=["upload"],
+    response_model=AgentUploadResponse
+)
+async def check_agent_post(
+    request: Request,
+    agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
+    public_key: str = Form(..., description="Public key of the miner in hex format"),
+    file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
+    signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
+    name: str = Form(..., description="Name of the agent"),
+    payment_time: float = Form(..., description="Timestamp of the payment"),
+) -> AgentUploadResponse:
+    miner_hotkey = get_miner_hotkey(file_info)
+    check_signature(public_key, file_info, signature)
+    await check_hotkey_registered(miner_hotkey)
+    await check_agent_banned(miner_hotkey=miner_hotkey) 
+    check_if_python_file(agent_file.filename)
+    coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
+    miner_balance = subtensor.get_balance(address=coldkey).rao
+    payment_cost = await get_upload_price(cache_time=payment_time)
+    if payment_cost.amount_rao > miner_balance:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO."
+        )
+    return AgentUploadResponse(
+        status="success",
+        message=f"Agent check successful"
+    )
+
+@router.post(
     "/agent",
     tags=["upload"],
     response_model=AgentUploadResponse,
@@ -136,7 +168,8 @@ async def post_agent(
         # Retrieve payment details from the chain
         try:
             payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error retrieving payment block: {e}")
             raise HTTPException(
                 status_code=402,
                 detail="Payment could not be verified"
@@ -201,6 +234,22 @@ async def post_agent(
                 status_code=402,
                 detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
             )
+
+        # Check if payment was successful
+        # see https://github.com/ridgesai/ridges/pull/212 to an example of a failed or successful extrinsic events
+        # TODO STEPHEN: There is probably a more robust way
+        events = subtensor.substrate.get_events(block_hash=payment_block_hash)
+        for event in events:
+            if event.get('attributes', {}).get('dispatch_error', {}).get('Token') == 'FundsUnavailable':
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Payment failed. Insufficient funds."
+                )
+            if event['module_id'] == 'System' and event['event_id'] == 'ExtrinsicFailed':
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Payment failed"
+                )
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
