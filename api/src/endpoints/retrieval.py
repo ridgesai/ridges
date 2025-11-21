@@ -3,6 +3,7 @@ from typing import Any
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
+from api.src.utils.retrieval_cache import retrieval_cache
 
 from queries.statistics import get_top_scores_over_time, get_problem_statistics
 
@@ -24,19 +25,6 @@ from utils.s3 import download_text_file_from_s3
 from api.endpoints.validator import get_all_connected_validator_ip_addresses
 
 
-# TODO: Hacky cache implementation. We should use a proper cache library
-CACHE_EXPIRATION = 900 # 15 minutes
-cache_timestamps: dict[str, float] = {}
-recalculating_cache: dict[str, bool] = {}
-cache_data: dict[str, Any] = {}
-
-def is_cache_valid(cache_key: str) -> bool:
-    if cache_key not in cache_timestamps:
-        return False
-    return time.time() - cache_timestamps[cache_key] < CACHE_EXPIRATION
-
-def update_cache_timestamp(cache_key: str):
-    cache_timestamps[cache_key] = time.time()
 
 async def queue(
     stage: str
@@ -52,6 +40,7 @@ async def queue(
     """
     return await get_agents_in_queue(EvaluationSetGroup(stage))
 
+@retrieval_cache(expire=900)
 async def top_agents(
     number_of_agents: int = 5,
     page: int = 1
@@ -59,20 +48,10 @@ async def top_agents(
     """
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
     """
-    cache_key = f"top_agents_{number_of_agents}_{page}"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
-
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_top_agents(
+    return await get_top_agents(
         number_of_agents=number_of_agents,
         page=page
-    )   
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
+    )
 
 async def agent_by_id(agent_id: str) -> Agent | AgentScored:
     agent = await get_agent_by_id(agent_id=uuid.UUID(agent_id))
@@ -149,59 +128,31 @@ async def get_agent_code(agent_id: str, request: Request):
     
     return text
 
+@retrieval_cache(expire=900)
 async def top_scores_over_time():
     """Gets agent scores over time for charting"""
-    cache_key = "top_scores_over_time"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
+    return await get_top_scores_over_time()
 
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_top_scores_over_time()
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
-
+@retrieval_cache(expire=900)
 async def network_statistics():
     """
     Gets network statistics for the dashboard
     """
-    cache_key = "network_statistics"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
-
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
     score_improvement, agents_created, top_score_value = await asyncio.gather(
         score_improvement_24_hrs(),
         agents_created_24_hrs(),
         top_score()
     )
-    cache_data[cache_key] = {
+    return {
         "score_improvement_24_hrs": score_improvement,
         "agents_created_24_hrs": agents_created,
         "top_score": top_score_value
     }
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
 
-
+@retrieval_cache(expire=900)
 async def problem_statistics():
     """Gets problem statistics"""
-    cache_key = "problem_statistics"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
-
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_problem_statistics()
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
+    return await get_problem_statistics()
 
 
 router = APIRouter()
