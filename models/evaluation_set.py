@@ -8,7 +8,6 @@ class EvaluationSetGroup(str, Enum):
     screener_2 = "screener_2"
     validator = "validator"
 
-
     @staticmethod
     def from_validator_hotkey(validator_hotkey: str):
         if validator_hotkey.startswith("screener-1"):
