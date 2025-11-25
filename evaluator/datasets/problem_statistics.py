@@ -8,7 +8,7 @@ from typing import Tuple, Optional
 
 class ProblemStatisticsProblemSuite(str, Enum):
     swebench_verified = "swebench_verified"
-    polyglot = "polyglot"
+    polyglot_py = "polyglot_py"
 
 class ProblemStatisticsProblemDifficulty(str, Enum):
     easy = "easy"

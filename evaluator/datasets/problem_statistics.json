@@ -2000,135 +2000,135 @@
         "problem_difficulty": "medium"
     },
     "affine-cipher": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "beer-song": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "book-store": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "bottle-song": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "bowling": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "connect": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "dominoes": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "dot-dsl": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "food-chain": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "forth": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "go-counting": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "grade-school": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "grep": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "hangman": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "list-ops": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "phone-number": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "pig-latin": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "poker": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "pov": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "proverb": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "react": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "rest-api": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "robot-name": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "scale-generator": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "sgf-parsing": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "simple-linked-list": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "transpose": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "tree-building": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "two-bucket": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "variable-length-quantity": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "wordy": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "zebra-puzzle": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "zipper": {
-        "problem_suite": "polyglot",
+        "problem_suite": "polyglot_py",
         "problem_difficulty": null
     }
 }
