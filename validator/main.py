@@ -21,8 +21,8 @@ from models.evaluation_set import EvaluationSetProblem
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from validator.http_utils import get_ridges_platform, post_ridges_platform
-from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
+from evaluator.problem_suites.polyglot_py.polyglot_py_suite import PolyglotPythonSuite
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
 
@@ -37,7 +37,7 @@ max_evaluation_run_log_size_bytes = None
 
 # The sandbox manager and problem suites
 sandbox_manager = None
-polyglot_suite = None
+polyglot_py_suite = None
 swebench_verified_suite = None
 
 
@@ -149,8 +149,8 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
     try:
         # Figure out what problem suite this problem belongs to
         problem_suite: Optional[ProblemSuite] = None
-        if polyglot_suite.has_problem_name(problem_name):
-            problem_suite = polyglot_suite
+        if polyglot_py_suite.has_problem_name(problem_name):
+            problem_suite = polyglot_py_suite
         elif swebench_verified_suite.has_problem_name(problem_name):
             problem_suite = swebench_verified_suite
 
@@ -158,7 +158,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
         if problem_suite is None:
             await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
                 "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
-                "error_message": f"The problem '{problem_name}' was not found in both PolyglotSuite and SWEBenchVerifiedSuite"
+                "error_message": f"The problem '{problem_name}' was not found in both PolyglotPythonSuite and SWEBenchVerifiedSuite"
             })
             return
 
@@ -298,7 +298,7 @@ async def main():
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
     global sandbox_manager
-    global polyglot_suite
+    global polyglot_py_suite
     global swebench_verified_suite
 
 
@@ -352,7 +352,7 @@ async def main():
 
     # Load all problem suites
     datasets_path = pathlib.Path(__file__).parent.parent / "evaluator" / "datasets"
-    polyglot_suite = PolyglotSuite(datasets_path / "polyglot")
+    polyglot_py_suite = PolyglotPythonSuite(datasets_path / "polyglot_py")
     swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
 
 
