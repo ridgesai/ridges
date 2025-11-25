@@ -117,7 +117,7 @@ class ProblemSuite(ABC):
 
             return sandbox_manager.initialize_sandbox(
                 name=f"agent-sandbox-{problem.name}-{evaluation_run_id}",
-                python_script_path=os.path.join(os.path.dirname(__file__), "AGENT_RUNNER.py"),
+                script_path=os.path.join(os.path.dirname(__file__), "AGENT_RUNNER.py"),
                 input_data={
                     "problem_statement": problem.problem_statement
                 },

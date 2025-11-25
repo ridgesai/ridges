@@ -76,7 +76,7 @@ class SandboxManager:
         This is the only sandbox that can access the internet.
         
         The other sandboxes cannot directly access the internet.
-        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inferencegateway.
+        So to do inference, they send requests to this proxy server, which forwards appropriate requests to the inference gateway.
         """
   
         logger.info("Running sandbox proxy")
@@ -100,7 +100,7 @@ class SandboxManager:
         self,
         *,
         name: str,
-        python_script_path: str,
+        script_path: str,
         input_data: Any,
         env_vars: Dict[str, str] = {},
         on_mount: Callable[[str], None] = None
@@ -115,17 +115,28 @@ class SandboxManager:
             on_mount(temp_dir)
             logger.debug(f"Called on_mount() for sandbox <{name}>")
 
-        # Copy Python script
-        python_script_name = os.path.basename(python_script_path)
-        temp_python_script_path = os.path.join(temp_dir, python_script_name)
-        shutil.copy2(python_script_path, temp_python_script_path)
-        logger.debug(f"Copied Python script for sandbox <{name}>: {python_script_path} --> {temp_python_script_path}")
+        # Python and JavaScript
+        script_extension = os.path.splitext(script_name)[1]
+        if script_extension != ".py" and script_extension != ".js":
+            raise ValueError(f"Invalid script extension: {script_extension}")
+
+        # Copy script
+        script_name = os.path.basename(script_path)
+        temp_script_path = os.path.join(temp_dir, script_name)
+        shutil.copy2(script_path, temp_script_path)
+        logger.debug(f"Copied script for sandbox <{name}>: {script_name} --> {temp_script_path}")
         
         # Create input.json
         temp_input_json_path = os.path.join(temp_dir, "input.json")
         with open(temp_input_json_path, "w") as f:
             json.dump(input_data, f, indent=2)
         logger.debug(f"Created input.json for sandbox <{name}>: {temp_input_json_path}")
+
+        # Create command
+        if script_extension == ".py":
+            command = f"python /sandbox/{script_name} 2>&1"
+        elif script_extension == ".js":
+            command = f"node /sandbox/{script_name} 2>&1"
 
         # Create Docker container
         container = get_docker_client().containers.run(
@@ -140,7 +151,7 @@ class SandboxManager:
                 "SANDBOX_PROXY_URL": f"http://{SANDBOX_PROXY_HOST}:{SANDBOX_PROXY_PORT}",
                 **env_vars
             },
-            command=f"python /sandbox/{python_script_name} 2>&1",
+            command=command,
             detach=True
         )
 
