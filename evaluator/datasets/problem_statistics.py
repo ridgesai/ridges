@@ -9,6 +9,7 @@ from typing import Tuple, Optional
 class ProblemStatisticsProblemSuite(str, Enum):
     swebench_verified = "swebench_verified"
     polyglot_py = "polyglot_py"
+    polyglot_js = "polyglot_js"
 
 class ProblemStatisticsProblemDifficulty(str, Enum):
     easy = "easy"

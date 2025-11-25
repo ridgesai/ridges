@@ -2538,5 +2538,541 @@
     "zipper": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
+    },
+    "accumulate-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "acronym-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "affine-cipher-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "all-your-base-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "allergies-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "alphametics-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "anagram-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "armstrong-numbers-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "atbash-cipher-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "bank-account-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "beer-song-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "binary-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "binary-search-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "binary-search-tree-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "bob-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "book-store-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "bottle-song-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "bowling-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "change-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "circular-buffer-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "clock-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "collatz-conjecture-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "complex-numbers-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "connect-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "crypto-square-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "custom-set-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "darts-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "diamond-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "difference-of-squares-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "diffie-hellman-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "dnd-character-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "dominoes-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "eliuds-eggs-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "etl-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "flatten-array-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "flower-field-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "food-chain-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "forth-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "game-of-life-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "gigasecond-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "go-counting-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "grade-school-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "grains-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "grep-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "hamming-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "hello-world-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "hexadecimal-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "high-scores-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "house-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "isbn-verifier-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "isogram-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "killer-sudoku-helper-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "kindergarten-garden-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "knapsack-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "largest-series-product-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "leap-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "ledger-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "lens-person-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "linked-list-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "list-ops-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "luhn-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "markdown-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "matching-brackets-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "matrix-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "meetup-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "micro-blog-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "minesweeper-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "nth-prime-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "nucleotide-count-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "ocr-numbers-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "octal-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "palindrome-products-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "pangram-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "parallel-letter-frequency-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "pascals-triangle-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "perfect-numbers-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "phone-number-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "pig-latin-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "point-mutations-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "poker-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "prime-factors-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "promises-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "protein-translation-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "proverb-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "pythagorean-triplet-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "queen-attack-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rail-fence-cipher-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "raindrops-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rational-numbers-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "react-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rectangles-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "relative-distance-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "resistor-color-duo-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "resistor-color-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "resistor-color-trio-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rest-api-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "reverse-string-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rna-transcription-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "robot-name-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "robot-simulator-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "roman-numerals-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "rotational-cipher-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "run-length-encoding-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "saddle-points-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "satellite-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "say-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "scale-generator-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "scrabble-score-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "secret-handshake-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "series-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "sieve-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "simple-cipher-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "simple-linked-list-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "space-age-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "spiral-matrix-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "square-root-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "state-of-tic-tac-toe-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "strain-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "sublist-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "sum-of-multiples-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "tournament-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "transpose-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "triangle-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "trinary-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "twelve-days-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "two-bucket-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "two-fer-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "variable-length-quantity-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "word-count-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "word-search-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "wordy-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "yacht-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "zebra-puzzle-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
+    },
+    "zipper-js": {
+        "problem_suite": "polyglot_js",
+        "problem_difficulty": null
     }
 }
