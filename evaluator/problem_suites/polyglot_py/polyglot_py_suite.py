@@ -21,7 +21,7 @@ from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_fo
 
 
 
-class PolyglotSuite(ProblemSuite):
+class PolyglotPythonSuite(ProblemSuite):
     def __init__(self, dataset_path: str):
         super().__init__(dataset_path)
 
@@ -34,12 +34,12 @@ class PolyglotSuite(ProblemSuite):
         if not os.path.exists(dataset_path):
             logger.fatal(f"Dataset not found: {dataset_path}")
             
-        # Make sure the polyglot.json file exists
-        json_path = os.path.join(dataset_path, "polyglot.json")
+        # Make sure the polyglot_py.json file exists
+        json_path = os.path.join(dataset_path, "polyglot_py.json")
         if not os.path.exists(json_path):
-            logger.fatal(f"polyglot.json not found at: {json_path}")
+            logger.fatal(f"polyglot_py.json not found: {json_path}")
             
-        # Open the polyglot.json file
+        # Open the polyglot_py.json file
         with open(json_path, "r") as f:
             problem_list = json.load(f)
         
