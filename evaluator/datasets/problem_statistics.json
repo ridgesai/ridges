@@ -1999,11 +1999,63 @@
         "problem_suite": "swebench_verified",
         "problem_difficulty": "medium"
     },
+    "accumulate": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "acronym": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "affine-cipher": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "all-your-base": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "allergies": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "alphametics": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "anagram": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "armstrong-numbers": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "atbash-cipher": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "bank-account": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "beer-song": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "binary": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "binary-search": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "binary-search-tree": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "bob": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2019,7 +2071,55 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "change": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "circular-buffer": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "clock": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "collatz-conjecture": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "complex-numbers": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "connect": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "crypto-square": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "custom-set": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "darts": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "diamond": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "difference-of-squares": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "diffie-hellman": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "dnd-character": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2031,11 +2131,35 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "eliuds-eggs": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "error-handling": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "etl": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "flatten-array": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "flower-field": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "food-chain": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
     "forth": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "gigasecond": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2047,7 +2171,15 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "grains": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "grep": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "hamming": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2055,7 +2187,115 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "hello-world": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "hexadecimal": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "high-scores": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "house": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "isbn-verifier": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "isogram": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "killer-sudoku-helper": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "kindergarten-garden": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "knapsack": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "largest-series-product": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "leap": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "ledger": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "linked-list": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "list-ops": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "luhn": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "markdown": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "matching-brackets": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "matrix": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "meetup": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "minesweeper": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "nth-prime": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "ocr-numbers": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "octal": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "paasio": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "palindrome-products": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "pangram": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "pascals-triangle": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "perfect-numbers": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2067,6 +2307,10 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "point-mutations": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "poker": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
@@ -2075,7 +2319,35 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "prime-factors": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "protein-translation": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "proverb": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "pythagorean-triplet": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "queen-attack": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "rail-fence-cipher": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "raindrops": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "rational-numbers": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2083,7 +2355,35 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "rectangles": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "resistor-color": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "resistor-color-duo": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "resistor-color-expert": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "resistor-color-trio": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "rest-api": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "reverse-string": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "rna-transcription": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2091,7 +2391,47 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "robot-simulator": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "roman-numerals": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "rotational-cipher": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "run-length-encoding": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "saddle-points": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "satellite": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "say": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "scale-generator": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "scrabble-score": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "secret-handshake": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "series": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2099,7 +2439,47 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "sieve": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "simple-cipher": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "simple-linked-list": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "space-age": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "spiral-matrix": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "square-root": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "strain": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "sublist": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "sum-of-multiples": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "swift-scheduling": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "tournament": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2111,7 +2491,23 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "triangle": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "trinary": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "twelve-days": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "two-bucket": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "two-fer": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
@@ -2119,7 +2515,19 @@
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
+    "word-count": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "word-search": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
     "wordy": {
+        "problem_suite": "polyglot_py",
+        "problem_difficulty": null
+    },
+    "yacht": {
         "problem_suite": "polyglot_py",
         "problem_difficulty": null
     },
