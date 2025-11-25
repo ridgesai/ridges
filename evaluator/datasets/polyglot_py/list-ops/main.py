@@ -1,33 +1,30 @@
-from typing import Callable, Any
-
-
-def append(list1: list, list2: list) -> list:
+def append(list1, list2):
     pass
 
 
-def concat(lists: list[list]) -> list:
+def concat(lists):
     pass
 
 
-def filter(function: Callable, list: list) -> list:
+def filter(function, list):
     pass
 
 
-def length(list: list) -> int:
+def length(list):
     pass
 
 
-def map(function: Callable, list: list) -> list:
+def map(function, list):
     pass
 
 
-def foldl(function: Callable, list: list, initial: Any) -> Any:  # function(acc, el)
+def foldl(function, list, initial):
     pass
 
 
-def foldr(function: Callable, list: list, initial: Any) -> Any:  # function(acc, el)
+def foldr(function, list, initial):
     pass
 
 
-def reverse(list: list) -> list:
+def reverse(list):
     pass

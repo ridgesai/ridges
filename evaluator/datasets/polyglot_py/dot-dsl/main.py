@@ -2,7 +2,7 @@ NODE, EDGE, ATTR = range(3)
 
 
 class Node:
-    def __init__(self, name: str, attrs: dict):
+    def __init__(self, name, attrs):
         self.name = name
         self.attrs = attrs
 
@@ -11,7 +11,7 @@ class Node:
 
 
 class Edge:
-    def __init__(self, src: str, dst: str, attrs: dict):
+    def __init__(self, src, dst, attrs):
         self.src = src
         self.dst = dst
         self.attrs = attrs
@@ -23,5 +23,5 @@ class Edge:
 
 
 class Graph:
-    def __init__(self, data: list | None = None):
+    def __init__(self, data=None):
         pass

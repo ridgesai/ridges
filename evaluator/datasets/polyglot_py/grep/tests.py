@@ -47,7 +47,7 @@ def open_mock(fname, *args, **kwargs):
         )
 
 
-@mock.patch("main.open", name="open", side_effect=open_mock, create=True)
+@mock.patch("grep.open", name="open", side_effect=open_mock, create=True)
 @mock.patch("io.StringIO", name="StringIO", wraps=io.StringIO)
 class GrepTest(unittest.TestCase):
     # Test grepping a single file

@@ -1,2 +1,2 @@
-def grep(pattern: str, flags: str, files: list[str]) -> str:
+def grep(pattern, flags, files):
     pass

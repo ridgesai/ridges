@@ -1,6 +1,6 @@
-def encode(numbers: list[int]) -> list[int]:
+def encode(numbers):
     pass
 
 
-def decode(bytes_: list[int]) -> list[int]:
+def decode(bytes_):
     pass

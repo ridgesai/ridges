@@ -1,9 +1,9 @@
 class Scale:
-    def __init__(self, tonic: str):
+    def __init__(self, tonic):
         pass
 
-    def chromatic(self) -> list[str]:
+    def chromatic(self):
         pass
 
-    def interval(self, intervals: str) -> list[str]:
+    def interval(self, intervals):
         pass

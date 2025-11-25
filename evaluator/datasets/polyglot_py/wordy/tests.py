@@ -1,6 +1,6 @@
 # These tests are auto-generated with test data from:
 # https://github.com/exercism/problem-specifications/tree/main/exercises/wordy/canonical-data.json
-# File last updated on 2023-07-19
+# File last updated on 2025-06-20
 
 import unittest
 
@@ -13,8 +13,20 @@ class WordyTest(unittest.TestCase):
     def test_just_a_number(self):
         self.assertEqual(answer("What is 5?"), 5)
 
+    def test_just_a_zero(self):
+        self.assertEqual(answer("What is 0?"), 0)
+
+    def test_just_a_negative_number(self):
+        self.assertEqual(answer("What is -123?"), -123)
+
     def test_addition(self):
         self.assertEqual(answer("What is 1 plus 1?"), 2)
+
+    def test_addition_with_a_left_hand_zero(self):
+        self.assertEqual(answer("What is 0 plus 2?"), 2)
+
+    def test_addition_with_a_right_hand_zero(self):
+        self.assertEqual(answer("What is 3 plus 0?"), 3)
 
     def test_more_addition(self):
         self.assertEqual(answer("What is 53 plus 2?"), 55)
@@ -58,12 +70,6 @@ class WordyTest(unittest.TestCase):
     def test_unknown_operation(self):
         with self.assertRaises(ValueError) as err:
             answer("What is 52 cubed?")
-        self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(err.exception.args[0], "unknown operation")
-
-    def test_non_math_question(self):
-        with self.assertRaises(ValueError) as err:
-            answer("Who is the President of the United States?")
         self.assertEqual(type(err.exception), ValueError)
         self.assertEqual(err.exception.args[0], "unknown operation")
 

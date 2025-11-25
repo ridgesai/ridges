@@ -1,6 +1,6 @@
-def drinks_water() -> str:
+def drinks_water():
     pass
 
 
-def owns_zebra() -> str:
+def owns_zebra():
     pass

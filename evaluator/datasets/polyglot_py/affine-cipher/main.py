@@ -1,6 +1,6 @@
-def encode(plain_text: str, a: int, b: int) -> str:
+def encode(plain_text, a, b):
     pass
 
 
-def decode(ciphered_text: str, a: int, b: int) -> str:
+def decode(ciphered_text, a, b):
     pass

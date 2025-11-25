@@ -1,5 +1,5 @@
 class SgfTree:
-    def __init__(self, properties: dict | None = None, children: list["SgfTree"] | None = None):
+    def __init__(self, properties=None, children=None):
         self.properties = properties or {}
         self.children = children or []
 
@@ -25,5 +25,5 @@ class SgfTree:
         return not self == other
 
 
-def parse(input_string: str) -> SgfTree:
+def parse(input_string):
     pass

@@ -1,2 +1,2 @@
-def total(basket: list[int]) -> int: # in cents
+def total(basket):
     pass

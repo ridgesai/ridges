@@ -1,0 +1,16 @@
+import { describe, expect, test, xtest } from '@jest/globals';
+import { twoFer } from './main';
+
+describe('twoFer()', () => {
+  test('no name given', () => {
+    expect(twoFer()).toEqual('One for you, one for me.');
+  });
+
+  xtest('a name given', () => {
+    expect(twoFer('Alice')).toEqual('One for Alice, one for me.');
+  });
+
+  xtest('another name given', () => {
+    expect(twoFer('Bob')).toEqual('One for Bob, one for me.');
+  });
+});

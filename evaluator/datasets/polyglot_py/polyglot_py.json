@@ -1,5 +1,30 @@
 [
   {
+    "name": "accumulate",
+    "tests": [
+      "test_empty_sequence",
+      "test_pow",
+      "test_divmod",
+      "test_composition",
+      "test_capitalize",
+      "test_recursive"
+    ]
+  },
+  {
+    "name": "acronym",
+    "tests": [
+      "test_basic",
+      "test_lowercase_words",
+      "test_punctuation",
+      "test_all_caps_word",
+      "test_punctuation_without_whitespace",
+      "test_very_long_abbreviation",
+      "test_consecutive_delimiters",
+      "test_apostrophes",
+      "test_underscore_emphasis"
+    ]
+  },
+  {
     "name": "affine-cipher",
     "tests": [
       "test_encode_yes",
@@ -21,6 +46,179 @@
     ]
   },
   {
+    "name": "all-your-base",
+    "tests": [
+      "test_single_bit_one_to_decimal",
+      "test_binary_to_single_decimal",
+      "test_single_decimal_to_binary",
+      "test_binary_to_multiple_decimal",
+      "test_decimal_to_binary",
+      "test_trinary_to_hexadecimal",
+      "test_hexadecimal_to_trinary",
+      "test_15_bit_integer",
+      "test_empty_list",
+      "test_single_zero",
+      "test_multiple_zeros",
+      "test_leading_zeros",
+      "test_input_base_is_one",
+      "test_input_base_is_zero",
+      "test_input_base_is_negative",
+      "test_negative_digit",
+      "test_invalid_positive_digit",
+      "test_output_base_is_one",
+      "test_output_base_is_zero",
+      "test_output_base_is_negative",
+      "test_both_bases_are_negative"
+    ]
+  },
+  {
+    "name": "allergies",
+    "tests": [
+      "test_eggs_not_allergic_to_anything",
+      "test_allergic_only_to_eggs",
+      "test_allergic_to_eggs_and_something_else",
+      "test_allergic_to_something_but_not_eggs",
+      "test_eggs_allergic_to_everything",
+      "test_peanuts_not_allergic_to_anything",
+      "test_allergic_only_to_peanuts",
+      "test_allergic_to_peanuts_and_something_else",
+      "test_allergic_to_something_but_not_peanuts",
+      "test_peanuts_allergic_to_everything",
+      "test_shellfish_not_allergic_to_anything",
+      "test_allergic_only_to_shellfish",
+      "test_allergic_to_shellfish_and_something_else",
+      "test_allergic_to_something_but_not_shellfish",
+      "test_shellfish_allergic_to_everything",
+      "test_strawberries_not_allergic_to_anything",
+      "test_allergic_only_to_strawberries",
+      "test_allergic_to_strawberries_and_something_else",
+      "test_allergic_to_something_but_not_strawberries",
+      "test_strawberries_allergic_to_everything",
+      "test_tomatoes_not_allergic_to_anything",
+      "test_allergic_only_to_tomatoes",
+      "test_allergic_to_tomatoes_and_something_else",
+      "test_allergic_to_something_but_not_tomatoes",
+      "test_tomatoes_allergic_to_everything",
+      "test_chocolate_not_allergic_to_anything",
+      "test_allergic_only_to_chocolate",
+      "test_allergic_to_chocolate_and_something_else",
+      "test_allergic_to_something_but_not_chocolate",
+      "test_chocolate_allergic_to_everything",
+      "test_pollen_not_allergic_to_anything",
+      "test_allergic_only_to_pollen",
+      "test_allergic_to_pollen_and_something_else",
+      "test_allergic_to_something_but_not_pollen",
+      "test_pollen_allergic_to_everything",
+      "test_cats_not_allergic_to_anything",
+      "test_allergic_only_to_cats",
+      "test_allergic_to_cats_and_something_else",
+      "test_allergic_to_something_but_not_cats",
+      "test_cats_allergic_to_everything",
+      "test_no_allergies",
+      "test_just_eggs",
+      "test_just_peanuts",
+      "test_just_strawberries",
+      "test_eggs_and_peanuts",
+      "test_more_than_eggs_but_not_peanuts",
+      "test_lots_of_stuff",
+      "test_everything",
+      "test_no_allergen_score_parts",
+      "test_no_allergen_score_parts_without_highest_valid_score"
+    ]
+  },
+  {
+    "name": "alphametics",
+    "tests": [
+      "test_puzzle_with_three_letters",
+      "test_solution_must_have_unique_value_for_each_letter",
+      "test_leading_zero_solution_is_invalid",
+      "test_puzzle_with_two_digits_final_carry",
+      "test_puzzle_with_four_letters",
+      "test_puzzle_with_six_letters",
+      "test_puzzle_with_seven_letters",
+      "test_puzzle_with_eight_letters",
+      "test_puzzle_with_ten_letters",
+      "test_puzzle_with_ten_letters_and_199_addends"
+    ]
+  },
+  {
+    "name": "anagram",
+    "tests": [
+      "test_no_matches",
+      "test_detects_two_anagrams",
+      "test_does_not_detect_anagram_subsets",
+      "test_detects_anagram",
+      "test_detects_three_anagrams",
+      "test_detects_multiple_anagrams_with_different_case",
+      "test_does_not_detect_non_anagrams_with_identical_checksum",
+      "test_detects_anagrams_case_insensitively",
+      "test_detects_anagrams_using_case_insensitive_subject",
+      "test_detects_anagrams_using_case_insensitive_possible_matches",
+      "test_does_not_detect_an_anagram_if_the_original_word_is_repeated",
+      "test_anagrams_must_use_all_letters_exactly_once",
+      "test_words_are_not_anagrams_of_themselves",
+      "test_words_are_not_anagrams_of_themselves_even_if_letter_case_is_partially_different",
+      "test_words_are_not_anagrams_of_themselves_even_if_letter_case_is_completely_different",
+      "test_words_other_than_themselves_can_be_anagrams",
+      "test_handles_case_of_greek_letters",
+      "test_different_characters_may_have_the_same_bytes"
+    ]
+  },
+  {
+    "name": "armstrong-numbers",
+    "tests": [
+      "test_zero_is_an_armstrong_number",
+      "test_single_digit_numbers_are_armstrong_numbers",
+      "test_there_are_no_two_digit_armstrong_numbers",
+      "test_three_digit_number_that_is_an_armstrong_number",
+      "test_three_digit_number_that_is_not_an_armstrong_number",
+      "test_four_digit_number_that_is_an_armstrong_number",
+      "test_four_digit_number_that_is_not_an_armstrong_number",
+      "test_seven_digit_number_that_is_an_armstrong_number",
+      "test_seven_digit_number_that_is_not_an_armstrong_number"
+    ]
+  },
+  {
+    "name": "atbash-cipher",
+    "tests": [
+      "test_encode_yes",
+      "test_encode_no",
+      "test_encode_omg",
+      "test_encode_spaces",
+      "test_encode_mindblowingly",
+      "test_encode_numbers",
+      "test_encode_deep_thought",
+      "test_encode_all_the_letters",
+      "test_decode_exercism",
+      "test_decode_a_sentence",
+      "test_decode_numbers",
+      "test_decode_all_the_letters",
+      "test_decode_with_too_many_spaces",
+      "test_decode_with_no_spaces"
+    ]
+  },
+  {
+    "name": "bank-account",
+    "tests": [
+      "test_newly_opened_account_has_zero_balance",
+      "test_single_deposit",
+      "test_multiple_deposits",
+      "test_withdraw_once",
+      "test_withdraw_twice",
+      "test_can_do_multiple_operations_sequentially",
+      "test_cannot_check_balance_of_closed_account",
+      "test_cannot_deposit_into_closed_account",
+      "test_cannot_deposit_into_unopened_account",
+      "test_cannot_withdraw_from_closed_account",
+      "test_cannot_close_an_account_that_was_not_opened",
+      "test_cannot_open_an_already_opened_account",
+      "test_reopened_account_does_not_retain_balance",
+      "test_cannot_withdraw_more_than_deposited",
+      "test_cannot_withdraw_negative",
+      "test_cannot_deposit_negative"
+    ]
+  },
+  {
     "name": "beer-song",
     "tests": [
       "test_first_generic_verse",
@@ -31,6 +229,83 @@
       "test_first_two_verses",
       "test_last_three_verses",
       "test_all_verses"
+    ]
+  },
+  {
+    "name": "binary",
+    "tests": [
+      "test_binary_1_is_decimal_1",
+      "test_binary_10_is_decimal_2",
+      "test_binary_11_is_decimal_3",
+      "test_binary_100_is_decimal_4",
+      "test_binary_1001_is_decimal_9",
+      "test_binary_11010_is_decimal_26",
+      "test_binary_10001101000_is_decimal_1128",
+      "test_invalid_binary_text_only",
+      "test_invalid_binary_number_not_base2",
+      "test_invalid_binary_numbers_with_text",
+      "test_invalid_binary_text_with_numbers"
+    ]
+  },
+  {
+    "name": "binary-search",
+    "tests": [
+      "test_finds_a_value_in_an_array_with_one_element",
+      "test_finds_a_value_in_the_middle_of_an_array",
+      "test_finds_a_value_at_the_beginning_of_an_array",
+      "test_finds_a_value_at_the_end_of_an_array",
+      "test_finds_a_value_in_an_array_of_odd_length",
+      "test_finds_a_value_in_an_array_of_even_length",
+      "test_identifies_that_a_value_is_not_included_in_the_array",
+      "test_a_value_smaller_than_the_array_s_smallest_value_is_not_found",
+      "test_a_value_larger_than_the_array_s_largest_value_is_not_found",
+      "test_nothing_is_found_in_an_empty_array",
+      "test_nothing_is_found_when_the_left_and_right_bounds_cross"
+    ]
+  },
+  {
+    "name": "binary-search-tree",
+    "tests": [
+      "test_data_is_retained",
+      "test_smaller_number_at_left_node",
+      "test_same_number_at_left_node",
+      "test_greater_number_at_right_node",
+      "test_can_create_complex_tree",
+      "test_can_sort_single_number",
+      "test_can_sort_if_second_number_is_smaller_than_first",
+      "test_can_sort_if_second_number_is_same_as_first",
+      "test_can_sort_if_second_number_is_greater_than_first",
+      "test_can_sort_complex_tree"
+    ]
+  },
+  {
+    "name": "bob",
+    "tests": [
+      "test_stating_something",
+      "test_shouting",
+      "test_shouting_gibberish",
+      "test_asking_a_question",
+      "test_asking_a_numeric_question",
+      "test_asking_gibberish",
+      "test_talking_forcefully",
+      "test_using_acronyms_in_regular_speech",
+      "test_forceful_question",
+      "test_shouting_numbers",
+      "test_no_letters",
+      "test_question_with_no_letters",
+      "test_shouting_with_special_characters",
+      "test_shouting_with_no_exclamation_mark",
+      "test_statement_containing_question_mark",
+      "test_non_letters_with_question",
+      "test_prattling_on",
+      "test_silence",
+      "test_prolonged_silence",
+      "test_alternate_silence",
+      "test_starting_with_whitespace",
+      "test_ending_with_whitespace",
+      "test_other_whitespace",
+      "test_non_question_ending_with_whitespace",
+      "test_multiple_line_question"
     ]
   },
   {
@@ -107,6 +382,162 @@
     ]
   },
   {
+    "name": "change",
+    "tests": [
+      "test_change_for_1_cent",
+      "test_single_coin_change",
+      "test_multiple_coin_change",
+      "test_change_with_lilliputian_coins",
+      "test_change_with_lower_elbonia_coins",
+      "test_large_target_values",
+      "test_possible_change_without_unit_coins_available",
+      "test_another_possible_change_without_unit_coins_available",
+      "test_a_greedy_approach_is_not_optimal",
+      "test_no_coins_make_0_change",
+      "test_error_testing_for_change_smaller_than_the_smallest_of_coins",
+      "test_error_if_no_combination_can_add_up_to_target",
+      "test_cannot_find_negative_change_values"
+    ]
+  },
+  {
+    "name": "circular-buffer",
+    "tests": [
+      "test_reading_empty_buffer_should_fail",
+      "test_can_read_an_item_just_written",
+      "test_each_item_may_only_be_read_once",
+      "test_items_are_read_in_the_order_they_are_written",
+      "test_full_buffer_can_t_be_written_to",
+      "test_a_read_frees_up_capacity_for_another_write",
+      "test_read_position_is_maintained_even_across_multiple_writes",
+      "test_items_cleared_out_of_buffer_can_t_be_read",
+      "test_clear_frees_up_capacity_for_another_write",
+      "test_clear_does_nothing_on_empty_buffer",
+      "test_overwrite_acts_like_write_on_non_full_buffer",
+      "test_overwrite_replaces_the_oldest_item_on_full_buffer",
+      "test_overwrite_replaces_the_oldest_item_remaining_in_buffer_following_a_read",
+      "test_initial_clear_does_not_affect_wrapping_around"
+    ]
+  },
+  {
+    "name": "clock",
+    "tests": [
+      "test_lunch_time",
+      "test_breakfast_time",
+      "test_dinner_time",
+      "test_on_the_hour",
+      "test_past_the_hour",
+      "test_midnight_is_zero_hours",
+      "test_hour_rolls_over",
+      "test_hour_rolls_over_continuously",
+      "test_sixty_minutes_is_next_hour",
+      "test_minutes_roll_over",
+      "test_minutes_roll_over_continuously",
+      "test_hour_and_minutes_roll_over",
+      "test_hour_and_minutes_roll_over_continuously",
+      "test_hour_and_minutes_roll_over_to_exactly_midnight",
+      "test_negative_hour",
+      "test_negative_hour_rolls_over",
+      "test_negative_hour_rolls_over_continuously",
+      "test_negative_minutes",
+      "test_negative_minutes_roll_over",
+      "test_negative_minutes_roll_over_continuously",
+      "test_negative_sixty_minutes_is_previous_hour",
+      "test_negative_hour_and_minutes_both_roll_over",
+      "test_negative_hour_and_minutes_both_roll_over_continuously",
+      "test_add_minutes",
+      "test_add_no_minutes",
+      "test_add_to_next_hour",
+      "test_add_more_than_one_hour",
+      "test_add_more_than_two_hours_with_carry",
+      "test_add_across_midnight",
+      "test_add_more_than_one_day_1500_min_25_hrs",
+      "test_add_more_than_two_days",
+      "test_subtract_minutes",
+      "test_subtract_to_previous_hour",
+      "test_subtract_more_than_an_hour",
+      "test_subtract_across_midnight",
+      "test_subtract_more_than_two_hours",
+      "test_subtract_more_than_two_hours_with_borrow",
+      "test_subtract_more_than_one_day_1500_min_25_hrs",
+      "test_subtract_more_than_two_days",
+      "test_clocks_with_same_time",
+      "test_clocks_a_minute_apart",
+      "test_clocks_an_hour_apart",
+      "test_clocks_with_hour_overflow",
+      "test_clocks_with_hour_overflow_by_several_days",
+      "test_clocks_with_negative_hour",
+      "test_clocks_with_negative_hour_that_wraps",
+      "test_clocks_with_negative_hour_that_wraps_multiple_times",
+      "test_clocks_with_minute_overflow",
+      "test_clocks_with_minute_overflow_by_several_days",
+      "test_clocks_with_negative_minute",
+      "test_clocks_with_negative_minute_that_wraps",
+      "test_clocks_with_negative_minute_that_wraps_multiple_times",
+      "test_clocks_with_negative_hours_and_minutes",
+      "test_clocks_with_negative_hours_and_minutes_that_wrap",
+      "test_full_clock_and_zeroed_clock"
+    ]
+  },
+  {
+    "name": "collatz-conjecture",
+    "tests": [
+      "test_zero_steps_for_one",
+      "test_divide_if_even",
+      "test_even_and_odd_steps",
+      "test_large_number_of_even_and_odd_steps",
+      "test_zero_is_an_error",
+      "test_negative_value_is_an_error"
+    ]
+  },
+  {
+    "name": "complex-numbers",
+    "tests": [
+      "test_real_part_of_a_purely_real_number",
+      "test_real_part_of_a_purely_imaginary_number",
+      "test_real_part_of_a_number_with_real_and_imaginary_part",
+      "test_imaginary_part_of_a_purely_real_number",
+      "test_imaginary_part_of_a_purely_imaginary_number",
+      "test_imaginary_part_of_a_number_with_real_and_imaginary_part",
+      "test_imaginary_unit",
+      "test_add_purely_real_numbers",
+      "test_add_purely_imaginary_numbers",
+      "test_add_numbers_with_real_and_imaginary_part",
+      "test_subtract_purely_real_numbers",
+      "test_subtract_purely_imaginary_numbers",
+      "test_subtract_numbers_with_real_and_imaginary_part",
+      "test_multiply_purely_real_numbers",
+      "test_multiply_purely_imaginary_numbers",
+      "test_multiply_numbers_with_real_and_imaginary_part",
+      "test_divide_purely_real_numbers",
+      "test_divide_purely_imaginary_numbers",
+      "test_divide_numbers_with_real_and_imaginary_part",
+      "test_absolute_value_of_a_positive_purely_real_number",
+      "test_absolute_value_of_a_negative_purely_real_number",
+      "test_absolute_value_of_a_purely_imaginary_number_with_positive_imaginary_part",
+      "test_absolute_value_of_a_purely_imaginary_number_with_negative_imaginary_part",
+      "test_absolute_value_of_a_number_with_real_and_imaginary_part",
+      "test_conjugate_a_purely_real_number",
+      "test_conjugate_a_purely_imaginary_number",
+      "test_conjugate_a_number_with_real_and_imaginary_part",
+      "test_euler_s_identity_formula",
+      "test_exponential_of_0",
+      "test_exponential_of_a_purely_real_number",
+      "test_exponential_of_a_number_with_real_and_imaginary_part",
+      "test_exponential_resulting_in_a_number_with_real_and_imaginary_part",
+      "test_add_real_number_to_complex_number",
+      "test_add_complex_number_to_real_number",
+      "test_subtract_real_number_from_complex_number",
+      "test_subtract_complex_number_from_real_number",
+      "test_multiply_complex_number_by_real_number",
+      "test_multiply_real_number_by_complex_number",
+      "test_divide_complex_number_by_real_number",
+      "test_divide_real_number_by_complex_number",
+      "test_equality_of_complex_numbers",
+      "test_inequality_of_real_part",
+      "test_inequality_of_imaginary_part"
+    ]
+  },
+  {
     "name": "connect",
     "tests": [
       "test_an_empty_board_has_no_winner",
@@ -119,6 +550,141 @@
       "test_o_wins_crossing_from_top_to_bottom",
       "test_x_wins_using_a_convoluted_path",
       "test_x_wins_using_a_spiral_path"
+    ]
+  },
+  {
+    "name": "crypto-square",
+    "tests": [
+      "test_empty_plaintext_results_in_an_empty_ciphertext",
+      "test_normalization_results_in_empty_plaintext",
+      "test_lowercase",
+      "test_remove_spaces",
+      "test_remove_punctuation",
+      "test_9_character_plaintext_results_in_3_chunks_of_3_characters",
+      "test_8_character_plaintext_results_in_3_chunks_the_last_one_with_a_trailing_space",
+      "test_54_character_plaintext_results_in_8_chunks_the_last_two_with_trailing_spaces"
+    ]
+  },
+  {
+    "name": "custom-set",
+    "tests": [
+      "test_sets_with_no_elements_are_empty",
+      "test_sets_with_elements_are_not_empty",
+      "test_nothing_is_contained_in_an_empty_set",
+      "test_when_the_element_is_in_the_set",
+      "test_when_the_element_is_not_in_the_set",
+      "test_empty_set_is_a_subset_of_another_empty_set",
+      "test_empty_set_is_a_subset_of_non_empty_set",
+      "test_non_empty_set_is_not_a_subset_of_empty_set",
+      "test_set_is_a_subset_of_set_with_exact_same_elements",
+      "test_set_is_a_subset_of_larger_set_with_same_elements",
+      "test_set_is_not_a_subset_of_set_that_does_not_contain_its_elements",
+      "test_the_empty_set_is_disjoint_with_itself",
+      "test_empty_set_is_disjoint_with_non_empty_set",
+      "test_non_empty_set_is_disjoint_with_empty_set",
+      "test_sets_are_not_disjoint_if_they_share_an_element",
+      "test_sets_are_disjoint_if_they_share_no_elements",
+      "test_empty_sets_are_equal",
+      "test_empty_set_is_not_equal_to_non_empty_set",
+      "test_non_empty_set_is_not_equal_to_empty_set",
+      "test_sets_with_the_same_elements_are_equal",
+      "test_sets_with_different_elements_are_not_equal",
+      "test_set_is_not_equal_to_larger_set_with_same_elements",
+      "test_set_is_equal_to_a_set_constructed_from_an_array_with_duplicates",
+      "test_add_to_empty_set",
+      "test_add_to_non_empty_set",
+      "test_adding_an_existing_element_does_not_change_the_set",
+      "test_intersection_of_two_empty_sets_is_an_empty_set",
+      "test_intersection_of_an_empty_set_and_non_empty_set_is_an_empty_set",
+      "test_intersection_of_a_non_empty_set_and_an_empty_set_is_an_empty_set",
+      "test_intersection_of_two_sets_with_no_shared_elements_is_an_empty_set",
+      "test_intersection_of_two_sets_with_shared_elements_is_a_set_of_the_shared_elements",
+      "test_difference_of_two_empty_sets_is_an_empty_set",
+      "test_difference_of_empty_set_and_non_empty_set_is_an_empty_set",
+      "test_difference_of_a_non_empty_set_and_an_empty_set_is_the_non_empty_set",
+      "test_difference_of_two_non_empty_sets_is_a_set_of_elements_that_are_only_in_the_first_set",
+      "test_difference_removes_all_duplicates_in_the_first_set",
+      "test_union_of_empty_sets_is_an_empty_set",
+      "test_union_of_an_empty_set_and_non_empty_set_is_the_non_empty_set",
+      "test_union_of_a_non_empty_set_and_empty_set_is_the_non_empty_set",
+      "test_union_of_non_empty_sets_contains_all_unique_elements"
+    ]
+  },
+  {
+    "name": "darts",
+    "tests": [
+      "test_missed_target",
+      "test_on_the_outer_circle",
+      "test_on_the_middle_circle",
+      "test_on_the_inner_circle",
+      "test_exactly_on_center",
+      "test_near_the_center",
+      "test_just_within_the_inner_circle",
+      "test_just_outside_the_inner_circle",
+      "test_just_within_the_middle_circle",
+      "test_just_outside_the_middle_circle",
+      "test_just_within_the_outer_circle",
+      "test_just_outside_the_outer_circle",
+      "test_asymmetric_position_between_the_inner_and_middle_circles"
+    ]
+  },
+  {
+    "name": "diamond",
+    "tests": [
+      "test_degenerate_case_with_a_single_a_row",
+      "test_degenerate_case_with_no_row_containing_3_distinct_groups_of_spaces",
+      "test_smallest_non_degenerate_case_with_odd_diamond_side_length",
+      "test_smallest_non_degenerate_case_with_even_diamond_side_length",
+      "test_largest_possible_diamond"
+    ]
+  },
+  {
+    "name": "difference-of-squares",
+    "tests": [
+      "test_square_of_sum_1",
+      "test_square_of_sum_5",
+      "test_square_of_sum_100",
+      "test_sum_of_squares_1",
+      "test_sum_of_squares_5",
+      "test_sum_of_squares_100",
+      "test_difference_of_squares_1",
+      "test_difference_of_squares_5",
+      "test_difference_of_squares_100"
+    ]
+  },
+  {
+    "name": "diffie-hellman",
+    "tests": [
+      "test_private_key_is_greater_than_1_and_less_than_p",
+      "test_private_key_is_random",
+      "test_can_calculate_public_key_using_private_key",
+      "test_can_calculate_public_key_when_given_a_different_private_key",
+      "test_can_calculate_secret_using_other_party_s_public_key",
+      "test_key_exchange"
+    ]
+  },
+  {
+    "name": "dnd-character",
+    "tests": [
+      "test_ability_modifier_for_score_3_is_n4",
+      "test_ability_modifier_for_score_4_is_n3",
+      "test_ability_modifier_for_score_5_is_n3",
+      "test_ability_modifier_for_score_6_is_n2",
+      "test_ability_modifier_for_score_7_is_n2",
+      "test_ability_modifier_for_score_8_is_n1",
+      "test_ability_modifier_for_score_9_is_n1",
+      "test_ability_modifier_for_score_10_is_0",
+      "test_ability_modifier_for_score_11_is_0",
+      "test_ability_modifier_for_score_12_is_1",
+      "test_ability_modifier_for_score_13_is_1",
+      "test_ability_modifier_for_score_14_is_2",
+      "test_ability_modifier_for_score_15_is_2",
+      "test_ability_modifier_for_score_16_is_3",
+      "test_ability_modifier_for_score_17_is_3",
+      "test_ability_modifier_for_score_18_is_4",
+      "test_random_ability_is_within_range",
+      "test_random_character_is_valid",
+      "test_each_ability_is_only_calculated_once"
     ]
   },
   {
@@ -154,6 +720,70 @@
       "test_malformed_node",
       "test_malformed_EDGE",
       "test_unknown_item"
+    ]
+  },
+  {
+    "name": "eliuds-eggs",
+    "tests": [
+      "test_0_eggs",
+      "test_1_egg",
+      "test_4_eggs",
+      "test_13_eggs"
+    ]
+  },
+  {
+    "name": "error-handling",
+    "tests": [
+      "test_throw_exception",
+      "test_return_none",
+      "test_return_tuple",
+      "test_filelike_objects_are_closed_on_exception",
+      "test_filelike_objects_are_closed_without_exception"
+    ]
+  },
+  {
+    "name": "etl",
+    "tests": [
+      "test_single_letter",
+      "test_single_score_with_multiple_letters",
+      "test_multiple_scores_with_multiple_letters",
+      "test_multiple_scores_with_differing_numbers_of_letters"
+    ]
+  },
+  {
+    "name": "flatten-array",
+    "tests": [
+      "test_empty",
+      "test_no_nesting",
+      "test_flattens_a_nested_array",
+      "test_flattens_array_with_just_integers_present",
+      "test_5_level_nesting",
+      "test_6_level_nesting",
+      "test_null_values_are_omitted_from_the_final_result",
+      "test_consecutive_null_values_at_the_front_of_the_array_are_omitted_from_the_final_result",
+      "test_consecutive_null_values_in_the_middle_of_the_array_are_omitted_from_the_final_result",
+      "test_6_level_nested_array_with_null_values",
+      "test_all_values_in_nested_array_are_null"
+    ]
+  },
+  {
+    "name": "flower-field",
+    "tests": [
+      "test_no_rows",
+      "test_no_columns",
+      "test_no_flowers",
+      "test_garden_full_of_flowers",
+      "test_flower_surrounded_by_spaces",
+      "test_space_surrounded_by_flowers",
+      "test_horizontal_line",
+      "test_horizontal_line_flowers_at_edges",
+      "test_vertical_line",
+      "test_vertical_line_flowers_at_edges",
+      "test_cross",
+      "test_large_garden",
+      "test_annotate_9",
+      "test_different_len",
+      "test_invalid_char"
     ]
   },
   {
@@ -231,6 +861,16 @@
     ]
   },
   {
+    "name": "gigasecond",
+    "tests": [
+      "test_date_only_specification_of_time",
+      "test_second_test_for_date_only_specification_of_time",
+      "test_third_test_for_date_only_specification_of_time",
+      "test_full_time_specified",
+      "test_full_time_with_day_roll_over"
+    ]
+  },
+  {
     "name": "go-counting",
     "tests": [
       "test_black_corner_territory_on_5x5_board",
@@ -272,6 +912,22 @@
     ]
   },
   {
+    "name": "grains",
+    "tests": [
+      "test_grains_on_square_1",
+      "test_grains_on_square_2",
+      "test_grains_on_square_3",
+      "test_grains_on_square_4",
+      "test_grains_on_square_16",
+      "test_grains_on_square_32",
+      "test_grains_on_square_64",
+      "test_square_0_is_invalid",
+      "test_negative_square_is_invalid",
+      "test_square_greater_than_64_is_invalid",
+      "test_returns_the_total_number_of_grains_on_the_board"
+    ]
+  },
+  {
     "name": "grep",
     "tests": [
       "test_one_file_one_match_no_flags",
@@ -302,6 +958,20 @@
     ]
   },
   {
+    "name": "hamming",
+    "tests": [
+      "test_empty_strands",
+      "test_single_letter_identical_strands",
+      "test_single_letter_different_strands",
+      "test_long_identical_strands",
+      "test_long_different_strands",
+      "test_disallow_first_strand_longer",
+      "test_disallow_second_strand_longer",
+      "test_disallow_empty_first_strand",
+      "test_disallow_empty_second_strand"
+    ]
+  },
+  {
     "name": "hangman",
     "tests": [
       "test_initially_9_failures_are_allowed",
@@ -311,6 +981,238 @@
       "test_feeding_a_correct_letter_twice_counts_as_a_failure",
       "test_getting_all_the_letters_right_makes_for_a_win",
       "test_winning_on_last_guess_still_counts_as_a_win"
+    ]
+  },
+  {
+    "name": "hello-world",
+    "tests": [
+      "test_say_hi"
+    ]
+  },
+  {
+    "name": "hexadecimal",
+    "tests": [
+      "test_valid_hexa1",
+      "test_valid_hexa2",
+      "test_valid_hexa3",
+      "test_valid_hexa4",
+      "test_valid_hexa5",
+      "test_valid_hexa6",
+      "test_valid_hexa7",
+      "test_valid_hexa8",
+      "test_valid_hexa9",
+      "test_invalid_hexa"
+    ]
+  },
+  {
+    "name": "high-scores",
+    "tests": [
+      "test_list_of_scores",
+      "test_latest_score",
+      "test_personal_best",
+      "test_personal_top_three_from_a_list_of_scores",
+      "test_personal_top_highest_to_lowest",
+      "test_personal_top_when_there_is_a_tie",
+      "test_personal_top_when_there_are_less_than_3",
+      "test_personal_top_when_there_is_only_one",
+      "test_latest_score_after_personal_top_scores",
+      "test_scores_after_personal_top_scores",
+      "test_latest_score_after_personal_best",
+      "test_scores_after_personal_best"
+    ]
+  },
+  {
+    "name": "house",
+    "tests": [
+      "test_verse_one_the_house_that_jack_built",
+      "test_verse_two_the_malt_that_lay",
+      "test_verse_three_the_rat_that_ate",
+      "test_verse_four_the_cat_that_killed",
+      "test_verse_five_the_dog_that_worried",
+      "test_verse_six_the_cow_with_the_crumpled_horn",
+      "test_verse_seven_the_maiden_all_forlorn",
+      "test_verse_eight_the_man_all_tattered_and_torn",
+      "test_verse_nine_the_priest_all_shaven_and_shorn",
+      "test_verse_10_the_rooster_that_crowed_in_the_morn",
+      "test_verse_11_the_farmer_sowing_his_corn",
+      "test_verse_12_the_horse_and_the_hound_and_the_horn",
+      "test_multiple_verses",
+      "test_full_rhyme"
+    ]
+  },
+  {
+    "name": "isbn-verifier",
+    "tests": [
+      "test_valid_isbn",
+      "test_invalid_isbn_check_digit",
+      "test_valid_isbn_with_a_check_digit_of_10",
+      "test_check_digit_is_a_character_other_than_x",
+      "test_invalid_check_digit_in_isbn_is_not_treated_as_zero",
+      "test_invalid_character_in_isbn_is_not_treated_as_zero",
+      "test_x_is_only_valid_as_a_check_digit",
+      "test_valid_isbn_without_separating_dashes",
+      "test_isbn_without_separating_dashes_and_x_as_check_digit",
+      "test_isbn_without_check_digit_and_dashes",
+      "test_too_long_isbn_and_no_dashes",
+      "test_too_short_isbn",
+      "test_isbn_without_check_digit",
+      "test_check_digit_of_x_should_not_be_used_for_0",
+      "test_empty_isbn",
+      "test_input_is_9_characters",
+      "test_invalid_characters_are_not_ignored_after_checking_length",
+      "test_invalid_characters_are_not_ignored_before_checking_length",
+      "test_input_is_too_long_but_contains_a_valid_isbn"
+    ]
+  },
+  {
+    "name": "isogram",
+    "tests": [
+      "test_empty_string",
+      "test_isogram_with_only_lower_case_characters",
+      "test_word_with_one_duplicated_character",
+      "test_word_with_one_duplicated_character_from_the_end_of_the_alphabet",
+      "test_longest_reported_english_isogram",
+      "test_word_with_duplicated_character_in_mixed_case",
+      "test_word_with_duplicated_character_in_mixed_case_lowercase_first",
+      "test_hypothetical_isogrammic_word_with_hyphen",
+      "test_hypothetical_word_with_duplicated_character_following_hyphen",
+      "test_isogram_with_duplicated_hyphen",
+      "test_made_up_name_that_is_an_isogram",
+      "test_duplicated_character_in_the_middle",
+      "test_same_first_and_last_characters",
+      "test_word_with_duplicated_character_and_with_two_hyphens"
+    ]
+  },
+  {
+    "name": "killer-sudoku-helper",
+    "tests": [
+      "test_1",
+      "test_2",
+      "test_3",
+      "test_4",
+      "test_5",
+      "test_6",
+      "test_7",
+      "test_8",
+      "test_9",
+      "test_cage_with_sum_45_contains_all_digits_1_9",
+      "test_cage_with_only_1_possible_combination",
+      "test_cage_with_several_combinations",
+      "test_cage_with_several_combinations_that_is_restricted"
+    ]
+  },
+  {
+    "name": "kindergarten-garden",
+    "tests": [
+      "test_partial_garden_garden_with_single_student",
+      "test_partial_garden_different_garden_with_single_student",
+      "test_partial_garden_garden_with_two_students",
+      "test_partial_garden_second_student_s_garden",
+      "test_partial_garden_third_student_s_garden",
+      "test_full_garden_for_alice_first_student_s_garden",
+      "test_full_garden_for_bob_second_student_s_garden",
+      "test_full_garden_for_charlie",
+      "test_full_garden_for_david",
+      "test_full_garden_for_eve",
+      "test_full_garden_for_fred",
+      "test_full_garden_for_ginny",
+      "test_full_garden_for_harriet",
+      "test_full_garden_for_ileana",
+      "test_full_garden_for_joseph",
+      "test_full_garden_for_kincaid_second_to_last_student_s_garden",
+      "test_full_garden_for_larry_last_student_s_garden",
+      "test_students_are_unordered_first_student",
+      "test_students_are_unordered_last_student"
+    ]
+  },
+  {
+    "name": "knapsack",
+    "tests": [
+      "test_no_items",
+      "test_one_item_too_heavy",
+      "test_five_items_cannot_be_greedy_by_weight",
+      "test_five_items_cannot_be_greedy_by_value",
+      "test_example_knapsack",
+      "test_8_items",
+      "test_15_items"
+    ]
+  },
+  {
+    "name": "largest-series-product",
+    "tests": [
+      "test_finds_the_largest_product_if_span_equals_length",
+      "test_can_find_the_largest_product_of_2_with_numbers_in_order",
+      "test_can_find_the_largest_product_of_2",
+      "test_can_find_the_largest_product_of_3_with_numbers_in_order",
+      "test_can_find_the_largest_product_of_3",
+      "test_can_find_the_largest_product_of_5_with_numbers_in_order",
+      "test_can_get_the_largest_product_of_a_big_number",
+      "test_reports_zero_if_the_only_digits_are_zero",
+      "test_reports_zero_if_all_spans_include_zero",
+      "test_rejects_span_longer_than_string_length",
+      "test_rejects_empty_string_and_nonzero_span",
+      "test_rejects_invalid_character_in_digits",
+      "test_rejects_negative_span",
+      "test_euler_big_number"
+    ]
+  },
+  {
+    "name": "leap",
+    "tests": [
+      "test_year_not_divisible_by_4_in_common_year",
+      "test_year_divisible_by_2_not_divisible_by_4_in_common_year",
+      "test_year_divisible_by_4_not_divisible_by_100_in_leap_year",
+      "test_year_divisible_by_4_and_5_is_still_a_leap_year",
+      "test_year_divisible_by_100_not_divisible_by_400_in_common_year",
+      "test_year_divisible_by_100_but_not_by_3_is_still_not_a_leap_year",
+      "test_year_divisible_by_400_is_leap_year",
+      "test_year_divisible_by_400_but_not_by_125_is_still_a_leap_year",
+      "test_year_divisible_by_200_not_divisible_by_400_in_common_year"
+    ]
+  },
+  {
+    "name": "ledger",
+    "tests": [
+      "test_empty_ledger",
+      "test_one_entry",
+      "test_credit_and_debit",
+      "test_final_order_tie_breaker_is_change",
+      "test_overlong_description_is_truncated",
+      "test_euros",
+      "test_dutch_locale",
+      "test_dutch_locale_and_euros",
+      "test_dutch_negative_number_with_3_digits_before_decimal_point",
+      "test_american_negative_number_with_3_digits_before_decimal_point",
+      "test_multiple_entries_on_same_date_ordered_by_description"
+    ]
+  },
+  {
+    "name": "linked-list",
+    "tests": [
+      "test_pop_gets_element_from_the_list",
+      "test_push_pop_respectively_add_remove_at_the_end_of_the_list",
+      "test_shift_gets_an_element_from_the_list",
+      "test_shift_gets_first_element_from_the_list",
+      "test_unshift_adds_element_at_start_of_the_list",
+      "test_pop_push_shift_and_unshift_can_be_used_in_any_order",
+      "test_count_an_empty_list",
+      "test_count_a_list_with_items",
+      "test_count_is_correct_after_mutation",
+      "test_popping_to_empty_doesn_t_break_the_list",
+      "test_shifting_to_empty_doesn_t_break_the_list",
+      "test_deletes_the_only_element",
+      "test_deletes_the_element_with_the_specified_value_from_the_list",
+      "test_deletes_the_element_with_the_specified_value_from_the_list_re_assigns_tail",
+      "test_deletes_the_element_with_the_specified_value_from_the_list_re_assigns_head",
+      "test_deletes_the_first_of_two_elements",
+      "test_deletes_the_second_of_two_elements",
+      "test_deletes_only_the_first_occurrence",
+      "test_using_pop_raises_an_error_if_the_list_is_empty",
+      "test_can_return_with_pop_and_then_raise_an_error_if_empty",
+      "test_using_shift_raises_an_error_if_the_list_is_empty",
+      "test_can_return_with_shift_and_then_raise_an_error_if_empty",
+      "test_using_delete_raises_an_error_if_the_list_is_empty",
+      "test_using_delete_raises_an_error_if_the_value_is_not_found"
     ]
   },
   {
@@ -340,6 +1242,368 @@
       "test_reverse_list_of_lists_is_not_flattened",
       "test_foldr_foldr_add_string",
       "test_reverse_reverse_mixed_types"
+    ]
+  },
+  {
+    "name": "luhn",
+    "tests": [
+      "test_single_digit_strings_can_not_be_valid",
+      "test_a_single_zero_is_invalid",
+      "test_a_simple_valid_sin_that_remains_valid_if_reversed",
+      "test_a_simple_valid_sin_that_becomes_invalid_if_reversed",
+      "test_a_valid_canadian_sin",
+      "test_invalid_canadian_sin",
+      "test_invalid_credit_card",
+      "test_invalid_long_number_with_an_even_remainder",
+      "test_invalid_long_number_with_a_remainder_divisible_by_5",
+      "test_valid_number_with_an_even_number_of_digits",
+      "test_valid_number_with_an_odd_number_of_spaces",
+      "test_valid_strings_with_a_non_digit_added_at_the_end_become_invalid",
+      "test_valid_strings_with_punctuation_included_become_invalid",
+      "test_valid_strings_with_symbols_included_become_invalid",
+      "test_single_zero_with_space_is_invalid",
+      "test_more_than_a_single_zero_is_valid",
+      "test_input_digit_9_is_correctly_converted_to_output_digit_9",
+      "test_very_long_input_is_valid",
+      "test_valid_luhn_with_an_odd_number_of_digits_and_non_zero_first_digit",
+      "test_using_ascii_value_for_non_doubled_non_digit_isn_t_allowed",
+      "test_using_ascii_value_for_doubled_non_digit_isn_t_allowed",
+      "test_non_numeric_non_space_char_in_the_middle_with_a_sum_that_s_divisible_by_10_isn_t_allowed",
+      "test_is_valid_can_be_called_repeatedly"
+    ]
+  },
+  {
+    "name": "markdown",
+    "tests": [
+      "test_parses_normal_text_as_a_paragraph",
+      "test_parsing_italics",
+      "test_parsing_bold_text",
+      "test_mixed_normal_italics_and_bold_text",
+      "test_with_h1_header_level",
+      "test_with_h2_header_level",
+      "test_with_h3_header_level",
+      "test_with_h4_header_level",
+      "test_with_h5_header_level",
+      "test_with_h6_header_level",
+      "test_h7_header_level_is_a_paragraph",
+      "test_unordered_lists",
+      "test_with_a_little_bit_of_everything",
+      "test_with_markdown_symbols_in_the_header_text_that_should_not_be_interpreted",
+      "test_with_markdown_symbols_in_the_list_item_text_that_should_not_be_interpreted",
+      "test_with_markdown_symbols_in_the_paragraph_text_that_should_not_be_interpreted",
+      "test_unordered_lists_close_properly_with_preceding_and_following_lines"
+    ]
+  },
+  {
+    "name": "matching-brackets",
+    "tests": [
+      "test_paired_square_brackets",
+      "test_empty_string",
+      "test_unpaired_brackets",
+      "test_wrong_ordered_brackets",
+      "test_wrong_closing_bracket",
+      "test_paired_with_whitespace",
+      "test_partially_paired_brackets",
+      "test_simple_nested_brackets",
+      "test_several_paired_brackets",
+      "test_paired_and_nested_brackets",
+      "test_unopened_closing_brackets",
+      "test_unpaired_and_nested_brackets",
+      "test_paired_and_wrong_nested_brackets",
+      "test_paired_and_wrong_nested_brackets_but_innermost_are_correct",
+      "test_paired_and_incomplete_brackets",
+      "test_too_many_closing_brackets",
+      "test_early_unexpected_brackets",
+      "test_early_mismatched_brackets",
+      "test_math_expression",
+      "test_complex_latex_expression"
+    ]
+  },
+  {
+    "name": "matrix",
+    "tests": [
+      "test_extract_row_from_one_number_matrix",
+      "test_can_extract_row",
+      "test_extract_row_where_numbers_have_different_widths",
+      "test_can_extract_row_from_non_square_matrix_with_no_corresponding_column",
+      "test_extract_column_from_one_number_matrix",
+      "test_can_extract_column",
+      "test_can_extract_column_from_non_square_matrix_with_no_corresponding_row",
+      "test_extract_column_where_numbers_have_different_widths"
+    ]
+  },
+  {
+    "name": "meetup",
+    "tests": [
+      "test_when_teenth_monday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_monday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_monday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_tuesday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_tuesday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_tuesday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_wednesday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_wednesday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_wednesday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_thursday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_thursday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_thursday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_friday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_friday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_friday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_saturday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_saturday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_teenth_saturday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_sunday_is_the_19th_the_last_day_of_the_teenth_week",
+      "test_when_teenth_sunday_is_some_day_in_the_middle_of_the_teenth_week",
+      "test_when_teenth_sunday_is_the_13th_the_first_day_of_the_teenth_week",
+      "test_when_first_monday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_monday_is_the_1st_the_first_day_of_the_first_week",
+      "test_when_first_tuesday_is_the_7th_the_last_day_of_the_first_week",
+      "test_when_first_tuesday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_wednesday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_wednesday_is_the_7th_the_last_day_of_the_first_week",
+      "test_when_first_thursday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_thursday_is_another_day_in_the_middle_of_the_first_week",
+      "test_when_first_friday_is_the_1st_the_first_day_of_the_first_week",
+      "test_when_first_friday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_saturday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_saturday_is_another_day_in_the_middle_of_the_first_week",
+      "test_when_first_sunday_is_some_day_in_the_middle_of_the_first_week",
+      "test_when_first_sunday_is_the_7th_the_last_day_of_the_first_week",
+      "test_when_second_monday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_monday_is_the_8th_the_first_day_of_the_second_week",
+      "test_when_second_tuesday_is_the_14th_the_last_day_of_the_second_week",
+      "test_when_second_tuesday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_wednesday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_wednesday_is_the_14th_the_last_day_of_the_second_week",
+      "test_when_second_thursday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_thursday_is_another_day_in_the_middle_of_the_second_week",
+      "test_when_second_friday_is_the_8th_the_first_day_of_the_second_week",
+      "test_when_second_friday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_saturday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_saturday_is_another_day_in_the_middle_of_the_second_week",
+      "test_when_second_sunday_is_some_day_in_the_middle_of_the_second_week",
+      "test_when_second_sunday_is_the_14th_the_last_day_of_the_second_week",
+      "test_when_third_monday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_monday_is_the_15th_the_first_day_of_the_third_week",
+      "test_when_third_tuesday_is_the_21st_the_last_day_of_the_third_week",
+      "test_when_third_tuesday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_wednesday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_wednesday_is_the_21st_the_last_day_of_the_third_week",
+      "test_when_third_thursday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_thursday_is_another_day_in_the_middle_of_the_third_week",
+      "test_when_third_friday_is_the_15th_the_first_day_of_the_third_week",
+      "test_when_third_friday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_saturday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_saturday_is_another_day_in_the_middle_of_the_third_week",
+      "test_when_third_sunday_is_some_day_in_the_middle_of_the_third_week",
+      "test_when_third_sunday_is_the_21st_the_last_day_of_the_third_week",
+      "test_when_fourth_monday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_monday_is_the_22nd_the_first_day_of_the_fourth_week",
+      "test_when_fourth_tuesday_is_the_28th_the_last_day_of_the_fourth_week",
+      "test_when_fourth_tuesday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_wednesday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_wednesday_is_the_28th_the_last_day_of_the_fourth_week",
+      "test_when_fourth_thursday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_thursday_is_another_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_friday_is_the_22nd_the_first_day_of_the_fourth_week",
+      "test_when_fourth_friday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_saturday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_saturday_is_another_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_sunday_is_some_day_in_the_middle_of_the_fourth_week",
+      "test_when_fourth_sunday_is_the_28th_the_last_day_of_the_fourth_week",
+      "test_last_monday_in_a_month_with_four_mondays",
+      "test_last_monday_in_a_month_with_five_mondays",
+      "test_last_tuesday_in_a_month_with_four_tuesdays",
+      "test_last_tuesday_in_another_month_with_four_tuesdays",
+      "test_last_wednesday_in_a_month_with_five_wednesdays",
+      "test_last_wednesday_in_a_month_with_four_wednesdays",
+      "test_last_thursday_in_a_month_with_four_thursdays",
+      "test_last_thursday_in_a_month_with_five_thursdays",
+      "test_last_friday_in_a_month_with_five_fridays",
+      "test_last_friday_in_a_month_with_four_fridays",
+      "test_last_saturday_in_a_month_with_four_saturdays",
+      "test_last_saturday_in_another_month_with_four_saturdays",
+      "test_last_sunday_in_a_month_with_five_sundays",
+      "test_last_sunday_in_a_month_with_four_sundays",
+      "test_when_last_wednesday_in_february_in_a_leap_year_is_the_29th",
+      "test_last_wednesday_in_december_that_is_also_the_last_day_of_the_year",
+      "test_when_last_sunday_in_february_in_a_non_leap_year_is_not_the_29th",
+      "test_when_first_friday_is_the_7th_the_last_day_of_the_first_week",
+      "test_fifth_monday_of_march_2015",
+      "test_fifth_thursday_of_february_2024",
+      "test_fifth_saturday_of_february_2020",
+      "test_last_sunday_of_june_2024",
+      "test_teenth_friday_of_may_2022",
+      "test_nonexistent_fifth_monday_of_february_2022",
+      "test_nonexistent_fifth_friday_of_august_2022",
+      "test_nonexistent_fifth_thursday_of_may_2023"
+    ]
+  },
+  {
+    "name": "minesweeper",
+    "tests": [
+      "test_no_rows",
+      "test_no_columns",
+      "test_no_mines",
+      "test_minefield_with_only_mines",
+      "test_mine_surrounded_by_spaces",
+      "test_space_surrounded_by_mines",
+      "test_horizontal_line",
+      "test_horizontal_line_mines_at_edges",
+      "test_vertical_line",
+      "test_vertical_line_mines_at_edges",
+      "test_cross",
+      "test_large_minefield",
+      "test_annotate_9",
+      "test_different_len",
+      "test_invalid_char"
+    ]
+  },
+  {
+    "name": "nth-prime",
+    "tests": [
+      "test_first_prime",
+      "test_second_prime",
+      "test_sixth_prime",
+      "test_big_prime",
+      "test_there_is_no_zeroth_prime",
+      "test_first_twenty_primes"
+    ]
+  },
+  {
+    "name": "ocr-numbers",
+    "tests": [
+      "test_recognizes_0",
+      "test_recognizes_1",
+      "test_unreadable_but_correctly_sized_inputs_return",
+      "test_input_with_a_number_of_lines_that_is_not_a_multiple_of_four_raises_an_error",
+      "test_input_with_a_number_of_columns_that_is_not_a_multiple_of_three_raises_an_error",
+      "test_recognizes_110101100",
+      "test_garbled_numbers_in_a_string_are_replaced_with",
+      "test_recognizes_2",
+      "test_recognizes_3",
+      "test_recognizes_4",
+      "test_recognizes_5",
+      "test_recognizes_6",
+      "test_recognizes_7",
+      "test_recognizes_8",
+      "test_recognizes_9",
+      "test_recognizes_string_of_decimal_numbers",
+      "test_numbers_separated_by_empty_lines_are_recognized_lines_are_joined_by_commas"
+    ]
+  },
+  {
+    "name": "octal",
+    "tests": [
+      "test_octal_1_is_decimal_1",
+      "test_octal_10_is_decimal_8",
+      "test_octal_17_is_decimal_15",
+      "test_octal_130_is_decimal_88",
+      "test_octal_2047_is_decimal_1063",
+      "test_octal_1234567_is_decimal_342391",
+      "test_8_is_seen_as_invalid",
+      "test_invalid_octal_is_recognized",
+      "test_6789_is_seen_as_invalid",
+      "test_valid_octal_formatted_string_011_is_decimal_9"
+    ]
+  },
+  {
+    "name": "paasio",
+    "tests": [
+      "test_meteredsocket_context_manager",
+      "test_meteredsocket_context_manager_exception_raise",
+      "test_meteredsocket_context_manager_exception_suppress",
+      "test_meteredsocket_recv_once",
+      "test_meteredsocket_recv_multiple",
+      "test_meteredsocket_recv_multiple_chunk",
+      "test_meteredsocket_recv_under_size",
+      "test_meteredsocket_send_once",
+      "test_meteredsocket_send_multiple",
+      "test_meteredsocket_send_under_size",
+      "test_meteredsocket_bufsize_required",
+      "test_meteredsocket_flags_support",
+      "test_meteredsocket_stats_read_only",
+      "test_meteredfile_context_manager",
+      "test_meteredfile_context_manager_exception_raise",
+      "test_meteredfile_context_manager_exception_suppress",
+      "test_meteredfile_iteration",
+      "test_meteredfile_read_once",
+      "test_meteredfile_read_multiple",
+      "test_meteredfile_read_multiple_chunk",
+      "test_meteredfile_read_under_size",
+      "test_meteredfile_write_once",
+      "test_meteredfile_write_multiple",
+      "test_meteredfile_write_under_size",
+      "test_meteredfile_stats_read_only"
+    ]
+  },
+  {
+    "name": "palindrome-products",
+    "tests": [
+      "test_find_the_smallest_palindrome_from_single_digit_factors",
+      "test_find_the_largest_palindrome_from_single_digit_factors",
+      "test_find_the_smallest_palindrome_from_double_digit_factors",
+      "test_find_the_largest_palindrome_from_double_digit_factors",
+      "test_find_the_smallest_palindrome_from_triple_digit_factors",
+      "test_find_the_largest_palindrome_from_triple_digit_factors",
+      "test_find_the_smallest_palindrome_from_four_digit_factors",
+      "test_find_the_largest_palindrome_from_four_digit_factors",
+      "test_empty_result_for_smallest_if_no_palindrome_in_the_range",
+      "test_empty_result_for_largest_if_no_palindrome_in_the_range",
+      "test_error_result_for_smallest_if_min_is_more_than_max",
+      "test_error_result_for_largest_if_min_is_more_than_max",
+      "test_smallest_product_does_not_use_the_smallest_factor"
+    ]
+  },
+  {
+    "name": "pangram",
+    "tests": [
+      "test_empty_sentence",
+      "test_perfect_lower_case",
+      "test_only_lower_case",
+      "test_missing_the_letter_x",
+      "test_missing_the_letter_h",
+      "test_with_underscores",
+      "test_with_numbers",
+      "test_missing_letters_replaced_by_numbers",
+      "test_mixed_case_and_punctuation",
+      "test_a_m_and_a_m_are_26_different_characters_but_not_a_pangram",
+      "test_sentence_without_lower_bound",
+      "test_sentence_without_upper_bound"
+    ]
+  },
+  {
+    "name": "pascals-triangle",
+    "tests": [
+      "test_zero_rows",
+      "test_single_row",
+      "test_two_rows",
+      "test_three_rows",
+      "test_four_rows",
+      "test_five_rows",
+      "test_six_rows",
+      "test_ten_rows",
+      "test_negative_rows_are_invalid",
+      "test_solution_is_recursive"
+    ]
+  },
+  {
+    "name": "perfect-numbers",
+    "tests": [
+      "test_smallest_perfect_number_is_classified_correctly",
+      "test_medium_perfect_number_is_classified_correctly",
+      "test_large_perfect_number_is_classified_correctly",
+      "test_smallest_abundant_number_is_classified_correctly",
+      "test_medium_abundant_number_is_classified_correctly",
+      "test_large_abundant_number_is_classified_correctly",
+      "test_smallest_prime_deficient_number_is_classified_correctly",
+      "test_smallest_non_prime_deficient_number_is_classified_correctly",
+      "test_medium_deficient_number_is_classified_correctly",
+      "test_large_deficient_number_is_classified_correctly",
+      "test_edge_case_no_factors_other_than_itself_is_classified_correctly",
+      "test_zero_is_rejected_as_it_is_not_a_positive_integer",
+      "test_negative_integer_is_rejected_as_it_is_not_a_positive_integer"
     ]
   },
   {
@@ -381,6 +1645,7 @@
       "test_word_beginning_with_k",
       "test_word_beginning_with_x",
       "test_word_beginning_with_q_without_a_following_u",
+      "test_word_beginning_with_consonant_and_vowel_containing_qu",
       "test_word_beginning_with_ch",
       "test_word_beginning_with_qu",
       "test_word_beginning_with_qu_and_a_preceding_consonant",
@@ -393,6 +1658,19 @@
       "test_y_is_treated_like_a_vowel_at_the_end_of_a_consonant_cluster",
       "test_y_as_second_letter_in_two_letter_word",
       "test_a_whole_phrase"
+    ]
+  },
+  {
+    "name": "point-mutations",
+    "tests": [
+      "test_no_difference_between_empty_strands",
+      "test_no_difference_between_identical_strands",
+      "test_complete_hamming_distance_in_small_strand",
+      "test_hamming_distance_in_off_by_one_strand",
+      "test_small_hamming_distance_in_middle_somewhere",
+      "test_larger_distance",
+      "test_ignores_extra_length_on_other_strand_when_longer",
+      "test_ignores_extra_length_on_original_strand_when_longer"
     ]
   },
   {
@@ -458,6 +1736,54 @@
     ]
   },
   {
+    "name": "prime-factors",
+    "tests": [
+      "test_no_factors",
+      "test_prime_number",
+      "test_another_prime_number",
+      "test_square_of_a_prime",
+      "test_product_of_first_prime",
+      "test_cube_of_a_prime",
+      "test_product_of_second_prime",
+      "test_product_of_third_prime",
+      "test_product_of_first_and_second_prime",
+      "test_product_of_primes_and_non_primes",
+      "test_product_of_primes",
+      "test_factors_include_a_large_prime"
+    ]
+  },
+  {
+    "name": "protein-translation",
+    "tests": [
+      "test_methionine_rna_sequence",
+      "test_phenylalanine_rna_sequence_1",
+      "test_phenylalanine_rna_sequence_2",
+      "test_leucine_rna_sequence_1",
+      "test_leucine_rna_sequence_2",
+      "test_serine_rna_sequence_1",
+      "test_serine_rna_sequence_2",
+      "test_serine_rna_sequence_3",
+      "test_serine_rna_sequence_4",
+      "test_tyrosine_rna_sequence_1",
+      "test_tyrosine_rna_sequence_2",
+      "test_cysteine_rna_sequence_1",
+      "test_cysteine_rna_sequence_2",
+      "test_tryptophan_rna_sequence",
+      "test_stop_codon_rna_sequence_1",
+      "test_stop_codon_rna_sequence_2",
+      "test_stop_codon_rna_sequence_3",
+      "test_sequence_of_two_protein_codons_translates_into_proteins",
+      "test_sequence_of_two_different_protein_codons_translates_into_proteins",
+      "test_translate_rna_strand_into_correct_protein_list",
+      "test_translation_stops_if_stop_codon_at_beginning_of_sequence",
+      "test_translation_stops_if_stop_codon_at_end_of_two_codon_sequence",
+      "test_translation_stops_if_stop_codon_at_end_of_three_codon_sequence",
+      "test_translation_stops_if_stop_codon_in_middle_of_three_codon_sequence",
+      "test_translation_stops_if_stop_codon_in_middle_of_six_codon_sequence",
+      "test_sequence_of_two_non_stop_codons_does_not_translate_to_a_stop_codon"
+    ]
+  },
+  {
     "name": "proverb",
     "tests": [
       "test_zero_pieces",
@@ -468,6 +1794,119 @@
       "test_four_pieces_modernized",
       "test_an_optional_qualifier_can_be_added",
       "test_an_optional_qualifier_in_the_final_consequences"
+    ]
+  },
+  {
+    "name": "pythagorean-triplet",
+    "tests": [
+      "test_triplets_whose_sum_is_12",
+      "test_triplets_whose_sum_is_108",
+      "test_triplets_whose_sum_is_1000",
+      "test_no_matching_triplets_for_1001",
+      "test_returns_all_matching_triplets",
+      "test_several_matching_triplets",
+      "test_triplets_for_large_number"
+    ]
+  },
+  {
+    "name": "queen-attack",
+    "tests": [
+      "test_queen_with_a_valid_position",
+      "test_queen_must_have_positive_row",
+      "test_queen_must_have_row_on_board",
+      "test_queen_must_have_positive_column",
+      "test_queen_must_have_column_on_board",
+      "test_cannot_attack",
+      "test_can_attack_on_same_row",
+      "test_can_attack_on_same_column",
+      "test_can_attack_on_first_diagonal",
+      "test_can_attack_on_second_diagonal",
+      "test_can_attack_on_third_diagonal",
+      "test_can_attack_on_fourth_diagonal",
+      "test_cannot_attack_if_falling_diagonals_are_only_the_same_when_reflected_across_the_longest_falling_diagonal",
+      "test_queens_same_position_can_attack"
+    ]
+  },
+  {
+    "name": "rail-fence-cipher",
+    "tests": [
+      "test_encode_with_two_rails",
+      "test_encode_with_three_rails",
+      "test_encode_with_ending_in_the_middle",
+      "test_decode_with_three_rails",
+      "test_decode_with_five_rails",
+      "test_decode_with_six_rails"
+    ]
+  },
+  {
+    "name": "raindrops",
+    "tests": [
+      "test_the_sound_for_1_is_1",
+      "test_the_sound_for_3_is_pling",
+      "test_the_sound_for_5_is_plang",
+      "test_the_sound_for_7_is_plong",
+      "test_the_sound_for_6_is_pling_as_it_has_a_factor_3",
+      "test_2_to_the_power_3_does_not_make_a_raindrop_sound_as_3_is_the_exponent_not_the_base",
+      "test_the_sound_for_9_is_pling_as_it_has_a_factor_3",
+      "test_the_sound_for_10_is_plang_as_it_has_a_factor_5",
+      "test_the_sound_for_14_is_plong_as_it_has_a_factor_of_7",
+      "test_the_sound_for_15_is_pling_plang_as_it_has_factors_3_and_5",
+      "test_the_sound_for_21_is_pling_plong_as_it_has_factors_3_and_7",
+      "test_the_sound_for_25_is_plang_as_it_has_a_factor_5",
+      "test_the_sound_for_27_is_pling_as_it_has_a_factor_3",
+      "test_the_sound_for_35_is_plang_plong_as_it_has_factors_5_and_7",
+      "test_the_sound_for_49_is_plong_as_it_has_a_factor_7",
+      "test_the_sound_for_52_is_52",
+      "test_the_sound_for_105_is_pling_plang_plong_as_it_has_factors_3_5_and_7",
+      "test_the_sound_for_3125_is_plang_as_it_has_a_factor_5"
+    ]
+  },
+  {
+    "name": "rational-numbers",
+    "tests": [
+      "test_add_two_positive_rational_numbers",
+      "test_add_a_positive_rational_number_and_a_negative_rational_number",
+      "test_add_two_negative_rational_numbers",
+      "test_add_a_rational_number_to_its_additive_inverse",
+      "test_subtract_two_positive_rational_numbers",
+      "test_subtract_a_positive_rational_number_and_a_negative_rational_number",
+      "test_subtract_two_negative_rational_numbers",
+      "test_subtract_a_rational_number_from_itself",
+      "test_multiply_two_positive_rational_numbers",
+      "test_multiply_a_negative_rational_number_by_a_positive_rational_number",
+      "test_multiply_two_negative_rational_numbers",
+      "test_multiply_a_rational_number_by_its_reciprocal",
+      "test_multiply_a_rational_number_by_1",
+      "test_multiply_a_rational_number_by_0",
+      "test_divide_two_positive_rational_numbers",
+      "test_divide_a_positive_rational_number_by_a_negative_rational_number",
+      "test_divide_two_negative_rational_numbers",
+      "test_divide_a_rational_number_by_1",
+      "test_absolute_value_of_a_positive_rational_number",
+      "test_absolute_value_of_a_positive_rational_number_with_negative_numerator_and_denominator",
+      "test_absolute_value_of_a_negative_rational_number",
+      "test_absolute_value_of_a_negative_rational_number_with_negative_denominator",
+      "test_absolute_value_of_zero",
+      "test_absolute_value_of_a_rational_number_is_reduced_to_lowest_terms",
+      "test_raise_a_positive_rational_number_to_a_positive_integer_power",
+      "test_raise_a_negative_rational_number_to_a_positive_integer_power",
+      "test_raise_a_positive_rational_number_to_a_negative_integer_power",
+      "test_raise_a_negative_rational_number_to_an_even_negative_integer_power",
+      "test_raise_a_negative_rational_number_to_an_odd_negative_integer_power",
+      "test_raise_zero_to_an_integer_power",
+      "test_raise_one_to_an_integer_power",
+      "test_raise_a_positive_rational_number_to_the_power_of_zero",
+      "test_raise_a_negative_rational_number_to_the_power_of_zero",
+      "test_raise_a_real_number_to_a_positive_rational_number",
+      "test_raise_a_real_number_to_a_negative_rational_number",
+      "test_raise_a_real_number_to_a_zero_rational_number",
+      "test_reduce_a_positive_rational_number_to_lowest_terms",
+      "test_reduce_places_the_minus_sign_on_the_numerator",
+      "test_reduce_a_negative_rational_number_to_lowest_terms",
+      "test_reduce_a_rational_number_with_a_negative_denominator_to_lowest_terms",
+      "test_reduce_zero_to_lowest_terms",
+      "test_reduce_an_integer_to_lowest_terms",
+      "test_reduce_one_to_lowest_terms"
     ]
   },
   {
@@ -490,6 +1929,78 @@
     ]
   },
   {
+    "name": "rectangles",
+    "tests": [
+      "test_no_rows",
+      "test_no_columns",
+      "test_no_rectangles",
+      "test_one_rectangle",
+      "test_two_rectangles_without_shared_parts",
+      "test_five_rectangles_with_shared_parts",
+      "test_rectangle_of_height_1_is_counted",
+      "test_rectangle_of_width_1_is_counted",
+      "test_1x1_square_is_counted",
+      "test_only_complete_rectangles_are_counted",
+      "test_rectangles_can_be_of_different_sizes",
+      "test_corner_is_required_for_a_rectangle_to_be_complete",
+      "test_large_input_with_many_rectangles",
+      "test_rectangles_must_have_four_sides"
+    ]
+  },
+  {
+    "name": "resistor-color",
+    "tests": [
+      "test_black",
+      "test_white",
+      "test_orange",
+      "test_colors"
+    ]
+  },
+  {
+    "name": "resistor-color-duo",
+    "tests": [
+      "test_brown_and_black",
+      "test_blue_and_grey",
+      "test_yellow_and_violet",
+      "test_white_and_red",
+      "test_orange_and_orange",
+      "test_ignore_additional_colors",
+      "test_black_and_brown_one_digit"
+    ]
+  },
+  {
+    "name": "resistor-color-expert",
+    "tests": [
+      "test_orange_orange_black_and_red",
+      "test_blue_grey_brown_and_violet",
+      "test_red_black_red_and_green",
+      "test_green_brown_orange_and_grey",
+      "test_one_black_band",
+      "test_orange_orange_yellow_black_and_brown",
+      "test_red_green_yellow_yellow_and_brown",
+      "test_blue_grey_white_brown_and_brown",
+      "test_violet_orange_red_and_grey",
+      "test_brown_red_orange_green_and_blue",
+      "test_brown_black_brown_yellow_and_violet",
+      "test_brown_black_red_and_red"
+    ]
+  },
+  {
+    "name": "resistor-color-trio",
+    "tests": [
+      "test_orange_and_orange_and_black",
+      "test_blue_and_grey_and_brown",
+      "test_red_and_black_and_red",
+      "test_green_and_brown_and_orange",
+      "test_yellow_and_violet_and_yellow",
+      "test_blue_and_violet_and_blue",
+      "test_minimum_possible_value",
+      "test_maximum_possible_value",
+      "test_first_two_colors_make_an_invalid_octal_number",
+      "test_ignore_extra_colors"
+    ]
+  },
+  {
     "name": "rest-api",
     "tests": [
       "test_no_users",
@@ -504,12 +2015,174 @@
     ]
   },
   {
+    "name": "reverse-string",
+    "tests": [
+      "test_an_empty_string",
+      "test_a_word",
+      "test_a_capitalized_word",
+      "test_a_sentence_with_punctuation",
+      "test_a_palindrome",
+      "test_an_even_sized_word",
+      "test_wide_characters"
+    ]
+  },
+  {
+    "name": "rna-transcription",
+    "tests": [
+      "test_empty_rna_sequence",
+      "test_rna_complement_of_cytosine_is_guanine",
+      "test_rna_complement_of_guanine_is_cytosine",
+      "test_rna_complement_of_thymine_is_adenine",
+      "test_rna_complement_of_adenine_is_uracil",
+      "test_rna_complement"
+    ]
+  },
+  {
     "name": "robot-name",
     "tests": [
       "test_has_name",
       "test_name_sticks",
       "test_different_robots_have_different_names",
       "test_reset_name"
+    ]
+  },
+  {
+    "name": "robot-simulator",
+    "tests": [
+      "test_at_origin_facing_north",
+      "test_at_negative_position_facing_south",
+      "test_changes_north_to_east",
+      "test_changes_east_to_south",
+      "test_changes_south_to_west",
+      "test_changes_west_to_north",
+      "test_changes_north_to_west",
+      "test_changes_west_to_south",
+      "test_changes_south_to_east",
+      "test_changes_east_to_north",
+      "test_facing_north_increments_y",
+      "test_facing_south_decrements_y",
+      "test_facing_east_increments_x",
+      "test_facing_west_decrements_x",
+      "test_moving_east_and_north_from_readme",
+      "test_moving_west_and_north",
+      "test_moving_west_and_south",
+      "test_moving_east_and_north"
+    ]
+  },
+  {
+    "name": "roman-numerals",
+    "tests": [
+      "test_1_is_i",
+      "test_2_is_ii",
+      "test_3_is_iii",
+      "test_4_is_iv",
+      "test_5_is_v",
+      "test_6_is_vi",
+      "test_9_is_ix",
+      "test_16_is_xvi",
+      "test_27_is_xxvii",
+      "test_48_is_xlviii",
+      "test_49_is_xlix",
+      "test_59_is_lix",
+      "test_66_is_lxvi",
+      "test_93_is_xciii",
+      "test_141_is_cxli",
+      "test_163_is_clxiii",
+      "test_166_is_clxvi",
+      "test_402_is_cdii",
+      "test_575_is_dlxxv",
+      "test_666_is_dclxvi",
+      "test_911_is_cmxi",
+      "test_1024_is_mxxiv",
+      "test_1666_is_mdclxvi",
+      "test_3000_is_mmm",
+      "test_3001_is_mmmi",
+      "test_3888_is_mmmdccclxxxviii",
+      "test_3999_is_mmmcmxcix"
+    ]
+  },
+  {
+    "name": "rotational-cipher",
+    "tests": [
+      "test_rotate_a_by_0_same_output_as_input",
+      "test_rotate_a_by_1",
+      "test_rotate_a_by_26_same_output_as_input",
+      "test_rotate_m_by_13",
+      "test_rotate_n_by_13_with_wrap_around_alphabet",
+      "test_rotate_capital_letters",
+      "test_rotate_spaces",
+      "test_rotate_numbers",
+      "test_rotate_punctuation",
+      "test_rotate_all_letters"
+    ]
+  },
+  {
+    "name": "run-length-encoding",
+    "tests": [
+      "test_encode_empty_string",
+      "test_encode_single_characters_only_are_encoded_without_count",
+      "test_encode_string_with_no_single_characters",
+      "test_encode_single_characters_mixed_with_repeated_characters",
+      "test_encode_multiple_whitespace_mixed_in_string",
+      "test_encode_lowercase_characters",
+      "test_decode_empty_string",
+      "test_decode_single_characters_only",
+      "test_decode_string_with_no_single_characters",
+      "test_decode_single_characters_with_repeated_characters",
+      "test_decode_multiple_whitespace_mixed_in_string",
+      "test_decode_lowercase_string",
+      "test_encode_followed_by_decode_gives_original_string"
+    ]
+  },
+  {
+    "name": "saddle-points",
+    "tests": [
+      "test_can_identify_single_saddle_point",
+      "test_can_identify_that_empty_matrix_has_no_saddle_points",
+      "test_can_identify_lack_of_saddle_points_when_there_are_none",
+      "test_can_identify_multiple_saddle_points_in_a_column",
+      "test_can_identify_multiple_saddle_points_in_a_row",
+      "test_can_identify_saddle_point_in_bottom_right_corner",
+      "test_can_identify_saddle_points_in_a_non_square_matrix",
+      "test_can_identify_that_saddle_points_in_a_single_column_matrix_are_those_with_the_minimum_value",
+      "test_can_identify_that_saddle_points_in_a_single_row_matrix_are_those_with_the_maximum_value",
+      "test_irregular_matrix"
+    ]
+  },
+  {
+    "name": "satellite",
+    "tests": [
+      "test_empty_tree",
+      "test_tree_with_one_item",
+      "test_tree_with_many_items",
+      "test_reject_traversals_of_different_length",
+      "test_reject_inconsistent_traversals_of_same_length",
+      "test_reject_traversals_with_repeated_items"
+    ]
+  },
+  {
+    "name": "say",
+    "tests": [
+      "test_zero",
+      "test_one",
+      "test_fourteen",
+      "test_twenty",
+      "test_twenty_two",
+      "test_thirty",
+      "test_ninety_nine",
+      "test_one_hundred",
+      "test_one_hundred_twenty_three",
+      "test_two_hundred",
+      "test_nine_hundred_ninety_nine",
+      "test_one_thousand",
+      "test_one_thousand_two_hundred_thirty_four",
+      "test_one_million",
+      "test_one_million_two_thousand_three_hundred_forty_five",
+      "test_one_billion",
+      "test_a_big_number",
+      "test_numbers_below_zero_are_out_of_range",
+      "test_numbers_above_999_999_999_999_are_out_of_range",
+      "test_one_hundred_seventy"
     ]
   },
   {
@@ -532,6 +2205,54 @@
       "test_hexatonic",
       "test_pentatonic",
       "test_enigmatic"
+    ]
+  },
+  {
+    "name": "scrabble-score",
+    "tests": [
+      "test_lowercase_letter",
+      "test_uppercase_letter",
+      "test_valuable_letter",
+      "test_short_word",
+      "test_short_valuable_word",
+      "test_medium_word",
+      "test_medium_valuable_word",
+      "test_long_mixed_case_word",
+      "test_english_like_word",
+      "test_empty_input",
+      "test_entire_alphabet_available"
+    ]
+  },
+  {
+    "name": "secret-handshake",
+    "tests": [
+      "test_wink_for_1",
+      "test_double_blink_for_10",
+      "test_close_your_eyes_for_100",
+      "test_jump_for_1000",
+      "test_combine_two_actions",
+      "test_reverse_two_actions",
+      "test_reversing_one_action_gives_the_same_action",
+      "test_reversing_no_actions_still_gives_no_actions",
+      "test_all_possible_actions",
+      "test_reverse_all_possible_actions",
+      "test_do_nothing_for_zero"
+    ]
+  },
+  {
+    "name": "series",
+    "tests": [
+      "test_slices_of_one_from_one",
+      "test_slices_of_one_from_two",
+      "test_slices_of_two",
+      "test_slices_of_two_overlap",
+      "test_slices_can_include_duplicates",
+      "test_slices_of_a_long_series",
+      "test_slice_length_is_too_large",
+      "test_slice_length_is_way_too_large",
+      "test_slice_length_cannot_be_zero",
+      "test_slice_length_cannot_be_negative",
+      "test_empty_series_is_invalid"
     ]
   },
   {
@@ -563,6 +2284,33 @@
     ]
   },
   {
+    "name": "sieve",
+    "tests": [
+      "test_no_primes_under_two",
+      "test_find_first_prime",
+      "test_find_primes_up_to_10",
+      "test_limit_is_prime",
+      "test_find_primes_up_to_1000"
+    ]
+  },
+  {
+    "name": "simple-cipher",
+    "tests": [
+      "test_can_encode",
+      "test_can_decode",
+      "test_is_reversible",
+      "test_key_is_made_only_of_lowercase_letters",
+      "test_can_encode",
+      "test_can_decode",
+      "test_is_reversible",
+      "test_can_double_shift_encode",
+      "test_can_wrap_on_encode",
+      "test_can_wrap_on_decode",
+      "test_can_encode_messages_longer_than_the_key",
+      "test_can_decode_messages_longer_than_the_key"
+    ]
+  },
+  {
     "name": "simple-linked-list",
     "tests": [
       "test_empty_list_has_len_zero",
@@ -585,6 +2333,140 @@
       "test_reversed_empty_list_is_empty_list",
       "test_reversed_singleton_list_is_same_list",
       "test_reverse_non_empty_list"
+    ]
+  },
+  {
+    "name": "space-age",
+    "tests": [
+      "test_age_on_earth",
+      "test_age_on_mercury",
+      "test_age_on_venus",
+      "test_age_on_mars",
+      "test_age_on_jupiter",
+      "test_age_on_saturn",
+      "test_age_on_uranus",
+      "test_age_on_neptune"
+    ]
+  },
+  {
+    "name": "spiral-matrix",
+    "tests": [
+      "test_empty_spiral",
+      "test_trivial_spiral",
+      "test_spiral_of_size_2",
+      "test_spiral_of_size_3",
+      "test_spiral_of_size_4",
+      "test_spiral_of_size_5"
+    ]
+  },
+  {
+    "name": "square-root",
+    "tests": [
+      "test_root_of_1",
+      "test_root_of_4",
+      "test_root_of_25",
+      "test_root_of_81",
+      "test_root_of_196",
+      "test_root_of_65025"
+    ]
+  },
+  {
+    "name": "strain",
+    "tests": [
+      "test_empty_sequence",
+      "test_empty_keep",
+      "test_empty_discard",
+      "test_keep_everything",
+      "test_discard_endswith",
+      "test_keep_z",
+      "test_keep_discard",
+      "test_keep_plus_discard"
+    ]
+  },
+  {
+    "name": "sublist",
+    "tests": [
+      "test_empty_lists",
+      "test_empty_list_within_non_empty_list",
+      "test_non_empty_list_contains_empty_list",
+      "test_list_equals_itself",
+      "test_different_lists",
+      "test_false_start",
+      "test_consecutive",
+      "test_sublist_at_start",
+      "test_sublist_in_middle",
+      "test_sublist_at_end",
+      "test_at_start_of_superlist",
+      "test_in_middle_of_superlist",
+      "test_at_end_of_superlist",
+      "test_first_list_missing_element_from_second_list",
+      "test_second_list_missing_element_from_first_list",
+      "test_first_list_missing_additional_digits_from_second_list",
+      "test_order_matters_to_a_list",
+      "test_same_digits_but_different_numbers",
+      "test_unique_return_values",
+      "test_inner_spaces",
+      "test_large_lists",
+      "test_spread_sublist"
+    ]
+  },
+  {
+    "name": "sum-of-multiples",
+    "tests": [
+      "test_no_multiples_within_limit",
+      "test_one_factor_has_multiples_within_limit",
+      "test_more_than_one_multiple_within_limit",
+      "test_more_than_one_factor_with_multiples_within_limit",
+      "test_each_multiple_is_only_counted_once",
+      "test_a_much_larger_limit",
+      "test_three_factors",
+      "test_factors_not_relatively_prime",
+      "test_some_pairs_of_factors_relatively_prime_and_some_not",
+      "test_one_factor_is_a_multiple_of_another",
+      "test_much_larger_factors",
+      "test_all_numbers_are_multiples_of_1",
+      "test_no_factors_means_an_empty_sum",
+      "test_the_only_multiple_of_0_is_0",
+      "test_the_factor_0_does_not_affect_the_sum_of_multiples_of_other_factors",
+      "test_solutions_using_include_exclude_must_extend_to_cardinality_greater_than_3"
+    ]
+  },
+  {
+    "name": "swift-scheduling",
+    "tests": [
+      "test_now_translates_to_two_hours_later",
+      "test_asap_before_one_in_the_afternoon_translates_to_today_at_five_in_the_afternoon",
+      "test_asap_at_one_in_the_afternoon_translates_to_tomorrow_at_one_in_the_afternoon",
+      "test_asap_after_one_in_the_afternoon_translates_to_tomorrow_at_one_in_the_afternoon",
+      "test_eow_on_monday_translates_to_friday_at_five_in_the_afternoon",
+      "test_eow_on_tuesday_translates_to_friday_at_five_in_the_afternoon",
+      "test_eow_on_wednesday_translates_to_friday_at_five_in_the_afternoon",
+      "test_eow_on_thursday_translates_to_sunday_at_eight_in_the_evening",
+      "test_eow_on_friday_translates_to_sunday_at_eight_in_the_evening",
+      "test_eow_translates_to_leap_day",
+      "test_2_m_before_the_second_month_of_this_year_translates_to_the_first_workday_of_the_second_month_of_this_year",
+      "test_11_m_in_the_eleventh_month_translates_to_the_first_workday_of_the_eleventh_month_of_next_year",
+      "test_4_m_in_the_ninth_month_translates_to_the_first_workday_of_the_fourth_month_of_next_year",
+      "test_q1_in_the_first_quarter_translates_to_the_last_workday_of_the_first_quarter_of_this_year",
+      "test_q4_in_the_second_quarter_translates_to_the_last_workday_of_the_fourth_quarter_of_this_year",
+      "test_q3_in_the_fourth_quarter_translates_to_the_last_workday_of_the_third_quarter_of_next_year"
+    ]
+  },
+  {
+    "name": "tournament",
+    "tests": [
+      "test_just_the_header_if_no_input",
+      "test_a_win_is_three_points_a_loss_is_zero_points",
+      "test_a_win_can_also_be_expressed_as_a_loss",
+      "test_a_different_team_can_win",
+      "test_a_draw_is_one_point_each",
+      "test_there_can_be_more_than_one_match",
+      "test_there_can_be_more_than_one_winner",
+      "test_there_can_be_more_than_two_teams",
+      "test_typical_input",
+      "test_incomplete_competition_not_all_pairs_have_played",
+      "test_ties_broken_alphabetically",
+      "test_ensure_points_sorted_numerically"
     ]
   },
   {
@@ -623,6 +2505,64 @@
     ]
   },
   {
+    "name": "triangle",
+    "tests": [
+      "test_all_sides_are_equal",
+      "test_any_side_is_unequal",
+      "test_no_sides_are_equal",
+      "test_all_zero_sides_is_not_a_triangle",
+      "test_sides_may_be_floats",
+      "test_last_two_sides_are_equal",
+      "test_first_two_sides_are_equal",
+      "test_first_and_last_sides_are_equal",
+      "test_equilateral_triangles_are_also_isosceles",
+      "test_no_sides_are_equal",
+      "test_first_triangle_inequality_violation",
+      "test_second_triangle_inequality_violation",
+      "test_third_triangle_inequality_violation",
+      "test_sides_may_be_floats",
+      "test_no_sides_are_equal",
+      "test_all_sides_are_equal",
+      "test_first_and_second_sides_are_equal",
+      "test_first_and_third_sides_are_equal",
+      "test_second_and_third_sides_are_equal",
+      "test_may_not_violate_triangle_inequality",
+      "test_sides_may_be_floats"
+    ]
+  },
+  {
+    "name": "trinary",
+    "tests": [
+      "test_valid_trinary1",
+      "test_valid_trinary2",
+      "test_valid_trinary3",
+      "test_valid_trinary4",
+      "test_valid_trinary5",
+      "test_valid_trinary6",
+      "test_invalid_trinary"
+    ]
+  },
+  {
+    "name": "twelve-days",
+    "tests": [
+      "test_first_day_a_partridge_in_a_pear_tree",
+      "test_second_day_two_turtle_doves",
+      "test_third_day_three_french_hens",
+      "test_fourth_day_four_calling_birds",
+      "test_fifth_day_five_gold_rings",
+      "test_sixth_day_six_geese_a_laying",
+      "test_seventh_day_seven_swans_a_swimming",
+      "test_eighth_day_eight_maids_a_milking",
+      "test_ninth_day_nine_ladies_dancing",
+      "test_tenth_day_ten_lords_a_leaping",
+      "test_eleventh_day_eleven_pipers_piping",
+      "test_twelfth_day_twelve_drummers_drumming",
+      "test_recites_first_three_verses_of_the_song",
+      "test_recites_three_verses_from_the_middle_of_the_song",
+      "test_recites_the_whole_song"
+    ]
+  },
+  {
     "name": "two-bucket",
     "tests": [
       "test_measure_using_bucket_one_of_size_3_and_bucket_two_of_size_5_start_with_bucket_one",
@@ -631,9 +2571,19 @@
       "test_measure_using_bucket_one_of_size_7_and_bucket_two_of_size_11_start_with_bucket_two",
       "test_measure_one_step_using_bucket_one_of_size_1_and_bucket_two_of_size_3_start_with_bucket_two",
       "test_measure_using_bucket_one_of_size_2_and_bucket_two_of_size_3_start_with_bucket_one_and_end_with_bucket_two",
+      "test_measure_using_bucket_one_much_bigger_than_bucket_two",
+      "test_measure_using_bucket_one_much_smaller_than_bucket_two",
       "test_not_possible_to_reach_the_goal",
       "test_with_the_same_buckets_but_a_different_goal_then_it_is_possible",
       "test_goal_larger_than_both_buckets_is_impossible"
+    ]
+  },
+  {
+    "name": "two-fer",
+    "tests": [
+      "test_no_name_given",
+      "test_a_name_given",
+      "test_another_name_given"
     ]
   },
   {
@@ -641,18 +2591,23 @@
     "tests": [
       "test_zero",
       "test_arbitrary_single_byte",
+      "test_asymmetric_single_byte",
       "test_largest_single_byte",
       "test_smallest_double_byte",
       "test_arbitrary_double_byte",
+      "test_asymmetric_double_byte",
       "test_largest_double_byte",
       "test_smallest_triple_byte",
       "test_arbitrary_triple_byte",
+      "test_asymmetric_triple_byte",
       "test_largest_triple_byte",
       "test_smallest_quadruple_byte",
       "test_arbitrary_quadruple_byte",
+      "test_asymmetric_quadruple_byte",
       "test_largest_quadruple_byte",
       "test_smallest_quintuple_byte",
       "test_arbitrary_quintuple_byte",
+      "test_asymmetric_quintuple_byte",
       "test_maximum_32_bit_integer_input",
       "test_two_single_byte_values",
       "test_two_multi_byte_values",
@@ -668,10 +2623,65 @@
     ]
   },
   {
+    "name": "word-count",
+    "tests": [
+      "test_count_one_word",
+      "test_count_one_of_each_word",
+      "test_multiple_occurrences_of_a_word",
+      "test_handles_cramped_lists",
+      "test_handles_expanded_lists",
+      "test_ignore_punctuation",
+      "test_include_numbers",
+      "test_normalize_case",
+      "test_with_apostrophes",
+      "test_with_quotations",
+      "test_substrings_from_the_beginning",
+      "test_multiple_spaces_not_detected_as_a_word",
+      "test_alternating_word_separators_not_detected_as_a_word",
+      "test_quotation_for_word_with_apostrophe",
+      "test_tabs",
+      "test_non_alphanumeric",
+      "test_multiple_apostrophes_ignored"
+    ]
+  },
+  {
+    "name": "word-search",
+    "tests": [
+      "test_should_accept_an_initial_game_grid_and_a_target_search_word",
+      "test_should_locate_one_word_written_left_to_right",
+      "test_should_locate_the_same_word_written_left_to_right_in_a_different_position",
+      "test_should_locate_a_different_left_to_right_word",
+      "test_should_locate_that_different_left_to_right_word_in_a_different_position",
+      "test_should_locate_a_left_to_right_word_in_two_line_grid",
+      "test_should_locate_a_left_to_right_word_in_three_line_grid",
+      "test_should_locate_a_left_to_right_word_in_ten_line_grid",
+      "test_should_locate_that_left_to_right_word_in_a_different_position_in_a_ten_line_grid",
+      "test_should_locate_a_different_left_to_right_word_in_a_ten_line_grid",
+      "test_should_locate_multiple_words",
+      "test_should_locate_a_single_word_written_right_to_left",
+      "test_should_locate_multiple_words_written_in_different_horizontal_directions",
+      "test_should_locate_words_written_top_to_bottom",
+      "test_should_locate_words_written_bottom_to_top",
+      "test_should_locate_words_written_top_left_to_bottom_right",
+      "test_should_locate_words_written_bottom_right_to_top_left",
+      "test_should_locate_words_written_bottom_left_to_top_right",
+      "test_should_locate_words_written_top_right_to_bottom_left",
+      "test_should_fail_to_locate_a_word_that_is_not_in_the_puzzle",
+      "test_should_fail_to_locate_words_that_are_not_on_horizontal_vertical_or_diagonal_lines",
+      "test_should_not_concatenate_different_lines_to_find_a_horizontal_word",
+      "test_should_not_wrap_around_horizontally_to_find_a_word",
+      "test_should_not_wrap_around_vertically_to_find_a_word"
+    ]
+  },
+  {
     "name": "wordy",
     "tests": [
       "test_just_a_number",
+      "test_just_a_zero",
+      "test_just_a_negative_number",
       "test_addition",
+      "test_addition_with_a_left_hand_zero",
+      "test_addition_with_a_right_hand_zero",
       "test_more_addition",
       "test_addition_with_negative_numbers",
       "test_large_addition",
@@ -686,7 +2696,6 @@
       "test_addition_and_multiplication",
       "test_multiple_division",
       "test_unknown_operation",
-      "test_non_math_question",
       "test_reject_problem_missing_an_operand",
       "test_reject_problem_with_no_operands_or_operators",
       "test_reject_two_operations_in_a_row",
@@ -695,6 +2704,40 @@
       "test_reject_prefix_notation",
       "test_missing_operation",
       "test_missing_number"
+    ]
+  },
+  {
+    "name": "yacht",
+    "tests": [
+      "test_yacht",
+      "test_not_yacht",
+      "test_ones",
+      "test_ones_out_of_order",
+      "test_no_ones",
+      "test_twos",
+      "test_fours",
+      "test_yacht_counted_as_threes",
+      "test_yacht_of_3s_counted_as_fives",
+      "test_fives",
+      "test_sixes",
+      "test_full_house_two_small_three_big",
+      "test_full_house_three_small_two_big",
+      "test_two_pair_is_not_a_full_house",
+      "test_four_of_a_kind_is_not_a_full_house",
+      "test_yacht_is_not_a_full_house",
+      "test_four_of_a_kind",
+      "test_yacht_can_be_scored_as_four_of_a_kind",
+      "test_full_house_is_not_four_of_a_kind",
+      "test_little_straight",
+      "test_little_straight_as_big_straight",
+      "test_four_in_order_but_not_a_little_straight",
+      "test_no_pairs_but_not_a_little_straight",
+      "test_minimum_is_1_maximum_is_5_but_not_a_little_straight",
+      "test_big_straight",
+      "test_big_straight_as_little_straight",
+      "test_no_pairs_but_not_a_big_straight",
+      "test_choice",
+      "test_yacht_as_choice"
     ]
   },
   {

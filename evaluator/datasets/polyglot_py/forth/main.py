@@ -2,5 +2,5 @@ class StackUnderflowError(Exception):
     pass
 
 
-def evaluate(input_data: list[str]) -> list[int]:
+def evaluate(input_data):
     pass

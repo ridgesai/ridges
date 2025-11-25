@@ -4,11 +4,12 @@
 
 import unittest
 
-from main import Board
-
-WHITE = "W"
-BLACK = "B"
-NONE = ""
+from main import (
+    Board,
+    WHITE,
+    BLACK,
+    NONE,
+)
 
 
 class GoCountingTest(unittest.TestCase):

@@ -2,14 +2,14 @@ class School:
     def __init__(self):
         pass
 
-    def add_student(self, name: str, grade: int) -> None:
+    def add_student(self, name, grade):
         pass
 
-    def roster(self) -> list[str]:
+    def roster(self):
         pass
 
-    def grade(self, grade_number: int) -> list[str]:
+    def grade(self, grade_number):
         pass
 
-    def added(self) -> list[bool]:
+    def added(self):
         pass

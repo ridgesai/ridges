@@ -1,2 +1,2 @@
-def recite(start: int, take: int = 1) -> list[str]:
+def recite(start, take=1):
     pass

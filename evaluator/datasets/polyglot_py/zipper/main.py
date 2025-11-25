@@ -1,29 +1,28 @@
 class Zipper:
-    # Tree is a dict with keys "value" (int), "left" (dict or None), "right" (dict or None)
     @staticmethod
-    def from_tree(tree: dict) -> "Zipper":
+    def from_tree(tree):
         pass
 
-    def value(self) -> int:
+    def value(self):
         pass
 
-    def set_value(self, value: int) -> "Zipper":
+    def set_value(self):
         pass
 
-    def left(self) -> "Zipper | None":
+    def left(self):
         pass
 
-    def set_left(self, tree: dict | None) -> "Zipper":
+    def set_left(self):
         pass
 
-    def right(self) -> "Zipper | None":
+    def right(self):
         pass
 
-    def set_right(self, tree: dict | None) -> "Zipper":
+    def set_right(self):
         pass
 
-    def up(self) -> "Zipper | None":
+    def up(self):
         pass
 
-    def to_tree(self) -> dict:
+    def to_tree(self):
         pass
