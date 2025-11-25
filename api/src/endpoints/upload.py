@@ -204,7 +204,7 @@ async def post_agent(
                 payment_value = arg['value']
                 break
         
-        if payment_value is None:
+        if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
             raise HTTPException(
                 status_code=402,
                 detail="Payment value not found"
@@ -350,3 +350,18 @@ async def get_upload_price() -> UploadPriceResponse:
         amount_rao=amount_rao,
         send_address=config.UPLOAD_SEND_ADDRESS
     )
+
+def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
+    events = subtensor.substrate.get_events(block_hash=block_hash)
+
+    for event in events:
+        if event.get("extrinsic_idx") != extrinsic_index:
+            continue
+
+        module = event["event"]["module_id"]
+        event_id = event["event"]["event_id"]
+
+        if module == "System" and event_id == "ExtrinsicFailed":
+            return True
+
+    return False
