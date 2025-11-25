@@ -80,7 +80,7 @@
 
 
 
-    "all-polyglot": [
+    "all-polyglot_py": [
         "affine-cipher",
         "beer-song",
         "book-store",
