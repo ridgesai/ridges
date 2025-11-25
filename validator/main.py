@@ -81,7 +81,11 @@ async def set_weights_loop():
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
-
+async def clean_tmp_loop():
+    logger.info("Starting clean tmp loop...")
+    while True:
+        clean_tmp(config.CLEAN_TMP_AGE_SECONDS)
+        await asyncio.sleep(config.CLEAN_TMP_INTERVAL_SECONDS)
 
 # Sends an update-evaluation-run request to the Ridges platform. The extra
 # parameter is for fields that are not sent in all requests, such as agent_logs
@@ -361,6 +365,7 @@ async def main():
 
     # Start the send heartbeat loop
     asyncio.create_task(send_heartbeat_loop())
+    asyncio.create_task(clean_tmp_loop())
 
     if config.MODE == "validator":
         # Start the set weights loop
