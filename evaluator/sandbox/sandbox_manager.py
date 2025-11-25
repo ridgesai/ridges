@@ -117,7 +117,7 @@ class SandboxManager:
 
         # Python and JavaScript
         script_extension = os.path.splitext(script_name)[1]
-        if script_extension != ".py" and script_extension != ".js":
+        if script_extension not in [".py", ".js"]:
             raise ValueError(f"Invalid script extension: {script_extension}")
 
         # Copy script

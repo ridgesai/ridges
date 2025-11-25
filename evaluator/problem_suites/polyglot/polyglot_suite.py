@@ -21,8 +21,12 @@ from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_fo
 
 
 
-class PolyglotPythonSuite(ProblemSuite):
+class PolyglotSuite(ProblemSuite):
     def __init__(self, dataset_path: str):
+        self.language = dataset_path.split("_")[1]
+        if self.language not in ["py", "js"]:
+            logger.fatal(f"Invalid language: {self.language}")
+
         super().__init__(dataset_path)
 
 
@@ -34,12 +38,12 @@ class PolyglotPythonSuite(ProblemSuite):
         if not os.path.exists(dataset_path):
             logger.fatal(f"Dataset not found: {dataset_path}")
             
-        # Make sure the polyglot_py.json file exists
-        json_path = os.path.join(dataset_path, "polyglot_py.json")
+        # Make sure the polyglot_*.json file exists
+        json_path = os.path.join(dataset_path, f"polyglot_{self.language}.json")
         if not os.path.exists(json_path):
-            logger.fatal(f"polyglot_py.json not found: {json_path}")
+            logger.fatal(f"polyglot_{self.language}.json not found: {json_path}")
             
-        # Open the polyglot_py.json file
+        # Open the polyglot_*.json file
         with open(json_path, "r") as f:
             problem_list = json.load(f)
         
@@ -59,7 +63,7 @@ class PolyglotPythonSuite(ProblemSuite):
                 logger.fatal(f"Problem directory not found: {problem_name}")
                 
             # Check for required files
-            required_files = ["main.py", "tests.py", "instructions.md", "solution.py"]
+            required_files = ["instructions.md", f"main.{self.language}", f"solution.{self.language}", f"tests.{self.language}"]
             missing_files = []
             
             for required_file in required_files:
@@ -82,9 +86,9 @@ class PolyglotPythonSuite(ProblemSuite):
 
             tests = [ProblemTest(name=test_name, category=ProblemTestCategory.default) for test_name in test_names]
 
-            # Calculate diff between main.py and solution.py
-            main_path = os.path.join(problem_dir, "main.py")
-            solution_path = os.path.join(problem_dir, "solution.py")
+            # Calculate diff between main.* and solution.*
+            main_path = os.path.join(problem_dir, f"main.{self.language}")
+            solution_path = os.path.join(problem_dir, f"solution.{self.language}")
             solution_diff = get_file_diff(main_path, solution_path)
             
 
@@ -113,14 +117,14 @@ class PolyglotPythonSuite(ProblemSuite):
     ) -> None:
         problem_dir = os.path.join(self.dataset_path, problem.name)
         
-        # Copy main.py
-        shutil.copy2(os.path.join(problem_dir, "main.py"), os.path.join(dir, "main.py"))
-        logger.debug(f"Copied main.py to {dir} for {problem.name}")
+        # Copy main.*
+        shutil.copy2(os.path.join(problem_dir, f"main.{self.language}"), os.path.join(dir, f"main.{self.language}"))
+        logger.debug(f"Copied main.{self.language} to {dir} for {problem.name}")
 
         if include_tests:
-            # Copy tests.py
-            shutil.copy2(os.path.join(problem_dir, "tests.py"), os.path.join(dir, "tests.py"))
-            logger.debug(f"Copied tests.py to {dir} for {problem.name}")
+            # Copy tests.*
+            shutil.copy2(os.path.join(problem_dir, f"tests.{self.language}"), os.path.join(dir, f"tests.{self.language}"))
+            logger.debug(f"Copied tests.{self.language} to {dir} for {problem.name}")
 
         # Initialize git repository with initial commit
         init_local_repo_with_initial_commit(dir, "Initial commit")
@@ -158,7 +162,7 @@ class PolyglotPythonSuite(ProblemSuite):
 
             return sandbox_manager.initialize_sandbox(
                 name=f"eval-sandbox-{problem.name}-{evaluation_run_id}",
-                script_path=os.path.join(os.path.dirname(__file__), "TEST_RUNNER.py"),
+                script_path=os.path.join(os.path.dirname(__file__), f"TEST_RUNNER.{self.language}"),
                 input_data=[test.model_dump() for test in problem.tests],
                 on_mount=_on_mount
             )
