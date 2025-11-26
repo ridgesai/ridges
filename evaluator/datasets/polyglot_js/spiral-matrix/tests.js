@@ -1,5 +1,5 @@
 
-import { spiralMatrix } from './main';
+import { spiralMatrix } from './main.js';
 
 describe('Spiral Matrix', () => {
   test('empty spiral', () => {

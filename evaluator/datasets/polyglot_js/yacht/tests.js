@@ -1,5 +1,5 @@
 
-import { score } from './main';
+import { score } from './main.js';
 
 describe('Yacht', () => {
   test('Yacht', () => {

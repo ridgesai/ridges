@@ -1,5 +1,5 @@
 
-import { Element, List } from './main';
+import { Element, List } from './main.js';
 
 describe('Element class', () => {
   test('has constructor', () => {

@@ -4,7 +4,7 @@ import { Born } from './born';
 import { Name } from './name';
 import { Person } from './person';
 
-import { bornAtLens, nameLens, streetLens } from './main';
+import { bornAtLens, nameLens, streetLens } from './main.js';
 
 // test data
 const person = new Person(

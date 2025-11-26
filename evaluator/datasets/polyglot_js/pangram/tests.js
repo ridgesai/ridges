@@ -1,5 +1,5 @@
 
-import { isPangram } from './main';
+import { isPangram } from './main.js';
 
 describe('Pangram()', () => {
   test('empty sentence', () => {

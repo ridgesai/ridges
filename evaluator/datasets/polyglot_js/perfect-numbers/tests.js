@@ -1,5 +1,5 @@
 
-import { classify } from './main';
+import { classify } from './main.js';
 
 describe('Exercise - Perfect Numbers', () => {
   describe('Invalid Inputs', () => {

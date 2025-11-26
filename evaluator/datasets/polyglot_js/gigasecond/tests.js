@@ -1,5 +1,5 @@
 
-import { gigasecond } from './main';
+import { gigasecond } from './main.js';
 
 describe('Gigasecond', () => {
   // date only specification of time

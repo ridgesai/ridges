@@ -1,5 +1,5 @@
 
-import { find } from './main';
+import { find } from './main.js';
 
 describe('Binary Search', () => {
   test('finds a value in an array with one element', () => {

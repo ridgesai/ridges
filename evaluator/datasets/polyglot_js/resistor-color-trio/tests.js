@@ -1,5 +1,5 @@
 
-import { ResistorColorTrio } from './main';
+import { ResistorColorTrio } from './main.js';
 
 function makeLabel({ value, unit }) {
   return `Resistor value: ${value} ${unit}`;

@@ -1,5 +1,5 @@
 
-import { isIsogram } from './main';
+import { isIsogram } from './main.js';
 
 describe('Isogram', () => {
   describe('Check if the given string is an isogram', () => {

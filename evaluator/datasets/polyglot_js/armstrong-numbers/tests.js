@@ -1,5 +1,5 @@
 
-import { isArmstrongNumber } from './main';
+import { isArmstrongNumber } from './main.js';
 
 describe('Armstrong Numbers', () => {
   test('Zero is an Armstrong number', () => {

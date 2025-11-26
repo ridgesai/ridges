@@ -1,5 +1,5 @@
 
-import { squareRoot } from './main';
+import { squareRoot } from './main.js';
 
 describe('Square root', () => {
   test('root of 1', () => {

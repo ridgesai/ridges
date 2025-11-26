@@ -1,5 +1,5 @@
 
-import { largestProduct } from './main';
+import { largestProduct } from './main.js';
 
 describe('Largest Series Product', () => {
   test('finds the largest product if span equals length', () => {

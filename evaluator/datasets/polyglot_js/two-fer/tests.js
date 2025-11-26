@@ -1,5 +1,5 @@
 
-import { twoFer } from './main';
+import { twoFer } from './main.js';
 
 describe('twoFer()', () => {
   test('no name given', () => {

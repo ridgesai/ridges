@@ -1,5 +1,5 @@
 
-import { eggCount } from './main';
+import { eggCount } from './main.js';
 
 describe('EliudsEggs', () => {
   test('0 eggs', () => {

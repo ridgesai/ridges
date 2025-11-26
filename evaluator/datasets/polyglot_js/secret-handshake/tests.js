@@ -1,5 +1,5 @@
 
-import { commands } from './main';
+import { commands } from './main.js';
 
 describe('Secret Handshake', () => {
   describe('Create A Handshake For A Number', () => {

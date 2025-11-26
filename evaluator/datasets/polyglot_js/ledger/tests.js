@@ -1,5 +1,5 @@
 
-import { createEntry, formatEntries } from './main';
+import { createEntry, formatEntries } from './main.js';
 
 describe('Ledger', () => {
   test('empty ledger', () => {

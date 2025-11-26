@@ -1,5 +1,5 @@
 
-import { Forth } from './main';
+import { Forth } from './main.js';
 
 describe('Forth', () => {
   let forth;

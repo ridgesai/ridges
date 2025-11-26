@@ -1,5 +1,5 @@
 
-import { Song } from './main';
+import { Song } from './main.js';
 
 describe('Food Chain', () => {
   let song;

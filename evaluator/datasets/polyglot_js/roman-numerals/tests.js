@@ -1,5 +1,5 @@
 
-import { toRoman } from './main';
+import { toRoman } from './main.js';
 
 describe('toRoman()', () => {
   test('converts 1', () => expect(toRoman(1)).toEqual('I'));

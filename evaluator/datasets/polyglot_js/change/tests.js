@@ -1,5 +1,5 @@
 
-import { Change } from './main';
+import { Change } from './main.js';
 
 describe('Change', () => {
   test('change for 1 cent', () => {

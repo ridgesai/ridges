@@ -1,5 +1,5 @@
 
-import { Binary } from './main';
+import { Binary } from './main.js';
 
 describe('binary', () => {
   test('0 is decimal 0', () => expect(new Binary('0').toDecimal()).toEqual(0));

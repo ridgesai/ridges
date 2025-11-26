@@ -1,5 +1,5 @@
 
-import { chain } from './main';
+import { chain } from './main.js';
 
 function runTest(dominoes, expected) {
   if (expected) {

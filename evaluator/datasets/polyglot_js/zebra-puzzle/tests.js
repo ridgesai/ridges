@@ -1,5 +1,5 @@
 
-import { ZebraPuzzle } from './main';
+import { ZebraPuzzle } from './main.js';
 
 describe('Zebra puzzle', () => {
   test('resident who drinks water', () => {

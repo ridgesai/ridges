@@ -27,7 +27,7 @@
  * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/BigInt
  */
 
-import { square, total } from './main';
+import { square, total } from './main.js';
 
 describe('Grains', () => {
   describe('returns the number of grains on the square', () => {

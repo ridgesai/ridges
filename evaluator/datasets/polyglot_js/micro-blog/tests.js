@@ -1,5 +1,5 @@
 
-import { truncate } from './main';
+import { truncate } from './main.js';
 
 describe('Micro-blog', () => {
   test('English language short', () => {

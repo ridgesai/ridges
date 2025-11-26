@@ -1,5 +1,5 @@
 
-import { primeFactors } from './main';
+import { primeFactors } from './main.js';
 
 describe('returns prime factors for the given input number', () => {
   test('no factors', () => expect(primeFactors(1)).toEqual([]));

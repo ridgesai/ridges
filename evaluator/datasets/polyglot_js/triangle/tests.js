@@ -1,5 +1,5 @@
 
-import { Triangle } from './main';
+import { Triangle } from './main.js';
 
 describe('Triangle', () => {
   describe('equilateral triangle', () => {

@@ -1,5 +1,5 @@
 
-import { flatten } from './main';
+import { flatten } from './main.js';
 
 describe('FlattenArray', () => {
   test('empty', () => {

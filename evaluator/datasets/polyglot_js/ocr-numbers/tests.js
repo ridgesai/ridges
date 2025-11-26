@@ -1,5 +1,5 @@
 
-import { convert } from './main';
+import { convert } from './main.js';
 
 describe('ocr', () => {
   test('recognizes zero', () => {

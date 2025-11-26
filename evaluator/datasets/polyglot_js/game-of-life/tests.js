@@ -1,5 +1,5 @@
 
-import { GameOfLife } from './main';
+import { GameOfLife } from './main.js';
 
 describe('Game of Life', () => {
   // Empty matrix

@@ -1,5 +1,5 @@
 
-import { treeFromTraversals } from './main';
+import { treeFromTraversals } from './main.js';
 
 describe('Satellite', () => {
   test('Empty tree', () => {

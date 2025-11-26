@@ -1,5 +1,5 @@
 
-import { degreesOfSeparation } from './main';
+import { degreesOfSeparation } from './main.js';
 
 describe('RelativeDistance', () => {
   test('Direct parent-child relation', () => {

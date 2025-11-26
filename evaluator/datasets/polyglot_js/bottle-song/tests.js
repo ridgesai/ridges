@@ -1,5 +1,5 @@
 
-import { recite } from './main';
+import { recite } from './main.js';
 
 describe('Bottle Song', () => {
   describe('verse', () => {

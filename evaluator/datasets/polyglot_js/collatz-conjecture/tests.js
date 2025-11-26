@@ -1,5 +1,5 @@
 
-import { steps } from './main';
+import { steps } from './main.js';
 
 describe('steps()', () => {
   test('zero steps for one', () => {

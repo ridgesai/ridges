@@ -1,5 +1,5 @@
 
-import { Series } from './main';
+import { Series } from './main.js';
 
 describe('Series', () => {
   test('slices of one from one', () => {

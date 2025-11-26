@@ -1,5 +1,5 @@
 
-import { BankAccount, ValueError } from './main';
+import { BankAccount, ValueError } from './main.js';
 
 describe('Bank Account', () => {
   test('newly opened account has zero balance', () => {

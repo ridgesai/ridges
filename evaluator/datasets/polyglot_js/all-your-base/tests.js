@@ -1,5 +1,5 @@
 
-import { convert } from './main';
+import { convert } from './main.js';
 
 describe('Converter', () => {
   test('single bit one to decimal', () => {

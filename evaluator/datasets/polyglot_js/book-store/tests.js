@@ -1,5 +1,5 @@
 
-import { cost } from './main';
+import { cost } from './main.js';
 
 describe('Book Store', () => {
   describe('Creating a basket', () => {

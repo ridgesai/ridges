@@ -1,5 +1,5 @@
 
-import { translate } from './main';
+import { translate } from './main.js';
 
 describe('Pig Latin', () => {
   describe('ay is added to words that start with vowels', () => {

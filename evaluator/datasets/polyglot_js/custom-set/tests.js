@@ -1,5 +1,5 @@
 
-import { CustomSet } from './main';
+import { CustomSet } from './main.js';
 
 describe('CustomSet', () => {
   describe('empty: returns true if the set contains no elements', () => {

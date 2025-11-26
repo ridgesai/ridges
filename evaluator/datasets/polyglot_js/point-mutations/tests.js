@@ -1,5 +1,5 @@
 
-import { DNA } from './main';
+import { DNA } from './main.js';
 
 describe('DNA', () => {
   test('no difference between empty strands', () => {

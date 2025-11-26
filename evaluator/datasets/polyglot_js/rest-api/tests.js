@@ -1,5 +1,5 @@
 
-import { RestAPI } from './main';
+import { RestAPI } from './main.js';
 
 describe('Rest API', () => {
   describe('user management', () => {

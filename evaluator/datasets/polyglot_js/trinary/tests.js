@@ -1,5 +1,5 @@
 
-import { Trinary } from './main';
+import { Trinary } from './main.js';
 
 describe('Trinary', () => {
   test('1 is decimal 1', () => {

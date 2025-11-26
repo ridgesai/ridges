@@ -1,5 +1,5 @@
 
-import { House } from './main';
+import { House } from './main.js';
 
 describe('House', () => {
   test('verse one - the house that jack built', () => {

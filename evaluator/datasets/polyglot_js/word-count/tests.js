@@ -1,5 +1,5 @@
 
-import { countWords } from './main';
+import { countWords } from './main.js';
 
 describe('countWords', () => {
   test('count one word', () => {

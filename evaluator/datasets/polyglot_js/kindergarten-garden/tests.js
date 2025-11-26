@@ -1,5 +1,5 @@
 
-import { Garden } from './main';
+import { Garden } from './main.js';
 
 describe('partial Garden', () => {
   test('garden with single student', () => {

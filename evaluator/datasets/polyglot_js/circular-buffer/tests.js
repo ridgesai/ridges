@@ -2,7 +2,7 @@
 import CircularBuffer, {
   BufferEmptyError,
   BufferFullError,
-} from './main';
+} from './main.js';
 
 describe('CircularBuffer', () => {
   test('reading empty buffer should fail', () => {

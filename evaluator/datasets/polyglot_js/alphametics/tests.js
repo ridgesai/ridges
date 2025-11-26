@@ -1,5 +1,5 @@
 
-import { solve } from './main';
+import { solve } from './main.js';
 
 describe('Solve the alphametics puzzle', () => {
   test('puzzle with three letters', () => {

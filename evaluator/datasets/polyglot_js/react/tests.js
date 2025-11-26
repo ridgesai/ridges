@@ -1,5 +1,5 @@
 
-import { CallbackCell, ComputeCell, InputCell } from './main';
+import { CallbackCell, ComputeCell, InputCell } from './main.js';
 
 describe('React module', () => {
   test('accepts input', () => {

@@ -1,5 +1,5 @@
 
-import { primes } from './main';
+import { primes } from './main.js';
 
 describe('Sieve', () => {
   test('no primes under two', () => {

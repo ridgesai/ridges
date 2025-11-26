@@ -1,5 +1,5 @@
 
-import { GradeSchool } from './main';
+import { GradeSchool } from './main.js';
 
 describe('Grade School', () => {
   let school;

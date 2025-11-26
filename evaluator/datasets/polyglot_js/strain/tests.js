@@ -1,5 +1,5 @@
 
-import { discard, keep } from './main';
+import { discard, keep } from './main.js';
 
 describe('strain', () => {
   test('keeps on empty array returns empty array', () => {

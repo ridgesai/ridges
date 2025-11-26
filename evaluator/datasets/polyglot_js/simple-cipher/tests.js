@@ -1,5 +1,5 @@
 
-import { Cipher } from './main';
+import { Cipher } from './main.js';
 
 describe('Random key cipher', () => {
   const cipher = new Cipher();

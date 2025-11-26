@@ -1,5 +1,5 @@
 
-import { count } from './main';
+import { count } from './main.js';
 
 describe('Rectangles', () => {
   test('no rows', () => {

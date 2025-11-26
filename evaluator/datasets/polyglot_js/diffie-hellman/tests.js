@@ -1,5 +1,5 @@
 
-import { DiffieHellman } from './main';
+import { DiffieHellman } from './main.js';
 
 describe('diffie-hellman', () => {
   test('throws an error if the constructor arguments are out of range', () => {

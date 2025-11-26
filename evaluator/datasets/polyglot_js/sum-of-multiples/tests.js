@@ -1,5 +1,5 @@
 
-import { sum } from './main';
+import { sum } from './main.js';
 
 describe('Sum Of Multiples', () => {
   test('no multiples within limit', () => {

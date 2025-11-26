@@ -1,5 +1,5 @@
 
-import { Scale } from './main';
+import { Scale } from './main.js';
 
 describe('ScaleGenerator', () => {
   describe('Chromatic scales', () => {

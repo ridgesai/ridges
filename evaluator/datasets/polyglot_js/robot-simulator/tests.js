@@ -1,5 +1,5 @@
 
-import { InvalidInputError, Robot } from './main';
+import { InvalidInputError, Robot } from './main.js';
 
 function turnRight(robot) {
   robot.evaluate('R');

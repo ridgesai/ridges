@@ -1,5 +1,5 @@
 
-import { isValid } from './main';
+import { isValid } from './main.js';
 
 describe('ISBN Verifier', () => {
   test('valid isbn', () => {

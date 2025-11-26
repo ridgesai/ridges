@@ -1,5 +1,5 @@
 
-import { gamestate } from './main';
+import { gamestate } from './main.js';
 
 describe('Won games', () => {
   test('Finished game where X won via left column victory', () => {

@@ -1,5 +1,5 @@
 
-import { Crypto } from './main';
+import { Crypto } from './main.js';
 
 describe('Crypto', () => {
   test('empty plaintext results in an empty ciphertext', () => {

@@ -1,5 +1,5 @@
 
-import { parse } from './main';
+import { parse } from './main.js';
 
 describe('Acronyms are produced from', () => {
   // basic

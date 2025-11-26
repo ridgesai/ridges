@@ -1,5 +1,5 @@
 
-import { parallelLetterFrequency } from './main';
+import { parallelLetterFrequency } from './main.js';
 
 describe('ParallelLetterFrequency', () => {
   test('no texts', async () => {

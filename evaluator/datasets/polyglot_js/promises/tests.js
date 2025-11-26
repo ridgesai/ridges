@@ -1,5 +1,5 @@
 
-import { all, allSettled, any, promisify, race } from './main';
+import { all, allSettled, any, promisify, race } from './main.js';
 
 describe('promises', () => {
   const failedCallback = new Error('Failed callback');

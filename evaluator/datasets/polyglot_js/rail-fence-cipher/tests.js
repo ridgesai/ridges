@@ -1,5 +1,5 @@
 
-import { decode, encode } from './main';
+import { decode, encode } from './main.js';
 
 describe('Rail Fence Cipher', () => {
   describe('encode', () => {

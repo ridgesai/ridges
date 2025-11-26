@@ -1,5 +1,5 @@
 
-import { Board } from './main';
+import { Board } from './main.js';
 
 describe('Judging a game of connect', () => {
   test('an empty board has no winner', () => {

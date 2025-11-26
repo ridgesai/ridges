@@ -1,5 +1,5 @@
 
-import { rows } from './main';
+import { rows } from './main.js';
 
 describe('Pascals Triangle', () => {
   describe("Given a count, return a collection of that many rows of pascal's triangle", () => {

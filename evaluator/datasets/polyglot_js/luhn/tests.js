@@ -1,5 +1,5 @@
 
-import { valid } from './main';
+import { valid } from './main.js';
 
 describe('Luhn', () => {
   test('single digit strings can not be valid', () => {

@@ -1,5 +1,5 @@
 
-import { saddlePoints } from './main';
+import { saddlePoints } from './main.js';
 
 describe('Saddle Points', () => {
   test('Can identify single saddle point', () => {

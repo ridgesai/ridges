@@ -1,5 +1,5 @@
 
-import { Rational } from './main';
+import { Rational } from './main.js';
 
 describe('Addition', () => {
   test('Add two positive rational numbers', () => {

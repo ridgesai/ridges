@@ -1,5 +1,5 @@
 
-import { Character, abilityModifier } from './main';
+import { Character, abilityModifier } from './main.js';
 
 describe('D&D Character', () => {
   describe('Ability modifier', () => {

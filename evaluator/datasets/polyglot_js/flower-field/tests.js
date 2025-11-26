@@ -1,5 +1,5 @@
 
-import { annotate } from './main';
+import { annotate } from './main.js';
 
 describe('Flower Field', () => {
   test('handles no rows', () => {

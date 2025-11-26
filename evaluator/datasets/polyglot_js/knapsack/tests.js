@@ -1,5 +1,5 @@
 
-import { knapsack } from './main';
+import { knapsack } from './main.js';
 
 describe('Knapsack', () => {
   test('no items', () => {

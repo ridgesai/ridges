@@ -1,5 +1,5 @@
 
-import { Octal } from './main';
+import { Octal } from './main.js';
 
 describe('octal', () => {
   test('1 is decimal 1', () => {

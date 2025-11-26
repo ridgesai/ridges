@@ -1,5 +1,5 @@
 
-import { transpose } from './main';
+import { transpose } from './main.js';
 
 describe('Transpose', () => {
   test('empty string', () => {

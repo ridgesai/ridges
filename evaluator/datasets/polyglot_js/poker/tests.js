@@ -1,5 +1,5 @@
 
-import { bestHands } from './main';
+import { bestHands } from './main.js';
 
 describe('Poker', () => {
   test('single hand always wins', () => {

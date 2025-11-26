@@ -1,5 +1,5 @@
 
-import { meetup } from './main';
+import { meetup } from './main.js';
 
 describe('Meetup', () => {
   test('monteenth of May 2013', () => {

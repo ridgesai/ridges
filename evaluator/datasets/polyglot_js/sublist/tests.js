@@ -1,5 +1,5 @@
 
-import { List } from './main';
+import { List } from './main.js';
 
 describe('sublist', () => {
   test('two empty lists are equal', () => {

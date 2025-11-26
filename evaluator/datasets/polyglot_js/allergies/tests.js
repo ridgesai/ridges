@@ -1,5 +1,5 @@
 
-import { Allergies } from './main';
+import { Allergies } from './main.js';
 
 describe('Allergies', () => {
   describe('testing for eggs allergy', () => {

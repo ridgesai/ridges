@@ -1,5 +1,5 @@
 
-import { Bowling } from './main';
+import { Bowling } from './main.js';
 
 describe('Bowling', () => {
   describe('Check game can be scored correctly.', () => {

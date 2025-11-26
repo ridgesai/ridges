@@ -1,5 +1,5 @@
 
-import { compute } from './main';
+import { compute } from './main.js';
 
 describe('Hamming', () => {
   test('empty strands', () => {

@@ -1,5 +1,5 @@
 
-import { proverb } from './main';
+import { proverb } from './main.js';
 
 describe('Proverb', () => {
   test('zero pieces', () => {

@@ -1,5 +1,5 @@
 
-import { hey } from './main';
+import { hey } from './main.js';
 
 describe('Bob', () => {
   test('stating something', () => {

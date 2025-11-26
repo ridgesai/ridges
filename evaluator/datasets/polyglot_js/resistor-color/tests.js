@@ -1,5 +1,5 @@
 
-import { colorCode, COLORS } from './main';
+import { colorCode, COLORS } from './main.js';
 
 describe('ResistorColor', () => {
   describe('Color codes', () => {

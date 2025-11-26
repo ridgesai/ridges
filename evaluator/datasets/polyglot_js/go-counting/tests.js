@@ -1,5 +1,5 @@
 
-import { GoCounting } from './main';
+import { GoCounting } from './main.js';
 
 describe('Go Counting', () => {
   describe('getTerritory', () => {

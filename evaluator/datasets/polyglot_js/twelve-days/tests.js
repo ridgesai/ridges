@@ -1,5 +1,5 @@
 
-import { recite } from './main';
+import { recite } from './main.js';
 
 describe('TwelveDays', () => {
   test('verse first day a partridge in a pear tree', () => {

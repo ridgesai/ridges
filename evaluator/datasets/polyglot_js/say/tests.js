@@ -1,5 +1,5 @@
 
-import { say } from './main';
+import { say } from './main.js';
 
 describe('say', () => {
   test('zero', () => {

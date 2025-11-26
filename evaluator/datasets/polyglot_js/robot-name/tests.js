@@ -1,5 +1,5 @@
 
-import { Robot } from './main';
+import { Robot } from './main.js';
 
 const areSequential = (name1, name2) => {
   const alpha1 = name1.substring(0, 2);

@@ -1,5 +1,5 @@
 
-import { findAnagrams } from './main';
+import { findAnagrams } from './main.js';
 
 const areSetsEqual = (setA, setB) =>
   setA.size === setB.size && [...setA].every((val) => setB.has(val));
