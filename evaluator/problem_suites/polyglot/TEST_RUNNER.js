@@ -67,6 +67,10 @@ function runTests() {
         test(description, callback);
     };
 
+    global.test.skip = function(description, callback) {
+        console.log(`[POLYGLOT_TEST_RUNNER] [JEST] test.skip(): "${description}"`);
+    };
+
     global.expect = expect;
 
 

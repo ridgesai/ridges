@@ -1162,21 +1162,6 @@
     ]
   },
   {
-    "name": "lens-person",
-    "tests": [
-      "test_should_get_the_name_of_the_person",
-      "test_should_set_a_new_forename_for_the_person",
-      "test_should_set_a_new_surname_for_the_person",
-      "test_should_ensure_immutability_when_setting_a_new_name",
-      "test_should_get_the_address_for_where_the_person_was_born",
-      "test_should_set_a_new_address_for_where_the_person_was_born",
-      "test_should_ensure_immutability_when_setting_a_new_birth_address",
-      "test_should_get_the_current_street_of_the_person",
-      "test_should_set_a_new_street_for_the_current_address_of_the_person",
-      "test_should_ensure_immutability_when_setting_a_new_street"
-    ]
-  },
-  {
     "name": "linked-list",
     "tests": [
       "test_pop_gets_last_element_from_the_list",
