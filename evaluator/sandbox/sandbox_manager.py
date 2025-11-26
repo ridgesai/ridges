@@ -116,12 +116,12 @@ class SandboxManager:
             logger.debug(f"Called on_mount() for sandbox <{name}>")
 
         # Python and JavaScript
+        script_name = os.path.basename(script_path)
         script_extension = os.path.splitext(script_name)[1]
         if script_extension not in [".py", ".js"]:
             raise ValueError(f"Invalid script extension: {script_extension}")
 
         # Copy script
-        script_name = os.path.basename(script_path)
         temp_script_path = os.path.join(temp_dir, script_name)
         shutil.copy2(script_path, temp_script_path)
         logger.debug(f"Copied script for sandbox <{name}>: {script_name} --> {temp_script_path}")
@@ -144,7 +144,6 @@ class SandboxManager:
             image="sandbox-image",
             volumes={temp_dir: {"bind": "/sandbox", "mode": "rw"}},
             network=SANDBOX_NETWORK_NAME,
-            user=f"{os.getuid()}:{os.getgid()}",
             environment={
                 "PYTHONUNBUFFERED": "1",
                 "PYTHONDONTWRITEBYTECODE": "1", # No __pycache__
