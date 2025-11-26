@@ -23,7 +23,7 @@ from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_fo
 
 class PolyglotSuite(ProblemSuite):
     def __init__(self, dataset_path: str):
-        self.language = dataset_path.split("_")[1]
+        self.language = str(dataset_path).split("_")[1]
         if self.language not in ["py", "js"]:
             logger.fatal(f"Invalid language: {self.language}")
 
@@ -95,7 +95,7 @@ class PolyglotSuite(ProblemSuite):
 
             # Add the problem to the suite
             self._add_problem(Problem(
-                name=problem_name,
+                name=f"{problem_name}-{self.language}",
 
                 problem_statement=problem_statement,
                 tests=tests,
@@ -115,7 +115,7 @@ class PolyglotSuite(ProblemSuite):
         *,
         include_tests: bool = False
     ) -> None:
-        problem_dir = os.path.join(self.dataset_path, problem.name)
+        problem_dir = os.path.join(self.dataset_path, problem.name.rsplit("-", 1)[0])
         
         # Copy main.*
         shutil.copy2(os.path.join(problem_dir, f"main.{self.language}"), os.path.join(dir, f"main.{self.language}"))
