@@ -20,6 +20,12 @@ function runTests() {
         global._beforeEachCallbacks.push(callback);
     };
 
+    global._afterEachCallbacks = [];
+    global.afterEach = function(callback) {
+        console.log(`[POLYGLOT_TEST_RUNNER] [JEST] afterEach()`);
+        global._afterEachCallbacks.push(callback);
+    };
+
     global.describe = function(description, callback) {
         console.log(`[POLYGLOT_TEST_RUNNER] [JEST] describe(): "${description}"`);
         callback();
@@ -36,6 +42,9 @@ function runTests() {
             for (const beforeEachCallback of global._beforeEachCallbacks)
                 beforeEachCallback();
             callback();
+            for (const afterEachCallback of global._afterEachCallbacks)
+                afterEachCallback();
+            
             console.log(`[POLYGLOT_TEST_RUNNER] [JEST] Test passed: "${description}"`);
             global.testResults.push({
                 "name": description,
