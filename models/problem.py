@@ -31,8 +31,6 @@ class Problem(BaseModel):
     name: str
 
     problem_statement: str
-    tests: List[ProblemTest]
-
     solution_diff: str
 
     userdata: Any = None

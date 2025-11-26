@@ -1,7 +1,6 @@
-"""The Polyglot Python problem suite."""
+"""The Polyglot problem suite."""
 
 import os
-import json
 import shutil
 import requests
 import traceback
@@ -9,6 +8,7 @@ import utils.logger as logger
 
 from uuid import UUID
 from typing import List, Tuple
+from models.problem import Problem
 from evaluator.models import Sandbox
 from models.problem import ProblemTestResult
 from evaluator.models import EvaluationRunException
@@ -16,7 +16,6 @@ from models.evaluation_run import EvaluationRunErrorCode
 from utils.git import init_local_repo_with_initial_commit
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
-from models.problem import Problem, ProblemTest, ProblemTestCategory
 from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
 
 
@@ -37,25 +36,18 @@ class PolyglotSuite(ProblemSuite):
         # Make sure the dataset path exists
         if not os.path.exists(dataset_path):
             logger.fatal(f"Dataset not found: {dataset_path}")
-            
-        # Make sure the polyglot_*.json file exists
-        json_path = os.path.join(dataset_path, f"polyglot_{self.language}.json")
-        if not os.path.exists(json_path):
-            logger.fatal(f"polyglot_{self.language}.json not found: {json_path}")
-            
-        # Open the polyglot_*.json file
-        with open(json_path, "r") as f:
-            problem_list = json.load(f)
         
-        logger.debug(f"Loaded {len(problem_list)} problems from {json_path}")
+        # Find problems
+        problem_names = []
+        for entry in os.listdir(dataset_path):
+            entry_path = os.path.join(dataset_path, entry)
+            if os.path.isdir(entry_path):
+                problem_names.append(entry)
+        
+        logger.debug(f"Found {len(problem_names)} problems")
         
         # Process each problem
-        for problem in problem_list:
-            # Parse problem name
-            problem_name = problem.get("name")
-            if not problem_name:
-                logger.fatal("Problem missing name field")
-            
+        for problem_name in sorted(problem_names):
             problem_dir = os.path.join(dataset_path, problem_name)
             
             # Verify directory exists
@@ -79,12 +71,6 @@ class PolyglotSuite(ProblemSuite):
             with open(instructions_path, "r") as f:
                 problem_statement = f.read()
 
-            # Parse problem tests
-            test_names = problem.get("tests")
-            if not test_names:
-                logger.fatal(f"Problem {problem_name} missing tests field")
-
-            tests = [ProblemTest(name=test_name, category=ProblemTestCategory.default) for test_name in test_names]
 
             # Calculate diff between main.* and solution.*
             main_path = os.path.join(problem_dir, f"main.{self.language}")
@@ -98,7 +84,6 @@ class PolyglotSuite(ProblemSuite):
                 name=f"{problem_name}-{self.language}",
 
                 problem_statement=problem_statement,
-                tests=tests,
                 solution_diff=solution_diff
             ))
             

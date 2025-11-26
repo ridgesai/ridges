@@ -113,7 +113,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 name=problem_name,
 
                 problem_statement=problem.get("problem_statement"),
-                tests=tests,
                 solution_diff=problem.get("patch"),
                 
                 # We will store the entire SWE-Bench problem object in the userdata (this is basically a Dict[str, Any])
