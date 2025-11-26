@@ -9,10 +9,10 @@ import utils.logger as logger
 from uuid import uuid4
 from datetime import datetime
 from typing import List, Optional
-from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
+from models.problem import ProblemDifficulty, ProblemTestResultStatus
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
@@ -247,16 +247,55 @@ def test_problem(problem_name: str, num_runs: int):
 
 
 
-# TODO ADAM: There is a lot of redundant data in test_agent_problem_sets.json.
-#            We should rather make this file load the data from the source,
-#            which is the /evaluator/datasets directory.
 with open(pathlib.Path(__file__).parent / "test_agent_problem_sets.json", "r") as f:
     problem_sets = json.load(f)
+
+# Register all-polyglot-py and all-polyglot-js
+problem_sets["all-polyglot-py"] = [problem.name for problem in POLYGLOT_PY_SUITE.problems.values()]
+problem_sets["all-polyglot-js"] = [problem.name for problem in POLYGLOT_JS_SUITE.problems.values()]
+
+# Register all-swebench-verified, all-swebench-verified-easy, all-swebench-verified-medium, all-swebench-verified-hard, all-swebench-verified-impossible
+problem_sets["all-swebench-verified"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values()]
+problem_sets["all-swebench-verified-easy"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.EASY]
+problem_sets["all-swebench-verified-medium"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.MEDIUM]
+problem_sets["all-swebench-verified-hard"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.HARD]
+problem_sets["all-swebench-verified-impossible"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.IMPOSSIBLE]
+
+
 
 @cli.command()
 @click.argument("problem_set_name", required=True, type=click.Choice(list(problem_sets.keys())))
 def test_problem_set(problem_set_name: str):
     asyncio.run(run_problems(agent_code, problem_sets[problem_set_name]))
+
+
+
+@cli.command()
+def list_problem_sets():
+    click.echo("\nAvailable Problem Sets:")
+    click.echo("=" * 80)
+    
+    max_name_length = max(len(name) for name in problem_sets.keys())
+    for problem_set_name in sorted(problem_sets.keys()):
+        num_problems = len(problem_sets[problem_set_name])
+        click.echo(f"  {problem_set_name:<{max_name_length}}    -    {num_problems:>4} problem(s)")
+    
+    click.echo("=" * 80)
+    click.echo(f"Total: {len(problem_sets)} problem set(s)\n")
+
+@cli.command()
+@click.argument("problem_set_name", required=True, type=click.Choice(list(problem_sets.keys())))
+def list_problems(problem_set_name: str):
+    problems = problem_sets[problem_set_name]
+    
+    click.echo(f"\nProblems in '{problem_set_name}':")
+    click.echo("=" * 80)
+    
+    for i, problem_name in enumerate(problems, 1):
+        click.echo(f"  {i:>3}. {problem_name}")
+    
+    click.echo("=" * 80)
+    click.echo(f"Total: {len(problems)} problem(s)\n")
 
 
 
