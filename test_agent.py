@@ -253,6 +253,9 @@ def test_problem(problem_name: str, num_runs: int):
 
 
 
+# TODO ADAM: There is a lot of redundant data in test_agent_problem_sets.json.
+#            We should rather make this file load the data from the source,
+#            which is the /evaluator/datasets directory.
 with open(pathlib.Path(__file__).parent / "test_agent_problem_sets.json", "r") as f:
     problem_sets = json.load(f)
 

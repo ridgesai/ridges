@@ -1,3 +1,7 @@
+# TODO ADAM: There is a lot of redundant data in problem_statistics.json. We
+#            should rather make this file load the data from the source, which
+#            is the /evaluator/datasets directory.
+
 import json
 import pathlib
 
