@@ -14,6 +14,12 @@ function runTests() {
 
 
     // Jest Emulator
+    global._beforeEachCallbacks = [];
+    global.beforeEach = function(callback) {
+        console.log(`[POLYGLOT_TEST_RUNNER] [JEST] beforeEach()`);
+        global._beforeEachCallbacks.push(callback);
+    };
+
     global.describe = function(description, callback) {
         console.log(`[POLYGLOT_TEST_RUNNER] [JEST] describe(): "${description}"`);
         callback();
@@ -27,6 +33,8 @@ function runTests() {
     global.test = function(description, callback) {
         console.log(`[POLYGLOT_TEST_RUNNER] [JEST] Test: "${description}"...`);
         try {
+            for (const beforeEachCallback of global._beforeEachCallbacks)
+                beforeEachCallback();
             callback();
             console.log(`[POLYGLOT_TEST_RUNNER] [JEST] Test passed: "${description}"`);
             global.testResults.push({
