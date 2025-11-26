@@ -180,6 +180,7 @@ class SandboxManager:
 
             # Get logs
             logs = sandbox.container.logs().decode("utf-8")
+            # logger.info(logs)
 
             return SandboxResultWithLogs(**output, logs=logs)
         finally:
