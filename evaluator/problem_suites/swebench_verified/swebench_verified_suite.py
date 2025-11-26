@@ -8,8 +8,8 @@ import traceback
 import utils.logger as logger
 
 from uuid import UUID
-from typing import List, Tuple
 from pydantic import BaseModel
+from typing import List, Tuple, Optional
 from utils.docker import get_docker_client
 from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
@@ -19,11 +19,24 @@ from models.evaluation_run import EvaluationRunErrorCode
 from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
-from models.problem import Problem, ProblemTest, ProblemTestCategory
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
-from models.problem import ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
 from utils.git import clone_repo, clone_local_repo_at_commit, verify_commit_exists_in_local_repo
+from models.problem import Problem, ProblemTest, ProblemDifficulty, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+
+
+
+def _swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Optional[ProblemDifficulty]:
+    if difficulty == "<15 min fix":
+        return ProblemDifficulty.EASY
+    elif difficulty == "15 min - 1 hour":
+        return ProblemDifficulty.MEDIUM
+    elif difficulty == "1-4 hours":
+        return ProblemDifficulty.HARD
+    elif difficulty == ">4 hours":
+        return ProblemDifficulty.IMPOSSIBLE
+    else:
+        return None
 
 
 
@@ -108,7 +121,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
             self._add_problem(Problem(
                 name=problem_name,
-
+                difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
+                
                 problem_statement=problem.get("problem_statement"),
                 solution_diff=problem.get("patch"),
                 
