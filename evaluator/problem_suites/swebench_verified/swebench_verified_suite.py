@@ -3,6 +3,7 @@
 import os
 import json
 import time
+import pathlib
 import traceback
 import utils.logger as logger
 
@@ -26,6 +27,11 @@ from utils.git import clone_repo, clone_local_repo_at_commit, verify_commit_exis
 
 
 
+# /evaluator/datasets/swebench_verified
+SWEBENCH_VERIFIED_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "swebench_verified")
+
+
+
 class SWEBenchVerifiedEvaluationSandbox(BaseModel):
     evaluation_run_id: UUID
     test_spec: TestSpec
@@ -34,20 +40,11 @@ class SWEBenchVerifiedEvaluationSandbox(BaseModel):
 
 
 class SWEBenchVerifiedSuite(ProblemSuite):
-    def __init__(self, dataset_path: str):
-        super().__init__(dataset_path)
-
-
-
-    def _load_problems(self, dataset_path: str):
-        logger.info(f"Loading problems from {dataset_path}...")
-
-        # Make sure the dataset path exists
-        if not os.path.exists(dataset_path):
-            logger.fatal(f"Dataset not found: {dataset_path}")
+    def __init__(self):
+        logger.info(f"Loading problems from {SWEBENCH_VERIFIED_DATASET_PATH}...")
         
         # Make sure the swebench_verified.json file exists
-        json_path = os.path.join(dataset_path, "swebench_verified.json")
+        json_path = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "swebench_verified.json")
         if not os.path.exists(json_path):
             logger.fatal(f"swebench_verified.json not found at: {json_path}")
             
@@ -65,7 +62,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Finding {len(unique_repos)} unique repositories...")
         
         # Check that all repositories exist in the repos/ directory
-        repos_dir = os.path.join(dataset_path, "repos")
+        repos_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos")
         if not os.path.exists(repos_dir):
             os.makedirs(repos_dir, exist_ok=True)
         
@@ -122,7 +119,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
             # logger.debug(f"Problem {problem_name} verified successfully")
         
-        logger.info(f"Successfully loaded {len(self.problems)} problems from {dataset_path}")
+        logger.info(f"Successfully loaded {len(self.problems)} problems from {SWEBENCH_VERIFIED_DATASET_PATH}")
 
 
 
@@ -139,7 +136,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         commit_hash = swebench_instance.get("base_commit")
 
         # Convert repository format from "owner/name" to directory name format "owner_name"
-        local_repo_dir = os.path.join(self.dataset_path, "repos", repo.replace("/", "_"))
+        local_repo_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos", repo.replace("/", "_"))
         
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
