@@ -1,4 +1,5 @@
-from validator.set_weights import set_weights_from_mapping # Need to import first because it breaks the logger
+# TODO ADAM
+from validator.set_weights import set_weights_from_mapping
 
 import os
 import sys
@@ -11,7 +12,7 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from api.endpoints.validator_models import *
 from models.problem import ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
@@ -19,10 +20,9 @@ from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
 from models.evaluation_set import EvaluationSetProblem
 from evaluator.sandbox.sandbox_manager import SandboxManager
-from evaluator.problem_suites.problem_suite import ProblemSuite
 from validator.http_utils import get_ridges_platform, post_ridges_platform
-from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
+from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite, PolyglotSuiteLanguage
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
 
@@ -345,10 +345,9 @@ async def main():
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
     # Load all problem suites
-    datasets_path = pathlib.Path(__file__).parent.parent / "evaluator" / "datasets"
-    polyglot_py_suite = PolyglotSuite(datasets_path / "polyglot_py")
-    polyglot_js_suite = PolyglotSuite(datasets_path / "polyglot_js")
-    swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
+    polyglot_py_suite = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
+    polyglot_js_suite = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)
+    swebench_verified_suite = SWEBenchVerifiedSuite()
     problem_suites = [polyglot_py_suite, polyglot_js_suite, swebench_verified_suite]
 
 
