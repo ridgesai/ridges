@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { truncate } from './main';
 
 describe('Micro-blog', () => {

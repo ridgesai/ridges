@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { primeFactors } from './main';
 
 describe('returns prime factors for the given input number', () => {

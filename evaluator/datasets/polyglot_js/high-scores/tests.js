@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { HighScores } from './main';
 
 describe('High Scores Test Suite', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { ZebraPuzzle } from './main';
 
 describe('Zebra puzzle', () => {

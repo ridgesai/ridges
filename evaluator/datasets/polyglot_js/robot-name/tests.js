@@ -1,11 +1,4 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  test,
-  xtest,
-} from '@jest/globals';
+
 import { Robot } from './main';
 
 const areSequential = (name1, name2) => {

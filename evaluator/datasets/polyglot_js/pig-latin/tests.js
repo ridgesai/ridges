@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { translate } from './main';
 
 describe('Pig Latin', () => {

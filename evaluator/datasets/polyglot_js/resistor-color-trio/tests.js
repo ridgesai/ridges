@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { ResistorColorTrio } from './main';
 
 function makeLabel({ value, unit }) {

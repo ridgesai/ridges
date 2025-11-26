@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { all, allSettled, any, promisify, race } from './main';
 
 describe('promises', () => {

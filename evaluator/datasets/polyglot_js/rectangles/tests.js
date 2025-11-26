@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { count } from './main';
 
 describe('Rectangles', () => {

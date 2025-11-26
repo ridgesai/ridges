@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { classify } from './main';
 
 describe('Exercise - Perfect Numbers', () => {

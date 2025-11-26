@@ -1,4 +1,4 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import { largestProduct } from './main';
 
 describe('Largest Series Product', () => {
