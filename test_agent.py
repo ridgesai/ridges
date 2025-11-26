@@ -14,8 +14,8 @@ from evaluator.models import EvaluationRunException
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
-from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite, PolyglotSuiteLanguage
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
+from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
+from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
 
 
@@ -201,16 +201,12 @@ async def run_problems(agent_code: str, problem_names: List[str]):
     
     sandbox_manager = SandboxManager(inference_gateway_url)
 
-    polyglot_py_suite = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
-    polyglot_js_suite = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)
-    swebench_verified_suite = SWEBenchVerifiedSuite()
-
-    swebench_verified_suite.prebuild_problem_images(problem_names)
+    SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(problem_names)
 
     tasks = []
 
     for problem_name in problem_names:
-        tasks.append(asyncio.create_task(run_local_evaluation_run(sandbox_manager, [polyglot_py_suite, polyglot_js_suite, swebench_verified_suite], problem_name)))
+        tasks.append(asyncio.create_task(run_local_evaluation_run(sandbox_manager, [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE], problem_name)))
 
     await asyncio.gather(*tasks)
 

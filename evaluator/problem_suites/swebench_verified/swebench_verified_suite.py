@@ -305,3 +305,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             logger.warning(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
             raise RuntimeError(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
         logger.debug(f"Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
+
+
+
+SWEBENCH_VERIFIED_SUITE = SWEBenchVerifiedSuite()

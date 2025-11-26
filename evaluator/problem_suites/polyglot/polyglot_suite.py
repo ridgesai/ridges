@@ -201,3 +201,8 @@ class PolyglotSuite(ProblemSuite):
                 EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL,
                 f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
             )
+
+
+
+POLYGLOT_PY_SUITE = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
+POLYGLOT_JS_SUITE = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)

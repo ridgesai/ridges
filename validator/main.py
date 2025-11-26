@@ -22,8 +22,8 @@ from models.evaluation_set import EvaluationSetProblem
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http_utils import get_ridges_platform, post_ridges_platform
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
-from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite, PolyglotSuiteLanguage
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
+from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
+from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
 
 
@@ -345,10 +345,7 @@ async def main():
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
     # Load all problem suites
-    polyglot_py_suite = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
-    polyglot_js_suite = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)
-    swebench_verified_suite = SWEBenchVerifiedSuite()
-    problem_suites = [polyglot_py_suite, polyglot_js_suite, swebench_verified_suite]
+    problem_suites = [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
 
 
 
@@ -358,7 +355,7 @@ async def main():
     latest_set_problem_names = list({prob.problem_name for prob in latest_set_problems})
     
     # Prebuild the images for the SWE-Bench Verified problems
-    swebench_verified_suite.prebuild_problem_images(latest_set_problem_names)
+    SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(latest_set_problem_names)
 
 
 
