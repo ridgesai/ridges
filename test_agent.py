@@ -13,8 +13,8 @@ from models.problem import ProblemTestResultStatus
 from evaluator.models import EvaluationRunException
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
-from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
+from evaluator.problem_suites.polyglot.polyglot_suite import PolyglotSuite, PolyglotSuiteLanguage
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBenchVerifiedSuite
 
 
@@ -201,11 +201,9 @@ async def run_problems(agent_code: str, problem_names: List[str]):
     
     sandbox_manager = SandboxManager(inference_gateway_url)
 
-    datasets_path = pathlib.Path(__file__).parent / "evaluator" / "datasets"
-
-    polyglot_py_suite = PolyglotSuite(datasets_path / "polyglot_py")
-    polyglot_js_suite = PolyglotSuite(datasets_path / "polyglot_js")
-    swebench_verified_suite = SWEBenchVerifiedSuite(datasets_path / "swebench_verified")
+    polyglot_py_suite = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
+    polyglot_js_suite = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)
+    swebench_verified_suite = SWEBenchVerifiedSuite()
 
     swebench_verified_suite.prebuild_problem_images(problem_names)
 
