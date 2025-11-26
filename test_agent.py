@@ -146,7 +146,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         evaluation_run.status = EvaluationRunStatus.error
         evaluation_run.finished_or_errored_at = datetime.now()
 
-        logger.error(f"[{problem_name}] Errored: {e.error_code.get_error_message()}: {e.error_message}")
+        logger.error(f"[{problem_name}] Errored: {e.error_message}")
 
     except Exception as e:
         evaluation_run.error_code = EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
@@ -155,7 +155,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         evaluation_run.status = EvaluationRunStatus.error
         evaluation_run.finished_or_errored_at = datetime.now()
 
-        logger.error(f"[{problem_name}] Errored: {e.error_code.get_error_message()}: {e.error_message}")
+        logger.error(f"[{problem_name}] Errored: {str(e)}")
 
 
 
