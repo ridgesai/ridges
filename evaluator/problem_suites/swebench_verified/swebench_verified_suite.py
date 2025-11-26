@@ -228,7 +228,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 timeout=timeout_seconds
             )
 
-            # TODO ADAM: timeout
+            # NOTE ADAM: timeout
 
             test_results = []
             
@@ -244,7 +244,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             for test_name in tests_status["PASS_TO_PASS"]["failure"]:
                 test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.FAIL))
             
-            # TODO: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
+            # NOTE ADAM: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
             eval_logs = "No evaluation logs available"
 
             return test_results, eval_logs
