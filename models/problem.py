@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import List, Any
 from pydantic import BaseModel
+from typing import Any, Optional
 
 
 
@@ -27,8 +27,15 @@ class ProblemTestResult(BaseModel):
 
 
 
+class ProblemDifficulty(str, Enum):
+    EASY = 'easy'
+    MEDIUM = 'medium'
+    HARD = 'hard'
+    IMPOSSIBLE = 'impossible'
+
 class Problem(BaseModel):
     name: str
+    difficulty: Optional[ProblemDifficulty] = None
 
     problem_statement: str
     solution_diff: str
