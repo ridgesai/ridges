@@ -136,7 +136,7 @@
         "zebra-puzzle",
         "zipper"
     ],
-    
+
     "all-polyglot-js": [
         "accumulate-js",
         "acronym-js",
@@ -195,7 +195,6 @@
         "largest-series-product-js",
         "leap-js",
         "ledger-js",
-        "lens-person-js",
         "linked-list-js",
         "list-ops-js",
         "luhn-js",
