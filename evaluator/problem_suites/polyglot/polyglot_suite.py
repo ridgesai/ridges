@@ -17,7 +17,7 @@ from evaluator.models import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode
 from utils.git import init_local_repo_with_initial_commit
 from evaluator.sandbox.sandbox_manager import SandboxManager
-from evaluator.problem_suites.problem_suite import ProblemSuite
+from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
 
 
@@ -29,6 +29,8 @@ class PolyglotSuiteLanguage(str, Enum):
 class PolyglotSuite(ProblemSuite):
     def __init__(self, language: PolyglotSuiteLanguage):
         self.problems = {}
+        self.name = ProblemSuiteName(f"polyglot_{language}")
+
         self.language = language
 
         # /evaluator/datasets/polyglot_*

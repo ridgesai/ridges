@@ -5,6 +5,7 @@ import requests
 import traceback
 import utils.logger as logger
 
+from enum import Enum
 from uuid import UUID
 from models.problem import Problem
 from abc import ABC, abstractmethod
@@ -13,6 +14,13 @@ from models.problem import ProblemTestResult
 from evaluator.models import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode
 from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
+
+
+
+class ProblemSuiteName(str, Enum):
+    swebench_verified = "swebench_verified"
+    polyglot_py = "polyglot_py"
+    polyglot_js = "polyglot_js"
 
 
 

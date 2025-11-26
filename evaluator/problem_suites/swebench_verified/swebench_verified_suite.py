@@ -18,9 +18,9 @@ from utils.temp import create_temp_dir, delete_temp_dir
 from models.evaluation_run import EvaluationRunErrorCode
 from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
-from evaluator.problem_suites.problem_suite import ProblemSuite
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
+from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from utils.git import clone_repo, clone_local_repo_at_commit, verify_commit_exists_in_local_repo
 from models.problem import Problem, ProblemTest, ProblemDifficulty, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
 
@@ -54,6 +54,9 @@ class SWEBenchVerifiedEvaluationSandbox(BaseModel):
 
 class SWEBenchVerifiedSuite(ProblemSuite):
     def __init__(self):
+        self.problems = {}
+        self.name = ProblemSuiteName.swebench_verified
+        
         logger.info(f"Loading problems from {SWEBENCH_VERIFIED_DATASET_PATH}...")
         
         # Make sure the swebench_verified.json file exists
@@ -122,7 +125,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             self._add_problem(Problem(
                 name=problem_name,
                 difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
-                
+
                 problem_statement=problem.get("problem_statement"),
                 solution_diff=problem.get("patch"),
                 
