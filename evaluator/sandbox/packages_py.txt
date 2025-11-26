@@ -13,7 +13,6 @@ pytest
 aiohttp
 asgiref
 astroid
-ripgrep
 requests
 pydantic
 sqlparse
