@@ -101,7 +101,7 @@ class SandboxManager:
         *,
         name: str,
         script_path: str,
-        input_data: Any,
+        input_data: Any = None,
         env_vars: Dict[str, str] = {},
         on_mount: Callable[[str], None] = None
     ) -> Sandbox:
