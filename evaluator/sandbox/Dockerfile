@@ -29,6 +29,8 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | b
     xargs -a /tmp/packages_js.txt npm install -g && \
     rm /tmp/packages_js.txt && \
     NODE_VERSION=$(nvm version default) && \
+    ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/npm" /usr/local/bin/npm && \
+    ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/npx" /usr/local/bin/npx && \
     ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/node" /usr/local/bin/node && \
     ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules" /usr/local/lib/node_modules
 
