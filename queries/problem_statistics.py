@@ -1,8 +1,10 @@
 from pydantic import BaseModel
 from typing import List, Optional
 from models.problem import ProblemDifficulty
+from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
 from evaluator.problem_suites.problem_suite import ProblemSuiteName
+from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
@@ -27,16 +29,16 @@ class ProblemStatistics(BaseModel):
     def __init__(self, **data):
         problem_name = data["problem_name"]
 
-        problem_suite = None
+        problem_suite_name = None
         problem_difficulty = None
 
         for problem_suite in [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]:
             if problem_suite.has_problem_name(problem_name):
-                problem_suite = problem_suite
+                problem_suite_name = problem_suite.name
                 problem_difficulty = problem_suite.get_problem(problem_name).difficulty
                 break    
 
-        data["problem_suite"] = problem_suite
+        data["problem_suite_name"] = problem_suite_name
         data["problem_difficulty"] = problem_difficulty
         
         super().__init__(**data)
@@ -81,4 +83,24 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
         """
     )
 
-    return [ProblemStatistics(**row) for row in rows]
+    problem_stats = [ProblemStatistics(**row) for row in rows]
+
+    evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
+    for evaluation_set_problem in evaluation_set_problems:
+        if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
+            problem_stats.append(ProblemStatistics(
+                problem_name=evaluation_set_problem.problem_name,
+                total_num_evaluation_runs=0,
+                num_finished_evaluation_runs=0,
+                num_finished_passed_evaluation_runs=0,
+                num_finished_failed_evaluation_runs=0,
+                num_errored_evaluation_runs=0,
+                pass_rate=None,
+                average_time=None,
+                average_cost_usd=None,
+                in_screener_1_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1 for _evaluation_set_problem in evaluation_set_problems),
+                in_screener_2_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2 for _evaluation_set_problem in evaluation_set_problems),
+                in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
+            ))
+
+    return problem_stats
