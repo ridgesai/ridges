@@ -1,10 +1,12 @@
 import api.config as config
 
-from typing import Dict
 from fastapi import APIRouter
 from pydantic import BaseModel
+from typing import Dict, Optional
+from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
 from queries.scores import get_weight_receiving_agent_hotkey
+from queries.statistics import get_average_score_per_evaluation_set_group
 
 
 
@@ -33,16 +35,29 @@ async def weights() -> Dict[str, float]:
 
 
 
-# /scoring/thresholds
-class ScoringThresholdsResponse(BaseModel):
+# /scoring/screener-info
+class ScoringScreenerInfoResponse(BaseModel):
     screener_1_threshold: float
     screener_2_threshold: float
     prune_threshold: float
 
-@router.get("/thresholds")
-async def thresholds() -> ScoringThresholdsResponse:
-    return ScoringThresholdsResponse(
+    screener_1_average_score: Optional[float] = None
+    screener_2_average_score: Optional[float] = None
+    validator_average_score: Optional[float] = None
+
+    screener_1_average_wait_time: Optional[float] = None
+    screener_2_average_wait_time: Optional[float] = None
+    validator_average_wait_time: Optional[float] = None
+
+@router.get("/screener-info")
+async def screener_info() -> ScoringScreenerInfoResponse:
+    average_score_per_evaluation_set_group = await get_average_score_per_evaluation_set_group()
+
+    return ScoringScreenerInfoResponse(
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
-        prune_threshold=config.PRUNE_THRESHOLD
+        prune_threshold=config.PRUNE_THRESHOLD,
+        screener_1_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_1],
+        screener_2_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_2],
+        validator_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.validator]
     )
