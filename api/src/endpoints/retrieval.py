@@ -4,7 +4,8 @@ from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, 
 import utils.logger as logger
 from dotenv import load_dotenv
 
-from queries.statistics import get_top_scores_over_time, get_problem_statistics
+from queries.statistics import get_top_scores_over_time
+from queries.problem_statistics import get_problem_statistics
 
 load_dotenv()
 

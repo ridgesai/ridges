@@ -29,9 +29,9 @@ class PolyglotSuiteLanguage(str, Enum):
 class PolyglotSuite(ProblemSuite):
     def __init__(self, language: PolyglotSuiteLanguage):
         self.problems = {}
-        self.name = ProblemSuiteName(f"polyglot_{language}")
+        self.name = ProblemSuiteName(f"polyglot_{language.value}")
 
-        self.language = language
+        self.language = language.value
 
         # /evaluator/datasets/polyglot_*
         dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / f"polyglot_{self.language}")
