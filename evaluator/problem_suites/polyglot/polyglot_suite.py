@@ -2,10 +2,12 @@
 
 import os
 import shutil
+import pathlib
 import requests
 import traceback
 import utils.logger as logger
 
+from enum import Enum
 from uuid import UUID
 from typing import List, Tuple
 from models.problem import Problem
@@ -20,22 +22,19 @@ from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_fo
 
 
 
+class PolyglotSuiteLanguage(str, Enum):
+    PYTHON = "py"
+    JAVASCRIPT = "js"
+
 class PolyglotSuite(ProblemSuite):
-    def __init__(self, dataset_path: str):
-        self.language = str(dataset_path).split("_")[1]
-        if self.language not in ["py", "js"]:
-            logger.fatal(f"Invalid language: {self.language}")
+    def __init__(self, language: PolyglotSuiteLanguage):
+        self.problems = {}
+        self.language = language
 
-        super().__init__(dataset_path)
+        # /evaluator/datasets/polyglot_*
+        dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / f"polyglot_{self.language}")
 
-
-
-    def _load_problems(self, dataset_path: str):
         logger.info(f"Loading problems from {dataset_path}...")
-
-        # Make sure the dataset path exists
-        if not os.path.exists(dataset_path):
-            logger.fatal(f"Dataset not found: {dataset_path}")
         
         # Find problems
         problem_names = []
@@ -100,7 +99,8 @@ class PolyglotSuite(ProblemSuite):
         *,
         include_tests: bool = False
     ) -> None:
-        problem_dir = os.path.join(self.dataset_path, problem.name.rsplit("-", 1)[0])
+        # /evaluator/datasets/polyglot_*/*
+        problem_dir = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / f"polyglot_{self.language}" / problem.name.rsplit("-", 1)[0])
         
         # Copy main.*
         shutil.copy2(os.path.join(problem_dir, f"main.{self.language}"), os.path.join(dir, f"main.{self.language}"))
