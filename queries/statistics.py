@@ -99,15 +99,18 @@ async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -
     rows = await conn.fetch(
         """
         SELECT
-        CASE
-            WHEN validator_hotkey LIKE 'screener-1%' THEN 'screener_1'
-            WHEN validator_hotkey LIKE 'screener-2%' THEN 'screener_2'
-            WHEN validator_hotkey NOT LIKE 'screener-%' THEN 'validator'
-        END as validator_type,
-        AVG(score) as average_score
-        FROM evaluations_hydrated
-        WHERE status = 'success'
-        AND set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            CASE
+                WHEN eh.validator_hotkey LIKE 'screener-1%' THEN 'screener_1'
+                WHEN eh.validator_hotkey LIKE 'screener-2%' THEN 'screener_2'
+                WHEN eh.validator_hotkey NOT LIKE 'screener-%' THEN 'validator'
+            END as validator_type,
+            AVG(eh.score) as average_score
+        FROM evaluations_hydrated eh
+            JOIN agents a on a.agent_id = eh.agent_id 
+        WHERE eh.status = 'success'
+            AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
         GROUP BY validator_type
         """
     )
