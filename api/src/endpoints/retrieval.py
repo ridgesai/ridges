@@ -27,14 +27,15 @@ from api.endpoints.validator import get_all_connected_validator_ip_addresses
 
 # TODO: Hacky cache implementation. We should use a proper cache library
 CACHE_EXPIRATION = 900 # 15 minutes
+QUEUE_CACHE_EXPIRATION = 20 # 20 seconds
 cache_timestamps: dict[str, float] = {}
 recalculating_cache: dict[str, bool] = {}
 cache_data: dict[str, Any] = {}
 
-def is_cache_valid(cache_key: str) -> bool:
+def is_cache_valid(cache_key: str, expiration: int = CACHE_EXPIRATION) -> bool:
     if cache_key not in cache_timestamps:
         return False
-    return time.time() - cache_timestamps[cache_key] < CACHE_EXPIRATION
+    return time.time() - cache_timestamps[cache_key] < expiration
 
 def update_cache_timestamp(cache_key: str):
     cache_timestamps[cache_key] = time.time()
@@ -51,7 +52,30 @@ async def queue(
     Returns:
         A list of Agent objects, sorted by their position in queue
     """
-    return await get_agents_in_queue(EvaluationSetGroup(stage))
+    cache_key = f"queue_{stage}"
+    if is_cache_valid(cache_key, QUEUE_CACHE_EXPIRATION):
+        return cache_data[cache_key]
+
+    # Hacky cache stampede protection: sleep and retry if someone else is calculating
+    for _ in range(10):  # Try up to 10 times
+        if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+            await asyncio.sleep(10)  # Sleep 100ms
+            if is_cache_valid(cache_key, QUEUE_CACHE_EXPIRATION):
+                return cache_data[cache_key]
+        else:
+            continue
+    
+    # If we waited and still no cache, return empty array to avoid further load
+    if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+        return []
+    
+    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
+        return cache_data[cache_key]
+    recalculating_cache[cache_key] = True
+    cache_data[cache_key] = await get_agents_in_queue(EvaluationSetGroup(stage))
+    cache_timestamps[cache_key] = time.time()
+    recalculating_cache[cache_key] = False
+    return cache_data[cache_key]
 
 async def top_agents(
     number_of_agents: int = 5,
@@ -61,9 +85,22 @@ async def top_agents(
     Returns the top agents for the latest problem set. All agents, including ones that have not been approved.
     """
     cache_key = f"top_agents_{number_of_agents}_{page}"
-    if is_cache_valid(cache_key):
+    if is_cache_valid(cache_key, 20):
         return cache_data[cache_key]
 
+    # Hacky cache stampede protection: sleep and retry if someone else is calculating
+    for _ in range(10):  # Try up to 10 times
+        if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+            await asyncio.sleep(10)  # Sleep 100ms
+            if is_cache_valid(cache_key, 20):
+                return cache_data[cache_key]
+        else:
+            continue
+    
+    # If we waited and still no cache, return empty array to avoid further load
+    if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+        return []
+    
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
@@ -156,6 +193,19 @@ async def top_scores_over_time():
     if is_cache_valid(cache_key):
         return cache_data[cache_key]
 
+    # Hacky cache stampede protection: sleep and retry if someone else is calculating
+    for _ in range(10):  # Try up to 10 times
+        if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+            await asyncio.sleep(10)  # Sleep 100ms
+            if is_cache_valid(cache_key):
+                return cache_data[cache_key]
+        else:
+            continue
+    
+    # If we waited and still no cache, return empty array to avoid further load
+    if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+        return []
+    
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
@@ -172,6 +222,19 @@ async def network_statistics():
     if is_cache_valid(cache_key):
         return cache_data[cache_key]
 
+    # Hacky cache stampede protection: sleep and retry if someone else is calculating
+    for _ in range(10):  # Try up to 10 times
+        if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+            await asyncio.sleep(10)  # Sleep 100ms
+            if is_cache_valid(cache_key):
+                return cache_data[cache_key]
+        else:
+            continue
+    
+    # If we waited and still no cache, return empty dict to avoid further load
+    if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+        return {}
+    
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
@@ -196,6 +259,19 @@ async def problem_statistics():
     if is_cache_valid(cache_key):
         return cache_data[cache_key]
 
+    # Hacky cache stampede protection: sleep and retry if someone else is calculating
+    for _ in range(10):  # Try up to 10 times
+        if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+            await asyncio.sleep(10)  # Sleep 100ms
+            if is_cache_valid(cache_key):
+                return cache_data[cache_key]
+        else:
+            continue
+    
+    # If we waited and still no cache, return empty dict to avoid further load
+    if recalculating_cache.get(cache_key, False) and cache_key not in cache_data:
+        return []
+    
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
@@ -227,3 +303,4 @@ for path, endpoint in routes:
         tags=["retrieval"],
         methods=["GET"]
     )
+
