@@ -1,3 +1,4 @@
+import api.config as config
 
 from datetime import datetime
 from pydantic import BaseModel
@@ -123,5 +124,75 @@ async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -
         result[EvaluationSetGroup.screener_2] = None
     if EvaluationSetGroup.validator not in result:
         result[EvaluationSetGroup.validator] = None
+
+    return result
+
+
+
+# NOTE: None is returned if there are no successful evaluations for a given
+#       evaluation set group. 
+@db_operation
+async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnection) -> Dict[EvaluationSetGroup, Optional[float]]:
+    result = {}
+
+    result[EvaluationSetGroup.screener_1] = await conn.fetchval(
+        """
+        SELECT 
+            AVG(EXTRACT(EPOCH FROM (e.finished_at - a.created_at))) AS average_wait_time
+        FROM evaluations_hydrated e
+            JOIN agents a ON e.agent_id = a.agent_id
+        WHERE e.status = 'success'
+            AND e.validator_hotkey LIKE 'screener-1%'
+            AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND e.finished_at >= NOW() - INTERVAL '6 hours'
+        """
+    )
+
+    result[EvaluationSetGroup.screener_2] = await conn.fetchval(
+        """
+        SELECT 
+            AVG(EXTRACT(EPOCH FROM (sc2_e.finished_at - sc1_e.finished_at))) AS average_wait_time
+        FROM evaluations_hydrated sc1_e
+            JOIN evaluations_hydrated sc2_e ON sc1_e.agent_id = sc2_e.agent_id
+            JOIN agents a ON sc1_e.agent_id = a.agent_id
+        WHERE sc1_e.status = 'success' AND sc2_e.status = 'success'
+            AND sc1_e.validator_hotkey LIKE 'screener-1%'
+            AND sc2_e.validator_hotkey LIKE 'screener-2%'
+            AND sc1_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND sc2_e.finished_at >= NOW() - INTERVAL '6 hours'
+        """
+    )
+
+    result[EvaluationSetGroup.validator] = await conn.fetchval(
+        f"""
+        SELECT 
+            AVG(EXTRACT(EPOCH FROM (v_e.finished_at - sc2_e.finished_at))) AS average_wait_time
+        FROM evaluations_hydrated sc2_e
+            JOIN (
+                SELECT
+                    v_e2.agent_id,
+                    MAX(v_e2.finished_at) AS finished_at,
+                    COUNT(DISTINCT v_e2.validator_hotkey) AS validator_count
+                    FROM evaluations_hydrated v_e2
+                    WHERE v_e2.status = 'success'
+                    AND v_e2.validator_hotkey not LIKE 'screener-%'
+                    AND v_e2.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                GROUP BY v_e2.agent_id
+            ) v_e ON sc2_e.agent_id = v_e.agent_id
+            JOIN agents a ON sc2_e.agent_id = a.agent_id
+        WHERE sc2_e.status = 'success'
+            AND sc2_e.validator_hotkey LIKE 'screener-2%'
+            AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND v_e.validator_count = {config.NUM_EVALS_PER_AGENT}
+            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND v_e.finished_at >= NOW() - INTERVAL '6 hours'
+        """
+    )
 
     return result
