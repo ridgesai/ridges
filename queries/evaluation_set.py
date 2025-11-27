@@ -1,4 +1,5 @@
 from typing import List
+from datetime import datetime
 from utils.database import db_operation, DatabaseConnection
 from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
 
@@ -6,8 +7,11 @@ from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
 
 @db_operation
 async def get_latest_set_id(conn: DatabaseConnection) -> int:
-    result = await conn.fetchrow("SELECT MAX(set_id) as latest_set_id FROM evaluation_sets")
-    return result["latest_set_id"]
+    return await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
+
+@db_operation
+async def get_latest_set_created_at(conn: DatabaseConnection) -> datetime:
+    return await conn.fetchval("SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)")
 
 
 
