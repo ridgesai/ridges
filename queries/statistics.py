@@ -109,8 +109,8 @@ async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -
             JOIN agents a on a.agent_id = eh.agent_id 
         WHERE eh.status = 'success'
             AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
         GROUP BY validator_type
         """
     )
