@@ -76,10 +76,13 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 AND es3.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             ) AS in_validator_set_group
         FROM evaluation_runs_hydrated erh
-        JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
-        JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+            JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
+            JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+            JOIN agents a on e.agent_id = a.agent_id
         WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-        GROUP BY erh.problem_name
+            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+        GROUP BY erh.problem_name;
         """
     )
 
