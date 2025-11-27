@@ -1,8 +1,10 @@
+# TODO ADAM: Subtensor bug (self.disable_third_party_loggers())
+from bittensor.core.async_subtensor import AsyncSubtensor
+
 import utils.logger as logger
 import validator.config as config
 
 from typing import Dict
-from bittensor.core.async_subtensor import AsyncSubtensor
 
 
 

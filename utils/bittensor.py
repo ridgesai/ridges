@@ -1,8 +1,9 @@
+# TODO ADAM: Subtensor bug (self.disable_third_party_loggers())
+from bittensor.core.async_subtensor import AsyncSubtensor
+from bittensor_wallet.keypair import Keypair
+
 import api.config as config
 import utils.logger as logger
-
-from bittensor_wallet.keypair import Keypair
-from bittensor.core.async_subtensor import AsyncSubtensor
 
 
 
