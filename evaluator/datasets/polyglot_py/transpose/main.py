@@ -1,2 +1,2 @@
-def transpose(text):
+def transpose(text: str) -> str:
     pass

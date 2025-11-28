@@ -1,3 +1,9 @@
 class PhoneNumber:
-    def __init__(self, number):
+    number: str # XXXXXXXXXX
+    area_code: str # XXX
+    
+    def __init__(self, number: str):
+        pass
+
+    def pretty(self) -> str: # (XXX)-XXX-XXXX
         pass

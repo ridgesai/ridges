@@ -50,4 +50,12 @@ Sometimes it is necessary to [raise an exception](https://docs.python.org/3/tuto
 This particular exercise requires that you use the [raise statement](https://docs.python.org/3/reference/simple_stmts.html#the-raise-statement) to "throw" multiple `ValueErrors` if the `Tree()` class is passed a tree that cannot be reoriented, or a path cannot be found between a `start node` and an `end node`. 
 The tests will only pass if you both `raise` the expected `exception` type and include the expected message with it.
 
-Please check the tests and their expected results carefully.
+To raise a `ValueError` with a message, write the message as an argument to the `exception` type:
+
+```python
+# if the tree cannot be reoriented (node doesn't exist in from_pov)
+raise ValueError("Tree could not be reoriented")
+
+# if a path cannot be found between nodes (either node doesn't exist in path_to)
+raise ValueError("No path found")
+```

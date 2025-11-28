@@ -1,2 +1,2 @@
-def best_hands(hands):
+def best_hands(hands: list[str]) -> list[str]:
     pass

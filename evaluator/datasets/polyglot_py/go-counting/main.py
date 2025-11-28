@@ -6,10 +6,10 @@ class Board:
         board (list[str]): A two-dimensional Go board
     """
 
-    def __init__(self, board):
+    def __init__(self, board: list[str]):
         pass
 
-    def territory(self, x, y):
+    def territory(self, x: int, y: int) -> tuple[str, set[tuple[int, int]]]:
         """Find the owner and the territories given a coordinate on
            the board
 
@@ -25,7 +25,7 @@ class Board:
         """
         pass
 
-    def territories(self):
+    def territories(self) -> dict[str, set[tuple[int, int]]]:
         """Find the owners and the territories of the whole board
 
         Args:
