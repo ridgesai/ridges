@@ -84,3 +84,35 @@ Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear
 ## robot-name
 
 Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
+
+## scale-generator
+
+Added typing to `Scale.constructor()`, `chromatic()`, and `interval()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## simple-linked-list
+
+Added typing to `Element.constructor()`, `Element.value()`, `Element.next()`, `List.constructor()`, `List.length`, `List.head`, `List.add()`, and `List.reverse()`, as it is unclear what the parameter types should be and what the methods should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## transpose
+
+Added typing to `transpose()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## two-bucket
+
+Added typing to `solve()`. The instructions explain what three values should be determined but don't specify they should be returned as an object. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## variable-length-quantity
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## wordy
+
+Added typing to `answer()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## zebra-puzzle
+
+Added typing to `drinks_water()` and `owns_zebra()`, as it is unclear what the functions should return (a nationality string).
+
+## zipper
+
+Added typing to all `Zipper` methods. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.

@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const answer = () => {
+/**
+ * @param {string} question
+ * @return {number}
+ */
+export function answer(question) {
   throw new Error('Remove this line and implement the function');
 };

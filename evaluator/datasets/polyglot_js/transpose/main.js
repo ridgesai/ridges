@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const transpose = () => {
+/**
+ * @param {string[]} input
+ * @return {string[]}
+ */
+export function transpose(input) {
   throw new Error('Remove this line and implement the function');
 };
