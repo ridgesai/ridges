@@ -16,3 +16,39 @@ Added typing to `recite()`, as it is unclear whether the function should return 
 ## book-store
 
 Added typing to `total()`, as it is unclear what format of input the function should expect. Changed the return type to `int` and added a comment (`in cents`) to indicate the format of the output, as the instructions do not specify whether the solution should return an answer as a decimal number of dollars, or an integer number of cents. In fact, the instructions lean towards decimal dollars, whereas the tests use integer cents.
+
+## bottle-song
+
+Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, seperated by newlines.
+
+## bowling
+
+No changes. The instructions provide enough typing information, as such, it is not necessary to include it in the JavaScript file.
+
+## connect
+
+Added typing to the Board `constructor()` and `get_winner()`, as it is unclear what type the board representation should be and what format the winner should be returned in. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## dominoes
+
+Added typing to `chain()`.
+
+## food-chain
+
+Added typing to `verse()` and `verses()`, as it is unclear what the parameter types should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## forth
+
+Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## go-counting
+
+Added typing to `GoCounting.constructor()`, `getTerritory()`, and `getTerritories()`. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## grade-school
+
+Added typing to `add()`, `roster()`, and `grade()`, as it is unclear what the parameter types should be and what the methods should return
+
+## grep
+
+No changes. There are already JSDocs in the JavaScript file.

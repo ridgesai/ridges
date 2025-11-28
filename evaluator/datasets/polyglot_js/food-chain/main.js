@@ -4,11 +4,20 @@
 //
 
 export class Song {
-  verse() {
+  /**
+   * @param {number} number
+   * @return {string}
+   */
+  verse(number) {
     throw new Error('Remove this line and implement the function');
   }
 
-  verses() {
+  /**
+   * @param {number} first
+   * @param {number} last
+   * @return {string}
+   */
+  verses(first, last) {
     throw new Error('Remove this line and implement the function');
   }
 }
