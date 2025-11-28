@@ -112,7 +112,7 @@ class ChutesProvider(Provider):
             if not chutes_model:
                 logger.fatal(f"Whitelisted Chutes embedding model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
 
-            max_input_tokens = 40954 # TODO ADAM
+            max_input_tokens = 40960 # TODO ADAM
             cost_usd_per_second = chutes_model["current_estimated_price"]["usd"]["second"]
 
             self.embedding_models.append(EmbeddingModelInfo(
