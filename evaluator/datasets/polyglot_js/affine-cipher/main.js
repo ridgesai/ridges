@@ -1,6 +1,6 @@
 /**
  * @param {string} phrase 
- * @param {object{a: number, b: number}} key
+ * @param {{a: number, b: number}} key
  * @return {string}
  */
 export const encode = (phrase, key) => {
@@ -9,7 +9,7 @@ export const encode = (phrase, key) => {
 
 /**
  * @param {string} phrase 
- * @param {object{a: number, b: number}} key
+ * @param {{a: number, b: number}} key
  * @return {string}
  */
 export const decode = (phrase, key) => {
