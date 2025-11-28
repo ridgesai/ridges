@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const chain = () => {
+
+/**
+ * @param {[number, number][]} dominoes
+ * @return {[number, number][] | null}
+ */
+export const chain = (dominoes) => {
   throw new Error('Remove this line and implement the function');
 };

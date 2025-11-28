@@ -8,10 +8,16 @@ export class Forth {
     throw Error('Remove this statement and implement this function');
   }
 
-  evaluate() {
+  /**
+   * @param {string} program
+   */
+  evaluate(program) {
     throw Error('Remove this statement and implement this function');
   }
 
+  /**
+   * @return {number[]}
+   */
   get stack() {
     throw Error('Remove this statement and implement this function');
   }

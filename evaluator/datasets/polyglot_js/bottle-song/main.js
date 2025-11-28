@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const recite = (initialBottlesCount, takeDownCount) => {
+/**
+ * @param {number} initialBottlesCount
+ * @param {number} takeDownCount
+ * @return {string[]}
+ */
+export const recite = (initialBottlesCount, takeDownCount = 1) => {
   throw new Error('Remove this line and implement the function');
 };

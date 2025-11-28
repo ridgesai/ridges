@@ -4,10 +4,16 @@
 //
 
 export class Board {
-  constructor() {
+  /**
+   * @param {string[]} board
+   */
+  constructor(board) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {'X' | 'O' | ''}
+   */
   winner() {
     throw new Error('Remove this line and implement the function');
   }

@@ -4,15 +4,27 @@
 //
 
 export class GradeSchool {
+  /**
+   * @return {string[]}
+   */
   roster() {
     throw new Error('Remove this line and implement the function');
   }
 
-  add() {
+  /**
+   * @param {string} student
+   * @param {number} level
+   * @return {boolean}
+   */
+  add(student, level) {
     throw new Error('Remove this line and implement the function');
   }
 
-  grade() {
+  /**
+   * @param {number} level
+   * @return {string[]}
+   */
+  grade(level) {
     throw new Error('Remove this line and implement the function');
   }
 }

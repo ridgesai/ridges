@@ -4,14 +4,25 @@
 //
 
 export class GoCounting {
+  /**
+   * @param {string[]} board
+   */
   constructor(board) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @param {number} x
+   * @param {number} y
+   * @return {{owner: 'BLACK' | 'WHITE' | 'NONE', territory: [number, number][]}}
+   */
   getTerritory(x, y) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {{territoryBlack: [number, number][], territoryWhite: [number, number][], territoryNone: [number, number][]}}
+   */
   getTerritories() {
     throw new Error('Remove this line and implement the function');
   }
