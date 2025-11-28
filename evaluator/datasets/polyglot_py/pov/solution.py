@@ -62,7 +62,10 @@ class Tree:
 
 
     def path_to(self, from_node, to_node):
-        reordered = self.from_pov(from_node)
+        try:
+            reordered = self.from_pov(from_node)
+        except ValueError:
+            raise ValueError('No path found')
         stack = reordered.children
         path = [from_node]
 

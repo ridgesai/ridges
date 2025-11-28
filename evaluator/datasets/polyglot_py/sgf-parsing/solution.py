@@ -1,17 +1,22 @@
 """Parse an SGF tree."""
-from __future__ import annotations
-
 import collections
-import dataclasses
 import string
 
 
-@dataclasses.dataclass
 class SgfTree:
     """SGF Node."""
 
-    properties: dict[str, str] = dataclasses.field(default_factory=dict)
-    children: list[SgfTree] = dataclasses.field(default_factory=list)
+    def __init__(self, properties=None, children=None):
+        self.properties = properties if properties is not None else {}
+        self.children = children if children is not None else []
+
+    def __eq__(self, other):
+        if not isinstance(other, SgfTree):
+            return False
+        return self.properties == other.properties and self.children == other.children
+
+    def __ne__(self, other):
+        return not self == other
 
 
 def parse_property_vals(sgf: str, idx: int) -> tuple[int, list[str]]:

@@ -3,34 +3,34 @@ class EmptyListException(Exception):
 
 
 class Node:
-    def __init__(self, value):
+    def __init__(self, value: int):
         pass
 
-    def value(self):
+    def value(self) -> int:
         pass
 
-    def next(self):
+    def next(self) -> "Node | None":
         pass
 
 
 class LinkedList:
-    def __init__(self, values=None):
+    def __init__(self, values: list | None = None):
         pass
 
     def __iter__(self):
         pass
 
-    def __len__(self):
+    def __len__(self) -> int:
         pass
 
-    def head(self):
+    def head(self) -> Node:
         pass
 
-    def push(self, value):
+    def push(self, value: int) -> None:
         pass
 
-    def pop(self):
+    def pop(self) -> int:
         pass
 
-    def reversed(self):
+    def reversed(self) -> "LinkedList":
         pass

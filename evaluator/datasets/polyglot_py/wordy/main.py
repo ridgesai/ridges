@@ -1,2 +1,2 @@
-def answer(question):
+def answer(question: str) -> int:
     pass

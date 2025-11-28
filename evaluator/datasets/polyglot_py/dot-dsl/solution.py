@@ -35,21 +35,21 @@ class Graph:
             raise TypeError('Graph data malformed')
 
         for item in data:
-            if len(item) < 3:
-                raise TypeError('Graph item incomplete')
+            if len(item) < 1:
+                raise TypeError('Graph item malformed')
 
             type_ = item[0]
             if type_ == ATTR:
                 if len(item) != 3:
-                    raise ValueError('Attribute is malformed')
+                    raise TypeError('Graph item malformed')
                 self.attrs[item[1]] = item[2]
             elif type_ == NODE:
                 if len(item) != 3:
-                    raise ValueError('Node is malformed')
+                    raise TypeError('Graph item malformed')
                 self.nodes.append(Node(item[1], item[2]))
             elif type_ == EDGE:
                 if len(item) != 4:
-                    raise ValueError('Edge is malformed')
+                    raise TypeError('Graph item malformed')
                 self.edges.append(Edge(item[1], item[2], item[3]))
             else:
                 raise ValueError('Unknown item')

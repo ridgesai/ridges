@@ -2,7 +2,7 @@ from json import dumps
 
 
 class Tree:
-    def __init__(self, label, children=None):
+    def __init__(self, label: str, children: list["Tree"] | None = None):
         self.label = label
         self.children = children if children is not None else []
 
@@ -18,8 +18,8 @@ class Tree:
     def __eq__(self, other):
         return self.__dict__() == other.__dict__()
 
-    def from_pov(self, from_node):
+    def from_pov(self, from_node: str) -> "Tree":
         pass
 
-    def path_to(self, from_node, to_node):
+    def path_to(self, from_node: str, to_node: str) -> list[str]:
         pass
