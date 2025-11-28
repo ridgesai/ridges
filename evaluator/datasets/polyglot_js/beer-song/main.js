@@ -5,7 +5,7 @@
 
 /**
  * @param {number} initialBottlesCount
- * @param {number} [takeDownCount=1]
+ * @param {number} takeDownCount
  * @return {string[]}
  */
 export const recite = (initialBottlesCount, takeDownCount = 1) => {
