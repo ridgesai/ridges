@@ -25,7 +25,7 @@ export class List {
   }
 
   /**
-   * @param {function} predicate
+   * @param {(any) => boolean} predicate
    * @return {List}
    */
   filter(predicate) {
@@ -33,7 +33,7 @@ export class List {
   }
 
   /**
-   * @param {function} expression
+   * @param {(any) => any} expression
    * @return {List}
    */
   map(expression) {
@@ -48,7 +48,7 @@ export class List {
   }
 
   /**
-   * @param {function} callback - function(acc, el)
+   * @param {(acc: any, el: any) => any} callback
    * @param {any} initial
    * @return {any}
    */
@@ -57,7 +57,7 @@ export class List {
   }
 
   /**
-   * @param {function} callback - function(acc, el)
+   * @param {(acc: any, el: any) => any} callback
    * @param {any} initial
    * @return {any}
    */
