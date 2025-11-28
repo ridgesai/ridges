@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string[]} hands
+ * @return {string[]}
+ */
 export const bestHands = (hands) => {
   throw new Error('Remove this line and implement the function');
 };

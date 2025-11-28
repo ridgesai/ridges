@@ -8,34 +8,66 @@ export class List {
     throw new Error('Remove this line and implement the function');
   }
 
-  append() {
+  /**
+   * @param {List} other
+   * @return {List}
+   */
+  append(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  concat() {
+  /**
+   * @param {List} others
+   * @return {List}
+   */
+  concat(others) {
     throw new Error('Remove this line and implement the function');
   }
 
-  filter() {
+  /**
+   * @param {(any) => boolean} predicate
+   * @return {List}
+   */
+  filter(predicate) {
     throw new Error('Remove this line and implement the function');
   }
 
-  map() {
+  /**
+   * @param {(any) => any} expression
+   * @return {List}
+   */
+  map(expression) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {number}
+   */
   length() {
     throw new Error('Remove this line and implement the function');
   }
 
-  foldl() {
+  /**
+   * @param {(acc: any, el: any) => any} callback
+   * @param {any} initial
+   * @return {any}
+   */
+  foldl(callback, initial) {
     throw new Error('Remove this line and implement the function');
   }
 
-  foldr() {
+  /**
+   * @param {(acc: any, el: any) => any} callback
+   * @param {any} initial
+   * @return {any}
+   */
+  foldr(callback, initial) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {List}
+   */
   reverse() {
     throw new Error('Remove this line and implement the function');
   }

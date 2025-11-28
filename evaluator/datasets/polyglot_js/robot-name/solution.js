@@ -58,6 +58,9 @@ export class Robot {
     return this._name;
   }
 
+  /**
+   * @return {void}
+   */
   reset() {
     this._name = generateName();
   }

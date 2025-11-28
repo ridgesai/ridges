@@ -9,7 +9,7 @@ def concat(lists: list[list]) -> list:
     pass
 
 
-def filter(function: Callable, list: list) -> list:
+def filter(function: Callable[[Any], bool], list: list) -> list:
     pass
 
 
@@ -17,15 +17,15 @@ def length(list: list) -> int:
     pass
 
 
-def map(function: Callable, list: list) -> list:
+def map(function: Callable[[Any], Any], list: list) -> list:
     pass
 
 
-def foldl(function: Callable, list: list, initial: Any) -> Any:  # function(acc, el)
+def foldl(function: Callable[[Any, Any], list], list: list, initial: Any) -> Any:  # function(acc, el)
     pass
 
 
-def foldr(function: Callable, list: list, initial: Any) -> Any:  # function(acc, el)
+def foldr(function: Callable[[Any, Any], list], list: list, initial: Any) -> Any:  # function(acc, el)
     pass
 
 
