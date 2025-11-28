@@ -8,10 +8,16 @@ export class ZebraPuzzle {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {string}
+   */
   waterDrinker() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {string}
+   */
   zebraOwner() {
     throw new Error('Remove this line and implement the function');
   }

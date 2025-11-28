@@ -4,14 +4,24 @@
 //
 
 export class Scale {
+  /**
+   * @param {string} tonic
+   */
   constructor(tonic) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {string[]}
+   */
   chromatic() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @param {string} intervals
+   * @return {string[]}
+   */
   interval(intervals) {
     throw new Error('Remove this line and implement the function');
   }

@@ -3,10 +3,18 @@
 // convenience to get you started writing code faster.
 //
 
-export const encode = () => {
+/**
+ * @param {number[]} data
+ * @return {number[]}
+ */
+export const encode = (data) => {
   throw new Error('Remove this line and implement the function');
 };
 
-export const decode = () => {
+/**
+ * @param {number[]} data
+ * @return {number[]}
+ */
+export const decode = (data) => {
   throw new Error('Remove this line and implement the function');
 };
