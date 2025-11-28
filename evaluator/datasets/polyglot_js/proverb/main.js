@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const proverb = () => {
+/**
+ * @param {...string} args
+ * @return {string}
+ */
+export const proverb = (...args) => {
   throw new Error('Remove this line and implement the function');
 };

@@ -4,15 +4,27 @@
 //
 
 export class RestAPI {
-  constructor() {
+  /**
+   * @param {{users: Object[]}} database
+   */
+  constructor(database = { users: [] }) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @param {string} url
+   * @return {{users: Object[]}}
+   */
   get(url) {
     throw new Error('Remove this line and implement the function');
   }
 
-  post(url, payload) {
+  /**
+   * @param {string} url
+   * @param {Object} [payload]
+   * @return {{users: Object[]}}
+   */
+  post(url, payload = undefined) {
     throw new Error('Remove this line and implement the function');
   }
 }

@@ -52,3 +52,35 @@ Added typing to `add()`, `roster()`, and `grade()`, as it is unclear what the pa
 ## grep
 
 No changes. There are already JSDocs in the JavaScript file.
+
+## list-ops
+
+Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.
+
+## phone-number
+
+Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXXXX` for the `clean()` method.
+
+## pig-latin
+
+Added typing to `translate()`, as it is unclear what the parameter type should be and what the function should return.
+
+## poker
+
+Added typing to `best_hands()`. Added explicit card format documentation specifying that the rank for ten is `10` (two characters) rather than `T`, since many LLMs are trained on standard poker notation that uses single-character ranks, which could cause confusion. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## proverb
+
+Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all
+
+## react
+
+Added typing to `InputCell.constructor()`, `ComputeCell.constructor()`, `CallbackCell.constructor()`, `add_callback()`, and `remove_callback()`, as it is unclear what the parameter types should be. The reactive programming paradigm described in the instructions is complex, and type hints help clarify the expected interface.
+
+## rest-api
+
+Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## robot-name
+
+Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.

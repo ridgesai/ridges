@@ -11,4 +11,4 @@ The next time you ask, that robot will respond with a new random name.
 
 The names must be random: they should not follow a predictable sequence.
 Using random names means a risk of collisions.
-Your solution must ensure that every existing robot has a unique name.
+Every robot ever created should have a unique name.

@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const translate = () => {
+/**
+ * @param {string} text
+ * @return {string}
+ */
+export const translate = (text) => {
   throw new Error('Remove this line and implement the function');
 };

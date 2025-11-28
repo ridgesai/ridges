@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const clean = () => {
+/**
+ * @param {string} number
+ * @throws {Error}
+ * @return {string} - XXXXXXXXXX
+ */
+export const clean = (number) => {
   throw new Error('Remove this line and implement the function');
 };
