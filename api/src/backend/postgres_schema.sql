@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
     set_group EvaluationSetGroup NOT NULL,
     problem_name TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (set_id, set_group, problem_name)
 );
 
@@ -116,6 +117,19 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     finished_or_errored_at TIMESTAMP WITH TIME ZONE
 );
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id ON evaluation_runs (evaluation_id);
+
+CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
+SELECT
+    er.*,
+    COALESCE(SUM(i.cost_usd), 0) AS total_cost_usd,
+    COALESCE(SUM(i.num_input_tokens), 0) AS total_input_tokens,
+    COALESCE(SUM(i.num_output_tokens), 0) AS total_output_tokens,
+    COUNT(*) as num_inferences
+FROM
+    evaluation_runs er
+    LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
+GROUP BY
+    er.evaluation_run_id;
 
 CREATE TABLE IF NOT EXISTS evaluation_run_logs (
     evaluation_run_id UUID NOT NULL,
