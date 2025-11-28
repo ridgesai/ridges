@@ -74,9 +74,13 @@ if not USE_CHUTES:
 USE_CHUTES = USE_CHUTES.lower() == "true"
 
 if USE_CHUTES:
-    CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL")
-    if not CHUTES_BASE_URL:
-        logger.fatal("CHUTES_BASE_URL is not set in .env")
+    CHUTES_INFERENCE_BASE_URL = os.getenv("CHUTES_INFERENCE_BASE_URL")
+    if not CHUTES_INFERENCE_BASE_URL:
+        logger.fatal("CHUTES_INFERENCE_BASE_URL is not set in .env")
+
+    CHUTES_EMBEDDING_BASE_URL = os.getenv("CHUTES_EMBEDDING_BASE_URL")
+    if not CHUTES_EMBEDDING_BASE_URL:
+        logger.fatal("CHUTES_EMBEDDING_BASE_URL is not set in .env")
 
     CHUTES_API_KEY = os.getenv("CHUTES_API_KEY")
     if not CHUTES_API_KEY:
@@ -144,7 +148,8 @@ if USE_DATABASE:
 logger.info("---------------------------------------")
 if USE_CHUTES:
     logger.info("Using Chutes")
-    logger.info(f"Chutes Base URL: {CHUTES_BASE_URL}")
+    logger.info(f"Chutes Inference Base URL: {CHUTES_INFERENCE_BASE_URL}")
+    logger.info(f"Chutes Embedding Base URL: {CHUTES_EMBEDDING_BASE_URL}")
     logger.info(f"Chutes Weight: {CHUTES_WEIGHT}")
 else:
     logger.warning("Not Using Chutes")

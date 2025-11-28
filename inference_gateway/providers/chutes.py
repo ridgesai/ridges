@@ -12,7 +12,7 @@ from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceRe
 
 
 if config.USE_CHUTES:
-    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_BASE_URL}/models" # https://llm.chutes.ai/v1/models
+    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models" # https://llm.chutes.ai/v1/models
     CHUTES_EMBEDDING_MODELS_URL = "https://api.chutes.ai/chutes/?template=embedding" # TODO ADAM
 
 
@@ -36,17 +36,12 @@ if config.USE_CHUTES:
     ]
 
 WHITELISTED_CHUTES_EMBEDDING_MODELS = [
-    # TODO ADAM
-    # WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")
+    WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")
 ]
 
 
 
 class ChutesProvider(Provider):
-    chutes_client: AsyncOpenAI = None
-
-
-    
     async def init(self) -> "ChutesProvider":
         self.name = "Chutes"
 
@@ -129,8 +124,13 @@ class ChutesProvider(Provider):
 
 
 
-        self.chutes_client = AsyncOpenAI(
-            base_url=config.CHUTES_BASE_URL,
+        self.chutes_inference_client = AsyncOpenAI(
+            base_url=config.CHUTES_INFERENCE_BASE_URL,
+            api_key=config.CHUTES_API_KEY
+        )
+
+        self.chutes_embedding_client = AsyncOpenAI(
+            base_url=config.CHUTES_EMBEDDING_BASE_URL,
             api_key=config.CHUTES_API_KEY
         )
 
@@ -150,7 +150,7 @@ class ChutesProvider(Provider):
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
-            chat_completion = await self.chutes_client.chat.completions.create(
+            chat_completion = await self.chutes_inference_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
@@ -199,7 +199,7 @@ class ChutesProvider(Provider):
     ) -> EmbeddingResult:
         try:
             start_time = time()
-            create_embedding_response = await self.chutes_client.embeddings.create(
+            create_embedding_response = await self.chutes_embedding_client.embeddings.create(
                 model=model_info.external_name,
                 input=input
             )

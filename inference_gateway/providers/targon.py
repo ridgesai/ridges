@@ -39,11 +39,7 @@ WHITELISTED_TARGON_EMBEDDING_MODELS = [
 
 
 
-class TargonProvider(Provider):
-    targon_client: AsyncOpenAI = None
-
-
-    
+class TargonProvider(Provider):  
     async def init(self) -> "TargonProvider":
         self.name = "Targon"
 
