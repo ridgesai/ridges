@@ -15,11 +15,9 @@ export class Robot {
     reset() {
         throw new Error('Remove this line and implement the function');
     }
-
-    /**
-     * @return {void}
-     */
-    releaseNames() {
-        throw new Error('Remove this line and implement the function');
-    }
 }
+
+/**
+ * @return {void}
+ */
+Robot.releaseNames = () => {};
