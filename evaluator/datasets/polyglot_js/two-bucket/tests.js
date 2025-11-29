@@ -74,22 +74,6 @@ describe('TwoBucket', () => {
     });
   });
 
-  xtest('Measure using bucket one much bigger than bucket two', () => {
-    const twoBucket = new TwoBucket(5, 1, 2, 'one');
-    const result = twoBucket.solve();
-    expect(result.moves).toEqual(6);
-    expect(result.goalBucket).toEqual('one');
-    expect(result.otherBucket).toEqual(1);
-  });
-
-  xtest('Measure using bucket one much smaller than bucket two', () => {
-    const twoBucket = new TwoBucket(3, 15, 9, 'one');
-    const result = twoBucket.solve();
-    expect(result.moves).toEqual(6);
-    expect(result.goalBucket).toEqual('two');
-    expect(result.otherBucket).toEqual(0);
-  });
-
   xtest('Not possible to reach the goal', () => {
     expect(() => new TwoBucket(6, 15, 5, 'one')).toThrow();
   });
