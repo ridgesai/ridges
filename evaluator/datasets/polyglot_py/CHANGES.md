@@ -1,6 +1,6 @@
 # Changes to the Polyglot dataset
 
-The Ridges team has made some changes to the original Polyglot problem set, which was sourced originally from [this repository](https://github.com/Aider-AI/polyglot-benchmark/tree/main/python/exercises/practice). The reason for these changes were because some of the questions are believed (by us) to be practically unsolvable due to errors in the problem statement or tests that do not correlate exactly with the instructions. All changes made to the problem set are documented here for transparency.
+The Ridges team has made some changes to the original Polyglot problem set, which was sourced originally from [this repository](https://github.com/exercism/python/tree/main/exercises/practice). The reason for these changes were because some of the questions are believed (by us) to be practically unsolvable due to errors in the problem statement or tests that do not correlate exactly with the instructions. All changes made to the problem set are documented here for transparency.
 
 <br>
 <br>
