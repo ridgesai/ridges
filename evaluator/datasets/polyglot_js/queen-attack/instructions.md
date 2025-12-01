@@ -33,17 +33,17 @@ To throw an `Error` with a message, write the message as an argument to the `Err
 
 ```js
 // if the row parameter is negative
-throw new Error("row not positive");
+throw new Error("Queen must be placed on the board");
 
 // if the row parameter is not on the defined board
-throw new Error("row not on board");
+throw new Error("Queen must be placed on the board");
 
 // if the column parameter is negative
-throw new Error("column not positive");
+throw new Error("Queen must be placed on the board");
 
 // if the column parameter is not on the defined board
-throw new Error("column not on board");
+throw new Error("Queen must be placed on the board");
 
 // if both the queens are on the same location
-throw new Error("Invalid queen position: both queens in the same square");
+throw new Error("Queens cannot share the same space");
 ```
