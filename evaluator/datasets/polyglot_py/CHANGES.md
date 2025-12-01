@@ -87,7 +87,7 @@ Added the complete function signature with typing for `proverb()`, including the
 
 ## queen-attack
 
-Added exceptions to the instructions, since they're only found in the tests.
+The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
 
 ## react
 
