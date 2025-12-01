@@ -85,10 +85,6 @@ Added typing to `Tree.__init__()`, `from_pov()`, and `path_to()`, as it is uncle
 
 Added the complete function signature with typing for `proverb()`, including the `*items` variadic parameter and `qualifier` keyword argument, as the `main.py` file had no parameters at all. The instructions mention the `qualifier` parameter but don't specify its type or default value.
 
-## queen-attack
-
-The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
-
 ## react
 
 Added typing to `InputCell.__init__()`, `ComputeCell.__init__()`, `add_callback()`, and `remove_callback()`, as it is unclear what the parameter types should be. The reactive programming paradigm described in the instructions is complex, and type hints help clarify the expected interface.
