@@ -73,6 +73,10 @@ Added typing to `best_hands()`. Added explicit card format documentation specify
 
 Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all
 
+## queen-attack
+
+Added exceptions to the instructions, since they're only found in the tests.
+
 ## react
 
 Added typing to `InputCell.constructor()`, `ComputeCell.constructor()`, `CallbackCell.constructor()`, `add_callback()`, and `remove_callback()`, as it is unclear what the parameter types should be. The reactive programming paradigm described in the instructions is complex, and type hints help clarify the expected interface.
