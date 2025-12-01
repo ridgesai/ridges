@@ -1,4 +1,8 @@
+import os
+import inspect
 import logging
+
+from datetime import datetime
 
 
 
@@ -9,10 +13,11 @@ logging.getLogger('chain_utils').setLevel(logging.WARNING)
 
 
 LEVEL_NAME_TO_COLOR = {
-    'DEBUG':   '\033[36m', # Cyan
+    'DEBUG':   '\033[90m', # Gray
     'INFO':    '\033[32m', # Green
     'WARNING': '\033[33m', # Yellow
-    'ERROR':   '\033[31m'  # Red
+    'ERROR':   '\033[31m', # Red
+    'FATAL':   '\033[31m'  # Red
 }
 
 GRAY = '\033[90m'
@@ -20,52 +25,32 @@ RESET = '\033[0m'
 
 
 
-class ColoredFormatter(logging.Formatter):
-    def format(self, record):
-        formatted = super().format(record)
-        
-        level_name = record.levelname
-        if level_name in LEVEL_NAME_TO_COLOR:
-            colored_level = f"[{LEVEL_NAME_TO_COLOR[level_name]}{level_name}{RESET}]"
-            formatted = formatted.replace(level_name, colored_level, 1)
-        
-        return formatted
+def print_log(level: str, message: str):
+    now = datetime.now()
+    timestamp = now.strftime('%Y-%m-%d %H:%M:%S')
+    ms = now.microsecond // 1000
 
-
-
-logger = logging.getLogger('ridges')
-logger.setLevel(logging.INFO)
-
-formatter = ColoredFormatter(
-    '%(asctime)s.%(msecs)03d - %(filename)s:%(lineno)d - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-
-logger.propagate = False
+    frame = inspect.currentframe().f_back
+    file = frame.f_code.co_filename.split('/')[-1]
+    line = frame.f_lineno
+    
+    print(f"{timestamp}.{ms:03d} - {file}:{line} - [{LEVEL_NAME_TO_COLOR[level]}{level}{RESET}] - {message}")
 
 
 
 def debug(message: str):
-    for line in message.split('\n'):
-        logger.debug(GRAY + line + RESET, stacklevel=2)
+    if os.getenv('DEBUG', 'false').lower() == 'true':
+        print_log('DEBUG', GRAY + message + RESET)
 
 def info(message: str):
-    for line in message.split('\n'):
-        logger.info(line, stacklevel=2)
+    print_log('INFO', message)
 
 def warning(message: str):
-    for line in message.split('\n'):
-        logger.warning(line, stacklevel=2)
+    print_log('WARNING', message)
 
 def error(message: str):
-    for line in message.split('\n'):
-        logger.error(LEVEL_NAME_TO_COLOR['ERROR'] + line + RESET, stacklevel=2)
+    print_log('ERROR', message)
 
 def fatal(message: str):
-    for line in message.split('\n'):
-        logger.error(LEVEL_NAME_TO_COLOR['ERROR'] + line + RESET, stacklevel=2)
+    print_log('FATAL', message)
     raise Exception(message)
