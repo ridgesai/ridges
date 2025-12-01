@@ -4,7 +4,7 @@ import asyncio
 import os
 import pprint
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
@@ -263,7 +263,7 @@ async def post_agent(
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
-                created_at=datetime.now(),
+                created_at=datetime.now(timezone.utc),
                 status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
             )
