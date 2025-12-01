@@ -2,7 +2,7 @@ import asyncio
 import re
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -92,7 +92,7 @@ async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
     _validators = list(SESSION_ID_TO_VALIDATOR.values())
     for validator in _validators:
         time_last_heartbeat = validator.time_last_heartbeat or validator.time_connected
-        if time_last_heartbeat + timedelta(seconds=config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS) < datetime.now():
+        if time_last_heartbeat + timedelta(seconds=config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS) < datetime.now(timezone.utc):
             async with DebugLock(validator._lock, f"delete_validators_that_have_not_sent_a_heartbeat() for {validator.name}'s lock"):
                 if validator.session_id in SESSION_ID_TO_VALIDATOR:
                     await delete_validator(validator, f"The validator was disconnected because it did not send a heartbeat in {config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} seconds.")
@@ -206,7 +206,7 @@ async def validator_register_as_validator(
         session_id=session_id,
         name=validator_hotkey_to_name(registration_request.hotkey),
         hotkey=registration_request.hotkey,
-        time_connected=datetime.now(),
+        time_connected=datetime.now(timezone.utc),
         ip_address=ip_address
     )
     
@@ -274,7 +274,7 @@ async def validator_register_as_screener(
         session_id=session_id,
         name=registration_request.name,
         hotkey=registration_request.name,
-        time_connected=datetime.now(),
+        time_connected=datetime.now(timezone.utc),
         ip_address=ip_address
     )
     
@@ -366,7 +366,7 @@ async def validator_heartbeat(
     # logger.info(f"Validator '{validator.name}' sent a heartbeat")
     # logger.info(f"  System metrics: {request.system_metrics}")
 
-    validator.time_last_heartbeat = datetime.now()
+    validator.time_last_heartbeat = datetime.now(timezone.utc)
     validator.system_metrics = request.system_metrics
     
     return ValidatorHeartbeatResponse()
@@ -428,7 +428,7 @@ async def validator_update_evaluation_run(
 
             # Update the evaluation run to initializing_agent
             evaluation_run.status = EvaluationRunStatus.initializing_agent
-            evaluation_run.started_initializing_agent_at = datetime.now()
+            evaluation_run.started_initializing_agent_at = datetime.now(timezone.utc)
 
 
 
@@ -442,7 +442,7 @@ async def validator_update_evaluation_run(
 
             # Update the evaluation run to running_agent
             evaluation_run.status = EvaluationRunStatus.running_agent
-            evaluation_run.started_running_agent_at = datetime.now()
+            evaluation_run.started_running_agent_at = datetime.now(timezone.utc)
 
 
 
@@ -471,7 +471,7 @@ async def validator_update_evaluation_run(
             # Update the evaluation run to initializing_eval
             evaluation_run.status = EvaluationRunStatus.initializing_eval
             evaluation_run.patch = request.patch
-            evaluation_run.started_initializing_eval_at = datetime.now()
+            evaluation_run.started_initializing_eval_at = datetime.now(timezone.utc)
 
             # Create an evaluation run log
             await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
@@ -488,7 +488,7 @@ async def validator_update_evaluation_run(
 
             # Update the evaluation run to running_eval
             evaluation_run.status = EvaluationRunStatus.running_eval
-            evaluation_run.started_running_eval_at = datetime.now()
+            evaluation_run.started_running_eval_at = datetime.now(timezone.utc)
 
 
 
@@ -517,7 +517,7 @@ async def validator_update_evaluation_run(
             # Update the evaluation run to finished
             evaluation_run.status = EvaluationRunStatus.finished
             evaluation_run.test_results = request.test_results
-            evaluation_run.finished_or_errored_at = datetime.now()
+            evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
 
             # Create an evaluation run log
             await create_evaluation_run_log(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
@@ -570,7 +570,7 @@ async def validator_update_evaluation_run(
             evaluation_run.status = EvaluationRunStatus.error
             evaluation_run.error_code = request.error_code
             evaluation_run.error_message = request.error_message
-            evaluation_run.finished_or_errored_at = datetime.now()
+            evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
 
             # Create evaluation run logs
             if request.agent_logs is not None:
