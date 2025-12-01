@@ -1,4 +1,5 @@
 import asyncio
+import utils.logger as logger
 
 from functools import wraps
 from pydantic import BaseModel, ConfigDict
@@ -67,18 +68,24 @@ def ttl_cache(ttl_seconds: int):
             if key in cache:
                 cache_entry = cache[key]
                 if datetime.now(timezone.utc) < cache_entry.expires_at:
+                    logger.debug(f"[TTLCache] {func.__name__}(): Cache hit")
                     return cache_entry.value
                 else:
                     if lock.locked():
+                        logger.debug(f"[TTLCache] {func.__name__}(): Cache miss, already recalculating")
                         return cache_entry.value
                     else:
+                        logger.debug(f"[TTLCache] {func.__name__}(): Cache miss, triggering recalculation")
                         asyncio.create_task(_recalculate(args, kwargs))
                         return cache_entry.value
             else:
                 if lock.locked():
+                    logger.debug(f"[TTLCache] {func.__name__}(): First request, already calculating, started waiting")
                     async with lock:
+                        logger.debug(f"[TTLCache] {func.__name__}(): First request, already calculating, stopped waiting")
                         return cache[key].value
                 else:
+                    logger.debug(f"[TTLCache] {func.__name__}(): First request, triggering calculation")
                     await _recalculate(args, kwargs)
                     return cache[key].value
 
@@ -96,6 +103,7 @@ def ttl_cache(ttl_seconds: int):
                         expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
                         value=value
                     )
+                    logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
                 except Exception:
                     # TODO
                     pass
