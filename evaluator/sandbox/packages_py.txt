@@ -21,3 +21,5 @@ urllib3
 legacy-cgi
 setuptools
 pickle-mixin
+lxml
+tree-sitter-language-pack
