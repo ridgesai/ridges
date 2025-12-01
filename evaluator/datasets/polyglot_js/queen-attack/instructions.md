@@ -19,3 +19,31 @@ The chessboard image was made by [habere-et-dispertire][habere-et-dispertire] us
 
 [habere-et-dispertire]: https://exercism.org/profiles/habere-et-dispertire
 [chessboard-package]: https://github.com/u-fischer/chessboard
+
+
+# Instructions append
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s if the `Queen` constructor is passed numbers that are negative, or numbers that are not a valid row or column.  The tests will only pass if you both `throw` the `Error` and include a message with it. You also should `throw` an `Error` if both the queens passed to the `can_attack()` method are on the same location.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// if the row parameter is negative
+throw new Error("Queen must be placed on the board");
+
+// if the row parameter is not on the defined board
+throw new Error("Queen must be placed on the board");
+
+// if the column parameter is negative
+throw new Error("Queen must be placed on the board");
+
+// if the column parameter is not on the defined board
+throw new Error("Queen must be placed on the board");
+
+// if both the queens are on the same location
+throw new Error("Queens cannot share the same space");
+```
