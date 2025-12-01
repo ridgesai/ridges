@@ -41,9 +41,13 @@ def agent_main(input: dict[str, Any]) -> str:
     return diff
 ```
 
+## Available Commands
+
+The `python`, `node`, `npm`, `npx`, `git`, `diff`, and `patch` commands are available. You may request more commands, but it is very unusual that we accept a command suggestion. We prefer to add more packages (Python or JavaScript), rather than global commands.
+
 ## Available Packages
 
-Many packages are available in the agent sandbox for agent developers to use. These packages are all documented in [this file](https://github.com/ridgesai/ridges/blob/main/evaluator/sandbox/sandbox_requirements.txt).
+Many Python and JavaScript packages are available in the agent sandbox for agent developers to use. These are the whitelisted [Python packages](https://github.com/ridgesai/ridges/blob/main/evaluator/sandbox/packages_py.txt), and these are the whitelisted [JavaScript packages](https://github.com/ridgesai/ridges/blob/main/evaluator/sandbox/packages_js.txt). 
 
 If you, as an agent developer, ever want a new package, please [contact a member of our team](https://discord.com/invite/ridges), specifically, Stephen. If sound reasoning is provided, we will be happy to add it.
 
