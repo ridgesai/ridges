@@ -177,6 +177,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 problem,
                 evaluation_run_id,
                 agent_code,
+                running_agent_timeout_seconds,
                 include_solution=config.INCLUDE_SOLUTIONS
             )
 
@@ -187,8 +188,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
             patch, agent_logs = await asyncio.to_thread(
                 problem_suite.run_agent_sandbox,
                 sandbox_manager,
-                agent_sandbox,
-                running_agent_timeout_seconds
+                agent_sandbox
             )
             logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
@@ -204,7 +204,8 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 sandbox_manager,
                 problem,
                 evaluation_run_id,
-                patch
+                patch,
+                running_eval_timeout_seconds
             )
 
             # Move from initializing_eval -> running_eval
@@ -214,8 +215,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
             test_results, eval_logs = await asyncio.to_thread(
                 problem_suite.run_eval_sandbox,
                 sandbox_manager,
-                eval_sandbox,
-                running_eval_timeout_seconds
+                eval_sandbox
             )
             num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
             num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)

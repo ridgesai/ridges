@@ -59,6 +59,7 @@ class ProblemSuite(ABC):
         problem: Problem,
         evaluation_run_id: UUID,
         agent_code: str,
+        timeout_seconds: int,
         *,
         include_solution: bool = False
     ) -> Sandbox:
@@ -89,9 +90,11 @@ class ProblemSuite(ABC):
                     "problem_statement": problem.problem_statement
                 },
                 env_vars={
-                    "EVALUATION_RUN_ID": evaluation_run_id
+                    "EVALUATION_RUN_ID": evaluation_run_id,
+                    "AGENT_TIMEOUT": str(timeout_seconds)
                 },
                 on_mount=_on_mount,
+                timeout_seconds=timeout_seconds
             )
         except Exception as e:
             raise EvaluationRunException(
@@ -104,12 +107,11 @@ class ProblemSuite(ABC):
     def run_agent_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        agent_sandbox: Sandbox,
-        timeout_seconds: int
+        agent_sandbox: Sandbox
     ) -> Tuple[str, str]:
         try:
             try:
-                sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox, timeout_seconds=timeout_seconds)
+                sandbox_result_with_logs = sandbox_manager.run_sandbox(agent_sandbox)
                 timed_out = False
             # NOTE ADAM: Docker bug
             # except TimeoutError:
@@ -119,7 +121,7 @@ class ProblemSuite(ABC):
             if timed_out:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT,
-                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT.get_error_message()}: The agent exceeded the timeout of {timeout_seconds} seconds."
+                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_AGENT.get_error_message()}: The agent exceeded the timeout of {agent_sandbox.timeout_seconds} seconds."
                 )
 
             if not sandbox_result_with_logs.success:

@@ -83,6 +83,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             problem, 
             evaluation_run.evaluation_run_id,
             agent_code,
+            running_agent_timeout_seconds,
             include_solution=include_solutions
         )
         logger.info(f"[{problem_name}] Finished initializing agent")
@@ -94,8 +95,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         patch, agent_logs = await asyncio.to_thread(
             problem_suite.run_agent_sandbox,
             sandbox_manager,
-            agent_sandbox,
-            timeout_seconds=running_agent_timeout_seconds
+            agent_sandbox
         )
         logger.info(f"[{problem_name}] Finished running agent: {len(patch.splitlines())} line(s) of patch, {len(agent_logs.splitlines())} line(s) of agent logs")
 
@@ -111,7 +111,8 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             sandbox_manager,
             problem,
             evaluation_run.evaluation_run_id,
-            patch
+            patch,
+            running_eval_timeout_seconds
         )
         logger.info(f"[{problem_name}] Finished initializing evaluation")
 
@@ -122,8 +123,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         test_results, eval_logs = await asyncio.to_thread(
             problem_suite.run_eval_sandbox,
             sandbox_manager,
-            eval_sandbox,
-            timeout_seconds=running_eval_timeout_seconds
+            eval_sandbox
         )
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)

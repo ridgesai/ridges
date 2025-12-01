@@ -12,6 +12,7 @@ class Sandbox(BaseModel):
     name: str
     temp_dir: str
     container: docker.models.containers.Container
+    timeout_seconds: Optional[int]
 
 class SandboxResult(BaseModel):
     success: bool

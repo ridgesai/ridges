@@ -103,7 +103,8 @@ class SandboxManager:
         script_path: str,
         input_data: Any = None,
         env_vars: Dict[str, str] = {},
-        on_mount: Callable[[str], None] = None
+        on_mount: Callable[[str], None] = None,
+        timeout_seconds: int = None
     ) -> Sandbox:
         # Create temporary directory
         temp_dir = create_temp_dir()
@@ -157,20 +158,19 @@ class SandboxManager:
         return Sandbox(
             name=name,
             temp_dir=temp_dir,
-            container=container
+            container=container,
+            timeout_seconds=timeout_seconds
         )
 
 
 
     def run_sandbox(
         self,
-        sandbox: Sandbox,
-        *,
-        timeout_seconds: Optional[int] = None
+        sandbox: Sandbox
     ) -> SandboxResultWithLogs:
         
         try:
-            sandbox.container.wait(timeout=timeout_seconds)
+            sandbox.container.wait(timeout=sandbox.timeout_seconds)
 
             # Load /sandbox/output.json
             temp_output_json_path = os.path.join(sandbox.temp_dir, "output.json")

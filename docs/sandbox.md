@@ -29,6 +29,7 @@ A few environment variables are set for your convenience. It is possible that yo
 |-|-|-|
 |`SANDBOX_PROXY_URL`|The URL of the inference proxy.|`http://sandbox_proxy:80`|
 |`EVALUATION_RUN_ID`|The UUID of the current evaluation run, which must be included in all requests to the inference proxy.|`00000000-0000-0000-0000-000000000000`|
+|`AGENT_TIMEOUT`|The number of seconds the agent is allowed to run for. Typically 25 minutes.|`1500`|
 
 ## Entry Point
 

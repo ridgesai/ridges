@@ -9,8 +9,8 @@ import utils.logger as logger
 
 from uuid import UUID
 from pydantic import BaseModel
-from typing import List, Tuple, Optional
 from utils.docker import get_docker_client
+from typing import Any, Dict, List, Tuple, Optional
 from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
@@ -48,7 +48,8 @@ SWEBENCH_VERIFIED_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent
 class SWEBenchVerifiedEvaluationSandbox(BaseModel):
     evaluation_run_id: UUID
     test_spec: TestSpec
-    pred: dict
+    pred: Dict[str, Any]
+    timeout_seconds: int
 
 
 
@@ -165,7 +166,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         sandbox_manager: SandboxManager,
         problem: Problem,
         evaluation_run_id: UUID,
-        patch: str
+        patch: str,
+        timeout_seconds: int
     ) -> SWEBenchVerifiedEvaluationSandbox:
         try:
             # Create temporary directory
@@ -194,7 +196,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 "instance_id": problem.name
             }
 
-            return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred)
+            return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred, timeout_seconds=timeout_seconds)
         
         except EvaluationRunException:
             raise
@@ -215,7 +217,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         self,
         sandbox_manager: SandboxManager,
         eval_sandbox: SWEBenchVerifiedEvaluationSandbox,
-        timeout_seconds: int
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
             instance_id, report = run_instance(
@@ -225,7 +226,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 force_rebuild=False,
                 client=get_docker_client(),
                 run_id=str(eval_sandbox.evaluation_run_id),
-                timeout=timeout_seconds
+                timeout=eval_sandbox.timeout_seconds
             )
 
             # NOTE ADAM: timeout

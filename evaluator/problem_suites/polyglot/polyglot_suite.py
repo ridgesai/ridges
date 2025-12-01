@@ -123,7 +123,8 @@ class PolyglotSuite(ProblemSuite):
         sandbox_manager: SandboxManager,
         problem: Problem,
         evaluation_run_id: UUID,
-        patch: str
+        patch: str,
+        timeout_seconds: int
     ) -> Sandbox:
         try:
             def _on_mount(temp_dir: str):
@@ -150,7 +151,9 @@ class PolyglotSuite(ProblemSuite):
             return sandbox_manager.initialize_sandbox(
                 name=f"eval-sandbox-{problem.name}-{evaluation_run_id}",
                 script_path=os.path.join(os.path.dirname(__file__), f"TEST_RUNNER.{self.language}"),
-                on_mount=_on_mount
+                env_vars={"EVAL_TIMEOUT": str(timeout_seconds)},
+                on_mount=_on_mount,
+                timeout_seconds=timeout_seconds
             )
 
         except EvaluationRunException:
@@ -167,12 +170,11 @@ class PolyglotSuite(ProblemSuite):
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        eval_sandbox: Sandbox,
-        timeout_seconds: int
+        eval_sandbox: Sandbox
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
             try:
-                sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox, timeout_seconds=timeout_seconds)
+                sandbox_result_with_logs = sandbox_manager.run_sandbox(eval_sandbox)
                 timed_out = False
             # NOTE ADAM: Docker bug
             # except TimeoutError:
@@ -182,7 +184,7 @@ class PolyglotSuite(ProblemSuite):
             if timed_out:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL,
-                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL.get_error_message()}: The agent exceeded the timeout of {timeout_seconds} seconds."
+                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL.get_error_message()}: The agent exceeded the timeout of {eval_sandbox.timeout_seconds} seconds."
                 )
 
             if not sandbox_result_with_logs.success:
