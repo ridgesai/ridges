@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS evaluations (
     validator_hotkey TEXT NOT NULL,
     set_id INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    finished_at TIMESTAMP WITH TIME ZONE
+    finished_at TIMESTAMP WITH TIME ZONE,
+    evaluation_set_group EvaluationSetGroup NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern ON evaluations (validator_hotkey text_pattern_ops);
@@ -228,7 +229,7 @@ agent_evaluations AS (
         AND e.status = 'success'
         AND e.score IS NOT NULL
         AND e.score > 0
-        AND e.validator_hotkey NOT LIKE 'screener-%'
+        AND evaluations_hydrated.evaluation_set_group = 'validator'::EvaluationSetGroup
         AND e.set_id IS NOT NULL
     LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
 )
@@ -300,7 +301,7 @@ WHERE agents.status = 'screening_1'
     FROM evaluations_hydrated
     WHERE evaluations_hydrated.agent_id = agents.agent_id
       AND evaluations_hydrated.status IN ('success', 'running')
-      AND evaluations_hydrated.validator_hotkey LIKE 'screener-1%'
+      AND evaluations_hydrated.evaluation_set_group = 'screener_1'::EvaluationSetGroup
   )
 ORDER BY agents.created_at ASC;
 
@@ -315,7 +316,7 @@ WHERE agents.status = 'screening_2'
     FROM evaluations_hydrated
     WHERE evaluations_hydrated.agent_id = agents.agent_id
       AND evaluations_hydrated.status IN ('success', 'running')
-      AND evaluations_hydrated.validator_hotkey LIKE 'screener-2%'
+      AND evaluations_hydrated.evaluation_set_group = 'screener_2'::EvaluationSetGroup
   )
 ORDER BY agents.created_at ASC;
 
@@ -330,12 +331,12 @@ WITH
             COUNT(*) FILTER (WHERE status = 'success') AS num_finished_evals
         FROM evaluations_hydrated
         WHERE evaluations_hydrated.status IN ('success', 'running')
-          AND validator_hotkey NOT LIKE 'screener%'
+          AND evaluations_hydrated.evaluation_set_group = 'validator'::EvaluationSetGroup
         GROUP BY agent_id
     ),
     screener_2_scores AS (
         SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
-        WHERE validator_hotkey LIKE 'screener-2%'
+        WHERE evaluations_hydrated.evaluation_set_group = 'screener_2'::EvaluationSetGroup
           AND evaluations_hydrated.status = 'success'
         GROUP BY agent_id
     )
