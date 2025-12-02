@@ -24,10 +24,6 @@ def delete_temp_dir(temp_dir: str):
 
 def clean_tmp(tmp_clean_age_seconds: int = 3600):
     for path in Path(tempfile.gettempdir()).glob("tmp*"):
-        runner_file = path / "AGENT_RUNNER.py"
-        if not runner_file.exists():
-            continue
-
         now = time.time()
         modified_time = path.stat().st_mtime
         age = now - modified_time
