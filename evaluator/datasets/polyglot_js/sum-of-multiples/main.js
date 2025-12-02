@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const sum = () => {
+/**
+ * @param {int[]} multiples 
+ * @param {int} limit 
+ */
+export const sum = (multiples, limit) => {
   throw new Error('Remove this line and implement the function');
 };

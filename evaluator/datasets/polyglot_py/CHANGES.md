@@ -65,6 +65,10 @@ Added typing to `Hangman.__init__()`, `guess()`, `get_masked_word()`, and `get_s
 
 Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.
 
+## ocr-numbers
+
+Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, seperated by newlines.
+
 ## phone-number
 
 Added typing to `PhoneNumber.__init__()` and `pretty()`. Added the missing `pretty()` method stub, as it is required by the tests but was not present in the `main.py` file. Added type hints and comments for the `number` and `area_code` attributes to clarify the expected class interface, as these are tested but never documented in the instructions. Added a comment showing the expected format `(XXX)-XXX-XXXX` for the `pretty()` method.
@@ -80,6 +84,10 @@ Added typing to `best_hands()`. Added explicit card format documentation specify
 ## pov
 
 Added typing to `Tree.__init__()`, `from_pov()`, and `path_to()`, as it is unclear what the parameter types should be and what the methods should return. Added specific error message documentation to the instructions for `"Tree could not be reoriented"` and `"No path found"`, as the original instructions did not document the required messages. Fixed `tests.py` and `solution.py` so that `path_to()` raises `"No path found"` (not `"Tree could not be reoriented"`) when the source node doesn't exist, as this is more semantically correct for a path-finding operation. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## protein-translation
+
+The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
 
 ## proverb
 

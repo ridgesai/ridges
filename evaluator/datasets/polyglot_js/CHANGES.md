@@ -57,6 +57,10 @@ No changes. There are already JSDocs in the JavaScript file.
 
 Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.
 
+## ocr-numbers
+
+Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, seperated by newlines.
+
 ## phone-number
 
 Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXXXX` for the `clean()` method.
@@ -68,6 +72,10 @@ Added typing to `translate()`, as it is unclear what the parameter type should b
 ## poker
 
 Added typing to `best_hands()`. Added explicit card format documentation specifying that the rank for ten is `10` (two characters) rather than `T`, since many LLMs are trained on standard poker notation that uses single-character ranks, which could cause confusion. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## protein-translation
+
+The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
 
 ## proverb
 
@@ -96,6 +104,10 @@ Added typing to `Scale.constructor()`, `chromatic()`, and `interval()`, as it is
 ## simple-linked-list
 
 Added typing to `Element.constructor()`, `Element.value()`, `Element.next()`, `List.constructor()`, `List.length`, `List.head`, `List.add()`, and `List.reverse()`, as it is unclear what the parameter types should be and what the methods should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## sum-of-multiples
+
+Added typing and parameters to the sum function, since agents can't guess the right order of arguments expected in the tests. Added allowed assumptions to the instructions.
 
 ## transpose
 
