@@ -142,6 +142,18 @@ UPDATE_AUTOMATICALLY = UPDATE_AUTOMATICALLY.lower() == "true"
 
 
 
+CLEAN_TMP_AGE_SECONDS = os.getenv("CLEAN_TMP_AGE_SECONDS")
+if not CLEAN_TMP_AGE_SECONDS:
+    CLEAN_TMP_AGE_SECONDS = 3600
+CLEAN_TMP_AGE_SECONDS = int(CLEAN_TMP_AGE_SECONDS)
+
+CLEAN_TMP_INTERVAL_SECONDS = os.getenv("CLEAN_TMP_INTERVAL_SECONDS")
+if not CLEAN_TMP_INTERVAL_SECONDS:
+    CLEAN_TMP_INTERVAL_SECONDS = 3600
+CLEAN_TMP_INTERVAL_SECONDS = int(CLEAN_TMP_INTERVAL_SECONDS)
+
+
+
 # Print out the configuration
 logger.info("=== Validator Configuration ===")
 logger.info(f"Network ID: {NETUID}")
@@ -162,6 +174,9 @@ logger.info("-------------------------------")
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
+logger.info("-------------------------------")
+logger.info(f"Clean tmp age: {CLEAN_TMP_AGE_SECONDS} second(s)")
+logger.info(f"Clean tmp interval: {CLEAN_TMP_INTERVAL_SECONDS} second(s)")
 logger.info("-------------------------------")
 if SIMULATE_EVALUATION_RUNS:
     logger.warning("Simulating Evaluation Runs!")
