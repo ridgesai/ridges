@@ -195,7 +195,7 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseCo
         WHERE 
             agent_id = $1
             AND status = '{EvaluationStatus.success.value}'
-            AND validator_hotkey NOT LIKE 'screener-%'
+            AND evaluation_set_group = 'validator'::EvaluationSetGroup
         """,
         agent_id,
     )
