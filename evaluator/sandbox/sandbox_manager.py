@@ -10,12 +10,12 @@ from typing import Any, Dict, Optional, Callable
 from utils.temp import create_temp_dir, delete_temp_dir
 from evaluator.models import Sandbox, SandboxResultWithLogs
 from utils.docker import get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
+from utils.docker import DOCKER_PREFIX
 
 
+SANDBOX_NETWORK_NAME = f"{DOCKER_PREFIX}-sandbox-network"
 
-SANDBOX_NETWORK_NAME = "sandbox-network"
-
-SANDBOX_PROXY_HOST = "sandbox_proxy"
+SANDBOX_PROXY_HOST = f"{DOCKER_PREFIX}-sandbox-proxy"
 SANDBOX_PROXY_PORT = 80
 
 
@@ -37,13 +37,13 @@ class SandboxManager:
 
         # Setup sandbox-image
         if os.getenv("CXII_NO_BUILD_SANDBOX_IMAGE") is None:
-            build_docker_image(os.path.dirname(__file__), "sandbox-image")
+            build_docker_image(os.path.dirname(__file__), f"{DOCKER_PREFIX}-sandbox-image")
         self.sandboxes = {}
 
         # Setup sandbox-proxy
         self.proxy_container = None
         self.proxy_temp_dir = None
-        build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
+        build_docker_image(os.path.dirname(__file__) + "/proxy", f"{DOCKER_PREFIX}-sandbox-proxy-image")
         self._create_sandbox_proxy(inference_gateway_url)
 
 
@@ -83,7 +83,7 @@ class SandboxManager:
 
         self.proxy_container = get_docker_client().containers.run(
             name=SANDBOX_PROXY_HOST,
-            image="sandbox-proxy-image",
+            image=f"{DOCKER_PREFIX}-sandbox-proxy-image",
             network=SANDBOX_NETWORK_NAME,
             environment={
                 "GATEWAY_URL": gateway_url,
@@ -142,7 +142,7 @@ class SandboxManager:
         # Create Docker container
         container = get_docker_client().containers.run(
             name=name,
-            image="sandbox-image",
+            image=f"{DOCKER_PREFIX}-sandbox-image",
             volumes={temp_dir: {"bind": "/sandbox", "mode": "rw"}},
             network=SANDBOX_NETWORK_NAME,
             environment={
