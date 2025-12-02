@@ -63,19 +63,65 @@ def check_rate_limit(latest_agent: Agent) -> None:
     
     logger.debug(f"Miner is not rate limited.")
 
-def check_signature(public_key: str, file_info: str, signature: str) -> None:
-    logger.debug(f"Checking if the signature is valid...")
-    logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
-
+def check_signature(public_key: str, file_info: str, signature: str, max_age_seconds: int = 300) -> None:
+    """
+    Verify signature and prevent replay attacks.
+    
+    Args:
+        public_key: Hex-encoded public key
+        file_info: Format "hotkey:hash:version:timestamp"
+        signature: Hex-encoded signature
+        max_age_seconds: Maximum age of signature (default 5 minutes)
+    
+    Raises:
+        HTTPException: If signature is invalid, expired, or malformed
+    """
+    logger.debug(f"Checking signature validity with replay protection...")
+    logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}")
+    
+    # Parse file_info
+    parts = file_info.split(":")
+    if len(parts) != 4:
+        logger.error(f"Invalid file_info format: {file_info}. Expected format: hotkey:hash:version:timestamp")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file_info format (expected: hotkey:hash:version:timestamp)"
+        )
+    
+    hotkey, content_hash, version, timestamp_str = parts
+    
+    # Validate timestamp format
+    try:
+        timestamp = int(timestamp_str)
+    except ValueError:
+        logger.error(f"Invalid timestamp in file_info: {timestamp_str}")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid timestamp format"
+        )
+    
+    # Check timestamp freshness (prevent replay attacks)
+    import time
+    current_time = int(time.time())
+    age = abs(current_time - timestamp)
+    
+    if age > max_age_seconds:
+        logger.error(f"Signature expired. Age: {age}s, Max: {max_age_seconds}s, Timestamp: {timestamp}, Current: {current_time}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Signature expired (age: {age}s, max: {max_age_seconds}s). Please retry upload."
+        )
+    
+    # Verify cryptographic signature
     keypair = Keypair(public_key=public_key)
     if not keypair.verify(file_info, bytes.fromhex(signature)):
-        logger.error(f"A miner attempted to upload an agent with an invalid signature. Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
+        logger.error(f"Invalid signature. Public key: {public_key}, File info: {file_info}")
         raise HTTPException(
             status_code=400, 
             detail="Invalid signature"
         )
     
-    logger.debug(f"The signature is valid.")
+    logger.debug(f"Signature valid and fresh (age: {age}s)")
 
 async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")

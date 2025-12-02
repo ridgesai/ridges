@@ -63,10 +63,11 @@ async def check_agent_post(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
     public_key: str = Form(..., description="Public key of the miner in hex format"),
-    file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
+    file_info: str = Form(..., description="File information containing miner hotkey, hash, version, and timestamp (format: hotkey:hash:version:timestamp)"),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    timestamp: int = Form(..., description="Unix timestamp when signature was created"),
 ) -> AgentUploadResponse:
     miner_hotkey = get_miner_hotkey(file_info)
     check_signature(public_key, file_info, signature)
@@ -103,12 +104,13 @@ async def post_agent(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
     public_key: str = Form(..., description="Public key of the miner in hex format"),
-    file_info: str = Form(..., description="File information containing miner hotkey and version number (format: hotkey:version)"),
+    file_info: str = Form(..., description="File information containing miner hotkey, hash, version, and timestamp (format: hotkey:hash:version:timestamp)"),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    timestamp: int = Form(..., description="Unix timestamp when signature was created"),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation

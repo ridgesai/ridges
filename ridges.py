@@ -110,14 +110,16 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 name = Prompt.ask("Enter a name for your miner agent")
                 version_num = 0
 
-            # Check if agent can be uploaded 
-            check_file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
+            # Check if agent can be uploaded
+            check_timestamp = int(time.time())
+            check_file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}:{check_timestamp}"
             check_payload = {
                 'public_key': public_key, 
                 'file_info': check_file_info,
                 'signature': wallet.hotkey.sign(check_file_info).hex(),
                 'name': name,
-                'payment_time': time.time()
+                'payment_time': time.time(),
+                'timestamp': check_timestamp
             }
             check_response = client.post(f"{ridges.api_url}/upload/agent/check", files={'agent_file': ('agent.py', file_content, 'text/plain')}, data=check_payload, timeout=120)
             if check_response.status_code != 200:
@@ -158,7 +160,8 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
             payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
             receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
 
-            file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
+            upload_timestamp = int(time.time())
+            file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}:{upload_timestamp}"
             signature = wallet.hotkey.sign(file_info).hex()
             payload = {
                 'public_key': public_key, 
@@ -167,7 +170,8 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 'name': name,
                 'payment_block_hash': receipt.block_hash,
                 'payment_extrinsic_index': receipt.extrinsic_idx,
-                'payment_time': payment_time_start
+                'payment_time': payment_time_start,
+                'timestamp': upload_timestamp
             }
 
             console.print(f"\n[yellow]Payment extrinsic submitted. If something goes wrong with the upload, you can use this information to get a refund[/yellow]")
