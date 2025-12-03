@@ -1,3 +1,4 @@
+import datetime
 from enum import Enum
 
 from pydantic import BaseModel
@@ -23,3 +24,4 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
+    created_at: datetime.datetime

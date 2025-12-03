@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+import datetime
+from uuid import UUID
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 from typing import List, Optional
 import json
 from models.problem import ProblemDifficulty
@@ -11,13 +13,35 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 class ErrorCodeInfo(BaseModel):
-    model_config = ConfigDict(strict=False)
+    error_code: int
+    description: str = ""
     count: int
+
+class TokenInfo(BaseModel):
+    model: str
+    num_total_tokens: int
+
+class TopAgentInfo(BaseModel):
+    name: str
+    agent_id: UUID
+    version: int
+    time_taken: float
+
+    # token 
+    # model 
+    # num tokens
+
+    # problem set, and when it was added,
+
+# top 5 agens run on problem
+# name, id version, time it took to run, 
 
 class ProblemStatistics(BaseModel):
     problem_name: str
     problem_suite_name: Optional[ProblemSuiteName]
     problem_difficulty: Optional[ProblemDifficulty]
+    problem_set_id: int
+    problem_set_created_at: datetime.datetime
     total_num_evaluation_runs: int
     num_finished_evaluation_runs: int
     num_finished_passed_evaluation_runs: int
@@ -29,8 +53,9 @@ class ProblemStatistics(BaseModel):
     in_screener_1_set_group: bool
     in_screener_2_set_group: bool
     in_validator_set_group: bool
-    error_code_distribution: Optional[dict[str, ErrorCodeInfo]] = None
-    num_total_runs: Optional[int] = None
+    error_code_distribution: list[ErrorCodeInfo] = []
+    tokens_per_model: list[TokenInfo] = []
+    top_agents: list[TopAgentInfo] = []
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
@@ -47,12 +72,15 @@ class ProblemStatistics(BaseModel):
         data["problem_suite_name"] = problem_suite_name
         data["problem_difficulty"] = problem_difficulty
         
-        if data.get("error_code_distribution") is not None:
-            error_dist_raw = json.loads(data["error_code_distribution"])
-            error_dist_dict = {}
-            for error_code, error_info in error_dist_raw.items():
-                error_dist_dict[error_code] = ErrorCodeInfo(**error_info)
-            data["error_code_distribution"] = error_dist_dict
+        # string means it's coming from the database as a json
+        if isinstance(data.get("error_code_distribution"), str):
+            data["error_code_distribution"] = TypeAdapter(list[ErrorCodeInfo]).validate_json(data["error_code_distribution"])
+        
+        if isinstance(data.get("token_count_per_model"), str):
+            data["token_count_per_model"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_count_per_model"])
+
+        if isinstance(data.get("top_5_agents"), str):
+            data["top_agents"] = TypeAdapter(list[TopAgentInfo]).validate_json(data["top_5_agents"])
 
         super().__init__(**data)
 
@@ -101,32 +129,90 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
         error_stats AS (
             SELECT
                 problem_name,
-                jsonb_object_agg(
-                    error_code,
-                    jsonb_build_object('count', error_count)
+                json_agg(
+                    jsonb_build_object('error_code', error_code, 'count', error_count)
                 ) AS error_code_distribution,
                 SUM(error_count) AS num_total_runs
             FROM (
                 SELECT
                     er.problem_name,
-                    COALESCE(er.error_code::text, 'success') AS error_code,
+                    er.error_code,
                     COUNT(*) AS error_count
                 FROM evaluation_runs er
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id
                     JOIN agents a on e.agent_id = a.agent_id
-                WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                WHERE er.error_code IS NOT NULL
+                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY er.problem_name, er.error_code
-            ) error_grouped
+            )
+            GROUP BY problem_name
+        ),
+        token_stats AS (
+            SELECT
+                problem_name,
+                json_agg(
+                    jsonb_build_object('model', model, 'num_total_tokens', num_total_tokens)
+                ) AS token_count_per_model
+            FROM (
+                SELECT
+                    er.problem_name,
+                    i.model,
+                    SUM(i.num_input_tokens) AS num_total_tokens
+                FROM evaluation_runs er
+                    JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id 
+                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
+                    JOIN agents a ON e.agent_id = a.agent_id 
+                WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                GROUP BY er.problem_name, i.model
+            )
+            GROUP BY problem_name
+        ),
+        top_agents AS (
+            SELECT
+                problem_name,
+                json_agg(
+                    jsonb_build_object(
+                        'agent_id', agent_id, 
+                        'name', name,
+                        'version', version_num,
+                        'time_taken', time_taken
+                    ) ORDER BY time_taken ASC
+                ) AS top_5_agents
+            FROM (
+                SELECT
+                    erh.problem_name,
+                    a.agent_id,
+                    a.name,
+                    a.version_num,
+                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS time_taken,
+                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC) AS time_rank
+                FROM evaluation_runs_hydrated erh
+                    JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+                    JOIN agents a ON e.agent_id = a.agent_id
+                WHERE erh.status = 'finished'
+                    AND erh.finished_or_errored_at IS NOT NULL
+                    AND erh.created_at IS NOT NULL
+                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            ) ranked_agents
+            WHERE time_rank <= 5
             GROUP BY problem_name
         )
         SELECT 
             ms.*, 
+            (SELECT MAX(set_id) FROM evaluation_sets) AS problem_set_id,
+            (SELECT MAX(created_at) FROM evaluation_sets WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)) AS problem_set_created_at,
             esa.error_code_distribution,
-            esa.num_total_runs
+            ts.token_count_per_model
         FROM main_stats ms 
-        LEFT JOIN error_stats esa ON ms.problem_name = esa.problem_name;
+        LEFT JOIN error_stats esa ON ms.problem_name = esa.problem_name
+        LEFT JOIN token_stats ts ON ms.problem_name = ts.problem_name
+        LEFT JOIN top_agents ta ON ms.problem_name = ta.problem_name;
         """
     )
 
@@ -142,6 +228,11 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 num_finished_passed_evaluation_runs=0,
                 num_finished_failed_evaluation_runs=0,
                 num_errored_evaluation_runs=0,
+                problem_set_id=evaluation_set_problem.set_id,
+                problem_set_created_at=evaluation_set_problem.created_at,
+                error_code_distribution=[],
+                tokens_per_model=[],
+                top_agents=[],
                 pass_rate=None,
                 average_time=None,
                 average_cost_usd=None,
