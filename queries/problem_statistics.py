@@ -7,9 +7,10 @@ from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
 from evaluator.problem_suites.problem_suite import ProblemSuiteName
-from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id
+from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id, get_latest_set_id, get_latest_set_created_at
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
+
 
 
 class ErrorCodeInfo(BaseModel):
@@ -27,21 +28,10 @@ class TopAgentInfo(BaseModel):
     version: int
     time_taken: float
 
-    # token 
-    # model 
-    # num tokens
-
-    # problem set, and when it was added,
-
-# top 5 agens run on problem
-# name, id version, time it took to run, 
-
-class ProblemStatistics(BaseModel):
+class ProblemInfo(BaseModel):
     problem_name: str
     problem_suite_name: Optional[ProblemSuiteName]
     problem_difficulty: Optional[ProblemDifficulty]
-    problem_set_id: int
-    problem_set_created_at: datetime.datetime
     total_num_evaluation_runs: int
     num_finished_evaluation_runs: int
     num_finished_passed_evaluation_runs: int
@@ -84,8 +74,15 @@ class ProblemStatistics(BaseModel):
 
         super().__init__(**data)
 
+class ProblemStatistics(BaseModel):
+    problem_set_id: int
+    problem_set_created_at: datetime.datetime
+    problem_infos: list[ProblemInfo]
+
+
+
 @db_operation
-async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
+async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
     rows = await conn.fetch(
         """
         WITH main_stats AS (
@@ -204,9 +201,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             GROUP BY problem_name
         )
         SELECT 
-            ms.*, 
-            (SELECT MAX(set_id) FROM evaluation_sets) AS problem_set_id,
-            (SELECT MAX(created_at) FROM evaluation_sets WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)) AS problem_set_created_at,
+            ms.*,
             esa.error_code_distribution,
             ts.token_count_per_model
         FROM main_stats ms 
@@ -216,20 +211,20 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
         """
     )
 
-    problem_stats = [ProblemStatistics(**row) for row in rows]
+    problem_stats = [ProblemInfo(**row) for row in rows]
+    problem_set_id = await get_latest_set_id()
+    problem_set_created_at = await get_latest_set_created_at()
 
     evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
     for evaluation_set_problem in evaluation_set_problems:
         if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
-            problem_stats.append(ProblemStatistics(
+            problem_stats.append(ProblemInfo(
                 problem_name=evaluation_set_problem.problem_name,
                 total_num_evaluation_runs=0,
                 num_finished_evaluation_runs=0,
                 num_finished_passed_evaluation_runs=0,
                 num_finished_failed_evaluation_runs=0,
                 num_errored_evaluation_runs=0,
-                problem_set_id=evaluation_set_problem.set_id,
-                problem_set_created_at=evaluation_set_problem.created_at,
                 error_code_distribution=[],
                 tokens_per_model=[],
                 top_agents=[],
@@ -241,4 +236,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
             ))
 
-    return problem_stats
+    return ProblemStatistics(
+        problem_set_id=problem_set_id,
+        problem_set_created_at=problem_set_created_at,
+        problem_infos=problem_stats
+    )
