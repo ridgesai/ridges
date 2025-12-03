@@ -40,6 +40,7 @@ def build_docker_image(dockerfile_dir: str, tag: str) -> None:
         dockerfile_dir: Path to a directory containing a Dockerfile
         tag: Tag to give the Docker image
     """
+    tag = f"{DOCKER_PREFIX}-{tag}"
     logger.info(f"Building Docker image: {tag}")
     
     try:
@@ -103,8 +104,6 @@ def create_internal_docker_network(name: str) -> None:
     """
     Creates an internal Docker network, if it does not already exist.
     """
-
-    prefixed_name = f"{DOCKER_PREFIX}-{name}"
     docker_client = get_docker_client()
     
     try:

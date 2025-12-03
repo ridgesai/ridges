@@ -9,8 +9,7 @@ import utils.logger as logger
 from typing import Any, Dict, Optional, Callable
 from utils.temp import create_temp_dir, delete_temp_dir
 from evaluator.models import Sandbox, SandboxResultWithLogs
-from utils.docker import get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
-from utils.docker import DOCKER_PREFIX
+from utils.docker import get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers, DOCKER_PREFIX
 
 
 SANDBOX_NETWORK_NAME = f"{DOCKER_PREFIX}-sandbox-network"
@@ -37,13 +36,13 @@ class SandboxManager:
 
         # Setup sandbox-image
         if os.getenv("CXII_NO_BUILD_SANDBOX_IMAGE") is None:
-            build_docker_image(os.path.dirname(__file__), f"{DOCKER_PREFIX}-sandbox-image")
+            build_docker_image(os.path.dirname(__file__), "sandbox-image")
         self.sandboxes = {}
 
         # Setup sandbox-proxy
         self.proxy_container = None
         self.proxy_temp_dir = None
-        build_docker_image(os.path.dirname(__file__) + "/proxy", f"{DOCKER_PREFIX}-sandbox-proxy-image")
+        build_docker_image(os.path.dirname(__file__) + "/proxy", "sandbox-proxy-image")
         self._create_sandbox_proxy(inference_gateway_url)
 
 
@@ -106,6 +105,7 @@ class SandboxManager:
         on_mount: Callable[[str], None] = None,
         timeout_seconds: int = None
     ) -> Sandbox:
+        name = f"{DOCKER_PREFIX}-{name}"
         # Create temporary directory
         temp_dir = create_temp_dir()
         logger.debug(f"Created temporary directory for sandbox <{name}>: {temp_dir}")
