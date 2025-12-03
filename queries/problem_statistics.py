@@ -1,5 +1,6 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
+import json
 from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
@@ -9,6 +10,9 @@ from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, 
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
 
+class ErrorCodeInfo(BaseModel):
+    model_config = ConfigDict(strict=False)
+    count: int
 
 class ProblemStatistics(BaseModel):
     problem_name: str
@@ -25,6 +29,8 @@ class ProblemStatistics(BaseModel):
     in_screener_1_set_group: bool
     in_screener_2_set_group: bool
     in_validator_set_group: bool
+    error_code_distribution: Optional[dict[str, ErrorCodeInfo]] = None
+    num_total_runs: Optional[int] = None
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
@@ -41,48 +47,86 @@ class ProblemStatistics(BaseModel):
         data["problem_suite_name"] = problem_suite_name
         data["problem_difficulty"] = problem_difficulty
         
+        if data.get("error_code_distribution") is not None:
+            error_dist_raw = json.loads(data["error_code_distribution"])
+            error_dist_dict = {}
+            for error_code, error_info in error_dist_raw.items():
+                error_dist_dict[error_code] = ErrorCodeInfo(**error_info)
+            data["error_code_distribution"] = error_dist_dict
+
         super().__init__(**data)
 
 @db_operation
 async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
     rows = await conn.fetch(
         """
-        SELECT
-            erh.problem_name,
-            COUNT(*) AS total_num_evaluation_runs,
-            COUNT(*) FILTER (WHERE erh.status = 'finished') AS num_finished_evaluation_runs,
-            COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved) AS num_finished_passed_evaluation_runs,
-            COUNT(*) FILTER (WHERE erh.status = 'finished' AND NOT erh.solved) AS num_finished_failed_evaluation_runs,
-            COUNT(*) FILTER (WHERE erh.status = 'error') AS num_errored_evaluation_runs,
-            COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved)::FLOAT / NULLIF(COUNT(*) FILTER (WHERE erh.status = 'finished'), 0) AS pass_rate,
-            AVG(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_initializing_agent_at))) AS average_time,
-            AVG(erwc.total_cost_usd) AS average_cost_usd,
-            EXISTS(
-                SELECT 1 FROM evaluation_sets es1 
-                WHERE es1.problem_name = erh.problem_name 
-                AND es1.set_group = 'screener_1' 
-                AND es1.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            ) AS in_screener_1_set_group,
-            EXISTS(
-                SELECT 1 FROM evaluation_sets es2 
-                WHERE es2.problem_name = erh.problem_name 
-                AND es2.set_group = 'screener_2' 
-                AND es2.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            ) AS in_screener_2_set_group,
-            EXISTS(
-                SELECT 1 FROM evaluation_sets es3 
-                WHERE es3.problem_name = erh.problem_name 
-                AND es3.set_group = 'validator' 
-                AND es3.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            ) AS in_validator_set_group
-        FROM evaluation_runs_hydrated erh
-            JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
-            JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
-            JOIN agents a on e.agent_id = a.agent_id
-        WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-            AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-        GROUP BY erh.problem_name;
+        WITH main_stats AS (
+            SELECT
+                erh.problem_name,
+                COUNT(*) AS total_num_evaluation_runs,
+                COUNT(*) FILTER (WHERE erh.status = 'finished') AS num_finished_evaluation_runs,
+                COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved) AS num_finished_passed_evaluation_runs,
+                COUNT(*) FILTER (WHERE erh.status = 'finished' AND NOT erh.solved) AS num_finished_failed_evaluation_runs,
+                COUNT(*) FILTER (WHERE erh.status = 'error') AS num_errored_evaluation_runs,
+                COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved)::FLOAT / NULLIF(COUNT(*) FILTER (WHERE erh.status = 'finished'), 0) AS pass_rate,
+                AVG(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_initializing_agent_at))) AS average_time,
+                AVG(erwc.total_cost_usd) AS average_cost_usd,
+                EXISTS(
+                    SELECT 1 FROM evaluation_sets es1 
+                    WHERE es1.problem_name = erh.problem_name 
+                    AND es1.set_group = 'screener_1' 
+                    AND es1.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                ) AS in_screener_1_set_group,
+                EXISTS(
+                    SELECT 1 FROM evaluation_sets es2 
+                    WHERE es2.problem_name = erh.problem_name 
+                    AND es2.set_group = 'screener_2' 
+                    AND es2.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                ) AS in_screener_2_set_group,
+                EXISTS(
+                    SELECT 1 FROM evaluation_sets es3 
+                    WHERE es3.problem_name = erh.problem_name 
+                    AND es3.set_group = 'validator' 
+                    AND es3.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                ) AS in_validator_set_group
+            FROM evaluation_runs_hydrated erh
+                JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
+                JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+                JOIN agents a on e.agent_id = a.agent_id
+            WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            GROUP BY erh.problem_name
+        ),
+        error_stats AS (
+            SELECT
+                problem_name,
+                jsonb_object_agg(
+                    error_code,
+                    jsonb_build_object('count', error_count)
+                ) AS error_code_distribution,
+                SUM(error_count) AS num_total_runs
+            FROM (
+                SELECT
+                    er.problem_name,
+                    COALESCE(er.error_code::text, 'success') AS error_code,
+                    COUNT(*) AS error_count
+                FROM evaluation_runs er
+                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
+                    JOIN agents a on e.agent_id = a.agent_id
+                WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                GROUP BY er.problem_name, er.error_code
+            ) error_grouped
+            GROUP BY problem_name
+        )
+        SELECT 
+            ms.*, 
+            esa.error_code_distribution,
+            esa.num_total_runs
+        FROM main_stats ms 
+        LEFT JOIN error_stats esa ON ms.problem_name = esa.problem_name;
         """
     )
 
