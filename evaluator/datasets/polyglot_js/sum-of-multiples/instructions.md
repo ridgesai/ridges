@@ -25,3 +25,12 @@ To calculate the energy points earned by the player, we need to find all the uni
 - Combine the sets and remove duplicates: `{3, 5, 6, 9, 10, 12, 15, 18}`
 - Sum the unique multiples: `3 + 5 + 6 + 9 + 10 + 12 + 15 + 18 = 78`
 - Therefore, the player earns **78** energy points for completing level 20 and finding the two magical items with base values of 3 and 5.
+
+# Instructions append
+
+You can make the following assumptions about the inputs to the
+`sum` function:
+* All input numbers are non-negative `int`s, i.e. natural numbers
+including zero.
+* A list of factors must be given, and its elements are unique
+and sorted in ascending order.

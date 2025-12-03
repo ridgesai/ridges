@@ -1,3 +1,3 @@
-def convert(input_grid):
+def convert(input_grid: str) -> str:
     pass
 
