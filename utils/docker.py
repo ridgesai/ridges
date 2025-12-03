@@ -7,6 +7,7 @@ import utils.logger as logger
 docker_client = None
 
 DOCKER_PREFIX = 'ridges-ai'
+SWEBENCH_EVAL_PREFIX = 'sweb'
 
 
 def _initialize_docker():
@@ -77,9 +78,9 @@ def stop_and_delete_all_docker_containers() -> None:
 
     docker_client = get_docker_client()
     
-    logger.info("Stopping and deleting all containers with prefix {DOCKER_PREFIX}...")
+    logger.info(f"Stopping and deleting all containers with prefix {DOCKER_PREFIX}...")
     
-    for container in docker_client.containers.list(all=True, filters={"name": f"^{DOCKER_PREFIX}"}):
+    for container in docker_client.containers.list(all=True, filters={"name": f"^({DOCKER_PREFIX}|sweb)"}):
         logger.info(f"Stopping and deleting container {container.name}...")
 
         try:
@@ -96,7 +97,7 @@ def stop_and_delete_all_docker_containers() -> None:
 
     docker_client.containers.prune()
     
-    logger.info(f"Stopped and deleted all containers with prefix {DOCKER_PREFIX}")
+    logger.info(f"Stopped and deleted all containers with prefix {DOCKER_PREFIX} or {SWEBENCH_EVAL_PREFIX}")
 
 
 
