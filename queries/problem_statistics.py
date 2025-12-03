@@ -16,17 +16,17 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 class ErrorCodeInfo(BaseModel):
     error_code: int
     description: str = ""
-    count: int
+    num_errors: int
 
 class TokenInfo(BaseModel):
     model: str
-    num_total_tokens: int
+    num_tokens: int
 
 class TopAgentInfo(BaseModel):
     name: str
     agent_id: UUID
     version: int
-    time_taken: float
+    run_time: float
 
 class ProblemInfo(BaseModel):
     problem_name: str
@@ -77,7 +77,7 @@ class ProblemInfo(BaseModel):
 class ProblemStatistics(BaseModel):
     problem_set_id: int
     problem_set_created_at: datetime.datetime
-    problem_infos: list[ProblemInfo]
+    problems: list[ProblemInfo]
 
 
 
@@ -127,14 +127,14 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code, 'count', error_count)
+                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
                 ) AS error_code_distribution,
-                SUM(error_count) AS num_total_runs
+                SUM(num_errors) AS num_total_runs
             FROM (
                 SELECT
                     er.problem_name,
                     er.error_code,
-                    COUNT(*) AS error_count
+                    COUNT(*) AS num_errors
                 FROM evaluation_runs er
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id
                     JOIN agents a on e.agent_id = a.agent_id
@@ -150,13 +150,13 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('model', model, 'num_total_tokens', num_total_tokens)
+                    jsonb_build_object('model', model, 'num_tokens', num_tokens)
                 ) AS token_count_per_model
             FROM (
                 SELECT
                     er.problem_name,
                     i.model,
-                    SUM(i.num_input_tokens) AS num_total_tokens
+                    SUM(i.num_input_tokens) AS num_tokens
                 FROM evaluation_runs er
                     JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id 
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
@@ -176,8 +176,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                         'agent_id', agent_id, 
                         'name', name,
                         'version', version_num,
-                        'time_taken', time_taken
-                    ) ORDER BY time_taken ASC
+                        'run_time', run_time
+                    ) ORDER BY run_time ASC
                 ) AS top_5_agents
             FROM (
                 SELECT
@@ -185,7 +185,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                     a.agent_id,
                     a.name,
                     a.version_num,
-                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS time_taken,
+                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS run_time,
                     ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC) AS time_rank
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
@@ -239,5 +239,5 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
     return ProblemStatistics(
         problem_set_id=problem_set_id,
         problem_set_created_at=problem_set_created_at,
-        problem_infos=problem_stats
+        problems=problem_stats
     )
