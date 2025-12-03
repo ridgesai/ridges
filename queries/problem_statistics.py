@@ -14,7 +14,7 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 class ErrorCodeInfo(BaseModel):
-    error_code: int
+    error_code: str
     description: str = ""
     num_errors: int
 
@@ -44,8 +44,8 @@ class ProblemInfo(BaseModel):
     in_screener_2_set_group: bool
     in_validator_set_group: bool
     error_code_distribution: list[ErrorCodeInfo] = []
-    tokens_per_model: list[TokenInfo] = []
-    top_agents: list[TopAgentInfo] = []
+    token_distribution: list[TokenInfo] = []
+    top_agents_run_on_problem: list[TopAgentInfo] = []
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
@@ -66,11 +66,11 @@ class ProblemInfo(BaseModel):
         if isinstance(data.get("error_code_distribution"), str):
             data["error_code_distribution"] = TypeAdapter(list[ErrorCodeInfo]).validate_json(data["error_code_distribution"])
         
-        if isinstance(data.get("token_count_per_model"), str):
-            data["token_count_per_model"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_count_per_model"])
+        if isinstance(data.get("token_distribution"), str):
+            data["token_distribution"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_distribution"])
 
-        if isinstance(data.get("top_5_agents"), str):
-            data["top_agents"] = TypeAdapter(list[TopAgentInfo]).validate_json(data["top_5_agents"])
+        if isinstance(data.get("top_agents_run_on_problem"), str):
+            data["top_agents_run_on_problem"] = TypeAdapter(list[TopAgentInfo]).validate_json(data["top_agents_run_on_problem"])
 
         super().__init__(**data)
 
@@ -127,7 +127,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
+                    jsonb_build_object('error_code', error_code::text, 'num_errors', num_errors)
                 ) AS error_code_distribution,
                 SUM(num_errors) AS num_total_runs
             FROM (
@@ -151,7 +151,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 problem_name,
                 json_agg(
                     jsonb_build_object('model', model, 'num_tokens', num_tokens)
-                ) AS token_count_per_model
+                ) AS token_distribution
             FROM (
                 SELECT
                     er.problem_name,
@@ -168,7 +168,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
             )
             GROUP BY problem_name
         ),
-        top_agents AS (
+        top_agents_stats AS (
             SELECT
                 problem_name,
                 json_agg(
@@ -178,7 +178,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                         'version', version_num,
                         'run_time', run_time
                     ) ORDER BY run_time ASC
-                ) AS top_5_agents
+                ) AS top_agents_run_on_problem
             FROM (
                 SELECT
                     erh.problem_name,
@@ -203,11 +203,12 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
         SELECT 
             ms.*,
             esa.error_code_distribution,
-            ts.token_count_per_model
+            ts.token_distribution,
+            ta.top_agents_run_on_problem
         FROM main_stats ms 
         LEFT JOIN error_stats esa ON ms.problem_name = esa.problem_name
         LEFT JOIN token_stats ts ON ms.problem_name = ts.problem_name
-        LEFT JOIN top_agents ta ON ms.problem_name = ta.problem_name;
+        LEFT JOIN top_agents_stats ta ON ms.problem_name = ta.problem_name;
         """
     )
 
@@ -226,8 +227,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 num_finished_failed_evaluation_runs=0,
                 num_errored_evaluation_runs=0,
                 error_code_distribution=[],
-                tokens_per_model=[],
-                top_agents=[],
+                token_distribution=[],
+                top_agents_run_on_problem=[],
                 pass_rate=None,
                 average_time=None,
                 average_cost_usd=None,
