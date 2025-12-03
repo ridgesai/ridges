@@ -11,7 +11,7 @@ Added typing to `encode()` and `decode()`, as it is unclear what types the param
 
 ## beer-song
 
-Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, seperated by newlines.
+Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, separated by newlines.
 
 ## book-store
 
@@ -19,7 +19,7 @@ Added typing to `total()`, as it is unclear what format of input the function sh
 
 ## bottle-song
 
-Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, seperated by newlines.
+Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, separated by newlines.
 
 ## bowling
 
@@ -59,7 +59,7 @@ Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `
 
 ## ocr-numbers
 
-Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, seperated by newlines.
+Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, separated by newlines.
 
 ## phone-number
 
