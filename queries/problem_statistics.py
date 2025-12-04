@@ -1,8 +1,7 @@
 import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-from typing import List, Optional
-import json
+from pydantic import BaseModel, TypeAdapter
+from typing import Optional
 from models.evaluation_run import EvaluationRunErrorCode
 from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
@@ -188,8 +187,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> list[ProblemInfo]:
                     a.agent_id,
                     a.name,
                     a.version_num,
-                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS run_time,
-                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC) AS time_rank
+                    MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) AS run_time,
+                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) ASC) AS time_rank
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
@@ -199,6 +198,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> list[ProblemInfo]:
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                GROUP BY erh.problem_name, a.agent_id, a.name, a.version_num
             ) ranked_agents
             WHERE time_rank <= 5
             GROUP BY problem_name
