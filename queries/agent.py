@@ -34,12 +34,12 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
                         COUNT(*) FILTER (WHERE status = '{EvaluationStatus.success.value}') AS num_finished_evals
                     FROM evaluations_hydrated
                     WHERE evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
-                      AND evaluation_set_group = 'validator'::EvaluationSetGroup
+                      AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
                     GROUP BY agent_id
                 ),
                 screener_2_scores AS (
                     SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
-                    WHERE evaluation_set_group = 'screener_2'::EvaluationSetGroup
+                    WHERE evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
                       AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
                     GROUP BY agent_id
                 )

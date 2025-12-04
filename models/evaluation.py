@@ -4,6 +4,7 @@ from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel
 from models.evaluation_run import EvaluationRun
+from models.evaluation_set import EvaluationSetGroup
 
 
 
@@ -19,6 +20,7 @@ class Evaluation(BaseModel):
     set_id: int
     created_at: datetime
     finished_at: Optional[datetime] = None
+    evaluation_set_group: EvaluationSetGroup
 
 class HydratedEvaluation(Evaluation):
     status: EvaluationStatus
