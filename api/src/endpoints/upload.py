@@ -68,7 +68,14 @@ async def check_agent_post(
     name: str = Form(..., description="Name of the agent"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
 ) -> AgentUploadResponse:
+    # raise HTTPException(
+    #     status_code=503,
+    #     detail="Uploads have been temporarily disabled while we re-eval the top 10"
+    # )
     miner_hotkey = get_miner_hotkey(file_info)
+    latest_agent: Optional[Agent] = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
+    if latest_agent:
+        check_rate_limit(latest_agent)
     check_signature(public_key, file_info, signature)
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey) 
@@ -125,7 +132,7 @@ async def post_agent(
 
     # raise HTTPException(
     #     status_code=503,
-    #     detail="Uploads have been temporarily disabled while the new problem set is being implemented."
+    #     detail="Uploads have been temporarily disabled while we re-eval the top 10"
     # )
 
     # Extract upload attempt data for tracking
@@ -234,22 +241,6 @@ async def post_agent(
                 status_code=402,
                 detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
             )
-
-        # Check if payment was successful
-        # see https://github.com/ridgesai/ridges/pull/212 to an example of a failed or successful extrinsic events
-        # TODO STEPHEN: There is probably a more robust way
-        events = subtensor.substrate.get_events(block_hash=payment_block_hash)
-        for event in events:
-            if event.get('attributes', {}).get('dispatch_error', {}).get('Token') == 'FundsUnavailable':
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Payment failed. Insufficient funds."
-                )
-            if event['module_id'] == 'System' and event['event_id'] == 'ExtrinsicFailed':
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Payment failed"
-                )
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
