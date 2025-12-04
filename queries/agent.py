@@ -103,12 +103,15 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
 
 @db_operation
 async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
-    result = await conn.fetchrow("""
-        select * from agents 
-        where miner_hotkey = $1
-        order by created_at desc
-        limit 1
-    """, miner_hotkey)
+    result = await conn.fetchrow(
+        """
+        SELECT * FROM agents 
+        WHERE miner_hotkey = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        miner_hotkey
+    )
 
     if result is None:
         return None 
@@ -171,7 +174,7 @@ async def get_top_agents(
     number_of_agents: int = 10,
     page: int = 1
 ) -> list[AgentScored]:
-
+    # TODO ADAM: maybe edge case bugs here if pagenum is 0,negative,or too high etc
     offset = (page - 1) * number_of_agents
 
     results = await conn.fetch(
