@@ -1,8 +1,8 @@
 import datetime
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-from typing import List, Optional
-import json
+from pydantic import BaseModel, TypeAdapter
+from typing import Optional
+from models.evaluation_run import EvaluationRunErrorCode
 from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
@@ -65,6 +65,8 @@ class ProblemInfo(BaseModel):
         # string means it's coming from the database as a json
         if isinstance(data.get("error_code_distribution"), str):
             data["error_code_distribution"] = TypeAdapter(list[ErrorCodeInfo]).validate_json(data["error_code_distribution"])
+        for error_code_info in data["error_code_distribution"]:
+            error_code_info.description = EvaluationRunErrorCode(int(error_code_info.error_code)).get_error_message()
         
         if isinstance(data.get("token_distribution"), str):
             data["token_distribution"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_distribution"])
@@ -82,7 +84,7 @@ class ProblemStatistics(BaseModel):
 
 
 @db_operation
-async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
+async def get_problem_statistics(conn: DatabaseConnection) -> list[ProblemInfo]:
     rows = await conn.fetch(
         """
         WITH main_stats AS (
@@ -185,8 +187,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                     a.agent_id,
                     a.name,
                     a.version_num,
-                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS run_time,
-                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC) AS time_rank
+                    MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) AS run_time,
+                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) ASC) AS time_rank
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
@@ -196,6 +198,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                GROUP BY erh.problem_name, a.agent_id, a.name, a.version_num
             ) ranked_agents
             WHERE time_rank <= 5
             GROUP BY problem_name
@@ -213,8 +216,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
     )
 
     problem_stats = [ProblemInfo(**row) for row in rows]
-    problem_set_id = await get_latest_set_id()
-    problem_set_created_at = await get_latest_set_created_at()
 
     evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
     for evaluation_set_problem in evaluation_set_problems:
@@ -237,8 +238,4 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
             ))
 
-    return ProblemStatistics(
-        problem_set_id=problem_set_id,
-        problem_set_created_at=problem_set_created_at,
-        problems=problem_stats
-    )
+    return problem_stats
