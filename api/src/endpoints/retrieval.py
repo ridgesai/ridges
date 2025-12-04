@@ -1,14 +1,8 @@
 from dotenv import load_dotenv
 from typing import Any
-import datetime
-
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
 
-from queries.evaluation_set import get_latest_set_created_at, get_latest_set_id
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score, get_top_scores_over_time
-from queries.problem_statistics import ProblemInfo, get_problem_statistics
-from utils.ttl import ttl_cache
 import utils.logger as logger
 
 load_dotenv()
@@ -194,24 +188,6 @@ async def network_statistics():
     return cache_data[cache_key]
 
 
-class ProblemStatisticsResponse(BaseModel):
-    problem_stats: list[ProblemInfo]
-    problem_set_id: int
-    problem_set_created_at: datetime.datetime
-
-@ttl_cache(ttl_seconds=900) # 15 mins
-async def problem_statistics() -> ProblemStatisticsResponse:
-    problem_stats, problem_set_id, problem_set_created_at = await asyncio.gather(
-        get_problem_statistics(),
-        get_latest_set_id(),
-        get_latest_set_created_at()
-    )
-    return ProblemStatisticsResponse(
-        problem_stats=problem_stats,
-        problem_set_id=problem_set_id,
-        problem_set_created_at=problem_set_created_at
-    )
-
 
 router = APIRouter()
 
@@ -225,7 +201,6 @@ routes = [
     ("/top-scores-over-time", top_scores_over_time),
     ("/network-statistics", network_statistics),
     ("/all-agents-by-hotkey", all_agents_by_hotkey),
-    ("/problem-statistics", problem_statistics)
 ]
 
 for path, endpoint in routes:
