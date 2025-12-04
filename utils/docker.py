@@ -6,6 +6,8 @@ import utils.logger as logger
 
 docker_client = None
 
+DOCKER_PREFIX = 'ridges-ai'
+SWEBENCH_EVAL_PREFIX = 'sweb'
 
 
 def _initialize_docker():
@@ -39,7 +41,7 @@ def build_docker_image(dockerfile_dir: str, tag: str) -> None:
         dockerfile_dir: Path to a directory containing a Dockerfile
         tag: Tag to give the Docker image
     """
-
+    tag = f"{DOCKER_PREFIX}-{tag}"
     logger.info(f"Building Docker image: {tag}")
     
     try:
@@ -76,9 +78,9 @@ def stop_and_delete_all_docker_containers() -> None:
 
     docker_client = get_docker_client()
     
-    logger.info("Stopping and deleting all containers...")
+    logger.info(f"Stopping and deleting all containers with prefix {DOCKER_PREFIX}...")
     
-    for container in docker_client.containers.list(all=True):
+    for container in docker_client.containers.list(all=True, filters={"name": f"^({DOCKER_PREFIX}|sweb)"}):
         logger.info(f"Stopping and deleting container {container.name}...")
 
         try:
@@ -95,7 +97,7 @@ def stop_and_delete_all_docker_containers() -> None:
 
     docker_client.containers.prune()
     
-    logger.info("Stopped and deleted all containers")
+    logger.info(f"Stopped and deleted all containers with prefix {DOCKER_PREFIX} or {SWEBENCH_EVAL_PREFIX}")
 
 
 
@@ -103,7 +105,6 @@ def create_internal_docker_network(name: str) -> None:
     """
     Creates an internal Docker network, if it does not already exist.
     """
-
     docker_client = get_docker_client()
     
     try:
