@@ -26,8 +26,5 @@ class HydratedEvaluation(Evaluation):
     status: EvaluationStatus
     score: float
 
-# TODO ADAM: Should inherit from Evaluation and then add the runs member, not priority right now
-
-class EvaluationWithRuns(BaseModel):
-    evaluation: Evaluation
+class EvaluationWithRuns(Evaluation):
     runs: list[EvaluationRun]

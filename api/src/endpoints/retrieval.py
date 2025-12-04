@@ -113,7 +113,7 @@ async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
     )
 
     return [
-        EvaluationWithRuns(evaluation=e, runs=runs)
+        EvaluationWithRuns(**e.model_dump(), runs=runs)
         for e, runs in zip(evaluations, runs_per_eval)
     ]
 
