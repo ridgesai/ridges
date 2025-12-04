@@ -3,6 +3,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from typing import List, Optional
 import json
+from models.evaluation_run import EvaluationRunErrorCode
 from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
@@ -65,6 +66,8 @@ class ProblemInfo(BaseModel):
         # string means it's coming from the database as a json
         if isinstance(data.get("error_code_distribution"), str):
             data["error_code_distribution"] = TypeAdapter(list[ErrorCodeInfo]).validate_json(data["error_code_distribution"])
+        for error_code_info in data["error_code_distribution"]:
+            error_code_info.description = EvaluationRunErrorCode(int(error_code_info.error_code)).get_error_message()
         
         if isinstance(data.get("token_distribution"), str):
             data["token_distribution"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_distribution"])

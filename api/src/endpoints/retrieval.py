@@ -1,12 +1,15 @@
-from fastapi import APIRouter, HTTPException, Request
-from typing import Any
-from queries.evaluation_set import get_latest_set_created_at, get_latest_set_id
-from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
-import utils.logger as logger
 from dotenv import load_dotenv
+from typing import Any
+import datetime
 
-from queries.statistics import get_top_scores_over_time
-from queries.problem_statistics import get_problem_statistics
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+
+from queries.evaluation_set import get_latest_set_created_at, get_latest_set_id
+from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score, get_top_scores_over_time
+from queries.problem_statistics import ProblemInfo, get_problem_statistics
+from utils.ttl import ttl_cache
+import utils.logger as logger
 
 load_dotenv()
 
@@ -191,28 +194,23 @@ async def network_statistics():
     return cache_data[cache_key]
 
 
-async def problem_statistics():
-    """Gets problem statistics"""
-    cache_key = "problem_statistics"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
+class ProblemStatisticsResponse(BaseModel):
+    problem_stats: list[ProblemInfo]
+    problem_set_id: int
+    problem_set_created_at: datetime.datetime
 
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
+@ttl_cache(ttl_seconds=900) # 15 mins
+async def problem_statistics() -> ProblemStatisticsResponse:
     problem_stats, problem_set_id, problem_set_created_at = await asyncio.gather(
         get_problem_statistics(),
         get_latest_set_id(),
         get_latest_set_created_at()
     )
-    cache_data[cache_key] = {
-        "problem_stats": problem_stats,
-        "problem_set_id": problem_set_id,
-        "problem_set_created_at": problem_set_created_at
-    }
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
+    return ProblemStatisticsResponse(
+        problem_stats=problem_stats,
+        problem_set_id=problem_set_id,
+        problem_set_created_at=problem_set_created_at
+    )
 
 
 router = APIRouter()
