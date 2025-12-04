@@ -15,6 +15,7 @@ from utils.database import db_operation, DatabaseConnection
 @db_operation
 async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int) -> UUID:
     evaluation_id = uuid.uuid4()
+    evaluation_set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
 
     await conn.execute(
         """
@@ -23,13 +24,15 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
             agent_id,
             validator_hotkey,
             set_id,
-            created_at
+            created_at,
+            evaluation_set_group
         ) VALUES ($1, $2, $3, $4, NOW())
         """,
         evaluation_id,
         agent_id,
         validator_hotkey,
-        set_id
+        set_id,
+        evaluation_set_group
     )
 
     logger.debug(f"Created evaluation {evaluation_id} for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
@@ -195,7 +198,7 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseCo
         WHERE 
             agent_id = $1
             AND status = '{EvaluationStatus.success.value}'
-            AND validator_hotkey NOT LIKE 'screener-%'
+            AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
         """,
         agent_id,
     )
