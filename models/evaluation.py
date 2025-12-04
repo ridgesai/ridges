@@ -18,13 +18,19 @@ class Evaluation(BaseModel):
     agent_id: UUID
     validator_hotkey: str
     set_id: int
+    evaluation_set_group: EvaluationSetGroup
     created_at: datetime
     finished_at: Optional[datetime] = None
-    evaluation_set_group: EvaluationSetGroup
 
 class HydratedEvaluation(Evaluation):
     status: EvaluationStatus
     score: float
+
+
+
+
+
+
 
 # TODO ADAM: Should inherit from Evaluation and then add the runs member, not priority right now
 
