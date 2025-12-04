@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Request
 from typing import Any
+from queries.evaluation_set import get_latest_set_created_at, get_latest_set_id
 from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
 import utils.logger as logger
 from dotenv import load_dotenv
@@ -199,7 +200,16 @@ async def problem_statistics():
     if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
         return cache_data[cache_key]
     recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_problem_statistics()
+    problem_stats, problem_set_id, problem_set_created_at = await asyncio.gather(
+        get_problem_statistics(),
+        get_latest_set_id(),
+        get_latest_set_created_at()
+    )
+    cache_data[cache_key] = {
+        "problem_stats": problem_stats,
+        "problem_set_id": problem_set_id,
+        "problem_set_created_at": problem_set_created_at
+    }
     cache_timestamps[cache_key] = time.time()
     recalculating_cache[cache_key] = False
     return cache_data[cache_key]

@@ -82,7 +82,7 @@ class ProblemStatistics(BaseModel):
 
 
 @db_operation
-async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
+async def get_problem_statistics(conn: DatabaseConnection) -> list[ProblemInfo]:
     rows = await conn.fetch(
         """
         WITH main_stats AS (
@@ -213,8 +213,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
     )
 
     problem_stats = [ProblemInfo(**row) for row in rows]
-    problem_set_id = await get_latest_set_id()
-    problem_set_created_at = await get_latest_set_created_at()
 
     evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
     for evaluation_set_problem in evaluation_set_problems:
@@ -237,8 +235,4 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
             ))
 
-    return ProblemStatistics(
-        problem_set_id=problem_set_id,
-        problem_set_created_at=problem_set_created_at,
-        problems=problem_stats
-    )
+    return problem_stats
