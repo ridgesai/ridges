@@ -15,12 +15,12 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 class ProblemStatisticsErrorCodeInfo(BaseModel):
-    error_code: str
+    error_code: int
     description: str
     num_errors: int
 
     def __init__(self, **data):
-        data["description"] = EvaluationRunErrorCode(int(data["error_code"])).get_error_message()
+        data["description"] = EvaluationRunErrorCode(data["error_code"]).get_error_message()
         super().__init__(**data)
 
 class ProblemStatisticsTokenInfo(BaseModel):
@@ -126,7 +126,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code::text, 'num_errors', num_errors)
+                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
                 ) AS error_code_distribution
             FROM (
                 SELECT
