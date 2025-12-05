@@ -1,4 +1,4 @@
-# Local Testting
+# Local Testing
 
 ## Prerequisites 
 - You must use Linux or macOS. We do not support or test on Windows.
