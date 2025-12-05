@@ -1,4 +1,4 @@
-# TODO ADAM
+# NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
 from validator.set_weights import set_weights_from_mapping
 
 import os
