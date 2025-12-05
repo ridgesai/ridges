@@ -112,15 +112,41 @@ class InferenceToolParameter(BaseModel):
     name: str
     description: str
     required: bool = False
+    items: Optional['InferenceToolParameter'] = None  # For array type
+    properties: Optional[List['InferenceToolParameter']] = None  # For object type
 
 def inference_tool_parameters_to_openai_parameters(parameters: List[InferenceToolParameter]) -> FunctionParameters:
+    properties = {}
+    for parameter in parameters:
+        prop = {
+            "type": parameter.type.value,
+            "description": parameter.description
+        }
+        
+        # Handle array type with items
+        if parameter.type == InferenceToolParameterType.ARRAY and parameter.items:
+            items_prop = {
+                "type": parameter.items.type.value,
+                "description": parameter.items.description
+            }
+            # Recursively handle nested arrays or objects in items
+            if parameter.items.type == InferenceToolParameterType.ARRAY and parameter.items.items:
+                items_prop["items"] = inference_tool_parameters_to_openai_parameters([parameter.items])["properties"][parameter.items.name]
+            elif parameter.items.type == InferenceToolParameterType.OBJECT and parameter.items.properties:
+                items_prop["properties"] = inference_tool_parameters_to_openai_parameters(parameter.items.properties)["properties"]
+                items_prop["required"] = [p.name for p in parameter.items.properties if p.required]
+            prop["items"] = items_prop
+        
+        # Handle object type with properties
+        if parameter.type == InferenceToolParameterType.OBJECT and parameter.properties:
+            nested_params = inference_tool_parameters_to_openai_parameters(parameter.properties)
+            prop["properties"] = nested_params["properties"]
+            prop["required"] = nested_params["required"]
+        
+        properties[parameter.name] = prop
+    
     return {
-        "properties": {
-            parameter.name: {
-                "type": parameter.type.value,
-                "description": parameter.description
-            } for parameter in parameters
-        },
+        "properties": properties,
         "required": [parameter.name for parameter in parameters if parameter.required]
     }
 
