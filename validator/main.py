@@ -80,7 +80,7 @@ async def set_weights_loop():
         try:
             await asyncio.wait_for(set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS)
         except asyncio.TimeoutError as e:
-            logger.error(f"Timeout while setting weights: {e}")
+            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
