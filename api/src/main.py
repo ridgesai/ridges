@@ -23,7 +23,7 @@ from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
 from api.endpoints.scoring import router as scoring_router
-
+from api.endpoints.statistics import router as statistics_router
 
 
 
@@ -109,6 +109,7 @@ app.include_router(debug_router, prefix="/debug")
 app.include_router(agent_router, prefix="/agent")
 app.include_router(evaluation_run_router, prefix="/evaluation-run")
 app.include_router(evaluations_router, prefix="/evaluation")
+app.include_router(statistics_router, prefix="/statistics")
 
 
 if __name__ == "__main__":

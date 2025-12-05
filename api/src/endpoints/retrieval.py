@@ -1,11 +1,15 @@
-from fastapi import APIRouter, HTTPException, Request
-from typing import Any
-from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score
-import utils.logger as logger
-from dotenv import load_dotenv
+# THIS IS BEING REMOVED
+# DO NOT ADD ANY NEW FUNCTIONALITY HERE
 
-from queries.statistics import get_top_scores_over_time
-from queries.problem_statistics import get_problem_statistics
+
+
+
+from dotenv import load_dotenv
+from typing import Any
+from fastapi import APIRouter, HTTPException, Request
+
+from queries.statistics import score_improvement_24_hrs, agents_created_24_hrs, top_score, get_top_scores_over_time
+import utils.logger as logger
 
 load_dotenv()
 
@@ -113,7 +117,7 @@ async def evaluations_for_agent(agent_id: str) -> list[EvaluationWithRuns]:
     )
 
     return [
-        EvaluationWithRuns(evaluation=e, runs=runs)
+        EvaluationWithRuns(**e.model_dump(), runs=runs)
         for e, runs in zip(evaluations, runs_per_eval)
     ]
 
@@ -190,20 +194,6 @@ async def network_statistics():
     return cache_data[cache_key]
 
 
-async def problem_statistics():
-    """Gets problem statistics"""
-    cache_key = "problem_statistics"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
-
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
-    cache_data[cache_key] = await get_problem_statistics()
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
-
 
 router = APIRouter()
 
@@ -217,7 +207,6 @@ routes = [
     ("/top-scores-over-time", top_scores_over_time),
     ("/network-statistics", network_statistics),
     ("/all-agents-by-hotkey", all_agents_by_hotkey),
-    ("/problem-statistics", problem_statistics)
 ]
 
 for path, endpoint in routes:

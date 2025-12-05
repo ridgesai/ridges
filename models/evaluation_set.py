@@ -1,6 +1,8 @@
-from enum import Enum
+import datetime
 
+from enum import Enum
 from pydantic import BaseModel
+
 
 
 class EvaluationSetGroup(str, Enum):
@@ -9,7 +11,7 @@ class EvaluationSetGroup(str, Enum):
     validator = "validator"
 
     @staticmethod
-    def from_validator_hotkey(validator_hotkey: str):
+    def from_validator_hotkey(validator_hotkey: str) -> "EvaluationSetGroup":
         if validator_hotkey.startswith("screener-1"):
             return EvaluationSetGroup.screener_1
         elif validator_hotkey.startswith("screener-2"):
@@ -23,3 +25,4 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
+    created_at: datetime.datetime

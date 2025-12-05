@@ -1,30 +1,24 @@
-"""SandboxManager class for creating and managing Docker sandboxes."""
-
 import os
 import json
 import httpx
 import shutil
 import utils.logger as logger
 
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Callable
 from utils.temp import create_temp_dir, delete_temp_dir
 from evaluator.models import Sandbox, SandboxResultWithLogs
-from utils.docker import get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
+from utils.docker import DOCKER_PREFIX, get_docker_client, build_docker_image, create_internal_docker_network, connect_docker_container_to_internet, stop_and_delete_all_docker_containers
 
 
 
-SANDBOX_NETWORK_NAME = "sandbox-network"
+SANDBOX_NETWORK_NAME = f"{DOCKER_PREFIX}-sandbox-network"
 
-SANDBOX_PROXY_HOST = "sandbox_proxy"
+SANDBOX_PROXY_HOST = f"{DOCKER_PREFIX}-sandbox-proxy"
 SANDBOX_PROXY_PORT = 80
 
 
 
 class SandboxManager:
-    """Manages Docker sandbox creation and execution."""
-
-
-
     def __init__(self, inference_gateway_url: str):
         # Setup inference gateway
         self._check_inference_gateway(inference_gateway_url)
@@ -83,7 +77,7 @@ class SandboxManager:
 
         self.proxy_container = get_docker_client().containers.run(
             name=SANDBOX_PROXY_HOST,
-            image="sandbox-proxy-image",
+            image=f"{DOCKER_PREFIX}-sandbox-proxy-image",
             network=SANDBOX_NETWORK_NAME,
             environment={
                 "GATEWAY_URL": gateway_url,
@@ -106,6 +100,8 @@ class SandboxManager:
         on_mount: Callable[[str], None] = None,
         timeout_seconds: int = None
     ) -> Sandbox:
+        name = f"{DOCKER_PREFIX}-{name}"
+        
         # Create temporary directory
         temp_dir = create_temp_dir()
         logger.debug(f"Created temporary directory for sandbox <{name}>: {temp_dir}")
@@ -142,7 +138,7 @@ class SandboxManager:
         # Create Docker container
         container = get_docker_client().containers.run(
             name=name,
-            image="sandbox-image",
+            image=f"{DOCKER_PREFIX}-sandbox-image",
             volumes={temp_dir: {"bind": "/sandbox", "mode": "rw"}},
             network=SANDBOX_NETWORK_NAME,
             environment={

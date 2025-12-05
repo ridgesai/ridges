@@ -36,7 +36,7 @@ async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection,
 async def get_all_evaluation_set_problems_in_latest_set_id(conn: DatabaseConnection) -> List[EvaluationSetProblem]:
     results = await conn.fetch(
         """
-        SELECT set_id, set_group, problem_name
+        SELECT *
         FROM evaluation_sets
         WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
         """
