@@ -15,12 +15,12 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 class ProblemStatisticsErrorCodeInfo(BaseModel):
-    error_code: str
+    error_code: int
     description: str
     num_errors: int
 
     def __init__(self, **data):
-        data["description"] = EvaluationRunErrorCode(int(data["error_code"])).get_error_message()
+        data["description"] = EvaluationRunErrorCode(data["error_code"]).get_error_message()
         super().__init__(**data)
 
 class ProblemStatisticsTokenInfo(BaseModel):
@@ -32,6 +32,8 @@ class ProblemStatisticsFastestAgentInfo(BaseModel):
     agent_id: UUID
     version_num: int
     evaluation_run_time: float
+    evaluation_id: UUID
+    evaluation_run_id: UUID
 
 class ProblemStatistics(BaseModel):
     problem_name: str
@@ -124,7 +126,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code::text, 'num_errors', num_errors)
+                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
                 ) AS error_code_distribution
             FROM (
                 SELECT
@@ -152,7 +154,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 SELECT
                     er.problem_name,
                     i.model,
-                    SUM(i.num_input_tokens) AS num_tokens
+                    COALESCE(SUM(i.num_input_tokens), 0) AS num_tokens
                 FROM evaluation_runs er
                     JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id 
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
@@ -172,25 +174,30 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         'agent_id', agent_id, 
                         'name', name,
                         'version_num', version_num,
-                        'evaluation_run_time', evaluation_run_time
+                        'evaluation_run_time', evaluation_run_time,
+                        'evaluation_id', evaluation_id,
+                        'evaluation_run_id', evaluation_run_id
                     ) ORDER BY evaluation_run_time ASC
                 ) AS fastest_agents
             FROM (
                 SELECT
-                    er.problem_name,
+                    erh.problem_name,
                     a.agent_id,
                     a.name,
                     a.version_num,
-                    MIN(EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at))) AS evaluation_run_time,
-                    ROW_NUMBER() OVER (PARTITION BY er.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at))) ASC) AS evaluation_run_time_rank
-                FROM evaluation_runs er
-                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
+                    (ARRAY_AGG(e.evaluation_id ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_id,
+                    (ARRAY_AGG(erh.evaluation_run_id ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_run_id,
+                    MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) AS evaluation_run_time,
+                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) ASC) AS evaluation_run_time_rank
+                FROM evaluation_runs_hydrated erh
+                    JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
-                WHERE er.status = 'finished'
+                WHERE erh.status = 'finished'
+                    AND erh.solved
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                GROUP BY er.problem_name, a.agent_id
+                GROUP BY erh.problem_name, a.agent_id
             )
             WHERE evaluation_run_time_rank <= 5
             GROUP BY problem_name
