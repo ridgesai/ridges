@@ -1,91 +1,88 @@
-import datetime
-from uuid import UUID
-from pydantic import BaseModel, ConfigDict, TypeAdapter
-from typing import List, Optional
 import json
+
+from uuid import UUID
+from pydantic import BaseModel
+from typing import List, Optional
 from models.problem import ProblemDifficulty
 from models.evaluation_set import EvaluationSetGroup
+from models.evaluation_run import EvaluationRunErrorCode
 from utils.database import db_operation, DatabaseConnection
 from evaluator.problem_suites.problem_suite import ProblemSuiteName
-from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id, get_latest_set_id, get_latest_set_created_at
+from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
 
 
-class ErrorCodeInfo(BaseModel):
+class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: str
-    description: str = ""
+    description: str
     num_errors: int
 
-class TokenInfo(BaseModel):
+    def __init__(self, **data):
+        data["description"] = EvaluationRunErrorCode(int(data["error_code"])).get_error_message()
+        super().__init__(**data)
+
+class ProblemStatisticsTokenInfo(BaseModel):
     model: str
     num_tokens: int
 
-class TopAgentInfo(BaseModel):
+class ProblemStatisticsFastestAgentInfo(BaseModel):
     name: str
     agent_id: UUID
-    version: int
-    run_time: float
+    version_num: int
+    evaluation_run_time: float
 
-class ProblemInfo(BaseModel):
+class ProblemStatistics(BaseModel):
     problem_name: str
-    problem_suite_name: Optional[ProblemSuiteName]
-    problem_difficulty: Optional[ProblemDifficulty]
-    total_num_evaluation_runs: int
-    num_finished_evaluation_runs: int
-    num_finished_passed_evaluation_runs: int
-    num_finished_failed_evaluation_runs: int
-    num_errored_evaluation_runs: int
-    pass_rate: Optional[float]
-    average_time: Optional[float]
-    average_cost_usd: Optional[float]
+    problem_suite_name: Optional[ProblemSuiteName] = None
+    problem_difficulty: Optional[ProblemDifficulty] = None
+
+    total_num_evaluation_runs: int = 0
+    num_finished_evaluation_runs: int = 0
+    num_finished_passed_evaluation_runs: int = 0
+    num_finished_failed_evaluation_runs: int = 0
+    num_errored_evaluation_runs: int = 0
+
+    pass_rate: Optional[float] = None
+    average_time: Optional[float] = None
+    average_cost_usd: Optional[float] = None
+
     in_screener_1_set_group: bool
     in_screener_2_set_group: bool
     in_validator_set_group: bool
-    error_code_distribution: list[ErrorCodeInfo] = []
-    token_distribution: list[TokenInfo] = []
-    top_agents_run_on_problem: list[TopAgentInfo] = []
+
+    error_code_distribution: List[ProblemStatisticsErrorCodeInfo] = []
+    token_distribution: List[ProblemStatisticsTokenInfo] = []
+    fastest_agents: List[ProblemStatisticsFastestAgentInfo] = []
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
 
-        problem_suite_name = None
-        problem_difficulty = None
-
         for problem_suite in [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]:
             if problem_suite.has_problem_name(problem_name):
-                problem_suite_name = problem_suite.name
-                problem_difficulty = problem_suite.get_problem(problem_name).difficulty
+                data["problem_suite_name"] = problem_suite.name
+                data["problem_difficulty"] = problem_suite.get_problem(problem_name).difficulty
                 break    
 
-        data["problem_suite_name"] = problem_suite_name
-        data["problem_difficulty"] = problem_difficulty
+        if "error_code_distribution" in data:
+            data["error_code_distribution"] = [ProblemStatisticsErrorCodeInfo(**item) for item in json.loads(data["error_code_distribution"])]
         
-        # string means it's coming from the database as a json
-        if isinstance(data.get("error_code_distribution"), str):
-            data["error_code_distribution"] = TypeAdapter(list[ErrorCodeInfo]).validate_json(data["error_code_distribution"])
-        
-        if isinstance(data.get("token_distribution"), str):
-            data["token_distribution"] = TypeAdapter(list[TokenInfo]).validate_json(data["token_distribution"])
+        if "token_distribution" in data:
+            data["token_distribution"] = [ProblemStatisticsTokenInfo(**item) for item in json.loads(data["token_distribution"])]
 
-        if isinstance(data.get("top_agents_run_on_problem"), str):
-            data["top_agents_run_on_problem"] = TypeAdapter(list[TopAgentInfo]).validate_json(data["top_agents_run_on_problem"])
+        if "fastest_agents" in data:
+            data["fastest_agents"] = [ProblemStatisticsFastestAgentInfo(**item) for item in json.loads(data["fastest_agents"])]
 
         super().__init__(**data)
-
-class ProblemStatistics(BaseModel):
-    problem_set_id: int
-    problem_set_created_at: datetime.datetime
-    problems: list[ProblemInfo]
 
 
 
 @db_operation
-async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
+async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
     rows = await conn.fetch(
         """
-        WITH main_stats AS (
+        WITH stats AS (
             SELECT
                 erh.problem_name,
                 COUNT(*) AS total_num_evaluation_runs,
@@ -120,16 +117,15 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 JOIN agents a on e.agent_id = a.agent_id
             WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             GROUP BY erh.problem_name
         ),
-        error_stats AS (
+        error_code_distribution_stats AS (
             SELECT
                 problem_name,
                 json_agg(
                     jsonb_build_object('error_code', error_code::text, 'num_errors', num_errors)
-                ) AS error_code_distribution,
-                SUM(num_errors) AS num_total_runs
+                ) AS error_code_distribution
             FROM (
                 SELECT
                     er.problem_name,
@@ -141,12 +137,12 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                 WHERE er.error_code IS NOT NULL
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY er.problem_name, er.error_code
             )
             GROUP BY problem_name
         ),
-        token_stats AS (
+        token_distribution_stats AS (
             SELECT
                 problem_name,
                 json_agg(
@@ -163,82 +159,65 @@ async def get_problem_statistics(conn: DatabaseConnection) -> ProblemStatistics:
                     JOIN agents a ON e.agent_id = a.agent_id 
                 WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY er.problem_name, i.model
             )
             GROUP BY problem_name
         ),
-        top_agents_stats AS (
+        fastest_agents_stats AS (
             SELECT
                 problem_name,
                 json_agg(
                     jsonb_build_object(
                         'agent_id', agent_id, 
                         'name', name,
-                        'version', version_num,
-                        'run_time', run_time
-                    ) ORDER BY run_time ASC
-                ) AS top_agents_run_on_problem
+                        'version_num', version_num,
+                        'evaluation_run_time', evaluation_run_time
+                    ) ORDER BY evaluation_run_time ASC
+                ) AS fastest_agents
             FROM (
                 SELECT
-                    erh.problem_name,
+                    er.problem_name,
                     a.agent_id,
                     a.name,
                     a.version_num,
-                    EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) AS run_time,
-                    ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC) AS time_rank
-                FROM evaluation_runs_hydrated erh
-                    JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+                    MIN(EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at))) AS evaluation_run_time,
+                    ROW_NUMBER() OVER (PARTITION BY er.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at))) ASC) AS evaluation_run_time_rank
+                FROM evaluation_runs er
+                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
-                WHERE erh.status = 'finished'
-                    AND erh.finished_or_errored_at IS NOT NULL
-                    AND erh.created_at IS NOT NULL
+                WHERE er.status = 'finished'
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-            ) ranked_agents
-            WHERE time_rank <= 5
+                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                GROUP BY er.problem_name, a.agent_id
+            )
+            WHERE evaluation_run_time_rank <= 5
             GROUP BY problem_name
         )
         SELECT 
-            ms.*,
-            esa.error_code_distribution,
-            ts.token_distribution,
-            ta.top_agents_run_on_problem
-        FROM main_stats ms 
-        LEFT JOIN error_stats esa ON ms.problem_name = esa.problem_name
-        LEFT JOIN token_stats ts ON ms.problem_name = ts.problem_name
-        LEFT JOIN top_agents_stats ta ON ms.problem_name = ta.problem_name;
+            s.*,
+            COALESCE(ecds.error_code_distribution, '[]') AS error_code_distribution,
+            COALESCE(tdss.token_distribution, '[]') AS token_distribution,
+            COALESCE(fas.fastest_agents, '[]') AS fastest_agents
+        FROM stats s
+        LEFT JOIN error_code_distribution_stats ecds ON s.problem_name = ecds.problem_name
+        LEFT JOIN token_distribution_stats tdss ON s.problem_name = tdss.problem_name
+        LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name;
         """
     )
 
-    problem_stats = [ProblemInfo(**row) for row in rows]
-    problem_set_id = await get_latest_set_id()
-    problem_set_created_at = await get_latest_set_created_at()
+    problem_stats = [ProblemStatistics(**row) for row in rows]
 
     evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
     for evaluation_set_problem in evaluation_set_problems:
         if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
-            problem_stats.append(ProblemInfo(
+            problem_stats.append(ProblemStatistics(
                 problem_name=evaluation_set_problem.problem_name,
-                total_num_evaluation_runs=0,
-                num_finished_evaluation_runs=0,
-                num_finished_passed_evaluation_runs=0,
-                num_finished_failed_evaluation_runs=0,
-                num_errored_evaluation_runs=0,
-                error_code_distribution=[],
-                token_distribution=[],
-                top_agents_run_on_problem=[],
-                pass_rate=None,
-                average_time=None,
-                average_cost_usd=None,
+
                 in_screener_1_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1 for _evaluation_set_problem in evaluation_set_problems),
                 in_screener_2_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2 for _evaluation_set_problem in evaluation_set_problems),
                 in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
             ))
 
-    return ProblemStatistics(
-        problem_set_id=problem_set_id,
-        problem_set_created_at=problem_set_created_at,
-        problems=problem_stats
-    )
+    return problem_stats

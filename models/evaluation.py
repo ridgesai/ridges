@@ -13,18 +13,22 @@ class EvaluationStatus(str, Enum):
     running = 'running'
     failure = 'failure'
 
+
+
 class Evaluation(BaseModel):
     evaluation_id: UUID
     agent_id: UUID
     validator_hotkey: str
     set_id: int
+    evaluation_set_group: EvaluationSetGroup
     created_at: datetime
     finished_at: Optional[datetime] = None
-    evaluation_set_group: EvaluationSetGroup
+
+class EvaluationWithRuns(Evaluation):
+    runs: list[EvaluationRun]
+
+
 
 class HydratedEvaluation(Evaluation):
     status: EvaluationStatus
     score: float
-
-class EvaluationWithRuns(Evaluation):
-    runs: list[EvaluationRun]
