@@ -77,7 +77,10 @@ async def set_weights_loop():
     while True:
         weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
         
-        await set_weights_from_mapping(weights_mapping)
+        try:
+            await asyncio.wait_for(set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS)
+        except asyncio.TimeoutError as e:
+            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
