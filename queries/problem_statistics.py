@@ -25,7 +25,8 @@ class ProblemStatisticsErrorCodeInfo(BaseModel):
 
 class ProblemStatisticsTokenInfo(BaseModel):
     model: str
-    num_tokens: int
+    num_input_tokens: int
+    num_output_tokens: int
 
 class ProblemStatisticsFastestAgentInfo(BaseModel):
     name: str
@@ -148,13 +149,14 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('model', model, 'num_tokens', num_tokens)
+                    jsonb_build_object('model', model, 'num_input_tokens', num_input_tokens, 'num_output_tokens', num_output_tokens)
                 ) AS token_distribution
             FROM (
                 SELECT
                     er.problem_name,
                     i.model,
-                    COALESCE(SUM(i.num_input_tokens), 0) AS num_tokens
+                    COALESCE(SUM(i.num_input_tokens), 0) AS num_input_tokens,
+                    COALESCE(SUM(i.num_output_tokens), 0) AS num_output_tokens
                 FROM evaluation_runs er
                     JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id 
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
