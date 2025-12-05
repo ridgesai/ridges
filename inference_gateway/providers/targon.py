@@ -28,7 +28,7 @@ class WhitelistedTargonModel(BaseModel):
 WHITELISTED_TARGON_INFERENCE_MODELS = [
     WhitelistedTargonModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
     WhitelistedTargonModel(name="zai-org/GLM-4.5-FP8", targon_name="zai-org/GLM-4.5"),
-    WhitelistedTargonModel(name="deepseek-ai/DeepSeek-V3-0324", targon_name="deepseek-ai/DeepSeek-V3"),
+    WhitelistedTargonModel(name="deepseek-ai/DeepSeek-V3-0324", targon_name="deepseek-ai/DeepSeek-V3-0324"),
     WhitelistedTargonModel(name="moonshotai/Kimi-K2-Instruct", targon_name="moonshotai/Kimi-K2-Thinking"),
     WhitelistedTargonModel(name="zai-org/GLM-4.6-FP8", targon_name="zai-org/GLM-4.6")
 ]
@@ -123,7 +123,8 @@ class TargonProvider(Provider):
 
         self.targon_client = AsyncOpenAI(
             base_url=config.TARGON_BASE_URL,
-            api_key=config.TARGON_API_KEY
+            api_key=config.TARGON_API_KEY,
+            timeout=120.0
         )
 
 
@@ -148,6 +149,7 @@ class TargonProvider(Provider):
                 messages=messages,
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
+                max_tokens=4096,
                 stream=False
             )
 
