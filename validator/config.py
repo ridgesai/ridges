@@ -134,10 +134,12 @@ UPDATE_AUTOMATICALLY = UPDATE_AUTOMATICALLY.lower() == "true"
 
 
 logger.info("=== Validator Configuration ===")
+
 logger.info(f"Network ID: {NETUID}")
 logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
 logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
 logger.info("-------------------------------")
+
 logger.info(f"Mode: {MODE}")
 if MODE == "validator":
     logger.info(f"Validator Wallet Name: {VALIDATOR_WALLET_NAME}")
@@ -146,14 +148,17 @@ if MODE == "validator":
 elif MODE == "screener":
     logger.info(f"Screener Name: {SCREENER_NAME}")
 logger.info("-------------------------------")
+
 logger.info(f"Ridges Platform URL: {RIDGES_PLATFORM_URL}")
 logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
+
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Timeout: {SET_WEIGHTS_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
 logger.info("-------------------------------")
+
 if SIMULATE_EVALUATION_RUNS:
     logger.warning("Simulating Evaluation Runs!")
 else:
@@ -162,8 +167,10 @@ else:
     else:
         logger.info("Not Including Solutions")
 logger.info("-------------------------------")
+
 if UPDATE_AUTOMATICALLY:
     logger.info("Updating Automatically")
 else:
-    logger.warning("Not Updating Automatically")
+    logger.warning("Not Updating Automatically!")
+
 logger.info("===============================")

@@ -5,12 +5,10 @@ from dotenv import load_dotenv
 
 
 
-# Load everything from .env
 load_dotenv()
 
 
 
-# Load host and port
 HOST = os.getenv("HOST")
 if not HOST:
     logger.fatal("HOST is not set in .env")
@@ -22,7 +20,6 @@ PORT = int(PORT)
 
 
 
-# Load database configuration
 USE_DATABASE = os.getenv("USE_DATABASE")
 if not USE_DATABASE:
     logger.fatal("USE_DATABASE is not set in .env")
@@ -50,8 +47,6 @@ if USE_DATABASE:
     if not DATABASE_NAME:
         logger.fatal("DATABASE_NAME is not set in .env")
 
-
-
     CHECK_EVALUATION_RUNS = os.getenv("CHECK_EVALUATION_RUNS")
     if not CHECK_EVALUATION_RUNS:
         logger.fatal("CHECK_EVALUATION_RUNS is not set in .env")
@@ -59,7 +54,6 @@ if USE_DATABASE:
 
 
 
-# Load evaluation run configuration
 MAX_COST_PER_EVALUATION_RUN_USD = os.getenv("MAX_COST_PER_EVALUATION_RUN_USD")
 if not MAX_COST_PER_EVALUATION_RUN_USD:
     logger.fatal("MAX_COST_PER_EVALUATION_RUN_USD is not set in .env")
@@ -67,7 +61,6 @@ MAX_COST_PER_EVALUATION_RUN_USD = float(MAX_COST_PER_EVALUATION_RUN_USD)
 
 
 
-# Load Chutes configuration
 USE_CHUTES = os.getenv("USE_CHUTES")
 if not USE_CHUTES:
     logger.fatal("USE_CHUTES is not set in .env")
@@ -93,7 +86,6 @@ if USE_CHUTES:
 
 
 
-# Load Targon configuration
 USE_TARGON = os.getenv("USE_TARGON")
 if not USE_TARGON:
     logger.fatal("USE_TARGON is not set in .env")
@@ -132,32 +124,35 @@ TEST_EMBEDDING_MODELS = TEST_EMBEDDING_MODELS.lower() == "true"
 
 
 
-# Print out the configuration
 logger.info("=== Inference Gateway Configuration ===")
+
 logger.info(f"Host: {HOST}")
 logger.info(f"Port: {PORT}")
+logger.info("---------------------------------------")
+
 if USE_DATABASE:
-    logger.info("---------------------------------------")
     logger.info(f"Database Username: {DATABASE_USERNAME}")
     logger.info(f"Database Host: {DATABASE_HOST}")
     logger.info(f"Database Port: {DATABASE_PORT}")
     logger.info(f"Database Name: {DATABASE_NAME}")
     if not CHECK_EVALUATION_RUNS:
-        logger.info("---------------------------------------")
-        logger.warning("Not Checking Evaluation Runs")
-logger.info("---------------------------------------")
+        logger.warning("Not Checking Evaluation Runs!")
+    logger.info("---------------------------------------")
+
 if USE_CHUTES:
     logger.info("Using Chutes")
     logger.info(f"Chutes Inference Base URL: {CHUTES_INFERENCE_BASE_URL}")
     logger.info(f"Chutes Embedding Base URL: {CHUTES_EMBEDDING_BASE_URL}")
     logger.info(f"Chutes Weight: {CHUTES_WEIGHT}")
 else:
-    logger.warning("Not Using Chutes")
+    logger.warning("Not Using Chutes!")
 logger.info("---------------------------------------")
+
 if USE_TARGON:
     logger.info("Using Targon")
     logger.info(f"Targon Base URL: {TARGON_BASE_URL}")
     logger.info(f"Targon Weight: {TARGON_WEIGHT}")
 else:
-    logger.warning("Not Using Targon")
+    logger.warning("Not Using Targon!")
+
 logger.info("=======================================")

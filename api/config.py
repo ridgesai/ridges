@@ -51,6 +51,16 @@ if not BURN:
     logger.fatal("BURN is not set in .env")
 BURN = BURN.lower() == "true"
 
+DISALLOW_UPLOADS = os.getenv("DISALLOW_UPLOADS")
+if not DISALLOW_UPLOADS:
+    logger.fatal("DISALLOW_UPLOADS is not set in .env")
+DISALLOW_UPLOADS = DISALLOW_UPLOADS.lower() == "true"
+
+if DISALLOW_UPLOADS:
+    DISALLOW_UPLOADS_REASON = os.getenv("DISALLOW_UPLOADS_REASON")
+    if not DISALLOW_UPLOADS_REASON:
+        logger.fatal("DISALLOW_UPLOADS_REASON is not set in .env")
+
 
 
 # Load the environment configuration
@@ -175,38 +185,55 @@ NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
 
 logger.info("=== API Configuration ===")
+
 logger.info(f"Host: {HOST}")
 logger.info(f"Port: {PORT}")
 logger.info("-------------------------")
+
 logger.info(f"Network ID: {NETUID}")
 logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
 logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
 logger.info(f"Owner Hotkey: {OWNER_HOTKEY}")
-if BURN:
-    logger.warning("Burning")
 logger.info("-------------------------")
+
+if BURN:
+    logger.warning("Burning!")
+    logger.info("-------------------------")
+
+if DISALLOW_UPLOADS:
+    logger.warning(f"Disallowing Uploads: {DISALLOW_UPLOADS_REASON}")
+    logger.info("-------------------------")
+
 logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
 logger.info("-------------------------")
+
 logger.info(f"AWS Region: {AWS_REGION}")
 logger.info("-------------------------")
+
 logger.info(f"S3 Bucket Name: {S3_BUCKET_NAME}")
 logger.info("-------------------------")
+
 logger.info(f"Database Username: {DATABASE_USERNAME}")
 logger.info(f"Database Host: {DATABASE_HOST}")
 logger.info(f"Database Port: {DATABASE_PORT}")
 logger.info(f"Database Name: {DATABASE_NAME}")
 logger.info("-------------------------")
+
 logger.info(f"Screener 1 Threshold: {SCREENER_1_THRESHOLD}")
 logger.info(f"Screener 2 Threshold: {SCREENER_2_THRESHOLD}")
 logger.info(f"Prune Threshold: {PRUNE_THRESHOLD}")
 logger.info("-------------------------")
+
 logger.info(f"Validator Heartbeat Timeout: {VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Heartbeat Timeout Interval: {VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS} second(s)")
 logger.info("-------------------------")
+
 logger.info(f"Validator Running Agent Timeout: {VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Running Evaluation Timeout: {VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Validator Max Evaluation Run Log Size: {VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES} byte(s)")
 logger.info("-------------------------")
+
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
+
 logger.info("=========================")
