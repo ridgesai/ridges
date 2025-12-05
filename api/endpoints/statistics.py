@@ -5,8 +5,8 @@ from typing import List
 from fastapi import APIRouter
 from pydantic import BaseModel
 from utils.ttl import ttl_cache
-from queries.problem_statistics import ProblemStatistics, get_problem_statistics
 from queries.evaluation_set import get_latest_set_id, get_latest_set_created_at
+from queries.problem_statistics import ProblemStatistics, get_problem_statistics
 
 
 
