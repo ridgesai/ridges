@@ -27,7 +27,6 @@ def run_tests():
     tests_spec.loader.exec_module(tests_module)
     print("[POLYGLOT_TEST_RUNNER] Loaded tests.py")
     
-    # Find test class (should inherit from unittest.TestCase)
     test_class = None
     for name in dir(tests_module):
         obj = getattr(tests_module, name)
@@ -40,7 +39,6 @@ def run_tests():
     
     print(f"[POLYGLOT_TEST_RUNNER] Found test class: {test_class.__name__}")
     
-    # Get test methods
     test_methods = [method for method in dir(test_class) if method.startswith("test_")]
     print(f"[POLYGLOT_TEST_RUNNER] Found {len(test_methods)} test methods")
     
@@ -53,7 +51,6 @@ def run_tests():
     total_tests = len(test_results)
     test_instance = test_class()
     
-    # Run tests with progress tracking and early exit
     for test_index, test_result in enumerate(test_results, 1):
         method_name = test_result["name"]
         
@@ -66,7 +63,7 @@ def run_tests():
         except Exception as e:
             print(f"[POLYGLOT_TEST_RUNNER] {method_name}: FAILED - {e}")
             test_result["status"] = "fail"
-            break
+            # break
     
     return test_results
 
