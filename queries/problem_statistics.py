@@ -40,6 +40,7 @@ class TestStatistics(BaseModel):
     test_name: str
     num_passed: int
     total_runs: int
+    category: str
 
 class ProblemStatistics(BaseModel):
     problem_name: str
@@ -92,6 +93,20 @@ class ProblemStatistics(BaseModel):
 
 @db_operation
 async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
+    """
+    We got the last skipped date using the query below:
+
+    SELECT MAX(er.created_at) as last_skip_run_datetime
+    FROM evaluation_runs er 
+        JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
+        JOIN agents a ON a.agent_id = e.agent_id
+        CROSS JOIN jsonb_array_elements(er.test_results) as test_data
+    WHERE er.status = 'finished'
+        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+        AND test_data->>'status' = 'skip';
+    """
     rows = await conn.fetch(
         """
         WITH stats AS (
@@ -130,6 +145,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                AND erh.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500' -- TODO: This is the last skipped test run. Hardcoded since this never changes, and this will be removed in a new problem set anyways
             GROUP BY erh.problem_name
         ),
         error_code_distribution_stats AS (
@@ -150,6 +166,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY er.problem_name, er.error_code
             )
             GROUP BY problem_name
@@ -173,6 +190,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY er.problem_name, i.model
             )
             GROUP BY problem_name
@@ -208,6 +226,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND erh.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY erh.problem_name, a.agent_id
             )
             WHERE evaluation_run_time_rank <= 5
@@ -220,13 +239,15 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     jsonb_build_object(
                         'test_name', test_name,
                         'num_passed', num_passed,
-                        'total_runs', total_runs
+                        'total_runs', total_runs,
+                        'category', category
                     )
                 ) AS test_details
             FROM (
                 SELECT 
                     er.problem_name,
                     test_data->>'name' AS test_name,
+                    test_data->>'category' AS category,
                     COUNT(*) FILTER (WHERE test_data->>'status' = 'pass') AS num_passed,
                     COUNT(*) AS total_runs
                 FROM 
@@ -239,8 +260,9 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY 
-                    er.problem_name, test_data->>'name'
+                    er.problem_name, test_name, category
             ) AS test_stats
             GROUP BY problem_name
         )
