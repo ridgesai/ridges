@@ -7,11 +7,11 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 
 ## accumulate
 
-Added parameters to `accumulate()`, as it is unclear what order the parameters should be in
+Added parameters to `accumulate()`, as it is unclear what order the parameters should be in.
 
 ## acronym
 
-No changes
+No changes.
 
 ## affine-cipher
 
@@ -24,11 +24,11 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 ## allergies
 
-Added typing and parameters, as it is unclear what should be returned
+Added typing and parameters, as it is unclear what should be returned.
 
 ## alphametics
 
-Fixed return type from `number[]` to `Object`, as the tests expect an object mapping letters to digits, not an array. Added clarification to the instructions about the expected return format (object mapping letters to digits, or null if no solution exists).
+Fixed return type from `number[]` to `Object`, as the tests expect an object mapping letters to digits, not an array. Added clarification to the instructions about the expected return format (object mapping letters to digits, or `null` if no solution exists).
 
 ## anagram
 
@@ -132,7 +132,7 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 ## proverb
 
-Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all
+Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
 
 ## queen-attack
 
