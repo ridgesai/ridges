@@ -5,9 +5,26 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 <br>
 <br>
 
+## accumulate
+
+Added parameters to `accumulate()`, as it is unclear what order the parameters should be in
+
+## acronym
+
+No changes
+
 ## affine-cipher
 
 Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## all-your-base
+
+Added typing to `convert()`, as it is unclear what order the parameters should be in.
+The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
+
+## allergies
+
+Added typing and parameters, as it is unclear what should be returned
 
 ## beer-song
 

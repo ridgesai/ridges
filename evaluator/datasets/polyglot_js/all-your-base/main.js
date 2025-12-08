@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const convert = () => {
+/**
+ * @param {number[]} array 
+ * @param {number} inputBase 
+ * @param {number} outputBase 
+ */
+export const convert = (array, inputBase, outputBase) => {
   throw new Error('Remove this line and implement the function');
 };

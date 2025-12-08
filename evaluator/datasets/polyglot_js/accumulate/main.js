@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const accumulate = () => {
+/**
+ * @param {any[]} list 
+ * @param {(any) => any} accumulator 
+ */
+export const accumulate = (list, accumulator) => {
   throw new Error('Remove this line and implement the function');
 };

@@ -5,9 +5,25 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 <br>
 <br>
 
+## accumulate
+
+No changes
+
+## acronym
+
+No changes
+
 ## affine-cipher
 
 Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## all-your-base
+
+No changes 
+
+## allergies
+
+No changes 
 
 ## beer-song
 
