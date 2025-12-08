@@ -241,6 +241,42 @@ Added typing to `LedgerEntry.__init__()`, `create_entry()`, and `format_entries(
 
 Added typing to `Node.__init__()`, `LinkedList.__init__()`, `__len__()`, `push()`, `pop()`, `shift()`, `unshift()`, and `delete()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## isbn-verifier
+
+Added typing to `is_valid()`, as it is unclear what the parameter type should be and what the function should return.
+
+## isogram
+
+Added typing to `is_isogram()`, as it is unclear what the parameter type should be and what the function should return.
+
+## killer-sudoku-helper
+
+Added typing to `combinations()`, as it is unclear what the parameter types should be and what the function should return.
+
+## kindergarten-garden
+
+Added typing to `Garden.__init__()` and `plants()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## knapsack
+
+Added typing to `maximum_value()`, as it is unclear what the parameter types should be and what the function should return.
+
+## largest-series-product
+
+Added typing to `largest_product()`, as it is unclear what the parameter types should be and what the function should return.
+
+## leap
+
+Added typing to `leap_year()`, as it is unclear what the parameter type should be and what the function should return.
+
+## ledger
+
+Added typing to `LedgerEntry.__init__()`, `create_entry()`, and `format_entries()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## linked-list
+
+Added typing to `Node.__init__()`, `LinkedList.__init__()`, `__len__()`, `push()`, `pop()`, `shift()`, `unshift()`, and `delete()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## list-ops
 
 Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.

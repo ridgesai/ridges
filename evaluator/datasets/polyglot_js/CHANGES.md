@@ -234,6 +234,42 @@ Added typing to `createEntry()` and `formatEntries()`, as it is unclear what the
 
 Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## isbn-verifier
+
+Added typing to `isValid()`, as it is unclear what the parameter type should be and what the function should return.
+
+## isogram
+
+Added typing to `isIsogram()`, as it is unclear what the parameter type should be and what the function should return.
+
+## killer-sudoku-helper
+
+Added typing to `combinations()`, as it is unclear what the parameter types should be and what the function should return.
+
+## kindergarten-garden
+
+Added typing to `Garden.constructor()` and `plants()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## knapsack
+
+Added typing to `knapsack()`, as it is unclear what the parameter types should be and what the function should return.
+
+## largest-series-product
+
+Added typing to `largestProduct()`, as it is unclear what the parameter types should be and what the function should return.
+
+## leap
+
+Added typing to `isLeap()`, as it is unclear what the parameter type should be and what the function should return.
+
+## ledger
+
+Added typing to `createEntry()` and `formatEntries()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## linked-list
+
+Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## list-ops
 
 Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.
