@@ -7,11 +7,11 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 
 ## accumulate
 
-No changes
+No changes.
 
 ## acronym
 
-No changes
+No changes.
 
 ## affine-cipher
 
@@ -19,11 +19,11 @@ Added typing to `encode()` and `decode()`, as it is unclear what types the param
 
 ## all-your-base
 
-No changes 
+No changes.
 
 ## allergies
 
-No changes 
+No changes.
 
 ## alphametics
 
