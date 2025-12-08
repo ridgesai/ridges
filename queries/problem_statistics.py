@@ -36,6 +36,11 @@ class ProblemStatisticsFastestAgentInfo(BaseModel):
     evaluation_id: UUID
     evaluation_run_id: UUID
 
+class TestStatistics(BaseModel):
+    test_name: str
+    num_passed: int
+    total_runs: int
+
 class ProblemStatistics(BaseModel):
     problem_name: str
     problem_suite_name: Optional[ProblemSuiteName] = None
@@ -58,6 +63,7 @@ class ProblemStatistics(BaseModel):
     error_code_distribution: List[ProblemStatisticsErrorCodeInfo] = []
     token_distribution: List[ProblemStatisticsTokenInfo] = []
     fastest_agents: List[ProblemStatisticsFastestAgentInfo] = []
+    test_statistics: List[TestStatistics] = []
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
@@ -76,6 +82,9 @@ class ProblemStatistics(BaseModel):
 
         if "fastest_agents" in data:
             data["fastest_agents"] = [ProblemStatisticsFastestAgentInfo(**item) for item in json.loads(data["fastest_agents"])]
+
+        if "test_statistics" in data:
+            data["test_statistics"] = [TestStatistics(**item) for item in json.loads(data["test_statistics"])]
 
         super().__init__(**data)
 
@@ -203,16 +212,49 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             )
             WHERE evaluation_run_time_rank <= 5
             GROUP BY problem_name
+        ),
+        test_stats AS ( 
+            SELECT 
+                problem_name,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'test_name', test_name,
+                        'num_passed', num_passed,
+                        'total_runs', total_runs
+                    )
+                ) AS test_details
+            FROM (
+                SELECT 
+                    er.problem_name,
+                    test_data->>'name' AS test_name,
+                    COUNT(*) FILTER (WHERE test_data->>'status' = 'pass') AS num_passed,
+                    COUNT(*) AS total_runs
+                FROM 
+                    evaluation_runs er 
+                    CROSS JOIN jsonb_array_elements(er.test_results) test_data 
+                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
+                    JOIN agents a ON a.agent_id = e.agent_id  
+                WHERE 
+                    er.status = 'finished'
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                GROUP BY 
+                    er.problem_name, test_data->>'name'
+            ) AS test_stats
+            GROUP BY problem_name
         )
         SELECT 
             s.*,
             COALESCE(ecds.error_code_distribution, '[]') AS error_code_distribution,
             COALESCE(tdss.token_distribution, '[]') AS token_distribution,
-            COALESCE(fas.fastest_agents, '[]') AS fastest_agents
+            COALESCE(fas.fastest_agents, '[]') AS fastest_agents,
+            COALESCE(ts.test_details, '[]') AS test_statistics
         FROM stats s
         LEFT JOIN error_code_distribution_stats ecds ON s.problem_name = ecds.problem_name
         LEFT JOIN token_distribution_stats tdss ON s.problem_name = tdss.problem_name
-        LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name;
+        LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name
+        LEFT JOIN test_stats ts ON s.problem_name = ts.problem_name;
         """
     )
 
