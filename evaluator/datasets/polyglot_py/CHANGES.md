@@ -209,6 +209,10 @@ Added typing to `recite()`, as it is unclear what the parameter types should be 
 
 Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `map()`, `foldl()`, `foldr()`, `reverse()`), as it is unclear what the parameter types should be and what the functions should return. Added comments to `foldl()` and `foldr()` clarifying the function signature should be `function(acc, el)`, as the instructions mention argument ordering is significant but don't specify what that ordering is.
 
+## luhn
+
+Added typing to `Luhn.__init__()` and `valid()`, as it is unclear what the parameter type should be and what the method should return.
+
 ## ocr-numbers
 
 Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, separated by newlines.

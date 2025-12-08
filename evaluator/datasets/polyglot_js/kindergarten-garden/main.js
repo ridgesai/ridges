@@ -26,10 +26,18 @@ const PLANT_CODES = {
 };
 
 export class Garden {
+  /**
+   * @param {string} diagram
+   * @param {string[]} students
+   */
   constructor(diagram, students = DEFAULT_STUDENTS) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @param {string} student
+   * @returns {string[]}
+   */
   plants(student) {
     throw new Error('Remove this line and implement the function');
   }

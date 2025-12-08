@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} maximumWeight
+ * @param {{weight: number, value: number}[]} items
+ * @returns {number}
+ */
 export const knapsack = (maximumWeight, items) => {
   throw new Error('Remove this line and implement the function');
 };

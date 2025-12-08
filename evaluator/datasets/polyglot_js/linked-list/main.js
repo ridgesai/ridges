@@ -4,26 +4,47 @@
 //
 
 export class LinkedList {
-  push() {
+  /**
+   * @param {*} value
+   * @returns {void}
+   */
+  push(value) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {*}
+   */
   pop() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {*}
+   */
   shift() {
     throw new Error('Remove this line and implement the function');
   }
 
-  unshift() {
+  /**
+   * @param {*} value
+   * @returns {void}
+   */
+  unshift(value) {
     throw new Error('Remove this line and implement the function');
   }
 
-  delete() {
+  /**
+   * @param {*} value
+   * @returns {void}
+   */
+  delete(value) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   count() {
     throw new Error('Remove this line and implement the function');
   }

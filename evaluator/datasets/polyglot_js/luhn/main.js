@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const valid = () => {
+/**
+ * @param {string} number
+ * @returns {boolean}
+ */
+export const valid = (number) => {
   throw new Error('Remove this line and implement the function');
 };

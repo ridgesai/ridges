@@ -6,6 +6,12 @@ class LedgerEntry {
   }
 }
 
+/**
+ * @param {string} date
+ * @param {string} description
+ * @param {number} change
+ * @returns {LedgerEntry}
+ */
 export function createEntry(date, description, change) {
   let entry = new LedgerEntry();
   entry.date = new Date(date);
@@ -14,6 +20,12 @@ export function createEntry(date, description, change) {
   return entry;
 }
 
+/**
+ * @param {string} currency
+ * @param {string} locale
+ * @param {LedgerEntry[]} entries
+ * @returns {string}
+ */
 export function formatEntries(currency, locale, entries) {
   let table = '';
   if (locale === 'en-US') {
