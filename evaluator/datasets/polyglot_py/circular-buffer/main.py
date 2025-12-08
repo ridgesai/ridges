@@ -4,7 +4,7 @@ class BufferFullException(BufferError):
     message: explanation of the error.
 
     """
-    def __init__(self, message):
+    def __init__(self, message: str):
         pass
 
 
@@ -14,22 +14,22 @@ class BufferEmptyException(BufferError):
     message: explanation of the error.
 
     """
-    def __init__(self, message):
+    def __init__(self, message: str):
         pass
 
 
 class CircularBuffer:
-    def __init__(self, capacity):
+    def __init__(self, capacity: int):
         pass
 
-    def read(self):
+    def read(self) -> str:
         pass
 
-    def write(self, data):
+    def write(self, data: str) -> None:
         pass
 
-    def overwrite(self, data):
+    def overwrite(self, data: str) -> None:
         pass
 
-    def clear(self):
+    def clear(self) -> None:
         pass

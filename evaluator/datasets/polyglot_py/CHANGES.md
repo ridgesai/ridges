@@ -77,6 +77,14 @@ Added typing to `recite()`, as it is unclear whether the function should return 
 
 No changes. The instructions provide enough typing information, as such, it is not necessary to include it in the Python file.
 
+## change
+
+Added typing to `find_fewest_coins()`, as it is unclear what the parameter types should be and what the function should return.
+
+## circular-buffer
+
+Added typing to `BufferFullException.__init__()`, `BufferEmptyException.__init__()`, `CircularBuffer.__init__()`, `read()`, `write()`, `overwrite()`, and `clear()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## connect
 
 Added typing to `__init__()` and `get_winner()`, as it is unclear what type the board representation should be and what format the winner should be returned in. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.

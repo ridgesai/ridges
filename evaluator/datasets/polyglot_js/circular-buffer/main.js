@@ -4,19 +4,31 @@
 //
 
 class CircularBuffer {
-  constructor() {
+  /**
+   * @param {number} capacity
+   */
+  constructor(capacity) {
     throw new Error('Remove this line and implement the function');
   }
 
-  write() {
+  /**
+   * @param {*} value
+   */
+  write(value) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {*}
+   */
   read() {
     throw new Error('Remove this line and implement the function');
   }
 
-  forceWrite() {
+  /**
+   * @param {*} value
+   */
+  forceWrite(value) {
     throw new Error('Remove this line and implement the function');
   }
 
