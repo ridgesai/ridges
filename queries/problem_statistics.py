@@ -14,10 +14,22 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 
+class ProblemStatisticsFastestAgentInfo(BaseModel):
+    name: str
+    agent_id: UUID
+    version_num: int
+    evaluation_run_time: float
+    evaluation_id: UUID
+    evaluation_run_id: UUID
+
+class ErrorInfo(ProblemStatisticsFastestAgentInfo):
+    error_message: str
+
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
     description: str
     num_errors: int
+    recent_error_info: List[ErrorInfo] = []
 
     def __init__(self, **data):
         data["description"] = EvaluationRunErrorCode(data["error_code"]).get_error_message()
@@ -28,13 +40,11 @@ class ProblemStatisticsTokenInfo(BaseModel):
     num_input_tokens: int
     num_output_tokens: int
 
-class ProblemStatisticsFastestAgentInfo(BaseModel):
-    name: str
-    agent_id: UUID
-    version_num: int
-    evaluation_run_time: float
-    evaluation_id: UUID
-    evaluation_run_id: UUID
+class TestStatistics(BaseModel):
+    test_name: str
+    num_passed: int
+    total_runs: int
+    category: str
 
 class ProblemStatistics(BaseModel):
     problem_name: str
@@ -58,6 +68,7 @@ class ProblemStatistics(BaseModel):
     error_code_distribution: List[ProblemStatisticsErrorCodeInfo] = []
     token_distribution: List[ProblemStatisticsTokenInfo] = []
     fastest_agents: List[ProblemStatisticsFastestAgentInfo] = []
+    test_statistics: List[TestStatistics] = []
 
     def __init__(self, **data):
         problem_name = data["problem_name"]
@@ -77,12 +88,29 @@ class ProblemStatistics(BaseModel):
         if "fastest_agents" in data:
             data["fastest_agents"] = [ProblemStatisticsFastestAgentInfo(**item) for item in json.loads(data["fastest_agents"])]
 
+        if "test_statistics" in data:
+            data["test_statistics"] = [TestStatistics(**item) for item in json.loads(data["test_statistics"])]
+
         super().__init__(**data)
 
 
 
 @db_operation
 async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
+    """
+    We got the last skipped date using the query below:
+
+    SELECT MAX(er.created_at) as last_skip_run_datetime
+    FROM evaluation_runs er 
+        JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
+        JOIN agents a ON a.agent_id = e.agent_id
+        CROSS JOIN jsonb_array_elements(er.test_results) as test_data
+    WHERE er.status = 'finished'
+        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+        AND test_data->>'status' = 'skip';
+    """
     rows = await conn.fetch(
         """
         WITH stats AS (
@@ -121,27 +149,61 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                AND erh.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500' -- TODO: This is the last skipped test run. Hardcoded since this never changes, and this will be removed in a new problem set anyways
             GROUP BY erh.problem_name
         ),
         error_code_distribution_stats AS (
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
+                    jsonb_build_object(
+                        'error_code', error_code,
+                        'num_errors', num_errors,
+                        'recent_error_info', recent_error_info
+                    )
                 ) AS error_code_distribution
             FROM (
                 SELECT
-                    er.problem_name,
-                    er.error_code,
-                    COUNT(*) AS num_errors
-                FROM evaluation_runs er
-                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
-                    JOIN agents a on e.agent_id = a.agent_id
-                WHERE er.error_code IS NOT NULL
-                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                GROUP BY er.problem_name, er.error_code
+                    problem_name,
+                    error_code,
+                    COUNT(*) AS num_errors,
+                    json_agg(
+                        jsonb_build_object(
+                            'name', name,
+                            'agent_id', agent_id,
+                            'version_num', version_num,
+                            'evaluation_run_time', evaluation_run_time,
+                            'evaluation_id', evaluation_id,
+                            'evaluation_run_id', evaluation_run_id,
+                            'error_message', error_message
+                        ) ORDER BY finished_or_errored_at DESC
+                    ) FILTER (WHERE recent_run_rank <= 5 AND error_message IS NOT NULL) AS recent_error_info
+                FROM (
+                    SELECT
+                        er.problem_name,
+                        er.error_code,
+                        a.name,
+                        a.agent_id,
+                        a.version_num,
+                        EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
+                        er.evaluation_id,
+                        er.evaluation_run_id,
+                        er.error_message,
+                        er.finished_or_errored_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY er.problem_name, er.error_code
+                            ORDER BY er.finished_or_errored_at DESC
+                        ) AS recent_run_rank
+                    FROM evaluation_runs er
+                        JOIN evaluations e ON er.evaluation_id = e.evaluation_id
+                        JOIN agents a ON e.agent_id = a.agent_id
+                    WHERE er.error_code IS NOT NULL
+                        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                        AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                        AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
+                ) ranked_errors
+                GROUP BY problem_name, error_code
             )
             GROUP BY problem_name
         ),
@@ -164,6 +226,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY er.problem_name, i.model
             )
             GROUP BY problem_name
@@ -199,20 +262,57 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND erh.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
                 GROUP BY erh.problem_name, a.agent_id
             )
             WHERE evaluation_run_time_rank <= 5
+            GROUP BY problem_name
+        ),
+        test_stats AS ( 
+            SELECT 
+                problem_name,
+                jsonb_agg(
+                    jsonb_build_object(
+                        'test_name', test_name,
+                        'num_passed', num_passed,
+                        'total_runs', total_runs,
+                        'category', category
+                    )
+                ) AS test_details
+            FROM (
+                SELECT 
+                    er.problem_name,
+                    test_data->>'name' AS test_name,
+                    test_data->>'category' AS category,
+                    COUNT(*) FILTER (WHERE test_data->>'status' = 'pass') AS num_passed,
+                    COUNT(*) AS total_runs
+                FROM 
+                    evaluation_runs er 
+                    CROSS JOIN jsonb_array_elements(er.test_results) test_data 
+                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
+                    JOIN agents a ON a.agent_id = e.agent_id  
+                WHERE 
+                    er.status = 'finished'
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
+                GROUP BY 
+                    er.problem_name, test_name, category
+            ) AS test_stats
             GROUP BY problem_name
         )
         SELECT 
             s.*,
             COALESCE(ecds.error_code_distribution, '[]') AS error_code_distribution,
             COALESCE(tdss.token_distribution, '[]') AS token_distribution,
-            COALESCE(fas.fastest_agents, '[]') AS fastest_agents
+            COALESCE(fas.fastest_agents, '[]') AS fastest_agents,
+            COALESCE(ts.test_details, '[]') AS test_statistics
         FROM stats s
         LEFT JOIN error_code_distribution_stats ecds ON s.problem_name = ecds.problem_name
         LEFT JOIN token_distribution_stats tdss ON s.problem_name = tdss.problem_name
-        LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name;
+        LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name
+        LEFT JOIN test_stats ts ON s.problem_name = ts.problem_name;
         """
     )
 
