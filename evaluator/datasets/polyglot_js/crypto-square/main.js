@@ -4,10 +4,16 @@
 //
 
 export class Crypto {
-  constructor() {
+  /**
+   * @param {string} input
+   */
+  constructor(input) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {string}
+   */
   get ciphertext() {
     throw new Error('Remove this line and implement the function');
   }

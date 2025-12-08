@@ -4,6 +4,11 @@
 //
 
 export class Change {
+  /**
+   * @param {number[]} coinArray
+   * @param {number} target
+   * @returns {number[]}
+   */
   calculate(coinArray, target) {
     throw new Error('Remove this line and implement the function');
   }

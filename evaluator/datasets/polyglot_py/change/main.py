@@ -1,2 +1,2 @@
-def find_fewest_coins(coins, target):
+def find_fewest_coins(coins: list[int], target: int) -> list[int]:
     pass

@@ -78,9 +78,37 @@ Added typing to `recite()`, as it is unclear whether the function should return 
 
 No changes. The instructions provide enough typing information, as such, it is not necessary to include it in the JavaScript file.
 
+## change
+
+Added typing to `calculate()`, as it is unclear what the parameter types should be and what the method should return.
+
+## circular-buffer
+
+Added typing to `constructor()`, `write()`, `read()`, `forceWrite()`, and `clear()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## clock
+
+Added typing to `constructor()`, `toString()`, `plus()`, `minus()`, and `equals()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## collatz-conjecture
+
+Added typing to `steps()`, as it is unclear what the parameter type should be and what the function should return.
+
+## complex-numbers
+
+Added typing to `constructor()`, `real`, `imag`, `add()`, `sub()`, `div()`, `mul()`, `abs`, `conj`, and `exp`, as it is unclear what the parameter types should be and what the methods/getters should return.
+
 ## connect
 
 Added typing to the Board `constructor()` and `get_winner()`, as it is unclear what type the board representation should be and what format the winner should be returned in. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## crypto-square
+
+Added typing to `constructor()` and `ciphertext`, as it is unclear what the parameter type should be and what the getter should return.
+
+## custom-set
+
+Added typing to `constructor()`, `empty()`, `contains()`, `add()`, `subset()`, `disjoint()`, `eql()`, `union()`, `intersection()`, and `difference()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## dominoes
 

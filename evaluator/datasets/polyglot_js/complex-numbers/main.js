@@ -4,42 +4,77 @@
 //
 
 export class ComplexNumber {
-  constructor() {
+  /**
+   * @param {number} real
+   * @param {number} imag
+   */
+  constructor(real, imag) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get real() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get imag() {
     throw new Error('Remove this line and implement the function');
   }
 
-  add() {
+  /**
+   * @param {ComplexNumber} other
+   * @returns {ComplexNumber}
+   */
+  add(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  sub() {
+  /**
+   * @param {ComplexNumber} other
+   * @returns {ComplexNumber}
+   */
+  sub(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  div() {
+  /**
+   * @param {ComplexNumber} other
+   * @returns {ComplexNumber}
+   */
+  div(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  mul() {
+  /**
+   * @param {ComplexNumber} other
+   * @returns {ComplexNumber}
+   */
+  mul(other) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get abs() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {ComplexNumber}
+   */
   get conj() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {ComplexNumber}
+   */
   get exp() {
     throw new Error('Remove this line and implement the function');
   }

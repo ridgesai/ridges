@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const steps = () => {
+/**
+ * @param {number} n
+ * @returns {number}
+ */
+export const steps = (n) => {
   throw new Error('Remove this line and implement the function');
 };
