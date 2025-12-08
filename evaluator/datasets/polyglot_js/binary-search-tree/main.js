@@ -4,26 +4,45 @@
 //
 
 export class BinarySearchTree {
-  constructor() {
+  /**
+   * @param {number} data
+   */
+  constructor(data) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {number}
+   */
   get data() {
     throw new Error('Remove this line and implement the function');
   }
+
+  /**
+   * @return {BinarySearchTree}
+   */
   get right() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {BinarySearchTree}
+   */
   get left() {
     throw new Error('Remove this line and implement the function');
   }
 
-  insert() {
+  /**
+   * @param {number} value
+   */
+  insert(value) {
     throw new Error('Remove this line and implement the function');
   }
 
-  each() {
+  /**
+   * @param {Function}
+   */
+  each(fn) {
     throw new Error('Remove this line and implement the function');
   }
 }

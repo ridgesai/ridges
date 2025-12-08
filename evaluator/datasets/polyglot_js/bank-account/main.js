@@ -16,14 +16,23 @@ export class BankAccount {
     throw new Error('Remove this line and implement the function');
   }
 
-  deposit() {
+  /**
+   * @param {number} amount
+   */
+  deposit(amount) {
     throw new Error('Remove this line and implement the function');
   }
 
-  withdraw() {
+  /**
+   * @param {number} amount
+   */
+  withdraw(amount) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @return {number}
+   */
   get balance() {
     throw new Error('Remove this line and implement the function');
   }

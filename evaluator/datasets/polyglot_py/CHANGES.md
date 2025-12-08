@@ -35,7 +35,31 @@ Added typing to `find_anagrams()`, as it is unclear what the parameter types sho
 
 ## armstrong-numbers
 
-Added typing to `is_armstrong_number()`, as it is unclear what the parameter type should be and what the function should return. 
+Added typing to `is_armstrong_number()`, as it is unclear what the parameter type should be and what the function should return.
+
+## atbash-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## bank-account
+
+Added typing to `get_balance()`, `open()`, `deposit()`, `withdraw()`, and `close()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## binary
+
+Added typing to `parse_binary()`, as it is unclear what the parameter type should be and what the function should return.
+
+## binary-search
+
+Added typing to `find()`, as it is unclear what the parameter types should be and what the function should return.
+
+## binary-search-tree
+
+Added typing to `TreeNode.__init__()`, `BinarySearchTree.__init__()`, `data()`, and `sorted_data()`, as it is unclear what the parameter types should be and what the methods should return. 
+
+## bob
+
+Added typing to `response()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## beer-song
 

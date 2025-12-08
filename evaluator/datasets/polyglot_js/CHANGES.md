@@ -38,6 +38,30 @@ Added parameters and typing to `findAnagrams()`, as it is unclear what the param
 
 Added parameter and typing to `isArmstrongNumber()`, as it is unclear what the parameter type should be and what the function should return.
 
+## atbash-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## bank-account
+
+Added typing to `deposit()`, `withdraw()`, and `balance`, as it is unclear what the parameter types should be and what the methods should return.
+
+## binary
+
+Added typing to `constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return (number or null for invalid inputs).
+
+## binary-search
+
+Added typing to `find()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that `"Value not in array"` should be thrown when the value is not found.
+
+## binary-search-tree
+
+Added typing to `constructor()`, `data`, `left`, `right`, `insert()`, and `each()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## bob
+
+Added typing to `hey()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## beer-song
 
 Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, separated by newlines.
