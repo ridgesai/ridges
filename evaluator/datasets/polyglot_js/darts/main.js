@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const score = () => {
+/**
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
+export const score = (x, y) => {
   throw new Error('Remove this line and implement the function');
 };

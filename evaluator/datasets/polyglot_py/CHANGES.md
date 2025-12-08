@@ -109,6 +109,26 @@ Added typing to `cipher_text()`, as it is unclear what the parameter type should
 
 Added typing to `__init__()`, `isempty()`, `__contains__()`, `issubset()`, `isdisjoint()`, `__eq__()`, `add()`, `intersection()`, `__sub__()`, and `__add__()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## darts
+
+Added typing to `score()`, as it is unclear what the parameter types should be and what the function should return.
+
+## diamond
+
+Added typing to `rows()`, as it is unclear what the parameter type should be and what the function should return.
+
+## difference-of-squares
+
+Added typing to `square_of_sum()`, `sum_of_squares()`, and `difference_of_squares()`, as it is unclear what the parameter type should be and what the functions should return.
+
+## diffie-hellman
+
+Added typing to `private_key()`, `public_key()`, and `secret()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## dnd-character
+
+Added typing to `modifier()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## dominoes
 
 Added typing to `can_chain()`.

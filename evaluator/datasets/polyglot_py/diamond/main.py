@@ -1,2 +1,2 @@
-def rows(letter):
+def rows(letter: str) -> list[str]:
     pass

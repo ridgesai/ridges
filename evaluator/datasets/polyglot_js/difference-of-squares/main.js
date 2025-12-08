@@ -4,18 +4,30 @@
 //
 
 export class Squares {
-  constructor() {
+  /**
+   * @param {number} max
+   */
+  constructor(max) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get sumOfSquares() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get squareOfSum() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get difference() {
     throw new Error('Remove this line and implement the function');
   }

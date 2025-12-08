@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const rows = () => {
+/**
+ * @param {string} input
+ * @returns {string[]}
+ */
+export const rows = (input) => {
   throw new Error('Remove this line and implement the function');
 };
