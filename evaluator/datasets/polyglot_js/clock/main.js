@@ -4,23 +4,42 @@
 //
 
 export class Clock {
-  constructor() {
+  /**
+   * @param {number} hour
+   * @param {number} minute
+   */
+  constructor(hour, minute) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {string}
+   */
   toString() {
     throw new Error('Remove this line and implement the function');
   }
 
-  plus() {
+  /**
+   * @param {number} mins
+   * @returns {Clock}
+   */
+  plus(mins) {
     throw new Error('Remove this line and implement the function');
   }
 
-  minus() {
+  /**
+   * @param {number} mins
+   * @returns {Clock}
+   */
+  minus(mins) {
     throw new Error('Remove this line and implement the function');
   }
 
-  equals() {
+  /**
+   * @param {Clock} other
+   * @returns {boolean}
+   */
+  equals(other) {
     throw new Error('Remove this line and implement the function');
   }
 }

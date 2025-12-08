@@ -4,43 +4,81 @@
 //
 
 export class CustomSet {
-  constructor() {
+  /**
+   * @param {Array} data
+   */
+  constructor(data) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {boolean}
+   */
   empty() {
     throw new Error('Remove this line and implement the function');
   }
 
-  contains() {
+  /**
+   * @param {*} el
+   * @returns {boolean}
+   */
+  contains(el) {
     throw new Error('Remove this line and implement the function');
   }
 
-  add() {
+  /**
+   * @param {*} el
+   * @returns {CustomSet}
+   */
+  add(el) {
     throw new Error('Remove this line and implement the function');
   }
 
-  subset() {
+  /**
+   * @param {CustomSet} other
+   * @returns {boolean}
+   */
+  subset(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  disjoint() {
+  /**
+   * @param {CustomSet} other
+   * @returns {boolean}
+   */
+  disjoint(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  eql() {
+  /**
+   * @param {CustomSet} other
+   * @returns {boolean}
+   */
+  eql(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  union() {
+  /**
+   * @param {CustomSet} other
+   * @returns {CustomSet}
+   */
+  union(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  intersection() {
+  /**
+   * @param {CustomSet} other
+   * @returns {CustomSet}
+   */
+  intersection(other) {
     throw new Error('Remove this line and implement the function');
   }
 
-  difference() {
+  /**
+   * @param {CustomSet} other
+   * @returns {CustomSet}
+   */
+  difference(other) {
     throw new Error('Remove this line and implement the function');
   }
 }

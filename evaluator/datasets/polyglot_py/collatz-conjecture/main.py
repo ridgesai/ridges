@@ -1,2 +1,2 @@
-def steps(number):
+def steps(number: int) -> int:
     pass

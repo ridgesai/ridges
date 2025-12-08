@@ -85,9 +85,29 @@ Added typing to `find_fewest_coins()`, as it is unclear what the parameter types
 
 Added typing to `BufferFullException.__init__()`, `BufferEmptyException.__init__()`, `CircularBuffer.__init__()`, `read()`, `write()`, `overwrite()`, and `clear()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## clock
+
+Added typing to `__init__()`, `__repr__()`, `__str__()`, `__eq__()`, `__add__()`, and `__sub__()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## collatz-conjecture
+
+Added typing to `steps()`, as it is unclear what the parameter type should be and what the function should return.
+
+## complex-numbers
+
+Added typing to `__init__()`, `__eq__()`, `__add__()`, `__mul__()`, `__sub__()`, `__truediv__()`, `__abs__()`, `conjugate()`, and `exp()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## connect
 
 Added typing to `__init__()` and `get_winner()`, as it is unclear what type the board representation should be and what format the winner should be returned in. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## crypto-square
+
+Added typing to `cipher_text()`, as it is unclear what the parameter type should be and what the function should return.
+
+## custom-set
+
+Added typing to `__init__()`, `isempty()`, `__contains__()`, `issubset()`, `isdisjoint()`, `__eq__()`, `add()`, `intersection()`, `__sub__()`, and `__add__()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## dominoes
 
