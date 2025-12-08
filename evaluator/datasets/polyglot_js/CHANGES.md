@@ -110,9 +110,45 @@ Added typing to `constructor()` and `ciphertext`, as it is unclear what the para
 
 Added typing to `constructor()`, `empty()`, `contains()`, `add()`, `subset()`, `disjoint()`, `eql()`, `union()`, `intersection()`, and `difference()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## darts
+
+Added typing to `score()`, as it is unclear what the parameter types should be and what the function should return.
+
+## diamond
+
+Added typing to `rows()`, as it is unclear what the parameter type should be and what the function should return.
+
+## difference-of-squares
+
+Added typing to `constructor()`, `sumOfSquares`, `squareOfSum`, and `difference`, as it is unclear what the parameter type should be and what the getters should return.
+
+## diffie-hellman
+
+Added typing to `constructor()`, `getPublicKey()`, `getSecret()`, and `getPrivateKey()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## dnd-character
+
+Added typing to `abilityModifier()`, `rollAbility()`, `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`, and `hitpoints`, as it is unclear what the parameter types should be and what the function/getters should return.
+
 ## dominoes
 
-Added typing to `chain()`.
+Added typing to `chain()`, as it is unclear what the parameter types should be and what the function should return.
+
+## eliuds-eggs
+
+Added typing to `eggCount()`, as it is unclear what the parameter type should be and what the function should return.
+
+## etl
+
+Added typing to `transform()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flatten-array
+
+Added typing to `flatten()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flower-field
+
+Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## food-chain
 

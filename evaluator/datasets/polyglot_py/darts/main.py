@@ -1,2 +1,2 @@
-def score(x, y):
+def score(x: float, y: float) -> int:
     pass

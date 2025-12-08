@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} displayValue
+ * @returns {number}
+ */
 export const eggCount = (displayValue) => {
   throw new Error('Remove this line and implement the function');
 };
