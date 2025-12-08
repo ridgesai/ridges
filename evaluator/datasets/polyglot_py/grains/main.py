@@ -1,6 +1,6 @@
-def square(number):
+def square(number: int) -> int:
     pass
 
 
-def total():
+def total() -> int:
     pass

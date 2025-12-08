@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const gigasecond = () => {
+/**
+ * @param {Date} dateOfBirth
+ * @returns {Date}
+ */
+export const gigasecond = (dateOfBirth) => {
   throw new Error('Remove this line and implement the function');
 };

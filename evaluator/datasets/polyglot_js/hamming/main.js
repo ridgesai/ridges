@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const compute = () => {
+/**
+ * @param {string} strand1
+ * @param {string} strand2
+ * @returns {number}
+ */
+export const compute = (strand1, strand2) => {
   throw new Error('Remove this line and implement the function');
 };

@@ -1,2 +1,2 @@
-def distance(strand_a, strand_b):
+def distance(strand_a: str, strand_b: str) -> int:
     pass
