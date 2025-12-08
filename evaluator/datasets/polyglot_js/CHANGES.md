@@ -158,6 +158,10 @@ Added typing to `verse()` and `verses()`, as it is unclear what the parameter ty
 
 Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## gigasecond
+
+Added typing to `gigasecond()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## go-counting
 
 Added typing to `GoCounting.constructor()`, `getTerritory()`, and `getTerritories()`. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -166,9 +170,33 @@ Added typing to `GoCounting.constructor()`, `getTerritory()`, and `getTerritorie
 
 Added typing to `add()`, `roster()`, and `grade()`, as it is unclear what the parameter types should be and what the methods should return
 
+## grains
+
+Added typing to `square()` and `total()`, as it is unclear what the parameter type should be and what the functions should return.
+
 ## grep
 
 No changes. There are already JSDocs in the JavaScript file.
+
+## hamming
+
+Added typing to `compute()`, as it is unclear what the parameter types should be and what the function should return.
+
+## hello-world
+
+Added typing to `hello()`, as it is unclear what the function should return.
+
+## hexadecimal
+
+Added typing to `toDecimal()`, as it is unclear what the parameter type should be and what the function should return.
+
+## high-scores
+
+Added typing to `constructor()`, `scores`, `latest`, `personalBest`, and `personalTopThree`, as it is unclear what the parameter type should be and what the getters should return.
+
+## house
+
+Added typing to `verse()` and `verses()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## list-ops
 

@@ -9,10 +9,18 @@
 // This is only a SKELETON file for the 'Grains' exercise. It's been provided as a
 // convenience to get you started writing code faster.
 //
-export const square = () => {
+
+/**
+ * @param {number} num
+ * @returns {bigint}
+ */
+export const square = (num) => {
   throw new Error('Remove this line and implement the function');
 };
 
+/**
+ * @returns {bigint}
+ */
 export const total = () => {
   throw new Error('Remove this line and implement the function');
 };

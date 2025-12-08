@@ -4,22 +4,37 @@
 //
 
 export class HighScores {
-  constructor() {
+  /**
+   * @param {number[]} scores
+   */
+  constructor(scores) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number[]}
+   */
   get scores() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get latest() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   get personalBest() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number[]}
+   */
   get personalTopThree() {
     throw new Error('Remove this line and implement the function');
   }

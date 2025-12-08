@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const toDecimal = () => {
+/**
+ * @param {string} hex
+ * @returns {number}
+ */
+export const toDecimal = (hex) => {
   throw new Error('Remove this line and implement the function');
 };

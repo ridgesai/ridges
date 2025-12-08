@@ -4,11 +4,20 @@
 //
 
 export class House {
-  static verse() {
+  /**
+   * @param {number} verseNumber
+   * @returns {string[]}
+   */
+  static verse(verseNumber) {
     throw new Error('Remove this line and implement the function');
   }
 
-  static verses() {
+  /**
+   * @param {number} start
+   * @param {number} end
+   * @returns {string[]}
+   */
+  static verses(start, end) {
     throw new Error('Remove this line and implement the function');
   }
 }
