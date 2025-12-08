@@ -1,9 +1,9 @@
 class Matrix:
-    def __init__(self, matrix_string):
+    def __init__(self, matrix_string: str) -> None:
         pass
 
-    def row(self, index):
+    def row(self, index: int) -> list[int]:
         pass
 
-    def column(self, index):
+    def column(self, index: int) -> list[int]:
         pass

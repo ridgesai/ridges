@@ -4,10 +4,16 @@
 //
 
 export class Octal {
-  constructor() {
+  /**
+   * @param {string} octal
+   */
+  constructor(octal) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   toDecimal() {
     throw new Error('Remove this line and implement the function');
   }
