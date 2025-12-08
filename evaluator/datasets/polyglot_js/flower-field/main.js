@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string[]} input
+ * @returns {string[]}
+ */
 export const annotate = (input) => {
   throw new Error('Remove this statement and implement this function');
 };

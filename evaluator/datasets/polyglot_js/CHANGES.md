@@ -132,6 +132,24 @@ Added typing to `abilityModifier()`, `rollAbility()`, `strength`, `dexterity`, `
 
 ## dominoes
 
+Added typing to `chain()`, as it is unclear what the parameter types should be and what the function should return.
+
+## eliuds-eggs
+
+Added typing to `eggCount()`, as it is unclear what the parameter type should be and what the function should return.
+
+## etl
+
+Added typing to `transform()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flatten-array
+
+Added typing to `flatten()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flower-field
+
+Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
+
 Added typing to `chain()`.
 
 ## food-chain

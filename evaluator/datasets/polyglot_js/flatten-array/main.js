@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const flatten = () => {
+/**
+ * @param {any[]} arr
+ * @returns {any[]}
+ */
+export const flatten = (arr) => {
   throw new Error('Remove this line and implement the function');
 };

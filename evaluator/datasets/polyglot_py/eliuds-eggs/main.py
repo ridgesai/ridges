@@ -1,2 +1,2 @@
-def egg_count(display_value):
+def egg_count(display_value: int) -> int:
     pass

@@ -131,6 +131,24 @@ Added typing to `modifier()`, as it is unclear what the parameter type should be
 
 ## dominoes
 
+Added typing to `can_chain()`, as it is unclear what the parameter types should be and what the function should return.
+
+## eliuds-eggs
+
+Added typing to `egg_count()`, as it is unclear what the parameter type should be and what the function should return.
+
+## etl
+
+Added typing to `transform()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flatten-array
+
+Added typing to `flatten()`, as it is unclear what the parameter type should be and what the function should return.
+
+## flower-field
+
+Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
+
 Added typing to `can_chain()`.
 
 ## dot-dsl

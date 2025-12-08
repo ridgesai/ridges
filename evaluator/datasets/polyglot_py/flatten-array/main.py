@@ -1,2 +1,2 @@
-def flatten(iterable):
+def flatten(iterable: list) -> list:
     pass
