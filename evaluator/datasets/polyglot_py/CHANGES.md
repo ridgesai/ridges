@@ -149,8 +149,6 @@ Added typing to `flatten()`, as it is unclear what the parameter type should be 
 
 Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
 
-Added typing to `can_chain()`.
-
 ## dot-dsl
 
 Added typing to `Node.__init__()`, `Edge.__init__()`, and `Graph.__init__()`, as it is unclear what types the parameters should be. Removed the redundant error messages `"Attribute is malformed"`, `"Node is malformed"`, and `"Edge is malformed"` from `solution.py`, `tests.py`, and `instructions.md` because they were only being used for length validation (wrong number of tuple elements), which is inconsistent - malformed items should raise `TypeError`, not `ValueError`. The solution and tests now consistently raise `TypeError("Graph item malformed")` for all malformed items (wrong number of elements) regardless of item type (`ATTR`, `NODE`, or `EDGE`). The only error messages that remain are: `"Graph data malformed"` (when data is not a list), `"Graph item malformed"` (when a tuple has the wrong number of elements, whether too few or too many), and `"Unknown item"` (when the item type is not `ATTR`, `NODE`, or `EDGE`). The original instructions only documented 2 error messages, so documentation was added for all remaining messages. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
