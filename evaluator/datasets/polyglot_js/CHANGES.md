@@ -26,6 +26,18 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 Added typing and parameters, as it is unclear what should be returned
 
+## alphametics
+
+Fixed return type from `number[]` to `Object`, as the tests expect an object mapping letters to digits, not an array. Added clarification to the instructions about the expected return format (object mapping letters to digits, or null if no solution exists).
+
+## anagram
+
+Added parameters and typing to `findAnagrams()`, as it is unclear what the parameter types should be and what the function should return.
+
+## armstrong-numbers
+
+Added parameter and typing to `isArmstrongNumber()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## beer-song
 
 Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, separated by newlines.

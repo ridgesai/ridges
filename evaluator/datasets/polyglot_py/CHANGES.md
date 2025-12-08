@@ -25,6 +25,18 @@ No changes
 
 No changes 
 
+## alphametics
+
+Added typing to `solve()`, as it is unclear what type the parameter should be and what the function should return. Added clarification to the instructions about the expected return format (dict mapping letters to digits, or None if no solution exists).
+
+## anagram
+
+Added typing to `find_anagrams()`, as it is unclear what the parameter types should be and what the function should return.
+
+## armstrong-numbers
+
+Added typing to `is_armstrong_number()`, as it is unclear what the parameter type should be and what the function should return. 
+
 ## beer-song
 
 Added typing to `recite()`, as it is unclear whether the function should return a list of strings, or a single string, separated by newlines.

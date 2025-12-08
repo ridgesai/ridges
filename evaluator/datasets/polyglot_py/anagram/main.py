@@ -1,2 +1,2 @@
-def find_anagrams(word, candidates):
+def find_anagrams(word: str, candidates: list[str]) -> list[str]:
     pass

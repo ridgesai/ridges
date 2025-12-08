@@ -5,7 +5,7 @@
 
 /**
  * @param {string} puzzle 
- * @returns {number[] | null}
+ * @returns {Object.<string, number> | null}
  */
 export const solve = (puzzle) => {
   throw new Error('Remove this line and implement the function');
