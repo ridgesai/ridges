@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const find = () => {
+/**
+ * @param {number[]}
+ * @param {number}
+ * @return {number}
+ */
+export const find = (array, element) => {
   throw new Error('Remove this line and implement the function');
 };

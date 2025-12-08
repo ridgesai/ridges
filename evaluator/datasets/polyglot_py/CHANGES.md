@@ -5,9 +5,61 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 <br>
 <br>
 
+## accumulate
+
+No changes.
+
+## acronym
+
+No changes.
+
 ## affine-cipher
 
 Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## all-your-base
+
+No changes.
+
+## allergies
+
+No changes.
+
+## alphametics
+
+Added typing to `solve()`, as it is unclear what type the parameter should be and what the function should return. Added clarification to the instructions about the expected return format (dict mapping letters to digits, or None if no solution exists).
+
+## anagram
+
+Added typing to `find_anagrams()`, as it is unclear what the parameter types should be and what the function should return.
+
+## armstrong-numbers
+
+Added typing to `is_armstrong_number()`, as it is unclear what the parameter type should be and what the function should return.
+
+## atbash-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## bank-account
+
+Added typing to `get_balance()`, `open()`, `deposit()`, `withdraw()`, and `close()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## binary
+
+Added typing to `parse_binary()`, as it is unclear what the parameter type should be and what the function should return.
+
+## binary-search
+
+Added typing to `find()`, as it is unclear what the parameter types should be and what the function should return.
+
+## binary-search-tree
+
+Added typing to `TreeNode.__init__()`, `BinarySearchTree.__init__()`, `data()`, and `sorted_data()`, as it is unclear what the parameter types should be and what the methods should return. 
+
+## bob
+
+Added typing to `response()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## beer-song
 

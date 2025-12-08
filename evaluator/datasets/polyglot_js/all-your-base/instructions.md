@@ -26,3 +26,22 @@ The number 1120, _in base 3_, means:
 _Yes. Those three numbers above are exactly the same. Congratulations!_
 
 [positional-notation]: https://en.wikipedia.org/wiki/Positional_notation
+
+# Instructions append
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s if the codon is invalid. The tests will only pass if you both `throw` the `Error` and include a message with it.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// Invalid input
+new Error('Input has wrong format')
+// Invalid input base
+new Error('Wrong input base')
+// Invalid output base
+new Error('Wrong output base')
+```

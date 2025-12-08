@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} message
+ * @returns {string}
+ */
 export const hey = (message) => {
   throw new Error('Remove this line and implement the function');
 };

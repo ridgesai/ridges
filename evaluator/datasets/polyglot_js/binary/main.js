@@ -4,10 +4,16 @@
 //
 
 export class Binary {
-  constructor() {
+  /**
+   * @param {string} binary
+   */
+  constructor(binary) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number | null}
+   */
   toDecimal() {
     throw new Error('Remove this line and implement the function');
   }

@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const findAnagrams = () => {
+/**
+ * @param {string} word
+ * @param {string[]} candidates
+ * @returns {string[]}
+ */
+export const findAnagrams = (word, candidates) => {
   throw new Error('Remove this line and implement the function');
 };

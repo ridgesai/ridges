@@ -5,9 +5,62 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 <br>
 <br>
 
+## accumulate
+
+Added parameters to `accumulate()`, as it is unclear what order the parameters should be in.
+
+## acronym
+
+No changes.
+
 ## affine-cipher
 
 Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## all-your-base
+
+Added typing to `convert()`, as it is unclear what order the parameters should be in.
+The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
+
+## allergies
+
+Added typing and parameters, as it is unclear what should be returned.
+
+## alphametics
+
+Fixed return type from `number[]` to `Object`, as the tests expect an object mapping letters to digits, not an array. Added clarification to the instructions about the expected return format (object mapping letters to digits, or `null` if no solution exists).
+
+## anagram
+
+Added parameters and typing to `findAnagrams()`, as it is unclear what the parameter types should be and what the function should return.
+
+## armstrong-numbers
+
+Added parameter and typing to `isArmstrongNumber()`, as it is unclear what the parameter type should be and what the function should return.
+
+## atbash-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## bank-account
+
+Added typing to `deposit()`, `withdraw()`, and `balance`, as it is unclear what the parameter types should be and what the methods should return.
+
+## binary
+
+Added typing to `constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return (number or null for invalid inputs).
+
+## binary-search
+
+Added typing to `find()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that `"Value not in array"` should be thrown when the value is not found.
+
+## binary-search-tree
+
+Added typing to `constructor()`, `data`, `left`, `right`, `insert()`, and `each()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## bob
+
+Added typing to `hey()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## beer-song
 
@@ -79,7 +132,7 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 ## proverb
 
-Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all
+Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
 
 ## queen-attack
 

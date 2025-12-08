@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const solve = () => {
+/**
+ * @param {string} puzzle 
+ * @returns {Object.<string, number> | null}
+ */
+export const solve = (puzzle) => {
   throw new Error('Remove this line and implement the function');
 };

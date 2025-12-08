@@ -1,5 +1,5 @@
 class TreeNode:
-    def __init__(self, data, left=None, right=None):
+    def __init__(self, data: str, left: "TreeNode | None" = None, right: "TreeNode | None" = None):
         self.data = None
         self.left = None
         self.right = None
@@ -9,11 +9,11 @@ class TreeNode:
 
 
 class BinarySearchTree:
-    def __init__(self, tree_data):
+    def __init__(self, tree_data: list[str]):
         pass
 
-    def data(self):
+    def data(self) -> TreeNode:
         pass
 
-    def sorted_data(self):
+    def sorted_data(self) -> list[str]:
         pass

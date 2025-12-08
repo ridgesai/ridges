@@ -27,3 +27,7 @@ Let's say we're looking for the number 23 in the following sorted list: `[4, 8, 
 - We then compare 23 with the new middle element, 28.
 - Since 23 is less than 28, we can eliminate the right half of the list: `[23]`.
 - We've found our item.
+
+## Exception messages
+
+When the given value is not found within the array, throw an `Error` with the message `"Value not in array"`.

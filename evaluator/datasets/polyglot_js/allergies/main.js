@@ -4,15 +4,24 @@
 //
 
 export class Allergies {
-  constructor() {
+  /**
+   * @param {number} allergenIndex 
+   */
+  constructor(allergenIndex) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {string[]}
+   */
   list() {
     throw new Error('Remove this line and implement the function');
   }
 
-  allergicTo() {
+  /**
+   * @param {string} food 
+   */
+  allergicTo(food) {
     throw new Error('Remove this line and implement the function');
   }
 }

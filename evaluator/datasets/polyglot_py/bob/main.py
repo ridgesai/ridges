@@ -1,2 +1,2 @@
-def response(hey_bob):
+def response(hey_bob: str) -> str:
     pass
