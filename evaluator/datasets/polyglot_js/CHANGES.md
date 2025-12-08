@@ -196,19 +196,7 @@ Added typing to `constructor()`, `scores`, `latest`, `personalBest`, and `person
 
 ## house
 
-Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
-
-## go-counting
-
-Added typing to `GoCounting.constructor()`, `getTerritory()`, and `getTerritories()`. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
-
-## grade-school
-
-Added typing to `add()`, `roster()`, and `grade()`, as it is unclear what the parameter types should be and what the methods should return
-
-## grep
-
-No changes. There are already JSDocs in the JavaScript file.
+Added typing to `verse()` and `verses()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## list-ops
 
