@@ -14,10 +14,22 @@ from evaluator.problem_suites.swebench_verified.swebench_verified_suite import S
 
 
 
+class ProblemStatisticsFastestAgentInfo(BaseModel):
+    name: str
+    agent_id: UUID
+    version_num: int
+    evaluation_run_time: float
+    evaluation_id: UUID
+    evaluation_run_id: UUID
+
+class ErrorInfo(ProblemStatisticsFastestAgentInfo):
+    error_message: str
+
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
     description: str
     num_errors: int
+    recent_error_info: List[ErrorInfo] = []
 
     def __init__(self, **data):
         data["description"] = EvaluationRunErrorCode(data["error_code"]).get_error_message()
@@ -27,14 +39,6 @@ class ProblemStatisticsTokenInfo(BaseModel):
     model: str
     num_input_tokens: int
     num_output_tokens: int
-
-class ProblemStatisticsFastestAgentInfo(BaseModel):
-    name: str
-    agent_id: UUID
-    version_num: int
-    evaluation_run_time: float
-    evaluation_id: UUID
-    evaluation_run_id: UUID
 
 class TestStatistics(BaseModel):
     test_name: str
@@ -152,22 +156,54 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
+                    jsonb_build_object(
+                        'error_code', error_code,
+                        'num_errors', num_errors,
+                        'recent_error_info', recent_error_info
+                    )
                 ) AS error_code_distribution
             FROM (
                 SELECT
-                    er.problem_name,
-                    er.error_code,
-                    COUNT(*) AS num_errors
-                FROM evaluation_runs er
-                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
-                    JOIN agents a on e.agent_id = a.agent_id
-                WHERE er.error_code IS NOT NULL
-                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                    AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
-                GROUP BY er.problem_name, er.error_code
+                    problem_name,
+                    error_code,
+                    COUNT(*) AS num_errors,
+                    json_agg(
+                        jsonb_build_object(
+                            'name', name,
+                            'agent_id', agent_id,
+                            'version_num', version_num,
+                            'evaluation_run_time', evaluation_run_time,
+                            'evaluation_id', evaluation_id,
+                            'evaluation_run_id', evaluation_run_id,
+                            'error_message', error_message
+                        ) ORDER BY finished_or_errored_at DESC
+                    ) FILTER (WHERE recent_run_rank <= 5 AND error_message IS NOT NULL) AS recent_error_info
+                FROM (
+                    SELECT
+                        er.problem_name,
+                        er.error_code,
+                        a.name,
+                        a.agent_id,
+                        a.version_num,
+                        EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
+                        er.evaluation_id,
+                        er.evaluation_run_id,
+                        er.error_message,
+                        er.finished_or_errored_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY er.problem_name, er.error_code
+                            ORDER BY er.finished_or_errored_at DESC
+                        ) AS recent_run_rank
+                    FROM evaluation_runs er
+                        JOIN evaluations e ON er.evaluation_id = e.evaluation_id
+                        JOIN agents a ON e.agent_id = a.agent_id
+                    WHERE er.error_code IS NOT NULL
+                        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                        AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                        AND er.finished_or_errored_at > '2025-12-05 21:36:27.732 -0500'
+                ) ranked_errors
+                GROUP BY problem_name, error_code
             )
             GROUP BY problem_name
         ),
