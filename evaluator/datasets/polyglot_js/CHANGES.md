@@ -76,7 +76,7 @@ Added typing to `recite()`, as it is unclear whether the function should return 
 
 ## bowling
 
-No changes to typing. The instructions provide enough typing information, as such, it is not necessary to include it in the JavaScript file. Added error message documentation specifying the exact error messages that should be thrown for invalid rolls and scoring operations.
+Added typing to `roll()` and `score()`, as it is unclear what the parameter type should be for `roll()` and what the method should return. Added error message documentation specifying the exact error messages that should be thrown for invalid rolls and scoring operations.
 
 ## change
 
@@ -254,6 +254,10 @@ Added typing to `isPaired()`, as it is unclear what the parameter type should be
 
 Added typing to `Matrix.constructor()`, `rows`, and `columns`, as it is unclear what the parameter type should be and what the getters should return.
 
+## micro-blog
+
+Added typing to `truncate()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## meetup
 
 Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return.
@@ -266,6 +270,10 @@ Added typing to `annotate()`, as it is unclear what the parameter type should be
 
 Added typing to `prime()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"there is no zeroth prime"` should be thrown when asking for the 0th prime.
 
+## nucleotide-count
+
+Added typing to `countNucleotides()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## ocr-numbers
 
 Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, separated by newlines.
@@ -273,6 +281,10 @@ Added typing to `convert()`, as it is unclear whether the function should should
 ## octal
 
 Added typing to `Octal.constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return.
+
+## parallel-letter-frequency
+
+Added typing to `parallelLetterFrequency()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## perfect-numbers
 
@@ -286,6 +298,10 @@ Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXX
 
 Added typing to `translate()`, as it is unclear what the parameter type should be and what the function should return.
 
+## point-mutations
+
+Added typing to `DNA.constructor()` and `hammingDistance()`, as it is unclear what the parameter types should be and what the method should return.
+
 ## poker
 
 Added typing to `best_hands()`. Added explicit card format documentation specifying that the rank for ten is `10` (two characters) rather than `T`, since many LLMs are trained on standard poker notation that uses single-character ranks, which could cause confusion. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -294,9 +310,17 @@ Added typing to `best_hands()`. Added explicit card format documentation specify
 
 The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
 
+## prime-factors
+
+Added typing to `primeFactors()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## proverb
 
 Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
+
+## pythagorean-triplet
+
+Added typing to `triplets()`, `Triplet.constructor()`, and `toArray()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## queen-attack
 
@@ -306,6 +330,10 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 Added typing to `InputCell.constructor()`, `ComputeCell.constructor()`, `CallbackCell.constructor()`, `add_callback()`, and `remove_callback()`, as it is unclear what the parameter types should be. The reactive programming paradigm described in the instructions is complex, and type hints help clarify the expected interface.
 
+## rectangles
+
+Added typing to `count()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## rest-api
 
 Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -313,6 +341,10 @@ Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear
 ## robot-name
 
 Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
+
+## saddle-points
+
+Added typing to `saddlePoints()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## satellite
 
@@ -326,6 +358,10 @@ Added error message documentation specifying that `"Number must be between 0 and
 
 Added error message documentation specifying the exact error messages that should be thrown for invalid inputs (empty series, negative slice length, zero slice length, or slice length exceeding series length).
 
+## sieve
+
+Added typing to `primes()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## scale-generator
 
 Added typing to `Scale.constructor()`, `chromatic()`, and `interval()`, as it is unclear what the parameter types should be and what the methods should return.
@@ -336,7 +372,11 @@ Added typing to `Element.constructor()`, `Element.value()`, `Element.next()`, `L
 
 ## space-age
 
-Added error message documentation specifying that `"not a planet"` should be thrown for invalid planet names.
+Added typing to `age()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that `"not a planet"` should be thrown for invalid planet names.
+
+## spiral-matrix
+
+Added typing to `spiralMatrix()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## state-of-tic-tac-toe
 

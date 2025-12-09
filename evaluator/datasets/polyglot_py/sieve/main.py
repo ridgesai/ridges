@@ -1,2 +1,2 @@
-def primes(limit):
+def primes(limit: int) -> list[int]:
     pass

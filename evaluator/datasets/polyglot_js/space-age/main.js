@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const age = () => {
+/**
+ * @param {string} planet
+ * @param {number} seconds
+ * @returns {number}
+ */
+export const age = (planet, seconds) => {
   throw new Error('Remove this line and implement the function');
 };

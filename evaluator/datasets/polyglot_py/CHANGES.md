@@ -289,6 +289,10 @@ Added typing to `PhoneNumber.__init__()` and `pretty()`. Added the missing `pret
 
 Added typing to `translate()`, as it is unclear what the parameter type should be and what the function should return.
 
+## point-mutations
+
+Added typing to `hamming_distance()`, as it is unclear what the parameter types should be and what the function should return.
+
 ## poker
 
 Added typing to `best_hands()`. Added explicit card format documentation specifying that the rank for ten is `10` (two characters) rather than `T`, since many LLMs are trained on standard poker notation that uses single-character ranks, which could cause confusion. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -297,6 +301,10 @@ Added typing to `best_hands()`. Added explicit card format documentation specify
 
 Added typing to `Tree.__init__()`, `from_pov()`, and `path_to()`, as it is unclear what the parameter types should be and what the methods should return. Added specific error message documentation to the instructions for `"Tree could not be reoriented"` and `"No path found"`, as the original instructions did not document the required messages. Fixed `tests.py` and `solution.py` so that `path_to()` raises `"No path found"` (not `"Tree could not be reoriented"`) when the source node doesn't exist, as this is more semantically correct for a path-finding operation. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## prime-factors
+
+Added typing to `factors()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## protein-translation
 
 The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
@@ -304,6 +312,10 @@ The exact exception messages are now specified in the instructions. Previously, 
 ## proverb
 
 Added the complete function signature with typing for `proverb()`, including the `*items` variadic parameter and `qualifier` keyword argument, as the `main.py` file had no parameters at all. The instructions mention the `qualifier` parameter but don't specify its type or default value.
+
+## pythagorean-triplet
+
+Added typing to `triplets_with_sum()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## react
 
@@ -321,13 +333,29 @@ Added the missing `name` property and `reset()` method with type hints. The inst
 
 Added typing to `Scale.__init__()`, `chromatic()`, and `interval()`, as it is unclear what the parameter types should be and what the methods should return.
 
+## saddle-points
+
+Added typing to `saddle_points()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## sgf-parsing
 
 Added typing to `SgfTree.__init__()` and `parse()`, as it is unclear what the parameter types should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## sieve
+
+Added typing to `primes()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## simple-linked-list
 
 Added typing to `Node.__init__()`, `Node.value()`, `Node.next()`, `LinkedList.__init__()`, `LinkedList.__len__()`, `LinkedList.head()`, `LinkedList.push()`, `LinkedList.pop()`, and `LinkedList.reversed()`, as it is unclear what the parameter types should be and what the methods should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## space-age
+
+Added typing to `SpaceAge.__init__()`, as it is unclear what the parameter type should be.
+
+## spiral-matrix
+
+Added typing to `spiral_matrix()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## transpose
 

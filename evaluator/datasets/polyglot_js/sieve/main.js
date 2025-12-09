@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const primes = () => {
+/**
+ * @param {number} n
+ * @returns {number[]}
+ */
+export const primes = (n) => {
   throw new Error('Remove this line and implement the function');
 };

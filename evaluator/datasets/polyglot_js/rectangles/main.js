@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export function count() {
+/**
+ * @param {string[]} diagram
+ * @returns {number}
+ */
+export function count(diagram) {
   throw new Error('Remove this line and implement the function');
 }

@@ -4,11 +4,18 @@
 //
 
 export class DNA {
-  constructor() {
+  /**
+   * @param {string} nucleotides
+   */
+  constructor(nucleotides) {
     throw new Error('Remove this line and implement the function');
   }
 
-  hammingDistance() {
+  /**
+   * @param {string} comparison
+   * @returns {number}
+   */
+  hammingDistance(comparison) {
     throw new Error('Remove this line and implement the function');
   }
 }
