@@ -310,6 +310,18 @@ Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear
 
 Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
 
+## satellite
+
+Added error message documentation specifying the exact error messages that should be thrown for invalid tree traversals (different lengths, duplicate items, or different elements).
+
+## say
+
+Added error message documentation specifying that `"Number must be between 0 and 999,999,999,999."` should be thrown for numbers outside the supported range.
+
+## series
+
+Added error message documentation specifying the exact error messages that should be thrown for invalid inputs (empty series, negative slice length, zero slice length, or slice length exceeding series length).
+
 ## scale-generator
 
 Added typing to `Scale.constructor()`, `chromatic()`, and `interval()`, as it is unclear what the parameter types should be and what the methods should return.
@@ -317,6 +329,14 @@ Added typing to `Scale.constructor()`, `chromatic()`, and `interval()`, as it is
 ## simple-linked-list
 
 Added typing to `Element.constructor()`, `Element.value()`, `Element.next()`, `List.constructor()`, `List.length`, `List.head`, `List.add()`, and `List.reverse()`, as it is unclear what the parameter types should be and what the methods should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## space-age
+
+Added error message documentation specifying that `"not a planet"` should be thrown for invalid planet names.
+
+## state-of-tic-tac-toe
+
+Added error message documentation specifying the exact error messages that should be thrown for invalid board states (wrong turn order or game continuing after completion).
 
 ## sum-of-multiples
 
