@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const spiralMatrix = () => {
+/**
+ * @param {number} size
+ * @returns {number[][]}
+ */
+export const spiralMatrix = (size) => {
   throw new Error('Remove this line and implement the function');
 };

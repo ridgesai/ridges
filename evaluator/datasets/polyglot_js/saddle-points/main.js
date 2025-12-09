@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const saddlePoints = () => {
+/**
+ * @param {number[][]} matrix
+ * @returns {{row: number, column: number}[]}
+ */
+export const saddlePoints = (matrix) => {
   throw new Error('Remove this line and implement the function');
 };

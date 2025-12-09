@@ -4,10 +4,16 @@
 //
 
 export class Bowling {
-  roll() {
+  /**
+   * @param {number} pins
+   */
+  roll(pins) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   score() {
     throw new Error('Remove this line and implement the function');
   }
