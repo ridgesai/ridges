@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const isPaired = () => {
+/**
+ * @param {string} input
+ * @returns {boolean}
+ */
+export const isPaired = (input) => {
   throw new Error('Remove this line and implement the function');
 };

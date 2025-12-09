@@ -249,9 +249,37 @@ Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `
 
 Added typing to `Luhn.__init__()` and `valid()`, as it is unclear what the parameter type should be and what the method should return.
 
+## markdown
+
+Added typing to `parse()`, as it is unclear what the parameter type should be and what the function should return.
+
+## matching-brackets
+
+Added typing to `is_paired()`, as it is unclear what the parameter type should be and what the function should return.
+
+## matrix
+
+Added typing to `Matrix.__init__()`, `row()`, and `column()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## meetup
+
+Added typing to `MeetupDayException.__init__()` and `meetup()`, as it is unclear what the parameter types should be and what the function should return. Added import for `datetime.date`.
+
+## minesweeper
+
+Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
+
+## nth-prime
+
+Added typing to `prime()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## ocr-numbers
 
 Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, separated by newlines.
+
+## octal
+
+Added typing to `parse_octal()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## phone-number
 

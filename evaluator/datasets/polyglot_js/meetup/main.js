@@ -3,6 +3,13 @@
 // convenience to get you started writing code faster.
 //
 
-export const meetup = () => {
+/**
+ * @param {number} year
+ * @param {number} month
+ * @param {string} week
+ * @param {string} dayOfWeek
+ * @returns {Date}
+ */
+export const meetup = (year, month, week, dayOfWeek) => {
   throw new Error('Remove this line and implement the function');
 };

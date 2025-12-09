@@ -1,2 +1,2 @@
-def is_paired(input_string):
+def is_paired(input_string: str) -> bool:
     pass

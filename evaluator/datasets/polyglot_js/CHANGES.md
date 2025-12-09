@@ -242,9 +242,37 @@ Added typing to all functions (`append()`, `concat()`, `filter()`, `length()`, `
 
 Added typing to `valid()`, as it is unclear what the parameter type should be and what the function should return.
 
+## markdown
+
+Added typing to `parse()`, as it is unclear what the parameter type should be and what the function should return.
+
+## matching-brackets
+
+Added typing to `isPaired()`, as it is unclear what the parameter type should be and what the function should return.
+
+## matrix
+
+Added typing to `Matrix.constructor()`, `rows`, and `columns`, as it is unclear what the parameter type should be and what the getters should return.
+
+## meetup
+
+Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return.
+
+## minesweeper
+
+Added typing to `annotate()`, as it is unclear what the parameter type should be and what the function should return.
+
+## nth-prime
+
+Added typing to `prime()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## ocr-numbers
 
 Added typing to `convert()`, as it is unclear whether the function should should accept a list of strings, or a single string, separated by newlines.
+
+## octal
+
+Added typing to `Octal.constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return.
 
 ## phone-number
 

@@ -1,2 +1,2 @@
-def prime(number):
+def prime(number: int) -> int:
     pass
