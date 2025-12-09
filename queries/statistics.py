@@ -9,7 +9,7 @@ from utils.database import db_operation, DatabaseConnection
 
 
 @db_operation
-async def top_score(conn: DatabaseConnection) -> float:
+async def top_score(conn: DatabaseConnection) -> Optional[float]:
     return await conn.fetchval("SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)")
 
 @db_operation

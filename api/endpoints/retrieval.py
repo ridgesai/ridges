@@ -1,17 +1,16 @@
 import asyncio
 
 from uuid import UUID
-from typing import List
 from pydantic import BaseModel
 from utils.ttl import ttl_cache
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException
 from utils.s3 import download_text_file_from_s3
 from models.evaluation_set import EvaluationSetGroup
-from fastapi import Request, APIRouter, HTTPException
 from models.agent import Agent, AgentScored, AgentStatus
 from queries.evaluation import get_evaluations_for_agent_id
 from models.evaluation import Evaluation, EvaluationWithRuns
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
-from api.endpoints.validator import get_all_connected_validator_ip_addresses
 from queries.statistics import top_score, TopScoreOverTime, agents_created_24_hrs, get_top_scores_over_time, score_improvement_24_hrs
 from queries.agent import get_top_agents, get_agent_by_id, get_agents_in_queue, get_all_agents_by_miner_hotkey, get_latest_agent_for_miner_hotkey
 
@@ -90,7 +89,7 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
 
 # /retrieval/agent-code?agent_id=
 @router.get("/agent-code")
-async def get_agent_code(agent_id: UUID) -> str:
+async def agent_code(agent_id: UUID) -> str:
     agent = await get_agent_by_id(agent_id=agent_id)
     
     if not agent:
@@ -121,7 +120,7 @@ async def top_scores_over_time() -> List[TopScoreOverTime]:
 class NetworkStatisticsResponse(BaseModel):
     score_improvement_24_hrs: float
     agents_created_24_hrs: int
-    top_score: float
+    top_score: Optional[float]
 
 @router.get("/network-statistics")
 @ttl_cache(ttl_seconds=60 * 15) # 15 minutes
