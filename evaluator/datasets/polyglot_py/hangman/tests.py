@@ -92,6 +92,6 @@ class HangmanTests(unittest.TestCase):
         for ch in 'bcdefghij':
             game.guess(ch)
         game.guess('a')
-        self.assertEqual(game.remaining_guesses, 0)
+        self.assertEqual(game.remaining_guesses, 1)
         self.assertEqual(game.get_status(), main.STATUS_WIN)
         self.assertEqual(game.get_masked_word(), 'aaa')

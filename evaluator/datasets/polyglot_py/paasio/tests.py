@@ -1,12 +1,145 @@
 import errno
 import os
 import unittest
+import inspect
+import io
 from unittest.mock import ANY, call, NonCallableMagicMock, patch
-
-from test_utils import MockSock, MockFile, MockException, ZEN, SuperMock
 
 from main import MeteredFile, MeteredSocket
 
+
+ZEN = b"""Beautiful is better than ugly.
+Explicit is better than implicit.
+Simple is better than complex.
+Complex is better than complicated.
+Flat is better than nested.
+Sparse is better than dense.
+Readability counts.
+Special cases aren't special enough to break the rules.
+Although practicality beats purity.
+Errors should never pass silently.
+Unless explicitly silenced.
+In the face of ambiguity, refuse the temptation to guess.
+There should be one-- and preferably only one --obvious way to do it.
+Although that way may not be obvious at first unless you're Dutch.
+Now is better than never.
+Although never is often better than *right* now.
+If the implementation is hard to explain, it's a bad idea.
+If the implementation is easy to explain, it may be a good idea.
+Namespaces are one honking great idea -- let's do more of those!
+"""
+
+
+class MockException(Exception):
+    pass
+
+
+class MockFile(io.BytesIO):
+    def __init__(self, *args, chunk=None, exception=None, **kwargs):
+        super(MockFile, self).__init__(*args, **kwargs)
+        self.__chunk = chunk
+        self.__exception = exception
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        ret = super(MockFile, self).__exit__(exc_type, exc_val, exc_tb)
+        if exc_type is not None and "suppress" in exc_val.args[0]:
+            return True
+        return ret
+
+    def read(self, size=-1):
+        if self.__exception is not None:
+            raise self.__exception
+        if self.__chunk is None:
+            return super(MockFile, self).read(size)
+        if size is None:
+            return super(MockFile, self).read(self.__chunk)
+        if size < 0:
+            return super(MockFile, self).read(self.__chunk)
+        return super(MockFile, self).read(min(self.__chunk, size))
+
+    def write(self, data):
+        if self.__chunk is None:
+            return super(MockFile, self).write(data)
+        return super(MockFile, self).write(data[: self.__chunk])
+
+
+class MockSock:
+    def __init__(self, *, chunk=None, exception=None):
+        self._recver = io.BytesIO(ZEN)
+        self._sender = io.BytesIO()
+        self.__closed = False
+        self.__chunk = chunk
+        self.__exception = exception
+        self.flags = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._recver.close()
+        self._sender.close()
+        self.__closed = True
+        if exc_type is not None and "suppress" in exc_val.args[0]:
+            return True
+        return False
+
+    def recv(self, bufsize, flags=0):
+        if self.__closed:
+            raise OSError(errno.EBADF, os.strerror(errno.EBADF))
+        if bufsize is None:
+            raise TypeError("'NoneType' object cannot be interpreted as an integer")
+        if not isinstance(flags, int):
+            raise TypeError(
+                "an integer is required (got type {})".format(type(flags).__name__)
+            )
+        self.flags = flags
+        if self.__exception is not None:
+            raise self.__exception
+        if self.__chunk is None:
+            return self._recver.read(bufsize)
+        else:
+            return self._recver.read(min(self.__chunk, bufsize))
+
+    def send(self, data, flags=0):
+        if self.__closed:
+            raise OSError(errno.EBADF, os.strerror(errno.EBADF))
+        if not isinstance(flags, int):
+            raise TypeError(
+                "an integer is required (got type {})".format(type(flags).__name__)
+            )
+        self.flags = flags
+        if self.__chunk is None:
+            return self._sender.write(data)
+        return self._sender.write(data[: self.__chunk])
+
+
+class SuperMock:
+    """Mock for super().__init__ calls only, as mock.MagicMock cannot."""
+
+    def __init__(self, *args, **kwargs):
+        if self.initialized:
+            self.init_called += 1
+        else:
+            self.initialized = True
+
+    def __call__(self, *args, **kwargs):
+        frame = inspect.currentframe()
+        if frame is None:
+            raise RuntimeError("Could not get current frame object")
+        stack = inspect.getouterframes(frame)
+        if any(frame[3] == "__init__" and "main" in frame[1] for frame in stack):
+            return self
+        else:
+            return self.mock_object
+
+    def __repr__(self):
+        return "<SuperMock at {} with mock object: {!r}>".format(
+            hex(id(self)), self.mock_object
+        )
+
+    mock_object = None
+    init_called = 0
+    initialized = False
 
 class PaasioTest(unittest.TestCase):
     def test_meteredsocket_context_manager(self):
@@ -212,7 +345,7 @@ class PaasioTest(unittest.TestCase):
             self.assertEqual(258, socket.recv_ops)
             self.assertEqual(259, socket.recv_bytes)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_context_manager(self, super_mock):
         wrapped = MockFile(ZEN)
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -230,7 +363,7 @@ class PaasioTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "I/O operation on closed file."):
             file.write(b"data")
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_context_manager_exception_raise(self, super_mock):
         exception = MockException("Should raise")
         wrapped = MockFile(ZEN, exception=exception)
@@ -249,7 +382,7 @@ class PaasioTest(unittest.TestCase):
         )
         self.assertEqual(exception, err.exception)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_context_manager_exception_suppress(self, super_mock):
         exception = MockException("Should suppress")
         wrapped = MockFile(ZEN, exception=exception)
@@ -266,7 +399,7 @@ class PaasioTest(unittest.TestCase):
             ANY,
         )
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_iteration(self, super_mock):
         mock = NonCallableMagicMock(wraps=MockFile(ZEN), autospec=True)
         super_mock.mock_object = mock
@@ -283,7 +416,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(len(ZEN), file.read_bytes)
         self.assertEqual(ZEN, actual_reads)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_read_once(self, super_mock):
         mock = NonCallableMagicMock(wraps=MockFile(ZEN), autospec=True)
         super_mock.mock_object = mock
@@ -310,7 +443,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(1, file.read_ops)
         self.assertEqual(mock.read.call_count, file.read_ops)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_read_multiple(self, super_mock):
         wrapped = MockFile(ZEN)
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -324,7 +457,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(150, file.read_bytes)
         self.assertEqual(5, mock.read.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_read_multiple_chunk(self, super_mock):
         wrapped = MockFile(ZEN, chunk=20)
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -351,7 +484,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(73, file.read_bytes)
         self.assertEqual(7, mock.read.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_read_under_size(self, super_mock):
         wrapped = MockFile(ZEN, chunk=257)  # largish odd number
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -363,7 +496,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(257, file.read_bytes)
         self.assertEqual(1, mock.read.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_write_once(self, super_mock):
         wrapped = MockFile(chunk=257)  # largish odd number
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -376,7 +509,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(257, file.write_bytes)
         self.assertEqual(1, mock.write.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_write_multiple(self, super_mock):
         wrapped = MockFile()
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -394,7 +527,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(39, file.write_bytes)
         self.assertEqual(4, mock.write.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_write_under_size(self, super_mock):
         wrapped = MockFile(chunk=257)  # largish odd number
         mock = NonCallableMagicMock(wraps=wrapped, autospec=True)
@@ -407,7 +540,7 @@ class PaasioTest(unittest.TestCase):
         self.assertEqual(123, file.write_bytes)
         self.assertEqual(1, mock.write.call_count)
 
-    @patch("paasio.super", create=True, new_callable=SuperMock)
+    @patch("main.super", create=True, new_callable=SuperMock)
     def test_meteredfile_stats_read_only(self, super_mock):
         mock = NonCallableMagicMock(wraps=MockFile(ZEN), autospec=True)
         super_mock.mock_object = mock
