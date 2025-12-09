@@ -44,3 +44,19 @@ For your third action, you may not fill bucket two, because this violates the th
 Written with <3 at [Fullstack Academy][fullstack] by Lindsay Levine.
 
 [fullstack]: https://www.fullstackacademy.com/
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s for invalid bucket configurations. The tests will only pass if you both `throw` the `Error` and include a message with it.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// if the goal is bigger than both buckets
+throw new Error('Goal is bigger than the largest bucket.');
+
+// if the goal is not a multiple of the GCD of the bucket sizes
+throw new Error('Goal must be a multiple of the GCD of the sizes of the two buckets.');
+```
