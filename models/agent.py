@@ -13,7 +13,6 @@ class AgentStatus(str, Enum):
     failed_screening_2 = 'failed_screening_2'
     evaluating = 'evaluating'
     finished = 'finished'
-    cancelled = 'cancelled'
 
 
 

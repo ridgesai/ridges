@@ -16,7 +16,7 @@ from queries.payments import retrieve_payment_by_hash, record_evaluation_payment
 from utils.debug_lock import DebugLock
 import utils.logger as logger
 from queries.agent import create_agent, record_upload_attempt
-from queries.agent import get_latest_agent_for_hotkey
+from queries.agent import get_latest_agent_for_miner_hotkey
 from queries.banned_hotkey import get_banned_hotkey
 from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python_file, check_agent_banned, \
     check_rate_limit, check_signature, check_hotkey_registered, check_file_size
@@ -256,7 +256,7 @@ async def post_agent(
 
         hotkey_lock = await get_hotkey_lock(miner_hotkey)
         async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
-            latest_agent: Optional[Agent] = await get_latest_agent_for_hotkey(miner_hotkey=miner_hotkey)
+            latest_agent: Optional[Agent] = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
             if prod and latest_agent:
                 check_rate_limit(latest_agent)
             agent = Agent(

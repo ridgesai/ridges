@@ -52,7 +52,7 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
 
 
 @db_operation
-async def get_all_agents_by_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> List[Agent]:
+async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> List[Agent]:
     result = await conn.fetch(
         """
         SELECT * FROM agents 
@@ -67,7 +67,7 @@ async def get_all_agents_by_hotkey(conn: DatabaseConnection, miner_hotkey: str) 
 
 
 @db_operation
-async def get_latest_agent_for_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
+async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
     result = await conn.fetchrow(
         """
         SELECT * FROM agents 
