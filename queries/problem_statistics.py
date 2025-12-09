@@ -181,7 +181,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND er.finished_or_errored_at > '2025-12-05 22:00:00.000 -0500' -- TODO ADAM: remove
                 GROUP BY 
-                    er.problem_name, name, category
+                    er.problem_name, tr->>'name', tr->>'category'
             )
             GROUP BY problem_name
         ),
