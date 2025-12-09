@@ -48,14 +48,14 @@ async def check_agent_banned(miner_hotkey: str) -> None:
     
     logger.debug(f"Miner hotkey {miner_hotkey} is not banned.")
 
-def check_rate_limit(latest_agent: Agent) -> None:
+def check_rate_limit(latest_agent_created_at_in_latest_set_id: datetime) -> None:
     logger.debug(f"Checking if miner is rate limited...")
 
-    earliest_allowed_time = latest_agent.created_at + timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)
+    earliest_allowed_time = latest_agent_created_at_in_latest_set_id + timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)
     logger.debug(f"Earliest allowed time: {earliest_allowed_time}. Current time: {datetime.now(timezone.utc)}. Difference: {datetime.now(timezone.utc) - earliest_allowed_time}. Minimum allowed time: {timedelta(seconds=MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS)}.")
     
     if datetime.now(timezone.utc) < earliest_allowed_time:
-        logger.error(f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent.created_at} and current time is {datetime.now(timezone.utc)}.")
+        logger.error(f"A miner attempted to upload an agent too quickly. Latest agent created at {latest_agent_created_at_in_latest_set_id} and current time is {datetime.now(timezone.utc)}.")
         raise HTTPException(
             status_code=429,
             detail=f"You must wait {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} seconds before uploading a new agent version"

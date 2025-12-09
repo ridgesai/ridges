@@ -2,6 +2,7 @@ import api.config as config
 import utils.logger as logger
 
 from uuid import UUID
+from datetime import datetime
 from typing import List, Optional
 from utils.s3 import upload_text_file_to_s3
 from models.evaluation import EvaluationStatus
@@ -82,6 +83,22 @@ async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotk
         return None 
     
     return Agent(**result)
+
+
+
+@db_operation
+async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(conn: DatabaseConnection, miner_hotkey: str) -> Optional[datetime]:
+    result = await conn.fetchval(
+        """
+        SELECT MAX(a.created_at)
+        FROM agents a
+        WHERE a.miner_hotkey = $1
+        AND a.created_at > (SELECT MAX(created_at) FROM evaluation_sets)
+        """,
+        miner_hotkey
+    )
+    
+    return result
 
 
 
