@@ -35,5 +35,9 @@ For example:
 Implement a way to determine whether a given number is [perfect](#perfect).
 Depending on your language track, you may also need to implement a way to determine whether a given number is [abundant](#abundant) or [deficient](#deficient).
 
+## Exception messages
+
+When a number that is not a natural number (i.e., less than or equal to 0) is passed to the `classify()` function, you should throw an error with the message: `"Classification is only possible for natural numbers."`
+
 [nicomachus]: https://en.wikipedia.org/wiki/Nicomachus
 [aliquot-sum]: https://en.wikipedia.org/wiki/Aliquot_sum

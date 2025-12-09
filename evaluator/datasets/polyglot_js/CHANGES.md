@@ -15,7 +15,7 @@ No changes.
 
 ## affine-cipher
 
-Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `encode()` and `decode()`, as it is unclear what types the parameters should be and what the functions should return. Added error message documentation specifying that `"a and m must be coprime."` should be thrown when necessary. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## all-your-base
 
@@ -76,11 +76,11 @@ Added typing to `recite()`, as it is unclear whether the function should return 
 
 ## bowling
 
-No changes. The instructions provide enough typing information, as such, it is not necessary to include it in the JavaScript file.
+No changes to typing. The instructions provide enough typing information, as such, it is not necessary to include it in the JavaScript file. Added error message documentation specifying the exact error messages that should be thrown for invalid rolls and scoring operations.
 
 ## change
 
-Added typing to `calculate()`, as it is unclear what the parameter types should be and what the method should return.
+Added typing to `calculate()`, as it is unclear what the parameter types should be and what the method should return. Added error message documentation specifying the exact error messages that should be thrown for invalid totals and impossible currency representations.
 
 ## circular-buffer
 
@@ -92,7 +92,7 @@ Added typing to `constructor()`, `toString()`, `plus()`, `minus()`, and `equals(
 
 ## collatz-conjecture
 
-Added typing to `steps()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `steps()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"Only positive integers are allowed"` should be thrown for non-positive inputs.
 
 ## complex-numbers
 
@@ -128,7 +128,7 @@ Added typing to `constructor()`, `getPublicKey()`, `getSecret()`, and `getPrivat
 
 ## dnd-character
 
-Added typing to `abilityModifier()`, `rollAbility()`, `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`, and `hitpoints`, as it is unclear what the parameter types should be and what the function/getters should return.
+Added typing to `abilityModifier()`, `rollAbility()`, `strength`, `dexterity`, `constitution`, `intelligence`, `wisdom`, `charisma`, and `hitpoints`, as it is unclear what the parameter types should be and what the function/getters should return. Added error message documentation specifying the exact error messages that should be thrown for invalid ability scores (less than 3 or greater than 18).
 
 ## dominoes
 
@@ -156,7 +156,7 @@ Added typing to `verse()` and `verses()`, as it is unclear what the parameter ty
 
 ## forth
 
-Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for various invalid Forth operations (unterminated definitions, unknown commands, invalid definitions, stack errors, and division by zero). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## gigasecond
 
@@ -172,15 +172,15 @@ Added typing to `add()`, `roster()`, and `grade()`, as it is unclear what the pa
 
 ## grains
 
-Added typing to `square()` and `total()`, as it is unclear what the parameter type should be and what the functions should return.
+Added typing to `square()` and `total()`, as it is unclear what the parameter type should be and what the functions should return. Added error message documentation specifying that `"square must be between 1 and 64"` should be thrown for invalid square numbers.
 
 ## grep
 
-No changes. There are already JSDocs in the JavaScript file.
+No changes to typing. There are already JSDocs in the JavaScript file. Added error message documentation specifying that errors should be thrown for unknown options.
 
 ## hamming
 
-Added typing to `compute()`, as it is unclear what the parameter types should be and what the function should return.
+Added typing to `compute()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that `"strands must be of equal length"` should be thrown when comparing strands of different lengths.
 
 ## hello-world
 
@@ -220,7 +220,7 @@ Added typing to `knapsack()`, as it is unclear what the parameter types should b
 
 ## largest-series-product
 
-Added typing to `largestProduct()`, as it is unclear what the parameter types should be and what the function should return.
+Added typing to `largestProduct()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for invalid spans (exceeding string length, negative, or non-digit input).
 
 ## leap
 
@@ -232,7 +232,7 @@ Added typing to `createEntry()` and `formatEntries()`, as it is unclear what the
 
 ## linked-list
 
-Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return.
+Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return. Added error message documentation specifying that `"list is empty"` should be thrown when attempting to remove from an empty list.
 
 ## list-ops
 
@@ -256,7 +256,7 @@ Added typing to `Matrix.constructor()`, `rows`, and `columns`, as it is unclear 
 
 ## meetup
 
-Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return.
+Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that an error should be thrown when the specified meetup date does not exist.
 
 ## minesweeper
 
@@ -264,7 +264,7 @@ Added typing to `annotate()`, as it is unclear what the parameter type should be
 
 ## nth-prime
 
-Added typing to `prime()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `prime()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"there is no zeroth prime"` should be thrown when asking for the 0th prime.
 
 ## ocr-numbers
 
@@ -276,7 +276,7 @@ Added typing to `Octal.constructor()` and `toDecimal()`, as it is unclear what t
 
 ## phone-number
 
-Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXXXX` for the `clean()` method.
+Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXXXX` for the `clean()` method. Added error message documentation specifying the exact error messages that should be thrown for various invalid phone number formats (letters, punctuations, wrong number of digits, invalid area/exchange codes).
 
 ## pig-latin
 
@@ -308,7 +308,7 @@ Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear
 
 ## robot-name
 
-Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
+Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed. Added error message documentation specifying that an error should be thrown when all possible robot names have been used.
 
 ## scale-generator
 
@@ -328,15 +328,15 @@ Added typing to `transpose()`, as it is unclear what the parameter type should b
 
 ## two-bucket
 
-Added typing to `solve()`. The instructions explain what three values should be determined but don't specify they should be returned as an object. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `solve()`. The instructions explain what three values should be determined but don't specify they should be returned as an object. Added error message documentation specifying the exact error messages that should be thrown for invalid bucket configurations (goal too large, goal not a multiple of GCD). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## variable-length-quantity
 
-Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return. Added error message documentation specifying that `"Incomplete sequence"` should be thrown for incomplete VLQ sequences. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## wordy
 
-Added typing to `answer()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `answer()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for invalid word problems (unknown operations and syntax errors). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## zebra-puzzle
 

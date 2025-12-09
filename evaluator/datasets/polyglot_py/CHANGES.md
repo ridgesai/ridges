@@ -195,7 +195,7 @@ Added typing to `hello()`, as it is unclear what the function should return.
 
 ## hexadecimal
 
-Added typing to `hexa()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `hexa()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"Invalid hexadecimal string"` should be raised for invalid hexadecimal inputs.
 
 ## high-scores
 
@@ -279,7 +279,7 @@ Added typing to `convert()`, as it is unclear whether the function should should
 
 ## octal
 
-Added typing to `parse_octal()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `parse_octal()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that errors should be raised for invalid octal digits.
 
 ## phone-number
 

@@ -54,3 +54,25 @@ It should support two operations:
   The argument is the number of pins knocked down.
 - `score() : int` is called only at the very end of the game.
   It returns the total score for that game.
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s for invalid inputs. The tests will only pass if you both `throw` the `Error` and include a message with it.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// if the roll is negative
+throw new Error('Negative roll is invalid');
+
+// if the pin count exceeds pins on the lane
+throw new Error('Pin count exceeds pins on the lane');
+
+// if trying to roll after game is over
+throw new Error('Cannot roll after game is over');
+
+// if trying to get score before game is over
+throw new Error('Score cannot be taken until the end of the game');
+```

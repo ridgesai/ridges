@@ -30,3 +30,19 @@ One such language is [Troll][troll].
 ~~~~
 
 [dnd]: https://en.wikipedia.org/wiki/Dungeons_%26_Dragons
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s for invalid ability scores. The tests will only pass if you both `throw` the `Error` and include a message with it.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// if the ability score is less than 3
+throw new Error('Ability scores must be at least 3');
+
+// if the ability score is greater than 18
+throw new Error('Ability scores can be at most 18');
+```

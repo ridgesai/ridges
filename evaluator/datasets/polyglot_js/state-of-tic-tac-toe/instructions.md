@@ -99,3 +99,22 @@ ___|___|___
 ```
 
 [tic-tac-toe]: https://en.wikipedia.org/wiki/Tic-tac-toe
+
+## Exception messages
+
+Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
+
+This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s for invalid board states. The tests will only pass if you both `throw` the `Error` and include a message with it.
+
+To throw an `Error` with a message, write the message as an argument to the `Error` type:
+
+```js
+// if X went twice in a row
+throw new Error('Wrong turn order: X went twice');
+
+// if O started the game
+throw new Error('Wrong turn order: O started');
+
+// if the game continued after it was won
+throw new Error('Impossible board: game should have ended after the game was won');
+```
