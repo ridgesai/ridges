@@ -12,7 +12,6 @@ from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_lo
 
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from api.src.endpoints.upload import router as upload_router
-from api.src.endpoints.retrieval import router as retrieval_router
 
 
 # NEW fixed endpoints
@@ -24,6 +23,7 @@ from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
+from api.endpoints.retrieval import router as retrieval_router
 
 
 
