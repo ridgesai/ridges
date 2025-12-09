@@ -85,6 +85,6 @@ This particular exercise requires that you use the [throw new Error statement](h
 To throw an `Error` with a message, write the message as an argument to the `Error` type:
 
 ```js
-// if the codon is invalid
-new Error('Invalid codon');
+// if a and m aren't coprime
+throw new Error('a and m must be coprime.');
 ```
