@@ -40,16 +40,3 @@ If a denominator with a negative integer is present, multiply both numerator and
 For example, `3/-4` should be reduced to `-3/4`
 
 Assume that the programming language you are using does not have an implementation of rational numbers.
-
-## Exception messages
-
-Sometimes it is necessary to [throw an error](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw). When you do this, you should always include a **meaningful error message** to indicate what the source of the error is. This makes your code more readable and helps significantly with debugging.
-
-This particular exercise requires that you use the [throw new Error statement](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/throw) to "throw" `Error`s when the denominator is zero. The tests will only pass if you both `throw` the `Error` and include a message with it.
-
-To throw an `Error` with a message, write the message as an argument to the `Error` type:
-
-```js
-// if the denominator is zero
-throw new Error('Denominator must not be zero.');
-```

@@ -176,7 +176,7 @@ Added typing to `square()` and `total()`, as it is unclear what the parameter ty
 
 ## grep
 
-No changes to typing. There are already JSDocs in the JavaScript file. Added error message documentation specifying that errors should be thrown for unknown options.
+No changes. There are already JSDocs in the JavaScript file.
 
 ## hamming
 
@@ -232,7 +232,7 @@ Added typing to `createEntry()` and `formatEntries()`, as it is unclear what the
 
 ## linked-list
 
-Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return. Added error message documentation specifying that `"list is empty"` should be thrown when attempting to remove from an empty list.
+Added typing to `push()`, `pop()`, `shift()`, `unshift()`, `delete()`, and `count()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## list-ops
 
@@ -256,7 +256,7 @@ Added typing to `Matrix.constructor()`, `rows`, and `columns`, as it is unclear 
 
 ## meetup
 
-Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying that an error should be thrown when the specified meetup date does not exist.
+Added typing to `meetup()`, as it is unclear what the parameter types should be and what the function should return.
 
 ## minesweeper
 
@@ -308,7 +308,7 @@ Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear
 
 ## robot-name
 
-Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed. Added error message documentation specifying that an error should be thrown when all possible robot names have been used.
+Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
 
 ## scale-generator
 
