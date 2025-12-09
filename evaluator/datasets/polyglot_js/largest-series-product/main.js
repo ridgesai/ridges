@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
-export const largestProduct = () => {
+/**
+ * @param {string} digits
+ * @param {number} seriesLength
+ * @returns {number}
+ */
+export const largestProduct = (digits, seriesLength) => {
   throw new Error('Remove this line and implement the function');
 };

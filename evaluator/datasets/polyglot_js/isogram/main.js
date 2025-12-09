@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const isIsogram = () => {
+/**
+ * @param {string} string
+ * @returns {boolean}
+ */
+export const isIsogram = (string) => {
   throw new Error('Remove this line and implement the function');
 };

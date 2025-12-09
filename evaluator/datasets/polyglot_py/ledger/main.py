@@ -3,13 +3,13 @@ from datetime import datetime
 
 
 class LedgerEntry:
-    def __init__(self):
+    def __init__(self) -> None:
         self.date = None
         self.description = None
         self.change = None
 
 
-def create_entry(date, description, change):
+def create_entry(date: str, description: str, change: int) -> LedgerEntry:
     entry = LedgerEntry()
     entry.date = datetime.strptime(date, '%Y-%m-%d')
     entry.description = description
@@ -17,7 +17,7 @@ def create_entry(date, description, change):
     return entry
 
 
-def format_entries(currency, locale, entries):
+def format_entries(currency: str, locale: str, entries: list[LedgerEntry]) -> str:
     if locale == 'en_US':
         # Generate Header Row
         table = 'Date'

@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
-export const isLeap = () => {
+/**
+ * @param {number} year
+ * @returns {boolean}
+ */
+export const isLeap = (year) => {
   throw new Error('Remove this line and implement the function');
 };
