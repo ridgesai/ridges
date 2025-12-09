@@ -274,6 +274,10 @@ Added typing to `convert()`, as it is unclear whether the function should should
 
 Added typing to `Octal.constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return.
 
+## perfect-numbers
+
+Added error message documentation specifying that `"Classification is only possible for natural numbers."` should be thrown when the number is not a natural number (less than or equal to 0).
+
 ## phone-number
 
 Added typing to `clean()`. Added a comment showing the expected format `XXXXXXXXXX` for the `clean()` method. Added error message documentation specifying the exact error messages that should be thrown for various invalid phone number formats (letters, punctuations, wrong number of digits, invalid area/exchange codes).
