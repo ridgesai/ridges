@@ -24,7 +24,7 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
             set_id,
             created_at,
             evaluation_set_group
-        ) VALUES ($1, $2, $3, $4, NOW())
+        ) VALUES ($1, $2, $3, $4, NOW(), $5)
         """,
         evaluation_id,
         agent_id,
