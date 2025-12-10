@@ -3,6 +3,7 @@ import api.config as config
 from fastapi import APIRouter
 from datetime import datetime
 from pydantic import BaseModel
+from utils.ttl import ttl_cache
 from typing import Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
@@ -52,6 +53,7 @@ class ScoringScreenerInfoResponse(BaseModel):
     validator_average_wait_time: Optional[float] = None
 
 @router.get("/screener-info")
+@ttl_cache(ttl_seconds=60) # 1 minute
 async def screener_info() -> ScoringScreenerInfoResponse:
     average_score_per_evaluation_set_group = await get_average_score_per_evaluation_set_group()
     average_wait_time_per_evaluation_set_group = await get_average_wait_time_per_evaluation_set_group()
