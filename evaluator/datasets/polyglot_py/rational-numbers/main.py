@@ -1,31 +1,31 @@
 class Rational:
-    def __init__(self, numer, denom):
+    def __init__(self, numer: int, denom: int) -> None:
         self.numer = None
         self.denom = None
 
-    def __eq__(self, other):
+    def __eq__(self, other: object) -> bool:
         return self.numer == other.numer and self.denom == other.denom
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f'{self.numer}/{self.denom}'
 
-    def __add__(self, other):
+    def __add__(self, other: 'Rational') -> 'Rational':
         pass
 
-    def __sub__(self, other):
+    def __sub__(self, other: 'Rational') -> 'Rational':
         pass
 
-    def __mul__(self, other):
+    def __mul__(self, other: 'Rational') -> 'Rational':
         pass
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: 'Rational') -> 'Rational':
         pass
 
-    def __abs__(self):
+    def __abs__(self) -> 'Rational':
         pass
 
-    def __pow__(self, power):
+    def __pow__(self, power: int) -> 'Rational':
         pass
 
-    def __rpow__(self, base):
+    def __rpow__(self, base: float) -> float:
         pass

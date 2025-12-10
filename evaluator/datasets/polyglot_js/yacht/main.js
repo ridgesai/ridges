@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number[]} dices
+ * @param {string} category
+ * @returns {number}
+ */
 export const score = () => {
   throw new Error('Remove this line and implement the function');
 };

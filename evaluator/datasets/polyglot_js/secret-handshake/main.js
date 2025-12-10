@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} handshake
+ * @returns {string[]}
+ */
 export const commands = () => {
   throw new Error('Remove this line and implement the function');
 };

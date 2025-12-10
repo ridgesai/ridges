@@ -1,4 +1,4 @@
-def classify(number):
+def classify(number: int) -> str:
     """ A perfect number equals the sum of its positive divisors.
 
     :param number: int a positive integer

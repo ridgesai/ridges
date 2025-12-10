@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} size
+ * @returns {number[][]}
+ */
 export const rows = () => {
   throw new Error('Remove this line and implement the function');
 };

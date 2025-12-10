@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} dna
+ * @returns {string}
+ */
 export const toRna = () => {
   throw new Error('Remove this line and implement the function');
 };

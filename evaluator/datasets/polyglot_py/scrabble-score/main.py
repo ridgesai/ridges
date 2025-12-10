@@ -1,2 +1,2 @@
-def score(word):
+def score(word: str) -> int:
     pass

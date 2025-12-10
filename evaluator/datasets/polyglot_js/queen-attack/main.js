@@ -4,6 +4,9 @@
 //
 
 export class QueenAttack {
+  /**
+   * @param {{black: number[], white: number[]}} positions
+   */
   constructor({
     black: [blackRow, blackColumn] = [],
     white: [whiteRow, whiteColumn] = [],
@@ -11,10 +14,16 @@ export class QueenAttack {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {string}
+   */
   toString() {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {boolean}
+   */
   get canAttack() {
     throw new Error('Remove this line and implement the function');
   }

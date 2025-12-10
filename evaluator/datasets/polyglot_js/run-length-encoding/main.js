@@ -3,10 +3,18 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} plainText
+ * @returns {string}
+ */
 export const encode = () => {
   throw new Error('Remove this line and implement the function');
 };
 
+/**
+ * @param {string} encodedText
+ * @returns {string}
+ */
 export const decode = () => {
   throw new Error('Remove this line and implement the function');
 };

@@ -4,7 +4,11 @@
 //
 
 export class Palindromes {
-  static generate() {
+  /**
+   * @param {{minFactor: number, maxFactor: number}} options
+   * @returns {{smallest: {value: number|null, factors: number[][]}, largest: {value: number|null, factors: number[][]}}}
+   */
+  static generate(options) {
     throw new Error('Remove this line and implement the function');
   }
 }

@@ -1,2 +1,2 @@
-def to_rna(dna_strand):
+def to_rna(dna_strand: str) -> str:
     pass

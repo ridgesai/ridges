@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} n
+ * @returns {string}
+ */
 export const say = (n) => {
   throw new Error('Remove this line and implement the function');
 };

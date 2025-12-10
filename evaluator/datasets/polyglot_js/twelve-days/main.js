@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} start
+ * @param {number} end
+ * @returns {string[]}
+ */
 export const recite = () => {
   throw new Error('Remove this line and implement the function');
 };

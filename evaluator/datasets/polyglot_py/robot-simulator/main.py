@@ -1,3 +1,5 @@
+from typing import Tuple
+
 # Globals for the directions
 # Change the values as you see fit
 EAST = None
@@ -7,5 +9,5 @@ SOUTH = None
 
 
 class Robot:
-    def __init__(self, direction=NORTH, x_pos=0, y_pos=0):
+    def __init__(self, direction: int = NORTH, x_pos: int = 0, y_pos: int = 0) -> None:
         pass

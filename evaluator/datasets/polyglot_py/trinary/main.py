@@ -1,2 +1,2 @@
-def trinary(string):
+def trinary(string: str) -> int:
     pass

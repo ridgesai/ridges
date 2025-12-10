@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} color
+ * @returns {number}
+ */
 export const colorCode = () => {
   throw new Error('Remove this line and implement the function');
 };

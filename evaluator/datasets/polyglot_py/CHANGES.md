@@ -7,11 +7,11 @@ The Ridges team has made some changes to the original Polyglot problem set, whic
 
 ## accumulate
 
-No changes.
+Added typing to `accumulate()`, as it is unclear what the parameter types should be and what the function should return.
 
 ## acronym
 
-No changes.
+Added typing to `abbreviate()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## affine-cipher
 
@@ -19,11 +19,11 @@ Added typing to `encode()` and `decode()`, as it is unclear what types the param
 
 ## all-your-base
 
-No changes.
+Added typing to `rebase()`, as it is unclear what the parameter types should be and what the function should return.
 
 ## allergies
 
-No changes.
+Added typing to `Allergies.__init__()`, `allergic_to()`, and `lst` property, as it is unclear what the parameter types should be and what the methods should return.
 
 ## alphametics
 
@@ -281,6 +281,22 @@ Added typing to `convert()`, as it is unclear whether the function should should
 
 Added typing to `parse_octal()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that errors should be raised for invalid octal digits.
 
+## palindrome-products
+
+Added typing to `largest()` and `smallest()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## pangram
+
+Added typing to `is_pangram()`, as it is unclear what the parameter type should be and what the function should return.
+
+## pascals-triangle
+
+Added typing to `rows()`, as it is unclear what the parameter type should be and what the function should return.
+
+## perfect-numbers
+
+Added typing to `classify()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## phone-number
 
 Added typing to `PhoneNumber.__init__()` and `pretty()`. Added the missing `pretty()` method stub, as it is required by the tests but was not present in the `main.py` file. Added type hints and comments for the `number` and `area_code` attributes to clarify the expected class interface, as these are tested but never documented in the instructions. Added a comment showing the expected format `(XXX)-XXX-XXXX` for the `pretty()` method.
@@ -317,17 +333,85 @@ Added the complete function signature with typing for `proverb()`, including the
 
 Added typing to `triplets_with_sum()`, as it is unclear what the parameter type should be and what the function should return.
 
+## queen-attack
+
+Added typing to `Queen.__init__()` and `can_attack()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## rail-fence-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## raindrops
+
+Added typing to `convert()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rational-numbers
+
+Added typing to `Rational.__init__()` and all dunder methods (`__eq__()`, `__repr__()`, `__add__()`, `__sub__()`, `__mul__()`, `__truediv__()`, `__abs__()`, `__pow__()`, and `__rpow__()`), as it is unclear what the parameter types should be and what the methods should return.
+
 ## react
 
 Added typing to `InputCell.__init__()`, `ComputeCell.__init__()`, `add_callback()`, and `remove_callback()`, as it is unclear what the parameter types should be. The reactive programming paradigm described in the instructions is complex, and type hints help clarify the expected interface.
+
+## rectangles
+
+Added typing to `rectangles()`, as it is unclear what the parameter type should be and what the function should return.
+
+## resistor-color
+
+Added typing to `color_code()` and `colors()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## resistor-color-duo
+
+Added typing to `value()`, as it is unclear what the parameter type should be and what the function should return.
+
+## resistor-color-expert
+
+Added typing to `resistor_label()`, as it is unclear what the parameter type should be and what the function should return.
+
+## resistor-color-trio
+
+Added typing to `label()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## rest-api
 
 Added typing to `RestAPI.__init__()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## reverse-string
+
+Added typing to `reverse()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rna-transcription
+
+Added typing to `to_rna()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## robot-name
 
 Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.py` had no indication that a `name` property or `reset()` method were needed. Fixed `solution.py` to use a class variable `_used_names` for global name tracking instead of an instance variable, as the tests expect different Robot instances to have different names. Clarified in the instructions that names must be globally unique across all Robot instances.
+
+## robot-simulator
+
+Added typing to `Robot.__init__()`, as it is unclear what the parameter types should be. Added import for `Tuple` type hint.
+
+## roman-numerals
+
+Added typing to `roman()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rotational-cipher
+
+Added typing to `rotate()`, as it is unclear what the parameter types should be and what the function should return.
+
+## run-length-encoding
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## satellite
+
+Added typing to `tree_from_traversals()`, as it is unclear what the parameter types should be and what the function should return.
+
+## say
+
+Added typing to `say()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## scale-generator
 
@@ -337,6 +421,18 @@ Added typing to `Scale.__init__()`, `chromatic()`, and `interval()`, as it is un
 
 Added typing to `saddle_points()`, as it is unclear what the parameter type should be and what the function should return.
 
+## scrabble-score
+
+Added typing to `score()`, as it is unclear what the parameter type should be and what the function should return.
+
+## secret-handshake
+
+Added typing to `commands()`, as it is unclear what the parameter type should be and what the function should return.
+
+## series
+
+Added typing to `slices()`, as it is unclear what the parameter types should be and what the function should return.
+
 ## sgf-parsing
 
 Added typing to `SgfTree.__init__()` and `parse()`, as it is unclear what the parameter types should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -344,6 +440,10 @@ Added typing to `SgfTree.__init__()` and `parse()`, as it is unclear what the pa
 ## sieve
 
 Added typing to `primes()`, as it is unclear what the parameter type should be and what the function should return.
+
+## simple-cipher
+
+Added typing to `Cipher.__init__()`, `encode()`, and `decode()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## simple-linked-list
 
@@ -357,6 +457,30 @@ Added typing to `SpaceAge.__init__()`, as it is unclear what the parameter type 
 
 Added typing to `spiral_matrix()`, as it is unclear what the parameter type should be and what the function should return.
 
+## square-root
+
+Added typing to `square_root()`, as it is unclear what the parameter type should be and what the function should return.
+
+## strain
+
+Added typing to `keep()` and `discard()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## sublist
+
+Added typing to `sublist()`, as it is unclear what the parameter types should be and what the function should return.
+
+## sum-of-multiples
+
+Added typing to `sum_of_multiples()`, as it is unclear what the parameter types should be and what the function should return.
+
+## swift-scheduling
+
+Added typing to `delivery_date()`, as it is unclear what the parameter types should be and what the function should return.
+
+## tournament
+
+Added typing to `tally()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## transpose
 
 Added typing to `transpose()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
@@ -365,13 +489,37 @@ Added typing to `transpose()`, as it is unclear what the parameter type should b
 
 Added typing to `Record.__init__()`, `Node.__init__()`, and `BuildTree()`. Fixed the error messages in the provided implementation to match what the tests expect, as the original code had generic messages like `"error!"` and `"something went wrong!"` instead of the specific messages required by the tests. Added comments documenting the required error messages. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## triangle
+
+Added typing to `equilateral()`, `isosceles()`, and `scalene()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## trinary
+
+Added typing to `trinary()`, as it is unclear what the parameter type should be and what the function should return.
+
+## twelve-days
+
+Added typing to `recite()`, as it is unclear what the parameter types should be and what the function should return.
+
 ## two-bucket
 
 Added typing to `measure()` with a comment clarifying the return tuple format. The instructions explain what three values should be determined but don't specify they should be returned as a tuple, the order of the values, or that the bucket should be the string `"one"` or `"two"`. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## two-fer
+
+Added typing to `two_fer()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## variable-length-quantity
 
 Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## word-count
+
+Added typing to `count_words()`, as it is unclear what the parameter type should be and what the function should return.
+
+## word-search
+
+Added typing to `Point.__init__()`, `Point.__eq__()`, `WordSearch.__init__()`, and `WordSearch.search()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## wordy
 

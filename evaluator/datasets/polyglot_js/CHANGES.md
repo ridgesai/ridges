@@ -11,7 +11,7 @@ Added parameters to `accumulate()`, as it is unclear what order the parameters s
 
 ## acronym
 
-No changes.
+Added typing to `parse()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## affine-cipher
 
@@ -158,6 +158,10 @@ Added typing to `verse()` and `verses()`, as it is unclear what the parameter ty
 
 Added typing to `evaluate()` and `stack()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for various invalid Forth operations (unterminated definitions, unknown commands, invalid definitions, stack errors, and division by zero). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## game-of-life
+
+Added typing to `GameOfLife.constructor()` and `state()`, as it is unclear what the parameter type should be and what the method should return.
+
 ## gigasecond
 
 Added typing to `gigasecond()`, as it is unclear what the parameter type should be and what the function should return.
@@ -282,13 +286,25 @@ Added typing to `convert()`, as it is unclear whether the function should should
 
 Added typing to `Octal.constructor()` and `toDecimal()`, as it is unclear what the parameter type should be and what the method should return.
 
+## palindrome-products
+
+Added typing to `Palindromes.generate()`, as it is unclear what the parameter types should be and what the method should return.
+
+## pangram
+
+Added typing to `isPangram()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## parallel-letter-frequency
 
 Added typing to `parallelLetterFrequency()`, as it is unclear what the parameter type should be and what the function should return.
 
+## pascals-triangle
+
+Added typing to `rows()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## perfect-numbers
 
-Added error message documentation specifying that `"Classification is only possible for natural numbers."` should be thrown when the number is not a natural number (less than or equal to 0).
+Added typing to `classify()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"Classification is only possible for natural numbers."` should be thrown when the number is not a natural number (less than or equal to 0).
 
 ## phone-number
 
@@ -314,6 +330,10 @@ The exact exception messages are now specified in the instructions. Previously, 
 
 Added typing to `primeFactors()`, as it is unclear what the parameter type should be and what the function should return.
 
+## promises
+
+Added typing to `promisify()`, `all()`, `allSettled()`, `race()`, and `any()`, as it is unclear what the parameter types should be and what the functions should return.
+
 ## proverb
 
 Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
@@ -324,7 +344,19 @@ Added typing to `triplets()`, `Triplet.constructor()`, and `toArray()`, as it is
 
 ## queen-attack
 
-The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
+Added typing to `QueenAttack.constructor()`, `toString()`, and `canAttack`, as it is unclear what the parameter types should be and what the methods should return. The exact exception messages are now specified in the instructions. Previously, they were only specified in the tests, thus making the problem impossible to solve for agents.
+
+## rail-fence-cipher
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## raindrops
+
+Added typing to `convert()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rational-numbers
+
+Added typing to `Rational.constructor()` and all methods (`add()`, `sub()`, `mul()`, `div()`, `abs()`, `exprational()`, and `expreal()`), as it is unclear what the parameter types should be and what the methods should return.
 
 ## react
 
@@ -334,13 +366,53 @@ Added typing to `InputCell.constructor()`, `ComputeCell.constructor()`, `Callbac
 
 Added typing to `count()`, as it is unclear what the parameter type should be and what the function should return.
 
+## relative-distance
+
+Added typing to `degreesOfSeparation()`, as it is unclear what the parameter types should be and what the function should return.
+
+## resistor-color
+
+Added typing to `colorCode()`, as it is unclear what the parameter type should be and what the function should return.
+
+## resistor-color-duo
+
+Added typing to `decodedValue()`, as it is unclear what the parameter type should be and what the function should return.
+
+## resistor-color-trio
+
+Added typing to `ResistorColorTrio.constructor()` and `label()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## rest-api
 
 Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## reverse-string
+
+Added typing to `reverseString()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rna-transcription
+
+Added typing to `toRna()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## robot-name
 
 Added the missing `name` property and `reset()` method with type hints. The instructions mention these behaviors but `main.js` had no indication that a `name` property or `reset()` method were needed.
+
+## robot-simulator
+
+Added typing to `Robot.bearing`, `Robot.coordinates`, `Robot.place()`, and `Robot.evaluate()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## roman-numerals
+
+Added typing to `toRoman()`, as it is unclear what the parameter type should be and what the function should return.
+
+## rotational-cipher
+
+Added typing to `rotate()`, as it is unclear what the parameter types should be and what the function should return.
+
+## run-length-encoding
+
+Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return.
 
 ## saddle-points
 
@@ -348,19 +420,31 @@ Added typing to `saddlePoints()`, as it is unclear what the parameter type shoul
 
 ## satellite
 
-Added error message documentation specifying the exact error messages that should be thrown for invalid tree traversals (different lengths, duplicate items, or different elements).
+Added typing to `treeFromTraversals()`, as it is unclear what the parameter types should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for invalid tree traversals (different lengths, duplicate items, or different elements).
 
 ## say
 
-Added error message documentation specifying that `"Number must be between 0 and 999,999,999,999."` should be thrown for numbers outside the supported range.
+Added typing to `say()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying that `"Number must be between 0 and 999,999,999,999."` should be thrown for numbers outside the supported range.
+
+## scrabble-score
+
+Added typing to `score()`, as it is unclear what the parameter type should be and what the function should return.
+
+## secret-handshake
+
+Added typing to `commands()`, as it is unclear what the parameter type should be and what the function should return.
 
 ## series
 
-Added error message documentation specifying the exact error messages that should be thrown for invalid inputs (empty series, negative slice length, zero slice length, or slice length exceeding series length).
+Added typing to `Series.constructor()` and `slices()`, as it is unclear what the parameter types should be and what the methods should return. Added error message documentation specifying the exact error messages that should be thrown for invalid inputs (empty series, negative slice length, zero slice length, or slice length exceeding series length).
 
 ## sieve
 
 Added typing to `primes()`, as it is unclear what the parameter type should be and what the function should return.
+
+## simple-cipher
+
+Added typing to `Cipher.constructor()`, `encode()`, `decode()`, and `key` getter, as it is unclear what the parameter types should be and what the methods should return.
 
 ## scale-generator
 
@@ -378,29 +462,73 @@ Added typing to `age()`, as it is unclear what the parameter types should be and
 
 Added typing to `spiralMatrix()`, as it is unclear what the parameter type should be and what the function should return.
 
+## square-root
+
+Added typing to `squareRoot()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## state-of-tic-tac-toe
 
-Added error message documentation specifying the exact error messages that should be thrown for invalid board states (wrong turn order or game continuing after completion).
+Added typing to `gamestate()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for invalid board states (wrong turn order or game continuing after completion).
+
+## strain
+
+Added typing to `keep()` and `discard()`, as it is unclear what the parameter types should be and what the functions should return.
+
+## sublist
+
+Added typing to `List.constructor()` and `compare()`, as it is unclear what the parameter types should be and what the methods should return.
 
 ## sum-of-multiples
 
 Added typing and parameters to the sum function, since agents can't guess the right order of arguments expected in the tests. Added allowed assumptions to the instructions.
 
+## tournament
+
+Added typing to `tournamentTally()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## transpose
 
 Added typing to `transpose()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## triangle
+
+Added typing to `Triangle.constructor()`, `isEquilateral`, `isIsosceles`, and `isScalene`, as it is unclear what the parameter types should be and what the getters should return.
+
+## trinary
+
+Added typing to `Trinary.constructor()` and `toDecimal()`, as it is unclear what the parameter types should be and what the methods should return.
+
+## twelve-days
+
+Added typing to `recite()`, as it is unclear what the parameter types should be and what the function should return.
 
 ## two-bucket
 
 Added typing to `solve()`. The instructions explain what three values should be determined but don't specify they should be returned as an object. Added error message documentation specifying the exact error messages that should be thrown for invalid bucket configurations (goal too large, goal not a multiple of GCD). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## two-fer
+
+Added typing to `twoFer()`, as it is unclear what the parameter type should be and what the function should return.
+
 ## variable-length-quantity
 
 Added typing to `encode()` and `decode()`, as it is unclear what the parameter types should be and what the functions should return. Added error message documentation specifying that `"Incomplete sequence"` should be thrown for incomplete VLQ sequences. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
+## word-count
+
+Added typing to `countWords()`, as it is unclear what the parameter type should be and what the function should return.
+
+## word-search
+
+Added typing to `WordSearch.constructor()` and `find()`, as it is unclear what the parameter types should be and what the methods should return.
+
 ## wordy
 
 Added typing to `answer()`, as it is unclear what the parameter type should be and what the function should return. Added error message documentation specifying the exact error messages that should be thrown for invalid word problems (unknown operations and syntax errors). There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+
+## yacht
+
+Added typing to `score()`, as it is unclear what the parameter types should be and what the function should return.
 
 ## zebra-puzzle
 

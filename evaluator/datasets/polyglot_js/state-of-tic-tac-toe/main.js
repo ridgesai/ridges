@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string[]} board
+ * @returns {string}
+ */
 export const gamestate = (board) => {
   throw new Error('Remove this line and implement the function');
 };
