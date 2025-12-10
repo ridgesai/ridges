@@ -1,5 +1,6 @@
 import api.config as config
 
+import asyncio
 from fastapi import APIRouter
 from datetime import datetime
 from pydantic import BaseModel
@@ -7,28 +8,14 @@ from utils.ttl import ttl_cache
 from typing import Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
+from utils.ttl import ttl_cache
 from queries.scores import get_weight_receiving_agent_hotkey
 from queries.evaluation_set import get_latest_set_id, get_latest_set_created_at
 from queries.statistics import get_average_score_per_evaluation_set_group, get_average_wait_time_per_evaluation_set_group
-import asyncio
+
 
 
 router = APIRouter()
-import time
-from typing import Any
-# TODO: Hacky cache implementation. We should use a proper cache library
-CACHE_EXPIRATION = 900 # 15 minutes
-cache_timestamps: dict[str, float] = {}
-recalculating_cache: dict[str, bool] = {}
-cache_data: dict[str, Any] = {}
-
-def is_cache_valid(cache_key: str) -> bool:
-    if cache_key not in cache_timestamps:
-        return False
-    return time.time() - cache_timestamps[cache_key] < CACHE_EXPIRATION
-
-def update_cache_timestamp(cache_key: str):
-    cache_timestamps[cache_key] = time.time()
 
 
 
@@ -68,20 +55,13 @@ class ScoringScreenerInfoResponse(BaseModel):
     validator_average_wait_time: Optional[float] = None
 
 @router.get("/screener-info")
-@ttl_cache(ttl_seconds=60) # 1 minute
+@ttl_cache(ttl_seconds=60 * 15) # 15 minutes
 async def screener_info() -> ScoringScreenerInfoResponse:
-    cache_key = "screener_info"
-    if is_cache_valid(cache_key):
-        return cache_data[cache_key]
-
-    if recalculating_cache.get(cache_key, False) and cache_key in cache_data:
-        return cache_data[cache_key]
-    recalculating_cache[cache_key] = True
     average_score_per_evaluation_set_group, average_wait_time_per_evaluation_set_group = await asyncio.gather(
         get_average_score_per_evaluation_set_group(),
         get_average_wait_time_per_evaluation_set_group()
     )
-    cache_data[cache_key] = ScoringScreenerInfoResponse(
+    return ScoringScreenerInfoResponse(
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
         prune_threshold=config.PRUNE_THRESHOLD,
@@ -94,9 +74,6 @@ async def screener_info() -> ScoringScreenerInfoResponse:
         screener_2_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.screener_2],
         validator_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.validator]
     )
-    cache_timestamps[cache_key] = time.time()
-    recalculating_cache[cache_key] = False
-    return cache_data[cache_key]
 
 
 
