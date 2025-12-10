@@ -48,6 +48,7 @@ class InferenceToolCallArgument(BaseModel):
     name: str
     value: Any
 class InferenceToolCall(BaseModel):
+    id: str
     name: str
     arguments: List[InferenceToolCallArgument]
 
@@ -62,6 +63,7 @@ def openai_tool_calls_to_inference_tool_calls(openai_tool_calls: List[ChatComple
             arguments_dict = {}
         
         inference_tool_calls.append(InferenceToolCall(
+            id=openai_tool_call.id,
             name=openai_tool_call.function.name,
             arguments=[InferenceToolCallArgument(name=name, value=value) for name, value in arguments_dict.items()]
         ))
@@ -96,6 +98,31 @@ class EmbeddingResult(BaseModel):
 class InferenceMessage(BaseModel):
     role: str
     content: str
+    tool_calls: Optional[List[InferenceToolCall]] = None
+    tool_call_id: Optional[str] = None
+
+def inference_message_to_openai_message(message: InferenceMessage) -> dict:
+    openai_message = {
+        "role": message.role,
+        "content": message.content
+    }
+    
+    if message.tool_calls:
+        openai_message["tool_calls"] = [
+            {
+                "id": tool_call.id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.name,
+                    "arguments": json.dumps({arg.name: arg.value for arg in tool_call.arguments})
+                }
+            } for tool_call in message.tool_calls
+        ]
+    
+    if message.tool_call_id:
+        openai_message["tool_call_id"] = message.tool_call_id
+    
+    return openai_message
 
 
 
