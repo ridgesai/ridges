@@ -1,6 +1,6 @@
+import asyncio
 import api.config as config
 
-import asyncio
 from fastapi import APIRouter
 from datetime import datetime
 from pydantic import BaseModel
@@ -61,6 +61,7 @@ async def screener_info() -> ScoringScreenerInfoResponse:
         get_average_score_per_evaluation_set_group(),
         get_average_wait_time_per_evaluation_set_group()
     )
+    
     return ScoringScreenerInfoResponse(
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
@@ -81,7 +82,6 @@ async def screener_info() -> ScoringScreenerInfoResponse:
 class ScoringLatestSetInfo(BaseModel):
     latest_set_id: int
     latest_set_created_at: datetime
-
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
     return ScoringLatestSetInfo(
