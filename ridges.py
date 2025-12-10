@@ -156,7 +156,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
             )
 
             payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
-            receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
+            receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_finalization=True)
 
             file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
             signature = wallet.hotkey.sign(file_info).hex()
