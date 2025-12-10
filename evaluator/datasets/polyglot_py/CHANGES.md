@@ -27,7 +27,7 @@ Added typing to `Allergies.__init__()`, `allergic_to()`, and `lst` property, as 
 
 ## alphametics
 
-Added typing to `solve()`, as it is unclear what type the parameter should be and what the function should return. Added clarification to the instructions about the expected return format (dict mapping letters to digits, or None if no solution exists).
+Added typing to `solve()`, as it is unclear what type the parameter should be and what the function should return. Added clarification to the instructions about the expected return format (dict mapping letters to digits, or None if no solution exists). Re-added the unit test skipped by default.
 
 ## anagram
 
@@ -367,7 +367,7 @@ Added typing to `value()`, as it is unclear what the parameter type should be an
 
 ## resistor-color-expert
 
-Added typing to `resistor_label()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `resistor_label()`, as it is unclear what the parameter type should be and what the function should return. Edited the instruction file to correctly say "3.3 kiloohms" instead of "3300 ohms".
 
 ## resistor-color-trio
 
