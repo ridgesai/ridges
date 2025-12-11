@@ -143,20 +143,19 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
                 return
 
-            subtensor = Subtensor(network=os.environ.get('SUBTENSOR_NETWORK', 'finney'))
+            with Subtensor(network=os.environ.get('SUBTENSOR_NETWORK', 'finney')) as subtensor:
+                # Transfer
+                payment_payload = subtensor.substrate.compose_call(
+                    call_module="Balances",
+                    call_function="transfer_keep_alive",
+                    call_params={
+                        'dest': payment_method_details['send_address'], 
+                        'value': payment_method_details['amount_rao'],
+                    }
+                )
 
-            # Transfer
-            payment_payload = subtensor.substrate.compose_call(
-                call_module="Balances",
-                call_function="transfer_keep_alive",
-                call_params={
-                    'dest': payment_method_details['send_address'], 
-                    'value': payment_method_details['amount_rao'],
-                }
-            )
-
-            payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
-            receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
+                payment_extrinsic = subtensor.substrate.create_signed_extrinsic(call=payment_payload, keypair=wallet.coldkey)
+                receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_inclusion=True)
 
             file_info = f"{wallet.hotkey.ss58_address}:{content_hash}:{version_num}"
             signature = wallet.hotkey.sign(file_info).hex()
