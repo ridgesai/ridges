@@ -25,7 +25,7 @@ class ProblemStatisticsTestInfo(BaseModel):
 
     pass_rate: float
 
-class ErroredAgentInfo(BaseModel):
+class ProblemStatisticsRecentErroredAgentInfo(BaseModel):
     agent_id: UUID
     name: str
     version_num: int
@@ -39,7 +39,7 @@ class ErroredAgentInfo(BaseModel):
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
     error_message: str
-    recent_errored_agents: List[ErroredAgentInfo]
+    recent_errored_agents: List[ProblemStatisticsRecentErroredAgentInfo]
 
     num_errors: int
 
