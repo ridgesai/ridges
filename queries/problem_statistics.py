@@ -1,7 +1,7 @@
-import datetime
 import json
 
 from uuid import UUID
+from datetime import datetime
 from pydantic import BaseModel
 from typing import List, Optional
 from models.problem import ProblemDifficulty
@@ -13,15 +13,7 @@ from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
-
-class ErroredAgentInfo(BaseModel):
-    agent_id: UUID
-    version_num: int
-    evaluation_run_time: float
-    evaluation_id: UUID
-    evaluation_run_id: UUID
-    evaluation_finished_at: datetime.datetime
-    error_message: str
+    
 
 class ProblemStatisticsTestInfo(BaseModel):
     name: str
@@ -33,10 +25,21 @@ class ProblemStatisticsTestInfo(BaseModel):
 
     pass_rate: float
 
+class ErroredAgentInfo(BaseModel):
+    agent_id: UUID
+    name: str
+    version_num: int
+
+    evaluation_id: UUID
+    evaluation_run_id: UUID
+    evaluation_run_started_at: datetime
+    evaluation_run_errored_at: datetime
+    evaluation_run_error_message: Optional[str] = None
+
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
     error_message: str
-    recent_errored_agent_info: List[ErroredAgentInfo]
+    recent_errored_agents: List[ErroredAgentInfo]
 
     num_errors: int
 
@@ -197,7 +200,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     jsonb_build_object(
                         'error_code', error_code,
                         'num_errors', num_errors,
-                        'recent_errored_agent_info', recent_errored_agent_info
+                        'recent_errored_agents', recent_errored_agents
                     )
                 ) AS error_code_distribution
             FROM (
@@ -206,37 +209,37 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     error_code,
                     COUNT(*) AS num_errors,
                     json_agg(
-                        jsonb_build_object(
-                            'name', name,
+                        jsonb_build_object(   
                             'agent_id', agent_id,
+                            'name', name,
                             'version_num', version_num,
-                            'evaluation_run_time', evaluation_run_time,
                             'evaluation_id', evaluation_id,
                             'evaluation_run_id', evaluation_run_id,
-                            'evaluation_finished_at', evaluation_finished_at,
-                            'error_message', error_message
-                        ) ORDER BY evaluation_finished_at DESC
-                    ) FILTER (WHERE recent_run_rank <= 5 AND error_message IS NOT NULL) AS recent_errored_agent_info
+                            'evaluation_run_errored_at', evaluation_run_errored_at,
+                            'evaluation_run_time', evaluation_run_time,
+                            'evaluation_run_error_message', evaluation_run_error_message,
+                        ) ORDER BY evaluation_run_errored_at DESC
+                    ) FILTER (WHERE evaluation_run_time_rank <= 5) AS recent_errored_agents
                 FROM (
                     SELECT
                         er.problem_name,
                         er.error_code,
-                        a.name,
                         a.agent_id,
+                        a.name,
                         a.version_num,
-                        EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
                         er.evaluation_id,
                         er.evaluation_run_id,
-                        er.error_message,
-                        er.finished_or_errored_at AS evaluation_finished_at,
+                        er.finished_or_errored_at AS evaluation_run_errored_at,
+                        EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
+                        er.error_message as evaluation_run_error_message,
                         ROW_NUMBER() OVER (
                             PARTITION BY er.problem_name, er.error_code
                             ORDER BY er.finished_or_errored_at DESC
-                        ) AS recent_run_rank
+                        ) AS evaluation_run_time_rank
                     FROM evaluation_runs er
                         JOIN evaluations e ON er.evaluation_id = e.evaluation_id
                         JOIN agents a ON e.agent_id = a.agent_id
-                    WHERE er.error_code IS NOT NULL
+                    WHERE er.status = 'error'
                         AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                         AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                         AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
