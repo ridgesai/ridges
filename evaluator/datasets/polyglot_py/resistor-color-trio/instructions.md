@@ -31,8 +31,8 @@ For the exercise it doesn't matter what ohms really are.
 For example:
 
 - orange-orange-black would be 33 and no zeros, which becomes 33 ohms.
-- orange-orange-red would be 33 and 2 zeros, which becomes 3300 ohms.
-- orange-orange-orange would be 33 and 3 zeros, which becomes 33000 ohms.
+- orange-orange-red would be 33 and 2 zeros, which becomes 3.3 kiloohms.
+- orange-orange-orange would be 33 and 3 zeros, which becomes 33 kiloohms.
 
 (If Math is your thing, you may want to think of the zeros as exponents of 10.
 If Math is not your thing, go with the zeros.

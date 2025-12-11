@@ -371,7 +371,7 @@ Added typing to `resistor_label()`, as it is unclear what the parameter type sho
 
 ## resistor-color-trio
 
-Added typing to `label()`, as it is unclear what the parameter type should be and what the function should return.
+Added typing to `label()`, as it is unclear what the parameter type should be and what the function should return. Edited the instruction file to correctly say "3.3 kiloohms" instead of "3300 ohms" and "33 kiloohms" instead of "33000 ohms"
 
 ## rest-api
 
