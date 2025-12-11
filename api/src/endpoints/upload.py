@@ -1,4 +1,4 @@
-from bittensor import Subtensor
+from bittensor import AsyncSubtensor
 
 import asyncio
 import os
@@ -23,9 +23,6 @@ from api.src.utils.upload_agent_helpers import get_miner_hotkey, check_if_python
 from models.agent import AgentStatus, Agent
 from utils.coingecko import get_tao_price
 from api import config 
-
-# TODO STEPHEN: we should have a global singleton
-subtensor = Subtensor(network=config.SUBTENSOR_NETWORK)
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -73,8 +70,9 @@ async def check_agent_post(
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey) 
     check_if_python_file(agent_file.filename)
-    coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
-    miner_balance = subtensor.get_balance(address=coldkey).rao
+    async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
+        coldkey = await subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
+        miner_balance = subtensor.get_balance(address=coldkey).rao
     payment_cost = await get_upload_price(cache_time=payment_time)
     if payment_cost.amount_rao > miner_balance:
         raise HTTPException(
@@ -168,7 +166,8 @@ async def post_agent(
 
         # Retrieve payment details from the chain
         try:
-            payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+            async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
+                payment_block = await subtensor.substrate.get_block(block_hash=payment_block_hash)
         except Exception as e:
             logger.error(f"Error retrieving payment block: {e}")
             raise HTTPException(
@@ -355,8 +354,9 @@ async def get_upload_price() -> UploadPriceResponse:
         send_address=config.UPLOAD_SEND_ADDRESS
     )
 
-def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = subtensor.substrate.get_events(block_hash=block_hash)
+async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
+    async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
+        events = await subtensor.substrate.get_events(block_hash=block_hash)
 
     for event in events:
         if event.get("extrinsic_idx") != extrinsic_index:

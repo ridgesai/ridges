@@ -7,12 +7,9 @@ import utils.logger as logger
 
 
 
-subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)
-
-
-
 async def check_if_hotkey_is_registered(hotkey: str) -> bool:
-    return await subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
+    async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
+        return await subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
 
 
 
