@@ -61,7 +61,8 @@ class ProblemStatisticsFastestAgentInfo(BaseModel):
     evaluation_id: UUID
 
     evaluation_run_id: UUID
-    evaluation_run_time: float
+    evaluation_run_started_at: datetime
+    evaluation_run_finished_at: datetime
 
 
 
@@ -215,8 +216,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                             'version_num', version_num,
                             'evaluation_id', evaluation_id,
                             'evaluation_run_id', evaluation_run_id,
+                            'evaluation_run_started_at', evaluation_run_started_at,
                             'evaluation_run_errored_at', evaluation_run_errored_at,
-                            'evaluation_run_time', evaluation_run_time,
                             'evaluation_run_error_message', evaluation_run_error_message
                         ) ORDER BY evaluation_run_errored_at DESC
                     ) FILTER (WHERE evaluation_run_time_rank <= 5) AS recent_errored_agents
@@ -229,6 +230,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         a.version_num,
                         er.evaluation_id,
                         er.evaluation_run_id,
+                        er.created_at AS evaluation_run_started_at,
                         er.finished_or_errored_at AS evaluation_run_errored_at,
                         EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
                         er.error_message as evaluation_run_error_message,
@@ -279,9 +281,10 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         'agent_id', agent_id, 
                         'name', name,
                         'version_num', version_num,
-                        'evaluation_run_time', evaluation_run_time,
                         'evaluation_id', evaluation_id,
-                        'evaluation_run_id', evaluation_run_id
+                        'evaluation_run_id', evaluation_run_id,
+                        'evaluation_run_started_at', evaluation_run_started_at,
+                        'evaluation_run_finished_at', evaluation_run_finished_at
                     ) ORDER BY evaluation_run_time ASC
                 ) AS fastest_agents
             FROM (
@@ -293,6 +296,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     (ARRAY_AGG(e.evaluation_id ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_id,
                     (ARRAY_AGG(erh.evaluation_run_id ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_run_id,
                     MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) AS evaluation_run_time,
+                    (ARRAY_AGG(erh.created_at ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_run_started_at,
+                    (ARRAY_AGG(erh.finished_or_errored_at ORDER BY EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at)) ASC))[1] AS evaluation_run_finished_at,
                     ROW_NUMBER() OVER (PARTITION BY erh.problem_name ORDER BY MIN(EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.created_at))) ASC) AS evaluation_run_time_rank
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
