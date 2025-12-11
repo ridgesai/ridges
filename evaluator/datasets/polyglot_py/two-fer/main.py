@@ -1,2 +1,2 @@
-def two_fer(name: str = 'you') -> str:
+def two_fer(name: str) -> str:
     pass
