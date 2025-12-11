@@ -72,7 +72,7 @@ async def check_agent_post(
     check_if_python_file(agent_file.filename)
     async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
         coldkey = await subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
-        miner_balance = subtensor.get_balance(address=coldkey).rao
+        miner_balance = (await subtensor.get_balance(address=coldkey)).rao
     payment_cost = await get_upload_price(cache_time=payment_time)
     if payment_cost.amount_rao > miner_balance:
         raise HTTPException(
@@ -189,7 +189,8 @@ async def post_agent(
             'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
         """
         block_number = payment_block['header']['number']
-        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
+        async with AsyncSubtensor(network=config.SUBTENSOR_NETWORK) as subtensor:
+            coldkey = await subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
         payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
         payment_cost = await get_upload_price(cache_time=payment_time)
@@ -204,7 +205,7 @@ async def post_agent(
                 payment_value = arg['value']
                 break
         
-        if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
+        if payment_value is None or await check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
             raise HTTPException(
                 status_code=402,
                 detail="Payment value not found"
