@@ -41,7 +41,7 @@ The four-band resistor is built up like this:
 Examples:
 
 - orange-orange-brown-green would be `330` ohms with a `±0.5%` tolerance.
-- orange-orange-red-grey would be `3300` ohms with `±0.05%` tolerance.
+- orange-orange-red-grey would be `3.3` kiloohms with `±0.05%` tolerance.
 
 The difference between a four and five-band resistor is that the five-band resistor has an extra band to indicate a more precise value.
 

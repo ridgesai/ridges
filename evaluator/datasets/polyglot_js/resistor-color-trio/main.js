@@ -4,10 +4,16 @@
 //
 
 export class ResistorColorTrio {
-  constructor() {
+  /**
+   * @param {string[]} colors
+   */
+  constructor(colors) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {string}
+   */
   label() {
     throw new Error('Remove this line and implement the function');
   }

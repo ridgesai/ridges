@@ -1,2 +1,2 @@
-def is_pangram(sentence):
+def is_pangram(sentence: str) -> bool:
     pass

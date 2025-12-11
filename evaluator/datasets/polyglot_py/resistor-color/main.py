@@ -1,6 +1,8 @@
-def color_code(color):
+from typing import List
+
+def color_code(color: str) -> int:
     pass
 
 
-def colors():
+def colors() -> List[str]:
     pass

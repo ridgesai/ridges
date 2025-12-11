@@ -4,11 +4,18 @@
 //
 
 export class List {
-  constructor() {
+  /**
+   * @param {...number} items
+   */
+  constructor(...items) {
     throw new Error('Remove this line and implement the function');
   }
 
-  compare() {
+  /**
+   * @param {List} other
+   * @returns {string}
+   */
+  compare(other) {
     throw new Error('Remove this line and implement the function');
   }
 }

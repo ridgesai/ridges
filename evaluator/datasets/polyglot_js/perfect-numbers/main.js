@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {number} number
+ * @returns {string}
+ */
 export const classify = () => {
   throw new Error('Remove this line and implement the function');
 };

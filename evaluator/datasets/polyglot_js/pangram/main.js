@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} candidate
+ * @returns {boolean}
+ */
 export const isPangram = () => {
   throw new Error('Remove this line and implement the function');
 };

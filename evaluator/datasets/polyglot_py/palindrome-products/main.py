@@ -1,4 +1,6 @@
-def largest(min_factor, max_factor):
+from typing import Tuple, List, Optional
+
+def largest(min_factor: int, max_factor: int) -> Tuple[Optional[int], List[Tuple[int, int]]]:
     """Given a range of numbers, find the largest palindromes which
        are products of two numbers within that range.
 
@@ -11,7 +13,7 @@ def largest(min_factor, max_factor):
     pass
 
 
-def smallest(min_factor, max_factor):
+def smallest(min_factor: int, max_factor: int) -> Tuple[Optional[int], List[Tuple[int, int]]]:
     """Given a range of numbers, find the smallest palindromes which
     are products of two numbers within that range.
 

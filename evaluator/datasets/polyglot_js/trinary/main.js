@@ -4,10 +4,16 @@
 //
 
 export class Trinary {
-  constructor() {
+  /**
+   * @param {string} decimal
+   */
+  constructor(decimal) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number}
+   */
   toDecimal() {
     throw new Error('Remove this line and implement the function');
   }

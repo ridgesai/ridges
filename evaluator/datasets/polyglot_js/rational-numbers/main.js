@@ -4,38 +4,72 @@
 //
 
 export class Rational {
-  constructor() {
+  /**
+   * @param {number} numerator
+   * @param {number} denominator
+   */
+  constructor(numerator, denominator) {
     throw new Error('Remove this line and implement the function');
   }
 
-  add() {
+  /**
+   * @param {Rational} that
+   * @returns {Rational}
+   */
+  add(that) {
     throw new Error('Remove this line and implement the function');
   }
 
-  sub() {
+  /**
+   * @param {Rational} that
+   * @returns {Rational}
+   */
+  sub(that) {
     throw new Error('Remove this line and implement the function');
   }
 
-  mul() {
+  /**
+   * @param {Rational} that
+   * @returns {Rational}
+   */
+  mul(that) {
     throw new Error('Remove this line and implement the function');
   }
 
-  div() {
+  /**
+   * @param {Rational} that
+   * @returns {Rational}
+   */
+  div(that) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {Rational}
+   */
   abs() {
     throw new Error('Remove this line and implement the function');
   }
 
-  exprational() {
+  /**
+   * @param {number} power
+   * @returns {Rational}
+   */
+  exprational(power) {
     throw new Error('Remove this line and implement the function');
   }
 
-  expreal() {
+  /**
+   * @param {number} base
+   * @returns {number}
+   */
+  expreal(base) {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {Rational}
+   */
   reduce() {
     throw new Error('Remove this line and implement the function');
   }

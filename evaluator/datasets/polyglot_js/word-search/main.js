@@ -4,11 +4,18 @@
 //
 
 class WordSearch {
-  constructor() {
+  /**
+   * @param {string[]} grid
+   */
+  constructor(grid) {
     throw new Error('Remove this line and implement the function');
   }
 
-  find() {
+  /**
+   * @param {string} word
+   * @returns {{start: number[], end: number[]}|undefined}
+   */
+  find(word) {
     throw new Error('Remove this line and implement the function');
   }
 }

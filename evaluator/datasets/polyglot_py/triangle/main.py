@@ -1,10 +1,12 @@
-def equilateral(sides):
+from typing import List
+
+def equilateral(sides: List[float]) -> bool:
     pass
 
 
-def isosceles(sides):
+def isosceles(sides: List[float]) -> bool:
     pass
 
 
-def scalene(sides):
+def scalene(sides: List[float]) -> bool:
     pass

@@ -3,6 +3,10 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} string
+ * @returns {string}
+ */
 export const reverseString = () => {
   throw new Error('Remove this line and implement the function');
 };

@@ -4,11 +4,18 @@
 //
 
 export class Series {
-  constructor(series) {
+  /**
+   * @param {string} numberString
+   */
+  constructor(numberString) {
     throw new Error('Remove this line and implement the function');
   }
 
-  slices(sliceLength) {
+  /**
+   * @param {number} sliceSize
+   * @returns {number[][]}
+   */
+  slices(sliceSize) {
     throw new Error('Remove this line and implement the function');
   }
 }

@@ -1,2 +1,2 @@
-def convert(number):
+def convert(number: int) -> str:
     pass

@@ -4,7 +4,10 @@
 //
 
 export class GameOfLife {
-  constructor() {
+  /**
+   * @param {number[][]} matrix
+   */
+  constructor(matrix) {
     throw new Error('Remove this line and implement the function');
   }
 
@@ -12,6 +15,9 @@ export class GameOfLife {
     throw new Error('Remove this line and implement the function');
   }
 
+  /**
+   * @returns {number[][]}
+   */
   state() {
     throw new Error('Remove this line and implement the function');
   }

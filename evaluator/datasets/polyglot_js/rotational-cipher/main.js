@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string} text
+ * @param {number} shift
+ * @returns {string}
+ */
 export const rotate = () => {
   throw new Error('Remove this line and implement the function');
 };

@@ -1,3 +1,3 @@
-def roman(number):
+def roman(number: int) -> str:
     pass
 

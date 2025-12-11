@@ -1,2 +1,2 @@
-def square_root(number):
+def square_root(number: int) -> int:
     pass

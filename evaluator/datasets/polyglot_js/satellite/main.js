@@ -3,6 +3,11 @@
 // convenience to get you started writing code faster.
 //
 
+/**
+ * @param {string[]} preorder
+ * @param {string[]} inorder
+ * @returns {Object}
+ */
 export const treeFromTraversals = (preorder, inorder) => {
   throw new Error('Remove this line and implement the function');
 };
