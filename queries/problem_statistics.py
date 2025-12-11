@@ -217,7 +217,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                             'evaluation_run_id', evaluation_run_id,
                             'evaluation_run_errored_at', evaluation_run_errored_at,
                             'evaluation_run_time', evaluation_run_time,
-                            'evaluation_run_error_message', evaluation_run_error_message,
+                            'evaluation_run_error_message', evaluation_run_error_message
                         ) ORDER BY evaluation_run_errored_at DESC
                     ) FILTER (WHERE evaluation_run_time_rank <= 5) AS recent_errored_agents
                 FROM (
