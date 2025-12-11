@@ -1,3 +1,4 @@
+import datetime
 import json
 
 from uuid import UUID
@@ -13,6 +14,14 @@ from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, 
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
 
+class ErroredAgentInfo(BaseModel):
+    agent_id: UUID
+    version_num: int
+    evaluation_run_time: float
+    evaluation_id: UUID
+    evaluation_run_id: UUID
+    evaluation_finished_at: datetime.datetime
+    error_message: str
 
 class ProblemStatisticsTestInfo(BaseModel):
     name: str
@@ -21,13 +30,13 @@ class ProblemStatisticsTestInfo(BaseModel):
     num_runs: int
     num_passed: int
     num_failed: int
-    num_skipped: int
 
     pass_rate: float
 
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
     error_message: str
+    recent_errored_agent_info: List[ErroredAgentInfo]
 
     num_errors: int
 
@@ -142,7 +151,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                AND erh.finished_or_errored_at > '2025-12-05 22:00:00.000 -0500' -- TODO ADAM: remove
             GROUP BY erh.problem_name
         ),
         tests_stats AS ( 
@@ -155,7 +163,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         'num_runs', num_runs,
                         'num_passed', num_passed,
                         'num_failed', num_failed,
-                        'num_skipped', num_skipped,
                         'pass_rate', pass_rate
                     )
                 ) AS tests
@@ -167,7 +174,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     COUNT(*) AS num_runs,
                     COUNT(*) FILTER (WHERE tr->>'status' = 'pass') AS num_passed,
                     COUNT(*) FILTER (WHERE tr->>'status' = 'fail') AS num_failed,
-                    COUNT(*) FILTER (WHERE tr->>'status' = 'skip') AS num_skipped,
                     COUNT(*) FILTER (WHERE tr->>'status' = 'pass')::FLOAT / NULLIF(COUNT(*), 0) AS pass_rate
                 FROM 
                     evaluation_runs er 
@@ -179,7 +185,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                    AND er.finished_or_errored_at > '2025-12-05 22:00:00.000 -0500' -- TODO ADAM: remove
                 GROUP BY 
                     er.problem_name, tr->>'name', tr->>'category'
             )
@@ -189,21 +194,54 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
             SELECT
                 problem_name,
                 json_agg(
-                    jsonb_build_object('error_code', error_code, 'num_errors', num_errors)
+                    jsonb_build_object(
+                        'error_code', error_code,
+                        'num_errors', num_errors,
+                        'recent_errored_agent_info', recent_errored_agent_info
+                    )
                 ) AS error_code_distribution
             FROM (
                 SELECT
-                    er.problem_name,
-                    er.error_code,
-                    COUNT(*) AS num_errors
-                FROM evaluation_runs er
-                    JOIN evaluations e ON er.evaluation_id = e.evaluation_id
-                    JOIN agents a ON e.agent_id = a.agent_id
-                WHERE er.error_code IS NOT NULL
-                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                GROUP BY er.problem_name, er.error_code
+                    problem_name,
+                    error_code,
+                    COUNT(*) AS num_errors,
+                    json_agg(
+                        jsonb_build_object(
+                            'name', name,
+                            'agent_id', agent_id,
+                            'version_num', version_num,
+                            'evaluation_run_time', evaluation_run_time,
+                            'evaluation_id', evaluation_id,
+                            'evaluation_run_id', evaluation_run_id,
+                            'evaluation_finished_at', evaluation_finished_at,
+                            'error_message', error_message
+                        ) ORDER BY evaluation_finished_at DESC
+                    ) FILTER (WHERE recent_run_rank <= 5 AND error_message IS NOT NULL) AS recent_errored_agent_info
+                FROM (
+                    SELECT
+                        er.problem_name,
+                        er.error_code,
+                        a.name,
+                        a.agent_id,
+                        a.version_num,
+                        EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.created_at)) AS evaluation_run_time,
+                        er.evaluation_id,
+                        er.evaluation_run_id,
+                        er.error_message,
+                        er.finished_or_errored_at AS evaluation_finished_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY er.problem_name, er.error_code
+                            ORDER BY er.finished_or_errored_at DESC
+                        ) AS recent_run_rank
+                    FROM evaluation_runs er
+                        JOIN evaluations e ON er.evaluation_id = e.evaluation_id
+                        JOIN agents a ON e.agent_id = a.agent_id
+                    WHERE er.error_code IS NOT NULL
+                        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                        AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                )
+                GROUP BY problem_name, error_code
             )
             GROUP BY problem_name
         ),
@@ -226,7 +264,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                 WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                    AND er.finished_or_errored_at > '2025-12-05 22:00:00.000 -0500' -- TODO ADAM: remove
                 GROUP BY er.problem_name, i.model
             )
             GROUP BY problem_name
@@ -262,7 +299,6 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                    AND erh.finished_or_errored_at > '2025-12-05 22:00:00.000 -0500' -- TODO ADAM: remove
                 GROUP BY erh.problem_name, a.agent_id
             )
             WHERE evaluation_run_time_rank <= 5
