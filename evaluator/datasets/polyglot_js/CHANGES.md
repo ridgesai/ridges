@@ -380,7 +380,7 @@ Added typing to `decodedValue()`, as it is unclear what the parameter type shoul
 
 ## resistor-color-trio
 
-Added typing to `ResistorColorTrio.constructor()` and `label()`, as it is unclear what the parameter types should be and what the methods should return.
+Added typing to `ResistorColorTrio.constructor()` and `label()`, as it is unclear what the parameter types should be and what the methods should return. Edited the instruction file to correctly say "3.3 kiloohms" instead of "3300 ohms" and "33 kiloohms" instead of "33000 ohms".
 
 ## rest-api
 
