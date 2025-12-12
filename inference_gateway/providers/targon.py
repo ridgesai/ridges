@@ -150,8 +150,15 @@ class TargonProvider(Provider):
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
                 stream=False
             )
+            choice = chat_completion.choices[0]
+            message = choice.message
 
-            message = chat_completion.choices[0].message
+            finish_reason = getattr(choice, 'finish_reason', None)
+            reasoning_content = getattr(message, 'reasoning_content', None)
+
+            final_content = message.content if message.content else ""
+            if not final_content and reasoning_content and finish_reason == "stop":
+                final_content = reasoning_content
 
             num_input_tokens = chat_completion.usage.prompt_tokens
             num_output_tokens = chat_completion.usage.completion_tokens
@@ -160,7 +167,7 @@ class TargonProvider(Provider):
             return InferenceResult(
                 status_code=200,
 
-                content=message.content if message.content else "",
+                content=final_content,
                 tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else [],
 
                 num_input_tokens=num_input_tokens,
