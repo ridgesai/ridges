@@ -2,7 +2,6 @@ DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
         CREATE TYPE AgentStatus AS ENUM (
-            'cancelled',
             'screening_1',
             'failed_screening_1',
             'screening_2',
@@ -346,6 +345,7 @@ BEGIN
             e.set_id,
             e.score,
             e.validator_hotkey,
+            e.evaluation_set_group,
             (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) as approved,
             avi.approved_at
         FROM agents a
@@ -353,7 +353,7 @@ BEGIN
             AND e.status = 'success'
             AND e.score IS NOT NULL
             AND e.score > 0
-            AND e.validator_hotkey NOT LIKE 'screener-%'
+            AND e.evaluation_set_group = 'validator'::EvaluationSetGroup
             AND e.set_id IS NOT NULL
         LEFT JOIN approved_agents avi ON a.agent_id = avi.agent_id AND e.set_id = avi.set_id
         WHERE a.agent_id = target_agent_id
@@ -420,7 +420,7 @@ BEGIN
             AND e.status = 'success'
             AND e.score IS NOT NULL
             AND e.score > 0
-            AND e.validator_hotkey NOT LIKE 'screener-%'
+            AND e.evaluation_set_group = 'validator'::EvaluationSetGroup
             AND e.set_id IS NOT NULL
         LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
     )
