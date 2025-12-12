@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS banned_hotkeys (
     banned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS benchmark_agent_ids (
+    agent_id UUID PRIMARY KEY REFERENCES agents(agent_id),
+    description TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
     set_group EvaluationSetGroup NOT NULL,
@@ -247,6 +252,7 @@ SELECT
     AVG(ae.score) AS final_score
 FROM agent_evaluations ae
 WHERE ae.set_id IS NOT NULL
+  AND ae.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
 GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
          ae.created_at, ae.status, ae.set_id, ae.approved, ae.approved_at
 -- At least 2 validators
@@ -303,6 +309,7 @@ WHERE agents.status = 'screening_1'
       AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.evaluation_set_group = 'screener_1'::EvaluationSetGroup
   )
+  AND agents.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
 ORDER BY agents.created_at ASC;
 
 -- Screener 2 queue view
@@ -318,6 +325,7 @@ WHERE agents.status = 'screening_2'
       AND evaluations_hydrated.status IN ('success', 'running')
       AND evaluations_hydrated.evaluation_set_group = 'screener_2'::EvaluationSetGroup
   )
+  AND agents.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
 ORDER BY agents.created_at ASC;
 
 -- Validator queue view
@@ -352,6 +360,7 @@ WHERE
     agents.status = 'evaluating'
 --   TODO: Make into a constant, same as config.NUM_EVALS_PER_AGENT
     AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < 3
+    AND agents.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
 ORDER BY
     screener_2_scores.score DESC,
     agents.created_at ASC,
