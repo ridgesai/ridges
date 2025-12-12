@@ -1,4 +1,3 @@
-import asyncio
 import api.config as config
 
 from fastapi import APIRouter
@@ -8,7 +7,6 @@ from utils.ttl import ttl_cache
 from typing import Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
-from utils.ttl import ttl_cache
 from queries.scores import get_weight_receiving_agent_hotkey
 from queries.evaluation_set import get_latest_set_id, get_latest_set_created_at
 from queries.statistics import get_average_score_per_evaluation_set_group, get_average_wait_time_per_evaluation_set_group
@@ -55,13 +53,11 @@ class ScoringScreenerInfoResponse(BaseModel):
     validator_average_wait_time: Optional[float] = None
 
 @router.get("/screener-info")
-@ttl_cache(ttl_seconds=60 * 15) # 15 minutes
+@ttl_cache(ttl_seconds=60) # 1 minute
 async def screener_info() -> ScoringScreenerInfoResponse:
-    average_score_per_evaluation_set_group, average_wait_time_per_evaluation_set_group = await asyncio.gather(
-        get_average_score_per_evaluation_set_group(),
-        get_average_wait_time_per_evaluation_set_group()
-    )
-    
+    average_score_per_evaluation_set_group = await get_average_score_per_evaluation_set_group()
+    average_wait_time_per_evaluation_set_group = await get_average_wait_time_per_evaluation_set_group()
+
     return ScoringScreenerInfoResponse(
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
@@ -82,6 +78,7 @@ async def screener_info() -> ScoringScreenerInfoResponse:
 class ScoringLatestSetInfo(BaseModel):
     latest_set_id: int
     latest_set_created_at: datetime
+
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
     return ScoringLatestSetInfo(
