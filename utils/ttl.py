@@ -98,16 +98,12 @@ def ttl_cache(ttl_seconds: int):
                 if key in cache and datetime.now(timezone.utc) < cache[key].expires_at:
                     return
                 
-                try:
-                    value = await func(*args, **kwargs)
-                    cache[key] = TTLCacheEntry(
-                        expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
-                        value=value
-                    )
-                    logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
-                except Exception:
-                    # TODO
-                    pass
+                value = await func(*args, **kwargs)
+                cache[key] = TTLCacheEntry(
+                    expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
+                    value=value
+                )
+                logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
         
 
 

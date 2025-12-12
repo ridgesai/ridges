@@ -118,7 +118,7 @@ class ProblemStatistics(BaseModel):
 
 
 @db_operation
-async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatistics]:
+async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[ProblemStatistics]:
     rows = await conn.fetch(
         """
         WITH stats AS (
@@ -136,25 +136,25 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     SELECT 1 FROM evaluation_sets es1 
                     WHERE es1.problem_name = erh.problem_name 
                     AND es1.set_group = 'screener_1' 
-                    AND es1.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND es1.set_id = $1
                 ) AS in_screener_1_set_group,
                 EXISTS(
                     SELECT 1 FROM evaluation_sets es2 
                     WHERE es2.problem_name = erh.problem_name 
                     AND es2.set_group = 'screener_2' 
-                    AND es2.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND es2.set_id = $1
                 ) AS in_screener_2_set_group,
                 EXISTS(
                     SELECT 1 FROM evaluation_sets es3 
                     WHERE es3.problem_name = erh.problem_name 
                     AND es3.set_group = 'validator' 
-                    AND es3.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND es3.set_id = $1
                 ) AS in_validator_set_group
             FROM evaluation_runs_hydrated erh
                 JOIN evaluation_runs_with_cost erwc ON erh.evaluation_run_id = erwc.evaluation_run_id
                 JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                 JOIN agents a on e.agent_id = a.agent_id
-            WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            WHERE e.set_id = $1
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             GROUP BY erh.problem_name
@@ -188,7 +188,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     JOIN agents a ON a.agent_id = e.agent_id
                 WHERE 
                     er.status = 'finished'
-                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY 
@@ -246,7 +246,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         JOIN evaluations e ON er.evaluation_id = e.evaluation_id
                         JOIN agents a ON e.agent_id = a.agent_id
                     WHERE er.status = 'error'
-                        AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                        AND e.set_id = $1
                         AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                         AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 )
@@ -270,7 +270,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id 
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
                     JOIN agents a ON e.agent_id = a.agent_id 
-                WHERE e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                WHERE e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY er.problem_name, i.model
@@ -308,7 +308,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                     JOIN agents a ON e.agent_id = a.agent_id
                 WHERE erh.status = 'finished'
                     AND erh.solved
-                    AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+                    AND e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 GROUP BY erh.problem_name, a.agent_id
@@ -327,7 +327,8 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
         LEFT JOIN error_code_distribution_stats ecds ON s.problem_name = ecds.problem_name
         LEFT JOIN token_distribution_stats tdss ON s.problem_name = tdss.problem_name
         LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name
-        """
+        """,
+        set_id
     )
 
     problem_stats = [ProblemStatistics(**row) for row in rows]
