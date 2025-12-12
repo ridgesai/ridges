@@ -31,6 +31,8 @@ class ProblemStatisticsRecentErroredAgentInfo(BaseModel):
     version_num: int
 
     evaluation_id: UUID
+    evaluation_validator_hotkey: str
+    
     evaluation_run_id: UUID
     evaluation_run_started_at: datetime
     evaluation_run_errored_at: datetime
@@ -215,6 +217,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                             'name', name,
                             'version_num', version_num,
                             'evaluation_id', evaluation_id,
+                            'evaluation_validator_hotkey', evaluation_validator_hotkey,
                             'evaluation_run_id', evaluation_run_id,
                             'evaluation_run_started_at', evaluation_run_started_at,
                             'evaluation_run_errored_at', evaluation_run_errored_at,
@@ -229,6 +232,7 @@ async def get_problem_statistics(conn: DatabaseConnection) -> List[ProblemStatis
                         a.name,
                         a.version_num,
                         er.evaluation_id,
+                        e.validator_hotkey as evaluation_validator_hotkey,
                         er.evaluation_run_id,
                         er.created_at AS evaluation_run_started_at,
                         er.finished_or_errored_at AS evaluation_run_errored_at,
