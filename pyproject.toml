@@ -41,8 +41,3 @@ profile = "black"
 
 [tool.setuptools]
 py-modules = []
-
-[tool.uv.workspace]
-members = [
-    "agent-sandbox-test2",
-]
