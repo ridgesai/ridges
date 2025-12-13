@@ -181,7 +181,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 evaluation_run_id,
                 agent_code,
                 running_agent_timeout_seconds,
-                include_solution=config.INCLUDE_SOLUTIONS
+                include_solutions=config.INCLUDE_SOLUTIONS
             )
 
             # Move from initializing_agent -> running_agent

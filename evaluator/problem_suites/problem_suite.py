@@ -61,7 +61,7 @@ class ProblemSuite(ABC):
         agent_code: str,
         timeout_seconds: int,
         *,
-        include_solution: bool = False,
+        include_solutions: bool = False,
         include_tests: bool = False
     ) -> Sandbox:
         try:
@@ -77,7 +77,7 @@ class ProblemSuite(ABC):
                 # Copy problem files to /sandbox/repo
                 self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_tests=include_tests)
 
-                if include_solution:
+                if include_solutions:
                     # Create /sandbox/solution.diff
                     with open(os.path.join(temp_dir, "solution.diff"), "w") as f:
                         f.write(problem.solution_diff)

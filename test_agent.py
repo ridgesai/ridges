@@ -89,7 +89,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             evaluation_run.evaluation_run_id,
             agent_code,
             running_agent_timeout_seconds,
-            include_solution=include_solutions,
+            include_solutions=include_solutions,
             include_tests=include_tests
         )
         logger.info(f"[{problem_name}] Finished initializing agent")
