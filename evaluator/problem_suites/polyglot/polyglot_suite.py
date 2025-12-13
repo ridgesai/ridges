@@ -27,14 +27,15 @@ class PolyglotSuiteLanguage(str, Enum):
     JAVASCRIPT = "js"
 
 class PolyglotSuite(ProblemSuite):
-    def __init__(self, language: PolyglotSuiteLanguage):
+    def __init__(self, language: PolyglotSuiteLanguage, unpatched: bool = False):
         self.problems = {}
         self.name = ProblemSuiteName(f"polyglot_{language.value}")
 
         self.language = language.value
+        self.unpatched = unpatched
 
         # /evaluator/datasets/polyglot_*
-        dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / f"polyglot_{self.language}")
+        dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / (f"polyglot_{self.language}" + ("_unpatched" if unpatched else "")))
 
         logger.info(f"Loading problems from {dataset_path}...")
         
@@ -102,7 +103,7 @@ class PolyglotSuite(ProblemSuite):
         include_tests: bool = False
     ) -> None:
         # /evaluator/datasets/polyglot_*/*
-        problem_dir = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / f"polyglot_{self.language}" / problem.name.rsplit("-", 1)[0])
+        problem_dir = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / (f"polyglot_{self.language}" + ("_unpatched" if self.unpatched else "")) / problem.name.rsplit("-", 1)[0])
         
         # Copy main.*
         shutil.copy2(os.path.join(problem_dir, f"main.{self.language}"), os.path.join(dir, f"main.{self.language}"))
@@ -208,3 +209,6 @@ class PolyglotSuite(ProblemSuite):
 
 POLYGLOT_PY_SUITE = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)
 POLYGLOT_JS_SUITE = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT)
+
+POLYGLOT_PY_UNPATCHED_SUITE = PolyglotSuite(PolyglotSuiteLanguage.PYTHON, unpatched=True)
+POLYGLOT_JS_UNPATCHED_SUITE = PolyglotSuite(PolyglotSuiteLanguage.JAVASCRIPT, unpatched=True)
