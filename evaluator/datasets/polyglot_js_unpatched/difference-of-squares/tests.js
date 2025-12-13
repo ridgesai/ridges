@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Squares } from './main';
+
+import { Squares } from './main.js';
 
 describe('difference-of-squares', () => {
   const squares1 = new Squares(1);

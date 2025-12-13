@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Cipher } from './main';
+
+import { Cipher } from './main.js';
 
 describe('Random key cipher', () => {
   const cipher = new Cipher();

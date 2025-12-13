@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { transform } from './main';
+
+import { transform } from './main.js';
 
 describe('Transform legacy to new', () => {
   test('single letter', () => {

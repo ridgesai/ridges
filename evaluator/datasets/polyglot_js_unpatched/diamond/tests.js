@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { rows } from './main';
+
+import { rows } from './main.js';
 
 describe('Diamond', () => {
   test("Degenerate case with a single 'A' row", () => {

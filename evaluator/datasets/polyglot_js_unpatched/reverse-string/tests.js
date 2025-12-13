@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { reverseString } from './main';
+
+import { reverseString } from './main.js';
 
 describe('ReverseString', () => {
   test('empty string', () => {

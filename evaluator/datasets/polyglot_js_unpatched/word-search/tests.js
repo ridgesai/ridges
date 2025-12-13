@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import WordSearch from './main';
+
+import WordSearch from './main.js';
 
 describe('Word Search', () => {
   test('Should accept an initial game grid', () => {

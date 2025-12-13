@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Series } from './main';
+
+import { Series } from './main.js';
 
 describe('Series', () => {
   test('slices of one from one', () => {

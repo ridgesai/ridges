@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { valid } from './main';
+
+import { valid } from './main.js';
 
 describe('Luhn', () => {
   test('single digit strings can not be valid', () => {

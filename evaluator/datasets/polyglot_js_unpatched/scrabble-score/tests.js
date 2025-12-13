@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { score } from './main';
+
+import { score } from './main.js';
 
 describe('Scrabble', () => {
   test('lowercase letter', () => {

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test, xtest } from '@jest/globals';
-import { Zipper } from './main';
+
+import { Zipper } from './main.js';
 
 function bt(value, left, right) {
   return {

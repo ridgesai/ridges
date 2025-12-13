@@ -1,8 +1,8 @@
-import { describe, expect, test, xtest } from '@jest/globals';
+
 import CircularBuffer, {
   BufferEmptyError,
   BufferFullError,
-} from './main';
+} from './main.js';
 
 describe('CircularBuffer', () => {
   test('reading empty buffer should fail', () => {

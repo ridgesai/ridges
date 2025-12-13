@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { treeFromTraversals } from './main';
+
+import { treeFromTraversals } from './main.js';
 
 describe('Satellite', () => {
   test('Empty tree', () => {

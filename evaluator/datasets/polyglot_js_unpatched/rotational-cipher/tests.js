@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { rotate } from './main';
+
+import { rotate } from './main.js';
 
 describe('Rotational cipher', () => {
   test('rotate a by 0, same output as input', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { combinations } from './main';
+
+import { combinations } from './main.js';
 
 describe('Trivial 1-digit cages', () => {
   test('1', () => {

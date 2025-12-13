@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { convert } from './main';
+
+import { convert } from './main.js';
 
 describe('Raindrops', () => {
   test('the sound for 1 is 1', () => expect(convert(1)).toEqual('1'));

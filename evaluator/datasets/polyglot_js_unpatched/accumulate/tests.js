@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { accumulate } from './main';
+
+import { accumulate } from './main.js';
 
 describe('accumulate()', () => {
   test('accumulation empty', () => {

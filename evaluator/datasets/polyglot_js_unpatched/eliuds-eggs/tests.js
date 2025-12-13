@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { eggCount } from './main';
+
+import { eggCount } from './main.js';
 
 describe('EliudsEggs', () => {
   test('0 eggs', () => {

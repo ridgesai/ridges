@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test, xtest } from '@jest/globals';
-import { Element, List } from './main';
+
+import { Element, List } from './main.js';
 
 describe('Element class', () => {
   test('has constructor', () => {

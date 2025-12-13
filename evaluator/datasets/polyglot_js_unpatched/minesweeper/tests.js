@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { annotate } from './main';
+
+import { annotate } from './main.js';
 
 describe(')', () => {
   test('handles no rows', () => {

@@ -1,6 +1,6 @@
 import unittest
 
-from main import main
+from main import accumulate
 
 
 class AccumulateTest(unittest.TestCase):

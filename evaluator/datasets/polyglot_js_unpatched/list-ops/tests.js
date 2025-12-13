@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { List } from './main';
+
+import { List } from './main.js';
 
 describe('append entries to a list and return the new list', () => {
   test('empty lists', () => {

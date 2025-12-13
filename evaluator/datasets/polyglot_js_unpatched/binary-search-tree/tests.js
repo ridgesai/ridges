@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { BinarySearchTree } from './main';
+
+import { BinarySearchTree } from './main.js';
 
 function recordAllData(bst) {
   const out = [];

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { CustomSet } from './main';
+
+import { CustomSet } from './main.js';
 
 describe('CustomSet', () => {
   describe('empty: returns true if the set contains no elements', () => {

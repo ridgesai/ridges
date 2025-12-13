@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Bowling } from './main';
+
+import { Bowling } from './main.js';
 
 describe('Bowling', () => {
   describe('Check game can be scored correctly.', () => {

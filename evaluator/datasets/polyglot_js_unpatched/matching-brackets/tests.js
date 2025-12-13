@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { isPaired } from './main';
+
+import { isPaired } from './main.js';
 
 describe('Matching Brackets', () => {
   test('paired square brackets', () => {

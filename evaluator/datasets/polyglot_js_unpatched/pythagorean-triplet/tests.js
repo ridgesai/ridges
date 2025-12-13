@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { triplets } from './main';
+
+import { triplets } from './main.js';
 
 function tripletsWithSum(sum, options = {}) {
   return triplets({ ...options, sum }).map((triplet) =>

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { QueenAttack } from './main';
+
+import { QueenAttack } from './main.js';
 
 describe('Queens', () => {
   describe('Test creation of Queens with valid and invalid positions', () => {

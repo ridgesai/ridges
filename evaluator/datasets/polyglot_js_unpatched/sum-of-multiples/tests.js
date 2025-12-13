@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { sum } from './main';
+
+import { sum } from './main.js';
 
 describe('Sum Of Multiples', () => {
   test('no multiples within limit', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Matrix } from './main';
+
+import { Matrix } from './main.js';
 
 describe('Matrix', () => {
   test('extract row from one number matrix', () => {

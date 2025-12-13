@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { isArmstrongNumber } from './main';
+
+import { isArmstrongNumber } from './main.js';
 
 describe('Armstrong Numbers', () => {
   test('Zero is an Armstrong number', () => {

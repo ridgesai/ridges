@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { createEntry, formatEntries } from './main';
+
+import { createEntry, formatEntries } from './main.js';
 
 describe('Ledger', () => {
   test('empty ledger', () => {

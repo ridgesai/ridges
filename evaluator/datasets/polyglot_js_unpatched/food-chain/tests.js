@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, test, xtest } from '@jest/globals';
-import { Song } from './main';
+
+import { Song } from './main.js';
 
 describe('Food Chain', () => {
   let song;

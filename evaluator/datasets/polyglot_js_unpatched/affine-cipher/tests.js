@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { decode, encode } from './main';
+
+import { decode, encode } from './main.js.js';
 
 describe('Affine cipher', () => {
   describe('encode', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { GoCounting } from './main';
+
+import { GoCounting } from './main.js';
 
 describe('Go Counting', () => {
   describe('getTerritory', () => {

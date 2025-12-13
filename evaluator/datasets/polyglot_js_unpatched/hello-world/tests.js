@@ -1,5 +1,5 @@
-import { describe, expect, test } from '@jest/globals';
-import { hello } from './main';
+
+import { hello } from './main.js';
 
 describe('Hello World', () => {
   test('Say Hi!', () => {

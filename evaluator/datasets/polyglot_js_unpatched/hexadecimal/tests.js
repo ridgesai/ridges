@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { toDecimal } from './main';
+
+import { toDecimal } from './main.js';
 
 describe('Hexadecimal', () => {
   test('hex 1 is decimal 1', () => {

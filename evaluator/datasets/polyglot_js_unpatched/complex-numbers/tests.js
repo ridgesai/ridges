@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { ComplexNumber } from './main';
+
+import { ComplexNumber } from './main.js';
 
 describe('Complex numbers', () => {
   describe('Real part', () => {

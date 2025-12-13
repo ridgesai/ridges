@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { toRna } from './main';
+
+import { toRna } from './main.js';
 
 describe('Transcription', () => {
   test('empty rna sequence', () => {

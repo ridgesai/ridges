@@ -1,5 +1,5 @@
-import { describe, expect, test } from '@jest/globals';
-import { knapsack } from './main';
+
+import { knapsack } from './main.js';
 
 describe('Knapsack', () => {
   test('no items', () => {

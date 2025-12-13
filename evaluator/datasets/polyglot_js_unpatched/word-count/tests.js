@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { countWords } from './main';
+
+import { countWords } from './main.js';
 
 describe('countWords', () => {
   test('count one word', () => {

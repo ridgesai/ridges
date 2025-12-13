@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { bestHands } from './main';
+
+import { bestHands } from './main.js';
 
 describe('Poker', () => {
   test('single hand always wins', () => {

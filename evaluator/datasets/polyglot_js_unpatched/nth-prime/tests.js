@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { prime } from './main';
+
+import { prime } from './main.js';
 
 describe('nth-prime', () => {
   test('first prime', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { say } from './main';
+
+import { say } from './main.js';
 
 describe('say', () => {
   test('zero', () => {

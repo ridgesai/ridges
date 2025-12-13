@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { compute } from './main';
+
+import { compute } from './main.js';
 
 describe('Hamming', () => {
   test('empty strands', () => {

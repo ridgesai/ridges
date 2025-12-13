@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { decodedValue } from './main';
+
+import { decodedValue } from './main.js';
 
 describe('Resistor Colors', () => {
   test('Brown and black', () => {

@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { Scale } from './main';
+
+import { Scale } from './main.js';
 
 describe('ScaleGenerator', () => {
   describe('Chromatic scales', () => {

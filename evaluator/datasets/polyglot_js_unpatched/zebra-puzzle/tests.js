@@ -1,5 +1,5 @@
-import { describe, expect, test, xtest } from '@jest/globals';
-import { ZebraPuzzle } from './main';
+
+import { ZebraPuzzle } from './main.js';
 
 describe('Zebra puzzle', () => {
   test('resident who drinks water', () => {
