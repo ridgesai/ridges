@@ -14,8 +14,8 @@ from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite
 from models.problem import ProblemDifficulty, ProblemTestResultStatus
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
+from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE, POLYGLOT_JS_UNPATCHED_SUITE, POLYGLOT_PY_UNPATCHED_SUITE
 
 
 
@@ -27,12 +27,17 @@ evaluation_id = uuid4()
 
 
 
+# Options
 global inference_gateway_url
 global agent_path
 global agent_code
 global running_agent_timeout_seconds
 global running_eval_timeout_seconds
 global include_solutions
+global include_tests
+global polyglot_unpatched
+
+global problem_suites
 
 
 
@@ -84,7 +89,8 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             evaluation_run.evaluation_run_id,
             agent_code,
             running_agent_timeout_seconds,
-            include_solution=include_solutions
+            include_solution=include_solutions,
+            include_tests=include_tests
         )
         logger.info(f"[{problem_name}] Finished initializing agent")
 
@@ -206,7 +212,7 @@ async def run_problems(agent_code: str, problem_names: List[str]):
     tasks = []
 
     for problem_name in problem_names:
-        tasks.append(asyncio.create_task(run_local_evaluation_run(sandbox_manager, [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE], problem_name)))
+        tasks.append(asyncio.create_task(run_local_evaluation_run(sandbox_manager, problem_suites, problem_name)))
 
     await asyncio.gather(*tasks)
 
@@ -218,13 +224,18 @@ async def run_problems(agent_code: str, problem_names: List[str]):
 @click.option("--agent-timeout", default=2400, type=int, help="The timeout in seconds for running the agent, in seconds")
 @click.option("--eval-timeout", default=600, type=int, help="The timeout in seconds for running the evaluation, in seconds")
 @click.option("--include-solutions", "_include_solutions", is_flag=True, help="Whether or not to include solutions in the evaluation")
-def cli(inference_url: str, _agent_path: str, agent_timeout: int, eval_timeout: int, _include_solutions: bool):
+@click.option("--include-tests", "_include_tests", is_flag=True, help="Whether or not to include tests in the evaluation")
+@click.option("--polyglot-unpatched", "polyglot_unpatched", is_flag=True, help="Whether or not to use the unpatched Polyglot suite")
+def cli(inference_url: str, _agent_path: str, agent_timeout: int, eval_timeout: int, _include_solutions: bool, _include_tests: bool, polyglot_unpatched: bool):
     global inference_gateway_url
     global agent_path
     global agent_code
     global running_agent_timeout_seconds
     global running_eval_timeout_seconds
     global include_solutions
+    global include_tests
+
+    global problem_suites
 
     inference_gateway_url = inference_url
     agent_path = _agent_path
@@ -233,9 +244,19 @@ def cli(inference_url: str, _agent_path: str, agent_timeout: int, eval_timeout: 
     running_agent_timeout_seconds = agent_timeout
     running_eval_timeout_seconds = eval_timeout
     include_solutions = _include_solutions
+    include_tests = _include_tests
 
     if include_solutions:
         logger.warning("Including Solutions!")
+
+    if include_tests:
+        logger.warning("Including Tests!")
+
+    if polyglot_unpatched:
+        logger.warning("Using Unpatched Polyglot Suite!")
+        problem_suites = [SWEBENCH_VERIFIED_SUITE, POLYGLOT_PY_UNPATCHED_SUITE, POLYGLOT_JS_UNPATCHED_SUITE]
+    else:
+        problem_suites = [SWEBENCH_VERIFIED_SUITE, POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE]
 
 
 

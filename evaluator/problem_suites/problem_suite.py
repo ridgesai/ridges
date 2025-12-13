@@ -61,7 +61,8 @@ class ProblemSuite(ABC):
         agent_code: str,
         timeout_seconds: int,
         *,
-        include_solution: bool = False
+        include_solution: bool = False,
+        include_tests: bool = False
     ) -> Sandbox:
         try:
             def _on_mount(temp_dir: str):
@@ -74,7 +75,7 @@ class ProblemSuite(ABC):
                 os.mkdir(sandbox_repo_dir)
 
                 # Copy problem files to /sandbox/repo
-                self.copy_problem_files_to_directory(problem, sandbox_repo_dir)
+                self.copy_problem_files_to_directory(problem, sandbox_repo_dir, include_tests=include_tests)
 
                 if include_solution:
                     # Create /sandbox/solution.diff

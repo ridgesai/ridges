@@ -146,7 +146,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         problem: Problem,
         dir: str,
         *,
-        include_tests: bool = False
+        include_tests: bool = False # TODO ADAM
     ) -> None:
         # Get the SWE-Bench problem object
         swebench_instance = problem.userdata
