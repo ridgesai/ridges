@@ -28,6 +28,13 @@ class Agent(BaseModel):
     created_at: datetime
     ip_address: Optional[str] = None
 
+class PossiblyBenchmarkAgent(Agent):
+    is_benchmark_agent: bool
+    benchmark_description: Optional[str] = None
+
+
+
+# TODO ADAM: need to look into this more
 class AgentScored(Agent):
     set_id: int
 

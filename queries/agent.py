@@ -7,8 +7,8 @@ from typing import List, Optional
 from utils.s3 import upload_text_file_to_s3
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
-from models.agent import Agent, AgentStatus, AgentScored
 from utils.database import db_operation, DatabaseConnection
+from models.agent import Agent, AgentStatus, AgentScored, PossiblyBenchmarkAgent
 
 
 
@@ -28,6 +28,27 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
         return None
 
     return Agent(**result)
+
+@db_operation
+async def get_possibly_benchmark_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[PossiblyBenchmarkAgent]:
+    result = await conn.fetchrow(
+        """
+        SELECT
+            a.*,
+            (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
+            bai.description AS benchmark_description
+        FROM agents a
+        LEFT JOIN benchmark_agent_ids bai ON a.agent_id = bai.agent_id
+        WHERE a.agent_id = $1
+        LIMIT 1
+        """,
+        agent_id
+    )
+    
+    if result is None:
+        return None
+    
+    return PossiblyBenchmarkAgent(**result)
 
 
 

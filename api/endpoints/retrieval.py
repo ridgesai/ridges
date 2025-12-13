@@ -7,12 +7,12 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from utils.s3 import download_text_file_from_s3
 from models.evaluation_set import EvaluationSetGroup
-from models.agent import Agent, AgentScored, AgentStatus
 from queries.evaluation import get_evaluations_for_agent_id
 from models.evaluation import Evaluation, EvaluationWithRuns
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from models.agent import Agent, AgentScored, AgentStatus, PossiblyBenchmarkAgent
 from queries.statistics import top_score, TopScoreOverTime, agents_created_24_hrs, get_top_scores_over_time, score_improvement_24_hrs
-from queries.agent import get_top_agents, get_agent_by_id, get_agents_in_queue, get_benchmark_agents, get_all_agents_by_miner_hotkey, get_latest_agent_for_miner_hotkey
+from queries.agent import get_top_agents, get_agent_by_id, get_agents_in_queue, get_benchmark_agents, get_all_agents_by_miner_hotkey, get_latest_agent_for_miner_hotkey, get_possibly_benchmark_agent_by_id
 
 
 
@@ -46,8 +46,8 @@ async def benchmark_agents() -> List[AgentScored]:
 
 # /retrieval/agent-by-id?agent_id=
 @router.get("/agent-by-id")
-async def agent_by_id(agent_id: UUID) -> Agent:
-    agent = await get_agent_by_id(agent_id)
+async def agent_by_id(agent_id: UUID) -> PossiblyBenchmarkAgent:
+    agent = await get_possibly_benchmark_agent_by_id(agent_id)
     
     if agent is None:
         raise HTTPException(
