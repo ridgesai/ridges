@@ -59,6 +59,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                     AND agent_scores.set_id = (SELECT set_id FROM max_set)
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 ),
                 DATE_TRUNC('hour', NOW()),
                 '1 hour'::interval
@@ -80,6 +81,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                 AND agent_scores.set_id = (SELECT set_id FROM max_set)
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             ),
             0
         ) as top_score
@@ -108,6 +110,7 @@ async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -
             AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND eh.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         GROUP BY validator_type
         """
     )
@@ -142,6 +145,7 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND e.finished_at >= NOW() - INTERVAL '6 hours'
         """
     )
@@ -160,6 +164,7 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
             AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND sc2_e.finished_at >= NOW() - INTERVAL '6 hours'
         """
     )
@@ -187,6 +192,7 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
             AND v_e.validator_count = {config.NUM_EVALS_PER_AGENT}
             AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+            AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND v_e.finished_at >= NOW() - INTERVAL '6 hours'
         """
     )
