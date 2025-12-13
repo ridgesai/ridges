@@ -1,6 +1,6 @@
 import unittest
 
-import main
+import main as hangman
 from main import Hangman
 
 
