@@ -137,7 +137,9 @@ if USE_DATABASE:
     logger.info(f"Database Name: {DATABASE_NAME}")
     if not CHECK_EVALUATION_RUNS:
         logger.warning("Not Checking Evaluation Runs!")
-    logger.info("---------------------------------------")
+else:
+    logger.warning("Not Using Database!")
+logger.info("---------------------------------------")
 
 if USE_CHUTES:
     logger.info("Using Chutes")
