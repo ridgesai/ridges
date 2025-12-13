@@ -134,6 +134,20 @@ async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: 
 
 
 
+@db_operation
+async def get_benchmark_agents(conn: DatabaseConnection) -> List[AgentScored]:
+    result = await conn.fetch(
+        """
+        SELECT * FROM agent_scores
+        WHERE agent_id IN (SELECT agent_id FROM benchmark_agent_ids)
+        ORDER BY created_at DESC
+        """
+    )
+
+    return [AgentScored(**agent) for agent in result]
+
+
+
 
 
 
