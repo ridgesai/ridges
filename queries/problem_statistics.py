@@ -157,6 +157,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
             WHERE e.set_id = $1
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             GROUP BY erh.problem_name
         ),
         tests_stats AS ( 
@@ -191,6 +192,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     AND e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY 
                     er.problem_name, tr->>'name', tr->>'category'
             )
@@ -249,6 +251,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                         AND e.set_id = $1
                         AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                         AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                        AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 )
                 GROUP BY problem_name, error_code
             )
@@ -273,6 +276,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                 WHERE e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY er.problem_name, i.model
             )
             GROUP BY problem_name
@@ -311,6 +315,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     AND e.set_id = $1
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY erh.problem_name, a.agent_id
             )
             WHERE evaluation_run_time_rank <= 5
