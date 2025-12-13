@@ -8,7 +8,7 @@ from utils.s3 import upload_text_file_to_s3
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
-from models.agent import Agent, AgentStatus, AgentScored, PossiblyBenchmarkAgent
+from models.agent import Agent, AgentStatus, AgentScored, BenchmarkAgentScored, PossiblyBenchmarkAgent
 
 
 
@@ -156,16 +156,20 @@ async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: 
 
 
 @db_operation
-async def get_benchmark_agents(conn: DatabaseConnection) -> List[AgentScored]:
+async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentScored]:
     result = await conn.fetch(
         """
-        SELECT * FROM agent_scores
-        WHERE agent_id IN (SELECT agent_id FROM benchmark_agent_ids)
-        ORDER BY created_at DESC
+        SELECT
+            ass.*,
+            bai.description AS benchmark_description
+        FROM agent_scores ass
+        LEFT JOIN benchmark_agent_ids bai ON ass.agent_id = bai.agent_id
+        WHERE ass.agent_id IN (SELECT agent_id FROM benchmark_agent_ids)
+        ORDER BY ass.created_at DESC
         """
     )
 
-    return [AgentScored(**agent) for agent in result]
+    return [BenchmarkAgentScored(**agent) for agent in result]
 
 
 

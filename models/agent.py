@@ -34,10 +34,27 @@ class PossiblyBenchmarkAgent(Agent):
 
 
 
+
+
+
+
+
+
+
+
+
+
 # TODO ADAM: need to look into this more
+
+class BenchmarkAgentScored(Agent):
+    benchmark_description: Optional[str] = None
+
+    set_id: int
+    approved: bool
+    validator_count: int
+    final_score: float
 class AgentScored(Agent):
     set_id: int
-
     approved: bool
     validator_count: int
     final_score: float

@@ -10,7 +10,7 @@ from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation import get_evaluations_for_agent_id
 from models.evaluation import Evaluation, EvaluationWithRuns
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
-from models.agent import Agent, AgentScored, AgentStatus, PossiblyBenchmarkAgent
+from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from queries.statistics import top_score, TopScoreOverTime, agents_created_24_hrs, get_top_scores_over_time, score_improvement_24_hrs
 from queries.agent import get_top_agents, get_agent_by_id, get_agents_in_queue, get_benchmark_agents, get_all_agents_by_miner_hotkey, get_latest_agent_for_miner_hotkey, get_possibly_benchmark_agent_by_id
 
@@ -39,7 +39,7 @@ async def top_agents() -> List[AgentScored]:
 # /retrieval/benchmark-agents
 @router.get("/benchmark-agents")
 @ttl_cache(ttl_seconds=10*60) # 10 minutes
-async def benchmark_agents() -> List[AgentScored]:
+async def benchmark_agents() -> List[BenchmarkAgentScored]:
     return await get_benchmark_agents()
 
 
