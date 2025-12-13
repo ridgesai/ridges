@@ -1,5 +1,5 @@
 
-import { decode, encode } from './main.js.js';
+import { decode, encode } from './main.js';
 
 describe('Affine cipher', () => {
   describe('encode', () => {
