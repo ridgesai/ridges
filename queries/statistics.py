@@ -10,11 +10,21 @@ from utils.database import db_operation, DatabaseConnection
 
 @db_operation
 async def top_score(conn: DatabaseConnection) -> Optional[float]:
-    return await conn.fetchval("SELECT MAX(final_score) FROM agent_scores WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)")
+    return await conn.fetchval("""
+        SELECT MAX(final_score) FROM agent_scores 
+        WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+        AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+    """)
 
 @db_operation
 async def agents_created_24_hrs(conn: DatabaseConnection) -> int:
-    return await conn.fetchval("SELECT COUNT(*) FROM agents WHERE created_at >= NOW() - INTERVAL '24 hours'")
+    return await conn.fetchval("""
+        SELECT COUNT(*) FROM agents 
+        WHERE created_at >= NOW() - INTERVAL '24 hours'
+        AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+        AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+    """)
 
 @db_operation
 async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
@@ -26,6 +36,7 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
                 MAX(final_score) FILTER (WHERE created_at <= NOW() - INTERVAL '24 hours') as max_score_24_hrs_ago
             FROM agent_scores
             WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         )
         SELECT
             COALESCE(max_score - max_score_24_hrs_ago, 0)

@@ -5,9 +5,7 @@ from utils.database import db_operation, DatabaseConnection
 
 @db_operation
 async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optional[str]:
-    """
-    Gets current top agent, who has been approved and that does not have a banned hotkey
-    """
+    # TODO ADAM: this query has artifacts of the old approval concept, fix
     current_leader = await conn.fetchrow(
         """
         SELECT 
@@ -17,6 +15,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
             ass.approved 
             AND ass.approved_at <= NOW() 
             AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         ORDER BY ass.final_score DESC, ass.created_at ASC
         LIMIT 1
         """

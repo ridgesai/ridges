@@ -172,6 +172,7 @@ async def get_top_agents(
     number_of_agents: int = 10,
     page: int = 1
 ) -> list[AgentScored]:
+    # TODO ADAM: this query was supposed to be fixed to remove the pagination concept
     # TODO ADAM: maybe edge case bugs here if pagenum is 0,negative,or too high etc
     offset = (page - 1) * number_of_agents
 
@@ -179,6 +180,7 @@ async def get_top_agents(
         """
         select * from agent_scores 
         where set_id = (select max(set_id) from evaluation_sets)
+        and agent_id not in (select agent_id from benchmark_agent_ids)
         order by round(final_score::numeric, 6) desc, created_at asc
         limit $1 offset $2
         """, number_of_agents, offset
@@ -253,6 +255,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
                 agents.status = '{AgentStatus.evaluating.value}'
               AND NOT COALESCE(already_evaluated, false)
               AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < $2
+              AND agents.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             ORDER BY
                 screener_2_scores.score DESC,
                 agents.created_at ASC

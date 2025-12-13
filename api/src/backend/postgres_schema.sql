@@ -252,7 +252,6 @@ SELECT
     AVG(ae.score) AS final_score
 FROM agent_evaluations ae
 WHERE ae.set_id IS NOT NULL
-  AND ae.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
 GROUP BY ae.agent_id, ae.miner_hotkey, ae.name, ae.version_num,
          ae.created_at, ae.status, ae.set_id, ae.approved, ae.approved_at
 -- At least 2 validators
