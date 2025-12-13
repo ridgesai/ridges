@@ -165,7 +165,7 @@ async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentS
         FROM agent_scores ass
         LEFT JOIN benchmark_agent_ids bai ON ass.agent_id = bai.agent_id
         WHERE ass.agent_id IN (SELECT agent_id FROM benchmark_agent_ids)
-        ORDER BY ass.created_at DESC
+        ORDER BY ass.created_at DESC, ass.final_score DESC
         """
     )
 
