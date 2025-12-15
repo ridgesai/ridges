@@ -6,7 +6,7 @@
 /**
  * @param {number} start
  * @param {number} [end]
- * @returns {string[]}
+ * @returns {string}
  */
 export const recite = (start, end) => {
   throw new Error('Remove this line and implement the function');
