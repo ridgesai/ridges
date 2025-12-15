@@ -9,7 +9,7 @@ from models.evaluation_set import EvaluationSetGroup
 from models.evaluation_run import EvaluationRunErrorCode
 from utils.database import db_operation, DatabaseConnection
 from evaluator.problem_suites.problem_suite import ProblemSuiteName
-from queries.evaluation_set import get_all_evaluation_set_problems_in_latest_set_id
+from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 
@@ -338,7 +338,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
 
     problem_stats = [ProblemStatistics(**row) for row in rows]
 
-    evaluation_set_problems = await get_all_evaluation_set_problems_in_latest_set_id()
+    evaluation_set_problems = await get_all_evaluation_set_problems_for_set_id(set_id)
     for evaluation_set_problem in evaluation_set_problems:
         if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
             problem_stats.append(ProblemStatistics(

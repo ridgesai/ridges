@@ -8,7 +8,7 @@ from typing import Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
 from queries.scores import get_weight_receiving_agent_hotkey
-from queries.evaluation_set import get_latest_set_id, get_latest_set_created_at
+from queries.evaluation_set import get_latest_set_id, get_set_created_at
 from queries.statistics import get_average_score_per_evaluation_set_group, get_average_wait_time_per_evaluation_set_group
 
 
@@ -83,5 +83,5 @@ class ScoringLatestSetInfo(BaseModel):
 async def latest_set_info() -> ScoringLatestSetInfo:
     return ScoringLatestSetInfo(
         latest_set_id=await get_latest_set_id(),
-        latest_set_created_at=await get_latest_set_created_at()
+        latest_set_created_at=await get_set_created_at()
     )
