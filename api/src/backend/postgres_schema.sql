@@ -313,16 +313,6 @@ ORDER BY
     agents.created_at ASC,
     num_finished_evals DESC;
 
-CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
-SELECT
-  er.*,
-  COALESCE(SUM(i.cost_usd), 0) AS total_cost
-FROM
-  evaluation_runs er
-  LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
-GROUP BY
-  er.evaluation_run_id;
-
 CREATE TABLE IF NOT EXISTS agent_scores (
     agent_id UUID PRIMARY KEY,
     miner_hotkey TEXT NOT NULL,
