@@ -10,8 +10,8 @@ async def get_latest_set_id(conn: DatabaseConnection) -> int:
     return await conn.fetchval("SELECT MAX(set_id) FROM evaluation_sets")
 
 @db_operation
-async def get_latest_set_created_at(conn: DatabaseConnection) -> datetime:
-    return await conn.fetchval("SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)")
+async def get_set_created_at(conn: DatabaseConnection, set_id: int) -> datetime:
+    return await conn.fetchval("SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1", set_id)
 
 
 
@@ -33,13 +33,14 @@ async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection,
 
 
 @db_operation
-async def get_all_evaluation_set_problems_in_latest_set_id(conn: DatabaseConnection) -> List[EvaluationSetProblem]:
+async def get_all_evaluation_set_problems_for_set_id(conn: DatabaseConnection, set_id: int) -> List[EvaluationSetProblem]:
     results = await conn.fetch(
         """
         SELECT *
         FROM evaluation_sets
-        WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-        """
+        WHERE set_id = $1
+        """,
+        set_id
     )
 
     return [EvaluationSetProblem(**result) for result in results]

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from utils.ttl import ttl_cache
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
-from queries.evaluation_set import get_latest_set_id, get_latest_set_created_at
+from queries.evaluation_set import get_latest_set_id, get_set_created_at
 from queries.problem_statistics import ProblemStatistics, get_problem_statistics
 
 
@@ -43,7 +43,7 @@ async def problem_statistics(set_id: Optional[int] = None) -> ProblemStatisticsR
 
     problem_stats, problem_set_created_at = await asyncio.gather(
         get_problem_statistics(set_id),
-        get_latest_set_created_at()
+        get_set_created_at(set_id)
     )
     
     return ProblemStatisticsResponse(
