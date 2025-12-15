@@ -157,6 +157,20 @@ ON inferences (request_received_at, provider)
 INCLUDE (response_sent_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
 WHERE response_sent_at IS NOT NULL AND provider IS NOT NULL;
 
+CREATE TABLE embeddings (
+	embedding_id uuid NOT NULL PRIMARY KEY,
+	evaluation_run_id uuid NOT NULL REFERENCES evaluation_runs(evaluation_run_id),
+	provider text NOT NULL,
+	model text NOT NULL,
+	input text NOT NULL,
+	status_code int4 NULL,
+	response jsonb NULL,
+	num_input_tokens int4 NULL,
+	cost_usd float8 NULL,
+	request_received_at timestamptz NOT NULL,
+	response_sent_at timestamptz NULL
+);
+
 CREATE TABLE IF NOT EXISTS approved_agents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     agent_id UUID REFERENCES agents(agent_id),
