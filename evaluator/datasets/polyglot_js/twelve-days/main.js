@@ -5,9 +5,9 @@
 
 /**
  * @param {number} start
- * @param {number} end
+ * @param {number} [end]
  * @returns {string[]}
  */
-export const recite = () => {
+export const recite = (start, end) => {
   throw new Error('Remove this line and implement the function');
 };

@@ -1,3 +1,3 @@
-def convert(input_grid: str) -> str:
+def convert(input_grid: list[str]) -> str:
     pass
 
