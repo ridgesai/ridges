@@ -23,11 +23,9 @@ echo 'export PATH="/home/ubuntu/.local/bin:$PATH"' >> /home/ubuntu/.bashrc
 git clone https://github.com/ridgesai/ridges.git ~/ridges
 cd ~/ridges
 
-uv venv --python 3.11
+uv venv --python 3.14
 source .venv/bin/activate
 uv pip install .
 
 pm2 start 'uv run -m inference_gateway.main' --name ridges-igateway
 pm2 stop ridges-igateway
-
-exec sudo --user "$USER" bash -c "cd ~/ridges && source .venv/bin/activate && exec bash -l"

@@ -47,7 +47,7 @@ sudo usermod -aG docker "$USER"
 git clone https://github.com/ridgesai/ridges.git ~/ridges
 cd ~/ridges
 
-uv venv --python 3.11
+uv venv --python 3.14
 source .venv/bin/activate
 uv pip install .
 
