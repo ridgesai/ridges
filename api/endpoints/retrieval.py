@@ -11,7 +11,7 @@ from queries.evaluation import get_evaluations_for_agent_id
 from models.evaluation import Evaluation, EvaluationWithRuns
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
-from queries.statistics import top_score, TopScoreOverTime, agents_created_24_hrs, get_top_scores_over_time, score_improvement_24_hrs
+from queries.statistics import NumPerfectlySolvedForTimeBucket, top_score, agents_created_24_hrs, get_perfectly_solved_over_time, score_improvement_24_hrs
 from queries.agent import get_top_agents, get_agent_by_id, get_agents_in_queue, get_benchmark_agents, get_all_agents_by_miner_hotkey, get_latest_agent_for_miner_hotkey, get_possibly_benchmark_agent_by_id
 
 
@@ -116,11 +116,11 @@ async def agent_code(agent_id: UUID) -> str:
 
 
 
-# /retrieval/top-scores-over-time
-@router.get("/top-scores-over-time")
+# /retrieval/perfectly-solved-over-time
+@router.get("/perfectly-solved-over-time")
 @ttl_cache(ttl_seconds=60 * 15) # 15 minutes
-async def top_scores_over_time() -> List[TopScoreOverTime]:
-    return await get_top_scores_over_time()
+async def perfectly_solved_over_time() -> List[NumPerfectlySolvedForTimeBucket]:
+    return await get_perfectly_solved_over_time()
 
 
 

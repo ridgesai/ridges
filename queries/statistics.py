@@ -44,65 +44,44 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
         """
     )
 
-class TopScoreOverTime(BaseModel):
-    hour: datetime
-    top_score: float
+class NumPerfectlySolvedForTimeBucket(BaseModel):
+    time_bucket: datetime
+    num_perfectly_solved: int
 
 @db_operation
-async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOverTime]:
+async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPerfectlySolvedForTimeBucket]:
     query = """
         WITH
-        max_set AS (
-            SELECT MAX(set_id) as set_id FROM evaluation_sets
-        ),
-        time_series AS (
-            SELECT
-            generate_series(
-                (
-                SELECT
-                    MIN(DATE_TRUNC('hour', agent_scores.created_at))
-                FROM
-                    agent_scores
-                JOIN
-                    agents a ON agent_scores.agent_id = a.agent_id
-                WHERE
-                    agent_scores.final_score IS NOT NULL
-                    AND agent_scores.set_id = (SELECT set_id FROM max_set)
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                    AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                    AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-                ),
-                DATE_TRUNC('hour', NOW()),
-                '1 hour'::interval
-            ) as hour
-        )
+            time_series AS (SELECT
+                generate_series(
+                    TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500', -- time of problem set 6
+                    DATE_TRUNC('hour', NOW()),
+                    '12 hours'::interval
+                ) as time_bucket
+            )
         SELECT
-        ts.hour,
-        COALESCE(
+            ts.time_bucket,
             (
-            SELECT
-                MAX(agent_scores.final_score)
-            FROM
-                agent_scores
-            JOIN
-                agents a ON agent_scores.agent_id = a.agent_id
-            WHERE
-                agent_scores.final_score IS NOT NULL
-                AND agent_scores.created_at <= ts.hour
-                AND agent_scores.set_id = (SELECT set_id FROM max_set)
-                AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-                AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-                AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-            ),
-            0
-        ) as top_score
-        FROM
-        time_series ts
-        ORDER BY
-        ts.hour
+                SELECT COUNT(*)
+                FROM (
+                    SELECT erh.problem_name
+                    FROM evaluation_runs_hydrated erh
+                        JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+                        JOIN agents a ON e.agent_id = a.agent_id
+                    WHERE erh.created_at BETWEEN '2025-11-27 15:30:00.000 -0500' and ts.time_bucket -- time of problem set 6
+                        AND erh.status = 'finished'
+                        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                        AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                        AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                    GROUP BY erh.problem_name
+                    HAVING COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) >= 0.95
+                )
+            ) as num_perfectly_solved
+        FROM time_series ts
+        ORDER BY ts.time_bucket ASC;
     """
     rows = await conn.fetch(query)
-    return [TopScoreOverTime(**row) for row in rows]
+    return [NumPerfectlySolvedForTimeBucket(**row) for row in rows]
 
 
 
