@@ -118,7 +118,7 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPe
                 generate_series(
                     TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500', -- time of problem set 6
                     DATE_TRUNC('hour', NOW()),
-                    '12 hours'::interval
+                    '6 hours'::interval
                 ) as time_bucket
             )
         SELECT
