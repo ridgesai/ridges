@@ -106,6 +106,57 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
 
 
 
+class PerfectlySolvedOverTime(BaseModel):
+    hour: datetime
+    polyglot_py: int
+    polyglot_js: int
+    swebench: int
+
+@db_operation
+async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPerfectlySolvedForTimeBucket]:
+    query = """
+        WITH
+            time_series AS (
+                SELECT generate_series(
+                    TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500', -- Problem Set 6
+                    DATE_TRUNC('hour', NOW()),
+                    '6 hours'::interval
+                ) as hour
+            ),
+            problem_groups AS (
+                SELECT
+                    MIN(erh.created_at) as first_perfectly_solved_at,
+                    CASE
+                        WHEN erh.problem_name LIKE '%-py' THEN 'polyglot_py'
+                        WHEN erh.problem_name LIKE '%-js' THEN 'polyglot_js'
+                        ELSE 'swebench'
+                    END AS problem_group
+                FROM evaluation_runs_hydrated erh
+                    JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
+                    JOIN agents a ON e.agent_id = a.agent_id
+                WHERE erh.created_at >= TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500' -- Problem Set 6
+                    AND erh.status = 'finished'
+                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+                    AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                GROUP BY erh.problem_name
+                HAVING COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) >= 0.90
+            )
+        SELECT
+            ts.hour,
+            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_py') as polyglot_py,
+            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_js') as polyglot_js,
+            COUNT(*) FILTER (WHERE pg.problem_group = 'swebench') as swebench
+        FROM time_series ts
+        LEFT JOIN problem_groups pg ON pg.first_perfectly_solved_at <= ts.hour
+        GROUP BY ts.hour
+        ORDER BY ts.hour ASC;
+    """
+    rows = await conn.fetch(query)
+    return [NumPerfectlySolvedForTimeBucket(**row) for row in rows]
+
+
+
 # NOTE: None is returned if there are no successful evaluations for a given
 #       evaluation set group. 
 @db_operation
@@ -209,3 +260,21 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
     )
 
     return result
+
+
+
+class ProblemSetCreationTime(BaseModel):
+    set_id: int
+    created_at: datetime
+
+@db_operation
+async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[ProblemSetCreationTime]:
+    rows = await conn.fetch(
+        """
+        SELECT DISTINCT set_id, created_at
+        FROM evaluation_sets es
+        WHERE set_id >= 6 ORDER BY set_id AS
+        """
+    )
+    
+    return [ProblemSetCreationTime(**row) for row in rows]
