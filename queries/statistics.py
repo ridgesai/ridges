@@ -261,6 +261,8 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
 
     return result
 
+
+
 class ProblemSetCreationTime(BaseModel):
     set_id: int
     created_at: datetime
@@ -271,7 +273,8 @@ async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[Probl
         """
         SELECT DISTINCT set_id, created_at
         FROM evaluation_sets es
-        WHERE set_id >= 6 ORDER BY set_id ASC -- problem set 6 is where we made the first big changes
+        WHERE set_id >= 6 ORDER BY set_id AS
         """
     )
+    
     return [ProblemSetCreationTime(**row) for row in rows]
