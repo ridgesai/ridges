@@ -345,7 +345,7 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
                 JOIN evaluation_runs_hydrated erh ON e.evaluation_id = erh.evaluation_id
                 JOIN agents a ON e.agent_id = a.agent_id
                 LEFT JOIN inferences i ON erh.evaluation_run_id = i.evaluation_run_id
-                LEFT JOIN embeddings em ON erh.evaluation_run_id = emb.evaluation_run_id
+                LEFT JOIN embeddings em ON erh.evaluation_run_id = em.evaluation_run_id
             WHERE e.set_id = (SELECT set_id FROM current_set)
                 AND e.evaluation_set_group = 'validator'::EvaluationSetGroup
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
