@@ -113,7 +113,7 @@ class PerfectlySolvedOverTime(BaseModel):
     swebench: int
 
 @db_operation
-async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPerfectlySolvedForTimeBucket]:
+async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[PerfectlySolvedOverTime]:
     query = """
         WITH
             time_series AS (
@@ -153,7 +153,7 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPe
         ORDER BY ts.hour ASC;
     """
     rows = await conn.fetch(query)
-    return [NumPerfectlySolvedForTimeBucket(**row) for row in rows]
+    return [PerfectlySolvedOverTime(**row) for row in rows]
 
 
 

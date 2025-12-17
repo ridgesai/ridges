@@ -133,7 +133,7 @@ class PerfectlySolvedOverTimeResponse(BaseModel):
 @ttl_cache(ttl_seconds=60 * 15) # 15 minutes
 async def perfectly_solved_over_time() -> PerfectlySolvedOverTimeResponse:
     return PerfectlySolvedOverTimeResponse(
-        perfectly_solved_over_time=await get_perfectly_solved_over_time(),
+        perfectly_solved_over_times=await get_perfectly_solved_over_time(),
         problem_set_creation_times=await get_problem_set_creation_times()
     )
 
