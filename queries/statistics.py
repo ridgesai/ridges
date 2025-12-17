@@ -273,7 +273,7 @@ async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[Probl
         """
         SELECT DISTINCT set_id, created_at
         FROM evaluation_sets es
-        WHERE set_id >= 6 ORDER BY set_id AS
+        WHERE set_id >= 6 ORDER BY set_id ASC
         """
     )
     
