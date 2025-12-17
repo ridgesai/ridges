@@ -106,8 +106,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
 
 
 
-class NumPerfectlySolvedForTimeBucket(BaseModel):
-    time_bucket: datetime
+class PerfectlySolvedOverTime(BaseModel):
+    hour: datetime
     polyglot_py: int
     polyglot_js: int
     swebench: int
@@ -118,10 +118,10 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPe
         WITH
             time_series AS (
                 SELECT generate_series(
-                    TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500', -- time of problem set 6
+                    TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500', -- Problem Set 6
                     DATE_TRUNC('hour', NOW()),
                     '6 hours'::interval
-                ) as time_bucket
+                ) as hour
             ),
             problem_groups AS (
                 SELECT
@@ -134,23 +134,23 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[NumPe
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
-                WHERE erh.created_at >= TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500' -- time of problem set 6
+                WHERE erh.created_at >= TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500' -- Problem Set 6
                     AND erh.status = 'finished'
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY erh.problem_name
-                HAVING COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) >= 0.95
+                HAVING COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) >= 0.90
             )
         SELECT
-            ts.time_bucket,
+            ts.hour,
             COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_py') as polyglot_py,
             COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_js') as polyglot_js,
             COUNT(*) FILTER (WHERE pg.problem_group = 'swebench') as swebench
         FROM time_series ts
-        LEFT JOIN problem_groups pg ON pg.first_perfectly_solved_at <= ts.time_bucket
-        GROUP BY ts.time_bucket
-        ORDER BY ts.time_bucket ASC;
+        LEFT JOIN problem_groups pg ON pg.first_perfectly_solved_at <= ts.hour
+        GROUP BY ts.hour
+        ORDER BY ts.hour ASC;
     """
     rows = await conn.fetch(query)
     return [NumPerfectlySolvedForTimeBucket(**row) for row in rows]
