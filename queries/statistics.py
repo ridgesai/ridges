@@ -3,7 +3,7 @@ import api.config as config
 
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import List, Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
 
@@ -259,6 +259,7 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
             AND v_e.finished_at >= NOW() - INTERVAL '6 hours'
         """
     )
+
     return result
 
 
@@ -279,27 +280,34 @@ async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[Probl
     
     return [ProblemSetCreationTime(**row) for row in rows]
 
+
+
 class ValidatorStatsErrorCodeInfo(BaseModel):
     error_code: int
     count: int
 
 class ValidatorStats(BaseModel):
     validator_hotkey: str
+    
     num_evals: int
-    num_total_eval_runs: int
+    
+    num_eval_runs: int
     num_success_eval_runs: int
     num_pass_eval_runs: int
     num_fail_eval_runs: int
     num_error_eval_runs: int
+    error_code_distribution: List[ValidatorStatsErrorCodeInfo]
+    
     num_inferences: int
     num_embeddings: int
-    error_code_distribution: list[ValidatorStatsErrorCodeInfo]
+    
     runtime_min: Optional[float] = None
     runtime_q1: Optional[float] = None
     runtime_median: Optional[float] = None
     runtime_q3: Optional[float] = None
     runtime_max: Optional[float] = None
     runtime_mean: Optional[float] = None
+    
     score_min: Optional[float] = None
     score_q1: Optional[float] = None
     score_median: Optional[float] = None
@@ -309,10 +317,8 @@ class ValidatorStats(BaseModel):
 
     def __init__(self, **data):
         if "error_code_distribution" in data:
-            data["error_code_distribution"] = [
-                ValidatorStatsErrorCodeInfo(**item) 
-                for item in json.loads(data["error_code_distribution"])
-            ]
+            data["error_code_distribution"] = [ValidatorStatsErrorCodeInfo(**item) for item in json.loads(data["error_code_distribution"])]
+        
         super().__init__(**data)
 
 @db_operation
@@ -325,21 +331,21 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
         validator_eval_runs AS (
             SELECT 
                 e.validator_hotkey,
-                erh.evaluation_run_id,
                 erh.evaluation_id,
+                erh.evaluation_run_id,
                 erh.status,
-                erh.error_code,
-                erh.finished_or_errored_at,
-                erh.started_initializing_agent_at,
                 erh.solved,
+                erh.error_code,
+                erh.started_initializing_agent_at,
+                erh.finished_or_errored_at,
                 EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_initializing_agent_at)) as runtime_seconds,
                 COUNT(DISTINCT i.inference_id) as num_inferences,
-                COUNT(DISTINCT emb.embedding_id) as num_embeddings
+                COUNT(DISTINCT em.embedding_id) as num_embeddings
             FROM evaluations e
                 JOIN evaluation_runs_hydrated erh ON e.evaluation_id = erh.evaluation_id
                 JOIN agents a ON e.agent_id = a.agent_id
                 LEFT JOIN inferences i ON erh.evaluation_run_id = i.evaluation_run_id
-                LEFT JOIN embeddings emb ON erh.evaluation_run_id = emb.evaluation_run_id
+                LEFT JOIN embeddings em ON erh.evaluation_run_id = emb.evaluation_run_id
             WHERE e.set_id = (SELECT set_id FROM current_set)
                 AND e.evaluation_set_group = 'validator'::EvaluationSetGroup
                 AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
@@ -359,7 +365,7 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
             SELECT 
                 validator_hotkey,
                 COUNT(DISTINCT evaluation_id) as num_evals,
-                COUNT(evaluation_run_id) as num_total_eval_runs,
+                COUNT(evaluation_run_id) as num_eval_runs,
                 COUNT(*) FILTER (WHERE status = 'finished') as num_success_eval_runs,
                 COUNT(*) FILTER (WHERE status = 'finished' AND solved) as num_pass_eval_runs,
                 COUNT(*) FILTER (WHERE status = 'finished' AND NOT solved) as num_fail_eval_runs,
@@ -369,7 +375,7 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
             FROM validator_eval_runs
             GROUP BY validator_hotkey
         ),
-        error_distribution AS (
+        error_code_distribution AS (
             SELECT 
                 validator_hotkey,
                 COALESCE(
@@ -386,7 +392,7 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
                 FROM validator_eval_runs
                 WHERE status = 'error' AND error_code IS NOT NULL
                 GROUP BY validator_hotkey, error_code
-            ) error_counts
+            )
             GROUP BY validator_hotkey
         ),
         runtime_quartiles AS (
@@ -420,20 +426,20 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
                 WHERE status IN ('finished', 'error')
                 GROUP BY validator_hotkey, evaluation_id
                 HAVING COUNT(*) FILTER (WHERE status = 'finished') > 0
-            ) eval_scores
+            )
             GROUP BY validator_hotkey
         )
         SELECT 
             vs.validator_hotkey,
             vs.num_evals,
-            vs.num_total_eval_runs,
+            vs.num_eval_runs,
             vs.num_success_eval_runs,
             vs.num_pass_eval_runs,
             vs.num_fail_eval_runs,
             vs.num_error_eval_runs,
+            ecd.error_code_distribution,
             vs.num_inferences,
             vs.num_embeddings,
-            ed.error_code_distribution,
             rq.runtime_min,
             rq.runtime_q1,
             rq.runtime_median,
@@ -447,7 +453,7 @@ async def get_validator_stats(conn: DatabaseConnection) -> int:
             sq.score_max,
             sq.score_mean
         FROM validator_stats vs
-            LEFT JOIN error_distribution ed ON vs.validator_hotkey = ed.validator_hotkey
+            LEFT JOIN error_code_distribution ecd ON vs.validator_hotkey = ecd.validator_hotkey
             LEFT JOIN runtime_quartiles rq ON vs.validator_hotkey = rq.validator_hotkey
             LEFT JOIN score_quartiles sq ON vs.validator_hotkey = sq.validator_hotkey
         ORDER BY vs.validator_hotkey;
