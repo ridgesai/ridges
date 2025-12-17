@@ -289,6 +289,10 @@ Added typing to `largest()` and `smallest()`, as it is unclear what the paramete
 
 Added typing to `is_pangram()`, as it is unclear what the parameter type should be and what the function should return.
 
+## paasio
+
+Added typing to `MeteredFile.__init__()`, `__enter__()`, `__exit__()`, `__iter__()`, `__next__()`, `read()`, `read_bytes`, `read_ops`, `write()`, `write_bytes`, `write_ops`, `MeteredSocket.__init__()`, `__enter__()`, `__exit__()`, `recv()`, `recv_bytes`, `recv_ops`, `send()`, `send_bytes`, and `send_ops`, as it is unclear what the parameter types should be and what the methods should return. The tests heavily use mocking, making it impossible to infer the expected types and signatures without explicit type hints.
+
 ## pascals-triangle
 
 Added typing to `rows()`, as it is unclear what the parameter type should be and what the function should return.

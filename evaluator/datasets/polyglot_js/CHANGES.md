@@ -384,7 +384,7 @@ Added typing to `ResistorColorTrio.constructor()` and `label()`, as it is unclea
 
 ## rest-api
 
-Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `RestAPI.constructor()`, `get()`, and `post()`, as it is unclear what the parameter types should be and what the methods should return. The payloads are JSON strings and the `get()` endpoint accepts query parameters, which is not obvious from the instructions alone. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## reverse-string
 
