@@ -1,6 +1,4 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
-from validator.set_weights import set_weights_from_mapping
-
 import os
 import sys
 import time
@@ -10,6 +8,7 @@ import asyncio
 import pathlib
 import traceback
 import utils.logger as logger
+import utils.bittensor
 import validator.config as config
 
 from typing import Any, Dict
@@ -78,9 +77,17 @@ async def set_weights_loop():
         weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
         
         try:
-            await asyncio.wait_for(set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError as e:
-            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
+            await utils.bittensor.set_weights_from_mapping(
+                weights_mapping=weights_mapping,
+                netuid=config.NETUID,
+                subtensor_network=config.SUBTENSOR_NETWORK,
+                subtensor_address=config.SUBTENSOR_ADDRESS,
+                wallet_name=config.VALIDATOR_WALLET_NAME,
+                hotkey_name=config.VALIDATOR_HOTKEY_NAME,
+                timeout_seconds=config.SET_WEIGHTS_TIMEOUT_SECONDS
+            )
+        except Exception as e:
+            logger.error(f"Error setting weights: {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
