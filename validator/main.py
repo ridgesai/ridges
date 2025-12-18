@@ -81,10 +81,16 @@ async def set_weights_loop():
             continue
 
         hotkey = list(weights_mapping.keys())[0]
-
+        
         try:
             process = await asyncio.create_subprocess_exec(
-                "uv", "run", "validator/set_weights_cli.py", hotkey,
+                "uv", "run", "bittensor/set_weights.py",
+                hotkey,
+                str(config.NETUID),
+                config.SUBTENSOR_NETWORK,
+                config.SUBTENSOR_ADDRESS,
+                config.VALIDATOR_WALLET_NAME,
+                config.VALIDATOR_HOTKEY_NAME,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
