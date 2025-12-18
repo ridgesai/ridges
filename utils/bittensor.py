@@ -19,6 +19,44 @@ async def check_if_hotkey_is_registered(hotkey: str) -> bool:
     await process.wait()
     return process.returncode == 0
 
+async def set_weights_from_mapping(weights_mapping: dict, netuid: int, subtensor_network: str, subtensor_address: str, wallet_name: str, hotkey_name: str, timeout_seconds: int) -> None:
+    if len(weights_mapping.keys()) != 1:
+        logger.error("Expected one hotkey in weights mapping")
+        return
+
+    hotkey = list(weights_mapping.keys())[0]
+
+    process = await asyncio.create_subprocess_exec(
+        "uv", "run", "bittensor/set_weights.py",
+        hotkey,
+        str(netuid),
+        subtensor_network,
+        subtensor_address,
+        wallet_name,
+        hotkey_name,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=timeout_seconds
+        )
+
+        if stdout:
+            logger.info(stdout.decode().strip())
+        if stderr:
+            logger.error(stderr.decode().strip())
+    except asyncio.TimeoutError:
+        logger.error(f"Timeout setting weights after {timeout_seconds} seconds")
+        try:
+            process.kill()
+            await process.wait()
+        except:
+            pass
+        raise
+
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
     try:
         keypair = Keypair(ss58_address=hotkey)

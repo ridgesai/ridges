@@ -8,6 +8,7 @@ import asyncio
 import pathlib
 import traceback
 import utils.logger as logger
+import utils.bittensor
 import validator.config as config
 
 from typing import Any, Dict
@@ -75,45 +76,18 @@ async def set_weights_loop():
     while True:
         weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
         
-        if len(weights_mapping.keys()) != 1:
-            logger.error("Expected one hotkey in weights mapping")
-            await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
-            continue
-
-        hotkey = list(weights_mapping.keys())[0]
-        
         try:
-            process = await asyncio.create_subprocess_exec(
-                "uv", "run", "bittensor/set_weights.py",
-                hotkey,
-                str(config.NETUID),
-                config.SUBTENSOR_NETWORK,
-                config.SUBTENSOR_ADDRESS,
-                config.VALIDATOR_WALLET_NAME,
-                config.VALIDATOR_HOTKEY_NAME,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            await utils.bittensor.set_weights_from_mapping(
+                weights_mapping=weights_mapping,
+                netuid=config.NETUID,
+                subtensor_network=config.SUBTENSOR_NETWORK,
+                subtensor_address=config.SUBTENSOR_ADDRESS,
+                wallet_name=config.VALIDATOR_WALLET_NAME,
+                hotkey_name=config.VALIDATOR_HOTKEY_NAME,
+                timeout_seconds=config.SET_WEIGHTS_TIMEOUT_SECONDS
             )
-
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS
-            )
-
-            if stdout:
-                logger.info(stdout.decode().strip())
-            if stderr:
-                logger.error(stderr.decode().strip())
-
-        except asyncio.TimeoutError:
-            logger.error(f"Timeout setting weights after {config.SET_WEIGHTS_TIMEOUT_SECONDS} seconds")
-            try:
-                process.kill()
-                await process.wait()
-            except:
-                pass
         except Exception as e:
-            logger.error(f"Error setting weights: {type(e).__name__}: {e}")
+            logger.error(f"Error setting weights: {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
