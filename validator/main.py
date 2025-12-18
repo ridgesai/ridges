@@ -1,6 +1,4 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
-from validator.set_weights import set_weights_from_mapping
-
 import os
 import sys
 import time
@@ -77,10 +75,39 @@ async def set_weights_loop():
     while True:
         weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
         
+        if len(weights_mapping.keys()) != 1:
+            logger.error("Expected one hotkey in weights mapping")
+            await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
+            continue
+
+        hotkey = list(weights_mapping.keys())[0]
+
         try:
-            await asyncio.wait_for(set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError as e:
-            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
+            process = await asyncio.create_subprocess_exec(
+                "uv", "run", "validator/set_weights_cli.py", hotkey,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS
+            )
+
+            if stdout:
+                logger.info(stdout.decode().strip())
+            if stderr:
+                logger.error(stderr.decode().strip())
+
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout setting weights after {config.SET_WEIGHTS_TIMEOUT_SECONDS} seconds")
+            try:
+                process.kill()
+                await process.wait()
+            except:
+                pass
+        except Exception as e:
+            logger.error(f"Error setting weights: {type(e).__name__}: {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
         
