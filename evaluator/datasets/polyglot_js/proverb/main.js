@@ -4,7 +4,7 @@
 //
 
 /**
- * @param {...string} args
+ * @param {...string | {qualifier: string}} args - The last argument may be an object with a `qualifier` property. The qualifier should go before the first argument in the conclusion.
  * @return {string}
  */
 export const proverb = (...args) => {

@@ -336,7 +336,7 @@ Added typing to `promisify()`, `all()`, `allSettled()`, `race()`, and `any()`, a
 
 ## proverb
 
-Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
+Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all. Explained where the qualifier should be used.
 
 ## pythagorean-triplet
 
