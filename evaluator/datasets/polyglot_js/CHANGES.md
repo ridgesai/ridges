@@ -336,7 +336,7 @@ Added typing to `promisify()`, `all()`, `allSettled()`, `race()`, and `any()`, a
 
 ## proverb
 
-Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all.
+Added the complete function signature with typing for `proverb()`, including the `...args` rest parameter, as the `main.js` file had no parameters at all. Explained where the qualifier should be used.
 
 ## pythagorean-triplet
 
@@ -400,7 +400,7 @@ Added the missing `name` property and `reset()` method with type hints. The inst
 
 ## robot-simulator
 
-Added typing to `Robot.bearing`, `Robot.coordinates`, `Robot.place()`, and `Robot.evaluate()`, as it is unclear what the parameter types should be and what the methods should return.
+Added typing to `Robot.bearing`, `Robot.coordinates`, `Robot.place()`, and `Robot.evaluate()`, as it is unclear what the parameter types should be, what errors should be thrown, and what the methods should return.
 
 ## roman-numerals
 
