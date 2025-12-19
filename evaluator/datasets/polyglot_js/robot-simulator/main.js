@@ -12,21 +12,22 @@ export class InvalidInputError extends Error {
 
 export class Robot {
   /**
-   * @returns {string}
+   * @returns {'north' | 'east' | 'south' | 'west'}
    */
   get bearing() {
     throw new Error('Remove this line and implement the function');
   }
 
   /**
-   * @returns {number[]}
+   * @returns {[number, number]}
    */
   get coordinates() {
     throw new Error('Remove this line and implement the function');
   }
 
   /**
-   * @param {{x: number, y: number, direction: string}} position
+   * @param {{x: number, y: number, direction: 'north' | 'east' | 'south' | 'west'}} position
+   * @throws {InvalidInputError}
    */
   place({ x, y, direction }) {
     throw new Error('Remove this line and implement the function');

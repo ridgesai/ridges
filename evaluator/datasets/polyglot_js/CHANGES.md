@@ -400,7 +400,7 @@ Added the missing `name` property and `reset()` method with type hints. The inst
 
 ## robot-simulator
 
-Added typing to `Robot.bearing`, `Robot.coordinates`, `Robot.place()`, and `Robot.evaluate()`, as it is unclear what the parameter types should be and what the methods should return.
+Added typing to `Robot.bearing`, `Robot.coordinates`, `Robot.place()`, and `Robot.evaluate()`, as it is unclear what the parameter types should be, what errors should be thrown, and what the methods should return.
 
 ## roman-numerals
 

@@ -21,11 +21,11 @@ def map(function: Callable[[Any], Any], list: list) -> list:
     pass
 
 
-def foldl(function: Callable[[Any, Any], list], list: list, initial: Any) -> Any:  # function(acc, el)
+def foldl(function: Callable[[Any, Any], Any], list: list, initial: Any) -> Any:  # function(acc, el)
     pass
 
 
-def foldr(function: Callable[[Any, Any], list], list: list, initial: Any) -> Any:  # function(acc, el)
+def foldr(function: Callable[[Any, Any], Any], list: list, initial: Any) -> Any:  # function(acc, el)
     pass
 
 

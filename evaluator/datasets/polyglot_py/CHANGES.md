@@ -395,7 +395,7 @@ Added the missing `name` property and `reset()` method with type hints. The inst
 
 ## robot-simulator
 
-Added typing to `Robot.__init__()`, as it is unclear what the parameter types should be. Added import for `Tuple` type hint.
+Added typing to `Robot.__init__()`, as it is unclear what the parameter types should be. Added import for `Tuple` type hint. Added `Robot.move()`, `Robot.direction`, and `Robot.coordinates` since they are needed by the tests.
 
 ## roman-numerals
 
