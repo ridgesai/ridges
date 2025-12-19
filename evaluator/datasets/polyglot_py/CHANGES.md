@@ -159,7 +159,7 @@ Added typing to `recite()`, as it is unclear what the parameter types should be 
 
 ## forth
 
-Added typing to `evaluate()`, as it is unclear what the parameter type should be and what the function should return. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
+Added typing to `evaluate()`, as it is unclear what the parameter type should be and what the function should return. Added a missing exception message in the instructions that the tests look for. There are some links that are impossible for the agent to follow. This will be resolved in a future version of our sandbox, where we provide restricted Internet access.
 
 ## gigasecond
 
