@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls, inference_message_to_openai_message
 
 
 
@@ -153,7 +153,7 @@ class ChutesProvider(Provider):
             chat_completion = await self.chutes_inference_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
-                messages=messages,
+                messages=[inference_message_to_openai_message(message) for message in messages],
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
                 stream=False
