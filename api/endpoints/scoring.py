@@ -7,7 +7,7 @@ from utils.ttl import ttl_cache
 from typing import Dict, Optional
 from models.evaluation_set import EvaluationSetGroup
 from utils.bittensor import check_if_hotkey_is_registered
-from queries.scores import get_weight_receiving_agent_hotkey
+from queries.scores import get_weight_receiving_agent_hotkey, get_weight_receiving_agent_info
 from queries.evaluation_set import get_latest_set_id, get_set_created_at
 from queries.statistics import get_average_score_per_evaluation_set_group, get_average_wait_time_per_evaluation_set_group
 
@@ -36,6 +36,16 @@ async def weights() -> Dict[str, float]:
     # owner hotkey (to burn).
     return {config.OWNER_HOTKEY: 1.0}
 
+@router.get("/approval-info")
+async def approval_info() -> Dict[str, str | float]:
+    if config.BURN:
+        return {"hotkey": config.OWNER_HOTKEY, "agent_id": None, "weight": 1.0}
+    
+    weight_receiving_agent_info = await get_weight_receiving_agent_info()
+    if weight_receiving_agent_info:
+        return {"hotkey": weight_receiving_agent_info["miner_hotkey"], "agent_id": weight_receiving_agent_info["agent_id"], "weight": 1.0}
+    
+    return {"hotkey": config.OWNER_HOTKEY, "agent_id": None, "weight": 1.0}
 
 
 # /scoring/screener-info
