@@ -11,3 +11,14 @@ SOUTH = None
 class Robot:
     def __init__(self, direction: int = NORTH, x_pos: int = 0, y_pos: int = 0) -> None:
         pass
+
+    def move(self, commands: str) -> None:
+        pass
+
+    @property
+    def direction(self) -> int:
+        pass
+
+    @property
+    def coordinates(self) -> Tuple[int, int]:
+        pass

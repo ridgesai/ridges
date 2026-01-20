@@ -59,4 +59,7 @@ raise ZeroDivisionError("divide by zero")
 
 #an example when the operation is undefined.
 raise ValueError("undefined operation")
+
+# an example when the operation is not allowed.
+raise ValueError('illegal operation')
 ```
