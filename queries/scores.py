@@ -24,6 +24,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
         return None
     return current_leader["miner_hotkey"]
 
+@db_operation
 async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[Dict[str, str]]:
     current_leader = await conn.fetchrow(
         """
