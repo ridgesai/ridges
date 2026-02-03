@@ -120,9 +120,6 @@ def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
         (is_valid: bool, error_message: Optional[str])
     """
     result = subprocess.run(["git", "diff", "--name-only"], cwd=repo_dir, capture_output=True, text=True)
-    if result.returncode != 0:
-        return False, f"Failed to get modified files: {result.stderr.strip()}"
-
     modified_files = [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
 
     errors = []
@@ -140,8 +137,6 @@ def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
                 errors.append(f"{filepath}:{e.lineno}: {e.msg}")
 
         elif filepath.endswith((".js", ".mjs")):
-            with open(full_path, "r") as f:
-                source = f.read()
             result = subprocess.run(
                 ["node", "--input-type=module", "--check"], input=source, capture_output=True, text=True
             )
