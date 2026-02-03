@@ -9,15 +9,14 @@ import utils.logger as logger
 from typing import Tuple, Optional
 
 
-
 def get_file_diff(old_path, new_path) -> str:
     """
     Gets the diff between two files.
-    
+
     Args:
         old_path: The path to the old file
         new_path: The path to the new file
-        
+
     Returns:
         The diff between the two files, expressed as a diff of the old file, as a string.
     """
@@ -29,13 +28,9 @@ def get_file_diff(old_path, new_path) -> str:
         missing.append(new_path)
     if missing:
         logger.fatal(f"File(s) not found for diff: {', '.join(missing)}")
-    
+
     # Use diff command
-    result = subprocess.run(
-        ["diff", "-u", old_path, new_path],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["diff", "-u", old_path, new_path], capture_output=True, text=True)
 
     # Check if the diff was generated successfully
     # `diff -u` return codes:
@@ -54,39 +49,33 @@ def get_file_diff(old_path, new_path) -> str:
         filename = os.path.basename(old_path)
         lines[0] = f"--- {filename}"
         lines[1] = f"+++ {filename}"
-    
-    return "\n".join(lines)
 
+    return "\n".join(lines)
 
 
 def validate_diff_for_local_repo(diff, local_repo_dir) -> Tuple[bool, Optional[str]]:
     """
     Validates if a diff string is valid and can be applied to a local repository.
-    
+
     Args:
         diff: The diff string to validate
         local_repo_dir: The local repository directory
-        
+
     Returns:
         (is_valid: bool, error_message: Optional[str])
     """
-    
+
     # Write diff to temp file
     with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as f:
         f.write(diff)
         diff_file = f.name
-    
+
     # Use `git apply --check` to validate without applying
-    result = subprocess.run(
-        ["git", "apply", "--check", diff_file],
-        cwd=local_repo_dir,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["git", "apply", "--check", diff_file], cwd=local_repo_dir, capture_output=True, text=True)
 
     # Delete the temp file
     os.unlink(diff_file)
-    
+
     # Check if the diff was applied successfully
     if result.returncode == 0:
         return True, None
@@ -94,11 +83,10 @@ def validate_diff_for_local_repo(diff, local_repo_dir) -> Tuple[bool, Optional[s
         return False, result.stderr.strip()
 
 
-
 def apply_diff_to_local_repo(diff, local_repo_dir) -> None:
     """
     Applies a diff string to files in the source directory.
-    
+
     Args:
         diff: The diff string to apply
         local_repo_dir: The local repository directory
@@ -108,14 +96,9 @@ def apply_diff_to_local_repo(diff, local_repo_dir) -> None:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".diff", delete=False) as f:
         f.write(diff)
         diff_file = f.name
-    
+
     # Use `git apply` to apply the diff
-    result = subprocess.run(
-        ["git", "apply", diff_file],
-        cwd=local_repo_dir,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["git", "apply", diff_file], cwd=local_repo_dir, capture_output=True, text=True)
 
     # Delete the temp file
     os.unlink(diff_file)
@@ -136,12 +119,7 @@ def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
     Returns:
         (is_valid: bool, error_message: Optional[str])
     """
-    result = subprocess.run(
-        ["git", "diff", "--name-only"],
-        cwd=repo_dir,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(["git", "diff", "--name-only"], cwd=repo_dir, capture_output=True, text=True)
     if result.returncode != 0:
         return False, f"Failed to get modified files: {result.stderr.strip()}"
 
@@ -165,9 +143,7 @@ def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
             with open(full_path, "r") as f:
                 source = f.read()
             result = subprocess.run(
-                ["node", "--input-type=module", "--check"],
-                input=source,
-                capture_output=True, text=True
+                ["node", "--input-type=module", "--check"], input=source, capture_output=True, text=True
             )
             if result.returncode != 0:
                 errors.append(f"{filepath}: {result.stderr.strip()}")
