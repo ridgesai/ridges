@@ -1,5 +1,6 @@
 """Utilities for computing diffs between files."""
 
+import ast
 import os
 import tempfile
 import subprocess
@@ -122,3 +123,55 @@ def apply_diff_to_local_repo(diff, local_repo_dir) -> None:
     # Check if the diff was applied successfully
     if result.returncode != 0:
         logger.fatal(f"Failed to apply diff to {local_repo_dir}: {result.stderr.strip()}")
+
+
+def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
+    """
+    After a patch has been applied, check that modified files have valid syntax.
+    Supports Python (.py) and JavaScript (.js, .mjs) files.
+
+    Args:
+        repo_dir: The repository directory where the patch was applied
+
+    Returns:
+        (is_valid: bool, error_message: Optional[str])
+    """
+    result = subprocess.run(
+        ["git", "diff", "--name-only"],
+        cwd=repo_dir,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        return False, f"Failed to get modified files: {result.stderr.strip()}"
+
+    modified_files = [f.strip() for f in result.stdout.strip().splitlines() if f.strip()]
+
+    errors = []
+    for filepath in modified_files:
+        full_path = os.path.join(repo_dir, filepath)
+        if not os.path.exists(full_path):
+            continue
+
+        if filepath.endswith(".py"):
+            try:
+                with open(full_path, "r") as f:
+                    source = f.read()
+                ast.parse(source, filename=filepath)
+            except SyntaxError as e:
+                errors.append(f"{filepath}:{e.lineno}: {e.msg}")
+
+        elif filepath.endswith((".js", ".mjs")):
+            with open(full_path, "r") as f:
+                source = f.read()
+            result = subprocess.run(
+                ["node", "--input-type=module", "--check"],
+                input=source,
+                capture_output=True, text=True
+            )
+            if result.returncode != 0:
+                errors.append(f"{filepath}: {result.stderr.strip()}")
+
+    if errors:
+        return False, "Patched files have syntax errors:\n" + "\n".join(errors)
+    return True, None
