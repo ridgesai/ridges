@@ -1,4 +1,5 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
+# NOTE: this file is Unused since subtensor.get_uid_for_hotkey_on_subnet keeps timing out after a few minutes
 from bittensor.core.async_subtensor import AsyncSubtensor
 
 import utils.logger as logger
