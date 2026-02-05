@@ -2,6 +2,7 @@ import asyncio
 import datetime
 
 from pydantic import BaseModel
+from queries.statistics import ValidatorStats, get_validator_stats
 from utils.ttl import ttl_cache
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
@@ -51,3 +52,9 @@ async def problem_statistics(set_id: Optional[int] = None) -> ProblemStatisticsR
         problem_set_id=set_id,
         problem_set_created_at=problem_set_created_at
     )
+
+# /statistics/validator-stats
+@router.get("/validator-stats")
+@ttl_cache(ttl_seconds=15*60) # 15 mins
+async def validator_stats() -> List[ValidatorStats]:
+    return await get_validator_stats()
