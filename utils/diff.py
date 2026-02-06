@@ -137,6 +137,8 @@ def validate_patched_files_syntax(repo_dir: str) -> Tuple[bool, Optional[str]]:
                 errors.append(f"{filepath}:{e.lineno}: {e.msg}")
 
         elif filepath.endswith((".js", ".mjs")):
+            with open(full_path, "r") as f:
+                source = f.read()
             result = subprocess.run(
                 ["node", "--input-type=module", "--check"], input=source, capture_output=True, text=True
             )
