@@ -89,9 +89,12 @@ class ScoringLatestSetInfo(BaseModel):
     latest_set_id: int
     latest_set_created_at: datetime
 
+
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
+    latest_set_id = await get_latest_set_id()
+    latest_set_created_at = await get_set_created_at(latest_set_id)
     return ScoringLatestSetInfo(
-        latest_set_id=await get_latest_set_id(),
-        latest_set_created_at=await get_set_created_at()
+        latest_set_id=latest_set_id,
+        latest_set_created_at=latest_set_created_at
     )
