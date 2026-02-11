@@ -27,10 +27,12 @@ class WhitelistedTargonModel(BaseModel):
 
 WHITELISTED_TARGON_INFERENCE_MODELS = [
     WhitelistedTargonModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8"),
+    WhitelistedTargonModel(name="Qwen/Qwen3-Next-80B-A3B-Instruct"),
     WhitelistedTargonModel(name="zai-org/GLM-4.5-FP8", targon_name="zai-org/GLM-4.5"),
     WhitelistedTargonModel(name="deepseek-ai/DeepSeek-V3-0324"),
     WhitelistedTargonModel(name="moonshotai/Kimi-K2-Instruct", targon_name="moonshotai/Kimi-K2-Thinking"),
     WhitelistedTargonModel(name="zai-org/GLM-4.6-FP8", targon_name="zai-org/GLM-4.6")
+    WhitelistedTargonModel(name="moonshotai/Kimi-K2.5"),
 ]
 
 WHITELISTED_TARGON_EMBEDDING_MODELS = [
