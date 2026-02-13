@@ -17,7 +17,8 @@ WHITELISTED_VALIDATORS = [
     {"name": "Alex's Validator (1)",  "hotkey": "5HpMvcM593HmizCA3ARLNifxjPSLbN3M5RHYy4GiEqmB3x9n"},
     {"name": "Alex's Validator (2)",  "hotkey": "5HNpAXVzWaW4yD9UqH5sXFPt1gPFqNTViDy61NdiViyDQiTQ"},
     {"name": "Alex's Validator (3)",  "hotkey": "5GgqnYQ3QwnCcmxiGatXS3rrHGmkqU3cMSjQFSdLKHDmxyB6"},
-    {"name": "Shak's Validator",      "hotkey": "5F26aNVC3rZVNbH36DWdZzxPVH17iBNGD14Wtb4nQem742Q7"}
+    {"name": "Shak's Validator",      "hotkey": "5F26aNVC3rZVNbH36DWdZzxPVH17iBNGD14Wtb4nQem742Q7"},
+    {"name": "Abe's Validator",       "hotkey": "5G699LghHWA18yEPq8NpX9gYi8ZDM3fy2BJvSvYWqtt2DHGE"}
 ]
 
 def is_validator_hotkey_whitelisted(validator_hotkey: str) -> bool:
