@@ -674,12 +674,12 @@ async def validator_finish_evaluation(
             detail="This validator is not currently running an evaluation, and therefore cannot request to finish an evaluation."
         )
 
-    # Make sure that all evaluation runs have either finished or errored
+    # Make sure that all evaluation runs have either finished,errored, or skipped
     evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
-    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error] for evaluation_run in evaluation_runs):
+    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error, EvaluationRunStatus.skipped] for evaluation_run in evaluation_runs):
         raise HTTPException(
             status_code=409,
-            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
+            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have finished, errored, or been skipped. Did you forget to send an update-evaluation-run?"
         )
 
 
