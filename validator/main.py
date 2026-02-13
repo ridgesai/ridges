@@ -163,7 +163,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
 
 
 # Run an evaluation run
-async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str):
+async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str) -> RunOutcome:
     try:
         # Figure out what problem suite this problem belongs to
         problem_suite = next((suite for suite in problem_suites if suite.has_problem_name(problem_name)), None)
@@ -174,7 +174,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
                 "error_message": f"The problem '{problem_name}' was not found in any problem suite"
             })
-            return
+            return RunOutcome()
 
         # Get the problem
         problem = problem_suite.get_problem(problem_name)
@@ -183,7 +183,9 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
 
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
-
+        outcome = RunOutcome()
+        agent_sandbox = None
+        eval_sandbox = None
 
         try:
             # Move from pending -> initializing_agent
@@ -247,6 +249,19 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 "eval_logs": truncate_logs_if_required(eval_logs)
             })
 
+            outcome.solved = num_passed == len(test_results) and len(test_results) > 0
+
+        except asyncio.CancelledError:
+            logger.info(f"Evaluation run {evaluation_run_id} for problem {problem_name} cancelled; cleaning up sandboxes")
+
+            if sandbox_manager is not None:
+                if agent_sandbox is not None:
+                    await asyncio.shield(asyncio.to_thread(sandbox_manager.cleanup_sandbox, agent_sandbox))
+                if eval_sandbox is not None:
+                    await asyncio.shield(asyncio.to_thread(sandbox_manager.cleanup_sandbox, eval_sandbox))
+
+            raise
+
         except EvaluationRunException as e:
             logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
 
@@ -254,6 +269,8 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 "error_code": e.error_code.value,
                 "error_message": e.error_message
             })
+
+            outcome.had_syntax_error = (e.error_code == EvaluationRunErrorCode.AGENT_INVALID_PATCH)
 
         except Exception as e:
             logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
@@ -267,15 +284,23 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
 
 
         logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}")
+        return outcome
 
+    except asyncio.CancelledError:
+        raise
     except Exception as e:
         logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
+
+    return RunOutcome()
     
 
 
 # Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
+# Terminate early when:
+# - Threshold is impossible
+# - Syntax error is detected
 async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse):
     logger.info("Received evaluation:")
     logger.info(f"  # of evaluation runs: {len(request_evaluation_response.evaluation_runs)}")
@@ -283,23 +308,75 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     for evaluation_run in request_evaluation_response.evaluation_runs:
         logger.info(f"    {evaluation_run.problem_name}")
 
-
+    pass_threshold = request_evaluation_response.pass_threshold
+    logger.info(f"  Pass threshold: {pass_threshold}")
 
     logger.info("Starting evaluation...")
 
-    tasks = []
+    task_to_run_info: Dict[asyncio.Task, ValidatorRequestEvaluationResponseEvaluationRun] = {}
+
     for evaluation_run in request_evaluation_response.evaluation_runs:
         evaluation_run_id = evaluation_run.evaluation_run_id
         problem_name = evaluation_run.problem_name
 
         if config.SIMULATE_EVALUATION_RUNS:
-            tasks.append(asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name)))
+            task = asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name))
         else:
-            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, request_evaluation_response.agent_code)))
+            task = asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, request_evaluation_response.agent_code))
 
-    await asyncio.gather(*tasks)
+        task_to_run_info[task] = evaluation_run
 
-    logger.info("Finished evaluation")
+    # Process tasks as they complete (check for early termination)
+    total = len(task_to_run_info)
+    solved_count = 0
+    completed_count = 0
+    pending = set(task_to_run_info.keys())
+    skip_reason = None
+
+    while pending:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+
+        for task in done:
+            try:
+                outcome: RunOutcome = task.result()
+                completed_count += 1
+                if outcome.solved:
+                    solved_count += 1
+
+                # Only screeners have non-zero pass threshold
+                if pass_threshold is not None and skip_reason is None:
+                    remaining = total - completed_count
+
+                    if outcome.had_syntax_error:
+                        skip_reason = "syntax error penalty"
+                        logger.info(f"Early termination triggered - syntax error detected, skipping remaining {len(pending)} runs")
+
+                    elif remaining > 0 and (solved_count + remaining) / total < pass_threshold:
+                        skip_reason = "threshold impossible"
+                        logger.info(f"Early termination triggered - threshold impossible ({solved_count + remaining}/{total} < {pass_threshold}), skipping remaining {len(pending)} runs")
+
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error getting result from task: {e}")
+                completed_count += 1
+
+        if skip_reason is not None and pending:
+            for pending_task in pending:
+                pending_task.cancel()
+
+            await asyncio.wait(pending)
+
+            for pending_task in pending:
+                run_info = task_to_run_info[pending_task]
+                try:
+                    await skip_evaluation_run(run_info.evaluation_run_id, run_info.problem_name)
+                except Exception as e:
+                    logger.error(f"Error skipping evaluation run {run_info.evaluation_run_id}: {e}")
+
+            pending = set()
+
+    logger.info(f"Finished evaluation (solved={solved_count}/{total}, skip_reason={skip_reason})")
 
     await post_ridges_platform("/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1)
 
