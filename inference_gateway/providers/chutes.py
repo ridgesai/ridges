@@ -161,8 +161,11 @@ class ChutesProvider(Provider):
             )
             streamed_completion = []
             async for chunk in completion_stream:
-                chunk_message = chunk.choices[0].delta.content
-                streamed_completion.append(chunk_message)
+                if len(chunk.choices) > 0:
+                    chunk_message = chunk.choices[0].delta.content
+                    streamed_completion.append(chunk_message)
+                # last chunk has no choices
+
             last_chunk = chunk
 
             message = "".join(streamed_completion)
