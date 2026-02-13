@@ -5,7 +5,7 @@ import inference_gateway.config as config
 from time import time
 from pydantic import BaseModel
 from typing import List, Optional
-from openai import AsyncOpenAI, APIStatusError
+from openai import AsyncOpenAI, APIStatusError, AsyncStream
 from inference_gateway.providers.provider import Provider
 from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
 
@@ -150,7 +150,7 @@ class ChutesProvider(Provider):
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
-            completion_stream = await self.chutes_inference_client.chat.completions.create(
+            completion_stream: AsyncStream = await self.chutes_inference_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
@@ -160,7 +160,7 @@ class ChutesProvider(Provider):
                 stream_options={"include_usage": True}
             )
             streamed_completion = []
-            for chunk in completion_stream:
+            async for chunk in completion_stream:
                 chunk_message = chunk.choices[0].delta.content
                 streamed_completion.append(chunk_message)
 
