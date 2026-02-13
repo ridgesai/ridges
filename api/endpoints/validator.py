@@ -352,7 +352,14 @@ async def validator_request_evaluation(
     agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
     evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
 
-    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
+    # Determine pass threshold for screeners (None for validators)
+    pass_threshold = None
+    if validator.current_agent.status == AgentStatus.screening_1:
+        pass_threshold = config.SCREENER_1_THRESHOLD
+    elif validator.current_agent.status == AgentStatus.screening_2:
+        pass_threshold = config.SCREENER_2_THRESHOLD
+
+    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs, pass_threshold=pass_threshold)
 
 
 
