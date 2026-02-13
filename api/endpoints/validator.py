@@ -22,7 +22,8 @@ from queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_r
     get_all_evaluation_runs_in_evaluation_id, create_evaluation_run_log, check_if_evaluation_run_logs_exist
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
+from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType, EvaluationRunErrorCode
+from models.evaluation_set import EvaluationSetGroup
 from models.problem import ProblemTestResult
 from utils.bittensor import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
@@ -773,3 +774,18 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 return
 
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+
+    elif hydrated_evaluation.status == EvaluationStatus.failure:
+        if hydrated_evaluation.evaluation_set_group in (EvaluationSetGroup.screener_1, EvaluationSetGroup.screener_2):
+            evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
+            has_syntax_penalty = any(
+                run.error_code is not None and run.error_code == EvaluationRunErrorCode.AGENT_INVALID_PATCH
+                for run in evaluation_runs
+            )
+
+            if has_syntax_penalty:
+                agent = await get_agent_by_id(hydrated_evaluation.agent_id)
+                if agent.status == AgentStatus.screening_1:
+                    await update_agent_status(hydrated_evaluation.agent_id, AgentStatus.failed_screening_1)
+                elif agent.status == AgentStatus.screening_2:
+                    await update_agent_status(hydrated_evaluation.agent_id, AgentStatus.failed_screening_2)
