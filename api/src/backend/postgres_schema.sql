@@ -229,8 +229,9 @@ CREATE OR REPLACE VIEW evaluations_hydrated AS
 SELECT
     evaluations.*,
     (CASE
-         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
-         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
+         WHEN evaluations.evaluation_set_group IN ('screener_1', 'screener_2') AND bool_or(erh.error_code = 1040) THEN 'failure'
+         WHEN EVERY(erh.status IN ('finished', 'skipped') OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error', 'skipped')) THEN 'failure'
          ELSE 'running'
         END)::EvaluationStatus AS status,
     COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
