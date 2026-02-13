@@ -107,6 +107,13 @@ async def update_evaluation_run(evaluation_run_id: UUID, problem_name: str, upda
     ), bearer_token=session_id, quiet=2)
 
 
+async def skip_evaluation_run(evaluation_run_id: UUID, problem_name: str):
+    logger.info(f"Skipping evaluation run {evaluation_run_id} for problem {problem_name} (early termination)...")
+
+    await post_ridges_platform("/validator/skip-evaluation-run", ValidatorSkipEvaluationRunRequest(
+        evaluation_run_id=evaluation_run_id
+    ), bearer_token=session_id, quiet=2)
+
 
 # Truncates a log if required
 def truncate_logs_if_required(log: str) -> str:
