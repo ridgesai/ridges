@@ -160,15 +160,19 @@ class ChutesProvider(Provider):
                 stream_options={"include_usage": True}
             )
             streamed_completion = []
+            tool_calls = []
             async for chunk in completion_stream:
                 if len(chunk.choices) > 0:
                     chunk_message = chunk.choices[0].delta.content
                     streamed_completion.append(chunk_message)
+                tool_calls.extend(chunk.tool_calls)
                 # last chunk has no choices
 
             last_chunk = chunk
 
-            message = "".join(streamed_completion)
+            message_content = "".join(streamed_completion)
+            print(last_chunk)
+            message_tool_calls = tool_calls
 
             num_input_tokens = last_chunk.usage.prompt_tokens
             num_output_tokens = last_chunk.usage.completion_tokens
@@ -177,8 +181,8 @@ class ChutesProvider(Provider):
             return InferenceResult(
                 status_code=200,
 
-                content=message.content if message.content else "",
-                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else [],
+                content=message_content,
+                tool_calls=openai_tool_calls_to_inference_tool_calls(message_tool_calls) if message_tool_calls else [],
 
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
