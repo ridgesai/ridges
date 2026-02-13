@@ -532,3 +532,14 @@ CREATE TRIGGER tr_refresh_agent_scores_unapproved_agent_ids
 AFTER INSERT OR UPDATE OR DELETE
 ON unapproved_agent_ids FOR EACH ROW
 EXECUTE PROCEDURE refresh_agent_scores();
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumlabel = 'skipped'
+        AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'evaluationrunstatus')
+    ) THEN
+        ALTER TYPE EvaluationRunStatus ADD VALUE 'skipped';
+    END IF;
+END $$;
