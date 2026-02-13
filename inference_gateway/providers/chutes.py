@@ -163,10 +163,10 @@ class ChutesProvider(Provider):
             async for chunk in completion_stream:
                 chunk_message = chunk.choices[0].delta.content
                 streamed_completion.append(chunk_message)
+            last_chunk = chunk
 
             message = "".join(streamed_completion)
 
-            last_chunk = completion_stream[-1]
             num_input_tokens = last_chunk.usage.prompt_tokens
             num_output_tokens = last_chunk.usage.completion_tokens
             cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
