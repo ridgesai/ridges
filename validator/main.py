@@ -12,6 +12,7 @@ import traceback
 import utils.logger as logger
 import validator.config as config
 
+from dataclasses import dataclass
 from typing import Any, Dict
 from api.endpoints.validator_models import *
 from models.problem import ProblemTestResultStatus
@@ -38,6 +39,13 @@ max_evaluation_run_log_size_bytes = None
 # The sandbox manager and problem suites
 sandbox_manager = None
 problem_suites = []
+
+# Result from a single evaluation run, 
+# Used to decide whether to cancel remaining runs
+@dataclass
+class RunOutcome:
+    solved: bool = False            # Did all tests pass?
+    had_syntax_error: bool = False  # Was there an AGENT_INVALID_PATCH error?
 
 
 
