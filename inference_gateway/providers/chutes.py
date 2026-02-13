@@ -150,19 +150,25 @@ class ChutesProvider(Provider):
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
-            chat_completion = await self.chutes_inference_client.chat.completions.create(
+            completion_stream = await self.chutes_inference_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
-                stream=False
+                stream=True,
+                stream_options={"include_usage": True}
             )
+            streamed_completion = []
+            for chunk in completion_stream:
+                chunk_message = chunk.choices[0].delta.content
+                streamed_completion.append(chunk_message)
 
-            message = chat_completion.choices[0].message
+            message = "".join(streamed_completion)
 
-            num_input_tokens = chat_completion.usage.prompt_tokens
-            num_output_tokens = chat_completion.usage.completion_tokens
+            last_chunk = completion_stream[-1]
+            num_input_tokens = last_chunk.usage.prompt_tokens
+            num_output_tokens = last_chunk.usage.completion_tokens
             cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
 
             return InferenceResult(
