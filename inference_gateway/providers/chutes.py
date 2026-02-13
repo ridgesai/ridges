@@ -32,7 +32,9 @@ if config.USE_CHUTES:
         WhitelistedChutesModel(name="zai-org/GLM-4.5-FP8", chutes_name="zai-org/GLM-4.5"),
         WhitelistedChutesModel(name="deepseek-ai/DeepSeek-V3-0324", chutes_name="deepseek-ai/DeepSeek-V3-0324-TEE"),
         WhitelistedChutesModel(name="moonshotai/Kimi-K2-Instruct", chutes_name="moonshotai/Kimi-K2-Instruct-0905"),
-        WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8", chutes_name="zai-org/GLM-4.6-TEE")
+        WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8", chutes_name="zai-org/GLM-4.6-TEE"),
+        WhitelistedChutesModel(name="Qwen/Qwen3-Coder-Next"),
+        WhitelistedChutesModel(name="moonshotai/Kimi-K2.5", chutes_name="moonshotai/Kimi-K2.5-TEE"),
     ]
 
 WHITELISTED_CHUTES_EMBEDDING_MODELS = [
