@@ -124,7 +124,7 @@ def truncate_logs_if_required(log: str) -> str:
 
 
 # Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
-async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str):
+async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str) -> RunOutcome:
     logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
 
 
@@ -158,6 +158,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
 
     
     logger.info(f"Finished simulated evaluation run {evaluation_run_id} for problem {problem_name}")
+    return RunOutcome(solved=True)
 
 
 
