@@ -225,6 +225,13 @@ FROM evaluation_runs;
 
 -- Second view: Evaluations hydrated view
 -- Evaluations with aggregated status and average score
+--
+-- Status logic:
+--   1. 'failure' — Syntax penalty: screener evaluation where any run hit AGENT_INVALID_PATCH (1040). Agent is penalized.
+--   2. 'success' — Clean completion: every run finished, was skipped, or errored with an agent-level error (1000-1999).
+--                   The evaluation infra worked; score the agent normally.
+--   3. 'failure' — Infra failure: all runs are done but at least one had a non-agent error (2000+). Re-queue.
+--   4. 'running' — Some runs are still in progress.
 CREATE OR REPLACE VIEW evaluations_hydrated AS
 SELECT
     evaluations.*,
