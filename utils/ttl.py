@@ -49,22 +49,39 @@ class TTLCacheEntry(BaseModel):
 #
 #
 #
-# TODO ADAM: This can technically leak if used on an endpoint that accepts a wide variety of
-#            arguments. We can add cleanup to this, similar to the ephemeral hashmap we use in the
-#            product repository.
-def ttl_cache(ttl_seconds: int):
+def ttl_cache(ttl_seconds: int, max_entries: int = 200):
     def decorator(func: Callable):
         cache: Dict[TTLCacheKey, TTLCacheEntry] = {}
         recalculating_locks: Dict[TTLCacheKey, asyncio.Lock] = {}
 
+
+        def _evict_expired():
+            """Remove all expired entries and their locks."""
+            now = datetime.now(timezone.utc)
+            expired = [k for k, v in cache.items() if now >= v.expires_at]
+            for k in expired:
+                del cache[k]
+                recalculating_locks.pop(k, None)
+
+            # Hard cap: if still over max_entries, drop oldest
+            if len(cache) > max_entries:
+                by_expiry = sorted(cache.items(), key=lambda kv: kv[1].expires_at)
+                to_remove = len(cache) - max_entries
+                for k, _ in by_expiry[:to_remove]:
+                    del cache[k]
+                    recalculating_locks.pop(k, None)
 
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
             key = _args_and_kwargs_to_ttl_cache_key(args, kwargs)
 
+            # Periodically evict expired entries
+            if len(cache) > max_entries // 2:
+                _evict_expired()
+
             lock = recalculating_locks.setdefault(key, asyncio.Lock())
-            
+
             if key in cache:
                 cache_entry = cache[key]
                 if datetime.now(timezone.utc) < cache_entry.expires_at:
