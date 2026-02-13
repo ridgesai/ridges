@@ -27,7 +27,8 @@ BEGIN
             'initializing_eval',
             'running_eval',
             'finished',
-            'error'
+            'error',
+            'skipped',
         );
     END IF;
 
