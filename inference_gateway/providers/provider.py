@@ -88,7 +88,7 @@ class Provider(ABC):
         if all(results):
             logger.info(f"Tested all {self.name} inference models")
         else:
-            logger.fatal(f"Failed to test {self.name} inference models: {', '.join([model.name for model, result in zip(self.inference_models, results) if not result])}")
+            logger.fatal(f"Failed to test {self.name} inference models: {', '.join([str(model.name) + ' (' + str(model.external_name) + ')' for model, result in zip(self.inference_models, results) if not result])}")
 
 
 
