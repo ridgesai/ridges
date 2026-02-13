@@ -613,6 +613,52 @@ async def validator_disconnect(
 
 
 
+# /validator/skip-evaluation-run
+# Used to mark an evaluation run as skipped when a screener (validator) cancels the evaluation
+@router.post("/skip-evaluation-run")
+@handle_validator_http_exceptions
+async def validator_skip_evaluation_run(
+    request: ValidatorSkipEvaluationRunRequest,
+    validator: Validator = Depends(get_request_validator_with_lock)
+) -> ValidatorSkipEvaluationRunResponse:
+    """Mark an evaluation run as skipped (early termination)."""
+
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This validator is not currently running an evaluation, and therefore cannot skip an evaluation run."
+        )
+
+    evaluation_run = await get_evaluation_run_by_id(request.evaluation_run_id)
+
+    if evaluation_run is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Evaluation run with ID {request.evaluation_run_id} does not exist."
+        )
+
+    if evaluation_run.evaluation_id != validator.current_evaluation_id:
+        raise HTTPException(
+            status_code=403,
+            detail=f"The evaluation run with ID {request.evaluation_run_id} is not associated with the validator's current evaluation."
+        )
+
+    # Ensure evaluation is not terminal
+    if evaluation_run.status in (EvaluationRunStatus.finished, EvaluationRunStatus.error, EvaluationRunStatus.skipped):
+        logger.info(f"Validator '{validator.name}' skip-evaluation-run called on terminal run (status={evaluation_run.status})")
+        return ValidatorSkipEvaluationRunResponse()
+
+    evaluation_run.status = EvaluationRunStatus.skipped
+    evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
+    await update_evaluation_run_by_id(evaluation_run)
+
+    logger.info(f"Validator '{validator.name}' skipped an evaluation run")
+    logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
+
+    return ValidatorSkipEvaluationRunResponse()
+
+
+
 # /validator/finish-evaluation
 @router.post("/finish-evaluation")
 @handle_validator_http_exceptions
