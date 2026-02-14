@@ -2,9 +2,9 @@ import asyncio
 import utils.logger as logger
 
 from http import HTTPStatus
-from typing import List, Optional
+from typing import AsyncIterator, List, Optional
 from abc import ABC, abstractmethod
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, InferenceToolParameter, InferenceToolParameterType
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, InferenceToolParameter, InferenceToolParameterType, StreamMetadata
 
 
 
@@ -39,6 +39,18 @@ class Provider(ABC):
         tool_mode: InferenceToolMode,
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
+        pass
+
+    @abstractmethod
+    async def _inference_stream(
+        self,
+        *,
+        model_info: InferenceModelInfo,
+        temperature: float,
+        messages: List[InferenceMessage],
+        metadata: StreamMetadata
+    ) -> AsyncIterator[str]:
+        """Yields content delta strings. Populates metadata with token counts/cost at stream end."""
         pass
 
     @abstractmethod
@@ -128,7 +140,39 @@ class Provider(ABC):
             logger.error(f"<-- {result.error_message}")
 
         return result
-        
+
+
+
+    async def inference_stream(
+        self,
+        *,
+        model_name: str,
+        temperature: float,
+        messages: List[InferenceMessage],
+        metadata: StreamMetadata
+    ) -> AsyncIterator[str]:
+        request_first_chars = messages[-1].content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ''
+        logger.info(f"--> Inference Stream Request {self.name}:{model_name} ({sum(len(message.content) for message in messages)} char(s)): '{request_first_chars}'...")
+
+        total_chars = 0
+        async for chunk in self._inference_stream(
+            model_info=self.get_inference_model_info_by_name(model_name),
+            temperature=temperature,
+            messages=messages,
+            metadata=metadata
+        ):
+            total_chars += len(chunk)
+            yield chunk
+
+        if metadata.status_code == 200:
+            logger.info(f"<-- Inference Stream Response {self.name}:{model_name} ({total_chars} char(s))")
+        elif metadata.status_code != -1:
+            metadata.error_message = f"Inference Stream External Error {self.name}:{model_name}: {metadata.status_code} {HTTPStatus(metadata.status_code).phrase}: {metadata.error_message}"
+            logger.warning(f"<-- {metadata.error_message}")
+        else:
+            metadata.error_message = f"Inference Stream Internal Error {self.name}:{model_name}: {metadata.error_message}"
+            logger.error(f"<-- {metadata.error_message}")
+
 
 
     # Embedding
