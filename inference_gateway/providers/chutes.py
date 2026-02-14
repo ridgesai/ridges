@@ -174,14 +174,9 @@ class ChutesProvider(Provider):
                     for tool_call_chunk in chunk_tool_calls:
                         if len(tool_calls) <= tool_call_chunk.index:
                             tool_calls.append({
-                                "id": "", "type": "function", "function": { "name": "", "arguments": "" }
+                                "id": "", "type": tool_call_chunk.type, "function": { "name": "", "arguments": "" }
                             })
                         tool_call = tool_calls[tool_call_chunk.index]
-                        
-                        # unsure if there are other tool calls, but we can find out later
-                        if tool_call_chunk.type != "function" and tool_call_chunk.type is not None:
-                            print("Tool call chunk type is not function:", tool_call_chunk)
-                            continue
                         
                         if tool_call_chunk.id is not None:
                             tool_call["id"] += tool_call_chunk.id
