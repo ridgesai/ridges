@@ -163,9 +163,11 @@ class ChutesProvider(Provider):
             tool_calls = []
             async for chunk in completion_stream:
                 if len(chunk.choices) > 0:
-                    chunk_message = chunk.choices[0].delta.content
-                    streamed_completion.append(chunk_message)
-                tool_calls.extend(chunk.tool_calls)
+                    chunk_delta = chunk.choices[0].delta
+                    chunk_content = chunk_delta.content
+                    chunk_tool_calls = chunk_delta.tool_calls
+                    streamed_completion.append(chunk_content)
+                    tool_calls.extend(chunk_tool_calls)
                 # last chunk has no choices
 
             last_chunk = chunk
