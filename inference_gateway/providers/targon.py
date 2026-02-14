@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from openai import AsyncOpenAI, APIStatusError
 from inference_gateway.providers.provider import Provider
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
+from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, StreamMetadata, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
 
 
 
@@ -179,6 +179,44 @@ class TargonProvider(Provider):
                 status_code=-1,
                 error_message=f"Error in TargonProvider._inference(): {type(e).__name__}: {str(e)}"
             )
+
+
+
+    async def _inference_stream(
+        self,
+        *,
+        model_info: InferenceModelInfo,
+        temperature: float,
+        messages: List[InferenceMessage],
+        metadata: StreamMetadata
+    ):
+        try:
+            stream = await self.targon_client.chat.completions.create(
+                model=model_info.external_name,
+                temperature=temperature,
+                messages=messages,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+
+            async for chunk in stream:
+                if chunk.usage is not None:
+                    metadata.num_input_tokens = chunk.usage.prompt_tokens
+                    metadata.num_output_tokens = chunk.usage.completion_tokens
+                    metadata.cost_usd = model_info.get_cost_usd(
+                        metadata.num_input_tokens, metadata.num_output_tokens
+                    )
+
+                if chunk.choices and chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except APIStatusError as e:
+            metadata.status_code = e.status_code
+            metadata.error_message = e.response.text
+
+        except Exception as e:
+            metadata.status_code = -1
+            metadata.error_message = f"Error in TargonProvider._inference_stream(): {type(e).__name__}: {str(e)}"
 
 
 
