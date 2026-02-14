@@ -166,8 +166,8 @@ class ChutesProvider(Provider):
                     chunk_delta = chunk.choices[0].delta
                     chunk_content = chunk_delta.content
                     chunk_tool_calls = chunk_delta.tool_calls
-                    streamed_completion.append(chunk_content)
-                    tool_calls.extend(chunk_tool_calls)
+                    streamed_completion.append(chunk_content if chunk_content else "")
+                    tool_calls.extend(chunk_tool_calls if chunk_tool_calls else [])
                 # last chunk has no choices
 
             last_chunk = chunk
