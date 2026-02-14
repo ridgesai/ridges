@@ -83,12 +83,21 @@ class InferenceResult(BaseModel):
 
 class EmbeddingResult(BaseModel):
     status_code: int
-    
+
     embedding: Optional[List[float]] = None # if status_code == 200
     error_message: Optional[str] = None # if status_code != 200
-    
+
     num_input_tokens: Optional[int] = None
     cost_usd: Optional[float] = None
+
+class StreamMetadata:
+    """Container populated by provider during streaming."""
+    def __init__(self):
+        self.num_input_tokens: int = 0
+        self.num_output_tokens: int = 0
+        self.cost_usd: float = 0.0
+        self.status_code: int = 200
+        self.error_message: Optional[str] = None
 
 
 
@@ -157,6 +166,7 @@ class InferenceRequest(BaseModel):
     messages: List[InferenceMessage]
     tool_mode: Optional[InferenceToolMode] = InferenceToolMode.NONE
     tools: Optional[List[InferenceTool]] = None
+    stream: Optional[bool] = False
 
 class InferenceResponse(BaseModel):
     content: str
