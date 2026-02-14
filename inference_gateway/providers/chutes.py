@@ -169,7 +169,28 @@ class ChutesProvider(Provider):
                     chunk_content = chunk_delta.content
                     chunk_tool_calls = chunk_delta.tool_calls
                     streamed_completion.append(chunk_content if chunk_content else "")
-                    tool_calls.extend(chunk_tool_calls if chunk_tool_calls else [])
+
+                    # Tool calls will be in chunks too, so we concat them
+                    for tool_call_chunk in chunk_tool_calls:
+                        if len(tool_calls) <= tool_call_chunk.index:
+                            tool_calls.append({
+                                "id": "", "type": "function", "function": { "name": "", "arguments": "" }
+                            })
+                        tool_call = tool_calls[tool_call_chunk.index]
+                        
+                        # unsure if there are other tool calls, but we can find out later
+                        if tool_call_chunk.type != "function" and tool_call_chunk.type is not None:
+                            print("Tool call chunk type is not function:", tool_call_chunk)
+                            continue
+                        
+                        if tool_call_chunk.id is not None:
+                            tool_call["id"] += tool_call_chunk.id
+                        if tool_call_chunk.function.name is not None:
+                            tool_call["function"]["name"] += tool_call_chunk.function.name
+                        if tool_call_chunk.function.arguments is not None:
+                            tool_call["function"]["arguments"] += tool_call_chunk.function.arguments
+
+                            
                 # last chunk has no choices
 
             last_chunk = chunk
