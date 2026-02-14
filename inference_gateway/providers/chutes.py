@@ -162,9 +162,9 @@ class ChutesProvider(Provider):
             streamed_completion = []
             tool_calls = []
             async for chunk in completion_stream:
+                print("Chunk:", chunk)
                 if len(chunk.choices) > 0:
                     chunk_delta = chunk.choices[0].delta
-                    print("Chunk:", chunk)
                     print("Chunk Delta:", chunk_delta)
                     chunk_content = chunk_delta.content
                     chunk_tool_calls = chunk_delta.tool_calls
