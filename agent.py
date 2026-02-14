@@ -44,6 +44,53 @@ def inference(model, temperature, messages):
 
 
 
+def inference_stream(model, temperature, messages):
+    """Streaming variant of inference() — yields content chunks as they arrive."""
+    try:
+        payload = {
+            "evaluation_run_id": RUN_ID,
+            "model": model,
+            "temperature": temperature,
+            "messages": messages,
+            "stream": True,
+        }
+
+        print(f"[AGENT] inference_stream(): Sending streaming inference request for model {model} (temperature {temperature}) with {len(messages)} messages")
+        response = requests.post(
+            f"{SANDBOX_PROXY_URL}/api/inference",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(payload),
+            stream=True,
+        )
+
+        if response.status_code == 200:
+            for line in response.iter_lines(decode_unicode=True):
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    parsed = json.loads(data)
+                    if "error" in parsed:
+                        print(f"[AGENT] inference_stream(): Server error: {parsed['error']}")
+                        break
+                    yield parsed["content"]
+        else:
+            print(f"[AGENT] inference_stream(): Failed with status {response.status_code}: {response.text}")
+
+    except Exception as e:
+        print(f"[AGENT] inference_stream(): Request failed: {e}")
+
+def inference_fast(model, temperature, messages):
+    """Like inference() but uses streaming for faster time-to-first-token. Returns complete string."""
+    chunks = list(inference_stream(model, temperature, messages))
+    if chunks:
+        result = "".join(chunks)
+        print(f"[AGENT] inference_fast(): Result: {len(result)} characters")
+        return result
+    return None
+
+
+
 def embedding(input):
     try:
         payload = {
