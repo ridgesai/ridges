@@ -1,3 +1,5 @@
+from collections import defaultdict
+from types import SimpleNamespace
 import httpx
 import utils.logger as logger
 import inference_gateway.config as config
@@ -10,11 +12,9 @@ from inference_gateway.providers.provider import Provider
 from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
 
 
-
 if config.USE_CHUTES:
     CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models" # https://llm.chutes.ai/v1/models
     CHUTES_EMBEDDING_MODELS_URL = "https://api.chutes.ai/chutes/?template=embedding" # TODO ADAM
-
 
 
 class WhitelistedChutesModel(BaseModel):
@@ -40,12 +40,9 @@ WHITELISTED_CHUTES_EMBEDDING_MODELS = [
 ]
 
 
-
 class ChutesProvider(Provider):
     async def init(self) -> "ChutesProvider":
         self.name = "Chutes"
-
-
 
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8")'
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8") | .pricing'
@@ -57,8 +54,6 @@ class ChutesProvider(Provider):
         chutes_inference_models_response.raise_for_status()
         chutes_inference_models_response = chutes_inference_models_response.json()["data"]
         logger.info(f"Fetched {CHUTES_INFERENCE_MODELS_URL}")
-
-
 
         # Add whitelisted inference models
         for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:     
@@ -88,8 +83,6 @@ class ChutesProvider(Provider):
             logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
-
-
 
         # NOTE ADAM: curl -s https://api.chutes.ai/chutes/?template=embedding | jq '.items[] | select(.name == "Qwen/Qwen3-Embedding-8B")'
 
@@ -122,8 +115,6 @@ class ChutesProvider(Provider):
             logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per second): {cost_usd_per_second}")
 
-
-
         self.chutes_inference_client = AsyncOpenAI(
             base_url=config.CHUTES_INFERENCE_BASE_URL,
             api_key=config.CHUTES_API_KEY
@@ -134,11 +125,7 @@ class ChutesProvider(Provider):
             api_key=config.CHUTES_API_KEY
         )
 
-
-
         return self
-        
-
 
     async def _inference(
         self,
@@ -160,7 +147,7 @@ class ChutesProvider(Provider):
                 stream_options={"include_usage": True}
             )
             streamed_completion = []
-            tool_calls = []
+            tool_calls = dict()
             async for chunk in completion_stream:
                 print("Chunk:", chunk)
                 if len(chunk.choices) > 0:
@@ -173,12 +160,12 @@ class ChutesProvider(Provider):
                     if chunk_tool_calls is not None:
                         # Tool calls will be in chunks too, so we concat them
                         for tool_call_chunk in chunk_tool_calls:
-                            if len(tool_calls) <= tool_call_chunk.index:
-                                tool_calls.append({
-                                    "id": "", "type": tool_call_chunk.type, "function": { "name": "", "arguments": "" }
-                                })
+                            if tool_call_chunk.index not in tool_calls:
+                                tool_calls[tool_call_chunk.index] = SimpleNamespace(
+                                    id="", type=tool_call_chunk.type, function=SimpleNamespace(name="", arguments="")
+                                )
                             tool_call = tool_calls[tool_call_chunk.index]
-                            
+
                             if tool_call_chunk.id is not None:
                                 tool_call["id"] += tool_call_chunk.id
                             if tool_call_chunk.function.name is not None:
@@ -186,14 +173,13 @@ class ChutesProvider(Provider):
                             if tool_call_chunk.function.arguments is not None:
                                 tool_call["function"]["arguments"] += tool_call_chunk.function.arguments
 
-                            
                 # last chunk has no choices
 
             last_chunk = chunk
 
             message_content = "".join(streamed_completion)
             print(last_chunk)
-            message_tool_calls = tool_calls
+            message_tool_calls = [tool_call for tool_call in tool_calls.values()]
 
             num_input_tokens = last_chunk.usage.prompt_tokens
             num_output_tokens = last_chunk.usage.completion_tokens
@@ -222,8 +208,6 @@ class ChutesProvider(Provider):
                 status_code=-1,
                 error_message=f"Error in ChutesProvider._inference(): {type(e).__name__}: {str(e)}"
             )
-
-
 
     async def _embedding(
         self,
