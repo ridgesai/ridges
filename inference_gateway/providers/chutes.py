@@ -149,10 +149,8 @@ class ChutesProvider(Provider):
             streamed_completion = []
             tool_calls = dict()
             async for chunk in completion_stream:
-                print("Chunk:", chunk)
                 if len(chunk.choices) > 0:
                     chunk_delta = chunk.choices[0].delta
-                    print("Chunk Delta:", chunk_delta)
                     chunk_content = chunk_delta.content
                     streamed_completion.append(chunk_content if chunk_content else "")
 
