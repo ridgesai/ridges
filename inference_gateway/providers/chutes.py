@@ -167,18 +167,17 @@ class ChutesProvider(Provider):
                             tool_call = tool_calls[tool_call_chunk.index]
 
                             if tool_call_chunk.id is not None:
-                                tool_call["id"] += tool_call_chunk.id
+                                tool_call.id += tool_call_chunk.id
                             if tool_call_chunk.function.name is not None:
-                                tool_call["function"]["name"] += tool_call_chunk.function.name
+                                tool_call.function.name += tool_call_chunk.function.name
                             if tool_call_chunk.function.arguments is not None:
-                                tool_call["function"]["arguments"] += tool_call_chunk.function.arguments
+                                tool_call.function.arguments += tool_call_chunk.function.arguments
 
                 # last chunk has no choices
 
             last_chunk = chunk
 
             message_content = "".join(streamed_completion)
-            print(last_chunk)
             message_tool_calls = [tool_call for tool_call in tool_calls.values()]
 
             num_input_tokens = last_chunk.usage.prompt_tokens
