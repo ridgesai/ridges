@@ -177,7 +177,7 @@ class ChutesProvider(Provider):
 
             message_content = "".join(streamed_completion)
             message_tool_calls = [
-                tool_call[idx] for idx in sorted(tool_calls) # sort by index
+                tool_calls[idx] for idx in sorted(tool_calls) # sort by index
             ]
 
             num_input_tokens = last_chunk.usage.prompt_tokens
