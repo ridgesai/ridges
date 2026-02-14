@@ -1,3 +1,4 @@
+import json
 import random
 import uvicorn
 import utils.logger as logger
@@ -8,6 +9,7 @@ from typing import List
 from functools import wraps
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 from models.evaluation_run import EvaluationRunStatus
 from inference_gateway.cost_hash_map import CostHashMap
@@ -18,7 +20,7 @@ from queries.evaluation_run import get_evaluation_run_status_by_id
 from queries.embedding import create_new_embedding, update_embedding_by_id
 from queries.inference import create_new_inference, update_inference_by_id
 from utils.database import initialize_database, get_debug_query_info, deinitialize_database
-from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
+from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, StreamMetadata
 
 
 
@@ -112,7 +114,7 @@ cost_hash_map = CostHashMap()
 #            inference@providers/*.py -> Handles inference
 @app.post("/api/inference")
 @handle_http_exceptions
-async def inference(request: InferenceRequest) -> InferenceResponse:
+async def inference(request: InferenceRequest):
     # If you specify a tool mode of NONE, you must not specify any tools
     if request.tool_mode == InferenceToolMode.NONE and request.tools:
         raise HTTPException(
@@ -175,37 +177,80 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             messages=request.messages
         )
 
-    response = await provider.inference(
-        model_name=request.model,
-        temperature=request.temperature,
-        messages=request.messages,
-        tool_mode=request.tool_mode,
-        tools=request.tools
-    )
+    use_streaming = request.stream and request.tool_mode == InferenceToolMode.NONE
 
-    if config.USE_DATABASE:
-        await update_inference_by_id(
-            inference_id=inference_id,
-
-            status_code=response.status_code,
-            response=response.content if response.status_code == 200 else response.error_message,
-            num_input_tokens=response.num_input_tokens,
-            num_output_tokens=response.num_output_tokens,
-            cost_usd=response.cost_usd
+    if not use_streaming:
+        response = await provider.inference(
+            model_name=request.model,
+            temperature=request.temperature,
+            messages=request.messages,
+            tool_mode=request.tool_mode,
+            tools=request.tools
         )
 
-        if response.cost_usd is not None:
-            cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
-    
-    if response.status_code == 200:
-        return InferenceResponse(
-            content=response.content,
-            tool_calls=response.tool_calls
-        )
+        if config.USE_DATABASE:
+            await update_inference_by_id(
+                inference_id=inference_id,
+
+                status_code=response.status_code,
+                response=response.content if response.status_code == 200 else response.error_message,
+                num_input_tokens=response.num_input_tokens,
+                num_output_tokens=response.num_output_tokens,
+                cost_usd=response.cost_usd
+            )
+
+            if response.cost_usd is not None:
+                cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+
+        if response.status_code == 200:
+            return InferenceResponse(
+                content=response.content,
+                tool_calls=response.tool_calls
+            )
+        else:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=response.error_message
+            )
+
     else:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=response.error_message
+        metadata = StreamMetadata()
+
+        async def generate():
+            full_content = []
+            try:
+                async for delta in provider.inference_stream(
+                    model_name=request.model,
+                    temperature=request.temperature,
+                    messages=request.messages,
+                    metadata=metadata,
+                ):
+                    full_content.append(delta)
+                    yield f"data: {json.dumps({'content': delta})}\n\n"
+            finally:
+                if metadata.status_code != 200:
+                    yield f"data: {json.dumps({'error': metadata.error_message, 'status_code': metadata.status_code})}\n\n"
+
+                yield "data: [DONE]\n\n"
+
+                if config.USE_DATABASE:
+                    await update_inference_by_id(
+                        inference_id=inference_id,
+
+                        status_code=metadata.status_code,
+                        response="".join(full_content) if metadata.status_code == 200 else metadata.error_message,
+                        num_input_tokens=metadata.num_input_tokens,
+                        num_output_tokens=metadata.num_output_tokens,
+                        cost_usd=metadata.cost_usd,
+                    )
+
+                    if metadata.cost_usd:
+                        cost_hash_map.add_cost(request.evaluation_run_id, metadata.cost_usd)
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
 
