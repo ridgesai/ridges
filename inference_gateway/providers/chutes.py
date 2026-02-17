@@ -28,7 +28,6 @@ class WhitelistedChutesModel(BaseModel):
 
 if config.USE_CHUTES:
     WHITELISTED_CHUTES_INFERENCE_MODELS = [
-        WhitelistedChutesModel(name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8", chutes_name="Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8-TEE"),
         WhitelistedChutesModel(name="deepseek-ai/DeepSeek-R1-0528", chutes_name="deepseek-ai/DeepSeek-R1-0528-TEE"),
         WhitelistedChutesModel(name="zai-org/GLM-4.6", chutes_name="zai-org/GLM-4.6-TEE"),
         WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8"),
