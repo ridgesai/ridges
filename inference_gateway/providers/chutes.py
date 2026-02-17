@@ -1,3 +1,5 @@
+from collections import defaultdict
+from types import SimpleNamespace
 import httpx
 import utils.logger as logger
 import inference_gateway.config as config
@@ -5,16 +7,14 @@ import inference_gateway.config as config
 from time import time
 from pydantic import BaseModel
 from typing import List, Optional
-from openai import AsyncOpenAI, APIStatusError
+from openai import AsyncOpenAI, APIStatusError, AsyncStream
 from inference_gateway.providers.provider import Provider
 from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
-
 
 
 if config.USE_CHUTES:
     CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models" # https://llm.chutes.ai/v1/models
     CHUTES_EMBEDDING_MODELS_URL = "https://api.chutes.ai/chutes/?template=embedding" # TODO ADAM
-
 
 
 class WhitelistedChutesModel(BaseModel):
@@ -43,12 +43,9 @@ WHITELISTED_CHUTES_EMBEDDING_MODELS = [
 ]
 
 
-
 class ChutesProvider(Provider):
     async def init(self) -> "ChutesProvider":
         self.name = "Chutes"
-
-
 
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8")'
         # NOTE ADAM: curl -s https://llm.chutes.ai/v1/models | jq '.data[] | select(.id == "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8") | .pricing'
@@ -60,8 +57,6 @@ class ChutesProvider(Provider):
         chutes_inference_models_response.raise_for_status()
         chutes_inference_models_response = chutes_inference_models_response.json()["data"]
         logger.info(f"Fetched {CHUTES_INFERENCE_MODELS_URL}")
-
-
 
         # Add whitelisted inference models
         for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:     
@@ -91,8 +86,6 @@ class ChutesProvider(Provider):
             logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
-
-
 
         # NOTE ADAM: curl -s https://api.chutes.ai/chutes/?template=embedding | jq '.items[] | select(.name == "Qwen/Qwen3-Embedding-8B")'
 
@@ -125,8 +118,6 @@ class ChutesProvider(Provider):
             logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per second): {cost_usd_per_second}")
 
-
-
         self.chutes_inference_client = AsyncOpenAI(
             base_url=config.CHUTES_INFERENCE_BASE_URL,
             api_key=config.CHUTES_API_KEY
@@ -137,11 +128,7 @@ class ChutesProvider(Provider):
             api_key=config.CHUTES_API_KEY
         )
 
-
-
         return self
-        
-
 
     async def _inference(
         self,
@@ -153,26 +140,58 @@ class ChutesProvider(Provider):
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
-            chat_completion = await self.chutes_inference_client.chat.completions.create(
+            completion_stream: AsyncStream = await self.chutes_inference_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
-                stream=False
+                stream=True,
+                stream_options={"include_usage": True}
             )
+            streamed_completion = []
+            tool_calls = dict()
+            async for chunk in completion_stream:
+                if len(chunk.choices) > 0:
+                    chunk_delta = chunk.choices[0].delta
+                    chunk_content = chunk_delta.content
+                    streamed_completion.append(chunk_content if chunk_content else "")
 
-            message = chat_completion.choices[0].message
+                    chunk_tool_calls = chunk_delta.tool_calls
+                    if chunk_tool_calls is not None:
+                        # Tool calls will be in chunks too, so we concat them
+                        for tool_call_chunk in chunk_tool_calls:
+                            if tool_call_chunk.index not in tool_calls:
+                                tool_calls[tool_call_chunk.index] = SimpleNamespace(
+                                    id="", type=tool_call_chunk.type, function=SimpleNamespace(name="", arguments="")
+                                )
+                            tool_call = tool_calls[tool_call_chunk.index]
 
-            num_input_tokens = chat_completion.usage.prompt_tokens
-            num_output_tokens = chat_completion.usage.completion_tokens
+                            if tool_call_chunk.id is not None:
+                                tool_call.id += tool_call_chunk.id
+                            if tool_call_chunk.function.name is not None:
+                                tool_call.function.name += tool_call_chunk.function.name
+                            if tool_call_chunk.function.arguments is not None:
+                                tool_call.function.arguments += tool_call_chunk.function.arguments
+
+                # last chunk has no choices
+
+            last_chunk = chunk
+
+            message_content = "".join(streamed_completion)
+            message_tool_calls = [
+                tool_calls[idx] for idx in sorted(tool_calls) # sort by index
+            ]
+
+            num_input_tokens = last_chunk.usage.prompt_tokens
+            num_output_tokens = last_chunk.usage.completion_tokens
             cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
 
             return InferenceResult(
                 status_code=200,
 
-                content=message.content if message.content else "",
-                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else [],
+                content=message_content,
+                tool_calls=openai_tool_calls_to_inference_tool_calls(message_tool_calls) if message_tool_calls else [],
 
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
@@ -191,8 +210,6 @@ class ChutesProvider(Provider):
                 status_code=-1,
                 error_message=f"Error in ChutesProvider._inference(): {type(e).__name__}: {str(e)}"
             )
-
-
 
     async def _embedding(
         self,
