@@ -35,6 +35,7 @@ if config.USE_CHUTES:
         WhitelistedChutesModel(name="zai-org/GLM-4.7-FP8"),
         WhitelistedChutesModel(name="zai-org/GLM-5-FP8", chutes_name="zai-org/GLM-5-TEE"),
         WhitelistedChutesModel(name="Qwen/Qwen3-Coder-Next"),
+        WhitelistedChutesModel(name="Qwen/Qwen3.5-397B-A17B", chutes_name="Qwen/Qwen3.5-397B-A17B-TEE"),
         WhitelistedChutesModel(name="moonshotai/Kimi-K2.5", chutes_name="moonshotai/Kimi-K2.5-TEE"),
     ]
 
