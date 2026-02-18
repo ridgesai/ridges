@@ -118,19 +118,6 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id ON evaluation_runs (evaluation_id);
 
-CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
-SELECT
-    er.*,
-    COALESCE(SUM(i.cost_usd), 0) AS total_cost_usd,
-    COALESCE(SUM(i.num_input_tokens), 0) AS total_input_tokens,
-    COALESCE(SUM(i.num_output_tokens), 0) AS total_output_tokens,
-    COUNT(*) as num_inferences
-FROM
-    evaluation_runs er
-    LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
-GROUP BY
-    er.evaluation_run_id;
-
 CREATE TABLE IF NOT EXISTS evaluation_run_logs (
     evaluation_run_id UUID NOT NULL,
     logs TEXT,
@@ -157,6 +144,19 @@ CREATE INDEX IF NOT EXISTS idx_inferences_created_provider_range
 ON inferences (request_received_at, provider)
 INCLUDE (response_sent_at, status_code, num_input_tokens, num_output_tokens, cost_usd)
 WHERE response_sent_at IS NOT NULL AND provider IS NOT NULL;
+
+CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
+SELECT
+    er.*,
+    COALESCE(SUM(i.cost_usd), 0) AS total_cost_usd,
+    COALESCE(SUM(i.num_input_tokens), 0) AS total_input_tokens,
+    COALESCE(SUM(i.num_output_tokens), 0) AS total_output_tokens,
+    COUNT(*) as num_inferences
+FROM
+    evaluation_runs er
+    LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
+GROUP BY
+    er.evaluation_run_id;
 
 CREATE TABLE embeddings (
 	embedding_id uuid NOT NULL PRIMARY KEY,

@@ -160,89 +160,90 @@ async def post_agent(
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey) 
         check_if_python_file(agent_file.filename)
-        
-        # Verify payment
-        # Check if payment has already been used for an agent
-        existing_payment = await retrieve_payment_by_hash(
-            payment_block_hash=payment_block_hash,
-            payment_extrinsic_index=payment_extrinsic_index
-        )
 
-        if existing_payment is not None:
-            raise HTTPException(
-                status_code=402,
-                detail="Payment already used"
+        if prod:
+            # Verify payment
+            # Check if payment has already been used for an agent
+            existing_payment = await retrieve_payment_by_hash(
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index
             )
 
-        # Retrieve payment details from the chain
-        try:
-            payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
-        except Exception as e:
-            logger.error(f"Error retrieving payment block: {e}")
-            raise HTTPException(
-                status_code=402,
-                detail="Payment could not be verified"
-            )
+            if existing_payment is not None:
+                raise HTTPException(
+                    status_code=402,
+                    detail="Payment already used"
+                )
 
-        # example payment block:
-        """
-        {'extrinsics': [<GenericExtrinsic(value={'extrinsic_hash': '0x6b6f2be8e0d0e7721fab46da881d894dafa221b4df73ebb2b69a8c0aa5aeb01b', 'extrinsic_length': 10, 'call': {'call_index': '0x0200', 'call_function': 'set', 'call_module': 'Timestamp', 'call_args': [{'name': 'now', 'type': 'Moment', 'value': 1763573265504}], 'call_hash': '0x5cad44676af19a09d4ae5354e08570778c06b75257a932db8183b90910d0c33e'}})>,
-                <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>],
- 'header': {'digest': {'logs': [<scale_info::17(value={'PreRuntime': ('0x61757261', '0x46f877a401000000')})>,
-                                <scale_info::17(value={'Consensus': ('0x66726f6e', '0x012f7e87441378c60d18e9b676246e74ca17064ff510b10dfed2a48191648a1a9400')})>,
-                                <scale_info::17(value={'Seal': ('0x61757261', '0x44729c195bda22d4e9dce35ed7e43fd1652e7782cb38cf27cc8489fb0460af1f4c97621e5e29c19e730051df736441d3359799c7002eb81350e169bb9fcecb80')})>]},
-            'extrinsicsRoot': '0x980d155f4b5a6f08d287c54e0a32380839cdfc0a5977200e33aa5787b48ec669',
-            'hash': '0xb9958e4374c182785bfa4467ceb971e23882079f48524e27c08e8f5b95d8b8d8',
-            'number': 13579,
-            'parentHash': '0x1065e83a02ff961d45ac34a6990477de3cba102bbba2322950815e5d59f23135',
-            'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
-        """
-        block_number = payment_block['header']['number']
-        coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
-        payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
+            # Retrieve payment details from the chain
+            try:
+                payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+            except Exception as e:
+                logger.error(f"Error retrieving payment block: {e}")
+                raise HTTPException(
+                    status_code=402,
+                    detail="Payment could not be verified"
+                )
 
-        payment_cost = await get_upload_price(cache_time=payment_time)
+            # example payment block:
+            """
+            {'extrinsics': [<GenericExtrinsic(value={'extrinsic_hash': '0x6b6f2be8e0d0e7721fab46da881d894dafa221b4df73ebb2b69a8c0aa5aeb01b', 'extrinsic_length': 10, 'call': {'call_index': '0x0200', 'call_function': 'set', 'call_module': 'Timestamp', 'call_args': [{'name': 'now', 'type': 'Moment', 'value': 1763573265504}], 'call_hash': '0x5cad44676af19a09d4ae5354e08570778c06b75257a932db8183b90910d0c33e'}})>,
+                    <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>],
+     'header': {'digest': {'logs': [<scale_info::17(value={'PreRuntime': ('0x61757261', '0x46f877a401000000')})>,
+                                    <scale_info::17(value={'Consensus': ('0x66726f6e', '0x012f7e87441378c60d18e9b676246e74ca17064ff510b10dfed2a48191648a1a9400')})>,
+                                    <scale_info::17(value={'Seal': ('0x61757261', '0x44729c195bda22d4e9dce35ed7e43fd1652e7782cb38cf27cc8489fb0460af1f4c97621e5e29c19e730051df736441d3359799c7002eb81350e169bb9fcecb80')})>]},
+                'extrinsicsRoot': '0x980d155f4b5a6f08d287c54e0a32380839cdfc0a5977200e33aa5787b48ec669',
+                'hash': '0xb9958e4374c182785bfa4467ceb971e23882079f48524e27c08e8f5b95d8b8d8',
+                'number': 13579,
+                'parentHash': '0x1065e83a02ff961d45ac34a6990477de3cba102bbba2322950815e5d59f23135',
+                'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
+            """
+            block_number = payment_block['header']['number']
+            coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
+            payment_extrinsic = payment_block['extrinsics'][int(payment_extrinsic_index)]
 
-        # Example payment extrinsic:
-        """
-        <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>
-        """
-        payment_value = None
-        for arg in payment_extrinsic.value['call']['call_args']:
-            if arg['name'] == 'value':
-                payment_value = arg['value']
-                break
-        
-        if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
-            raise HTTPException(
-                status_code=402,
-                detail="Payment value not found"
-            )
+            payment_cost = await get_upload_price(cache_time=payment_time)
 
-        if payment_value != payment_cost.amount_rao:
-            raise HTTPException(
-                status_code=402,
-                detail="Payment amount does not match"
-            )
-        
-        # Make sure coldkey is the same as hotkeys owner coldkey
-        if coldkey != payment_extrinsic['address']:
-            raise HTTPException(
-                status_code=402,
-                detail="Coldkey does not match"
-            )
+            # Example payment extrinsic:
+            """
+            <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>
+            """
+            payment_value = None
+            for arg in payment_extrinsic.value['call']['call_args']:
+                if arg['name'] == 'value':
+                    payment_value = arg['value']
+                    break
 
-        # Make sure destination is our upload send address
-        destination = None
-        for arg in payment_extrinsic.value['call']['call_args']:
-            if arg['name'] == 'dest':
-                destination = arg['value']
-                break
-        if destination != config.UPLOAD_SEND_ADDRESS:
-            raise HTTPException(
-                status_code=402,
-                detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
-            )
+            if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
+                raise HTTPException(
+                    status_code=402,
+                    detail="Payment value not found"
+                )
+
+            if payment_value != payment_cost.amount_rao:
+                raise HTTPException(
+                    status_code=402,
+                    detail="Payment amount does not match"
+                )
+
+            # Make sure coldkey is the same as hotkeys owner coldkey
+            if coldkey != payment_extrinsic['address']:
+                raise HTTPException(
+                    status_code=402,
+                    detail="Coldkey does not match"
+                )
+
+            # Make sure destination is our upload send address
+            destination = None
+            for arg in payment_extrinsic.value['call']['call_args']:
+                if arg['name'] == 'dest':
+                    destination = arg['value']
+                    break
+            if destination != config.UPLOAD_SEND_ADDRESS:
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}"
+                )
 
         agent_text = (await agent_file.read()).decode("utf-8")
 
@@ -265,14 +266,15 @@ async def post_agent(
             )
             await create_agent(agent, agent_text)
 
-        await record_evaluation_payment(
-            payment_block_hash=payment_block_hash,
-            payment_extrinsic_index=payment_extrinsic_index,
-            amount_rao=payment_value,
-            agent_id=agent.agent_id,
-            miner_hotkey=miner_hotkey,
-            miner_coldkey=coldkey
-        )
+        if prod:
+            await record_evaluation_payment(
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index,
+                amount_rao=payment_value,
+                agent_id=agent.agent_id,
+                miner_hotkey=miner_hotkey,
+                miner_coldkey=coldkey
+            )
 
         logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
 
@@ -333,7 +335,7 @@ class UploadPriceResponse(BaseModel):
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
     TAO_PRICE = await get_tao_price() 
-    eval_cost_usd = 60
+    eval_cost_usd = 30
 
     # Get the amount of tao required per eval
     eval_cost_tao = eval_cost_usd / TAO_PRICE

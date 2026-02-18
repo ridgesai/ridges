@@ -278,7 +278,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
                     GROUP BY agent_id
                 ),
                 screener_2_scores AS (
-                    SELECT agent_id, MAX(score) AS score FROM evaluations_hydrated
+                    SELECT agent_id, COALESCE(MAX(score), 0) AS score FROM evaluations_hydrated
                     WHERE evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
                       AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
                     GROUP BY agent_id
@@ -288,7 +288,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
                 COALESCE(num_running_evals, 0) as num_running_evals,
                 COALESCE(num_finished_evals, 0) as num_finished_evals
             FROM agents
-                 INNER JOIN screener_2_scores USING (agent_id)
+                 LEFT JOIN screener_2_scores USING (agent_id)
                  LEFT JOIN validator_eval_counts USING (agent_id)
             WHERE
                 agents.status = '{AgentStatus.evaluating.value}'
@@ -308,3 +308,4 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
         return None
 
     return result["agent_id"]
+
