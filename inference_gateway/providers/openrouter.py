@@ -101,13 +101,10 @@ class OpenRouterProvider(Provider):
             if not openrouter_model:
                 logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} is not supported by OpenRouter")
 
-            if not "text" in openrouter_model["input_modalities"]:
+            if not "text" in openrouter_model["architecture"]["input_modalities"]:
                 logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support text input")
-            if not "embedding" in openrouter_model["output_modalities"]:
+            if not "embeddings" in openrouter_model["architecture"]["output_modalities"]: # embeddings plural
                 logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support embedding output")
-
-            if not "EMBEDDING" in openrouter_model["supported_endpoints"]:
-                logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support embedding endpoints")
 
             max_input_tokens = openrouter_model["context_length"]
             cost_usd_per_million_input_tokens = float(openrouter_model["pricing"]["prompt"])
