@@ -14,6 +14,7 @@ from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceRe
 
 if config.USE_OPENROUTER:
     OPENROUTER_INFERENCE_MODELS_URL = f"{config.OPENROUTER_BASE_URL}/models" # https://openrouter.ai/api/v1/models
+    OPENROUTER_EMBEDDING_MODELS_URL = f"{config.OPENROUTER_BASE_URL}/embeddings/models" # https://openrouter.ai/api/v1/embeddings/models
 
 
 class WhitelistedOpenRouterModel(BaseModel):
@@ -51,14 +52,14 @@ class OpenRouterProvider(Provider):
         # Fetch OpenRouter inference models
         logger.info(f"Fetching {OPENROUTER_INFERENCE_MODELS_URL}...")
         async with httpx.AsyncClient() as client:
-            openrouter_inference_models_response = await client.get(OPENROUTER_INFERENCE_MODELS_URL)
-        openrouter_inference_models_response.raise_for_status()
-        openrouter_inference_models_response = openrouter_inference_models_response.json()["data"]
+            all_openrouter_inference_models_response = await client.get(OPENROUTER_INFERENCE_MODELS_URL)
+        all_openrouter_inference_models_response.raise_for_status()
+        all_openrouter_inference_models_response = all_openrouter_inference_models_response.json()["data"]
         logger.info(f"Fetched {OPENROUTER_INFERENCE_MODELS_URL}")
 
         # Add whitelisted inference models
         for whitelisted_openrouter_model in WHITELISTED_OPENROUTER_INFERENCE_MODELS:     
-            openrouter_model = next((openrouter_model for openrouter_model in openrouter_inference_models_response if openrouter_model["id"] == whitelisted_openrouter_model.openrouter_name), None)
+            openrouter_model = next((openrouter_model for openrouter_model in all_openrouter_inference_models_response if openrouter_model["id"] == whitelisted_openrouter_model.openrouter_name), None)
             if not openrouter_model:
                 logger.fatal(f"Whitelisted OpenRouter inference model {whitelisted_openrouter_model.openrouter_name} is not supported by OpenRouter")
 
@@ -85,10 +86,18 @@ class OpenRouterProvider(Provider):
             logger.info(f"  Input cost (USD per million tokens): {cost_usd_per_million_input_tokens}")
             logger.info(f"  Output cost (USD per million tokens): {cost_usd_per_million_output_tokens}")
 
+        
+        # Fetch OpenRouter embedding models
+        logger.info(f"Fetching {OPENROUTER_EMBEDDING_MODELS_URL}...")
+        async with httpx.AsyncClient() as client:
+            all_openrouter_embedding_models_response = await client.get(OPENROUTER_EMBEDDING_MODELS_URL)
+        all_openrouter_embedding_models_response.raise_for_status()
+        all_openrouter_embedding_models_response = all_openrouter_embedding_models_response.json()["data"]
+        logger.info(f"Fetched {OPENROUTER_EMBEDDING_MODELS_URL}")
 
         # Add whitelisted embedding models
         for whitelisted_openrouter_model in WHITELISTED_OPENROUTER_EMBEDDING_MODELS:
-            openrouter_model = next((openrouter_model for openrouter_model in openrouter_inference_models_response if openrouter_model["id"] == whitelisted_openrouter_model.openrouter_name), None)
+            openrouter_model = next((openrouter_model for openrouter_model in all_openrouter_embedding_models_response if openrouter_model["id"] == whitelisted_openrouter_model.openrouter_name), None)
             if not openrouter_model:
                 logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} is not supported by OpenRouter")
 
