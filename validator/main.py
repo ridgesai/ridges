@@ -108,6 +108,10 @@ def truncate_logs_if_required(log: str) -> str:
 
 
 
+async def _simulate_run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_name: str, semaphore: asyncio.Semaphore):
+    async with semaphore:
+        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name)
+
 # Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
 async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str):
     logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
@@ -145,6 +149,9 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
     logger.info(f"Finished simulated evaluation run {evaluation_run_id} for problem {problem_name}")
 
 
+async def _run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_name: str, agent_code: str, semaphore: asyncio.Semaphore):
+    async with semaphore:
+        return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code)
 
 # Run an evaluation run
 async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str):
@@ -272,14 +279,15 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     logger.info("Starting evaluation...")
 
     tasks = []
+    semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_EVALUATION_RUNS)
     for evaluation_run in request_evaluation_response.evaluation_runs:
         evaluation_run_id = evaluation_run.evaluation_run_id
         problem_name = evaluation_run.problem_name
 
         if config.SIMULATE_EVALUATION_RUNS:
-            tasks.append(asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name)))
+            tasks.append(asyncio.create_task(_simulate_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, semaphore)))
         else:
-            tasks.append(asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, request_evaluation_response.agent_code)))
+            tasks.append(asyncio.create_task(_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, request_evaluation_response.agent_code, semaphore)))
 
     await asyncio.gather(*tasks)
 
