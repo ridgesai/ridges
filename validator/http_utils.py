@@ -84,7 +84,7 @@ async def get_ridges_platform(endpoint: str, *, quiet: int = 0) -> Any:
 
 
 
-async def post_ridges_platform(endpoint: str, body: BaseModel, *, bearer_token: str = None, quiet: int = 0) -> Any:
+async def post_ridges_platform(endpoint: str, body: BaseModel, *, bearer_token: str = None, quiet: int = 0, timeout: int = HTTP_TIMEOUT_SECONDS) -> Any:
     """
     Helper function that sends a POST request to the Ridges platform.
 
@@ -114,7 +114,7 @@ async def post_ridges_platform(endpoint: str, body: BaseModel, *, bearer_token: 
     
     try:
         # Send the request
-        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             headers = {"Authorization": f"Bearer {bearer_token}"} if bearer_token is not None else None
             response = await client.post(url, json=body_dict, headers=headers)
             response.raise_for_status()

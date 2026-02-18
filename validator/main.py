@@ -64,7 +64,7 @@ async def send_heartbeat_loop():
         while True:
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
-            await post_ridges_platform("/validator/heartbeat", ValidatorHeartbeatRequest(system_metrics=system_metrics), bearer_token=session_id, quiet=2)
+            await post_ridges_platform("/validator/heartbeat", ValidatorHeartbeatRequest(system_metrics=system_metrics), bearer_token=session_id, quiet=2, timout=5)
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
         logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
