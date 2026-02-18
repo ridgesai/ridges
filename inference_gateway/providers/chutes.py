@@ -37,6 +37,7 @@ if config.USE_CHUTES:
         WhitelistedChutesModel(name="Qwen/Qwen3-Coder-Next"),
         WhitelistedChutesModel(name="Qwen/Qwen3.5-397B-A17B", chutes_name="Qwen/Qwen3.5-397B-A17B-TEE"),
         WhitelistedChutesModel(name="moonshotai/Kimi-K2.5", chutes_name="moonshotai/Kimi-K2.5-TEE"),
+        WhitelistedChutesModel(name="MiniMaxAI/MiniMax-M2.5", chutes_name="MiniMaxAI/MiniMax-M2.5-TEE"),
     ]
 
 WHITELISTED_CHUTES_EMBEDDING_MODELS = [
