@@ -162,7 +162,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     if not provider:
         raise HTTPException(
             status_code=404,
-            detail="The model specified is not supported by Ridges for inference."
+            detail=f"The model {request.model} is not supported by Ridges for inference."
         )
 
     if config.USE_DATABASE:
@@ -249,7 +249,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     if not provider:
         raise HTTPException(
             status_code=404,
-            detail="The model specified is not supported by Ridges for embedding."
+            detail=f"The model {request.model} is not supported by Ridges for embedding."
         )
 
     if config.USE_DATABASE:
