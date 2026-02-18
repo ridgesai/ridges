@@ -22,8 +22,8 @@ class WhitelistedOpenRouterModel(BaseModel):
 
     def __init__(self, **data):
         super().__init__(**data)
-        if self.chutes_name is None:
-            self.chutes_name = self.name
+        if self.openrouter_name is None:
+            self.openrouter_name = self.name
 
 if config.USE_OPENROUTER:
     WHITELISTED_OPENROUTER_INFERENCE_MODELS = [
