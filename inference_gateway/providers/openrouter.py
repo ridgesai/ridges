@@ -70,8 +70,8 @@ class OpenRouterProvider(Provider):
 
             openrouter_model_pricing = openrouter_model["pricing"]
             max_input_tokens = openrouter_model["context_length"]
-            cost_usd_per_million_input_tokens = float(openrouter_model_pricing["prompt"])
-            cost_usd_per_million_output_tokens = float(openrouter_model_pricing["completion"])
+            cost_usd_per_million_input_tokens = float(openrouter_model_pricing["prompt"]) * 1_000_000
+            cost_usd_per_million_output_tokens = float(openrouter_model_pricing["completion"]) * 1_000_000
 
             self.inference_models.append(InferenceModelInfo(
                 name=whitelisted_openrouter_model.name,
@@ -107,7 +107,7 @@ class OpenRouterProvider(Provider):
                 logger.fatal(f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support embedding output")
 
             max_input_tokens = openrouter_model["context_length"]
-            cost_usd_per_million_input_tokens = float(openrouter_model["pricing"]["prompt"])
+            cost_usd_per_million_input_tokens = float(openrouter_model["pricing"]["prompt"]) * 1_000_000
 
             self.embedding_models.append(EmbeddingModelInfo(
                 name=whitelisted_openrouter_model.name,
