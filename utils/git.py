@@ -70,7 +70,8 @@ def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir
 
 def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir: str) -> None:
     """
-    Reset a local repository to a specific commit.
+    Reset a local repository to a specific commit and remove all future commits.
+    This ensures that future commits cannot be accessed via git log or git show.
     
     Args:
         local_repo_dir: Path to the local repository
@@ -94,6 +95,107 @@ def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir
     )
     
     logger.debug(f"Reset local repository to commit {commit_hash} in {target_dir}")
+    
+    # Remove all future commits by:
+    # 1. Delete all branch refs that point to commits after the target commit
+    # 2. Update HEAD to point directly to the commit (detached HEAD)
+    # 3. Prune unreachable objects and garbage collect
+    
+    logger.debug(f"Removing future commits from {target_dir}...")
+    
+    # Delete all branch refs (we'll use detached HEAD instead)
+    # This removes references to future commits
+    try:
+        branches_result = subprocess.run(
+            ["git", "branch"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir
+        )
+        # Parse branch names (remove leading * and whitespace)
+        branches = []
+        for line in branches_result.stdout.strip().split('\n'):
+            line = line.strip()
+            if line:
+                # Remove leading * and whitespace
+                branch = line.lstrip('*').strip()
+                if branch:
+                    branches.append(branch)
+        
+        for branch in branches:
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                capture_output=True,
+                text=True,
+                check=False,  # Don't fail if branch doesn't exist
+                cwd=target_dir
+            )
+    except subprocess.CalledProcessError:
+        pass  # No branches to delete
+    
+    # Delete all remote refs (they might point to future commits)
+    try:
+        subprocess.run(
+            ["git", "remote", "remove", "origin"],
+            capture_output=True,
+            text=True,
+            check=False,  # Don't fail if remote doesn't exist
+            cwd=target_dir
+        )
+    except Exception:
+        pass
+    
+    # Delete all tag refs (they might point to future commits)
+    try:
+        tags_result = subprocess.run(
+            ["git", "tag", "-l"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir
+        )
+        tags = [t.strip() for t in tags_result.stdout.strip().split('\n') if t.strip()]
+        for tag in tags:
+            subprocess.run(
+                ["git", "tag", "-d", tag],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=target_dir
+            )
+    except subprocess.CalledProcessError:
+        pass  # No tags to delete
+    
+    # Set HEAD to point directly to the commit (detached HEAD state)
+    # This ensures HEAD points to the exact commit, not a branch
+    subprocess.run(
+        ["git", "checkout", "--detach", commit_hash],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir
+    )
+    
+    # Prune unreachable objects and garbage collect to actually remove them
+    # This physically deletes commits that are no longer reachable
+    subprocess.run(
+        ["git", "reflog", "expire", "--expire=now", "--all"],
+        capture_output=True,
+        text=True,
+        check=False,  # May fail if no reflog exists
+        cwd=target_dir
+    )
+    
+    subprocess.run(
+        ["git", "gc", "--prune=now", "--aggressive"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir
+    )
+    
+    logger.debug(f"Removed future commits from {target_dir}")
 
 
 def verify_commit_exists_in_local_repo(local_repo_dir: str, commit_hash: str) -> bool:
