@@ -311,6 +311,9 @@ async def validator_request_evaluation(
             detail=f"This validator is already running an evaluation, and validators may only run one evaluation at a time."
         )
 
+    # Record a heartbeat for the validator
+    record_validator_heartbeat(validator)
+
     # Choose the appropriate lock based on the validator's hotkey
     if validator.hotkey.startswith("screener-1"):
         lock = screener_1_request_evaluation_lock
@@ -362,6 +365,10 @@ async def validator_request_evaluation(
 
     return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs, pass_threshold=pass_threshold)
 
+def record_validator_heartbeat(validator: Validator, system_metrics: SystemMetrics | None = None) -> None:
+    validator.time_last_heartbeat = datetime.now(timezone.utc)
+    if system_metrics is not None:
+        validator.system_metrics = system_metrics
 
 
 # /validator/heartbeat
@@ -374,8 +381,7 @@ async def validator_heartbeat(
     # logger.info(f"Validator '{validator.name}' sent a heartbeat")
     # logger.info(f"  System metrics: {request.system_metrics}")
 
-    validator.time_last_heartbeat = datetime.now(timezone.utc)
-    validator.system_metrics = request.system_metrics
+    record_validator_heartbeat(validator, request.system_metrics)
     
     return ValidatorHeartbeatResponse()
 
@@ -395,6 +401,9 @@ async def validator_update_evaluation_run(
             status_code=409,
             detail=f"This validator is not currently running an evaluation, and therefore cannot update an evaluation run."
         )
+
+    # Record a heartbeat for the validator
+    record_validator_heartbeat(validator)
 
     # Get the evaluation run with the provided evaluation_run_id
     evaluation_run = await get_evaluation_run_by_id(request.evaluation_run_id)
@@ -676,6 +685,10 @@ async def validator_finish_evaluation(
         )
 
     # Make sure that all evaluation runs have either finished,errored, or skipped
+    # Record a heartbeat for the validator
+    record_validator_heartbeat(validator)
+
+    # Make sure that all evaluation runs have either finished or errored
     evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
     if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error, EvaluationRunStatus.skipped] for evaluation_run in evaluation_runs):
         raise HTTPException(

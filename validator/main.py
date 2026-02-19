@@ -72,7 +72,7 @@ async def send_heartbeat_loop():
         while True:
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
-            await post_ridges_platform("/validator/heartbeat", ValidatorHeartbeatRequest(system_metrics=system_metrics), bearer_token=session_id, quiet=2)
+            await post_ridges_platform("/validator/heartbeat", ValidatorHeartbeatRequest(system_metrics=system_metrics), bearer_token=session_id, quiet=2, timeout=5)
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
         logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
@@ -123,6 +123,10 @@ def truncate_logs_if_required(log: str) -> str:
 
 
 
+async def _simulate_run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_name: str, semaphore: asyncio.Semaphore):
+    async with semaphore:
+        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name)
+
 # Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
 async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str) -> RunOutcome:
     logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
@@ -161,6 +165,9 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
     return RunOutcome(solved=True)
 
 
+async def _run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_name: str, agent_code: str, semaphore: asyncio.Semaphore):
+    async with semaphore:
+        return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code)
 
 # Run an evaluation run
 async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str) -> RunOutcome:
@@ -315,6 +322,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
 
     task_to_run_info: Dict[asyncio.Task, ValidatorRequestEvaluationResponseEvaluationRun] = {}
 
+    semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_EVALUATION_RUNS)
     for evaluation_run in request_evaluation_response.evaluation_runs:
         evaluation_run_id = evaluation_run.evaluation_run_id
         problem_name = evaluation_run.problem_name
@@ -322,7 +330,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         if config.SIMULATE_EVALUATION_RUNS:
             task = asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name))
         else:
-            task = asyncio.create_task(_run_evaluation_run(evaluation_run_id, problem_name, request_evaluation_response.agent_code))
+            task = asyncio.create_task(_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, request_evaluation_response.agent_code, semaphore))
 
         task_to_run_info[task] = evaluation_run
 

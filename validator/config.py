@@ -173,4 +173,10 @@ if UPDATE_AUTOMATICALLY:
 else:
     logger.warning("Not Updating Automatically!")
 
+MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
+if not MAX_CONCURRENT_EVALUATION_RUNS:
+    logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
+    MAX_CONCURRENT_EVALUATION_RUNS = 30 # high default for validators
+MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
+
 logger.info("===============================")

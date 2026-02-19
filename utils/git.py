@@ -68,6 +68,32 @@ def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir
     
     logger.debug(f"Checked out commit {commit_hash} in {target_dir}")
 
+def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir: str) -> None:
+    """
+    Reset a local repository to a specific commit.
+    
+    Args:
+        local_repo_dir: Path to the local repository
+        commit_hash: The commit hash to reset to
+        target_dir: Directory to reset the repository in
+    """
+    
+    # Make sure the local repository path exists
+    if not os.path.exists(local_repo_dir):
+        logger.fatal(f"Local repository directory does not exist: {local_repo_dir}")
+
+    # Reset the repository to the specific commit
+    logger.debug(f"Resetting local repository to commit {commit_hash} in {target_dir}...")
+
+    subprocess.run(
+        ["git", "reset", "--hard", commit_hash],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir
+    )
+    
+    logger.debug(f"Reset local repository to commit {commit_hash} in {target_dir}")
 
 
 def verify_commit_exists_in_local_repo(local_repo_dir: str, commit_hash: str) -> bool:

@@ -1,5 +1,6 @@
 import random
 import uvicorn
+from inference_gateway.providers.openrouter import OpenRouterProvider
 import utils.logger as logger
 import inference_gateway.config as config
 
@@ -65,6 +66,8 @@ async def lifespan(app: FastAPI):
         providers.append(WeightedProvider(await ChutesProvider().init(), weight=config.CHUTES_WEIGHT))
     if config.USE_TARGON:
         providers.append(WeightedProvider(await TargonProvider().init(), weight=config.TARGON_WEIGHT))
+    if config.USE_OPENROUTER:
+        providers.append(WeightedProvider(await OpenRouterProvider().init(), weight=config.OPENROUTER_WEIGHT))
 
     for wp in providers:
         if config.TEST_INFERENCE_MODELS:
@@ -162,7 +165,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     if not provider:
         raise HTTPException(
             status_code=404,
-            detail="The model specified is not supported by Ridges for inference."
+            detail=f"The model {request.model} is not supported by Ridges for inference."
         )
 
     if config.USE_DATABASE:
@@ -249,7 +252,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     if not provider:
         raise HTTPException(
             status_code=404,
-            detail="The model specified is not supported by Ridges for embedding."
+            detail=f"The model {request.model} is not supported by Ridges for embedding."
         )
 
     if config.USE_DATABASE:
