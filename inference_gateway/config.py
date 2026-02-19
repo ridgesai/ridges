@@ -105,11 +105,29 @@ if USE_TARGON:
         logger.fatal("TARGON_WEIGHT is not set in .env")
     TARGON_WEIGHT = int(TARGON_WEIGHT)
 
+USE_OPENROUTER = os.getenv("USE_OPENROUTER")
+if not USE_OPENROUTER:
+    logger.fatal("USE_OPENROUTER is not set in .env")
+USE_OPENROUTER = USE_OPENROUTER.lower() == "true"
+
+if USE_OPENROUTER:
+    OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL")
+    if not OPENROUTER_BASE_URL:
+        logger.fatal("OPENROUTER_BASE_URL is not set in .env")
+
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    if not OPENROUTER_API_KEY:
+        logger.fatal("OPENROUTER_API_KEY is not set in .env")
+
+    OPENROUTER_WEIGHT = os.getenv("OPENROUTER_WEIGHT")
+    if not OPENROUTER_WEIGHT:
+        logger.fatal("OPENROUTER_WEIGHT is not set in .env")
+    OPENROUTER_WEIGHT = int(OPENROUTER_WEIGHT)
 
 
-if not USE_CHUTES and not USE_TARGON:
-    logger.fatal("Either USE_CHUTES or USE_TARGON must be set to True in .env")
 
+if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER:
+    logger.fatal("Either USE_CHUTES or USE_TARGON or USE_OPENROUTER must be set to True in .env")
 
 
 TEST_INFERENCE_MODELS = os.getenv("TEST_INFERENCE_MODELS")
@@ -156,5 +174,12 @@ if USE_TARGON:
     logger.info(f"Targon Weight: {TARGON_WEIGHT}")
 else:
     logger.warning("Not Using Targon!")
+
+if USE_OPENROUTER:
+    logger.info("Using OpenRouter")
+    logger.info(f"OpenRouter Base URL: {OPENROUTER_BASE_URL}")
+    logger.info(f"OpenRouter Weight: {OPENROUTER_WEIGHT}")
+else:
+    logger.warning("Not Using OpenRouter!")
 
 logger.info("=======================================")
