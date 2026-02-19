@@ -328,7 +328,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         problem_name = evaluation_run.problem_name
 
         if config.SIMULATE_EVALUATION_RUNS:
-            task = asyncio.create_task(_simulate_run_evaluation_run(evaluation_run_id, problem_name))
+            task = asyncio.create_task(_simulate_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, semaphore))
         else:
             task = asyncio.create_task(_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, request_evaluation_response.agent_code, semaphore))
 
