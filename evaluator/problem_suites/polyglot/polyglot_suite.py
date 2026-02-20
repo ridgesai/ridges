@@ -18,7 +18,7 @@ from models.evaluation_run import EvaluationRunErrorCode
 from utils.git import init_local_repo_with_initial_commit
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
-from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
+from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo, validate_patched_files_syntax
 
 
 
@@ -147,7 +147,13 @@ class PolyglotSuite(ProblemSuite):
                 # Apply the patch
                 apply_diff_to_local_repo(patch, sandbox_repo_dir)
 
-
+                # Syntax-check the patched files
+                is_valid, error_message = validate_patched_files_syntax(sandbox_repo_dir)
+                if not is_valid:
+                    raise EvaluationRunException(
+                        EvaluationRunErrorCode.AGENT_INVALID_PATCH,
+                        f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
+                    )
 
             return sandbox_manager.initialize_sandbox(
                 name=f"eval-sandbox-{problem.name}-{evaluation_run_id}",

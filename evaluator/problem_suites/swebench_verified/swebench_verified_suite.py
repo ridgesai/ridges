@@ -11,7 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel
 from utils.docker import get_docker_client
 from typing import Any, Dict, List, Tuple, Optional
-from utils.diff import validate_diff_for_local_repo
+from utils.diff import validate_diff_for_local_repo, apply_diff_to_local_repo, validate_patched_files_syntax
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
 from utils.temp import create_temp_dir, delete_temp_dir
@@ -186,7 +186,14 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                     f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
                 )
 
-
+            # Syntax-check the patched files
+            apply_diff_to_local_repo(patch, temp_dir)
+            is_valid, error_message = validate_patched_files_syntax(temp_dir)
+            if not is_valid:
+                raise EvaluationRunException(
+                    EvaluationRunErrorCode.AGENT_INVALID_PATCH,
+                    f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
+                )
 
             swebench_instance = problem.userdata
 
