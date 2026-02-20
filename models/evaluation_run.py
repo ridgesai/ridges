@@ -60,7 +60,6 @@ class EvaluationRunStatus(str, Enum):
     running_eval = 'running_eval'
     finished = 'finished'
     error = 'error'
-    skipped = 'skipped'
 
 
 

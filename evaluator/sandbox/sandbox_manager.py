@@ -160,20 +160,6 @@ class SandboxManager:
 
 
 
-    def cleanup_sandbox(self, sandbox: Sandbox):
-        """Clean up a sandbox's container and temp directory."""
-        try:
-            sandbox.container.stop()
-            sandbox.container.remove()
-        except Exception:
-            pass
-        try:
-            delete_temp_dir(sandbox.temp_dir)
-        except Exception:
-            pass
-
-
-
     def run_sandbox(
         self,
         sandbox: Sandbox

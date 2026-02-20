@@ -22,8 +22,7 @@ from queries.evaluation_run import get_evaluation_run_by_id, update_evaluation_r
     get_all_evaluation_runs_in_evaluation_id, create_evaluation_run_log, check_if_evaluation_run_logs_exist
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType, EvaluationRunErrorCode
-from models.evaluation_set import EvaluationSetGroup
+from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
 from models.problem import ProblemTestResult
 from utils.bittensor import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
@@ -356,14 +355,7 @@ async def validator_request_evaluation(
     agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
     evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
 
-    # Determine pass threshold for screeners (None for validators)
-    pass_threshold = None
-    if validator.current_agent.status == AgentStatus.screening_1:
-        pass_threshold = config.SCREENER_1_THRESHOLD
-    elif validator.current_agent.status == AgentStatus.screening_2:
-        pass_threshold = config.SCREENER_2_THRESHOLD
-
-    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs, pass_threshold=pass_threshold)
+    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
 
 def record_validator_heartbeat(validator: Validator, system_metrics: SystemMetrics | None = None) -> None:
     validator.time_last_heartbeat = datetime.now(timezone.utc)
@@ -623,52 +615,6 @@ async def validator_disconnect(
 
 
 
-# /validator/skip-evaluation-run
-# Used to mark an evaluation run as skipped when a screener (validator) cancels the evaluation
-@router.post("/skip-evaluation-run")
-@handle_validator_http_exceptions
-async def validator_skip_evaluation_run(
-    request: ValidatorSkipEvaluationRunRequest,
-    validator: Validator = Depends(get_request_validator_with_lock)
-) -> ValidatorSkipEvaluationRunResponse:
-    """Mark an evaluation run as skipped (early termination)."""
-
-    if validator.current_evaluation_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="This validator is not currently running an evaluation, and therefore cannot skip an evaluation run."
-        )
-
-    evaluation_run = await get_evaluation_run_by_id(request.evaluation_run_id)
-
-    if evaluation_run is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Evaluation run with ID {request.evaluation_run_id} does not exist."
-        )
-
-    if evaluation_run.evaluation_id != validator.current_evaluation_id:
-        raise HTTPException(
-            status_code=403,
-            detail=f"The evaluation run with ID {request.evaluation_run_id} is not associated with the validator's current evaluation."
-        )
-
-    # Ensure evaluation is not terminal
-    if evaluation_run.status in (EvaluationRunStatus.finished, EvaluationRunStatus.error, EvaluationRunStatus.skipped):
-        logger.info(f"Validator '{validator.name}' skip-evaluation-run called on terminal run (status={evaluation_run.status})")
-        return ValidatorSkipEvaluationRunResponse()
-
-    evaluation_run.status = EvaluationRunStatus.skipped
-    evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
-    await update_evaluation_run_by_id(evaluation_run)
-
-    logger.info(f"Validator '{validator.name}' skipped an evaluation run")
-    logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
-
-    return ValidatorSkipEvaluationRunResponse()
-
-
-
 # /validator/finish-evaluation
 @router.post("/finish-evaluation")
 @handle_validator_http_exceptions
@@ -684,16 +630,15 @@ async def validator_finish_evaluation(
             detail="This validator is not currently running an evaluation, and therefore cannot request to finish an evaluation."
         )
 
-    # Make sure that all evaluation runs have either finished,errored, or skipped
     # Record a heartbeat for the validator
     record_validator_heartbeat(validator)
 
     # Make sure that all evaluation runs have either finished or errored
     evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
-    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error, EvaluationRunStatus.skipped] for evaluation_run in evaluation_runs):
+    if any(evaluation_run.status not in [EvaluationRunStatus.finished, EvaluationRunStatus.error] for evaluation_run in evaluation_runs):
         raise HTTPException(
             status_code=409,
-            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have finished, errored, or been skipped. Did you forget to send an update-evaluation-run?"
+            detail="Not all evaluation runs associated with the evaluation that this validator is currently running have either finished or errored. Did you forget to send an update-evaluation-run?"
         )
 
 
@@ -787,18 +732,3 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 return
 
         await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
-
-    elif hydrated_evaluation.status == EvaluationStatus.failure:
-        if hydrated_evaluation.evaluation_set_group in (EvaluationSetGroup.screener_1, EvaluationSetGroup.screener_2):
-            evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
-            has_syntax_penalty = any(
-                run.error_code is not None and run.error_code == EvaluationRunErrorCode.AGENT_INVALID_PATCH
-                for run in evaluation_runs
-            )
-
-            if has_syntax_penalty:
-                agent = await get_agent_by_id(hydrated_evaluation.agent_id)
-                if agent.status == AgentStatus.screening_1:
-                    await update_agent_status(hydrated_evaluation.agent_id, AgentStatus.failed_screening_1)
-                elif agent.status == AgentStatus.screening_2:
-                    await update_agent_status(hydrated_evaluation.agent_id, AgentStatus.failed_screening_2)
