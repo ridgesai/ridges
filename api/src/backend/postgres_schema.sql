@@ -27,8 +27,7 @@ BEGIN
             'initializing_eval',
             'running_eval',
             'finished',
-            'error',
-            'skipped',
+            'error'
         );
     END IF;
 
@@ -225,20 +224,12 @@ FROM evaluation_runs;
 
 -- Second view: Evaluations hydrated view
 -- Evaluations with aggregated status and average score
---
--- Status logic:
---   1. 'failure' — Syntax penalty: screener evaluation where any run hit AGENT_INVALID_PATCH (1040). Agent is penalized.
---   2. 'success' — Clean completion: every run finished, was skipped, or errored with an agent-level error (1000-1999).
---                   The evaluation infra worked; score the agent normally.
---   3. 'failure' — Infra failure: all runs are done but at least one had a non-agent error (2000+). Re-queue.
---   4. 'running' — Some runs are still in progress.
 CREATE OR REPLACE VIEW evaluations_hydrated AS
 SELECT
     evaluations.*,
     (CASE
-         WHEN evaluations.evaluation_set_group IN ('screener_1', 'screener_2') AND bool_or(erh.error_code = 1040) THEN 'failure'
-         WHEN EVERY(erh.status IN ('finished', 'skipped') OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
-         WHEN EVERY(erh.status IN ('finished', 'error', 'skipped')) THEN 'failure'
+         WHEN EVERY(erh.status = 'finished' OR (erh.status = 'error' AND erh.error_code BETWEEN 1000 AND 1999)) THEN 'success'
+         WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
          ELSE 'running'
         END)::EvaluationStatus AS status,
     COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
@@ -540,14 +531,3 @@ CREATE TRIGGER tr_refresh_agent_scores_unapproved_agent_ids
 AFTER INSERT OR UPDATE OR DELETE
 ON unapproved_agent_ids FOR EACH ROW
 EXECUTE PROCEDURE refresh_agent_scores();
-
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_enum
-        WHERE enumlabel = 'skipped'
-        AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'evaluationrunstatus')
-    ) THEN
-        ALTER TYPE EvaluationRunStatus ADD VALUE 'skipped';
-    END IF;
-END $$;

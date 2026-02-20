@@ -47,7 +47,6 @@ class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel): # :(
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
-    pass_threshold: Optional[float] = None  # None for validators
 
 
 
@@ -73,13 +72,6 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
     error_message: Optional[str] = None
 
 class ValidatorUpdateEvaluationRunResponse(BaseModel):
-    pass
-
-# Models for new endpoint that mark a run as skipped when screener (vali) cancels
-class ValidatorSkipEvaluationRunRequest(BaseModel):
-    evaluation_run_id: UUID
-
-class ValidatorSkipEvaluationRunResponse(BaseModel):
     pass
 
 
