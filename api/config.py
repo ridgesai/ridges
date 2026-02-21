@@ -182,6 +182,10 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
+SHOULD_RUN_LOOPS = os.getenv("SHOULD_RUN_LOOPS")
+if not SHOULD_RUN_LOOPS:
+    logger.fatal("SHOULD_RUN_LOOPS is not set in .env")
+SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
 
 
 logger.info("=== API Configuration ===")

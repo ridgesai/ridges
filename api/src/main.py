@@ -56,8 +56,9 @@ async def lifespan(app: FastAPI):
         secret_access_key=config.AWS_SECRET_ACCESS_KEY
     )
 
-    # Loop setup
-    asyncio.create_task(validator_heartbeat_timeout_loop())
+    # Loops
+    if config.SHOULD_RUN_LOOPS:
+        asyncio.create_task(validator_heartbeat_timeout_loop())
 
 
 
