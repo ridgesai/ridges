@@ -274,8 +274,8 @@ def init_local_repo_with_initial_commit(local_repo_dir: str, commit_message: str
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to make initial commit in {local_repo_dir}")
         logger.error(f"Git commit exit code: {e.returncode}")
-        logger.error(f"Git commit stdout: {e.stdout}")
-        logger.error(f"Git commit stderr: {e.stderr}")
+        logger.error(f"Git commit stdout: {e.stdout or ''}")
+        logger.error(f"Git commit stderr: {e.stderr or ''}")
         raise
 
 
