@@ -46,25 +46,39 @@ def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir
     # Clone the local repository directly to the target directory
     logger.debug(f"Cloning local repository from {local_repo_dir} to {target_dir}...")
     
-    subprocess.run(
-        ["git", "clone", abs_local_repo_dir, target_dir],
-        capture_output=True,
-        text=True,
-        check=True
-    )
+    try:
+        subprocess.run(
+            ["git", "clone", abs_local_repo_dir, target_dir],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to clone local repository from {abs_local_repo_dir} to {target_dir}")
+        logger.error(f"Git clone exit code: {e.returncode}")
+        logger.error(f"Git clone stdout: {e.stdout or ''}")
+        logger.error(f"Git clone stderr: {e.stderr or ''}")
+        raise
     
     logger.debug(f"Cloned local repository from {local_repo_dir} to {target_dir}")
 
     # Checkout the specific commit
     logger.debug(f"Checking out commit {commit_hash} in {target_dir}...")
 
-    subprocess.run(
-        ["git", "checkout", commit_hash],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=target_dir
-    )
+    try:
+        subprocess.run(
+            ["git", "checkout", commit_hash],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to checkout commit {commit_hash} in {target_dir}")
+        logger.error(f"Git checkout exit code: {e.returncode}")
+        logger.error(f"Git checkout stdout: {e.stdout or ''}")
+        logger.error(f"Git checkout stderr: {e.stderr or ''}")
+        raise
     
     logger.debug(f"Checked out commit {commit_hash} in {target_dir}")
 
@@ -262,14 +276,21 @@ def init_local_repo_with_initial_commit(local_repo_dir: str, commit_message: str
     
     # Make initial commit
     logger.debug(f"Making initial commit in {local_repo_dir}: {commit_message}")
-    subprocess.run(
-        ['git', 'commit', '-m', commit_message],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=local_repo_dir
-    )
-    logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
+    try:
+        subprocess.run(
+            ['git', 'commit', '-m', commit_message],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=local_repo_dir
+        )
+        logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to make initial commit in {local_repo_dir}")
+        logger.error(f"Git commit exit code: {e.returncode}")
+        logger.error(f"Git commit stdout: {e.stdout or ''}")
+        logger.error(f"Git commit stderr: {e.stderr or ''}")
+        raise
 
 
 
