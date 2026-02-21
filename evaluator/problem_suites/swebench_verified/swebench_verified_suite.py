@@ -3,7 +3,9 @@
 import os
 import json
 import time
+import shutil
 import pathlib
+import subprocess
 import traceback
 import utils.logger as logger
 
@@ -155,6 +157,17 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
         # Convert repository format from "owner/name" to directory name format "owner_name"
         local_repo_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos", repo.replace("/", "_"))
+
+        # Self-heal
+        health_check = subprocess.run(
+            ["git", "-C", local_repo_dir, "show-ref", "--head"],
+            capture_output=True,
+            text=True,
+        )
+        if health_check.returncode != 0:
+            logger.warning(f"Repairing SWE-Bench mirror for {repo} at {local_repo_dir}")
+            shutil.rmtree(local_repo_dir, ignore_errors=True)
+            clone_repo(f"https://github.com/{repo}.git", local_repo_dir)
         
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
