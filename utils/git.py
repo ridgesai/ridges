@@ -262,14 +262,21 @@ def init_local_repo_with_initial_commit(local_repo_dir: str, commit_message: str
     
     # Make initial commit
     logger.debug(f"Making initial commit in {local_repo_dir}: {commit_message}")
-    subprocess.run(
-        ['git', 'commit', '-m', commit_message],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=local_repo_dir
-    )
-    logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
+    try:
+        subprocess.run(
+            ['git', 'commit', '-m', commit_message],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=local_repo_dir
+        )
+        logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to make initial commit in {local_repo_dir}")
+        logger.error(f"Git commit exit code: {e.returncode}")
+        logger.error(f"Git commit stdout: {e.stdout}")
+        logger.error(f"Git commit stderr: {e.stderr}")
+        raise
 
 
 
