@@ -1,6 +1,9 @@
 events {}
 
 http {
+    # Use a public DNS resolver for upstream name resolution
+    resolver 1.1.1.1 1.0.0.1 ipv6=off;
+
     server {
         listen 80;
 
@@ -14,6 +17,10 @@ http {
             proxy_connect_timeout 300s;
             proxy_send_timeout 300s;
             proxy_read_timeout 300s;
+
+            # Ensure TLS SNI to Cloudflare/origin matches the hostname
+            proxy_ssl_server_name on;
+            proxy_ssl_name $GATEWAY_HOST;
         }
     }
 }
