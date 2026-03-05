@@ -134,9 +134,9 @@ if USE_SGLANG:
     if not SGLANG_BASE_URL:
         logger.fatal("SGLANG_BASE_URL is not set in .env")
 
-    SGLANG_API_KEY = os.getenv("SGLANG_API_KEY")
-    if not SGLANG_API_KEY:
-        logger.fatal("SGLANG_API_KEY is not set in .env")
+    SGLANG_API_KEY = os.getenv("SGLANG_API_KEY", "")
+    # if not SGLANG_API_KEY:
+    #     logger.fatal("SGLANG_API_KEY is not set in .env")
 
     SGLANG_WEIGHT = os.getenv("SGLANG_WEIGHT")
     if not SGLANG_WEIGHT:
