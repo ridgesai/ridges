@@ -65,6 +65,13 @@ SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 def is_validator_registered(validator_hotkey: str) -> bool:
     return validator_hotkey in [validator.hotkey for validator in SESSION_ID_TO_VALIDATOR.values()]
 
+def delete_session_by_hotkey(validator_hotkey: str) -> Optional[UUID]:
+    for session_id, validator in SESSION_ID_TO_VALIDATOR.items():
+        if validator.hotkey == validator_hotkey:
+            del SESSION_ID_TO_VALIDATOR[session_id]
+            return session_id
+    return None
+
 # Returns the IP addresses of all connected screeners and validators
 def get_all_connected_validator_ip_addresses() -> List[str]:
     return [validator.ip_address for validator in SESSION_ID_TO_VALIDATOR.values()]
@@ -193,15 +200,21 @@ async def validator_register_as_validator(
         )
 
     # Ensure that the validator is not already registered
+    ip_address = request.client.host if request.client else None
     if is_validator_registered(registration_request.hotkey):
-        raise HTTPException(
-            status_code=409,
-            detail=f"There is already a validator connected with the given hotkey."
-        )
+        if ip_address != SESSION_ID_TO_VALIDATOR[registration_request.hotkey].ip_address:
+            raise HTTPException(
+                status_code=409,
+                detail=f"There is already a validator connected with the given hotkey."
+            )
+        else:
+            # delete old session
+            old_session_id = delete_session_by_hotkey(registration_request.hotkey)
+            if old_session_id is not None:
+                logger.info(f"Deleted old session {old_session_id} for validator {registration_request.hotkey}")
 
     # Register the validator with a new session ID
     session_id = uuid4()
-    ip_address = request.client.host if request.client else None
     SESSION_ID_TO_VALIDATOR[session_id] = Validator(
         session_id=session_id,
         name=validator_hotkey_to_name(registration_request.hotkey),
