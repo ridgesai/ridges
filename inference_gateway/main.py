@@ -1,5 +1,6 @@
 import random
 import uvicorn
+from inference_gateway.providers.sglang import SglangProvider
 from inference_gateway.providers.openrouter import OpenRouterProvider
 import utils.logger as logger
 import inference_gateway.config as config
@@ -68,6 +69,8 @@ async def lifespan(app: FastAPI):
         providers.append(WeightedProvider(await TargonProvider().init(), weight=config.TARGON_WEIGHT))
     if config.USE_OPENROUTER:
         providers.append(WeightedProvider(await OpenRouterProvider().init(), weight=config.OPENROUTER_WEIGHT))
+    if config.USE_SGLANG:
+        providers.append(WeightedProvider(await SglangProvider().init(), weight=config.SGLANG_WEIGHT))
 
     for wp in providers:
         if config.TEST_INFERENCE_MODELS:
