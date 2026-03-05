@@ -19,7 +19,7 @@ from bittensor import Subtensor
 import time
 
 console = Console()
-DEFAULT_API_BASE_URL = "https://platform-v2.ridges.ai"
+DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
 
 load_dotenv(".env")
 

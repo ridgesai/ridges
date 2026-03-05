@@ -7,6 +7,7 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
+from api.loops.fetch_metagraph import fetch_metagraph_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 
 
@@ -56,8 +57,11 @@ async def lifespan(app: FastAPI):
         secret_access_key=config.AWS_SECRET_ACCESS_KEY
     )
 
-    # Loop setup
-    asyncio.create_task(validator_heartbeat_timeout_loop())
+    # Loops
+    if config.SHOULD_RUN_LOOPS: # validator loops; TODO: rename env var
+        asyncio.create_task(validator_heartbeat_timeout_loop())
+        
+    asyncio.create_task(fetch_metagraph_loop())
 
 
 
