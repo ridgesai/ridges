@@ -124,10 +124,29 @@ if USE_OPENROUTER:
         logger.fatal("OPENROUTER_WEIGHT is not set in .env")
     OPENROUTER_WEIGHT = int(OPENROUTER_WEIGHT)
 
+USE_SGLANG = os.getenv("USE_SGLANG")
+if not USE_SGLANG:
+    logger.fatal("USE_SGLANG is not set in .env")
+USE_SGLANG = USE_SGLANG.lower() == "true"
+
+if USE_SGLANG:
+    SGLANG_BASE_URL = os.getenv("SGLANG_BASE_URL")
+    if not SGLANG_BASE_URL:
+        logger.fatal("SGLANG_BASE_URL is not set in .env")
+
+    SGLANG_API_KEY = os.getenv("SGLANG_API_KEY")
+    if not SGLANG_API_KEY:
+        logger.fatal("SGLANG_API_KEY is not set in .env")
+
+    SGLANG_WEIGHT = os.getenv("SGLANG_WEIGHT")
+    if not SGLANG_WEIGHT:
+        logger.fatal("SGLANG_WEIGHT is not set in .env")
+    SGLANG_WEIGHT = int(SGLANG_WEIGHT)
 
 
-if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER:
-    logger.fatal("Either USE_CHUTES or USE_TARGON or USE_OPENROUTER must be set to True in .env")
+
+if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER and not USE_SGLANG:
+    logger.fatal("Either USE_CHUTES or USE_TARGON or USE_OPENROUTER or USE_SGLANG must be set to True in .env")
 
 
 TEST_INFERENCE_MODELS = os.getenv("TEST_INFERENCE_MODELS")
@@ -181,5 +200,12 @@ if USE_OPENROUTER:
     logger.info(f"OpenRouter Weight: {OPENROUTER_WEIGHT}")
 else:
     logger.warning("Not Using OpenRouter!")
+
+if USE_SGLANG:
+    logger.info("Using SGLang")
+    logger.info(f"SGLang Base URL: {SGLANG_BASE_URL}")
+    logger.info(f"SGLang Weight: {SGLANG_WEIGHT}")
+else:
+    logger.warning("Not Using SGLang!")
 
 logger.info("=======================================")
