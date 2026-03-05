@@ -1,3 +1,33 @@
+"""Polyglot Test Runner - Python Version
+
+This script runs inside the Docker sandbox to execute Python unit tests
+for the polyglot problem suite. It discovers and runs unittest-based tests
+in the /sandbox/repo directory.
+
+Execution Flow:
+1. Loads the main.py module (the code being tested)
+2. Loads the tests.py module (unittest test cases)
+3. Discovers all test methods in the test class
+4. Runs each test and collects results
+5. Writes structured results to output.json
+
+Expected File Layout:
+    /sandbox/repo/
+        ├── main.py    # Code to test (loaded as module)
+        └── tests.py   # Unittest test cases
+
+Output Format:
+    [
+        {"name": "test_method_1", "category": "default", "status": "pass|fail|skip"},
+        ...
+    ]
+
+Note:
+    - Tests run sequentially, not in parallel
+    - All tests are discovered from a single TestCase subclass
+    - Test execution continues even after failures
+"""
+
 import os
 import sys
 import json
@@ -7,13 +37,20 @@ import importlib.util
 
 
 
+# Add the repository directory to Python path so imports work
 repo_path = "/sandbox/repo"
 sys.path.insert(0, repo_path)
 
 
 
 def run_tests():
-    # Load main module
+    """Discover and run all tests in the repository.
+    
+    Returns:
+        List of test result dictionaries with name, category, and status
+    """
+    # Load the main module (the code being tested)
+    # This makes the implementation available to the tests
     print("[POLYGLOT_TEST_RUNNER] Loading main.py")
     main_spec = importlib.util.spec_from_file_location("main", "/sandbox/repo/main.py")
     main_module = importlib.util.module_from_spec(main_spec)
@@ -70,11 +107,14 @@ def run_tests():
 
 
 def main():
+    """Main entry point for test execution inside the sandbox."""
     print("[POLYGLOT_TEST_RUNNER] Entered main()")
     
     try:
+        # Run all tests and collect results
         test_results = run_tests()
 
+        # Print results for debugging (visible in container logs)
         print("[POLYGLOT_TEST_RUNNER] Test results:")
         print(json.dumps(test_results, indent=2))
         

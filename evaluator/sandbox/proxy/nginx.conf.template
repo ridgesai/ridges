@@ -1,16 +1,40 @@
+# Nginx Configuration Template for Sandbox Proxy
+#
+# This template is processed by envsubst at container startup to inject
+# the GATEWAY_URL and GATEWAY_HOST environment variables.
+#
+# Purpose:
+# - Forward all HTTP requests from sandboxes to the inference gateway
+# - Preserve original client information via proxy headers
+# - Handle long-running inference requests with extended timeouts
+#
+# Variables (substituted at runtime):
+#   ${GATEWAY_URL}  - Full URL of the inference gateway
+#   ${GATEWAY_HOST} - Hostname for the Host header
+
+# Required event section (even though we use default settings)
 events {}
 
 http {
     server {
+        # Standard HTTP port - sandboxes connect here
         listen 80;
 
+        # Forward all requests to the inference gateway
         location / {
+            # Proxy to the configured gateway URL
             proxy_pass $GATEWAY_URL;
+            
+            # Preserve the original Host header for the gateway
             proxy_set_header Host $GATEWAY_HOST;
+            
+            # Forward client information for logging/debugging
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
 
+            # Extended timeouts for LLM inference requests
+            # These should be longer than the longest expected inference call
             proxy_connect_timeout 300s;
             proxy_send_timeout 300s;
             proxy_read_timeout 300s;
