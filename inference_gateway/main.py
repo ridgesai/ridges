@@ -197,9 +197,9 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             cost_usd=response.cost_usd
         )
 
-        if response.cost_usd is not None:
-            cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
-    
+    if response.cost_usd is not None:
+        cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+
     if response.status_code == 200:
         return InferenceResponse(
             content=response.content,
