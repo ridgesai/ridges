@@ -62,8 +62,11 @@ class Validator(BaseModel):
 SESSION_ID_TO_VALIDATOR: Dict[UUID, Validator] = {}
 
 # Returns True if a validator with the given hotkey is currently registered
-def is_validator_registered(validator_hotkey: str) -> bool:
-    return validator_hotkey in [validator.hotkey for validator in SESSION_ID_TO_VALIDATOR.values()]
+def is_validator_registered(validator_hotkey: str) -> str | None:
+    for session_id, validator in SESSION_ID_TO_VALIDATOR.items():
+        if validator.hotkey == validator_hotkey:
+            return session_id
+    return None
 
 def delete_session_by_hotkey(validator_hotkey: str) -> Optional[UUID]:
     for session_id, validator in SESSION_ID_TO_VALIDATOR.items():
@@ -201,8 +204,8 @@ async def validator_register_as_validator(
 
     # Ensure that the validator is not already registered
     ip_address = request.client.host if request.client else None
-    if is_validator_registered(registration_request.hotkey):
-        if ip_address != SESSION_ID_TO_VALIDATOR[registration_request.hotkey].ip_address:
+    if (old_session_id_ := is_validator_registered(registration_request.hotkey)) is not None:
+        if ip_address != SESSION_ID_TO_VALIDATOR[old_session_id_].ip_address:
             raise HTTPException(
                 status_code=409,
                 detail=f"There is already a validator connected with the given hotkey."
