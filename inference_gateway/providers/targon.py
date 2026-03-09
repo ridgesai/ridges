@@ -143,39 +143,54 @@ class TargonProvider(Provider):
         tools: Optional[List[InferenceTool]]
     ) -> InferenceResult:
         try:
+            tool_choice = inference_tool_mode_to_openai_tool_choice(tool_mode)
+            tools = inference_tools_to_openai_tools(tools) if tools else None
+        except Exception as e:
+            return InferenceResult(
+                status_code=-1,
+                error_message=f"Error in TargonProvider._inference() during tool_choice or tools conversion: {type(e).__name__}: {str(e)}"
+            )
+
+        try:
             chat_completion = await self.targon_client.chat.completions.create(
                 model=model_info.external_name,
                 temperature=temperature,
                 messages=messages,
-                tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
-                tools=inference_tools_to_openai_tools(tools) if tools else None,
+                tool_choice=tool_choice,
+                tools=tools,
                 stream=False
             )
-
-            message = chat_completion.choices[0].message
-
-            num_input_tokens = chat_completion.usage.prompt_tokens
-            num_output_tokens = chat_completion.usage.completion_tokens
-            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
-
-            return InferenceResult(
-                status_code=200,
-
-                content=message.content if message.content else "",
-                tool_calls=openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else [],
-
-                num_input_tokens=num_input_tokens,
-                num_output_tokens=num_output_tokens,
-                cost_usd=cost_usd
-            )
-
         except APIStatusError as e:
             # Targon returned 4xx or 5xx
             return InferenceResult(
                 status_code=e.status_code,
                 error_message=e.response.text
             )
+        except Exception as e:
+            return InferenceResult(
+                status_code=-1,
+                error_message=f"Error in TargonProvider._inference() during chat.completions.create(): {type(e).__name__}: {str(e)}"
+            )
 
+        try:    
+            message = chat_completion.choices[0].message
+
+            num_input_tokens = chat_completion.usage.prompt_tokens
+            num_output_tokens = chat_completion.usage.completion_tokens
+            cost_usd = model_info.get_cost_usd(num_input_tokens, num_output_tokens)
+
+            tool_calls = openai_tool_calls_to_inference_tool_calls(message.tool_calls) if message.tool_calls else []
+
+            return InferenceResult(
+                status_code=200,
+
+                content=message.content if message.content else "",
+                tool_calls=tool_calls,
+
+                num_input_tokens=num_input_tokens,
+                num_output_tokens=num_output_tokens,
+                cost_usd=cost_usd
+            )
         except Exception as e:
             return InferenceResult(
                 status_code=-1,
