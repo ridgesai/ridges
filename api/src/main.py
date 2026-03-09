@@ -9,6 +9,7 @@ import uvicorn
 
 from api.loops.fetch_metagraph import fetch_metagraph_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
+from api.loops.validator_stalled_evaluation import validator_stalled_evaluation_loop
 
 
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
@@ -60,7 +61,8 @@ async def lifespan(app: FastAPI):
     # Loops
     if config.SHOULD_RUN_LOOPS: # validator loops; TODO: rename env var
         asyncio.create_task(validator_heartbeat_timeout_loop())
-        
+        asyncio.create_task(validator_stalled_evaluation_loop())
+
     asyncio.create_task(fetch_metagraph_loop())
 
 
