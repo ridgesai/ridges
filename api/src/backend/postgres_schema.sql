@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS agents (
     ip_address TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey_version ON agents (miner_hotkey, agent_id);
+CREATE INDEX IF NOT EXISTS idx_agents_status ON agents (status) WHERE status = 'evaluating';
 
 CREATE TABLE IF NOT EXISTS banned_hotkeys (
     miner_hotkey TEXT NOT NULL,
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
 );
 CREATE INDEX IF NOT EXISTS idx_evaluations_id ON evaluations (evaluation_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_agent_id ON evaluations (agent_id);
+CREATE INDEX IF NOT EXISTS idx_evaluations_set_group_agent_id ON evaluations (evaluation_set_group, agent_id);
 CREATE INDEX IF NOT EXISTS idx_evaluations_validator_pattern ON evaluations (validator_hotkey text_pattern_ops);
 
 CREATE TABLE IF NOT EXISTS evaluation_runs (

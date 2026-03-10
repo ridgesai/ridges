@@ -263,9 +263,17 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
              SELECT agent_id FROM screener_2_queue LIMIT 1
         """)
     else:
+        # Restrict to candidate agents first so we only hydrate evaluations for agents
+        # in evaluating status (avoids full evaluations_hydrated scan and heavy JSONB work).
         result = await conn.fetchrow(
             f"""
             WITH
+                candidates AS (
+                    SELECT agent_id, created_at
+                    FROM agents
+                    WHERE agents.status = '{AgentStatus.evaluating.value}'
+                      AND NOT EXISTS (SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = agents.agent_id)
+                ),
                 validator_eval_counts AS (
                     SELECT
                         agent_id,
@@ -273,31 +281,32 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
                         COUNT(*) FILTER (WHERE status = '{EvaluationStatus.running.value}') AS num_running_evals,
                         COUNT(*) FILTER (WHERE status = '{EvaluationStatus.success.value}') AS num_finished_evals
                     FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
+                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
+                      AND evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
                       AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
                     GROUP BY agent_id
                 ),
                 screener_2_scores AS (
-                    SELECT agent_id, COALESCE(MAX(score), 0) AS score FROM evaluations_hydrated
-                    WHERE evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
+                    SELECT agent_id, COALESCE(MAX(score), 0) AS score
+                    FROM evaluations_hydrated
+                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
+                      AND evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
                       AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
                     GROUP BY agent_id
                 )
             SELECT
-                agent_id,
-                COALESCE(num_running_evals, 0) as num_running_evals,
-                COALESCE(num_finished_evals, 0) as num_finished_evals
-            FROM agents
-                 LEFT JOIN screener_2_scores USING (agent_id)
-                 LEFT JOIN validator_eval_counts USING (agent_id)
+                c.agent_id,
+                COALESCE(v.num_running_evals, 0) AS num_running_evals,
+                COALESCE(v.num_finished_evals, 0) AS num_finished_evals
+            FROM candidates c
+                 LEFT JOIN screener_2_scores s ON s.agent_id = c.agent_id
+                 LEFT JOIN validator_eval_counts v ON v.agent_id = c.agent_id
             WHERE
-                agents.status = '{AgentStatus.evaluating.value}'
-              AND NOT COALESCE(already_evaluated, false)
-              AND COALESCE(num_running_evals, 0) + COALESCE(num_finished_evals, 0) < $2
-              AND agents.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                NOT COALESCE(v.already_evaluated, false)
+              AND COALESCE(v.num_running_evals, 0) + COALESCE(v.num_finished_evals, 0) < $2
             ORDER BY
-                screener_2_scores.score DESC,
-                agents.created_at ASC
+                s.score DESC NULLS LAST,
+                c.created_at ASC
             LIMIT 1
             """,
             validator_hotkey,
