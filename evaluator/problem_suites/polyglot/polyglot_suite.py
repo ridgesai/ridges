@@ -34,6 +34,7 @@ class PolyglotSuite(ProblemSuite):
         self.language = language.value
         self.unpatched = unpatched
 
+    async def setup(self) -> None:
         # /evaluator/datasets/polyglot_*
         dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / (f"polyglot_{self.language}" + ("_unpatched" if unpatched else "")))
 

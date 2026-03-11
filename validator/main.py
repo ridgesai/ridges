@@ -356,9 +356,8 @@ async def main():
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
     # Load all problem suites
-    problem_suites = [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
-
-
+    problem_suites: list[ProblemSuite] = [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
+    await asyncio.gather(*[asyncio.to_thread(problem_suite.setup) for problem_suite in problem_suites])
 
     # Get all the problems in the latest set
     latest_set_problems_data = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)

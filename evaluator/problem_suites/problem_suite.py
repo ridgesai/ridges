@@ -155,3 +155,11 @@ class ProblemSuite(ABC):
         eval_sandbox: Any
     ) -> Tuple[List[ProblemTestResult], str]:
         pass
+
+    @abstractmethod
+    async def setup(self) -> None:
+        """
+        Setup the problem suite.
+        Should be called before the validator starts.
+        """
+        pass

@@ -1,5 +1,6 @@
 """The SWE-Bench Verified problem suite."""
 
+import asyncio
 import os
 import json
 import time
@@ -60,6 +61,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         self.problems = {}
         self.name = ProblemSuiteName.swebench_verified
         
+
+    async def setup(self) -> None:
         logger.info(f"Loading problems from {SWEBENCH_VERIFIED_DATASET_PATH}...")
         
         # Make sure the swebench_verified.json file exists
@@ -85,6 +88,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         if not os.path.exists(repos_dir):
             os.makedirs(repos_dir, exist_ok=True)
         
+        clone_tasks = []
         for repo in unique_repos:
             # Convert repository format from "owner/name" to directory name format "owner_name"
             repo_dir_name = repo.replace("/", "_")
@@ -92,7 +96,9 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             
             if not os.path.exists(repo_path):
                 repo_url = f"https://github.com/{repo}.git"
-                clone_repo(repo_url, repo_path)
+                clone_tasks.append(asyncio.to_thread(clone_repo, repo_url, repo_path))
+        # Wait for all clone tasks to complete
+        await asyncio.gather(*clone_tasks)
         
         logger.debug(f"Found {len(unique_repos)} unique repositories")
         
