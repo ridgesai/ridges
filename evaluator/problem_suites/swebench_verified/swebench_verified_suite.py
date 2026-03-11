@@ -294,9 +294,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         test_specs = []
 
         for problem_name in problem_names:
-            if not self.has_problem_name(problem_name):
-                continue
-
             swebench_instance = self.get_problem(problem_name).userdata
             test_specs.append(make_test_spec(SWEbenchInstance(swebench_instance)))
 
