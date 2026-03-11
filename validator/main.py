@@ -162,8 +162,13 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
             return
 
         # Get the problem
-        problem = problem_suite.get_problem(problem_name)
-
+        problem: Problem | None = problem_suite.get_problem(problem_name)
+        if problem is None: # should never happen
+            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+                "error_message": f"The problem '{problem_name}' was not found in problem suite {problem_suite.name}"
+            })
+            return
 
 
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")

@@ -77,6 +77,13 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             )
 
         problem = problem_suite.get_problem(problem_name)
+        if problem is None: # should never happen
+            logger.error(f"[{problem_name}] The problem '{problem_name}' was not found")
+
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM,
+                f"The problem '{problem_name}' was not found"
+            )
 
         evaluation_run.status = EvaluationRunStatus.initializing_agent
         evaluation_run.started_initializing_agent_at = datetime.now()

@@ -23,12 +23,10 @@ class ProblemSuite(ABC):
         
         self.problems[problem.name] = problem
 
-
-
     def has_problem_name(self, problem_name: str) -> bool:
         return problem_name in self.problems
 
-    def get_problem(self, problem_name: str) -> Problem:  
+    def get_problem(self, problem_name: str) -> Problem | None:  
         return self.problems.get(problem_name)
 
 
