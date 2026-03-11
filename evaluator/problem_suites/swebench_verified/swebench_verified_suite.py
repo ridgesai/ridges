@@ -124,13 +124,6 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             #     logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
             #     continue
 
-            # Convert tests to our format
-            tests = []
-            for test_name in json.loads(problem.get("PASS_TO_PASS")):
-                tests.append(ProblemTest(name=test_name, category=ProblemTestCategory.pass_to_pass))
-            for test_name in json.loads(problem.get("FAIL_TO_PASS")):
-                tests.append(ProblemTest(name=test_name, category=ProblemTestCategory.fail_to_pass))
-
             self._add_problem(Problem(
                 name=problem_name,
                 difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
