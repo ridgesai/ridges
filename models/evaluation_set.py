@@ -26,5 +26,7 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
-    problem_suite_name: ProblemSuiteName | None = None
+    problem_suite_name: ProblemSuiteName
+
+
     created_at: datetime.datetime
