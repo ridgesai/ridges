@@ -352,8 +352,11 @@ async def main():
     latest_set_problems = [EvaluationSetProblem(**prob) for prob in latest_set_problems_data]
 
     # Prebuild the images for the SWE-Bench Verified problems
-    SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(
-        [prob.problem_name for prob in latest_set_problems if prob.problem_suite_name == ProblemSuiteName.swebench_verified]
+    await asyncio.to_thread(
+        SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(
+            [prob.problem_name for prob in latest_set_problems if prob.problem_suite_name == ProblemSuiteName.swebench_verified]
+        )
+    )
     )
 
     # Start the send heartbeat loop
