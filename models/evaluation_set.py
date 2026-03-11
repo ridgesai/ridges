@@ -3,6 +3,8 @@ import datetime
 from enum import Enum
 from pydantic import BaseModel
 
+from models.problem import ProblemSuiteName
+
 
 class EvaluationSetGroup(str, Enum):
     screener_1 = "screener_1"
@@ -24,4 +26,5 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
+    problem_suite_name: ProblemSuiteName | None = None
     created_at: datetime.datetime

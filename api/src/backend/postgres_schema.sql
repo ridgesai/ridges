@@ -83,8 +83,9 @@ CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
     set_group EvaluationSetGroup NOT NULL,
     problem_name TEXT,
+    problem_suite_name TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (set_id, set_group, problem_name)
+    PRIMARY KEY (set_id, set_group, problem_name, problem_suite_name)
 );
 
 CREATE TABLE IF NOT EXISTS evaluations (

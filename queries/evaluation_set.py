@@ -16,10 +16,10 @@ async def get_set_created_at(conn: DatabaseConnection, set_id: int) -> datetime:
 
 
 @db_operation
-async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection, set_id: int, set_group: EvaluationSetGroup) -> List[str]:
+async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection, set_id: int, set_group: EvaluationSetGroup) -> list[tuple[str, str]]:
     results = await conn.fetch(
         """
-        SELECT problem_name
+        SELECT problem_name, problem_suite_name
         FROM evaluation_sets
         WHERE set_id = $1 AND set_group = $2
         ORDER BY problem_name
@@ -28,12 +28,12 @@ async def get_all_problem_names_in_set_group_in_set_id(conn: DatabaseConnection,
         set_group.value
     )
     
-    return [row["problem_name"] for row in results]
+    return [(row["problem_name"], row["problem_suite_name"]) for row in results]
 
 
 
 @db_operation
-async def get_all_evaluation_set_problems_for_set_id(conn: DatabaseConnection, set_id: int) -> List[EvaluationSetProblem]:
+async def get_all_evaluation_set_problems_for_set_id(conn: DatabaseConnection, set_id: int) -> list[EvaluationSetProblem]:
     results = await conn.fetch(
         """
         SELECT *

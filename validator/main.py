@@ -14,7 +14,7 @@ import validator.config as config
 
 from typing import Any, Dict
 from api.endpoints.validator_models import *
-from models.problem import ProblemTestResultStatus
+from models.problem import ProblemSuiteName, ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
@@ -34,11 +34,9 @@ running_eval_timeout_seconds = None
 max_evaluation_run_log_size_bytes = None
 
 
-
 # The sandbox manager and problem suites
 sandbox_manager = None
 problem_suites = []
-
 
 
 # Disconnect from the Ridges platform (called when the program exits)
@@ -54,7 +52,6 @@ async def disconnect(reason: str):
         logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
-
 
 
 # A loop that sends periodic heartbeats to the Ridges platform
@@ -83,7 +80,6 @@ async def set_weights_loop():
             logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
-        
 
 
 # Sends an update-evaluation-run request to the Ridges platform. The extra
@@ -99,13 +95,11 @@ async def update_evaluation_run(evaluation_run_id: UUID, problem_name: str, upda
     ), bearer_token=session_id, quiet=2)
 
 
-
 # Truncates a log if required
 def truncate_logs_if_required(log: str) -> str:
     if len(log) > max_evaluation_run_log_size_bytes:
         return f"<truncated {len(log) - max_evaluation_run_log_size_bytes} chars>\n\n" + log[-max_evaluation_run_log_size_bytes:]
     return log
-
 
 
 async def _simulate_run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_name: str, semaphore: asyncio.Semaphore):
@@ -263,7 +257,6 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
         logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
-    
 
 
 # Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
@@ -296,7 +289,6 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     await post_ridges_platform("/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1)
 
 
-
 # Main loop
 async def main():
     global session_id
@@ -306,8 +298,6 @@ async def main():
     global sandbox_manager
     global problem_suites
 
-
-
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
 
@@ -316,21 +306,21 @@ async def main():
             # Get the current timestamp, and sign it with the validator hotkey
             timestamp = int(time.time())
             signed_timestamp = config.VALIDATOR_HOTKEY.sign(str(timestamp)).hex()
-            
+
             register_response = ValidatorRegistrationResponse(**(await post_ridges_platform("/validator/register-as-validator", ValidatorRegistrationRequest(
                 timestamp=timestamp,
                 signed_timestamp=signed_timestamp,
                 hotkey=config.VALIDATOR_HOTKEY.ss58_address,
                 commit_hash=COMMIT_HASH
             ))))
-        
+
         elif config.MODE == "screener":
             register_response = ScreenerRegistrationResponse(**(await post_ridges_platform("/validator/register-as-screener", ScreenerRegistrationRequest(
                 name=config.SCREENER_NAME,
                 password=config.SCREENER_PASSWORD,
                 commit_hash=COMMIT_HASH
             ))))
-    
+
     except httpx.HTTPStatusError as e:
         if config.UPDATE_AUTOMATICALLY and e.response.status_code == 426:
             logger.info("Updating...")
@@ -338,7 +328,7 @@ async def main():
             sys.exit(0)
         else:
             raise e
-    
+
     session_id = register_response.session_id
     running_agent_timeout_seconds = register_response.running_agent_timeout_seconds
     running_eval_timeout_seconds = register_response.running_eval_timeout_seconds
@@ -350,8 +340,6 @@ async def main():
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
 
-
-
     # Create the sandbox manager
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
@@ -362,12 +350,11 @@ async def main():
     # Get all the problems in the latest set
     latest_set_problems_data = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)
     latest_set_problems = [EvaluationSetProblem(**prob) for prob in latest_set_problems_data]
-    latest_set_problem_names = list({prob.problem_name for prob in latest_set_problems})
-    
+
     # Prebuild the images for the SWE-Bench Verified problems
-    SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(latest_set_problem_names)
-
-
+    SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(
+        [prob.problem_name for prob in latest_set_problems if prob.problem_suite_name == ProblemSuiteName.swebench_verified]
+    )
 
     # Start the send heartbeat loop
     asyncio.create_task(send_heartbeat_loop())
@@ -376,12 +363,10 @@ async def main():
         # Start the set weights loop
         asyncio.create_task(set_weights_loop())
 
-
-
     # Loop forever, just keep requesting evaluations and running them
     while True:
         logger.info("Requesting an evaluation...")
-        
+
         request_evaluation_response_data = await post_ridges_platform("/validator/request-evaluation", ValidatorRequestEvaluationRequest(), bearer_token=session_id, quiet=1)
 
         # If no evaluation is available, wait and try again
@@ -391,7 +376,6 @@ async def main():
             continue
 
         await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data))
-
 
 
 if __name__ == "__main__":
