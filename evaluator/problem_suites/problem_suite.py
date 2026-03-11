@@ -16,14 +16,6 @@ from models.evaluation_run import EvaluationRunErrorCode
 from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
 
 
-
-class ProblemSuiteName(str, Enum):
-    swebench_verified = "swebench_verified"
-    polyglot_py = "polyglot_py"
-    polyglot_js = "polyglot_js"
-
-
-
 class ProblemSuite(ABC):
     def _add_problem(self, problem: Problem) -> None:     
         if problem.name in self.problems:

@@ -22,9 +22,9 @@ from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
-from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
+from evaluator.problem_suites.problem_suite import ProblemSuite
 from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit, verify_commit_exists_in_local_repo
-from models.problem import Problem, ProblemTest, ProblemDifficulty, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from models.problem import Problem, ProblemTest, ProblemDifficulty, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus, ProblemSuiteName
 
 
 

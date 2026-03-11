@@ -2,7 +2,10 @@ from enum import Enum
 from pydantic import BaseModel
 from typing import Any, Optional
 
-
+class ProblemSuiteName(str, Enum):
+    swebench_verified = "swebench_verified"
+    polyglot_py = "polyglot_py"
+    polyglot_js = "polyglot_js"
 
 class ProblemTestCategory(str, Enum):
     default = 'default'
