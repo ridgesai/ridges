@@ -88,6 +88,24 @@ CREATE TABLE IF NOT EXISTS evaluation_sets (
     PRIMARY KEY (set_id, set_group, problem_name, problem_suite_name)
 );
 
+-- Infinite SWE problems 
+-- this is just the problems. We can select from these to make a pset.
+CREATE TABLE IF NOT EXISTS infinite_swe_problems (
+    id UUID NOT NULL PRIMARY KEY,
+    repo TEXT NOT NULL,
+    instance_id TEXT NOT NULL,
+    base_commit TEXT NOT NULL,
+    patch TEXT NOT NULL,
+    test_patch TEXT NOT NULL,
+    problem_statement TEXT NOT NULL,
+    hints_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    version TEXT NOT NULL,
+    FAIL_TO_PASS TEXT NOT NULL,
+    PASS_TO_PASS TEXT NOT NULL,
+    environment_setup_commit TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS evaluations (
     evaluation_id UUID NOT NULL PRIMARY KEY,
     agent_id UUID NOT NULL REFERENCES agents,
