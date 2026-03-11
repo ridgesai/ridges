@@ -111,6 +111,65 @@ async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
 
 
 
+# Detects validators/screeners that are alive (sending heartbeats) but whose
+# evaluation runs have made no progress. This happens when a screener's
+# inference gateway is broken — the agent retries forever, no runs complete,
+# and the miner's agent is stuck until the evaluation times out.
+async def detect_and_handle_stalled_evaluations() -> None:
+    logger.info("Checking for stalled evaluations...")
+
+    now = datetime.now(timezone.utc)
+    _validators = list(SESSION_ID_TO_VALIDATOR.values())
+
+    for validator in _validators:
+        # Skip validators not currently running an evaluation
+        if validator.current_evaluation_id is None:
+            continue
+
+        # Skip if we don't have a current_evaluation with a created_at timestamp
+        if validator.current_evaluation is None:
+            continue
+
+        evaluation_age_seconds = (now - validator.current_evaluation.created_at).total_seconds()
+
+        # Only check evaluations that have been running longer than the threshold
+        if evaluation_age_seconds < config.VALIDATOR_STALLED_EVALUATION_TIMEOUT_SECONDS:
+            continue
+
+        # Query the evaluation runs to check for progress
+        evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
+
+        # Count how many runs have progressed beyond running_agent (i.e. actually produced output)
+        completed_or_progressed = sum(
+            1 for run in evaluation_runs
+            if run.status in [
+                EvaluationRunStatus.initializing_eval,
+                EvaluationRunStatus.running_eval,
+                EvaluationRunStatus.finished,
+                EvaluationRunStatus.error,
+            ]
+        )
+
+        if completed_or_progressed == 0:
+            logger.warning(
+                f"Stalled evaluation detected for validator '{validator.name}': "
+                f"evaluation {validator.current_evaluation_id} has been running for "
+                f"{int(evaluation_age_seconds)}s with 0/{len(evaluation_runs)} runs progressed past running_agent. "
+                f"Disconnecting validator."
+            )
+
+            async with DebugLock(validator._lock, f"detect_and_handle_stalled_evaluations() for {validator.name}'s lock"):
+                if validator.session_id in SESSION_ID_TO_VALIDATOR:
+                    await delete_validator(
+                        validator,
+                        f"The validator was disconnected because its evaluation had 0 completed runs "
+                        f"after {int(evaluation_age_seconds)} seconds (stalled evaluation detection)."
+                    )
+
+    logger.info("Finished checking for stalled evaluations")
+
+
+
 # Dependency to get the validator associated with the request
 # Requires that the request has a valid "Authorization: Bearer <session_id>" header
 # See validator_request_evaluation() and other endpoints for usage examples
