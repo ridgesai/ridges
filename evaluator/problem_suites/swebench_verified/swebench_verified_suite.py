@@ -55,8 +55,13 @@ class SWEBenchVerifiedEvaluationSandbox(BaseModel):
     timeout_seconds: int
 
 
+class SWEBenchVerifiedProblem(Problem):
+    swebench_instance: SWEbenchInstance
+    
 
 class SWEBenchVerifiedSuite(ProblemSuite):
+    problems: Dict[str, SWEBenchVerifiedProblem]
+
     def __init__(self):
         self.problems = {}
         self.name = ProblemSuiteName.swebench_verified
@@ -124,16 +129,14 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             #     logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
             #     continue
 
-            self._add_problem(Problem(
+            self._add_problem(SWEBenchVerifiedProblem(
                 name=problem_name,
                 difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
 
                 problem_statement=problem.get("problem_statement"),
                 solution_diff=problem.get("patch"),
                 
-                # We will store the entire SWE-Bench problem object in the userdata (this is basically a Dict[str, Any])
-                # This is so that we can access metadata like the commit hash later on
-                userdata=problem
+                swebench_instance=SWEbenchInstance(**problem)
             ))
 
             # logger.debug(f"Problem {problem_name} verified successfully")
@@ -144,13 +147,13 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
     def copy_problem_files_to_directory(
         self,
-        problem: Problem,
+        problem: SWEBenchVerifiedProblem,
         dir: str,
         *,
         include_tests: bool = False # TODO ADAM
     ) -> None:
         # Get the SWE-Bench problem object
-        swebench_instance = problem.userdata
+        swebench_instance = problem.swebench_instance
         repo = swebench_instance.get("repo")
         commit_hash = swebench_instance.get("base_commit")
 
@@ -178,7 +181,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem: Problem,
+        problem: SWEBenchVerifiedProblem,
         evaluation_run_id: UUID,
         patch: str,
         timeout_seconds: int
@@ -198,11 +201,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                     f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
                 )
 
-
-
-            swebench_instance = problem.userdata
-
-            test_spec = make_test_spec(SWEbenchInstance(**swebench_instance))
+            test_spec = make_test_spec(problem.swebench_instance)
 
             pred = {
                 "model_name_or_path": str(evaluation_run_id),
@@ -287,8 +286,11 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         test_specs = []
 
         for problem_name in problem_names:
-            swebench_instance = self.get_problem(problem_name).userdata
-            test_specs.append(make_test_spec(SWEbenchInstance(swebench_instance)))
+            problem = self.get_problem(problem_name)
+            if problem is None:
+                continue
+
+            test_specs.append(make_test_spec(problem.swebench_instance))
 
         logger.debug(f"Prebuilding environment images for {len(test_specs)} problems")
         start_time = time.time()
