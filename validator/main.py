@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import httpx
+import signal
 import random
 import asyncio
 import pathlib
@@ -18,6 +19,7 @@ from models.problem import ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
+from validator.health_server import HealthServer
 from models.evaluation_set import EvaluationSetProblem
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http_utils import get_ridges_platform, post_ridges_platform
@@ -38,6 +40,10 @@ max_evaluation_run_log_size_bytes = None
 # The sandbox manager and problem suites
 sandbox_manager = None
 problem_suites = []
+health = None
+
+# Graceful shutdown: set by SIGTERM handler
+_shutdown_event = None
 
 
 
@@ -55,18 +61,23 @@ async def disconnect(reason: str):
         logger.error(traceback.format_exc())
         os._exit(1)
 
-
-
 # A loop that sends periodic heartbeats to the Ridges platform
 async def send_heartbeat_loop():
     try:
         logger.info("Starting send heartbeat loop...")
-        while True:
+        while not _shutdown_event.is_set():
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
             await post_ridges_platform("/validator/heartbeat", ValidatorHeartbeatRequest(system_metrics=system_metrics), bearer_token=session_id, quiet=2, timeout=5)
-            await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=config.SEND_HEARTBEAT_INTERVAL_SECONDS)
+                break
+            except asyncio.TimeoutError:
+                pass
+        logger.info("Heartbeat loop stopped (shutdown)")
     except Exception as e:
+        if _shutdown_event and _shutdown_event.is_set():
+            return
         logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
@@ -305,8 +316,24 @@ async def main():
     global max_evaluation_run_log_size_bytes
     global sandbox_manager
     global problem_suites
+    global health
+    global _shutdown_event
 
+    health = HealthServer()
+    await health.start()
 
+    _shutdown_event = asyncio.Event()
+
+    # SIGTERM handler: mark not-ready immediately so K8s stops sending
+    # traffic, then signal the main loop to drain and exit.
+    def _handle_sigterm(sig, frame):
+        logger.info("Received SIGTERM, initiating graceful shutdown...")
+        health.mark_shutting_down()
+        asyncio.get_event_loop().call_soon_threadsafe(_shutdown_event.set)
+
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
+    logger.info(f"Commit SHA: {COMMIT_HASH}")
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
@@ -350,25 +377,21 @@ async def main():
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
 
-
-
     # Create the sandbox manager
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
     # Load all problem suites
     problem_suites = [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
 
-
-
     # Get all the problems in the latest set
     latest_set_problems_data = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)
     latest_set_problems = [EvaluationSetProblem(**prob) for prob in latest_set_problems_data]
     latest_set_problem_names = list({prob.problem_name for prob in latest_set_problems})
-    
+
     # Prebuild the images for the SWE-Bench Verified problems
     SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(latest_set_problem_names)
 
-
+    health.mark_ready()
 
     # Start the send heartbeat loop
     asyncio.create_task(send_heartbeat_loop())
@@ -377,27 +400,35 @@ async def main():
         # Start the set weights loop
         asyncio.create_task(set_weights_loop())
 
-
-
-    # Loop forever, just keep requesting evaluations and running them
-    while True:
+    # Main evaluation loop: exits when shutdown event is set.
+    # If idle, wakes immediately on SIGTERM. If running an evaluation,
+    # finishes the current one before exiting.
+    while not _shutdown_event.is_set():
         logger.info("Requesting an evaluation...")
         
         request_evaluation_response_data = await post_ridges_platform("/validator/request-evaluation", ValidatorRequestEvaluationRequest(), bearer_token=session_id, quiet=1)
 
-        # If no evaluation is available, wait and try again
         if request_evaluation_response_data is None:
             logger.info(f"No evaluations available. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
-            await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
+            try:
+                await asyncio.wait_for(
+                    _shutdown_event.wait(),
+                    timeout=config.REQUEST_EVALUATION_INTERVAL_SECONDS
+                )
+            except asyncio.TimeoutError:
+                pass
             continue
 
         await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data))
 
+    logger.info("Shutdown: disconnecting from platform...")
+    await disconnect("SIGTERM")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
+        logger.info("Shutdown complete")
     except KeyboardInterrupt:
         logger.warning("Keyboard interrupt")
         asyncio.run(disconnect("Keyboard interrupt"))

@@ -32,7 +32,9 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | b
     ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/npm" /usr/local/bin/npm && \
     ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/npx" /usr/local/bin/npx && \
     ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/bin/node" /usr/local/bin/node && \
-    ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules" /usr/local/lib/node_modules
+    ln -sf "$NVM_DIR/versions/node/$NODE_VERSION/lib/node_modules" /usr/local/lib/node_modules && \
+    chmod -R a+rX /root/.nvm && \
+    chmod a+rx /root
 
 ENV NODE_PATH=/usr/local/lib/node_modules
 
