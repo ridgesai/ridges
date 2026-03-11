@@ -6,6 +6,7 @@ class ProblemSuiteName(str, Enum):
     swebench_verified = "swebench_verified"
     polyglot_py = "polyglot_py"
     polyglot_js = "polyglot_js"
+    infinite_swe = "infinite_swe"
 
 class ProblemTestCategory(str, Enum):
     default = 'default'
