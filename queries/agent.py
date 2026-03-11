@@ -229,6 +229,26 @@ async def get_top_agents(
 
 
 @db_operation
+async def get_queue_depth(conn: DatabaseConnection, queue_stage: EvaluationSetGroup) -> int:
+    queue_to_query = f"{queue_stage.value}_queue"
+    result = await conn.fetchval(f"SELECT COUNT(*) FROM {queue_to_query}")
+    return result or 0
+
+
+@db_operation
+async def get_active_evaluation_count(conn: DatabaseConnection, queue_stage: EvaluationSetGroup) -> int:
+    result = await conn.fetchval(
+        """
+        SELECT COUNT(*) FROM evaluations_hydrated
+        WHERE status = 'running'
+          AND evaluation_set_group = $1::EvaluationSetGroup
+        """,
+        queue_stage.value
+    )
+    return result or 0
+
+
+@db_operation
 async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: EvaluationSetGroup) -> list[Agent]:
     # TODO ALEX from ADAM: Modify this in the view itself rather than branching explicitly here.
     # The view apparently does not sort by created_at.

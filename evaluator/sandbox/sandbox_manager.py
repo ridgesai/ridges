@@ -14,7 +14,7 @@ from utils.docker import DOCKER_PREFIX, get_docker_client, build_docker_image, c
 SANDBOX_NETWORK_NAME = f"{DOCKER_PREFIX}-sandbox-network"
 
 SANDBOX_PROXY_HOST = f"{DOCKER_PREFIX}-sandbox-proxy"
-SANDBOX_PROXY_PORT = 80
+SANDBOX_PROXY_PORT = 8080
 
 
 
@@ -135,7 +135,11 @@ class SandboxManager:
         elif script_extension == ".js":
             command = f"node /sandbox/{script_name} 2>&1"
 
-        # Create Docker container
+        for root, dirs, files in os.walk(temp_dir):
+            os.chmod(root, 0o777)
+            for fname in files:
+                os.chmod(os.path.join(root, fname), 0o666)
+
         container = get_docker_client().containers.run(
             name=name,
             image=f"{DOCKER_PREFIX}-sandbox-image",
@@ -143,12 +147,22 @@ class SandboxManager:
             network=SANDBOX_NETWORK_NAME,
             environment={
                 "PYTHONUNBUFFERED": "1",
-                "PYTHONDONTWRITEBYTECODE": "1", # No __pycache__
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "HOME": "/tmp",
                 "SANDBOX_PROXY_URL": f"http://{SANDBOX_PROXY_HOST}:{SANDBOX_PROXY_PORT}",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "safe.directory",
+                "GIT_CONFIG_VALUE_0": "/sandbox/repo",
                 **env_vars
             },
             command=command,
-            detach=True
+            detach=True,
+            user="65534",
+            read_only=True,
+            tmpfs={"/tmp": "size=64m,mode=1777"},
+            pids_limit=256,
+            security_opt=["no-new-privileges"],
+            cap_drop=["ALL"],
         )
 
         return Sandbox(
