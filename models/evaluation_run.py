@@ -37,6 +37,7 @@ class EvaluationRunErrorCode(IntEnum):
     PLATFORM_RESTARTED_WHILE_RUNNING_AGENT = (3020, "The platform was restarted while the evaluation run was running the agent")
     PLATFORM_RESTARTED_WHILE_INIT_EVAL     = (3030, "The platform was restarted while the evaluation run was initializing the evaluation")
     PLATFORM_RESTARTED_WHILE_RUNNING_EVAL  = (3040, "The platform was restarted while the evaluation run was running the evaluation")
+    PLATFORM_TOO_MANY_INFERENCE_ERRORS     = (3050, "Too many platform-side inference errors occurred during the evaluation run")
 
     def get_error_message(self) -> str:
         return self.message
