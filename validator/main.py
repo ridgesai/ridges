@@ -207,7 +207,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
             # run, the agent never had a fair chance, so we bail out early and
             # mark this as a platform error instead of scoring a bad patch.
             try:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     usage_response = await client.get(f"{config.RIDGES_INFERENCE_GATEWAY_URL}/api/usage?evaluation_run_id={evaluation_run_id}")
                 if usage_response.status_code == 200:
                     usage = usage_response.json()

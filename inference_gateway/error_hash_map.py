@@ -1,6 +1,6 @@
-# Tracks the number of non-halting (platform-side) inference errors per
-# evaluation run. When the count exceeds a configured threshold the run
-# is flagged as a platform error so the agent is not penalized unfairly.
+# Tracks the number of platform-side inference errors per evaluation run.
+# When the count exceeds a configured threshold the run is flagged as a
+# platform error so the agent is not penalized unfairly.
 
 import time
 

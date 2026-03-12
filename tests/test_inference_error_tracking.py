@@ -145,7 +145,7 @@ try:
     os.environ["OPENROUTER_WEIGHT"] = "1"
 
     from inference_gateway.main import app, cost_hash_map as global_cost_hash_map, error_hash_map as global_error_hash_map, is_platform_error, PLATFORM_ERROR_CODES
-    from inference_gateway.models import InferenceResult
+    from inference_gateway.models import InferenceResult, EmbeddingResult
     _can_import_app = True
 except Exception:
     pass
@@ -162,13 +162,14 @@ if _can_import_app:
         async with AsyncClient(transport=transport, base_url="http://test") as c:
             yield c
 
-    def _mock_provider(status_code=200):
+    def _mock_provider(status_code=200, for_embedding=False):
         """Create a mock provider that returns the given status code."""
         provider = MagicMock()
         provider.name = "MockProvider"
         provider.is_model_supported_for_inference.return_value = True
+        provider.is_model_supported_for_embedding.return_value = True
 
-        result = InferenceResult(
+        inference_result = InferenceResult(
             status_code=status_code,
             content="hello" if status_code == 200 else None,
             error_message="provider error" if status_code != 200 else None,
@@ -177,7 +178,17 @@ if _can_import_app:
             num_output_tokens=5,
             cost_usd=0.001
         )
-        provider.inference = AsyncMock(return_value=result)
+        provider.inference = AsyncMock(return_value=inference_result)
+
+        embedding_result = EmbeddingResult(
+            status_code=status_code,
+            embedding=[0.1, 0.2, 0.3] if status_code == 200 else None,
+            error_message="provider error" if status_code != 200 else None,
+            num_input_tokens=10,
+            cost_usd=0.0005
+        )
+        provider.embedding = AsyncMock(return_value=embedding_result)
+
         return provider
 
 
@@ -283,6 +294,75 @@ if _can_import_app:
                 assert data["inference_errors"] == 2
                 assert data["max_inference_errors"] == 5
                 assert data["used_cost_usd"] == 0.05
+
+        async def test_usage_endpoint_zero_errors(self, client):
+            """A run with no errors should report zero."""
+            run_id = str(uuid4())
+
+            with patch("inference_gateway.main.config") as mock_config:
+                mock_config.MAX_COST_PER_EVALUATION_RUN_USD = 10.0
+                mock_config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN = 5
+
+                response = await client.get(f"/api/usage?evaluation_run_id={run_id}")
+
+                assert response.status_code == 200
+                data = response.json()
+                assert data["inference_errors"] == 0
+                assert data["used_cost_usd"] == 0.0
+
+        async def test_separate_runs_do_not_interfere(self, client):
+            """Errors for one run must not affect another run's count."""
+            run_a = str(uuid4())
+            run_b = str(uuid4())
+            mock_provider = _mock_provider(status_code=502)
+
+            with patch("inference_gateway.main.get_provider_that_supports_model_for_inference", return_value=mock_provider), \
+                 patch("inference_gateway.main.config") as mock_config:
+                mock_config.USE_DATABASE = False
+                mock_config.MAX_COST_PER_EVALUATION_RUN_USD = 10.0
+                mock_config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN = 5
+
+                # Hit run_a three times
+                for _ in range(3):
+                    await client.post("/api/inference", json={
+                        "evaluation_run_id": run_a,
+                        "model": "test-model",
+                        "temperature": 0.5,
+                        "messages": [{"role": "user", "content": "test"}]
+                    })
+
+                # Hit run_b once
+                await client.post("/api/inference", json={
+                    "evaluation_run_id": run_b,
+                    "model": "test-model",
+                    "temperature": 0.5,
+                    "messages": [{"role": "user", "content": "test"}]
+                })
+
+                from uuid import UUID
+                assert global_error_hash_map.get_inference_errors(UUID(run_a)) == 3
+                assert global_error_hash_map.get_inference_errors(UUID(run_b)) == 1
+
+        async def test_embedding_platform_error_increments_counter(self, client):
+            """Embedding endpoint should also track platform errors."""
+            run_id = str(uuid4())
+            mock_provider = _mock_provider(status_code=503)
+
+            with patch("inference_gateway.main.get_provider_that_supports_model_for_embedding", return_value=mock_provider), \
+                 patch("inference_gateway.main.config") as mock_config:
+                mock_config.USE_DATABASE = False
+                mock_config.MAX_COST_PER_EVALUATION_RUN_USD = 10.0
+                mock_config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN = 5
+
+                response = await client.post("/api/embedding", json={
+                    "evaluation_run_id": run_id,
+                    "model": "test-model",
+                    "input": "hello world"
+                })
+
+                assert response.status_code == 503
+                from uuid import UUID
+                assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 1
 
         async def test_constants_match_expected(self):
             """Verify the actual constants match what we test against."""

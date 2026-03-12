@@ -174,6 +174,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         # Make sure the evaluation run has not had too many platform-side inference errors
         inference_errors = error_hash_map.get_inference_errors(request.evaluation_run_id)
         if inference_errors >= config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN:
+            logger.warning(f"Blocking inference for run {request.evaluation_run_id}: too many platform errors ({inference_errors}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})")
             raise HTTPException(
                 status_code=503,
                 detail=f"The evaluation run with ID {request.evaluation_run_id} has had too many platform-side inference errors ({inference_errors} errors, limit is {config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})."
@@ -227,9 +228,11 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             tool_calls=response.tool_calls
         )
     else:
-        # Track non-halting errors (platform/provider failures, not agent mistakes)
+        # Track platform errors (provider failures, not agent mistakes)
         if is_platform_error(response.status_code):
             error_hash_map.add_inference_error(request.evaluation_run_id)
+            error_count = error_hash_map.get_inference_errors(request.evaluation_run_id)
+            logger.warning(f"Platform inference error for run {request.evaluation_run_id}: status {response.status_code} (error {error_count}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})")
 
         raise HTTPException(
             status_code=response.status_code,
@@ -273,6 +276,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
         # Make sure the evaluation run has not had too many platform-side inference errors
         inference_errors = error_hash_map.get_inference_errors(request.evaluation_run_id)
         if inference_errors >= config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN:
+            logger.warning(f"Blocking embedding for run {request.evaluation_run_id}: too many platform errors ({inference_errors}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})")
             raise HTTPException(
                 status_code=503,
                 detail=f"The evaluation run with ID {request.evaluation_run_id} has had too many platform-side inference errors ({inference_errors} errors, limit is {config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})."
@@ -320,9 +324,11 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
             embedding=response.embedding
         )
     else:
-        # Track non-halting errors (platform/provider failures, not agent mistakes)
+        # Track platform errors (provider failures, not agent mistakes)
         if is_platform_error(response.status_code):
             error_hash_map.add_inference_error(request.evaluation_run_id)
+            error_count = error_hash_map.get_inference_errors(request.evaluation_run_id)
+            logger.warning(f"Platform embedding error for run {request.evaluation_run_id}: status {response.status_code} (error {error_count}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})")
 
         raise HTTPException(
             status_code=response.status_code,
