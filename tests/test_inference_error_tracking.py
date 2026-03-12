@@ -62,28 +62,28 @@ class TestErrorHashMap:
 
 
 # ---------------------------------------------------------------------------
-# Unit tests: non-halting error classification
+# Unit tests: platform error classification
 #
 # We define the expected set here to avoid importing inference_gateway.main,
 # which triggers the config import chain and requires env vars.
 # ---------------------------------------------------------------------------
 
-EXPECTED_NON_HALTING_ERROR_CODES = {500, 502, 503, 504, -1}
+EXPECTED_PLATFORM_ERROR_CODES = {500, 502, 503, 504, -1}
 
-class TestNonHaltingErrorClassification:
-    def test_server_errors_are_non_halting(self):
+class TestPlatformErrorClassification:
+    def test_server_errors_are_platform_errors(self):
         for code in [500, 502, 503, 504]:
-            assert code in EXPECTED_NON_HALTING_ERROR_CODES, f"Expected {code} to be non-halting"
+            assert code in EXPECTED_PLATFORM_ERROR_CODES, f"Expected {code} to be a platform error"
 
-    def test_internal_error_is_non_halting(self):
-        assert -1 in EXPECTED_NON_HALTING_ERROR_CODES
+    def test_internal_error_is_platform_error(self):
+        assert -1 in EXPECTED_PLATFORM_ERROR_CODES
 
-    def test_client_errors_are_halting(self):
+    def test_client_errors_are_not_platform_errors(self):
         for code in [400, 404, 422, 429]:
-            assert code not in EXPECTED_NON_HALTING_ERROR_CODES, f"Expected {code} to be halting"
+            assert code not in EXPECTED_PLATFORM_ERROR_CODES, f"Expected {code} to not be a platform error"
 
-    def test_success_is_not_non_halting(self):
-        assert 200 not in EXPECTED_NON_HALTING_ERROR_CODES
+    def test_success_is_not_platform_error(self):
+        assert 200 not in EXPECTED_PLATFORM_ERROR_CODES
 
 
 
@@ -144,7 +144,7 @@ try:
     os.environ["OPENROUTER_API_KEY"] = "test-key"
     os.environ["OPENROUTER_WEIGHT"] = "1"
 
-    from inference_gateway.main import app, cost_hash_map as global_cost_hash_map, error_hash_map as global_error_hash_map, is_non_halting_error, NON_HALTING_ERROR_CODES
+    from inference_gateway.main import app, cost_hash_map as global_cost_hash_map, error_hash_map as global_error_hash_map, is_platform_error, PLATFORM_ERROR_CODES
     from inference_gateway.models import InferenceResult
     _can_import_app = True
 except Exception:
@@ -189,7 +189,7 @@ if _can_import_app:
             global_error_hash_map.error_hash_map = {}
             global_error_hash_map.last_cleanup_at = time.time()
 
-        async def test_non_halting_error_increments_counter(self, client):
+        async def test_platform_error_increments_counter(self, client):
             run_id = str(uuid4())
             mock_provider = _mock_provider(status_code=500)
 
@@ -210,7 +210,7 @@ if _can_import_app:
                 from uuid import UUID
                 assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 1
 
-        async def test_halting_error_does_not_increment_counter(self, client):
+        async def test_non_platform_error_does_not_increment_counter(self, client):
             run_id = str(uuid4())
             mock_provider = _mock_provider(status_code=422)
 
@@ -286,6 +286,6 @@ if _can_import_app:
 
         async def test_constants_match_expected(self):
             """Verify the actual constants match what we test against."""
-            assert NON_HALTING_ERROR_CODES == EXPECTED_NON_HALTING_ERROR_CODES
-            assert is_non_halting_error(500)
-            assert not is_non_halting_error(400)
+            assert PLATFORM_ERROR_CODES == EXPECTED_PLATFORM_ERROR_CODES
+            assert is_platform_error(500)
+            assert not is_platform_error(400)

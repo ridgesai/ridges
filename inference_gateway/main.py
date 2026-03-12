@@ -116,10 +116,10 @@ error_hash_map = ErrorHashMap()
 # 400/404/422 are excluded because those indicate bad agent requests (wrong
 # model, invalid format, etc). 429 is excluded because it means the cost
 # limit was intentionally reached.
-NON_HALTING_ERROR_CODES = {500, 502, 503, 504, -1}
+PLATFORM_ERROR_CODES = {500, 502, 503, 504, -1}
 
-def is_non_halting_error(status_code: int) -> bool:
-    return status_code in NON_HALTING_ERROR_CODES
+def is_platform_error(status_code: int) -> bool:
+    return status_code in PLATFORM_ERROR_CODES
 
 
 
@@ -228,7 +228,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         )
     else:
         # Track non-halting errors (platform/provider failures, not agent mistakes)
-        if is_non_halting_error(response.status_code):
+        if is_platform_error(response.status_code):
             error_hash_map.add_inference_error(request.evaluation_run_id)
 
         raise HTTPException(
@@ -321,7 +321,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
         )
     else:
         # Track non-halting errors (platform/provider failures, not agent mistakes)
-        if is_non_halting_error(response.status_code):
+        if is_platform_error(response.status_code):
             error_hash_map.add_inference_error(request.evaluation_run_id)
 
         raise HTTPException(
