@@ -8,12 +8,13 @@ import shutil
 import pathlib
 import subprocess
 import traceback
+from models.evaluation_set import InfiniteSWEProblem
 import utils.logger as logger
 
 from uuid import UUID
 from pydantic import BaseModel
 from utils.docker import get_docker_client
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
@@ -23,50 +24,42 @@ from swebench.harness.test_spec.test_spec import TestSpec
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
-from evaluator.problem_suites.problem_suite import ProblemSuite
-from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit#, verify_commit_exists_in_local_repo
-from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus, ProblemSuiteName
+from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
+from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit, verify_commit_exists_in_local_repo
+from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from validator.http_utils import get_ridges_platform
 
 from helpers import _swebench_verified_difficulty_to_problem_difficulty
 
-# /evaluator/datasets/swebench_verified
-SWEBENCH_VERIFIED_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "swebench_verified")
+INFINITE_SWE_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "infinite_swe")
 
 
-
-class SWEBenchVerifiedEvaluationSandbox(BaseModel):
+class InfiniteSWEEvaluationSandbox(BaseModel):
     evaluation_run_id: UUID
     test_spec: TestSpec
     pred: Dict[str, Any]
     timeout_seconds: int
 
 
-class SWEBenchVerifiedProblem(Problem):
+class InfiniteSWEProblem(Problem):
     swebench_instance: SWEbenchInstance
-    
 
-class SWEBenchVerifiedSuite(ProblemSuite):
-    problems: Dict[str, SWEBenchVerifiedProblem]
+
+class InfiniteSWESuite(ProblemSuite):
+    problems: Dict[str, InfiniteSWEProblem]
 
     def __init__(self):
         self.problems = {}
-        self.name = ProblemSuiteName.swebench_verified
-        
+        self.name = ProblemSuiteName.infinite_swe
 
-    async def setup(self) -> None:
-        logger.info(f"Loading problems from {SWEBENCH_VERIFIED_DATASET_PATH}...")
-        
-        # Make sure the swebench_verified.json file exists
-        json_path = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "swebench_verified.json")
-        if not os.path.exists(json_path):
-            logger.fatal(f"swebench_verified.json not found at: {json_path}")
+    async def setup(self):
+        # Get problem list from platform
+        logger.info(f"Getting problem list from platform...")
+        problems_data = await get_ridges_platform("/validator/infinite-swe-problems", quiet=1)
+        problems_list = [InfiniteSWEProblem(**problem) for problem in problems_data["problems"]]
+
+        logger.debug(f"Loaded {len(problems_list)} problems")
             
-        # Open the swebench_verified.json file
-        with open(json_path, "r") as f:
-            problems_list = json.load(f)
-        
-        logger.debug(f"Loaded {len(problems_list)} problems from {json_path}")
-        
         # Count unique repositories
         unique_repos = set()
         for problem in problems_list:
@@ -74,8 +67,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         
         logger.debug(f"Finding {len(unique_repos)} unique repositories...")
         
-        # Check that all repositories exist in the repos/ directory
-        repos_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos")
+        # Check for missing repositories, clone if necessary
+        repos_dir = os.path.join(INFINITE_SWE_DATASET_PATH, "repos")
         if not os.path.exists(repos_dir):
             os.makedirs(repos_dir, exist_ok=True)
         
@@ -94,28 +87,20 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Found {len(unique_repos)} unique repositories")
         
         # Process each problem
-        num_skipped_problems = 0
         for problem in problems_list:
             problem_name = problem.get("instance_id")
             
-            # repo = problem.get("repo")
-            # base_commit = problem.get("base_commit")
+            repo = problem.get("repo")
+            base_commit = problem.get("base_commit")
             
-            # # Verify commit exists in repository
-            # repo_dir_name = repo.replace("/", "_")
-            # repo_path = os.path.join(repos_dir, repo_dir_name)
+            # Verify commit exists in repository
+            repo_dir_name = repo.replace("/", "_")
+            repo_path = os.path.join(repos_dir, repo_dir_name)
         
-            # if not verify_commit_exists_in_local_repo(repo_path, base_commit):
-            #     logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
+            if not verify_commit_exists_in_local_repo(repo_path, base_commit):
+                logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
 
-            # # Skip non-arm64 problems
-            # architecture = make_test_spec(SWEbenchInstance(problem)).arch
-            # if architecture != "arm64":
-            #     num_skipped_problems += 1
-            #     logger.warning(f"Problem {problem_name} is not an arm64 problem (is {architecture}), skipping (skipped {num_skipped_problems} problem(s) so far)")
-            #     continue
-
-            self._add_problem(SWEBenchVerifiedProblem(
+            self._add_problem(InfiniteSWEProblem(
                 name=problem_name,
                 difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
 
@@ -127,13 +112,15 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
             # logger.debug(f"Problem {problem_name} verified successfully")
         
-        logger.info(f"Successfully loaded {len(self.problems)} problems from {SWEBENCH_VERIFIED_DATASET_PATH}")
+        logger.info(f"Successfully loaded {len(self.problems)} problems from {INFINITE_SWE_DATASET_PATH}")
+
+
 
 
 
     def copy_problem_files_to_directory(
         self,
-        problem: SWEBenchVerifiedProblem,
+        problem: InfiniteSWEProblem,
         dir: str,
         *,
         include_tests: bool = False # TODO ADAM
@@ -144,7 +131,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         commit_hash = swebench_instance.get("base_commit")
 
         # Convert repository format from "owner/name" to directory name format "owner_name"
-        local_repo_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos", repo.replace("/", "_"))
+        local_repo_dir = os.path.join(INFINITE_SWE_DATASET_PATH, "repos", repo.replace("/", "_"))
 
         # Self-heal
         health_check = subprocess.run(
@@ -153,7 +140,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
             text=True,
         )
         if health_check.returncode != 0:
-            logger.warning(f"Repairing SWE-Bench mirror for {repo} at {local_repo_dir}")
+            logger.warning(f"Repairing Infinite SWE repository for {repo} at {local_repo_dir}")
             shutil.rmtree(local_repo_dir, ignore_errors=True)
             clone_repo(f"https://github.com/{repo}.git", local_repo_dir)
         
@@ -167,11 +154,11 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def initialize_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        problem: SWEBenchVerifiedProblem,
+        problem: InfiniteSWEProblem,
         evaluation_run_id: UUID,
         patch: str,
         timeout_seconds: int
-    ) -> SWEBenchVerifiedEvaluationSandbox:
+    ) -> InfiniteSWEEvaluationSandbox:
         try:
             # Create temporary directory
             temp_dir = create_temp_dir()
@@ -195,7 +182,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
                 "instance_id": problem.name
             }
 
-            return SWEBenchVerifiedEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred, timeout_seconds=timeout_seconds)
+            return InfiniteSWEEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred, timeout_seconds=timeout_seconds)
         
         except EvaluationRunException:
             raise
@@ -215,8 +202,8 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     def run_eval_sandbox(
         self,
         sandbox_manager: SandboxManager,
-        eval_sandbox: SWEBenchVerifiedEvaluationSandbox,
-    ) -> Tuple[List[ProblemTestResult], str]:
+        eval_sandbox: InfiniteSWEEvaluationSandbox,
+    ) -> tuple[list[ProblemTestResult], str]:
         try:
             instance_id, report = run_instance(
                 test_spec=eval_sandbox.test_spec,
@@ -257,7 +244,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
     
 
 
-    def prebuild_problem_images(self, problem_names: List[str]):
+    def prebuild_problem_images(self, problem_names: list[str]):
         MAX_WORKERS = 4
 
         problem_names = sorted({name for name in problem_names if self.has_problem_name(name)})
@@ -308,4 +295,4 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
 
 
-SWEBENCH_VERIFIED_SUITE = SWEBenchVerifiedSuite()
+INFINITE_SWE_SUITE = InfiniteSWESuite()

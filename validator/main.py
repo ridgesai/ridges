@@ -1,4 +1,5 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
+from evaluator.problem_suites.problem_suite import ProblemSuite
 from validator.set_weights import set_weights_from_mapping
 
 import os
@@ -14,7 +15,7 @@ import validator.config as config
 
 from typing import Any, Dict
 from api.endpoints.validator_models import *
-from models.problem import ProblemSuiteName, ProblemTestResultStatus
+from models.problem import Problem, ProblemSuiteName, ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
 from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
@@ -24,7 +25,7 @@ from validator.http_utils import get_ridges_platform, post_ridges_platform
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
 from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
-
+from evaluator.problem_suites.infinite_swe.infinite_swe_suite import INFINITE_SWE_SUITE
 
 
 # The session ID for this validator
@@ -349,7 +350,7 @@ async def main():
     sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
 
     # Load all problem suites
-    problem_suites: list[ProblemSuite] = [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
+    problem_suites: list[ProblemSuite] = [INFINITE_SWE_SUITE] #[POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
     await asyncio.gather(*[asyncio.to_thread(problem_suite.setup) for problem_suite in problem_suites])
 
     # Get all the problems in the latest set
@@ -362,6 +363,10 @@ async def main():
             [prob.problem_name for prob in latest_set_problems if prob.problem_suite_name == ProblemSuiteName.swebench_verified]
         )
     )
+    await asyncio.to_thread(
+        INFINITE_SWE_SUITE.prebuild_problem_images(
+            [prob.problem_name for prob in latest_set_problems if prob.problem_suite_name == ProblemSuiteName.infinite_swe]
+        )
     )
 
     # Start the send heartbeat loop

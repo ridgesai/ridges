@@ -1,7 +1,8 @@
 from typing import List
 from datetime import datetime
+from uuid import UUID
 from utils.database import db_operation, DatabaseConnection
-from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
+from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem, RawInfiniteSWEProblem
 
 
 
@@ -44,3 +45,15 @@ async def get_all_evaluation_set_problems_for_set_id(conn: DatabaseConnection, s
     )
 
     return [EvaluationSetProblem(**result) for result in results]
+
+@db_operation
+async def get_infinite_swe_problems(conn: DatabaseConnection, infinite_swe_problem_ids: list[UUID]) -> list[RawInfiniteSWEProblem]:
+    results = await conn.fetch(
+        """
+        SELECT *
+        FROM infinite_swe_problems
+        WHERE id = ANY($1)
+        """,
+        infinite_swe_problem_ids
+    )
+    return [RawInfiniteSWEProblem(**result) for result in results]
