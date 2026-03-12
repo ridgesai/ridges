@@ -6,6 +6,7 @@ import time
 import shutil
 import pathlib
 import subprocess
+import threading
 import traceback
 import utils.logger as logger
 
@@ -44,6 +45,7 @@ def _swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Opti
 
 # /evaluator/datasets/swebench_verified
 SWEBENCH_VERIFIED_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "swebench_verified")
+SWEBENCH_MIRROR_REPAIR_LOCK = threading.Lock()
 
 
 
@@ -159,15 +161,17 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         local_repo_dir = os.path.join(SWEBENCH_VERIFIED_DATASET_PATH, "repos", repo.replace("/", "_"))
 
         # Self-heal
-        health_check = subprocess.run(
-            ["git", "-C", local_repo_dir, "show-ref", "--head"],
-            capture_output=True,
-            text=True,
-        )
-        if health_check.returncode != 0:
-            logger.warning(f"Repairing SWE-Bench mirror for {repo} at {local_repo_dir}")
-            shutil.rmtree(local_repo_dir, ignore_errors=True)
-            clone_repo(f"https://github.com/{repo}.git", local_repo_dir)
+        with SWEBENCH_MIRROR_REPAIR_LOCK:
+            health_check = subprocess.run(
+                ["git", "-C", local_repo_dir, "show-ref", "--head"],
+                capture_output=True,
+                text=True,
+            )
+            has_commit = verify_commit_exists_in_local_repo(local_repo_dir, commit_hash)
+            if health_check.returncode != 0 or not has_commit:
+                logger.warning(f"Repairing SWE-Bench mirror for {repo} at {local_repo_dir}")
+                shutil.rmtree(local_repo_dir, ignore_errors=True)
+                clone_repo(f"https://github.com/{repo}.git", local_repo_dir)
         
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
