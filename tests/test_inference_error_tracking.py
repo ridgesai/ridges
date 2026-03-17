@@ -392,3 +392,160 @@ if _can_import_app:
             assert PLATFORM_ERROR_CODES == EXPECTED_PLATFORM_ERROR_CODES
             assert is_platform_error(500)
             assert not is_platform_error(400)
+
+        async def test_reset_endpoint_clears_errors(self, client):
+            """POST /api/reset-inference-errors should clear the error count."""
+            run_id = str(uuid4())
+
+            # Add some errors
+            from uuid import UUID
+            global_error_hash_map.add_inference_error(UUID(run_id))
+            global_error_hash_map.add_inference_error(UUID(run_id))
+            assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 2
+
+            # Reset via endpoint
+            response = await client.post(f"/api/reset-inference-errors?evaluation_run_id={run_id}")
+            assert response.status_code == 200
+
+            # Errors should be cleared
+            assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 0
+
+        async def test_reset_endpoint_allows_new_inferences_after_threshold(self, client):
+            """After resetting errors, the error count is 0 so the threshold check passes."""
+            run_id = str(uuid4())
+            from uuid import UUID
+
+            with patch("inference_gateway.main.config") as mock_config:
+                mock_config.USE_DATABASE = False
+                mock_config.MAX_COST_PER_EVALUATION_RUN_USD = 10.0
+                mock_config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN = 2
+
+                # Fill up the error counter to the threshold
+                global_error_hash_map.add_inference_error(UUID(run_id))
+                global_error_hash_map.add_inference_error(UUID(run_id))
+                assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 2
+
+                # Reset errors via endpoint
+                reset_response = await client.post(f"/api/reset-inference-errors?evaluation_run_id={run_id}")
+                assert reset_response.status_code == 200
+                assert global_error_hash_map.get_inference_errors(UUID(run_id)) == 0
+
+                # Verify usage endpoint also reflects the reset
+                usage_response = await client.get(f"/api/usage?evaluation_run_id={run_id}")
+                assert usage_response.status_code == 200
+                assert usage_response.json()["inference_errors"] == 0
+
+
+
+# ---------------------------------------------------------------------------
+# Integration test: validator retry logic
+#
+# This test mocks the sandbox/problem suite to verify that the validator
+# retries a single run when inference errors exceed the threshold, rather
+# than failing the entire evaluation.
+#
+# Requires: the full validator environment (sandbox_manager, problem_suites)
+# Run with: python3 -m pytest tests/test_inference_error_tracking.py::TestValidatorRetryLogic -v
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    not os.getenv("NETUID"),
+    reason="Requires full validator environment (.env with NETUID, etc.)"
+)
+class TestValidatorRetryLogic:
+    """Tests for the validator's per-run retry behavior on platform inference errors.
+
+    These tests require the full validator environment to be configured.
+    Run with: NETUID=... python3 -m pytest tests/test_inference_error_tracking.py::TestValidatorRetryLogic -v
+    """
+
+    @pytest.fixture
+    def mock_httpx_responses(self):
+        """Create mock httpx responses for the inference gateway usage/reset endpoints."""
+        call_count = {"check": 0, "reset": 0}
+
+        class MockResponse:
+            def __init__(self, status_code, json_data=None):
+                self.status_code = status_code
+                self._json = json_data or {}
+            def json(self):
+                return self._json
+
+        class MockClient:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            async def get(self, url):
+                call_count["check"] += 1
+                # First call: errors exceed threshold (triggers retry)
+                # Second call: errors below threshold (retry succeeded)
+                if call_count["check"] == 1:
+                    return MockResponse(200, {"inference_errors": 5, "max_inference_errors": 5})
+                return MockResponse(200, {"inference_errors": 0, "max_inference_errors": 5})
+            async def post(self, url):
+                call_count["reset"] += 1
+                return MockResponse(200)
+
+        return MockClient, call_count
+
+    @pytest.mark.asyncio
+    async def test_retry_resets_errors_and_reruns(self, mock_httpx_responses):
+        """Validator should retry a run when inference errors exceed threshold."""
+        MockClient, call_count = mock_httpx_responses
+        from unittest.mock import AsyncMock, patch, MagicMock
+        from uuid import uuid4
+        from models.problem import ProblemTestResultStatus
+        from models.evaluation_run import EvaluationRunStatus
+
+        run_id = uuid4()
+        problem_name = "test-problem"
+        agent_code = "print('hello')"
+        run_count = {"value": 0}
+
+        # Mock problem suite
+        mock_suite = MagicMock()
+        mock_suite.has_problem_name.return_value = True
+        mock_suite.get_problem.return_value = MagicMock()
+        mock_suite.initialize_agent_sandbox.return_value = MagicMock()
+        mock_suite.run_agent_sandbox.return_value = ("patch content", "agent logs")
+        mock_suite.initialize_eval_sandbox.return_value = MagicMock()
+
+        mock_test_result = MagicMock()
+        mock_test_result.status = ProblemTestResultStatus.PASS
+        mock_test_result.model_dump.return_value = {"status": "pass", "name": "test"}
+        mock_suite.run_eval_sandbox.return_value = ([mock_test_result], "eval logs")
+
+        # Track how many times the agent sandbox is initialized (= number of attempts)
+        original_init = mock_suite.initialize_agent_sandbox
+        def counting_init(*args, **kwargs):
+            run_count["value"] += 1
+            return original_init(*args, **kwargs)
+        mock_suite.initialize_agent_sandbox.side_effect = counting_init
+
+        # Import and patch
+        import validator.main as val_main
+
+        updates = []
+        async def mock_update(eid, pname, status, extra=None):
+            updates.append((status, extra))
+
+        with patch.object(val_main, "problem_suites", [mock_suite]), \
+             patch.object(val_main, "sandbox_manager", MagicMock()), \
+             patch.object(val_main, "running_agent_timeout_seconds", 60), \
+             patch.object(val_main, "running_eval_timeout_seconds", 60), \
+             patch.object(val_main, "update_evaluation_run", mock_update), \
+             patch.object(val_main, "truncate_logs_if_required", lambda x: x), \
+             patch("httpx.AsyncClient", MockClient):
+
+            await val_main._run_evaluation_run(run_id, problem_name, agent_code)
+
+        # Should have been called twice (first attempt + one retry)
+        assert run_count["value"] == 2, f"Expected 2 attempts, got {run_count['value']}"
+        # Should have reset errors once
+        assert call_count["reset"] == 1, f"Expected 1 reset call, got {call_count['reset']}"
+        # Should have checked errors twice
+        assert call_count["check"] == 2, f"Expected 2 check calls, got {call_count['check']}"
+        # Final status should be finished (not error)
+        final_status = updates[-1][0]
+        assert final_status == EvaluationRunStatus.finished, f"Expected finished, got {final_status}"
