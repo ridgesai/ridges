@@ -1,26 +1,52 @@
+pid /sandbox-proxy/nginx.pid;
+
 events {}
 
 http {
     # Use a public DNS resolver for upstream name resolution
     resolver 1.1.1.1 1.0.0.1 ipv6=off;
 
+    client_body_temp_path /sandbox-proxy/client_temp;
+    proxy_temp_path /sandbox-proxy/proxy_temp;
+    fastcgi_temp_path /sandbox-proxy/fastcgi_temp;
+    uwsgi_temp_path /sandbox-proxy/uwsgi_temp;
+    scgi_temp_path /sandbox-proxy/scgi_temp;
+
+    limit_req_zone $binary_remote_addr zone=agent:10m rate=30r/s;
+
     server {
-        listen 80;
+        listen 8080;
+
+        proxy_set_header Host $GATEWAY_HOST;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+
+        # Ensure TLS SNI to Cloudflare/origin matches the hostname
+        #proxy_ssl_server_name on;
+        #proxy_ssl_name $GATEWAY_HOST;
+
+        location /api/inference {
+            limit_req zone=agent burst=10 nodelay;
+            proxy_pass $GATEWAY_URL/api/inference;
+        }
+
+        location /api/embedding {
+            limit_req zone=agent burst=10 nodelay;
+            proxy_pass $GATEWAY_URL/api/embedding;
+        }
+
+        location /api/usage {
+            limit_req zone=agent burst=10 nodelay;
+            proxy_pass $GATEWAY_URL/api/usage;
+        }
 
         location / {
-            proxy_pass $GATEWAY_URL;
-            proxy_set_header Host $GATEWAY_HOST;
-            proxy_set_header X-Real-IP $remote_addr;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto $scheme;
-
-            proxy_connect_timeout 300s;
-            proxy_send_timeout 300s;
-            proxy_read_timeout 300s;
-
-            # Ensure TLS SNI to Cloudflare/origin matches the hostname
-            proxy_ssl_server_name on;
-            proxy_ssl_name $GATEWAY_HOST;
+            return 403 "Forbidden";
         }
     }
 }
