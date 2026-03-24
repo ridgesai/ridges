@@ -1,0 +1,36 @@
+# Attribution (MIT License): Opentensor Foundation 2026 (https://github.com/opentensor)
+# https://github.com/opentensor/bittensor/blob/bb526e6d61210ef2ee0e229f63ca5518381ff5a7/.github/workflows/ruff.yml
+
+name: Ruff - formatter check
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  ruff:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff in virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install ruff==0.15.7
+
+      - name: Ruff format check
+        run: |
+          source venv/bin/activate
+          python -m ruff format --diff .

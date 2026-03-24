@@ -25,19 +25,16 @@ dependencies = [
     "uvicorn>=0.30.5",
 ]
 
-# Python formatting and linting configuration
-[tool.black]
-line-length = 150
+dev-dependencies = [
+    "ruff==0.15.7",
+]
 
+# Python formatting and linting configuration
 [tool.flake8]
 max-line-length = 120
 
 [tool.ruff]
 line-length = 120
-
-[tool.isort]
-line_length = 120
-profile = "black"
 
 [tool.setuptools]
 py-modules = []
