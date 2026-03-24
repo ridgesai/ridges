@@ -25,7 +25,8 @@ dependencies = [
     "uvicorn>=0.30.5",
 ]
 
-dev-dependencies = [
+[project.optional-dependencies]
+dev = [
     "ruff==0.15.7",
 ]
 
