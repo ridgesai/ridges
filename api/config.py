@@ -4,10 +4,8 @@ import utils.logger as logger
 from dotenv import load_dotenv
 
 
-
 # Load everything from .env
 load_dotenv()
-
 
 
 # Load host and port
@@ -19,7 +17,6 @@ PORT = os.getenv("PORT")
 if not PORT:
     logger.fatal("PORT is not set in .env")
 PORT = int(PORT)
-
 
 
 # Load Bittensor configuration
@@ -35,7 +32,6 @@ if not SUBTENSOR_ADDRESS:
 SUBTENSOR_NETWORK = os.getenv("SUBTENSOR_NETWORK")
 if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
-
 
 
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
@@ -62,7 +58,6 @@ if DISALLOW_UPLOADS:
         logger.fatal("DISALLOW_UPLOADS_REASON is not set in .env")
 
 
-
 # Load the environment configuration
 ENV = os.getenv("ENV")
 if not ENV:
@@ -72,12 +67,11 @@ if ENV != "prod" and ENV != "dev":
     logger.fatal("ENV must be either 'prod' or 'dev'")
 
 
-
 # Load AWS configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
 if not AWS_ACCESS_KEY_ID:
     logger.fatal("AWS_ACCESS_KEY_ID is not set in .env")
-    
+
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 if not AWS_SECRET_ACCESS_KEY:
     logger.fatal("AWS_SECRET_ACCESS_KEY is not set in .env")
@@ -87,36 +81,33 @@ if not AWS_REGION:
     logger.fatal("AWS_REGION is not set in .env")
 
 
-
 # Load S3 configuration
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 if not S3_BUCKET_NAME:
     logger.fatal("S3_BUCKET_NAME is not set in .env")
 
 
-
 # Load database configuration
 DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
 if not DATABASE_USERNAME:
     logger.fatal("DATABASE_USERNAME is not set in .env")
-    
+
 DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
 if not DATABASE_PASSWORD:
     logger.fatal("DATABASE_PASSWORD is not set in .env")
-    
+
 DATABASE_HOST = os.getenv("DATABASE_HOST")
 if not DATABASE_HOST:
     logger.fatal("DATABASE_HOST is not set in .env")
-    
+
 DATABASE_PORT = os.getenv("DATABASE_PORT")
 if not DATABASE_PORT:
     logger.fatal("DATABASE_PORT is not set in .env")
 DATABASE_PORT = int(DATABASE_PORT)
-    
+
 DATABASE_NAME = os.getenv("DATABASE_NAME")
 if not DATABASE_NAME:
     logger.fatal("DATABASE_NAME is not set in .env")
-
 
 
 # Load screener configuration
@@ -140,7 +131,6 @@ if not PRUNE_THRESHOLD:
 PRUNE_THRESHOLD = float(PRUNE_THRESHOLD)
 
 
-
 # Load validator configuration
 VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS = os.getenv("VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS")
 if not VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS:
@@ -151,7 +141,6 @@ VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS = os.getenv("VALIDATOR_HEARTBEAT_TI
 if not VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS:
     logger.fatal("VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS is not set in .env")
 VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS = int(VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS)
-
 
 
 # Load validator configuration (sent to validator upon registration)
@@ -169,7 +158,6 @@ VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES = os.getenv("VALIDATOR_MAX_EVALUATIO
 if not VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES:
     logger.fatal("VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES is not set in .env")
 VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES = int(VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES)
-
 
 
 MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS = os.getenv("MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS")
@@ -190,7 +178,9 @@ SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
 FETCH_METAGRAPH_INTERVAL_SECONDS = os.getenv("FETCH_METAGRAPH_INTERVAL_SECONDS")
 if not FETCH_METAGRAPH_INTERVAL_SECONDS:
     default_fetch_metagraph_interval_seconds = 120
-    logger.warning(f"FETCH_METAGRAPH_INTERVAL_SECONDS is not set in .env, using default of {default_fetch_metagraph_interval_seconds} seconds")
+    logger.warning(
+        f"FETCH_METAGRAPH_INTERVAL_SECONDS is not set in .env, using default of {default_fetch_metagraph_interval_seconds} seconds"
+    )
     FETCH_METAGRAPH_INTERVAL_SECONDS = default_fetch_metagraph_interval_seconds
 else:
     FETCH_METAGRAPH_INTERVAL_SECONDS = int(FETCH_METAGRAPH_INTERVAL_SECONDS)

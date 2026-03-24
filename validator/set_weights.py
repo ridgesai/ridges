@@ -7,9 +7,7 @@ import validator.config as config
 from typing import Dict
 
 
-
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=[config.SUBTENSOR_ADDRESS])
-
 
 
 async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
@@ -22,7 +20,9 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
         logger.error("Expected weight of 1")
         return
 
-    weight_receiving_uid = await subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=weight_receiving_hotkey, netuid=config.NETUID)
+    weight_receiving_uid = await subtensor.get_uid_for_hotkey_on_subnet(
+        hotkey_ss58=weight_receiving_hotkey, netuid=config.NETUID
+    )
     if weight_receiving_uid is None:
         logger.error(f"Weight receiving hotkey {weight_receiving_hotkey} not found")
         return
@@ -35,7 +35,7 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
         uids=[weight_receiving_uid],
         weights=[1],
         wait_for_inclusion=True,
-        wait_for_finalization=True
+        wait_for_finalization=True,
     )
 
     if success:

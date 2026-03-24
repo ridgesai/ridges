@@ -27,9 +27,7 @@ class AcronymTest(unittest.TestCase):
 
     def test_very_long_abbreviation(self):
         self.assertEqual(
-            abbreviate(
-                "Rolling On The Floor Laughing So Hard That My Dogs Came Over And Licked Me"
-            ),
+            abbreviate("Rolling On The Floor Laughing So Hard That My Dogs Came Over And Licked Me"),
             "ROTFLSHTMDCOALM",
         )
 

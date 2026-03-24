@@ -7,7 +7,6 @@ from models.evaluation_set import EvaluationSetGroup
 from utils.database import db_operation, DatabaseConnection
 
 
-
 @db_operation
 async def top_score(conn: DatabaseConnection) -> Optional[float]:
     return await conn.fetchval("""
@@ -15,6 +14,7 @@ async def top_score(conn: DatabaseConnection) -> Optional[float]:
         WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
         AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
     """)
+
 
 @db_operation
 async def agents_created_24_hrs(conn: DatabaseConnection) -> int:
@@ -25,6 +25,7 @@ async def agents_created_24_hrs(conn: DatabaseConnection) -> int:
         AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
         AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
     """)
+
 
 @db_operation
 async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
@@ -44,9 +45,11 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
         """
     )
 
+
 class TopScoreOverTime(BaseModel):
     hour: datetime
     top_score: float
+
 
 @db_operation
 async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOverTime]:
@@ -105,12 +108,12 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
     return [TopScoreOverTime(**row) for row in rows]
 
 
-
 class PerfectlySolvedOverTime(BaseModel):
     hour: datetime
     polyglot_py: int
     polyglot_js: int
     swebench: int
+
 
 @db_operation
 async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[PerfectlySolvedOverTime]:
@@ -156,11 +159,12 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
     return [PerfectlySolvedOverTime(**row) for row in rows]
 
 
-
 # NOTE: None is returned if there are no successful evaluations for a given
-#       evaluation set group. 
+#       evaluation set group.
 @db_operation
-async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -> Dict[EvaluationSetGroup, Optional[float]]:
+async def get_average_score_per_evaluation_set_group(
+    conn: DatabaseConnection,
+) -> Dict[EvaluationSetGroup, Optional[float]]:
     rows = await conn.fetch(
         """
         SELECT
@@ -189,11 +193,12 @@ async def get_average_score_per_evaluation_set_group(conn: DatabaseConnection) -
     return result
 
 
-
 # NOTE: None is returned if there are no successful evaluations for a given
-#       evaluation set group. 
+#       evaluation set group.
 @db_operation
-async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnection) -> Dict[EvaluationSetGroup, Optional[float]]:
+async def get_average_wait_time_per_evaluation_set_group(
+    conn: DatabaseConnection,
+) -> Dict[EvaluationSetGroup, Optional[float]]:
     result = {}
 
     result[EvaluationSetGroup.screener_1] = await conn.fetchval(
@@ -262,10 +267,10 @@ async def get_average_wait_time_per_evaluation_set_group(conn: DatabaseConnectio
     return result
 
 
-
 class ProblemSetCreationTime(BaseModel):
     set_id: int
     created_at: datetime
+
 
 @db_operation
 async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[ProblemSetCreationTime]:
@@ -276,5 +281,5 @@ async def get_problem_set_creation_times(conn: DatabaseConnection) -> list[Probl
         WHERE set_id >= 6 ORDER BY set_id ASC
         """
     )
-    
+
     return [ProblemSetCreationTime(**row) for row in rows]

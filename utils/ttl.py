@@ -3,16 +3,15 @@ import utils.logger as logger
 
 from functools import wraps
 from pydantic import BaseModel, ConfigDict
-from datetime import datetime, timezone,timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Tuple, Callable, TypeAlias
-
 
 
 TTLCacheKey: TypeAlias = Tuple[Any, ...]
 
+
 def _args_and_kwargs_to_ttl_cache_key(args: Tuple, kwargs: Dict) -> TTLCacheKey:
     return (args, tuple(sorted(kwargs.items())))
-
 
 
 class TTLCacheEntry(BaseModel):
@@ -20,7 +19,6 @@ class TTLCacheEntry(BaseModel):
 
     expires_at: datetime
     value: Any
-    
 
 
 # NOTE ADAM: A robust TTL cache implementation. The implementation supports the following
@@ -54,7 +52,6 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
         cache: Dict[TTLCacheKey, TTLCacheEntry] = {}
         recalculating_locks: Dict[TTLCacheKey, asyncio.Lock] = {}
 
-
         def _evict_expired():
             """Remove all expired entries and their locks."""
             now = datetime.now(timezone.utc)
@@ -70,7 +67,6 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
                 for k, _ in by_expiry[:to_remove]:
                     del cache[k]
                     recalculating_locks.pop(k, None)
-
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -99,14 +95,14 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
                 if lock.locked():
                     logger.debug(f"[TTLCache] {func.__name__}(): First request, already calculating, started waiting")
                     async with lock:
-                        logger.debug(f"[TTLCache] {func.__name__}(): First request, already calculating, stopped waiting")
+                        logger.debug(
+                            f"[TTLCache] {func.__name__}(): First request, already calculating, stopped waiting"
+                        )
                         return cache[key].value
                 else:
                     logger.debug(f"[TTLCache] {func.__name__}(): First request, triggering calculation")
                     await _recalculate(args, kwargs)
                     return cache[key].value
-
-
 
         async def _recalculate(args: Tuple, kwargs: Dict):
             key = _args_and_kwargs_to_ttl_cache_key(args, kwargs)
@@ -114,18 +110,13 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
             async with recalculating_locks[key]:
                 if key in cache and datetime.now(timezone.utc) < cache[key].expires_at:
                     return
-                
+
                 value = await func(*args, **kwargs)
                 cache[key] = TTLCacheEntry(
-                    expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
-                    value=value
+                    expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds), value=value
                 )
                 logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
-        
-
 
         return wrapper
-    
-
 
     return decorator

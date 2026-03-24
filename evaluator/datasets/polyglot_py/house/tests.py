@@ -14,24 +14,18 @@ class HouseTest(unittest.TestCase):
         self.assertEqual(recite(1, 1), ["This is the house that Jack built."])
 
     def test_verse_two_the_malt_that_lay(self):
-        self.assertEqual(
-            recite(2, 2), ["This is the malt that lay in the house that Jack built."]
-        )
+        self.assertEqual(recite(2, 2), ["This is the malt that lay in the house that Jack built."])
 
     def test_verse_three_the_rat_that_ate(self):
         self.assertEqual(
             recite(3, 3),
-            [
-                "This is the rat that ate the malt that lay in the house that Jack built."
-            ],
+            ["This is the rat that ate the malt that lay in the house that Jack built."],
         )
 
     def test_verse_four_the_cat_that_killed(self):
         self.assertEqual(
             recite(4, 4),
-            [
-                "This is the cat that killed the rat that ate the malt that lay in the house that Jack built."
-            ],
+            ["This is the cat that killed the rat that ate the malt that lay in the house that Jack built."],
         )
 
     def test_verse_five_the_dog_that_worried(self):

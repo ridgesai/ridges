@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple
 
+
 class Point:
     def __init__(self, x: int, y: int) -> None:
         self.x = None

@@ -1,6 +1,7 @@
 import random
 
-ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
 
 class Robot:
     _used_names = set()  # Class variable to track all names globally
@@ -9,16 +10,10 @@ class Robot:
         self._name = None
 
     def prefix(self):
-        return ''.join([
-            random.choice(ALPHABET)
-            for _ in range(0, 2)
-        ])
+        return "".join([random.choice(ALPHABET) for _ in range(0, 2)])
 
     def suffix(self):
-        return ''.join([
-            str(random.choice(range(0, 10)))
-            for _ in range(0, 3)
-        ])
+        return "".join([str(random.choice(range(0, 10))) for _ in range(0, 3)])
 
     def get_name(self):
         if not self._name:

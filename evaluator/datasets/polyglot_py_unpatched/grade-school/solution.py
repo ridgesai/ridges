@@ -19,7 +19,6 @@ class School:
         else:
             self.add.append(False)
 
-
     def roster(self, grade=0):
         grades_roster = defaultdict(list)
 

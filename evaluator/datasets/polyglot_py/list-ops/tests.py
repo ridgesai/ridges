@@ -84,17 +84,13 @@ class ListOpsTest(unittest.TestCase):
         self.assertEqual(reverse([1, 3, 5, 7]), [7, 5, 3, 1])
 
     def test_reverse_list_of_lists_is_not_flattened(self):
-        self.assertEqual(
-            reverse([[1, 2], [3], [], [4, 5, 6]]), [[4, 5, 6], [], [3], [1, 2]]
-        )
+        self.assertEqual(reverse([[1, 2], [3], [], [4, 5, 6]]), [[4, 5, 6], [], [3], [1, 2]])
 
     # Additional tests for this track
 
     def test_foldr_foldr_add_string(self):
         self.assertEqual(
-            foldr(
-                lambda acc, el: el + acc, ["e", "x", "e", "r", "c", "i", "s", "m"], "!"
-            ),
+            foldr(lambda acc, el: el + acc, ["e", "x", "e", "r", "c", "i", "s", "m"], "!"),
             "exercism!",
         )
 

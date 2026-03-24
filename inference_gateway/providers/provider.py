@@ -4,13 +4,21 @@ import utils.logger as logger
 from http import HTTPStatus
 from typing import List, Optional
 from abc import ABC, abstractmethod
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, InferenceToolParameter, InferenceToolParameterType
-
+from inference_gateway.models import (
+    InferenceTool,
+    EmbeddingResult,
+    InferenceResult,
+    InferenceMessage,
+    InferenceToolMode,
+    EmbeddingModelInfo,
+    InferenceModelInfo,
+    InferenceToolParameter,
+    InferenceToolParameterType,
+)
 
 
 NUM_INFERENCE_CHARS_TO_LOG = 30
 NUM_EMBEDDING_CHARS_TO_LOG = 30
-
 
 
 # my_provider = Provider().init()
@@ -20,8 +28,6 @@ class Provider(ABC):
 
         self.inference_models = []
         self.embedding_models = []
-
-
 
     # Abstract methods
 
@@ -37,20 +43,13 @@ class Provider(ABC):
         temperature: float,
         messages: List[InferenceMessage],
         tool_mode: InferenceToolMode,
-        tools: Optional[List[InferenceTool]]
+        tools: Optional[List[InferenceTool]],
     ) -> InferenceResult:
         pass
 
     @abstractmethod
-    async def _embedding(
-        self,
-        *,
-        model_info: EmbeddingModelInfo,
-        input: str
-    ) -> EmbeddingResult:
+    async def _embedding(self, *, model_info: EmbeddingModelInfo, input: str) -> EmbeddingResult:
         pass
-
-
 
     # Inference
 
@@ -65,21 +64,25 @@ class Provider(ABC):
             response = await self.inference(
                 model_name=model_name,
                 temperature=0.5,
-                messages=[InferenceMessage(role="user", content="Please use the print(str) tool to say something cool.")],
+                messages=[
+                    InferenceMessage(role="user", content="Please use the print(str) tool to say something cool.")
+                ],
                 tool_mode=InferenceToolMode.REQUIRED,
-                tools=[InferenceTool(
-                    name="print",
-                    description="Print a string",
-                    parameters=[InferenceToolParameter(
-                        name="str",
-                        description="The string to print",
-                        type=InferenceToolParameterType.STRING
-                    )]
-                )]
+                tools=[
+                    InferenceTool(
+                        name="print",
+                        description="Print a string",
+                        parameters=[
+                            InferenceToolParameter(
+                                name="str", description="The string to print", type=InferenceToolParameterType.STRING
+                            )
+                        ],
+                    )
+                ],
             )
 
             return response.status_code == 200
-        
+
         logger.info(f"Testing all {self.name} inference models...")
 
         tasks = [test_inference_model(model.name) for model in self.inference_models]
@@ -88,9 +91,9 @@ class Provider(ABC):
         if all(results):
             logger.info(f"Tested all {self.name} inference models")
         else:
-            logger.fatal(f"Failed to test {self.name} inference models: {', '.join([str(model.name) + ' (' + str(model.external_name) + ')' for model, result in zip(self.inference_models, results) if not result])}")
-
-
+            logger.fatal(
+                f"Failed to test {self.name} inference models: {', '.join([str(model.name) + ' (' + str(model.external_name) + ')' for model, result in zip(self.inference_models, results) if not result])}"
+            )
 
     async def inference(
         self,
@@ -99,25 +102,29 @@ class Provider(ABC):
         temperature: float,
         messages: List[InferenceMessage],
         tool_mode: InferenceToolMode = InferenceToolMode.NONE,
-        tools: Optional[List[InferenceTool]] = None
+        tools: Optional[List[InferenceTool]] = None,
     ) -> InferenceResult:
         # Log the request
-        request_first_chars = messages[-1].content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ''
-        logger.info(f"--> Inference Request {self.name}:{model_name} ({sum(len(message.content) for message in messages)} char(s)): '{request_first_chars}'...")
+        request_first_chars = messages[-1].content.replace("\n", "")[:NUM_INFERENCE_CHARS_TO_LOG] if messages else ""
+        logger.info(
+            f"--> Inference Request {self.name}:{model_name} ({sum(len(message.content) for message in messages)} char(s)): '{request_first_chars}'..."
+        )
 
         result = await self._inference(
             model_info=self.get_inference_model_info_by_name(model_name),
             temperature=temperature,
             messages=messages,
             tool_mode=tool_mode,
-            tools=tools
+            tools=tools,
         )
 
         # Log the response
         if result.status_code == 200:
             # 200 OK
-            result_first_chars = result.content.replace('\n', '')[:NUM_INFERENCE_CHARS_TO_LOG]
-            logger.info(f"<-- Inference Response {self.name}:{model_name} ({len(result.content)} char(s), {len(result.tool_calls)} tool call(s)): '{result_first_chars}'...")
+            result_first_chars = result.content.replace("\n", "")[:NUM_INFERENCE_CHARS_TO_LOG]
+            logger.info(
+                f"<-- Inference Response {self.name}:{model_name} ({len(result.content)} char(s), {len(result.tool_calls)} tool call(s)): '{result_first_chars}'..."
+            )
         elif result.status_code != -1:
             # 4xx or 5xx
             result.error_message = f"Inference External Error {self.name}:{model_name}: {result.status_code} {HTTPStatus(result.status_code).phrase}: {result.error_message}"
@@ -128,8 +135,6 @@ class Provider(ABC):
             logger.error(f"<-- {result.error_message}")
 
         return result
-        
-
 
     # Embedding
 
@@ -141,13 +146,10 @@ class Provider(ABC):
 
     async def test_all_embedding_models(self):
         async def test_embedding_model(model_name):
-            response = await self.embedding(
-                model_name=model_name,
-                input="Hello, world!"
-            )
+            response = await self.embedding(model_name=model_name, input="Hello, world!")
 
             return response.status_code == 200
-        
+
         logger.info(f"Testing all {self.name} embedding models...")
 
         tasks = [test_embedding_model(model.name) for model in self.embedding_models]
@@ -156,21 +158,17 @@ class Provider(ABC):
         if all(results):
             logger.info(f"Tested all {self.name} embedding models")
         else:
-            logger.fatal(f"Failed to test {self.name} embedding models: {', '.join([model.name for model, result in zip(self.embedding_models, results) if not result])}")
+            logger.fatal(
+                f"Failed to test {self.name} embedding models: {', '.join([model.name for model, result in zip(self.embedding_models, results) if not result])}"
+            )
 
-    async def embedding(
-        self,
-        *,
-        model_name: str,
-        input: str
-    ) -> EmbeddingResult:
+    async def embedding(self, *, model_name: str, input: str) -> EmbeddingResult:
         # Log the request
-        logger.info(f"--> Embedding Request {self.name}:{model_name} ({len(input)} char(s)): '{input[:NUM_INFERENCE_CHARS_TO_LOG]}'...")
-
-        result = await self._embedding(
-            model_info=self.get_embedding_model_info_by_name(model_name),
-            input=input
+        logger.info(
+            f"--> Embedding Request {self.name}:{model_name} ({len(input)} char(s)): '{input[:NUM_INFERENCE_CHARS_TO_LOG]}'..."
         )
+
+        result = await self._embedding(model_info=self.get_embedding_model_info_by_name(model_name), input=input)
 
         # Log the response
         if result.status_code == 200:

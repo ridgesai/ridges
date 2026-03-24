@@ -4,7 +4,6 @@ from enum import Enum
 from pydantic import BaseModel
 
 
-
 class EvaluationSetGroup(str, Enum):
     screener_1 = "screener_1"
     screener_2 = "screener_2"
@@ -18,7 +17,6 @@ class EvaluationSetGroup(str, Enum):
             return EvaluationSetGroup.screener_2
         else:
             return EvaluationSetGroup.validator
-
 
 
 class EvaluationSetProblem(BaseModel):

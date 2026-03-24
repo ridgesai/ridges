@@ -21,10 +21,10 @@ from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteNam
 from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
 
 
-
 class PolyglotSuiteLanguage(str, Enum):
     PYTHON = "py"
     JAVASCRIPT = "js"
+
 
 class PolyglotSuite(ProblemSuite):
     def __init__(self, language: PolyglotSuiteLanguage, unpatched: bool = False):
@@ -35,89 +35,93 @@ class PolyglotSuite(ProblemSuite):
         self.unpatched = unpatched
 
         # /evaluator/datasets/polyglot_*
-        dataset_path = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / (f"polyglot_{self.language}" + ("_unpatched" if unpatched else "")))
+        dataset_path = str(
+            pathlib.Path(__file__).parent.parent.parent
+            / "datasets"
+            / (f"polyglot_{self.language}" + ("_unpatched" if unpatched else ""))
+        )
 
         logger.info(f"Loading problems from {dataset_path}...")
-        
+
         # Find problems
         problem_names = []
         for entry in os.listdir(dataset_path):
             entry_path = os.path.join(dataset_path, entry)
             if os.path.isdir(entry_path):
                 problem_names.append(entry)
-        
+
         logger.debug(f"Found {len(problem_names)} problems")
-        
+
         # Process each problem
         for problem_name in sorted(problem_names):
             problem_dir = os.path.join(dataset_path, problem_name)
-            
+
             # Verify directory exists
             if not os.path.exists(problem_dir):
                 logger.fatal(f"Problem directory not found: {problem_name}")
-                
+
             # Check for required files
-            required_files = ["instructions.md", f"main.{self.language}", f"solution.{self.language}", f"tests.{self.language}"]
+            required_files = [
+                "instructions.md",
+                f"main.{self.language}",
+                f"solution.{self.language}",
+                f"tests.{self.language}",
+            ]
             missing_files = []
-            
+
             for required_file in required_files:
                 file_path = os.path.join(problem_dir, required_file)
                 if not os.path.exists(file_path):
                     missing_files.append(required_file)
-                    
+
             if missing_files:
                 logger.fatal(f"Problem {problem_name} missing files: {missing_files}")
-            
+
             # Read problem statement from instructions.md
             instructions_path = os.path.join(problem_dir, "instructions.md")
             with open(instructions_path, "r") as f:
                 problem_statement = f.read()
 
-
             # Calculate diff between main.* and solution.*
             main_path = os.path.join(problem_dir, f"main.{self.language}")
             solution_path = os.path.join(problem_dir, f"solution.{self.language}")
             solution_diff = get_file_diff(main_path, solution_path)
-            
-
 
             # Add the problem to the suite
-            self._add_problem(Problem(
-                name=f"{problem_name}-{self.language}",
+            self._add_problem(
+                Problem(
+                    name=f"{problem_name}-{self.language}",
+                    problem_statement=problem_statement,
+                    solution_diff=solution_diff,
+                )
+            )
 
-                problem_statement=problem_statement,
-                solution_diff=solution_diff
-            ))
-            
             logger.debug(f"Problem {problem_name} verified successfully")
-        
+
         logger.info(f"Successfully loaded {len(self.problems)} problems from {dataset_path}")
 
-
-
-    def copy_problem_files_to_directory(
-        self,
-        problem: Problem,
-        dir: str,
-        *,
-        include_tests: bool = False
-    ) -> None:
+    def copy_problem_files_to_directory(self, problem: Problem, dir: str, *, include_tests: bool = False) -> None:
         # /evaluator/datasets/polyglot_*/*
-        problem_dir = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / (f"polyglot_{self.language}" + ("_unpatched" if self.unpatched else "")) / problem.name.rsplit("-", 1)[0])
-        
+        problem_dir = str(
+            pathlib.Path(__file__).parent.parent.parent
+            / "datasets"
+            / (f"polyglot_{self.language}" + ("_unpatched" if self.unpatched else ""))
+            / problem.name.rsplit("-", 1)[0]
+        )
+
         # Copy main.*
         shutil.copy2(os.path.join(problem_dir, f"main.{self.language}"), os.path.join(dir, f"main.{self.language}"))
         logger.debug(f"Copied main.{self.language} to {dir} for {problem.name}")
 
         if include_tests:
             # Copy tests.*
-            shutil.copy2(os.path.join(problem_dir, f"tests.{self.language}"), os.path.join(dir, f"tests.{self.language}"))
+            shutil.copy2(
+                os.path.join(problem_dir, f"tests.{self.language}"), os.path.join(dir, f"tests.{self.language}")
+            )
             logger.debug(f"Copied tests.{self.language} to {dir} for {problem.name}")
 
         # Initialize git repository with initial commit
         init_local_repo_with_initial_commit(dir, "Initial commit")
-
-
 
     def initialize_eval_sandbox(
         self,
@@ -125,9 +129,10 @@ class PolyglotSuite(ProblemSuite):
         problem: Problem,
         evaluation_run_id: UUID,
         patch: str,
-        timeout_seconds: int
+        timeout_seconds: int,
     ) -> Sandbox:
         try:
+
             def _on_mount(temp_dir: str):
                 # Create /sandbox/repo directory
                 sandbox_repo_dir = os.path.join(temp_dir, "repo")
@@ -141,20 +146,18 @@ class PolyglotSuite(ProblemSuite):
                 if not is_valid:
                     raise EvaluationRunException(
                         EvaluationRunErrorCode.AGENT_INVALID_PATCH,
-                        f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
+                        f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}",
                     )
 
                 # Apply the patch
                 apply_diff_to_local_repo(patch, sandbox_repo_dir)
-
-
 
             return sandbox_manager.initialize_sandbox(
                 name=f"eval-sandbox-{problem.name}-{evaluation_run_id}",
                 script_path=os.path.join(os.path.dirname(__file__), f"TEST_RUNNER.{self.language}"),
                 env_vars={"EVAL_TIMEOUT": str(timeout_seconds)},
                 on_mount=_on_mount,
-                timeout_seconds=timeout_seconds
+                timeout_seconds=timeout_seconds,
             )
 
         except EvaluationRunException:
@@ -163,15 +166,11 @@ class PolyglotSuite(ProblemSuite):
         except Exception as e:
             raise EvaluationRunException(
                 EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
-                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}",
             )
 
-
-
     def run_eval_sandbox(
-        self,
-        sandbox_manager: SandboxManager,
-        eval_sandbox: Sandbox
+        self, sandbox_manager: SandboxManager, eval_sandbox: Sandbox
     ) -> Tuple[List[ProblemTestResult], str]:
         try:
             try:
@@ -185,16 +184,18 @@ class PolyglotSuite(ProblemSuite):
             if timed_out:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL,
-                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL.get_error_message()}: The agent exceeded the timeout of {eval_sandbox.timeout_seconds} seconds."
+                    f"{EvaluationRunErrorCode.AGENT_TIMEOUT_RUNNING_EVAL.get_error_message()}: The agent exceeded the timeout of {eval_sandbox.timeout_seconds} seconds.",
                 )
 
             if not sandbox_result_with_logs.success:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL,
-                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}"
+                    f"{EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL.get_error_message()}: {sandbox_result_with_logs.error}\n\nTraceback:\n{sandbox_result_with_logs.traceback}",
                 )
-            
-            return [ProblemTestResult(**test) for test in sandbox_result_with_logs.output], sandbox_result_with_logs.logs
+
+            return [
+                ProblemTestResult(**test) for test in sandbox_result_with_logs.output
+            ], sandbox_result_with_logs.logs
 
         except EvaluationRunException:
             raise
@@ -202,9 +203,8 @@ class PolyglotSuite(ProblemSuite):
         except Exception as e:
             raise EvaluationRunException(
                 EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL,
-                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}",
             )
-
 
 
 POLYGLOT_PY_SUITE = PolyglotSuite(PolyglotSuiteLanguage.PYTHON)

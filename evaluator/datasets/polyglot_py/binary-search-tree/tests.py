@@ -33,9 +33,7 @@ class BinarySearchTreeTest(unittest.TestCase):
             TreeNode("2", TreeNode("1", None, None), TreeNode("3", None, None)),
             TreeNode("6", TreeNode("5", None, None), TreeNode("7", None, None)),
         )
-        self.assertTreeEqual(
-            BinarySearchTree(["4", "2", "6", "1", "3", "5", "7"]).data(), expected
-        )
+        self.assertTreeEqual(BinarySearchTree(["4", "2", "6", "1", "3", "5", "7"]).data(), expected)
 
     def test_can_sort_single_number(self):
         expected = ["2"]
@@ -55,9 +53,7 @@ class BinarySearchTreeTest(unittest.TestCase):
 
     def test_can_sort_complex_tree(self):
         expected = ["1", "2", "3", "5", "6", "7"]
-        self.assertEqual(
-            BinarySearchTree(["2", "1", "3", "6", "7", "5"]).sorted_data(), expected
-        )
+        self.assertEqual(BinarySearchTree(["2", "1", "3", "6", "7", "5"]).sorted_data(), expected)
 
     # Utilities
     def assertTreeEqual(self, tree_one, tree_two):

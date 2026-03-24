@@ -20,9 +20,9 @@ def BuildTree(records: list[Record]) -> Node | None:
     ordered_id = [i.record_id for i in records]
     if records:
         if ordered_id[-1] != len(ordered_id) - 1:
-            raise ValueError('Record id is invalid or out of order.')
+            raise ValueError("Record id is invalid or out of order.")
         if ordered_id[0] != 0:
-            raise ValueError('Record id is invalid or out of order.')
+            raise ValueError("Record id is invalid or out of order.")
     trees = []
     parent = {}
     for i in range(len(ordered_id)):
@@ -35,7 +35,7 @@ def BuildTree(records: list[Record]) -> Node | None:
                     raise ValueError("Node parent_id should be smaller than it's record_id.")
                 if j.record_id == j.parent_id:
                     if j.record_id != 0:
-                        raise ValueError('Only root should have equal record and parent id.')
+                        raise ValueError("Only root should have equal record and parent id.")
                 trees.append(Node(ordered_id[i]))
     for i in range(len(ordered_id)):
         for j in trees:

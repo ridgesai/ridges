@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 class Cipher:
     def __init__(self, key: Optional[str] = None) -> None:
         pass

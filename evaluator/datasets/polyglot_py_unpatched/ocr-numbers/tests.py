@@ -25,9 +25,7 @@ class OcrNumbersTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             convert([" _ ", "| |", "   "])
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "Number of input lines is not a multiple of four"
-        )
+        self.assertEqual(err.exception.args[0], "Number of input lines is not a multiple of four")
 
     def test_input_with_a_number_of_columns_that_is_not_a_multiple_of_three_raises_an_error(
         self,
@@ -35,9 +33,7 @@ class OcrNumbersTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             convert(["    ", "   |", "   |", "    "])
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "Number of input columns is not a multiple of three"
-        )
+        self.assertEqual(err.exception.args[0], "Number of input columns is not a multiple of three")
 
     def test_recognizes_110101100(self):
         self.assertEqual(

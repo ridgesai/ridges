@@ -5,7 +5,6 @@ import utils.logger as logger
 from api.endpoints.validator import delete_validators_that_have_not_sent_a_heartbeat
 
 
-
 async def validator_heartbeat_timeout_loop():
     logger.info("Starting validator heartbeat timeout loop...")
 

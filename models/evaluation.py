@@ -7,12 +7,10 @@ from models.evaluation_run import EvaluationRun
 from models.evaluation_set import EvaluationSetGroup
 
 
-
 class EvaluationStatus(str, Enum):
-    success = 'success'
-    running = 'running'
-    failure = 'failure'
-
+    success = "success"
+    running = "running"
+    failure = "failure"
 
 
 class Evaluation(BaseModel):
@@ -24,9 +22,9 @@ class Evaluation(BaseModel):
     created_at: datetime
     finished_at: Optional[datetime] = None
 
+
 class EvaluationWithRuns(Evaluation):
     runs: list[EvaluationRun]
-
 
 
 class HydratedEvaluation(Evaluation):

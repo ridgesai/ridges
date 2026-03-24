@@ -11,7 +11,6 @@ from utils.database import db_operation, DatabaseConnection
 from models.agent import Agent, AgentStatus, AgentScored, BenchmarkAgentScored, PossiblyBenchmarkAgent
 
 
-
 @db_operation
 async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow(
@@ -21,7 +20,7 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
         WHERE agent_id = $1
         LIMIT 1
         """,
-        agent_id
+        agent_id,
     )
 
     if result is None:
@@ -29,8 +28,11 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
 
     return Agent(**result)
 
+
 @db_operation
-async def get_possibly_benchmark_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[PossiblyBenchmarkAgent]:
+async def get_possibly_benchmark_agent_by_id(
+    conn: DatabaseConnection, agent_id: UUID
+) -> Optional[PossiblyBenchmarkAgent]:
     result = await conn.fetchrow(
         """
         SELECT
@@ -42,14 +44,13 @@ async def get_possibly_benchmark_agent_by_id(conn: DatabaseConnection, agent_id:
         WHERE a.agent_id = $1
         LIMIT 1
         """,
-        agent_id
+        agent_id,
     )
-    
+
     if result is None:
         return None
-    
-    return PossiblyBenchmarkAgent(**result)
 
+    return PossiblyBenchmarkAgent(**result)
 
 
 @db_operation
@@ -63,14 +64,13 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
             ) LIMIT 1
         )
         """,
-        evaluation_run_id
+        evaluation_run_id,
     )
-    
+
     if result is None:
         return None
 
     return Agent(**result)
-
 
 
 @db_operation
@@ -81,11 +81,10 @@ async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey:
         WHERE miner_hotkey = $1
         ORDER BY created_at DESC
         """,
-        miner_hotkey
+        miner_hotkey,
     )
-    
-    return [Agent(**agent) for agent in result]
 
+    return [Agent(**agent) for agent in result]
 
 
 @db_operation
@@ -97,18 +96,19 @@ async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotk
         ORDER BY created_at DESC
         LIMIT 1
         """,
-        miner_hotkey
+        miner_hotkey,
     )
 
     if result is None:
-        return None 
-    
+        return None
+
     return Agent(**result)
 
 
-
 @db_operation
-async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(conn: DatabaseConnection, miner_hotkey: str) -> Optional[datetime]:
+async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
+    conn: DatabaseConnection, miner_hotkey: str
+) -> Optional[datetime]:
     result = await conn.fetchval(
         """
         SELECT MAX(a.created_at)
@@ -116,11 +116,10 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(conn: Da
         WHERE a.miner_hotkey = $1
         AND a.created_at > (SELECT MAX(created_at) FROM evaluation_sets)
         """,
-        miner_hotkey
+        miner_hotkey,
     )
-    
-    return result
 
+    return result
 
 
 @db_operation
@@ -140,7 +139,6 @@ async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) 
     )
 
 
-
 @db_operation
 async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: AgentStatus) -> None:
     await conn.execute(
@@ -150,9 +148,8 @@ async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: 
         WHERE agent_id = $1
         """,
         agent_id,
-        status.value
+        status.value,
     )
-
 
 
 @db_operation
@@ -172,21 +169,12 @@ async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentS
     return [BenchmarkAgentScored(**agent) for agent in result]
 
 
-
-
-
-
-
-
-
-
-
 # TODO ADAM: fix this section
+
 
 @db_operation
 async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, success: bool, **kwargs) -> None:
     # TODO ADAM: gross
-
 
     """Record an upload attempt in the upload_attempts table."""
     try:
@@ -194,23 +182,28 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
             """INSERT INTO upload_attempts (upload_type, success, hotkey, agent_name, filename,
                                             file_size_bytes, ip_address, error_type, error_message, ban_reason, http_status_code, agent_id)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)""",
-            upload_type, success, kwargs.get('hotkey'), kwargs.get('agent_name'), kwargs.get('filename'),
-            kwargs.get('file_size_bytes'), kwargs.get('ip_address'), kwargs.get('error_type'),
-            kwargs.get('error_message'), kwargs.get('ban_reason'), kwargs.get('http_status_code'), kwargs.get('agent_id')
+            upload_type,
+            success,
+            kwargs.get("hotkey"),
+            kwargs.get("agent_name"),
+            kwargs.get("filename"),
+            kwargs.get("file_size_bytes"),
+            kwargs.get("ip_address"),
+            kwargs.get("error_type"),
+            kwargs.get("error_message"),
+            kwargs.get("ban_reason"),
+            kwargs.get("http_status_code"),
+            kwargs.get("agent_id"),
         )
-        logger.debug(f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}")
+        logger.debug(
+            f"Recorded upload attempt: type={upload_type}, success={success}, error_type={kwargs.get('error_type')}"
+        )
     except Exception as e:
         logger.error(f"Failed to record upload attempt: {e}")
 
 
-
-
 @db_operation
-async def get_top_agents(
-    conn: DatabaseConnection, 
-    number_of_agents: int = 10,
-    page: int = 1
-) -> list[AgentScored]:
+async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
     # TODO ADAM: this query was supposed to be fixed to remove the pagination concept
     # TODO ADAM: maybe edge case bugs here if pagenum is 0,negative,or too high etc
     offset = (page - 1) * number_of_agents
@@ -222,7 +215,9 @@ async def get_top_agents(
         and agent_id not in (select agent_id from benchmark_agent_ids)
         order by round(final_score::numeric, 6) desc, created_at asc
         limit $1 offset $2
-        """, number_of_agents, offset
+        """,
+        number_of_agents,
+        offset,
     )
 
     return [AgentScored(**agent) for agent in results]
@@ -252,8 +247,11 @@ async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: EvaluationS
 
     return [Agent(**agent) for agent in queue]
 
+
 @db_operation
-async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: DatabaseConnection, validator_hotkey: str) -> Optional[UUID]:
+async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
+    conn: DatabaseConnection, validator_hotkey: str
+) -> Optional[UUID]:
     if validator_hotkey.startswith("screener-1"):
         result = await conn.fetchrow("""
             SELECT agent_id FROM screener_1_queue LIMIT 1
@@ -310,11 +308,10 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(conn: Datab
             LIMIT 1
             """,
             validator_hotkey,
-            config.NUM_EVALS_PER_AGENT
+            config.NUM_EVALS_PER_AGENT,
         )
 
     if result is None:
         return None
 
     return result["agent_id"]
-

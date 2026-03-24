@@ -27,15 +27,10 @@ from api.endpoints.statistics import router as statistics_router
 from api.endpoints.retrieval import router as retrieval_router
 
 
-
-
-
-
 import api.config as config
 
 from utils.s3 import initialize_s3, deinitialize_s3
 from utils.database import initialize_database, deinitialize_database
-
 
 
 @asynccontextmanager
@@ -46,7 +41,7 @@ async def lifespan(app: FastAPI):
         password=config.DATABASE_PASSWORD,
         host=config.DATABASE_HOST,
         port=config.DATABASE_PORT,
-        name=config.DATABASE_NAME
+        name=config.DATABASE_NAME,
     )
 
     # S3 setup
@@ -54,54 +49,34 @@ async def lifespan(app: FastAPI):
         _bucket=config.S3_BUCKET_NAME,
         region=config.AWS_REGION,
         access_key_id=config.AWS_ACCESS_KEY_ID,
-        secret_access_key=config.AWS_SECRET_ACCESS_KEY
+        secret_access_key=config.AWS_SECRET_ACCESS_KEY,
     )
 
     # Loops
-    if config.SHOULD_RUN_LOOPS: # validator loops; TODO: rename env var
+    if config.SHOULD_RUN_LOOPS:  # validator loops; TODO: rename env var
         asyncio.create_task(validator_heartbeat_timeout_loop())
-        
+
     asyncio.create_task(fetch_metagraph_loop())
 
-
-
     # TODO ADAM: fix this, the error message isn't useful and it sets it to a 2xxx error when it should be a 3xxx error
-    await set_all_unfinished_evaluation_runs_to_errored(
-        error_message="Platform crashed while running this evaluation"
-    )
-
+    await set_all_unfinished_evaluation_runs_to_errored(error_message="Platform crashed while running this evaluation")
 
     yield
-
-
 
     await deinitialize_database()
     await deinitialize_s3()
 
 
-
 app = FastAPI(lifespan=lifespan)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", 'https://www.ridges.ai'],
+    allow_origins=["http://localhost:3000", "https://www.ridges.ai"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
 app.include_router(upload_router, prefix="/upload")

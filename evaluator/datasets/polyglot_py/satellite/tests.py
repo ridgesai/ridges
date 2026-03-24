@@ -55,9 +55,7 @@ class SatelliteTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             tree_from_traversals(preorder, inorder)
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "traversals must have the same elements"
-        )
+        self.assertEqual(err.exception.args[0], "traversals must have the same elements")
 
     def test_reject_traversals_with_repeated_items(self):
         preorder = ["a", "b", "a"]

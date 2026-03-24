@@ -4,10 +4,7 @@ from fastapi import APIRouter, HTTPException
 from queries.agent import get_agent_by_evaluation_run_id
 
 
-
-
 router = APIRouter()
-
 
 
 # /agent/get-by-evaluation-run-id?evaluation_run_id=

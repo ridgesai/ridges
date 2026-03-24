@@ -63,14 +63,10 @@ class MinesweeperTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             annotate([" ", "*  ", "  "])
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "The board is invalid with current input."
-        )
+        self.assertEqual(err.exception.args[0], "The board is invalid with current input.")
 
     def test_invalid_char(self):
         with self.assertRaises(ValueError) as err:
             annotate(["X  * "])
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "The board is invalid with current input."
-        )
+        self.assertEqual(err.exception.args[0], "The board is invalid with current input.")

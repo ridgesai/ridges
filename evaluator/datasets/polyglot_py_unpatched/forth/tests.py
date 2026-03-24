@@ -24,17 +24,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["+"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_addition_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 +"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_addition_more_than_two_values_on_the_stack(self):
         self.assertEqual(evaluate(["1 2 3 +"]), [1, 5])
@@ -46,17 +42,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["-"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_subtraction_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 -"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_subtraction_more_than_two_values_on_the_stack(self):
         self.assertEqual(evaluate(["1 12 3 -"]), [1, 9])
@@ -68,17 +60,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["*"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_multiplication_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 *"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_multiplication_more_than_two_values_on_the_stack(self):
         self.assertEqual(evaluate(["1 2 3 *"]), [1, 6])
@@ -100,17 +88,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["/"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_division_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 /"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_division_more_than_two_values_on_the_stack(self):
         self.assertEqual(evaluate(["1 12 3 /"]), [1, 4])
@@ -137,9 +121,7 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["dup"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_drop_removes_the_top_value_on_the_stack_if_it_is_the_only_one(self):
         self.assertEqual(evaluate(["1 drop"]), [])
@@ -151,9 +133,7 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["drop"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_swap_swaps_the_top_two_values_on_the_stack_if_they_are_the_only_ones(self):
         self.assertEqual(evaluate(["1 2 swap"]), [2, 1])
@@ -167,17 +147,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["swap"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_swap_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 swap"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_over_copies_the_second_element_if_there_are_only_two(self):
         self.assertEqual(evaluate(["1 2 over"]), [1, 2, 1])
@@ -189,17 +165,13 @@ class ForthTest(unittest.TestCase):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["over"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_over_errors_if_there_is_only_one_value_on_the_stack(self):
         with self.assertRaises(StackUnderflowError) as err:
             evaluate(["1 over"])
         self.assertEqual(type(err.exception), StackUnderflowError)
-        self.assertEqual(
-            str(err.exception.args[0]), "Insufficient number of items in stack"
-        )
+        self.assertEqual(str(err.exception.args[0]), "Insufficient number of items in stack")
 
     def test_user_defined_words_can_consist_of_built_in_words(self):
         self.assertEqual(evaluate([": dup-twice dup dup ;", "1 dup-twice"]), [1, 1, 1])
@@ -208,9 +180,7 @@ class ForthTest(unittest.TestCase):
         self.assertEqual(evaluate([": countup 1 2 3 ;", "countup"]), [1, 2, 3])
 
     def test_user_defined_words_can_override_other_user_defined_words(self):
-        self.assertEqual(
-            evaluate([": foo dup ;", ": foo dup dup ;", "1 foo"]), [1, 1, 1]
-        )
+        self.assertEqual(evaluate([": foo dup ;", ": foo dup dup ;", "1 foo"]), [1, 1, 1])
 
     def test_user_defined_words_can_override_built_in_words(self):
         self.assertEqual(evaluate([": swap dup ;", "1 swap"]), [1, 1])
@@ -219,9 +189,7 @@ class ForthTest(unittest.TestCase):
         self.assertEqual(evaluate([": + * ;", "3 4 +"]), [12])
 
     def test_user_defined_words_can_use_different_words_with_the_same_name(self):
-        self.assertEqual(
-            evaluate([": foo 5 ;", ": bar foo ;", ": foo 6 ;", "bar foo"]), [5, 6]
-        )
+        self.assertEqual(evaluate([": foo 5 ;", ": bar foo ;", ": foo 6 ;", "bar foo"]), [5, 6])
 
     def test_user_defined_words_can_define_word_that_uses_word_with_the_same_name(self):
         self.assertEqual(evaluate([": foo 10 ;", ": foo foo 1 + ;", "foo"]), [11])

@@ -1,5 +1,6 @@
 from typing import List
 
+
 def equilateral(sides: List[float]) -> bool:
     pass
 

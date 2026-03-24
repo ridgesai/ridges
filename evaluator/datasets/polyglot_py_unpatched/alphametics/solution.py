@@ -14,7 +14,7 @@ from itertools import permutations, chain, product
 
 def dig_perms(digit_set, non_zero_chars, ok_zero_chars):
     """This function creates permutations given the set of digits,
-       letters not alllowed to be 0, and letters allowed to be 0
+    letters not alllowed to be 0, and letters allowed to be 0
     """
     non_zero_count = len(non_zero_chars)  # How many letters are non-0
     ok_zero_count = len(ok_zero_chars)  # How many letters are allowed 0
@@ -43,17 +43,20 @@ def dig_perms(digit_set, non_zero_chars, ok_zero_chars):
         # first iterator with all non-0 permutations
         # second iterator with all permulations without 1 letter
         # insert 0 in all possible positions of that permutation
-        return chain(permutations(non_zero_digit_set, total_count),
-                     map(lambda iters: iters[0][:iters[1]] + (0,) + iters[0][iters[1]:],
-                         product(permutations(non_zero_digit_set, total_count - 1),
-                                 positions_list)))
+        return chain(
+            permutations(non_zero_digit_set, total_count),
+            map(
+                lambda iters: iters[0][: iters[1]] + (0,) + iters[0][iters[1] :],
+                product(permutations(non_zero_digit_set, total_count - 1), positions_list),
+            ),
+        )
 
 
 def check_rec(eqparams, trace_combo=({}, 0, set(range(10))), power=0):
     """This function recursively traces a parsed expression from lowest
-       digits to highest, generating additional digits when necessary
-       checking the digit sum is divisible by 10, carrying the multiple of 10
-       up to the next level
+    digits to highest, generating additional digits when necessary
+    checking the digit sum is divisible by 10, carrying the multiple of 10
+    up to the next level
     """
     # Basic parameters of the equation,
     # maximal digit rank
@@ -93,8 +96,7 @@ def check_rec(eqparams, trace_combo=({}, 0, set(range(10))), power=0):
         # build the dictionary for the new letters and this level
         new_dict = dict(zip(digit_letters, newdigs))
         # complete the partial sum into test sum using the current permutation
-        testsum = part_sum + sum([new_dict[caesar] * van_gogh
-                                 for caesar, van_gogh in remaining_exp])
+        testsum = part_sum + sum([new_dict[caesar] * van_gogh for caesar, van_gogh in remaining_exp])
         # check if the sum is divisible by 10
         dali, rembrandt = divmod(testsum, 10)
         if rembrandt == 0:
@@ -103,9 +105,7 @@ def check_rec(eqparams, trace_combo=({}, 0, set(range(10))), power=0):
             # proceed to the next level of recursion with
             # the same eqparams, but updated digit dictionary,
             # new carry over and remaining digits to assign
-            recurring_test = check_rec(eqparams,
-                                (new_dict, dali, remaining_digits - set(newdigs)),
-                                power + 1)
+            recurring_test = check_rec(eqparams, (new_dict, dali, remaining_digits - set(newdigs)), power + 1)
             # if the recursive call returned a non-empty dictionary
             # this means the recursion has found a solution
             # otherwise, proceed to the new permutation
@@ -117,14 +117,15 @@ def check_rec(eqparams, trace_combo=({}, 0, set(range(10))), power=0):
 
 
 def solve(puzzle):
-    """A function to solve the alphametics problem
-    """
+    """A function to solve the alphametics problem"""
     # First, split the expresion into left and right parts by ==
     # split each part into words by +
     # strip spaces fro, each word, reverse each work to
     # enumerate the digit rank from lower to higer
-    full_exp = [list(map(lambda idx: list(reversed(idx.strip())), sigmund.split('+')))
-               for sigmund in puzzle.strip().upper().split('==')]
+    full_exp = [
+        list(map(lambda idx: list(reversed(idx.strip())), sigmund.split("+")))
+        for sigmund in puzzle.strip().upper().split("==")
+    ]
     # Find the maximal lenght of the work, maximal possive digit rank or
     # the power of 10, should the < maxp
     max_digit_rank = max([len(warhol) for sigmund in full_exp for warhol in sigmund])
