@@ -34,3 +34,9 @@ jobs:
         run: |
           source venv/bin/activate
           python -m ruff format --diff .
+    
+      - name: Ruff check
+        run: |
+            source venv/bin/activate
+            python -m ruff check --diff .
+            
