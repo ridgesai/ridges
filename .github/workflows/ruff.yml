@@ -15,28 +15,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+      - name: Install Ruff
+        uses: astral-sh/ruff-action@v3.6.1
         with:
-          python-version: "3.12"
-
-      - name: Install Ruff in virtual environment
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install ruff==0.15.7
+          version: "0.15.7"
+          checksum: "2253ba7f064023def4b77aaef127756d3724e92a0fc69d666d4692f5c019af6d"
+          args: 
+            "--version"
 
       - name: Ruff format check
         run: |
-          source venv/bin/activate
-          python -m ruff format --diff .
+          ruff format --check --diff
     
-      - name: Ruff check
+      - name: Ruff lint check
         run: |
-            source venv/bin/activate
-            python -m ruff check --diff .
+          ruff check
             
