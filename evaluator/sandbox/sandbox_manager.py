@@ -55,7 +55,7 @@ class SandboxManager:
             # TODO ADAM: Send inference & embedding requests
 
             valid = True
-        except Exception as e:
+        except Exception:
             pass
 
         if not valid:

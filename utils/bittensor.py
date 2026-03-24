@@ -6,10 +6,8 @@ from typing import Set
 
 from bittensor_wallet.keypair import Keypair
 from bittensor.core.async_subtensor import AsyncSubtensor
-from bittensor_wallet.keypair import Keypair
 
 import api.config as config
-import utils.logger as logger
 
 
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)

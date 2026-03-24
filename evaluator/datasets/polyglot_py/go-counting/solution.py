@@ -58,7 +58,7 @@ class Board:
         visited = set()
         for row in range(self.height):
             for column in range(self.width):
-                if not (column, row) in visited:
+                if (column, row) not in visited:
                     owner, owned_territories = self.territory(column, row)
                     result[owner].update(owned_territories)
                     visited.update(owned_territories)

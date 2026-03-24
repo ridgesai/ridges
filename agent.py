@@ -40,7 +40,7 @@ def embedding(input):
     try:
         payload = {"run_id": RUN_ID, "input": input}
 
-        print(f"[AGENT] embedding(): Sending embedding request...")
+        print("[AGENT] embedding(): Sending embedding request...")
         response = requests.post(
             f"{SANDBOX_PROXY_URL}/api/embedding", headers={"Content-Type": "application/json"}, data=json.dumps(payload)
         )

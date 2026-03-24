@@ -192,7 +192,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
             }
 
             console.print(
-                f"\n[yellow]Payment extrinsic submitted. If something goes wrong with the upload, you can use this information to get a refund[/yellow]"
+                "\n[yellow]Payment extrinsic submitted. If something goes wrong with the upload, you can use this information to get a refund[/yellow]"
             )
             console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
             console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_idx}\n")

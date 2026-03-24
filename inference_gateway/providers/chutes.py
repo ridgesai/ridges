@@ -1,4 +1,3 @@
-from collections import defaultdict
 from types import SimpleNamespace
 import httpx
 import utils.logger as logger
@@ -86,11 +85,11 @@ class ChutesProvider(Provider):
                     f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes"
                 )
 
-            if not "text" in chutes_model["input_modalities"]:
+            if "text" not in chutes_model["input_modalities"]:
                 logger.fatal(
                     f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text input"
                 )
-            if not "text" in chutes_model["output_modalities"]:
+            if "text" not in chutes_model["output_modalities"]:
                 logger.fatal(
                     f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text output"
                 )

@@ -29,8 +29,8 @@ def verse(number):
 def main_verse(number):
     if number == 1:
         return [
-            f"One green bottle hanging on the wall,",
-            f"One green bottle hanging on the wall,",
+            "One green bottle hanging on the wall,",
+            "One green bottle hanging on the wall,",
         ]
     else:
         return [
@@ -41,6 +41,6 @@ def main_verse(number):
 
 def last_verse(number):
     if number - 1 == 1:
-        return f"There'll be one green bottle hanging on the wall."
+        return "There'll be one green bottle hanging on the wall."
     else:
         return f"There'll be {NUMBERS[number - 1]} green bottles hanging on the wall."

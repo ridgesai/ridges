@@ -298,7 +298,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         if len(problem_names) == 0:
             return
 
-        logger.info(f"Prebuilding problem images:")
+        logger.info("Prebuilding problem images:")
         for problem_name in problem_names:
             logger.info(f"  {problem_name}")
 

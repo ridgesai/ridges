@@ -44,7 +44,7 @@ def get_num_docker_containers() -> int:
 def stop_and_delete_all_docker_containers() -> None:
     docker_client = get_docker_client()
 
-    logger.info(f"Stopping and deleting all containers...")
+    logger.info("Stopping and deleting all containers...")
 
     for container in docker_client.containers.list(
         all=True, filters={"name": f"^({DOCKER_PREFIX}|{SWEBENCH_DOCKER_PREFIX})"}
@@ -67,7 +67,7 @@ def stop_and_delete_all_docker_containers() -> None:
 
     docker_client.containers.prune()
 
-    logger.info(f"Stopped and deleted all containers")
+    logger.info("Stopped and deleted all containers")
 
 
 def create_internal_docker_network(name: str) -> None:

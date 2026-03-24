@@ -29,11 +29,11 @@ def _pretty_print_httpx_error(method: str, url: str, e: httpx.HTTPStatusError):
             logger.error(textwrap.indent(response_json["detail"], "  "))
         else:
             # The response is a JSON
-            logger.error(f"Response (JSON):")
+            logger.error("Response (JSON):")
             logger.error(textwrap.indent(json.dumps(response_json, indent=2), "  "))
     except Exception:
         # The response is not a JSON
-        logger.error(f"Response:")
+        logger.error("Response:")
         logger.error(textwrap.indent(e.response.text, "  "))
 
 

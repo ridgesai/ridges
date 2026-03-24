@@ -14,7 +14,7 @@ COLORS_TOLERANCE = {
 
 def resistor_label(colors):
     if len(colors) == 1:
-        return f"0 ohms"
+        return "0 ohms"
     elif len(colors) == 4:
         value = 10 * COLORS.index(colors[0]) + COLORS.index(colors[1])
         value *= 10 ** COLORS.index(colors[2])

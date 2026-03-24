@@ -1,4 +1,3 @@
-from collections import defaultdict
 from types import SimpleNamespace
 import httpx
 import utils.logger as logger
@@ -17,7 +16,6 @@ from inference_gateway.models import (
     InferenceToolMode,
     EmbeddingModelInfo,
     InferenceModelInfo,
-    EmbeddingModelPricingMode,
     inference_tools_to_openai_tools,
     inference_tool_mode_to_openai_tool_choice,
     openai_tool_calls_to_inference_tool_calls,
@@ -87,11 +85,11 @@ class OpenRouterProvider(Provider):
                     f"Whitelisted OpenRouter inference model {whitelisted_openrouter_model.openrouter_name} is not supported by OpenRouter"
                 )
 
-            if not "text" in openrouter_model["architecture"]["input_modalities"]:
+            if "text" not in openrouter_model["architecture"]["input_modalities"]:
                 logger.fatal(
                     f"Whitelisted OpenRouter inference model {whitelisted_openrouter_model.chutes_name} does not support text input"
                 )
-            if not "text" in openrouter_model["architecture"]["output_modalities"]:
+            if "text" not in openrouter_model["architecture"]["output_modalities"]:
                 logger.fatal(
                     f"Whitelisted OpenRouter inference model {whitelisted_openrouter_model.chutes_name} does not support text output"
                 )
@@ -139,11 +137,11 @@ class OpenRouterProvider(Provider):
                     f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} is not supported by OpenRouter"
                 )
 
-            if not "text" in openrouter_model["architecture"]["input_modalities"]:
+            if "text" not in openrouter_model["architecture"]["input_modalities"]:
                 logger.fatal(
                     f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support text input"
                 )
-            if not "embeddings" in openrouter_model["architecture"]["output_modalities"]:  # embeddings plural
+            if "embeddings" not in openrouter_model["architecture"]["output_modalities"]:  # embeddings plural
                 logger.fatal(
                     f"Whitelisted OpenRouter embedding model {whitelisted_openrouter_model.openrouter_name} does not support embedding output"
                 )

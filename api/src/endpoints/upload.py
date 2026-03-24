@@ -2,13 +2,11 @@ from bittensor import Subtensor
 
 import asyncio
 import os
-import pprint
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
-from numpy import meshgrid
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from api.src.utils.request_cache import hourly_cache
@@ -28,7 +26,6 @@ from api.src.utils.upload_agent_helpers import (
     check_rate_limit,
     check_signature,
     check_hotkey_registered,
-    check_file_size,
 )
 from models.agent import AgentStatus, Agent
 from utils.coingecko import get_tao_price
@@ -105,7 +102,7 @@ async def check_agent_post(
             status_code=402,
             detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO.",
         )
-    return AgentUploadResponse(status="success", message=f"Agent check successful")
+    return AgentUploadResponse(status="success", message="Agent check successful")
 
 
 @router.post(
@@ -165,7 +162,7 @@ async def post_agent(
     }
 
     try:
-        logger.debug(f"Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
+        logger.debug("Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
         if prod:

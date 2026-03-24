@@ -76,20 +76,20 @@ class TargonProvider(Provider):
                     f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} is not supported by Targon"
                 )
 
-            if not "text" in targon_model["input_modalities"]:
+            if "text" not in targon_model["input_modalities"]:
                 logger.fatal(
                     f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support text input"
                 )
-            if not "text" in targon_model["output_modalities"]:
+            if "text" not in targon_model["output_modalities"]:
                 logger.fatal(
                     f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support text output"
                 )
 
-            if not "CHAT" in targon_model["supported_endpoints"]:
+            if "CHAT" not in targon_model["supported_endpoints"]:
                 logger.fatal(
                     f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support chat endpoints"
                 )
-            if not "COMPLETION" in targon_model["supported_endpoints"]:
+            if "COMPLETION" not in targon_model["supported_endpoints"]:
                 logger.fatal(
                     f"Whitelisted Targon inference model {whitelisted_targon_model.targon_name} does not support completion endpoints"
                 )
@@ -129,16 +129,16 @@ class TargonProvider(Provider):
                     f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} is not supported by Targon"
                 )
 
-            if not "text" in targon_model["input_modalities"]:
+            if "text" not in targon_model["input_modalities"]:
                 logger.fatal(
                     f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support text input"
                 )
-            if not "embedding" in targon_model["output_modalities"]:
+            if "embedding" not in targon_model["output_modalities"]:
                 logger.fatal(
                     f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support embedding output"
                 )
 
-            if not "EMBEDDING" in targon_model["supported_endpoints"]:
+            if "EMBEDDING" not in targon_model["supported_endpoints"]:
                 logger.fatal(
                     f"Whitelisted Targon embedding model {whitelisted_targon_model.targon_name} does not support embedding endpoints"
                 )

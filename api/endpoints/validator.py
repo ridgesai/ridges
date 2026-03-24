@@ -39,7 +39,6 @@ from queries.evaluation_run import (
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
-from models.problem import ProblemTestResult
 from utils.bittensor import validate_signed_timestamp
 from utils.s3 import download_text_file_from_s3
 from utils.system_metrics import SystemMetrics
@@ -219,7 +218,7 @@ async def validator_register_as_validator(
     if (old_session_id_ := is_validator_registered(registration_request.hotkey)) is not None:
         if ip_address != SESSION_ID_TO_VALIDATOR[old_session_id_].ip_address:
             raise HTTPException(
-                status_code=409, detail=f"There is already a validator connected with the given hotkey."
+                status_code=409, detail="There is already a validator connected with the given hotkey."
             )
         else:
             # delete old session
@@ -280,7 +279,7 @@ async def validator_register_as_screener(
 
     # Ensure that the screener is not already registered
     if is_validator_registered(registration_request.name):
-        raise HTTPException(status_code=409, detail=f"There is already a screener connected with the given name.")
+        raise HTTPException(status_code=409, detail="There is already a screener connected with the given name.")
 
     # Register the screener with a new session ID
     session_id = uuid4()
@@ -321,7 +320,7 @@ async def validator_request_evaluation(
     if validator.current_evaluation_id is not None:
         raise HTTPException(
             status_code=409,
-            detail=f"This validator is already running an evaluation, and validators may only run one evaluation at a time.",
+            detail="This validator is already running an evaluation, and validators may only run one evaluation at a time.",
         )
 
     # Record a heartbeat for the validator
@@ -407,7 +406,7 @@ async def validator_update_evaluation_run(
     if validator.current_evaluation_id is None:
         raise HTTPException(
             status_code=409,
-            detail=f"This validator is not currently running an evaluation, and therefore cannot update an evaluation run.",
+            detail="This validator is not currently running an evaluation, and therefore cannot update an evaluation run.",
         )
 
     # Record a heartbeat for the validator
