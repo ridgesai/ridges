@@ -1,6 +1,5 @@
 from string import ascii_lowercase
 
-
 BLOCK_SIZE = 5
 trtbl = str.maketrans(ascii_lowercase, ascii_lowercase[::-1])
 

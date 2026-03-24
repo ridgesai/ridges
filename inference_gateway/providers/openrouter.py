@@ -1,26 +1,26 @@
-from types import SimpleNamespace
-import httpx
-import utils.logger as logger
-import inference_gateway.config as config
-
 from time import time
-from pydantic import BaseModel
+from types import SimpleNamespace
 from typing import List, Optional
-from openai import AsyncOpenAI, APIStatusError, AsyncStream
-from inference_gateway.providers.provider import Provider
+
+import httpx
+from openai import APIStatusError, AsyncOpenAI, AsyncStream
+from pydantic import BaseModel
+
+import inference_gateway.config as config
+import utils.logger as logger
 from inference_gateway.models import (
-    InferenceTool,
-    EmbeddingResult,
-    InferenceResult,
-    InferenceMessage,
-    InferenceToolMode,
     EmbeddingModelInfo,
+    EmbeddingResult,
+    InferenceMessage,
     InferenceModelInfo,
-    inference_tools_to_openai_tools,
+    InferenceResult,
+    InferenceTool,
+    InferenceToolMode,
     inference_tool_mode_to_openai_tool_choice,
+    inference_tools_to_openai_tools,
     openai_tool_calls_to_inference_tool_calls,
 )
-
+from inference_gateway.providers.provider import Provider
 
 if config.USE_OPENROUTER:
     OPENROUTER_INFERENCE_MODELS_URL = f"{config.OPENROUTER_BASE_URL}/models"  # https://openrouter.ai/api/v1/models

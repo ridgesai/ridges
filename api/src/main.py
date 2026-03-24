@@ -2,35 +2,29 @@
 
 import asyncio
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 
-from api.loops.fetch_metagraph import fetch_metagraph_loop
-from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
-
-
-from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
-from api.src.endpoints.upload import router as upload_router
-
+import api.config as config
+from api.endpoints.agent import router as agent_router
+from api.endpoints.debug import router as debug_router
+from api.endpoints.evaluation_run import router as evaluation_run_router
+from api.endpoints.evaluation_sets import router as evaluation_sets_router
+from api.endpoints.evaluations import router as evaluations_router
+from api.endpoints.retrieval import router as retrieval_router
+from api.endpoints.scoring import router as scoring_router
+from api.endpoints.statistics import router as statistics_router
 
 # NEW fixed endpoints
 from api.endpoints.validator import router as validator_router
-from api.endpoints.debug import router as debug_router
-from api.endpoints.agent import router as agent_router
-from api.endpoints.evaluation_run import router as evaluation_run_router
-from api.endpoints.evaluations import router as evaluations_router
-from api.endpoints.evaluation_sets import router as evaluation_sets_router
-from api.endpoints.scoring import router as scoring_router
-from api.endpoints.statistics import router as statistics_router
-from api.endpoints.retrieval import router as retrieval_router
-
-
-import api.config as config
-
-from utils.s3 import initialize_s3, deinitialize_s3
-from utils.database import initialize_database, deinitialize_database
+from api.loops.fetch_metagraph import fetch_metagraph_loop
+from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
+from api.src.endpoints.upload import router as upload_router
+from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
+from utils.database import deinitialize_database, initialize_database
+from utils.s3 import deinitialize_s3, initialize_s3
 
 
 @asynccontextmanager

@@ -5,18 +5,19 @@ Ridges CLI - Elegant command-line interface for managing Ridges miners and valid
 """
 
 import hashlib
-from bittensor_wallet.wallet import Wallet
-import httpx
 import os
 import subprocess
+import time
 from typing import Optional
+
+import httpx
+from bittensor import Subtensor
+from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
-from bittensor import Subtensor
-import time
 
 console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
@@ -51,8 +52,14 @@ def run_cmd(cmd: str, capture: bool = True) -> tuple[int, str, str]:
         raise
 
 
-run_cmd("uv add click")
-import click
+try:
+    import click
+except ImportError:
+    print("Installing click...")
+    run_cmd("uv add click")
+    import click
+
+    print("Click installed successfully")
 
 
 def get_or_prompt(key: str, prompt: str, default: Optional[str] = None) -> str:

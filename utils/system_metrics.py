@@ -1,8 +1,9 @@
-import psutil
-import utils.logger as logger
-
 from typing import Optional
+
+import psutil
 from pydantic import BaseModel
+
+import utils.logger as logger
 from utils.docker import get_num_docker_containers
 
 

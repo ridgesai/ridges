@@ -1,8 +1,10 @@
-from uuid import UUID
 from datetime import datetime
 from enum import Enum, IntEnum
-from pydantic import BaseModel
 from typing import List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel
+
 from models.problem import ProblemTestResult
 
 

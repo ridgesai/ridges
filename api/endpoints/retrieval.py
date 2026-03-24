@@ -1,37 +1,37 @@
 import asyncio
-
-from uuid import UUID
-from pydantic import BaseModel
-from utils.ttl import ttl_cache
 from typing import List, Optional
+from uuid import UUID
+
 from fastapi import APIRouter, HTTPException
-from utils.s3 import download_text_file_from_s3
-from models.evaluation_set import EvaluationSetGroup
-from queries.evaluation import get_evaluations_for_agent_id
-from models.evaluation import Evaluation, EvaluationWithRuns
-from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from pydantic import BaseModel
+
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from models.evaluation import Evaluation, EvaluationWithRuns
+from models.evaluation_set import EvaluationSetGroup
 from queries.agent import (
-    get_top_agents,
     get_agent_by_id,
     get_agents_in_queue,
-    get_benchmark_agents,
     get_all_agents_by_miner_hotkey,
+    get_benchmark_agents,
     get_latest_agent_for_miner_hotkey,
     get_possibly_benchmark_agent_by_id,
+    get_top_agents,
 )
+from queries.evaluation import get_evaluations_for_agent_id
+from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from queries.statistics import (
-    top_score,
+    PerfectlySolvedOverTime,
+    ProblemSetCreationTime,
     TopScoreOverTime,
     agents_created_24_hrs,
-    ProblemSetCreationTime,
-    PerfectlySolvedOverTime,
-    get_top_scores_over_time,
-    score_improvement_24_hrs,
     get_perfectly_solved_over_time,
     get_problem_set_creation_times,
+    get_top_scores_over_time,
+    score_improvement_24_hrs,
+    top_score,
 )
-
+from utils.s3 import download_text_file_from_s3
+from utils.ttl import ttl_cache
 
 router = APIRouter()
 

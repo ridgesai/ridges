@@ -5,10 +5,10 @@
 import unittest
 
 from main import (
-    Board,
-    WHITE,
     BLACK,
     NONE,
+    WHITE,
+    Board,
 )
 
 

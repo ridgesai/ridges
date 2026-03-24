@@ -1,8 +1,8 @@
 import os
-import utils.logger as logger
 
 from dotenv import load_dotenv
 
+import utils.logger as logger
 
 # Load everything from .env
 load_dotenv()

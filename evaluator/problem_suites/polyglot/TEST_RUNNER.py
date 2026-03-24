@@ -1,9 +1,8 @@
-import sys
-import json
-import unittest
-import traceback
 import importlib.util
-
+import json
+import sys
+import traceback
+import unittest
 
 repo_path = "/sandbox/repo"
 sys.path.insert(0, repo_path)
@@ -96,8 +95,8 @@ def main():
             with open("/sandbox/output.json", "w") as f:
                 json.dump(output, f, indent=2)
             print("[POLYGLOT_TEST_RUNNER] Wrote output.json")
-        except:
-            print("[POLYGLOT_TEST_RUNNER] Failed to write output.json")
+        except Exception as e:
+            print(f"[POLYGLOT_TEST_RUNNER] Failed to write output.json: {e}")
             pass
 
     print("[POLYGLOT_TEST_RUNNER] Exiting main()")

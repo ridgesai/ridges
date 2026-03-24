@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import UploadFile, HTTPException
+import httpx
 from bittensor_wallet.keypair import Keypair
+from fastapi import HTTPException, UploadFile
 
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
@@ -115,9 +116,6 @@ async def check_file_size(agent_file: UploadFile) -> str:
         return content.decode("utf-8")
     else:
         return content
-
-
-import httpx
 
 
 async def get_tao_price() -> float:

@@ -1,49 +1,65 @@
 import asyncio
 import re
-
 import time
 from datetime import datetime, timedelta, timezone
+from functools import wraps
+from http import HTTPStatus
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-
-from utils.git import COMMIT_HASH
-from utils.debug_lock import DebugLock
-from http import HTTPStatus
-from fastapi import Depends, APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
-from functools import wraps
+
 import api.config as config
 import utils.logger as logger
-from queries.agent import (
-    get_top_agents,
-    get_agent_by_id,
-    update_agent_status,
-    get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
-)
-from queries.evaluation import (
-    get_hydrated_evaluation_by_id,
-    update_evaluation_finished_at,
-    create_new_evaluation_and_evaluation_runs,
-    get_num_successful_validator_evaluations_for_agent_id,
-    update_unfinished_evaluation_runs_in_evaluation_id_to_errored,
-)
-from queries.evaluation_run import (
-    get_evaluation_run_by_id,
-    update_evaluation_run_by_id,
-    get_all_evaluation_runs_in_evaluation_id,
-    create_evaluation_run_log,
-    check_if_evaluation_run_logs_exist,
+from api.endpoints.validator_models import (
+    ConnectedValidatorInfo,
+    ScreenerRegistrationRequest,
+    ScreenerRegistrationResponse,
+    ValidatorDisconnectRequest,
+    ValidatorDisconnectResponse,
+    ValidatorFinishEvaluationRequest,
+    ValidatorFinishEvaluationResponse,
+    ValidatorHeartbeatRequest,
+    ValidatorHeartbeatResponse,
+    ValidatorRegistrationRequest,
+    ValidatorRegistrationResponse,
+    ValidatorRequestEvaluationRequest,
+    ValidatorRequestEvaluationResponse,
+    ValidatorRequestEvaluationResponseEvaluationRun,
+    ValidatorUpdateEvaluationRunRequest,
+    ValidatorUpdateEvaluationRunResponse,
 )
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRunStatus, EvaluationRunLogType
+from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
+from queries.agent import (
+    get_agent_by_id,
+    get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
+    get_top_agents,
+    update_agent_status,
+)
+from queries.evaluation import (
+    create_new_evaluation_and_evaluation_runs,
+    get_hydrated_evaluation_by_id,
+    get_num_successful_validator_evaluations_for_agent_id,
+    update_evaluation_finished_at,
+    update_unfinished_evaluation_runs_in_evaluation_id_to_errored,
+)
+from queries.evaluation_run import (
+    check_if_evaluation_run_logs_exist,
+    create_evaluation_run_log,
+    get_all_evaluation_runs_in_evaluation_id,
+    get_evaluation_run_by_id,
+    update_evaluation_run_by_id,
+)
 from utils.bittensor import validate_signed_timestamp
+from utils.debug_lock import DebugLock
+from utils.git import COMMIT_HASH
 from utils.s3 import download_text_file_from_s3
 from utils.system_metrics import SystemMetrics
-from utils.validator_hotkeys import validator_hotkey_to_name, is_validator_hotkey_whitelisted
-from api.endpoints.validator_models import *
+from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
 
 
 # A validator
@@ -217,9 +233,7 @@ async def validator_register_as_validator(
     ip_address = request.client.host if request.client else None
     if (old_session_id_ := is_validator_registered(registration_request.hotkey)) is not None:
         if ip_address != SESSION_ID_TO_VALIDATOR[old_session_id_].ip_address:
-            raise HTTPException(
-                status_code=409, detail="There is already a validator connected with the given hotkey."
-            )
+            raise HTTPException(status_code=409, detail="There is already a validator connected with the given hotkey.")
         else:
             # delete old session
             old_session_id = delete_session_by_hotkey(registration_request.hotkey)

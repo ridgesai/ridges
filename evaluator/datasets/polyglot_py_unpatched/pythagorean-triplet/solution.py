@@ -1,4 +1,4 @@
-from math import sqrt, ceil, gcd
+from math import ceil, gcd, sqrt
 
 
 def triplets_in_range(start, end):

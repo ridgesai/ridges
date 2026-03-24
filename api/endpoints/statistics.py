@@ -1,13 +1,13 @@
 import asyncio
 import datetime
-
-from pydantic import BaseModel
-from utils.ttl import ttl_cache
 from typing import List, Optional
+
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
 from queries.evaluation_set import get_latest_set_id, get_set_created_at
 from queries.problem_statistics import ProblemStatistics, get_problem_statistics
-
+from utils.ttl import ttl_cache
 
 # NOTE ADAM: Set IDs 6 and earlier still included the validator optimization
 #            of skipping all tests after the first failure, which means that

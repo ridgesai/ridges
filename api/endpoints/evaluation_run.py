@@ -1,9 +1,9 @@
 from uuid import UUID
-from fastapi import APIRouter, HTTPException
-from queries.evaluation_run import get_evaluation_run_by_id
-from models.evaluation_run import EvaluationRun, EvaluationRunLogType
-from queries.evaluation_run import get_evaluation_run_logs_by_id
 
+from fastapi import APIRouter, HTTPException
+
+from models.evaluation_run import EvaluationRun, EvaluationRunLogType
+from queries.evaluation_run import get_evaluation_run_by_id, get_evaluation_run_logs_by_id
 
 router = APIRouter()
 

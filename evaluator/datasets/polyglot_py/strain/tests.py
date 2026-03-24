@@ -1,6 +1,6 @@
 import unittest
 
-from main import keep, discard
+from main import discard, keep
 
 
 class StrainTest(unittest.TestCase):

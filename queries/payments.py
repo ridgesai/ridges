@@ -2,7 +2,7 @@ from typing import Optional
 from uuid import UUID
 
 from models.payments import Payment
-from utils.database import db_operation, DatabaseConnection
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation

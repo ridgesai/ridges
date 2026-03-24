@@ -1,43 +1,44 @@
 """The SWE-Bench Verified problem suite."""
 
-import os
 import json
-import time
-import shutil
+import os
 import pathlib
+import shutil
 import subprocess
 import threading
+import time
 import traceback
-import utils.logger as logger
-
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
+
 from pydantic import BaseModel
-from utils.docker import get_docker_client
-from typing import Any, Dict, List, Tuple, Optional
-from utils.diff import validate_diff_for_local_repo
-from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
-from utils.temp import create_temp_dir, delete_temp_dir
-from models.evaluation_run import EvaluationRunErrorCode
-from swebench.harness.test_spec.test_spec import TestSpec
-from evaluator.sandbox.sandbox_manager import SandboxManager
-from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
+from swebench.harness.run_evaluation import make_test_spec, run_instance
+from swebench.harness.test_spec.test_spec import TestSpec
+
+import utils.logger as logger
+from evaluator.models import EvaluationRunException
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from models.evaluation_run import EvaluationRunErrorCode
+from models.problem import (
+    Problem,
+    ProblemDifficulty,
+    ProblemTest,
+    ProblemTestCategory,
+    ProblemTestResult,
+    ProblemTestResultStatus,
+)
+from utils.diff import validate_diff_for_local_repo
+from utils.docker import get_docker_client
 from utils.git import (
-    clone_repo,
     clone_local_repo_at_commit,
+    clone_repo,
     reset_local_repo_to_commit,
     verify_commit_exists_in_local_repo,
 )
-from models.problem import (
-    Problem,
-    ProblemTest,
-    ProblemDifficulty,
-    ProblemTestResult,
-    ProblemTestCategory,
-    ProblemTestResultStatus,
-)
+from utils.temp import create_temp_dir, delete_temp_dir
 
 
 def _swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Optional[ProblemDifficulty]:
@@ -107,7 +108,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
         logger.debug(f"Found {len(unique_repos)} unique repositories")
 
         # Process each problem
-        num_skipped_problems = 0
+        # num_skipped_problems = 0
         for problem in problems_list:
             problem_name = problem.get("instance_id")
 

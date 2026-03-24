@@ -1,7 +1,6 @@
 import unittest
 
-from main import LinkedList, EmptyListException
-
+from main import EmptyListException, LinkedList
 
 # No canonical data available for this exercise
 

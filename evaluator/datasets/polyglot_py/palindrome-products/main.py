@@ -1,4 +1,4 @@
-from typing import Tuple, List, Optional
+from typing import List, Optional, Tuple
 
 
 def largest(min_factor: int, max_factor: int) -> Tuple[Optional[int], List[Tuple[int, int]]]:

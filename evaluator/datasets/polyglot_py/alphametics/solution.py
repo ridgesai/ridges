@@ -9,7 +9,7 @@ Also leading letters in words will be treated as non-zero digits only
 to reduce the number of permutations
 """
 
-from itertools import permutations, chain, product
+from itertools import chain, permutations, product
 
 
 def dig_perms(digit_set, non_zero_chars, ok_zero_chars):

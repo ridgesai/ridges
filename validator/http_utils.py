@@ -1,12 +1,12 @@
 import json
-import httpx
 import textwrap
-import utils.logger as logger
-import validator.config as config
-
 from typing import Any
+
+import httpx
 from pydantic import BaseModel
 
+import utils.logger as logger
+import validator.config as config
 
 # TODO ADAM: .env
 HTTP_TIMEOUT_SECONDS = 120

@@ -4,11 +4,11 @@
 
 import io
 import unittest
+from unittest import mock
 
 from main import (
     grep,
 )
-from unittest import mock
 
 FILE_TEXT = {
     "iliad.txt": """Achilles sing, O Goddess! Peleus' son;

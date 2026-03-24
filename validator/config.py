@@ -1,10 +1,10 @@
 import os
 import re
-import utils.logger as logger
 
-from dotenv import load_dotenv
 from bittensor_wallet.wallet import Wallet
+from dotenv import load_dotenv
 
+import utils.logger as logger
 
 load_dotenv()
 

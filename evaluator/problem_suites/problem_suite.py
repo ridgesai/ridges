@@ -1,19 +1,19 @@
 """Base class for problem suites."""
 
 import os
-import requests
 import traceback
-import utils.logger as logger
-
-from enum import Enum
-from uuid import UUID
-from models.problem import Problem
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, List, Tuple
-from models.problem import ProblemTestResult
+from uuid import UUID
+
+import requests
+
+import utils.logger as logger
 from evaluator.models import EvaluationRunException
-from models.evaluation_run import EvaluationRunErrorCode
 from evaluator.sandbox.sandbox_manager import Sandbox, SandboxManager
+from models.evaluation_run import EvaluationRunErrorCode
+from models.problem import Problem, ProblemTestResult
 
 
 class ProblemSuiteName(str, Enum):

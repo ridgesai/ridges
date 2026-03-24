@@ -1,11 +1,12 @@
-import asyncpg
 import json
-import utils.logger as logger
-
-from uuid import UUID, uuid4
 from typing import List, Optional
-from utils.database import db_operation, DatabaseConnection
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunLogType
+from uuid import UUID, uuid4
+
+import asyncpg
+
+import utils.logger as logger
+from models.evaluation_run import EvaluationRun, EvaluationRunLogType, EvaluationRunStatus
+from utils.database import DatabaseConnection, db_operation
 
 
 def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:

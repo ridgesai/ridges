@@ -11,7 +11,11 @@ from main import (
     foldr,
     length,
     reverse,
+)
+from main import (
     filter as list_ops_filter,
+)
+from main import (
     map as list_ops_map,
 )
 

@@ -1,7 +1,7 @@
-from string import ascii_lowercase
-from time import time
 import random
 from itertools import cycle
+from string import ascii_lowercase
+from time import time
 
 
 class Cipher:

@@ -1,7 +1,8 @@
-from typing import List
 from datetime import datetime
-from utils.database import db_operation, DatabaseConnection
+from typing import List
+
 from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation

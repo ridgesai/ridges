@@ -1,6 +1,6 @@
 import unittest
 
-from main import Record, BuildTree
+from main import BuildTree, Record
 
 
 class TreeBuildingTest(unittest.TestCase):

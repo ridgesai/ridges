@@ -1,14 +1,14 @@
-import api.config as config
-import utils.logger as logger
-
-from uuid import UUID
 from datetime import datetime
 from typing import List, Optional
-from utils.s3 import upload_text_file_to_s3
+from uuid import UUID
+
+import api.config as config
+import utils.logger as logger
+from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, DatabaseConnection
-from models.agent import Agent, AgentStatus, AgentScored, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from utils.database import DatabaseConnection, db_operation
+from utils.s3 import upload_text_file_to_s3
 
 
 @db_operation

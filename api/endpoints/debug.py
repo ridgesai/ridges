@@ -1,7 +1,7 @@
 from fastapi import APIRouter
+
 from utils.database import get_debug_query_info
 from utils.debug_lock import get_debug_lock_info
-
 
 router = APIRouter()
 

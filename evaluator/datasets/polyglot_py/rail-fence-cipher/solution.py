@@ -1,4 +1,4 @@
-from itertools import cycle, chain
+from itertools import chain, cycle
 
 
 def fence_pattern(rails, size):

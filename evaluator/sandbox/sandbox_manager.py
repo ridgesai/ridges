@@ -1,21 +1,21 @@
-import os
 import json
-import httpx
+import os
 import shutil
-import utils.logger as logger
+from typing import Any, Callable, Dict
 
-from typing import Any, Dict, Callable
-from utils.temp import create_temp_dir, delete_temp_dir
+import httpx
+
+import utils.logger as logger
 from evaluator.models import Sandbox, SandboxResultWithLogs
 from utils.docker import (
     DOCKER_PREFIX,
-    get_docker_client,
     build_docker_image,
-    create_internal_docker_network,
     connect_docker_container_to_internet,
+    create_internal_docker_network,
+    get_docker_client,
     stop_and_delete_all_docker_containers,
 )
-
+from utils.temp import create_temp_dir, delete_temp_dir
 
 SANDBOX_NETWORK_NAME = f"{DOCKER_PREFIX}-sandbox-network"
 

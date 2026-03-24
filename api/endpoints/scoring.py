@@ -1,19 +1,19 @@
-import api.config as config
+from datetime import datetime
+from typing import Dict, Optional
 
 from fastapi import APIRouter
-from datetime import datetime
 from pydantic import BaseModel
-from utils.ttl import ttl_cache
-from typing import Dict, Optional
+
+import api.config as config
 from models.evaluation_set import EvaluationSetGroup
-from utils.bittensor import check_if_hotkey_is_registered
-from queries.scores import get_weight_receiving_agent_hotkey
 from queries.evaluation_set import get_latest_set_id, get_set_created_at
+from queries.scores import get_weight_receiving_agent_hotkey
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
 )
-
+from utils.bittensor import check_if_hotkey_is_registered
+from utils.ttl import ttl_cache
 
 router = APIRouter()
 

@@ -1,6 +1,6 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-from utils.database import db_operation, DatabaseConnection
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation

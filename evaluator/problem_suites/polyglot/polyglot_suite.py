@@ -1,24 +1,23 @@
 """The Polyglot problem suite."""
 
 import os
-import shutil
 import pathlib
-import requests
+import shutil
 import traceback
-import utils.logger as logger
-
 from enum import Enum
-from uuid import UUID
 from typing import List, Tuple
-from models.problem import Problem
-from evaluator.models import Sandbox
-from models.problem import ProblemTestResult
-from evaluator.models import EvaluationRunException
-from models.evaluation_run import EvaluationRunErrorCode
-from utils.git import init_local_repo_with_initial_commit
-from evaluator.sandbox.sandbox_manager import SandboxManager
+from uuid import UUID
+
+import requests
+
+import utils.logger as logger
+from evaluator.models import EvaluationRunException, Sandbox
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
-from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from models.evaluation_run import EvaluationRunErrorCode
+from models.problem import Problem, ProblemTestResult
+from utils.diff import apply_diff_to_local_repo, get_file_diff, validate_diff_for_local_repo
+from utils.git import init_local_repo_with_initial_commit
 
 
 class PolyglotSuiteLanguage(str, Enum):

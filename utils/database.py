@@ -1,14 +1,15 @@
 # ADAM: Black magic file
+import asyncio
+import contextvars
 import re
 import time
-import asyncio
-import asyncpg
-import contextvars
-import utils.logger as logger
-
-from typing import Optional
 from functools import wraps
+from typing import Optional
 from uuid import UUID, uuid4
+
+import asyncpg
+
+import utils.logger as logger
 
 
 async def initialize_database(*, username: str, password: str, host: str, port: int, name: str):

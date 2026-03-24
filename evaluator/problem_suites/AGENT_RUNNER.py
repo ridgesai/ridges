@@ -1,8 +1,8 @@
-import sys
+import importlib.util
 import json
+import sys
 import time
 import traceback
-import importlib.util
 
 
 def main():
@@ -58,8 +58,8 @@ def main():
             with open("/sandbox/output.json", "w") as f:
                 json.dump(output, f, indent=2)
             print("[AGENT_RUNNER] Wrote output.json")
-        except:
-            print("[AGENT_RUNNER] Failed to write output.json")
+        except Exception as e:
+            print(f"[AGENT_RUNNER] Failed to write output.json: {e}")
             pass
 
     print("[AGENT_RUNNER] Exiting main()")

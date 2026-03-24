@@ -1,12 +1,14 @@
-from uuid import UUID
-from models.agent import Agent
 from datetime import datetime
-from pydantic import BaseModel
 from typing import List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel
+
+from models.agent import Agent
 from models.evaluation import Evaluation
+from models.evaluation_run import EvaluationRunStatus
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
-from models.evaluation_run import EvaluationRunStatus
 
 
 class ValidatorRegistrationRequest(BaseModel):

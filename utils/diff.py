@@ -1,11 +1,11 @@
 """Utilities for computing diffs between files."""
 
 import os
-import tempfile
 import subprocess
-import utils.logger as logger
+import tempfile
+from typing import Optional, Tuple
 
-from typing import Tuple, Optional
+import utils.logger as logger
 
 
 def get_file_diff(old_path, new_path) -> str:

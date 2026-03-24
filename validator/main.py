@@ -1,30 +1,41 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
-from validator.set_weights import set_weights_from_mapping
-
+import asyncio
 import os
+import pathlib
+import random
 import sys
 import time
-import httpx
-import random
-import asyncio
-import pathlib
 import traceback
+from typing import Any, Dict
+from uuid import UUID
+
+import httpx
+
 import utils.logger as logger
 import validator.config as config
-
-from typing import Any, Dict
-from api.endpoints.validator_models import *
+from api.endpoints.validator_models import (
+    ScreenerRegistrationRequest,
+    ScreenerRegistrationResponse,
+    ValidatorDisconnectRequest,
+    ValidatorFinishEvaluationRequest,
+    ValidatorHeartbeatRequest,
+    ValidatorRegistrationRequest,
+    ValidatorRegistrationResponse,
+    ValidatorRequestEvaluationRequest,
+    ValidatorRequestEvaluationResponse,
+    ValidatorUpdateEvaluationRunRequest,
+)
+from evaluator.models import EvaluationRunException
+from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE
+from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetProblem
 from models.problem import ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
-from evaluator.models import EvaluationRunException
 from utils.system_metrics import get_system_metrics
-from models.evaluation_set import EvaluationSetProblem
-from evaluator.sandbox.sandbox_manager import SandboxManager
 from validator.http_utils import get_ridges_platform, post_ridges_platform
-from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
-
+from validator.set_weights import set_weights_from_mapping
 
 # The session ID for this validator
 session_id = None

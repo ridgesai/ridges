@@ -1,7 +1,7 @@
 import asyncio
+
 import api.config as config
 import utils.logger as logger
-
 from api.endpoints.validator import delete_validators_that_have_not_sent_a_heartbeat
 
 

@@ -1,6 +1,7 @@
 from enum import Enum
-from pydantic import BaseModel
 from typing import Any, Optional
+
+from pydantic import BaseModel
 
 
 class ProblemTestCategory(str, Enum):

@@ -5,11 +5,11 @@
 import unittest
 
 from main import (
-    Robot,
-    NORTH,
     EAST,
+    NORTH,
     SOUTH,
     WEST,
+    Robot,
 )
 
 

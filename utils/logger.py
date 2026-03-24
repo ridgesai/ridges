@@ -1,9 +1,7 @@
-import os
 import inspect
 import logging
-
+import os
 from datetime import datetime
-
 
 # We want some loggers from third-party libraries to be quieter
 logging.getLogger("httpx").setLevel(logging.WARNING)

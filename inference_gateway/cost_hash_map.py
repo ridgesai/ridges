@@ -6,10 +6,9 @@
 #            information is tracked here in memory.
 
 import time
-
 from uuid import UUID
-from pydantic import BaseModel
 
+from pydantic import BaseModel
 
 COST_HASH_MAP_CLEANUP_INTERVAL_SECONDS = 60  # 1 minute
 

@@ -5,8 +5,8 @@
 import unittest
 
 from main import (
-    WordSearch,
     Point,
+    WordSearch,
 )
 
 

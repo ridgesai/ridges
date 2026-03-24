@@ -1,4 +1,3 @@
-
 # Globals for the directions
 # Change the values as you see fit
 EAST = None

@@ -2,8 +2,8 @@
 # https://github.com/exercism/problem-specifications/tree/main/exercises/gigasecond/canonical-data.json
 # File last updated on 2023-07-19
 
-from datetime import datetime
 import unittest
+from datetime import datetime
 
 from main import (
     add,

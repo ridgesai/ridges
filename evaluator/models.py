@@ -1,7 +1,8 @@
-import docker
-
 from typing import Any, Dict, Optional
+
+import docker
 from pydantic import BaseModel, ConfigDict
+
 from models.evaluation_run import EvaluationRunErrorCode
 
 

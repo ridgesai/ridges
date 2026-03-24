@@ -1,8 +1,9 @@
 from uuid import UUID
-from models.agent import Agent
-from fastapi import APIRouter, HTTPException
-from queries.agent import get_agent_by_evaluation_run_id
 
+from fastapi import APIRouter, HTTPException
+
+from models.agent import Agent
+from queries.agent import get_agent_by_evaluation_run_id
 
 router = APIRouter()
 

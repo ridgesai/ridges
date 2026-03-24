@@ -1,35 +1,35 @@
-from bittensor import Subtensor
-
 import asyncio
 import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from bittensor import Subtensor
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from api.src.utils.request_cache import hourly_cache
-from queries.payments import retrieve_payment_by_hash, record_evaluation_payment
-from utils.debug_lock import DebugLock
 import utils.logger as logger
-from queries.agent import create_agent, record_upload_attempt
-from queries.agent import (
-    get_latest_agent_for_miner_hotkey,
-    get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
-)
-from queries.banned_hotkey import get_banned_hotkey
+from api import config
+from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
-    get_miner_hotkey,
-    check_if_python_file,
     check_agent_banned,
+    check_hotkey_registered,
+    check_if_python_file,
     check_rate_limit,
     check_signature,
-    check_hotkey_registered,
+    get_miner_hotkey,
 )
-from models.agent import AgentStatus, Agent
+from models.agent import Agent, AgentStatus
+from queries.agent import (
+    create_agent,
+    get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
+    get_latest_agent_for_miner_hotkey,
+    record_upload_attempt,
+)
+from queries.banned_hotkey import get_banned_hotkey
+from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
 from utils.coingecko import get_tao_price
-from api import config
+from utils.debug_lock import DebugLock
 
 # TODO STEPHEN: we should have a global singleton
 subtensor = Subtensor(network=config.SUBTENSOR_NETWORK)

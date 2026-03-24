@@ -1,21 +1,20 @@
 import asyncio
-import utils.logger as logger
-
+from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import List, Optional
-from abc import ABC, abstractmethod
+
+import utils.logger as logger
 from inference_gateway.models import (
-    InferenceTool,
-    EmbeddingResult,
-    InferenceResult,
-    InferenceMessage,
-    InferenceToolMode,
     EmbeddingModelInfo,
+    EmbeddingResult,
+    InferenceMessage,
     InferenceModelInfo,
+    InferenceResult,
+    InferenceTool,
+    InferenceToolMode,
     InferenceToolParameter,
     InferenceToolParameterType,
 )
-
 
 NUM_INFERENCE_CHARS_TO_LOG = 30
 NUM_EMBEDDING_CHARS_TO_LOG = 30

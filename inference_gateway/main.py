@@ -1,33 +1,34 @@
 import random
-import uvicorn
-from inference_gateway.providers.openrouter import OpenRouterProvider
-import utils.logger as logger
-import inference_gateway.config as config
-
-from uuid import UUID
-from typing import List
-from functools import wraps
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
-from models.evaluation_run import EvaluationRunStatus
+from functools import wraps
+from typing import List
+from uuid import UUID
+
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+import inference_gateway.config as config
+import utils.logger as logger
 from inference_gateway.cost_hash_map import CostHashMap
-from inference_gateway.providers.provider import Provider
-from inference_gateway.providers.chutes import ChutesProvider
-from inference_gateway.providers.targon import TargonProvider
-from queries.evaluation_run import get_evaluation_run_status_by_id
-from queries.embedding import create_new_embedding, update_embedding_by_id
-from queries.inference import create_new_inference, update_inference_by_id
-from utils.database import initialize_database, get_debug_query_info, deinitialize_database
 from inference_gateway.models import (
+    EmbeddingModelInfo,
     EmbeddingRequest,
-    InferenceRequest,
     EmbeddingResponse,
+    InferenceModelInfo,
+    InferenceRequest,
     InferenceResponse,
     InferenceToolMode,
-    EmbeddingModelInfo,
-    InferenceModelInfo,
 )
+from inference_gateway.providers.chutes import ChutesProvider
+from inference_gateway.providers.openrouter import OpenRouterProvider
+from inference_gateway.providers.provider import Provider
+from inference_gateway.providers.targon import TargonProvider
+from models.evaluation_run import EvaluationRunStatus
+from queries.embedding import create_new_embedding, update_embedding_by_id
+from queries.evaluation_run import get_evaluation_run_status_by_id
+from queries.inference import create_new_inference, update_inference_by_id
+from utils.database import deinitialize_database, get_debug_query_info, initialize_database
 
 
 class WeightedProvider:

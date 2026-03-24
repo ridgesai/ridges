@@ -1,5 +1,5 @@
 from itertools import chain
-from math import log10, floor, ceil
+from math import ceil, floor, log10
 
 
 def largest(min_factor, max_factor):

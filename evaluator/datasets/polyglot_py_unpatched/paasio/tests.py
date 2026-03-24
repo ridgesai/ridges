@@ -1,12 +1,11 @@
 import errno
-import os
-import unittest
 import inspect
 import io
-from unittest.mock import ANY, call, NonCallableMagicMock, patch
+import os
+import unittest
+from unittest.mock import ANY, NonCallableMagicMock, call, patch
 
 from main import MeteredFile, MeteredSocket
-
 
 ZEN = b"""Beautiful is better than ugly.
 Explicit is better than implicit.

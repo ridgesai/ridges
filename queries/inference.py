@@ -1,9 +1,9 @@
 import json
-
-from uuid import UUID, uuid4
 from typing import Any, List, Optional
-from utils.database import db_operation, DatabaseConnection
+from uuid import UUID, uuid4
+
 from inference_gateway.models import InferenceMessage
+from utils.database import DatabaseConnection, db_operation
 
 
 def _remove_null_bytes(x: Any) -> Any:

@@ -5,8 +5,8 @@
 import unittest
 
 from main import (
-    evaluate,
     StackUnderflowError,
+    evaluate,
 )
 
 

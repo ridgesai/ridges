@@ -1,14 +1,14 @@
 import json
-
 from enum import Enum
-from uuid import UUID
-from pydantic import BaseModel
 from typing import Any, List, Optional
+from uuid import UUID
+
 from openai.types.chat import ChatCompletionToolChoiceOptionParam
+from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCallUnion
+from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 from openai.types.shared_params.function_definition import FunctionDefinition
 from openai.types.shared_params.function_parameters import FunctionParameters
-from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
-from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCallUnion
+from pydantic import BaseModel
 
 
 # Model Info

@@ -5,11 +5,11 @@
 import unittest
 
 from main import (
-    sublist,
+    EQUAL,
     SUBLIST,
     SUPERLIST,
-    EQUAL,
     UNEQUAL,
+    sublist,
 )
 
 

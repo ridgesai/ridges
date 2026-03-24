@@ -1,7 +1,8 @@
-import docker
 import subprocess
-import utils.logger as logger
 
+import docker
+
+import utils.logger as logger
 
 DOCKER_PREFIX = "ridges-ai"
 SWEBENCH_DOCKER_PREFIX = "sweb"

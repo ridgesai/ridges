@@ -1,13 +1,13 @@
-import utils.logger as logger
-
+from typing import List, Optional, Tuple
 from uuid import UUID, uuid4
-from typing import List, Tuple, Optional
-from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, DatabaseConnection
+
+import utils.logger as logger
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
-from queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
+from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_set import get_all_problem_names_in_set_group_in_set_id, get_latest_set_id
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation

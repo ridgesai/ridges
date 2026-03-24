@@ -1,10 +1,11 @@
-import api.config as config
-
 from datetime import datetime
-from pydantic import BaseModel
 from typing import Dict, Optional
+
+from pydantic import BaseModel
+
+import api.config as config
 from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, DatabaseConnection
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation
