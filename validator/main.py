@@ -153,6 +153,36 @@ async def _run_evaluation_run_with_semaphore(evaluation_run_id: UUID, problem_na
     async with semaphore:
         return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code)
 
+# Maximum number of times to retry a single evaluation run when platform
+# inference errors exceed the threshold.  After this many retries the run
+# is marked as a platform error so the evaluation can still finish.
+MAX_SINGLE_RUN_RETRIES = 2
+
+async def _check_and_handle_inference_errors(evaluation_run_id: UUID, problem_name: str) -> bool:
+    """Check if this run hit too many platform inference errors.
+    Returns True if the error threshold was exceeded (caller should retry)."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            usage_response = await client.get(f"{config.RIDGES_INFERENCE_GATEWAY_URL}/api/usage?evaluation_run_id={evaluation_run_id}")
+        if usage_response.status_code == 200:
+            usage = usage_response.json()
+            inference_errors = usage.get("inference_errors", 0)
+            max_inference_errors = usage.get("max_inference_errors", float("inf"))
+            if inference_errors >= max_inference_errors:
+                logger.warning(f"Run {evaluation_run_id} for {problem_name} hit inference error threshold ({inference_errors}/{max_inference_errors})")
+                return True
+    except Exception as e:
+        logger.warning(f"Failed to check inference error count for evaluation run {evaluation_run_id}: {e}")
+    return False
+
+async def _reset_inference_errors(evaluation_run_id: UUID):
+    """Reset the inference error counter on the gateway before retrying a run."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(f"{config.RIDGES_INFERENCE_GATEWAY_URL}/api/reset-inference-errors?evaluation_run_id={evaluation_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to reset inference error count for evaluation run {evaluation_run_id}: {e}")
+
 # Run an evaluation run
 async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str):
     try:
@@ -175,85 +205,109 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
 
+        # Retry loop: if the agent is hit by too many platform inference errors,
+        # reset the error counter and retry just this run (not the whole evaluation).
+        for attempt in range(1 + MAX_SINGLE_RUN_RETRIES):
 
-        try:
-            # Move from pending -> initializing_agent
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+            try:
+                # Move from pending -> initializing_agent
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
-            # Start initializing the agent sandbox
-            agent_sandbox = await asyncio.to_thread(
-                problem_suite.initialize_agent_sandbox,
-                sandbox_manager,
-                problem,
-                evaluation_run_id,
-                agent_code,
-                running_agent_timeout_seconds,
-                include_solutions=config.INCLUDE_SOLUTIONS
-            )
+                # Start initializing the agent sandbox
+                agent_sandbox = await asyncio.to_thread(
+                    problem_suite.initialize_agent_sandbox,
+                    sandbox_manager,
+                    problem,
+                    evaluation_run_id,
+                    agent_code,
+                    running_agent_timeout_seconds,
+                    include_solutions=config.INCLUDE_SOLUTIONS
+                )
 
-            # Move from initializing_agent -> running_agent
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+                # Move from initializing_agent -> running_agent
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
-            # Start running the agent sandbox
-            patch, agent_logs = await asyncio.to_thread(
-                problem_suite.run_agent_sandbox,
-                sandbox_manager,
-                agent_sandbox
-            )
-            logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
+                # Start running the agent sandbox
+                patch, agent_logs = await asyncio.to_thread(
+                    problem_suite.run_agent_sandbox,
+                    sandbox_manager,
+                    agent_sandbox
+                )
+                logger.info(f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs")
 
-            # Move from running_agent -> initializing_eval
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
-                "patch": patch,
-                "agent_logs": truncate_logs_if_required(agent_logs)
-            })
+                # Check if the agent was affected by platform-side inference errors.
+                # Instead of failing the whole evaluation, retry just this run.
+                exceeded = await _check_and_handle_inference_errors(evaluation_run_id, problem_name)
+                if exceeded and attempt < MAX_SINGLE_RUN_RETRIES:
+                    logger.info(f"Retrying run {evaluation_run_id} for {problem_name} (attempt {attempt + 2}/{1 + MAX_SINGLE_RUN_RETRIES}) due to platform inference errors")
+                    await _reset_inference_errors(evaluation_run_id)
+                    continue
+                elif exceeded:
+                    # Exhausted retries — mark as platform error
+                    raise EvaluationRunException(
+                        EvaluationRunErrorCode.PLATFORM_TOO_MANY_INFERENCE_ERRORS,
+                        f"{EvaluationRunErrorCode.PLATFORM_TOO_MANY_INFERENCE_ERRORS.get_error_message()}: exceeded inference error threshold after {1 + MAX_SINGLE_RUN_RETRIES} attempts",
+                        extra={"agent_logs": truncate_logs_if_required(agent_logs)}
+                    )
 
-            # Start initializing the evaluation sandbox
-            eval_sandbox = await asyncio.to_thread(
-                problem_suite.initialize_eval_sandbox,
-                sandbox_manager,
-                problem,
-                evaluation_run_id,
-                patch,
-                running_eval_timeout_seconds
-            )
+                # Move from running_agent -> initializing_eval
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_eval, {
+                    "patch": patch,
+                    "agent_logs": truncate_logs_if_required(agent_logs)
+                })
 
-            # Move from initializing_eval -> running_eval
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
+                # Start initializing the evaluation sandbox
+                eval_sandbox = await asyncio.to_thread(
+                    problem_suite.initialize_eval_sandbox,
+                    sandbox_manager,
+                    problem,
+                    evaluation_run_id,
+                    patch,
+                    running_eval_timeout_seconds
+                )
 
-            # Start running the evaluation sandbox
-            test_results, eval_logs = await asyncio.to_thread(
-                problem_suite.run_eval_sandbox,
-                sandbox_manager,
-                eval_sandbox
-            )
-            num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
-            num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
-            num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
-            logger.info(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
+                # Move from initializing_eval -> running_eval
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
-            # Move from running_eval -> finished
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
-                "test_results": [test.model_dump() for test in test_results],
-                "eval_logs": truncate_logs_if_required(eval_logs)
-            })
+                # Start running the evaluation sandbox
+                test_results, eval_logs = await asyncio.to_thread(
+                    problem_suite.run_eval_sandbox,
+                    sandbox_manager,
+                    eval_sandbox
+                )
+                num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
+                num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
+                num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
+                logger.info(f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs")
 
-        except EvaluationRunException as e:
-            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+                # Move from running_eval -> finished
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.finished, {
+                    "test_results": [test.model_dump() for test in test_results],
+                    "eval_logs": truncate_logs_if_required(eval_logs)
+                })
 
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-                "error_code": e.error_code.value,
-                "error_message": e.error_message
-            })
+                # Success — break out of the retry loop
+                break
 
-        except Exception as e:
-            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
-            logger.error(traceback.format_exc())
+            except EvaluationRunException as e:
+                logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
 
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
-                "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
-                "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
-            })
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                    "error_code": e.error_code.value,
+                    "error_message": e.error_message,
+                    **(e.extra or {})
+                })
+                break
+
+            except Exception as e:
+                logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}")
+                logger.error(traceback.format_exc())
+
+                await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.error, {
+                    "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
+                    "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+                })
+                break
 
 
 
