@@ -13,7 +13,7 @@ import utils.logger as logger
 from uuid import UUID
 from pydantic import BaseModel
 from utils.docker import get_docker_client
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Tuple
 from utils.diff import validate_diff_for_local_repo
 from evaluator.models import EvaluationRunException
 from swebench.harness.constants import SWEbenchInstance
@@ -24,24 +24,10 @@ from evaluator.sandbox.sandbox_manager import SandboxManager
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
 from evaluator.problem_suites.problem_suite import ProblemSuite
-from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit, verify_commit_exists_in_local_repo
-from models.problem import Problem, ProblemTest, ProblemDifficulty, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus, ProblemSuiteName
+from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit#, verify_commit_exists_in_local_repo
+from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus, ProblemSuiteName
 
-
-
-def _swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Optional[ProblemDifficulty]:
-    if difficulty == "<15 min fix":
-        return ProblemDifficulty.EASY
-    elif difficulty == "15 min - 1 hour":
-        return ProblemDifficulty.MEDIUM
-    elif difficulty == "1-4 hours":
-        return ProblemDifficulty.HARD
-    elif difficulty == ">4 hours":
-        return ProblemDifficulty.IMPOSSIBLE
-    else:
-        return None
-
-
+from helpers import swebench_verified_difficulty_to_problem_difficulty
 
 # /evaluator/datasets/swebench_verified
 SWEBENCH_VERIFIED_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "swebench_verified")
@@ -131,7 +117,7 @@ class SWEBenchVerifiedSuite(ProblemSuite):
 
             self._add_problem(SWEBenchVerifiedProblem(
                 name=problem_name,
-                difficulty=_swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
+                difficulty=swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
 
                 problem_statement=problem.get("problem_statement"),
                 solution_diff=problem.get("patch"),
