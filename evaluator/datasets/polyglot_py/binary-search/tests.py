@@ -28,9 +28,7 @@ class BinarySearchTest(unittest.TestCase):
 
     def test_finds_a_value_in_an_array_of_odd_length(self):
 
-        self.assertEqual(
-            find([1, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 634], 144), 9
-        )
+        self.assertEqual(find([1, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 634], 144), 9)
 
     def test_finds_a_value_in_an_array_of_even_length(self):
 

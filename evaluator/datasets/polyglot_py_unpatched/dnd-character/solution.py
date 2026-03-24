@@ -1,5 +1,5 @@
-import random
 import math
+import random
 
 
 class Character:
@@ -18,4 +18,4 @@ class Character:
 
 
 def modifier(value):
-    return math.floor((value-10)/2)
+    return math.floor((value - 10) / 2)

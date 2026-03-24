@@ -10,7 +10,6 @@ from main import (
 
 
 class RationalNumbersTest(unittest.TestCase):
-
     # Tests of type: Arithmetic
 
     # Addition

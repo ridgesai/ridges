@@ -1,8 +1,9 @@
-import time
 import asyncio
+import time
 from datetime import datetime
 from functools import wraps
 from typing import Any
+
 
 def hourly_cache():
     def decorator(func):
@@ -14,7 +15,7 @@ def hourly_cache():
         async def wrapper(*args, **kwargs):
             nonlocal hourly_bucket_cache
 
-            cache_time = kwargs.pop('cache_time', time.time())
+            cache_time = kwargs.pop("cache_time", time.time())
             hour_bucket = datetime.fromtimestamp(cache_time).strftime("%Y-%m-%d:%H")
 
             if hour_bucket in hourly_bucket_cache:
@@ -26,4 +27,5 @@ def hourly_cache():
                 return result
 
         return wrapper
+
     return decorator

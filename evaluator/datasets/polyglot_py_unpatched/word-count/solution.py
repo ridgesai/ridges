@@ -1,7 +1,6 @@
 import re
 from collections import Counter
 
-
 WORDS = re.compile("[a-z0-9]+(['][a-z]+)?")
 
 

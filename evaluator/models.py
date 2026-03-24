@@ -1,18 +1,19 @@
-import docker
-
 from typing import Any, Dict, Optional
+
+import docker
 from pydantic import BaseModel, ConfigDict
+
 from models.evaluation_run import EvaluationRunErrorCode
 
 
-
 class Sandbox(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True) # Because of docker.models.containers.Container
+    model_config = ConfigDict(arbitrary_types_allowed=True)  # Because of docker.models.containers.Container
 
     name: str
     temp_dir: str
     container: docker.models.containers.Container
     timeout_seconds: Optional[int]
+
 
 class SandboxResult(BaseModel):
     success: bool
@@ -24,9 +25,9 @@ class SandboxResult(BaseModel):
     error: Optional[str] = None
     traceback: Optional[str] = None
 
+
 class SandboxResultWithLogs(SandboxResult):
     logs: str
-
 
 
 # Can be raised by some methods in ProblemSuite. These exceptions should be
@@ -38,7 +39,9 @@ class SandboxResultWithLogs(SandboxResult):
 # validator. The only keys that could be in the extra field are "agent_logs" or
 # "eval_logs".
 class EvaluationRunException(Exception):
-    def __init__(self, error_code: EvaluationRunErrorCode, error_message: str, *, extra: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self, error_code: EvaluationRunErrorCode, error_message: str, *, extra: Optional[Dict[str, Any]] = None
+    ):
         super().__init__(error_message)
         self.error_code = error_code
         self.error_message = error_message

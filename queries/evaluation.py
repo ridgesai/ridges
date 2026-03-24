@@ -1,14 +1,13 @@
-import utils.logger as logger
-
+from typing import List, Optional, Tuple
 from uuid import UUID, uuid4
-from typing import List, Tuple, Optional
-from models.evaluation_set import EvaluationSetGroup
-from utils.database import db_operation, DatabaseConnection
-from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
-from queries.evaluation_set import get_latest_set_id, get_all_problem_names_in_set_group_in_set_id
-from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
 
+import utils.logger as logger
+from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
+from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup
+from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_set import get_all_problem_names_in_set_group_in_set_id, get_latest_set_id
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation
@@ -30,37 +29,37 @@ async def create_evaluation(conn: DatabaseConnection, agent_id: UUID, validator_
         agent_id,
         validator_hotkey,
         set_id,
-        EvaluationSetGroup.from_validator_hotkey(validator_hotkey).value # TODO ADAM
+        EvaluationSetGroup.from_validator_hotkey(validator_hotkey).value,  # TODO ADAM
     )
 
-    logger.debug(f"Created evaluation {evaluation_id} for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
+    logger.debug(
+        f"Created evaluation {evaluation_id} for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}"
+    )
 
     return evaluation_id
 
 
-
 @db_operation
-async def create_new_evaluation_and_evaluation_runs(conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None) -> Tuple[Evaluation, List[EvaluationRun]]:
+async def create_new_evaluation_and_evaluation_runs(
+    conn: DatabaseConnection, agent_id: UUID, validator_hotkey: str, set_id: int = None
+) -> Tuple[Evaluation, List[EvaluationRun]]:
     if set_id is None:
         set_id = await get_latest_set_id()
-    
-    logger.debug(f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}")
+
+    logger.debug(
+        f"Creating new evaluation and evaluation runs for agent {agent_id} with validator hotkey {validator_hotkey} and set ID {set_id}"
+    )
 
     set_group = EvaluationSetGroup.from_validator_hotkey(validator_hotkey)
     problem_names = await get_all_problem_names_in_set_group_in_set_id(set_id, set_group)
 
     logger.debug(f"# of problems in set ID {set_id}, set group {set_group.value}: {len(problem_names)}")
 
-    evaluation_id = await create_evaluation(
-        agent_id,
-        validator_hotkey,
-        set_id
-    )
+    evaluation_id = await create_evaluation(agent_id, validator_hotkey, set_id)
 
     await create_evaluation_runs(evaluation_id, problem_names)
 
     return await get_evaluation_by_id(evaluation_id), await get_all_evaluation_runs_in_evaluation_id(evaluation_id)
-
 
 
 @db_operation
@@ -75,7 +74,6 @@ async def get_evaluation_by_id(conn: DatabaseConnection, evaluation_id: UUID) ->
     )
 
     return Evaluation(**response)
-
 
 
 @db_operation
@@ -95,9 +93,10 @@ async def get_hydrated_evaluation_by_id(conn: DatabaseConnection, evaluation_id:
     return HydratedEvaluation(**result)
 
 
-
 @db_operation
-async def get_hydrated_evaluation_by_evaluation_run_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[HydratedEvaluation]:
+async def get_hydrated_evaluation_by_evaluation_run_id(
+    conn: DatabaseConnection, evaluation_run_id: UUID
+) -> Optional[HydratedEvaluation]:
     result = await conn.fetchrow(
         """
         SELECT *
@@ -109,9 +108,8 @@ async def get_hydrated_evaluation_by_evaluation_run_id(conn: DatabaseConnection,
 
     if result is None:
         return None
-    
-    return HydratedEvaluation(**result)
 
+    return HydratedEvaluation(**result)
 
 
 @db_operation
@@ -122,11 +120,10 @@ async def get_evaluations_for_agent_id(conn: DatabaseConnection, agent_id: UUID)
         FROM evaluations
         WHERE agent_id = $1
         """,
-        agent_id
+        agent_id,
     )
 
     return [Evaluation(**evaluation) for evaluation in results]
-
 
 
 @db_operation
@@ -137,9 +134,8 @@ async def update_evaluation_finished_at(conn: DatabaseConnection, evaluation_id:
         SET finished_at = NOW()
         WHERE evaluation_id = $1
         """,
-        evaluation_id
+        evaluation_id,
     )
-
 
 
 @db_operation
@@ -153,15 +149,12 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseCo
             AND status = '{EvaluationStatus.success.value}'
             AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
         """,
-        agent_id
+        agent_id,
     )
 
 
-
-
-
-
 # TODO ADAM: Fix this section
+
 
 @db_operation
 async def set_all_unfinished_evaluation_runs_to_errored(conn: DatabaseConnection, error_message: str) -> None:
@@ -183,11 +176,14 @@ async def set_all_unfinished_evaluation_runs_to_errored(conn: DatabaseConnection
         WHERE
             status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
         """,
-        error_message
+        error_message,
     )
 
+
 @db_operation
-async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(conn: DatabaseConnection, evaluation_id: UUID, error_message: str) -> None:
+async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(
+    conn: DatabaseConnection, evaluation_id: UUID, error_message: str
+) -> None:
     await conn.execute(
         f"""
         UPDATE evaluation_runs
@@ -206,5 +202,5 @@ async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(conn: Da
         AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
         """,
         evaluation_id,
-        error_message
+        error_message,
     )

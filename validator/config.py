@@ -1,14 +1,12 @@
 import os
 import re
+
+from bittensor_wallet.wallet import Wallet
+from dotenv import load_dotenv
+
 import utils.logger as logger
 
-from dotenv import load_dotenv
-from bittensor_wallet.wallet import Wallet
-
-
-
 load_dotenv()
-
 
 
 NETUID = os.getenv("NETUID")
@@ -25,14 +23,12 @@ if not SUBTENSOR_NETWORK:
     logger.fatal("SUBTENSOR_NETWORK is not set in .env")
 
 
-
 MODE = os.getenv("MODE")
 if not MODE:
     logger.fatal("MODE is not set in .env")
 
 if MODE != "screener" and MODE != "validator":
     logger.fatal("MODE must be either 'screener' or 'validator'")
-
 
 
 if MODE == "validator":
@@ -49,7 +45,6 @@ if MODE == "validator":
         VALIDATOR_HOTKEY = VALIDATOR_WALLET.hotkey
     except Exception as e:
         logger.fatal(f"Error loading hotkey: {e}")
-
 
 
 elif MODE == "screener":
@@ -69,7 +64,6 @@ elif MODE == "screener":
         logger.fatal("SCREENER_PASSWORD is not set in .env")
 
 
-
 RIDGES_PLATFORM_URL = os.getenv("RIDGES_PLATFORM_URL")
 if not RIDGES_PLATFORM_URL:
     logger.fatal("RIDGES_PLATFORM_URL is not set in .env")
@@ -86,27 +80,25 @@ if "localhost" in RIDGES_INFERENCE_GATEWAY_URL or "127.0.0.1" in RIDGES_INFERENC
     logger.fatal("RIDGES_INFERENCE_GATEWAY_URL must be set to a local IP address, not localhost/127.0.0.1.")
 
 
-
 SEND_HEARTBEAT_INTERVAL_SECONDS = os.getenv("SEND_HEARTBEAT_INTERVAL_SECONDS")
 if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
-SEND_HEARTBEAT_INTERVAL_SECONDS = max(int(SEND_HEARTBEAT_INTERVAL_SECONDS), 10) # minimum 10 seconds
+SEND_HEARTBEAT_INTERVAL_SECONDS = max(int(SEND_HEARTBEAT_INTERVAL_SECONDS), 10)  # minimum 10 seconds
 
 SET_WEIGHTS_INTERVAL_SECONDS = os.getenv("SET_WEIGHTS_INTERVAL_SECONDS")
 if not SET_WEIGHTS_INTERVAL_SECONDS:
     logger.fatal("SET_WEIGHTS_INTERVAL_SECONDS is not set in .env")
-SET_WEIGHTS_INTERVAL_SECONDS = int(SET_WEIGHTS_INTERVAL_SECONDS) 
+SET_WEIGHTS_INTERVAL_SECONDS = int(SET_WEIGHTS_INTERVAL_SECONDS)
 
-SET_WEIGHTS_TIMEOUT_SECONDS = os.getenv("SET_WEIGHTS_TIMEOUT_SECONDS", "90") # TODO ADAM
+SET_WEIGHTS_TIMEOUT_SECONDS = os.getenv("SET_WEIGHTS_TIMEOUT_SECONDS", "90")  # TODO ADAM
 if not SET_WEIGHTS_TIMEOUT_SECONDS:
     logger.fatal("SET_WEIGHTS_TIMEOUT_SECONDS is not set in .env")
-SET_WEIGHTS_TIMEOUT_SECONDS = int(SET_WEIGHTS_TIMEOUT_SECONDS) 
+SET_WEIGHTS_TIMEOUT_SECONDS = int(SET_WEIGHTS_TIMEOUT_SECONDS)
 
 REQUEST_EVALUATION_INTERVAL_SECONDS = os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS")
 if not REQUEST_EVALUATION_INTERVAL_SECONDS:
     logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")
-REQUEST_EVALUATION_INTERVAL_SECONDS = int(REQUEST_EVALUATION_INTERVAL_SECONDS) 
-
+REQUEST_EVALUATION_INTERVAL_SECONDS = int(REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
 SIMULATE_EVALUATION_RUNS = os.getenv("SIMULATE_EVALUATION_RUNS")
@@ -125,12 +117,10 @@ if not INCLUDE_SOLUTIONS:
 INCLUDE_SOLUTIONS = INCLUDE_SOLUTIONS.lower() == "true"
 
 
-
 UPDATE_AUTOMATICALLY = os.getenv("UPDATE_AUTOMATICALLY")
 if not UPDATE_AUTOMATICALLY:
     logger.fatal("UPDATE_AUTOMATICALLY is not set in .env")
 UPDATE_AUTOMATICALLY = UPDATE_AUTOMATICALLY.lower() == "true"
-
 
 
 logger.info("=== Validator Configuration ===")
@@ -176,7 +166,7 @@ else:
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
 if not MAX_CONCURRENT_EVALUATION_RUNS:
     logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
-    MAX_CONCURRENT_EVALUATION_RUNS = 30 # high default for validators
+    MAX_CONCURRENT_EVALUATION_RUNS = 30  # high default for validators
 MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
 
 logger.info("===============================")

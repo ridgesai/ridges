@@ -1,8 +1,7 @@
 import datetime
-
 from enum import Enum
-from pydantic import BaseModel
 
+from pydantic import BaseModel
 
 
 class EvaluationSetGroup(str, Enum):
@@ -18,7 +17,6 @@ class EvaluationSetGroup(str, Enum):
             return EvaluationSetGroup.screener_2
         else:
             return EvaluationSetGroup.validator
-
 
 
 class EvaluationSetProblem(BaseModel):

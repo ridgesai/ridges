@@ -1,20 +1,31 @@
-from collections import defaultdict
-from types import SimpleNamespace
-import httpx
-import utils.logger as logger
-import inference_gateway.config as config
-
 from time import time
-from pydantic import BaseModel
+from types import SimpleNamespace
 from typing import List, Optional
-from openai import AsyncOpenAI, APIStatusError, AsyncStream
-from inference_gateway.providers.provider import Provider
-from inference_gateway.models import InferenceTool, EmbeddingResult, InferenceResult, InferenceMessage, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo, EmbeddingModelPricingMode, inference_tools_to_openai_tools, inference_tool_mode_to_openai_tool_choice, openai_tool_calls_to_inference_tool_calls
 
+import httpx
+from openai import APIStatusError, AsyncOpenAI, AsyncStream
+from pydantic import BaseModel
+
+import inference_gateway.config as config
+import utils.logger as logger
+from inference_gateway.models import (
+    EmbeddingModelInfo,
+    EmbeddingModelPricingMode,
+    EmbeddingResult,
+    InferenceMessage,
+    InferenceModelInfo,
+    InferenceResult,
+    InferenceTool,
+    InferenceToolMode,
+    inference_tool_mode_to_openai_tool_choice,
+    inference_tools_to_openai_tools,
+    openai_tool_calls_to_inference_tool_calls,
+)
+from inference_gateway.providers.provider import Provider
 
 if config.USE_CHUTES:
-    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models" # https://llm.chutes.ai/v1/models
-    CHUTES_EMBEDDING_MODELS_URL = "https://api.chutes.ai/chutes/?template=embedding" # TODO ADAM
+    CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models"  # https://llm.chutes.ai/v1/models
+    CHUTES_EMBEDDING_MODELS_URL = "https://api.chutes.ai/chutes/?template=embedding"  # TODO ADAM
 
 
 class WhitelistedChutesModel(BaseModel):
@@ -25,6 +36,7 @@ class WhitelistedChutesModel(BaseModel):
         super().__init__(**data)
         if self.chutes_name is None:
             self.chutes_name = self.name
+
 
 if config.USE_CHUTES:
     WHITELISTED_CHUTES_INFERENCE_MODELS = [
@@ -40,9 +52,7 @@ if config.USE_CHUTES:
         WhitelistedChutesModel(name="MiniMaxAI/MiniMax-M2.5", chutes_name="MiniMaxAI/MiniMax-M2.5-TEE"),
     ]
 
-WHITELISTED_CHUTES_EMBEDDING_MODELS = [
-    WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")
-]
+WHITELISTED_CHUTES_EMBEDDING_MODELS = [WhitelistedChutesModel(name="Qwen/Qwen3-Embedding-8B")]
 
 
 class ChutesProvider(Provider):
@@ -61,28 +71,43 @@ class ChutesProvider(Provider):
         logger.info(f"Fetched {CHUTES_INFERENCE_MODELS_URL}")
 
         # Add whitelisted inference models
-        for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:     
-            chutes_model = next((chutes_model for chutes_model in chutes_inference_models_response if chutes_model["id"] == whitelisted_chutes_model.chutes_name), None)
+        for whitelisted_chutes_model in WHITELISTED_CHUTES_INFERENCE_MODELS:
+            chutes_model = next(
+                (
+                    chutes_model
+                    for chutes_model in chutes_inference_models_response
+                    if chutes_model["id"] == whitelisted_chutes_model.chutes_name
+                ),
+                None,
+            )
             if not chutes_model:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
+                logger.fatal(
+                    f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} is not supported by Chutes"
+                )
 
-            if not "text" in chutes_model["input_modalities"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text input")
-            if not "text" in chutes_model["output_modalities"]:
-                logger.fatal(f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text output")
+            if "text" not in chutes_model["input_modalities"]:
+                logger.fatal(
+                    f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text input"
+                )
+            if "text" not in chutes_model["output_modalities"]:
+                logger.fatal(
+                    f"Whitelisted Chutes inference model {whitelisted_chutes_model.chutes_name} does not support text output"
+                )
 
             chutes_model_pricing = chutes_model["pricing"]
             max_input_tokens = chutes_model["context_length"]
             cost_usd_per_million_input_tokens = chutes_model_pricing["prompt"]
             cost_usd_per_million_output_tokens = chutes_model_pricing["completion"]
 
-            self.inference_models.append(InferenceModelInfo(
-                name=whitelisted_chutes_model.name,
-                external_name=whitelisted_chutes_model.chutes_name,
-                max_input_tokens=max_input_tokens,
-                cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens,
-                cost_usd_per_million_output_tokens=cost_usd_per_million_output_tokens
-            ))
+            self.inference_models.append(
+                InferenceModelInfo(
+                    name=whitelisted_chutes_model.name,
+                    external_name=whitelisted_chutes_model.chutes_name,
+                    max_input_tokens=max_input_tokens,
+                    cost_usd_per_million_input_tokens=cost_usd_per_million_input_tokens,
+                    cost_usd_per_million_output_tokens=cost_usd_per_million_output_tokens,
+                )
+            )
 
             logger.info(f"Found whitelisted Chutes inference model {whitelisted_chutes_model.name}:")
             logger.info(f"  Max input tokens: {max_input_tokens}")
@@ -100,34 +125,43 @@ class ChutesProvider(Provider):
         logger.info(f"Fetched {CHUTES_EMBEDDING_MODELS_URL}")
 
         # Add whitelisted embedding models
-        for whitelisted_chutes_model in WHITELISTED_CHUTES_EMBEDDING_MODELS:     
-            chutes_model = next((chutes_model for chutes_model in chutes_embedding_models_response if chutes_model["name"] == whitelisted_chutes_model.chutes_name), None)
+        for whitelisted_chutes_model in WHITELISTED_CHUTES_EMBEDDING_MODELS:
+            chutes_model = next(
+                (
+                    chutes_model
+                    for chutes_model in chutes_embedding_models_response
+                    if chutes_model["name"] == whitelisted_chutes_model.chutes_name
+                ),
+                None,
+            )
             if not chutes_model:
-                logger.fatal(f"Whitelisted Chutes embedding model {whitelisted_chutes_model.chutes_name} is not supported by Chutes")
+                logger.fatal(
+                    f"Whitelisted Chutes embedding model {whitelisted_chutes_model.chutes_name} is not supported by Chutes"
+                )
 
-            max_input_tokens = 40960 # TODO ADAM
+            max_input_tokens = 40960  # TODO ADAM
             cost_usd_per_second = chutes_model["current_estimated_price"]["usd"]["second"]
 
-            self.embedding_models.append(EmbeddingModelInfo(
-                name=whitelisted_chutes_model.name,
-                external_name=whitelisted_chutes_model.chutes_name,
-                max_input_tokens=max_input_tokens,
-                pricing_mode=EmbeddingModelPricingMode.PER_SECOND,
-                cost_usd_per_second=cost_usd_per_second
-            ))
+            self.embedding_models.append(
+                EmbeddingModelInfo(
+                    name=whitelisted_chutes_model.name,
+                    external_name=whitelisted_chutes_model.chutes_name,
+                    max_input_tokens=max_input_tokens,
+                    pricing_mode=EmbeddingModelPricingMode.PER_SECOND,
+                    cost_usd_per_second=cost_usd_per_second,
+                )
+            )
 
             logger.info(f"Found whitelisted Chutes inference model {whitelisted_chutes_model.name}:")
             logger.info(f"  Max input tokens: {max_input_tokens}")
             logger.info(f"  Input cost (USD per second): {cost_usd_per_second}")
 
         self.chutes_inference_client = AsyncOpenAI(
-            base_url=config.CHUTES_INFERENCE_BASE_URL,
-            api_key=config.CHUTES_API_KEY
+            base_url=config.CHUTES_INFERENCE_BASE_URL, api_key=config.CHUTES_API_KEY
         )
 
         self.chutes_embedding_client = AsyncOpenAI(
-            base_url=config.CHUTES_EMBEDDING_BASE_URL,
-            api_key=config.CHUTES_API_KEY
+            base_url=config.CHUTES_EMBEDDING_BASE_URL, api_key=config.CHUTES_API_KEY
         )
 
         return self
@@ -139,7 +173,7 @@ class ChutesProvider(Provider):
         temperature: float,
         messages: List[InferenceMessage],
         tool_mode: InferenceToolMode,
-        tools: Optional[List[InferenceTool]]
+        tools: Optional[List[InferenceTool]],
     ) -> InferenceResult:
         try:
             completion_stream: AsyncStream = await self.chutes_inference_client.chat.completions.create(
@@ -149,7 +183,7 @@ class ChutesProvider(Provider):
                 tool_choice=inference_tool_mode_to_openai_tool_choice(tool_mode),
                 tools=inference_tools_to_openai_tools(tools) if tools else None,
                 stream=True,
-                stream_options={"include_usage": True}
+                stream_options={"include_usage": True},
             )
             streamed_completion = []
             tool_calls = dict()
@@ -182,7 +216,8 @@ class ChutesProvider(Provider):
 
             message_content = "".join(streamed_completion)
             message_tool_calls = [
-                tool_calls[idx] for idx in sorted(tool_calls) # sort by index
+                tool_calls[idx]
+                for idx in sorted(tool_calls)  # sort by index
             ]
 
             num_input_tokens = last_chunk.usage.prompt_tokens
@@ -191,39 +226,27 @@ class ChutesProvider(Provider):
 
             return InferenceResult(
                 status_code=200,
-
                 content=message_content,
                 tool_calls=openai_tool_calls_to_inference_tool_calls(message_tool_calls) if message_tool_calls else [],
-
                 num_input_tokens=num_input_tokens,
                 num_output_tokens=num_output_tokens,
-                cost_usd=cost_usd
+                cost_usd=cost_usd,
             )
 
         except APIStatusError as e:
             # Chutes returned 4xx or 5xx
-            return InferenceResult(
-                status_code=e.status_code,
-                error_message=e.response.text
-            )
+            return InferenceResult(status_code=e.status_code, error_message=e.response.text)
 
         except Exception as e:
             return InferenceResult(
-                status_code=-1,
-                error_message=f"Error in ChutesProvider._inference(): {type(e).__name__}: {str(e)}"
+                status_code=-1, error_message=f"Error in ChutesProvider._inference(): {type(e).__name__}: {str(e)}"
             )
 
-    async def _embedding(
-        self,
-        *,
-        model_info: EmbeddingModelInfo,
-        input: str
-    ) -> EmbeddingResult:
+    async def _embedding(self, *, model_info: EmbeddingModelInfo, input: str) -> EmbeddingResult:
         try:
             start_time = time()
             create_embedding_response = await self.chutes_embedding_client.embeddings.create(
-                model=model_info.external_name,
-                input=input
+                model=model_info.external_name, input=input
             )
             end_time = time()
 
@@ -233,23 +256,14 @@ class ChutesProvider(Provider):
             cost_usd = model_info.get_cost_usd(num_input_tokens, end_time - start_time)
 
             return EmbeddingResult(
-                status_code=200,
-
-                embedding=embedding,
-
-                num_input_tokens=num_input_tokens,
-                cost_usd=cost_usd
+                status_code=200, embedding=embedding, num_input_tokens=num_input_tokens, cost_usd=cost_usd
             )
 
         except APIStatusError as e:
             # Chutes returned 4xx or 5xx
-            return EmbeddingResult(
-                status_code=e.status_code,
-                error_message=e.response.text
-            )
+            return EmbeddingResult(status_code=e.status_code, error_message=e.response.text)
 
         except Exception as e:
             return EmbeddingResult(
-                status_code=-1,
-                error_message=f"Error in ChutesProvider._embedding(): {type(e).__name__}: {str(e)}"
+                status_code=-1, error_message=f"Error in ChutesProvider._embedding(): {type(e).__name__}: {str(e)}"
             )

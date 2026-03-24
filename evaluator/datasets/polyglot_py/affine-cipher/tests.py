@@ -27,9 +27,7 @@ class AffineCipherTest(unittest.TestCase):
         self.assertEqual(encode("mindblowingly", 11, 15), "rzcwa gnxzc dgt")
 
     def test_encode_numbers(self):
-        self.assertEqual(
-            encode("Testing,1 2 3, testing.", 3, 4), "jqgjc rw123 jqgjc rw"
-        )
+        self.assertEqual(encode("Testing,1 2 3, testing.", 3, 4), "jqgjc rw123 jqgjc rw")
 
     def test_encode_deep_thought(self):
         self.assertEqual(encode("Truth is fiction.", 5, 17), "iynia fdqfb ifje")
@@ -71,9 +69,7 @@ class AffineCipherTest(unittest.TestCase):
         )
 
     def test_decode_with_too_many_spaces(self):
-        self.assertEqual(
-            decode("vszzm    cly   yd cg    qdp", 15, 16), "jollygreengiant"
-        )
+        self.assertEqual(decode("vszzm    cly   yd cg    qdp", 15, 16), "jollygreengiant")
 
     def test_decode_with_a_not_coprime_to_m(self):
         with self.assertRaises(ValueError) as err:

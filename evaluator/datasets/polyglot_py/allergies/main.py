@@ -1,7 +1,7 @@
 from typing import List
 
-class Allergies:
 
+class Allergies:
     def __init__(self, score: int) -> None:
         pass
 

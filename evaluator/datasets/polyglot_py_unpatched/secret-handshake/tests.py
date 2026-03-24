@@ -35,14 +35,10 @@ class SecretHandshakeTest(unittest.TestCase):
         self.assertEqual(commands("10000"), [])
 
     def test_all_possible_actions(self):
-        self.assertEqual(
-            commands("01111"), ["wink", "double blink", "close your eyes", "jump"]
-        )
+        self.assertEqual(commands("01111"), ["wink", "double blink", "close your eyes", "jump"])
 
     def test_reverse_all_possible_actions(self):
-        self.assertEqual(
-            commands("11111"), ["jump", "close your eyes", "double blink", "wink"]
-        )
+        self.assertEqual(commands("11111"), ["jump", "close your eyes", "double blink", "wink"])
 
     def test_do_nothing_for_zero(self):
         self.assertEqual(commands("00000"), [])

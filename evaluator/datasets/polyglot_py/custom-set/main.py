@@ -8,23 +8,23 @@ class CustomSet:
     def __contains__(self, element) -> bool:
         pass
 
-    def issubset(self, other: 'CustomSet') -> bool:
+    def issubset(self, other: "CustomSet") -> bool:
         pass
 
-    def isdisjoint(self, other: 'CustomSet') -> bool:
+    def isdisjoint(self, other: "CustomSet") -> bool:
         pass
 
-    def __eq__(self, other: 'CustomSet') -> bool:
+    def __eq__(self, other: "CustomSet") -> bool:
         pass
 
     def add(self, element) -> None:
         pass
 
-    def intersection(self, other: 'CustomSet') -> 'CustomSet':
+    def intersection(self, other: "CustomSet") -> "CustomSet":
         pass
 
-    def __sub__(self, other: 'CustomSet') -> 'CustomSet':
+    def __sub__(self, other: "CustomSet") -> "CustomSet":
         pass
 
-    def __add__(self, other: 'CustomSet') -> 'CustomSet':
+    def __add__(self, other: "CustomSet") -> "CustomSet":
         pass

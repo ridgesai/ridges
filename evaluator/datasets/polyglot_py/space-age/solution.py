@@ -6,7 +6,6 @@ def period_converter(period):
 
 
 class SpaceAge:
-
     on_mercury = period_converter(7600530.24)
     on_venus = period_converter(19413907.2)
     on_earth = period_converter(31558149.76)

@@ -2,12 +2,12 @@
 # https://github.com/exercism/problem-specifications/tree/main/exercises/react/canonical-data.json
 # File last updated on 2023-07-19
 
-from functools import partial
 import unittest
+from functools import partial
 
 from main import (
-    InputCell,
     ComputeCell,
+    InputCell,
 )
 
 

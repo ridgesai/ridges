@@ -1,25 +1,17 @@
 import json
-
-from uuid import UUID, uuid4
 from typing import Any, List, Optional
-from utils.database import db_operation, DatabaseConnection
+from uuid import UUID, uuid4
 
+from utils.database import DatabaseConnection, db_operation
 
 
 def _remove_null_bytes(x: Any) -> Any:
-    return x.replace('\x00', '')
-
+    return x.replace("\x00", "")
 
 
 @db_operation
 async def create_new_embedding(
-    conn: DatabaseConnection,
-    *,
-    evaluation_run_id: UUID,
-
-    provider: str,
-    model: str,
-    input: str
+    conn: DatabaseConnection, *, evaluation_run_id: UUID, provider: str, model: str, input: str
 ) -> UUID:
 
     embedding_id = uuid4()
@@ -39,7 +31,6 @@ async def create_new_embedding(
         """,
         embedding_id,
         evaluation_run_id,
-
         provider,
         model,
         _remove_null_bytes(input),
@@ -48,17 +39,15 @@ async def create_new_embedding(
     return embedding_id
 
 
-
 @db_operation
 async def update_embedding_by_id(
     conn: DatabaseConnection,
     *,
     embedding_id: UUID,
-
     status_code: Optional[int] = None,
     response: Optional[List[float]] = None,
     num_input_tokens: Optional[int] = None,
-    cost_usd: Optional[float] = None
+    cost_usd: Optional[float] = None,
 ) -> None:
     await conn.execute(
         """
@@ -76,5 +65,5 @@ async def update_embedding_by_id(
         status_code,
         json.dumps(response),
         num_input_tokens,
-        cost_usd
+        cost_usd,
     )

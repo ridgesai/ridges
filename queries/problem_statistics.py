@@ -1,19 +1,19 @@
 import json
-
-from uuid import UUID
 from datetime import datetime
-from pydantic import BaseModel
 from typing import List, Optional
-from models.problem import ProblemDifficulty
-from models.evaluation_set import EvaluationSetGroup
-from models.evaluation_run import EvaluationRunErrorCode
-from utils.database import db_operation, DatabaseConnection
-from evaluator.problem_suites.problem_suite import ProblemSuiteName
-from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
+from uuid import UUID
 
-    
+from pydantic import BaseModel
+
+from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE
+from evaluator.problem_suites.problem_suite import ProblemSuiteName
+from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
+from models.evaluation_run import EvaluationRunErrorCode
+from models.evaluation_set import EvaluationSetGroup
+from models.problem import ProblemDifficulty
+from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id
+from utils.database import DatabaseConnection, db_operation
+
 
 class ProblemStatisticsTestInfo(BaseModel):
     name: str
@@ -25,6 +25,7 @@ class ProblemStatisticsTestInfo(BaseModel):
 
     pass_rate: float
 
+
 class ProblemStatisticsRecentErroredAgentInfo(BaseModel):
     agent_id: UUID
     name: str
@@ -32,11 +33,12 @@ class ProblemStatisticsRecentErroredAgentInfo(BaseModel):
 
     evaluation_id: UUID
     evaluation_validator_hotkey: str
-    
+
     evaluation_run_id: UUID
     evaluation_run_started_at: datetime
     evaluation_run_errored_at: datetime
     evaluation_run_error_message: Optional[str] = None
+
 
 class ProblemStatisticsErrorCodeInfo(BaseModel):
     error_code: int
@@ -49,11 +51,13 @@ class ProblemStatisticsErrorCodeInfo(BaseModel):
         data["error_message"] = EvaluationRunErrorCode(data["error_code"]).get_error_message()
         super().__init__(**data)
 
+
 class ProblemStatisticsTokenInfo(BaseModel):
     model: str
 
     num_input_tokens: int
     num_output_tokens: int
+
 
 class ProblemStatisticsFastestAgentInfo(BaseModel):
     agent_id: UUID
@@ -65,7 +69,6 @@ class ProblemStatisticsFastestAgentInfo(BaseModel):
     evaluation_run_id: UUID
     evaluation_run_started_at: datetime
     evaluation_run_finished_at: datetime
-
 
 
 class ProblemStatistics(BaseModel):
@@ -105,16 +108,21 @@ class ProblemStatistics(BaseModel):
             data["tests"] = [ProblemStatisticsTestInfo(**item) for item in json.loads(data["tests"])]
 
         if "error_code_distribution" in data:
-            data["error_code_distribution"] = [ProblemStatisticsErrorCodeInfo(**item) for item in json.loads(data["error_code_distribution"])]
-        
+            data["error_code_distribution"] = [
+                ProblemStatisticsErrorCodeInfo(**item) for item in json.loads(data["error_code_distribution"])
+            ]
+
         if "token_distribution" in data:
-            data["token_distribution"] = [ProblemStatisticsTokenInfo(**item) for item in json.loads(data["token_distribution"])]
+            data["token_distribution"] = [
+                ProblemStatisticsTokenInfo(**item) for item in json.loads(data["token_distribution"])
+            ]
 
         if "fastest_agents" in data:
-            data["fastest_agents"] = [ProblemStatisticsFastestAgentInfo(**item) for item in json.loads(data["fastest_agents"])]
+            data["fastest_agents"] = [
+                ProblemStatisticsFastestAgentInfo(**item) for item in json.loads(data["fastest_agents"])
+            ]
 
         super().__init__(**data)
-
 
 
 @db_operation
@@ -333,7 +341,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
         LEFT JOIN token_distribution_stats tdss ON s.problem_name = tdss.problem_name
         LEFT JOIN fastest_agents_stats fas ON s.problem_name = fas.problem_name
         """,
-        set_id
+        set_id,
     )
 
     problem_stats = [ProblemStatistics(**row) for row in rows]
@@ -341,12 +349,25 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
     evaluation_set_problems = await get_all_evaluation_set_problems_for_set_id(set_id)
     for evaluation_set_problem in evaluation_set_problems:
         if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
-            problem_stats.append(ProblemStatistics(
-                problem_name=evaluation_set_problem.problem_name,
-
-                in_screener_1_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1 for _evaluation_set_problem in evaluation_set_problems),
-                in_screener_2_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2 for _evaluation_set_problem in evaluation_set_problems),
-                in_validator_set_group=any(_evaluation_set_problem.problem_name == evaluation_set_problem.problem_name and _evaluation_set_problem.set_group == EvaluationSetGroup.validator for _evaluation_set_problem in evaluation_set_problems)
-            ))
+            problem_stats.append(
+                ProblemStatistics(
+                    problem_name=evaluation_set_problem.problem_name,
+                    in_screener_1_set_group=any(
+                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                        and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1
+                        for _evaluation_set_problem in evaluation_set_problems
+                    ),
+                    in_screener_2_set_group=any(
+                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                        and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2
+                        for _evaluation_set_problem in evaluation_set_problems
+                    ),
+                    in_validator_set_group=any(
+                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                        and _evaluation_set_problem.set_group == EvaluationSetGroup.validator
+                        for _evaluation_set_problem in evaluation_set_problems
+                    ),
+                )
+            )
 
     return problem_stats

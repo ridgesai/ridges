@@ -5,11 +5,11 @@
 import unittest
 
 from main import (
-    sublist,
+    EQUAL,
     SUBLIST,
     SUPERLIST,
-    EQUAL,
     UNEQUAL,
+    sublist,
 )
 
 
@@ -85,6 +85,4 @@ class SublistTest(unittest.TestCase):
         )
 
     def test_spread_sublist(self):
-        self.assertEqual(
-            sublist(list(range(3, 200, 3)), list(range(15, 200, 15))), UNEQUAL
-        )
+        self.assertEqual(sublist(list(range(3, 200, 3)), list(range(15, 200, 15))), UNEQUAL)

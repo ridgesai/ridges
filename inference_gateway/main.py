@@ -1,26 +1,34 @@
 import random
-import uvicorn
-from inference_gateway.providers.openrouter import OpenRouterProvider
-import utils.logger as logger
-import inference_gateway.config as config
-
-from uuid import UUID
-from typing import List
-from functools import wraps
-from pydantic import BaseModel
-from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
-from models.evaluation_run import EvaluationRunStatus
-from inference_gateway.cost_hash_map import CostHashMap
-from inference_gateway.providers.provider import Provider
-from inference_gateway.providers.chutes import ChutesProvider
-from inference_gateway.providers.targon import TargonProvider
-from queries.evaluation_run import get_evaluation_run_status_by_id
-from queries.embedding import create_new_embedding, update_embedding_by_id
-from queries.inference import create_new_inference, update_inference_by_id
-from utils.database import initialize_database, get_debug_query_info, deinitialize_database
-from inference_gateway.models import EmbeddingRequest, InferenceRequest, EmbeddingResponse, InferenceResponse, InferenceToolMode, EmbeddingModelInfo, InferenceModelInfo
+from functools import wraps
+from typing import List
+from uuid import UUID
 
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+import inference_gateway.config as config
+import utils.logger as logger
+from inference_gateway.cost_hash_map import CostHashMap
+from inference_gateway.models import (
+    EmbeddingModelInfo,
+    EmbeddingRequest,
+    EmbeddingResponse,
+    InferenceModelInfo,
+    InferenceRequest,
+    InferenceResponse,
+    InferenceToolMode,
+)
+from inference_gateway.providers.chutes import ChutesProvider
+from inference_gateway.providers.openrouter import OpenRouterProvider
+from inference_gateway.providers.provider import Provider
+from inference_gateway.providers.targon import TargonProvider
+from models.evaluation_run import EvaluationRunStatus
+from queries.embedding import create_new_embedding, update_embedding_by_id
+from queries.evaluation_run import get_evaluation_run_status_by_id
+from queries.inference import create_new_inference, update_inference_by_id
+from utils.database import deinitialize_database, get_debug_query_info, initialize_database
 
 
 class WeightedProvider:
@@ -28,16 +36,17 @@ class WeightedProvider:
         self.provider = provider
         self.weight = weight
 
+
 providers = []
 
 
-
 def get_provider_that_supports_model_for_inference(model_name: str) -> Provider:
-    inference_providers = [wp for wp in providers if wp.provider.is_model_supported_for_inference(model_name)]  
+    inference_providers = [wp for wp in providers if wp.provider.is_model_supported_for_inference(model_name)]
     if not inference_providers:
         return None
     chosen = random.choices(inference_providers, weights=[wp.weight for wp in inference_providers], k=1)[0]
     return chosen.provider
+
 
 def get_provider_that_supports_model_for_embedding(model_name: str) -> Provider:
     embedding_providers = [wp for wp in providers if wp.provider.is_model_supported_for_embedding(model_name)]
@@ -45,7 +54,6 @@ def get_provider_that_supports_model_for_embedding(model_name: str) -> Provider:
         return None
     chosen = random.choices(embedding_providers, weights=[wp.weight for wp in embedding_providers], k=1)[0]
     return chosen.provider
-
 
 
 @asynccontextmanager
@@ -56,10 +64,8 @@ async def lifespan(app: FastAPI):
             password=config.DATABASE_PASSWORD,
             host=config.DATABASE_HOST,
             port=config.DATABASE_PORT,
-            name=config.DATABASE_NAME
+            name=config.DATABASE_NAME,
         )
-
-
 
     global providers
     if config.USE_CHUTES:
@@ -75,23 +81,13 @@ async def lifespan(app: FastAPI):
         if config.TEST_EMBEDDING_MODELS:
             await wp.provider.test_all_embedding_models()
 
-
-
     yield
-    
-
 
     if config.USE_DATABASE:
         await deinitialize_database()
 
 
-
-app = FastAPI(
-    title="Inference Gateway", 
-    description="Inference gateway server",
-    lifespan=lifespan
-)
-
+app = FastAPI(title="Inference Gateway", description="Inference gateway server", lifespan=lifespan)
 
 
 def handle_http_exceptions(func):
@@ -102,12 +98,11 @@ def handle_http_exceptions(func):
         except HTTPException as e:
             logger.error(f"HTTP exception: {e.status_code} {e.detail}")
             raise
+
     return wrapper
 
 
-
 cost_hash_map = CostHashMap()
-
 
 
 # NOTE ADAM: inference@main.py -> Handles HTTP exceptions and database
@@ -119,35 +114,31 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     # If you specify a tool mode of NONE, you must not specify any tools
     if request.tool_mode == InferenceToolMode.NONE and request.tools:
         raise HTTPException(
-            status_code=422,
-            detail="If you specify a tool mode of NONE, you must not specify any tools."
+            status_code=422, detail="If you specify a tool mode of NONE, you must not specify any tools."
         )
 
     # If you specify a tool mode of REQUIRED, you must specify at least one tool
     if request.tool_mode == InferenceToolMode.REQUIRED and not request.tools:
         raise HTTPException(
-            status_code=422,
-            detail="If you specify a tool mode of REQUIRED, you must specify at least one tool."
+            status_code=422, detail="If you specify a tool mode of REQUIRED, you must specify at least one tool."
         )
-
-
 
     if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
-        
+
         # Make sure the evaluation run actually exists
         if evaluation_run_status is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}."
+                detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}.",
             )
-        
+
         # Make sure the evaluation run is in the running_agent state
         if evaluation_run_status != EvaluationRunStatus.running_agent:
             raise HTTPException(
                 status_code=400,
-                detail=f"The evaluation run with ID {request.evaluation_run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
+                detail=f"The evaluation run with ID {request.evaluation_run_id} is not in the running_agent state (current state: {evaluation_run_status.value}).",
             )
 
         # Make sure the evaluation run has not reached or exceeded its cost limit
@@ -155,27 +146,23 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         if cost >= config.MAX_COST_PER_EVALUATION_RUN_USD:
             raise HTTPException(
                 status_code=429,
-                detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD)."
+                detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD).",
             )
-
-        
 
     # Make sure we support the model for inference
     provider = get_provider_that_supports_model_for_inference(request.model)
     if not provider:
         raise HTTPException(
-            status_code=404,
-            detail=f"The model {request.model} is not supported by Ridges for inference."
+            status_code=404, detail=f"The model {request.model} is not supported by Ridges for inference."
         )
 
     if config.USE_DATABASE:
         inference_id = await create_new_inference(
             evaluation_run_id=request.evaluation_run_id,
-
             provider=provider.name.lower(),
             model=request.model,
             temperature=request.temperature,
-            messages=request.messages
+            messages=request.messages,
         )
 
     response = await provider.inference(
@@ -183,34 +170,26 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         temperature=request.temperature,
         messages=request.messages,
         tool_mode=request.tool_mode,
-        tools=request.tools
+        tools=request.tools,
     )
 
     if config.USE_DATABASE:
         await update_inference_by_id(
             inference_id=inference_id,
-
             status_code=response.status_code,
             response=response.content if response.status_code == 200 else response.error_message,
             num_input_tokens=response.num_input_tokens,
             num_output_tokens=response.num_output_tokens,
-            cost_usd=response.cost_usd
+            cost_usd=response.cost_usd,
         )
 
     if response.cost_usd is not None:
         cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
 
     if response.status_code == 200:
-        return InferenceResponse(
-            content=response.content,
-            tool_calls=response.tool_calls
-        )
+        return InferenceResponse(content=response.content, tool_calls=response.tool_calls)
     else:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=response.error_message
-        )
-
+        raise HTTPException(status_code=response.status_code, detail=response.error_message)
 
 
 # NOTE ADAM: embedding@main.py -> Handles HTTP exceptions and database
@@ -222,19 +201,19 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
         # Get the status of the evaluation run
         evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
-        
+
         # Make sure the evaluation run actually exists
         if evaluation_run_status is None:
             raise HTTPException(
                 status_code=400,
-                detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}."
+                detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}.",
             )
-        
+
         # Make sure the evaluation run is in the running_agent state
         if evaluation_run_status != EvaluationRunStatus.running_agent:
             raise HTTPException(
                 status_code=400,
-                detail=f"The evaluation run with ID {request.evaluation_run_id} is not in the running_agent state (current state: {evaluation_run_status.value})."
+                detail=f"The evaluation run with ID {request.evaluation_run_id} is not in the running_agent state (current state: {evaluation_run_status.value}).",
             )
 
         # Make sure the evaluation run has not reached or exceeded its cost limit
@@ -242,62 +221,49 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
         if cost >= config.MAX_COST_PER_EVALUATION_RUN_USD:
             raise HTTPException(
                 status_code=429,
-                detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD)."
+                detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD).",
             )
-
-    
 
     # Make sure we support the model for embedding
     provider = get_provider_that_supports_model_for_embedding(request.model)
     if not provider:
         raise HTTPException(
-            status_code=404,
-            detail=f"The model {request.model} is not supported by Ridges for embedding."
+            status_code=404, detail=f"The model {request.model} is not supported by Ridges for embedding."
         )
 
     if config.USE_DATABASE:
         embedding_id = await create_new_embedding(
             evaluation_run_id=request.evaluation_run_id,
-
             provider=provider.name.lower(),
             model=request.model,
-            input=request.input
+            input=request.input,
         )
 
-    response = await provider.embedding(
-        model_name=request.model,
-        input=request.input
-    )
+    response = await provider.embedding(model_name=request.model, input=request.input)
 
     if config.USE_DATABASE:
         await update_embedding_by_id(
             embedding_id=embedding_id,
-
             status_code=response.status_code,
             response=response.embedding if response.status_code == 200 else response.error_message,
             num_input_tokens=response.num_input_tokens,
-            cost_usd=response.cost_usd
+            cost_usd=response.cost_usd,
         )
 
         if response.cost_usd is not None:
             cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
-    
-    if response.status_code == 200:
-        return EmbeddingResponse(
-            embedding=response.embedding
-        )
-    else:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=response.error_message
-        )
 
+    if response.status_code == 200:
+        return EmbeddingResponse(embedding=response.embedding)
+    else:
+        raise HTTPException(status_code=response.status_code, detail=response.error_message)
 
 
 class UsageResponse(BaseModel):
     used_cost_usd: float
     remaining_cost_usd: float
     max_cost_usd: float
+
 
 @app.get("/api/usage")
 @handle_http_exceptions
@@ -306,9 +272,8 @@ async def usage(evaluation_run_id: UUID) -> UsageResponse:
     return UsageResponse(
         used_cost_usd=used_cost_usd,
         remaining_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD - used_cost_usd,
-        max_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD
+        max_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD,
     )
-
 
 
 @app.get("/api/inference-models")
@@ -316,17 +281,16 @@ async def usage(evaluation_run_id: UUID) -> UsageResponse:
 async def inference_models() -> List[InferenceModelInfo]:
     return [model for wp in providers for model in wp.provider.inference_models]
 
+
 @app.get("/api/embedding-models")
 @handle_http_exceptions
 async def embedding_models() -> List[EmbeddingModelInfo]:
     return [model for wp in providers for model in wp.provider.embedding_models]
 
 
-
 @app.get("/debug/query-info")
 async def debug_query_info():
     return get_debug_query_info()
-
 
 
 if __name__ == "__main__":

@@ -35,17 +35,13 @@ class SeriesTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             slices("12345", 6)
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "slice length cannot be greater than series length"
-        )
+        self.assertEqual(err.exception.args[0], "slice length cannot be greater than series length")
 
     def test_slice_length_is_way_too_large(self):
         with self.assertRaises(ValueError) as err:
             slices("12345", 42)
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "slice length cannot be greater than series length"
-        )
+        self.assertEqual(err.exception.args[0], "slice length cannot be greater than series length")
 
     def test_slice_length_cannot_be_zero(self):
         with self.assertRaises(ValueError) as err:
