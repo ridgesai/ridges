@@ -7,6 +7,8 @@ from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
 
+from models.evaluation_set import EvaluationSetGroup, RawInfiniteSWEProblem
+from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id, get_infinite_swe_problems, get_latest_set_id
 from utils.git import COMMIT_HASH
 from utils.debug_lock import DebugLock
 from http import HTTPStatus
@@ -393,6 +395,29 @@ async def validator_heartbeat(
     
     return ValidatorHeartbeatResponse()
 
+
+# /validator/heartbeat
+@router.post("/infinite-swe-problems")
+async def validator_infinite_swe_problems(
+    request: ValidatorInfiniteSWESuiteProblemsRequest,
+    validator: Validator = Depends(get_request_validator) # No lock required
+) -> ValidatorInfiniteSWESuiteProblemsResponse:
+    logger.info(f"Validator '{validator.name}' requested Infinite SWE problems")
+    all_evaluation_set_problems = await get_all_evaluation_set_problems_for_set_id(await get_latest_set_id())
+
+    # Only send the problems for the appropriate validator/screener
+    if validator.hotkey.startswith("screener-1"):
+        infinite_swe_problem_ids = [problem.problem_name for problem in all_evaluation_set_problems if problem.set_group == EvaluationSetGroup.screener_1]
+    elif validator.hotkey.startswith("screener-2"):
+        infinite_swe_problem_ids = [problem.problem_name for problem in all_evaluation_set_problems if problem.set_group == EvaluationSetGroup.screener_2]
+    else:
+        infinite_swe_problem_ids = [problem.problem_name for problem in all_evaluation_set_problems if problem.set_group == EvaluationSetGroup.validator]
+
+    problems: list[RawInfiniteSWEProblem] = await get_infinite_swe_problems(
+        [UUID(int=int(problem_name)) for problem_name in infinite_swe_problem_ids]
+    )
+
+    return ValidatorInfiniteSWESuiteProblemsResponse(problems=problems)
 
 
 # /validator/update-evaluation-run

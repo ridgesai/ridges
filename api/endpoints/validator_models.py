@@ -49,6 +49,12 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
 
 
+class ValidatorInfiniteSWESuiteProblemsRequest(BaseModel):
+    pass
+
+class ValidatorInfiniteSWESuiteProblemsResponse(BaseModel):
+    problems: list[str] # list of json objects
+
 
 class ValidatorHeartbeatRequest(BaseModel):
     system_metrics: SystemMetrics
