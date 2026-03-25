@@ -15,17 +15,13 @@ class RailFenceCipherTest(unittest.TestCase):
         self.assertMultiLineEqual(encode("XOXOXOXOXOXOXOXOXO", 2), "XXXXXXXXXOOOOOOOOO")
 
     def test_encode_with_three_rails(self):
-        self.assertMultiLineEqual(
-            encode("WEAREDISCOVEREDFLEEATONCE", 3), "WECRLTEERDSOEEFEAOCAIVDEN"
-        )
+        self.assertMultiLineEqual(encode("WEAREDISCOVEREDFLEEATONCE", 3), "WECRLTEERDSOEEFEAOCAIVDEN")
 
     def test_encode_with_ending_in_the_middle(self):
         self.assertMultiLineEqual(encode("EXERCISES", 4), "ESXIEECSR")
 
     def test_decode_with_three_rails(self):
-        self.assertMultiLineEqual(
-            decode("TEITELHDVLSNHDTISEIIEA", 3), "THEDEVILISINTHEDETAILS"
-        )
+        self.assertMultiLineEqual(decode("TEITELHDVLSNHDTISEIIEA", 3), "THEDEVILISINTHEDETAILS")
 
     def test_decode_with_five_rails(self):
         self.assertMultiLineEqual(decode("EIEXMSMESAORIWSCE", 5), "EXERCISMISAWESOME")

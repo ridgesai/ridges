@@ -1,6 +1,6 @@
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-from utils.database import db_operation, DatabaseConnection
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation
@@ -23,6 +23,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
     if current_leader is None or "miner_hotkey" not in current_leader:
         return None
     return current_leader["miner_hotkey"]
+
 
 @db_operation
 async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[Dict[str, str]]:

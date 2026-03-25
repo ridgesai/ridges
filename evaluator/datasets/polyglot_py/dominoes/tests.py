@@ -91,30 +91,19 @@ class DominoesTest(unittest.TestCase):
         return list(sorted(tuple(sorted(domino)) for domino in dominoes))
 
     def assert_same_dominoes(self, input_dominoes, output_chain):
-        msg = (
-            "Dominoes used in the output must be the same "
-            "as the ones given in the input"
-        )
+        msg = "Dominoes used in the output must be the same as the ones given in the input"
         input_normal = self.normalize_dominoes(input_dominoes)
         output_normal = self.normalize_dominoes(output_chain)
         self.assertEqual(input_normal, output_normal, msg)
 
     def assert_consecutive_dominoes_match(self, output_chain):
         for i in range(len(output_chain) - 1):
-            msg = (
-                "In chain {}, right end of domino {} ({}) "
-                "and left end of domino {} ({}) must match"
-            )
-            msg = msg.format(
-                output_chain, i, output_chain[i], i + 1, output_chain[i + 1]
-            )
+            msg = "In chain {}, right end of domino {} ({}) and left end of domino {} ({}) must match"
+            msg = msg.format(output_chain, i, output_chain[i], i + 1, output_chain[i + 1])
             self.assertEqual(output_chain[i][1], output_chain[i + 1][0], msg)
 
     def assert_dominoes_at_ends_match(self, output_chain):
-        msg = (
-            "In chain {}, left end of first domino ({}) and "
-            "right end of last domino ({}) must match"
-        )
+        msg = "In chain {}, left end of first domino ({}) and right end of last domino ({}) must match"
         msg = msg.format(output_chain, output_chain[0], output_chain[-1])
         self.assertEqual(output_chain[0][0], output_chain[-1][1], msg)
 

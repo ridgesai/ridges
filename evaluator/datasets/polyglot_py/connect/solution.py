@@ -1,9 +1,7 @@
-
 class ConnectGame:
-
     DIRECTIONS = [(0, 1), (0, -1), (1, 0), (-1, 0), (1, -1), (-1, 1)]
-    WHITE = 'O'
-    BLACK = 'X'
+    WHITE = "O"
+    BLACK = "X"
 
     def __init__(self, lines):
         self.board = ConnectGame.make_board(lines)
@@ -21,7 +19,7 @@ class ConnectGame:
 
     @staticmethod
     def make_board(lines):
-        return [''.join(cur_line.split()) for cur_line in lines.splitlines()]
+        return ["".join(cur_line.split()) for cur_line in lines.splitlines()]
 
     def player_reach_dest(self, player, width, height):
         if player == self.BLACK:
@@ -63,4 +61,4 @@ class ConnectGame:
             return self.BLACK
         if self.check_player_is_winner(self.WHITE):
             return self.WHITE
-        return ''
+        return ""

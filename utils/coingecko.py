@@ -1,5 +1,6 @@
 import httpx
 
+
 async def get_tao_price() -> float:
     url = "https://api.coingecko.com/api/v3/simple/price"
     params = {"ids": "bittensor", "vs_currencies": "usd"}

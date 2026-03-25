@@ -1,24 +1,25 @@
 from enum import Enum
-from pydantic import BaseModel
 from typing import Any, Optional
 
+from pydantic import BaseModel
 
 
 class ProblemTestCategory(str, Enum):
-    default = 'default'
-    pass_to_pass = 'pass_to_pass'
-    fail_to_pass = 'fail_to_pass'
+    default = "default"
+    pass_to_pass = "pass_to_pass"
+    fail_to_pass = "fail_to_pass"
+
 
 class ProblemTest(BaseModel):
     name: str
     category: ProblemTestCategory
 
 
-
 class ProblemTestResultStatus(str, Enum):
-    PASS = 'pass'
-    FAIL = 'fail'
-    SKIP = 'skip'
+    PASS = "pass"
+    FAIL = "fail"
+    SKIP = "skip"
+
 
 class ProblemTestResult(BaseModel):
     name: str
@@ -26,12 +27,12 @@ class ProblemTestResult(BaseModel):
     status: ProblemTestResultStatus
 
 
-
 class ProblemDifficulty(str, Enum):
-    EASY = 'easy'
-    MEDIUM = 'medium'
-    HARD = 'hard'
-    IMPOSSIBLE = 'impossible'
+    EASY = "easy"
+    MEDIUM = "medium"
+    HARD = "hard"
+    IMPOSSIBLE = "impossible"
+
 
 class Problem(BaseModel):
     name: str

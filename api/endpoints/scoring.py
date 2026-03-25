@@ -1,20 +1,21 @@
-import api.config as config
+from datetime import datetime
+from typing import Dict, Optional
 
 from fastapi import APIRouter
-from datetime import datetime
 from pydantic import BaseModel
-from utils.ttl import ttl_cache
-from typing import Dict, Optional
+
+import api.config as config
 from models.evaluation_set import EvaluationSetGroup
-from utils.bittensor import check_if_hotkey_is_registered
-from queries.scores import get_weight_receiving_agent_hotkey
 from queries.evaluation_set import get_latest_set_id, get_set_created_at
-from queries.statistics import get_average_score_per_evaluation_set_group, get_average_wait_time_per_evaluation_set_group
-
-
+from queries.scores import get_weight_receiving_agent_hotkey
+from queries.statistics import (
+    get_average_score_per_evaluation_set_group,
+    get_average_wait_time_per_evaluation_set_group,
+)
+from utils.bittensor import check_if_hotkey_is_registered
+from utils.ttl import ttl_cache
 
 router = APIRouter()
-
 
 
 # /scoring/weights
@@ -37,7 +38,6 @@ async def weights() -> Dict[str, float]:
     return {config.OWNER_HOTKEY: 1.0}
 
 
-
 # /scoring/screener-info
 class ScoringScreenerInfoResponse(BaseModel):
     screener_1_threshold: float
@@ -52,8 +52,9 @@ class ScoringScreenerInfoResponse(BaseModel):
     screener_2_average_wait_time: Optional[float] = None
     validator_average_wait_time: Optional[float] = None
 
+
 @router.get("/screener-info")
-@ttl_cache(ttl_seconds=60) # 1 minute
+@ttl_cache(ttl_seconds=60)  # 1 minute
 async def screener_info() -> ScoringScreenerInfoResponse:
     average_score_per_evaluation_set_group = await get_average_score_per_evaluation_set_group()
     average_wait_time_per_evaluation_set_group = await get_average_wait_time_per_evaluation_set_group()
@@ -62,16 +63,13 @@ async def screener_info() -> ScoringScreenerInfoResponse:
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
         prune_threshold=config.PRUNE_THRESHOLD,
-
         screener_1_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_1],
         screener_2_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_2],
         validator_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.validator],
-
         screener_1_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.screener_1],
         screener_2_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.screener_2],
-        validator_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.validator]
+        validator_average_wait_time=average_wait_time_per_evaluation_set_group[EvaluationSetGroup.validator],
     )
-
 
 
 # /scoring/latest-set-info
@@ -84,7 +82,4 @@ class ScoringLatestSetInfo(BaseModel):
 async def latest_set_info() -> ScoringLatestSetInfo:
     latest_set_id = await get_latest_set_id()
     latest_set_created_at = await get_set_created_at(latest_set_id)
-    return ScoringLatestSetInfo(
-        latest_set_id=latest_set_id,
-        latest_set_created_at=latest_set_created_at
-    )
+    return ScoringLatestSetInfo(latest_set_id=latest_set_id, latest_set_created_at=latest_set_created_at)

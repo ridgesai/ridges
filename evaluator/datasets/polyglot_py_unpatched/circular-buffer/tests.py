@@ -5,9 +5,9 @@
 import unittest
 
 from main import (
-    CircularBuffer,
     BufferEmptyException,
     BufferFullException,
+    CircularBuffer,
 )
 
 

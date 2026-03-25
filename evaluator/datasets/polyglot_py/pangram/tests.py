@@ -32,9 +32,7 @@ class PangramTest(unittest.TestCase):
         self.assertIs(is_pangram("the_quick_brown_fox_jumps_over_the_lazy_dog"), True)
 
     def test_with_numbers(self):
-        self.assertIs(
-            is_pangram("the 1 quick brown fox jumps over the 2 lazy dogs"), True
-        )
+        self.assertIs(is_pangram("the 1 quick brown fox jumps over the 2 lazy dogs"), True)
 
     def test_missing_letters_replaced_by_numbers(self):
         self.assertIs(is_pangram("7h3 qu1ck brown fox jumps ov3r 7h3 lazy dog"), False)

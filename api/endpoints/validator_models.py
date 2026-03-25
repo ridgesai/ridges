@@ -1,13 +1,14 @@
-from uuid import UUID
-from models.agent import Agent
 from datetime import datetime
-from pydantic import BaseModel
 from typing import List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel
+
+from models.agent import Agent
 from models.evaluation import Evaluation
+from models.evaluation_run import EvaluationRunStatus
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
-from models.evaluation_run import EvaluationRunStatus
-
 
 
 class ValidatorRegistrationRequest(BaseModel):
@@ -16,6 +17,7 @@ class ValidatorRegistrationRequest(BaseModel):
     hotkey: str
     commit_hash: str
 
+
 class ValidatorRegistrationResponse(BaseModel):
     session_id: UUID
     running_agent_timeout_seconds: int
@@ -23,11 +25,11 @@ class ValidatorRegistrationResponse(BaseModel):
     max_evaluation_run_log_size_bytes: int
 
 
-
 class ScreenerRegistrationRequest(BaseModel):
     name: str
     password: str
     commit_hash: str
+
 
 class ScreenerRegistrationResponse(BaseModel):
     session_id: UUID
@@ -36,32 +38,32 @@ class ScreenerRegistrationResponse(BaseModel):
     max_evaluation_run_log_size_bytes: int
 
 
-
 class ValidatorRequestEvaluationRequest(BaseModel):
     pass
 
-class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel): # :(
+
+class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel):  # :(
     evaluation_run_id: UUID
     problem_name: str
+
 
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
 
 
-
 class ValidatorHeartbeatRequest(BaseModel):
     system_metrics: SystemMetrics
+
 
 class ValidatorHeartbeatResponse(BaseModel):
     pass
 
 
-
 class ValidatorUpdateEvaluationRunRequest(BaseModel):
     evaluation_run_id: UUID
     updated_status: EvaluationRunStatus
-    
+
     patch: Optional[str] = None
     test_results: Optional[List[ProblemTestResult]] = None
 
@@ -71,25 +73,25 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
     error_code: Optional[int] = None
     error_message: Optional[str] = None
 
+
 class ValidatorUpdateEvaluationRunResponse(BaseModel):
     pass
-
 
 
 class ValidatorDisconnectRequest(BaseModel):
     reason: str
 
+
 class ValidatorDisconnectResponse(BaseModel):
     pass
-
 
 
 class ValidatorFinishEvaluationRequest(BaseModel):
     pass
 
+
 class ValidatorFinishEvaluationResponse(BaseModel):
     pass
-
 
 
 class ConnectedValidatorInfo(BaseModel):

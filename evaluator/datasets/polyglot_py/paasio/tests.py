@@ -1,12 +1,11 @@
 import errno
-import os
-import unittest
 import inspect
 import io
-from unittest.mock import ANY, call, NonCallableMagicMock, patch
+import os
+import unittest
+from unittest.mock import ANY, NonCallableMagicMock, call, patch
 
 from main import MeteredFile, MeteredSocket
-
 
 ZEN = b"""Beautiful is better than ugly.
 Explicit is better than implicit.
@@ -89,9 +88,7 @@ class MockSock:
         if bufsize is None:
             raise TypeError("'NoneType' object cannot be interpreted as an integer")
         if not isinstance(flags, int):
-            raise TypeError(
-                "an integer is required (got type {})".format(type(flags).__name__)
-            )
+            raise TypeError("an integer is required (got type {})".format(type(flags).__name__))
         self.flags = flags
         if self.__exception is not None:
             raise self.__exception
@@ -104,9 +101,7 @@ class MockSock:
         if self.__closed:
             raise OSError(errno.EBADF, os.strerror(errno.EBADF))
         if not isinstance(flags, int):
-            raise TypeError(
-                "an integer is required (got type {})".format(type(flags).__name__)
-            )
+            raise TypeError("an integer is required (got type {})".format(type(flags).__name__))
         self.flags = flags
         if self.__chunk is None:
             return self._sender.write(data)
@@ -133,13 +128,12 @@ class SuperMock:
             return self.mock_object
 
     def __repr__(self):
-        return "<SuperMock at {} with mock object: {!r}>".format(
-            hex(id(self)), self.mock_object
-        )
+        return "<SuperMock at {} with mock object: {!r}>".format(hex(id(self)), self.mock_object)
 
     mock_object = None
     init_called = 0
     initialized = False
+
 
 class PaasioTest(unittest.TestCase):
     def test_meteredsocket_context_manager(self):
@@ -282,10 +276,7 @@ class PaasioTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "^'NoneType'.+integer$"):
             with MeteredSocket(mock) as socket:
                 socket.recv(None)
-        self.assertTrue(
-            call(None) in mock.recv.mock_calls
-            or call(None, ANY) in mock.recv.mock_calls
-        )
+        self.assertTrue(call(None) in mock.recv.mock_calls or call(None, ANY) in mock.recv.mock_calls)
 
     def test_meteredsocket_flags_support(self):
         mock = NonCallableMagicMock(wraps=MockSock(), autospec=True)
@@ -408,9 +399,7 @@ class PaasioTest(unittest.TestCase):
         for line in file:
             actual_reads += line
             self.assertLess(0, mock.readline.call_count, "File's readline not called")
-            self.assertGreater(
-                50, mock.readline.call_count, "Possible infinte loop detected"
-            )
+            self.assertGreater(50, mock.readline.call_count, "Possible infinte loop detected")
             self.assertEqual(file.read_ops, mock.readline.call_count)
         self.assertFalse(mock.__iter__.called)
         self.assertEqual(len(ZEN), file.read_bytes)

@@ -11,19 +11,13 @@ from main import (
 
 class MarkdownTest(unittest.TestCase):
     def test_parses_normal_text_as_a_paragraph(self):
-        self.assertEqual(
-            parse("This will be a paragraph"), "<p>This will be a paragraph</p>"
-        )
+        self.assertEqual(parse("This will be a paragraph"), "<p>This will be a paragraph</p>")
 
     def test_parsing_italics(self):
-        self.assertEqual(
-            parse("_This will be italic_"), "<p><em>This will be italic</em></p>"
-        )
+        self.assertEqual(parse("_This will be italic_"), "<p><em>This will be italic</em></p>")
 
     def test_parsing_bold_text(self):
-        self.assertEqual(
-            parse("__This will be bold__"), "<p><strong>This will be bold</strong></p>"
-        )
+        self.assertEqual(parse("__This will be bold__"), "<p><strong>This will be bold</strong></p>")
 
     def test_mixed_normal_italics_and_bold_text(self):
         self.assertEqual(
@@ -41,19 +35,13 @@ class MarkdownTest(unittest.TestCase):
         self.assertEqual(parse("### This will be an h3"), "<h3>This will be an h3</h3>")
 
     def test_with_h4_header_level(self):
-        self.assertEqual(
-            parse("#### This will be an h4"), "<h4>This will be an h4</h4>"
-        )
+        self.assertEqual(parse("#### This will be an h4"), "<h4>This will be an h4</h4>")
 
     def test_with_h5_header_level(self):
-        self.assertEqual(
-            parse("##### This will be an h5"), "<h5>This will be an h5</h5>"
-        )
+        self.assertEqual(parse("##### This will be an h5"), "<h5>This will be an h5</h5>")
 
     def test_with_h6_header_level(self):
-        self.assertEqual(
-            parse("###### This will be an h6"), "<h6>This will be an h6</h6>"
-        )
+        self.assertEqual(parse("###### This will be an h6"), "<h6>This will be an h6</h6>")
 
     def test_h7_header_level_is_a_paragraph(self):
         self.assertEqual(
@@ -62,9 +50,7 @@ class MarkdownTest(unittest.TestCase):
         )
 
     def test_unordered_lists(self):
-        self.assertEqual(
-            parse("* Item 1\n* Item 2"), "<ul><li>Item 1</li><li>Item 2</li></ul>"
-        )
+        self.assertEqual(parse("* Item 1\n* Item 2"), "<ul><li>Item 1</li><li>Item 2</li></ul>")
 
     def test_with_a_little_bit_of_everything(self):
         self.assertEqual(
