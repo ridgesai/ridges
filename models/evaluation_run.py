@@ -65,6 +65,10 @@ class EvaluationRunErrorCode(IntEnum):
         3040,
         "The platform was restarted while the evaluation run was running the evaluation",
     )
+    PLATFORM_TOO_MANY_INFERENCE_ERRORS = (
+        3050,
+        "Too many platform-side inference errors occurred during the evaluation run",
+    )
 
     def get_error_message(self) -> str:
         return self.message
