@@ -371,7 +371,7 @@ async def validator_request_evaluation(
     logger.info(f"  # of Evaluation Runs: {len(evaluation_runs)}")
 
     agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-    evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name) for evaluation_run in evaluation_runs]
+    evaluation_runs = [ValidatorRequestEvaluationResponseEvaluationRun(evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name, problem_suite_name=evaluation_run.problem_suite_name) for evaluation_run in evaluation_runs]
 
     return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
 

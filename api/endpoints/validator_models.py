@@ -4,7 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import List, Optional
 from models.evaluation import Evaluation
-from models.problem import ProblemTestResult
+from models.problem import ProblemSuiteName, ProblemTestResult
 from utils.system_metrics import SystemMetrics
 from models.evaluation_run import EvaluationRunStatus
 
@@ -43,6 +43,7 @@ class ValidatorRequestEvaluationRequest(BaseModel):
 class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel): # :(
     evaluation_run_id: UUID
     problem_name: str
+    problem_suite_name: ProblemSuiteName
 
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
