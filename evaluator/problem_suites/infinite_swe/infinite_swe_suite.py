@@ -22,7 +22,6 @@ from evaluator.models import EvaluationRunException
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from models.evaluation_run import EvaluationRunErrorCode
-from models.evaluation_set import InfiniteSWEProblem
 from models.problem import Problem, ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
 from utils.diff import validate_diff_for_local_repo
 from utils.docker import get_docker_client

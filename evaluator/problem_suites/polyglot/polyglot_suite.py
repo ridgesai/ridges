@@ -12,10 +12,9 @@ import requests
 
 import utils.logger as logger
 from evaluator.models import EvaluationRunException, Sandbox
-from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from models.evaluation_run import EvaluationRunErrorCode
-from models.problem import Problem, ProblemSuiteName, ProblemTestResult
+from models.problem import Problem, ProblemSuite, ProblemSuiteName, ProblemTestResult
 from utils.diff import apply_diff_to_local_repo, get_file_diff, validate_diff_for_local_repo
 from utils.git import init_local_repo_with_initial_commit
 
@@ -38,7 +37,7 @@ class PolyglotSuite(ProblemSuite):
         dataset_path = str(
             pathlib.Path(__file__).parent.parent.parent
             / "datasets"
-            / (f"polyglot_{self.language}" + ("_unpatched" if unpatched else ""))
+            / (f"polyglot_{self.language}" + ("_unpatched" if self.unpatched else ""))
         )
 
         logger.info(f"Loading problems from {dataset_path}...")

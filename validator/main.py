@@ -13,7 +13,6 @@ import httpx
 
 import utils.logger as logger
 import validator.config as config
-from api.endpoints.validator_models import *
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
@@ -48,7 +47,6 @@ max_evaluation_run_log_size_bytes = None
 
 # The sandbox manager and problem suites
 sandbox_manager = None
-problem_suites = []
 
 
 # Disconnect from the Ridges platform (called when the program exits)
@@ -134,14 +132,14 @@ def truncate_logs_if_required(log: str) -> str:
 
 
 async def _simulate_run_evaluation_run_with_semaphore(
-    evaluation_run_id: UUID, problem_name: str, semaphore: asyncio.Semaphore
+    evaluation_run_id: UUID, problem_name: str, problem_suites: list[ProblemSuite], semaphore: asyncio.Semaphore
 ):
     async with semaphore:
-        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name)
+        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name, problem_suites)
 
 
 # Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
-async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str):
+async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str, problem_suites: list[ProblemSuite]):
     logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
 
     # Move from pending -> initializing_agent
@@ -183,14 +181,20 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
 
 
 async def _run_evaluation_run_with_semaphore(
-    evaluation_run_id: UUID, problem_name: str, agent_code: str, semaphore: asyncio.Semaphore
+    evaluation_run_id: UUID,
+    problem_name: str,
+    agent_code: str,
+    problem_suites: list[ProblemSuite],
+    semaphore: asyncio.Semaphore,
 ):
     async with semaphore:
-        return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code)
+        return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code, problem_suites)
 
 
 # Run an evaluation run
-async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_code: str):
+async def _run_evaluation_run(
+    evaluation_run_id: UUID, problem_name: str, agent_code: str, problem_suites: list[ProblemSuite]
+):
     try:
         # Figure out what problem suite this problem belongs to
         problem_suite = next((suite for suite in problem_suites if suite.has_problem_name(problem_name)), None)
@@ -326,7 +330,9 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
 
 
 # Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
-async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse):
+async def _run_evaluation(
+    request_evaluation_response: ValidatorRequestEvaluationResponse, problem_suites: list[ProblemSuite]
+):
     logger.info("Received evaluation:")
     logger.info(f"  # of evaluation runs: {len(request_evaluation_response.evaluation_runs)}")
 
@@ -344,14 +350,20 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         if config.SIMULATE_EVALUATION_RUNS:
             tasks.append(
                 asyncio.create_task(
-                    _simulate_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, semaphore)
+                    _simulate_run_evaluation_run_with_semaphore(
+                        evaluation_run_id, problem_name, problem_suites, semaphore
+                    )
                 )
             )
         else:
             tasks.append(
                 asyncio.create_task(
                     _run_evaluation_run_with_semaphore(
-                        evaluation_run_id, problem_name, request_evaluation_response.agent_code, semaphore
+                        evaluation_run_id,
+                        problem_name,
+                        request_evaluation_response.agent_code,
+                        problem_suites,
+                        semaphore,
                     )
                 )
             )
@@ -372,7 +384,6 @@ async def main():
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
     global sandbox_manager
-    global problem_suites
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
@@ -484,7 +495,7 @@ async def main():
             await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
             continue
 
-        await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data))
+        await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data), problem_suites)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,8 @@ from api.endpoints.validator_models import (
     ValidatorFinishEvaluationResponse,
     ValidatorHeartbeatRequest,
     ValidatorHeartbeatResponse,
+    ValidatorInfiniteSWESuiteProblemsRequest,
+    ValidatorInfiniteSWESuiteProblemsResponse,
     ValidatorRegistrationRequest,
     ValidatorRegistrationResponse,
     ValidatorRequestEvaluationRequest,

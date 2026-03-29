@@ -21,12 +21,12 @@ from swebench.harness.test_spec.test_spec import TestSpec
 
 import utils.logger as logger
 from evaluator.models import EvaluationRunException
-from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from models.evaluation_run import EvaluationRunErrorCode
 from models.problem import (
     Problem,
     ProblemDifficulty,
+    ProblemSuite,
     ProblemSuiteName,
     ProblemTestCategory,
     ProblemTestResult,
