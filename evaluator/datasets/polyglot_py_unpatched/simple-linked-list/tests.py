@@ -1,9 +1,9 @@
 import unittest
 
-from main import LinkedList, EmptyListException
-
+from main import EmptyListException, LinkedList
 
 # No canonical data available for this exercise
+
 
 class SimpleLinkedListTest(unittest.TestCase):
     def test_empty_list_has_len_zero(self):

@@ -37,9 +37,7 @@ class RestApiTest(unittest.TestCase):
         api = RestAPI(database)
         payload = json.dumps({"users": ["Bob"]})
         response = api.get("/users", payload)
-        expected = {
-            "users": [{"name": "Bob", "owes": {}, "owed_by": {}, "balance": 0.0}]
-        }
+        expected = {"users": [{"name": "Bob", "owes": {}, "owed_by": {}, "balance": 0.0}]}
         self.assertDictEqual(json.loads(response), expected)
 
     def test_both_users_have_0_balance(self):

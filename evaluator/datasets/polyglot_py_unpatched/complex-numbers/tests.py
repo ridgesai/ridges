@@ -11,7 +11,6 @@ from main import (
 
 
 class ComplexNumbersTest(unittest.TestCase):
-
     # Real part
 
     def test_real_part_of_a_purely_real_number(self):
@@ -35,9 +34,7 @@ class ComplexNumbersTest(unittest.TestCase):
         self.assertEqual(ComplexNumber(1, 2).imaginary, 2)
 
     def test_imaginary_unit(self):
-        self.assertEqual(
-            ComplexNumber(0, 1) * ComplexNumber(0, 1), ComplexNumber(-1, 0)
-        )
+        self.assertEqual(ComplexNumber(0, 1) * ComplexNumber(0, 1), ComplexNumber(-1, 0))
 
     # Arithmetic
 
@@ -55,19 +52,13 @@ class ComplexNumbersTest(unittest.TestCase):
     # Subtraction
 
     def test_subtract_purely_real_numbers(self):
-        self.assertEqual(
-            ComplexNumber(1, 0) - ComplexNumber(2, 0), ComplexNumber(-1, 0)
-        )
+        self.assertEqual(ComplexNumber(1, 0) - ComplexNumber(2, 0), ComplexNumber(-1, 0))
 
     def test_subtract_purely_imaginary_numbers(self):
-        self.assertEqual(
-            ComplexNumber(0, 1) - ComplexNumber(0, 2), ComplexNumber(0, -1)
-        )
+        self.assertEqual(ComplexNumber(0, 1) - ComplexNumber(0, 2), ComplexNumber(0, -1))
 
     def test_subtract_numbers_with_real_and_imaginary_part(self):
-        self.assertEqual(
-            ComplexNumber(1, 2) - ComplexNumber(3, 4), ComplexNumber(-2, -2)
-        )
+        self.assertEqual(ComplexNumber(1, 2) - ComplexNumber(3, 4), ComplexNumber(-2, -2))
 
     # Multiplication
 
@@ -75,31 +66,21 @@ class ComplexNumbersTest(unittest.TestCase):
         self.assertEqual(ComplexNumber(1, 0) * ComplexNumber(2, 0), ComplexNumber(2, 0))
 
     def test_multiply_purely_imaginary_numbers(self):
-        self.assertEqual(
-            ComplexNumber(0, 1) * ComplexNumber(0, 2), ComplexNumber(-2, 0)
-        )
+        self.assertEqual(ComplexNumber(0, 1) * ComplexNumber(0, 2), ComplexNumber(-2, 0))
 
     def test_multiply_numbers_with_real_and_imaginary_part(self):
-        self.assertEqual(
-            ComplexNumber(1, 2) * ComplexNumber(3, 4), ComplexNumber(-5, 10)
-        )
+        self.assertEqual(ComplexNumber(1, 2) * ComplexNumber(3, 4), ComplexNumber(-5, 10))
 
     # Division
 
     def test_divide_purely_real_numbers(self):
-        self.assertAlmostEqual(
-            ComplexNumber(1, 0) / ComplexNumber(2, 0), ComplexNumber(0.5, 0)
-        )
+        self.assertAlmostEqual(ComplexNumber(1, 0) / ComplexNumber(2, 0), ComplexNumber(0.5, 0))
 
     def test_divide_purely_imaginary_numbers(self):
-        self.assertAlmostEqual(
-            ComplexNumber(0, 1) / ComplexNumber(0, 2), ComplexNumber(0.5, 0)
-        )
+        self.assertAlmostEqual(ComplexNumber(0, 1) / ComplexNumber(0, 2), ComplexNumber(0.5, 0))
 
     def test_divide_numbers_with_real_and_imaginary_part(self):
-        self.assertAlmostEqual(
-            ComplexNumber(1, 2) / ComplexNumber(3, 4), ComplexNumber(0.44, 0.08)
-        )
+        self.assertAlmostEqual(ComplexNumber(1, 2) / ComplexNumber(3, 4), ComplexNumber(0.44, 0.08))
 
     # Absolute value
 
@@ -145,14 +126,10 @@ class ComplexNumbersTest(unittest.TestCase):
         self.assertAlmostEqual(ComplexNumber(1, 0).exp(), ComplexNumber(math.e, 0))
 
     def test_exponential_of_a_number_with_real_and_imaginary_part(self):
-        self.assertAlmostEqual(
-            ComplexNumber(math.log(2), math.pi).exp(), ComplexNumber(-2, 0)
-        )
+        self.assertAlmostEqual(ComplexNumber(math.log(2), math.pi).exp(), ComplexNumber(-2, 0))
 
     def test_exponential_resulting_in_a_number_with_real_and_imaginary_part(self):
-        self.assertAlmostEqual(
-            ComplexNumber(math.log(2) / 2, math.pi / 4).exp(), ComplexNumber(1, 1)
-        )
+        self.assertAlmostEqual(ComplexNumber(math.log(2) / 2, math.pi / 4).exp(), ComplexNumber(1, 1))
 
     # Operations between real numbers and complex numbers
 

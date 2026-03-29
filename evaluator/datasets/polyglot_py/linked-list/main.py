@@ -2,7 +2,7 @@ from typing import Any
 
 
 class Node:
-    def __init__(self, value: Any, succeeding: 'Node | None' = None, previous: 'Node | None' = None) -> None:
+    def __init__(self, value: Any, succeeding: "Node | None" = None, previous: "Node | None" = None) -> None:
         pass
 
 

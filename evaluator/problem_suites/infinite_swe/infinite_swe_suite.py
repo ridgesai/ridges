@@ -25,7 +25,12 @@ from evaluator.sandbox.sandbox_manager import SandboxManager
 from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
-from utils.git import clone_repo, clone_local_repo_at_commit, reset_local_repo_to_commit, verify_commit_exists_in_local_repo
+from utils.git import (
+    clone_repo,
+    clone_local_repo_at_commit,
+    reset_local_repo_to_commit,
+    verify_commit_exists_in_local_repo,
+)
 from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
 from validator.http_utils import get_ridges_platform
 
@@ -59,71 +64,67 @@ class InfiniteSWESuite(ProblemSuite):
         problems_list = [InfiniteSWEProblem(**problem) for problem in problems_data["problems"]]
 
         logger.debug(f"Loaded {len(problems_list)} problems")
-            
+
         # Count unique repositories
         unique_repos = set()
         for problem in problems_list:
             unique_repos.add(problem.get("repo"))
-        
+
         logger.debug(f"Finding {len(unique_repos)} unique repositories...")
-        
+
         # Check for missing repositories, clone if necessary
         repos_dir = os.path.join(INFINITE_SWE_DATASET_PATH, "repos")
         if not os.path.exists(repos_dir):
             os.makedirs(repos_dir, exist_ok=True)
-        
+
         clone_tasks = []
         for repo in unique_repos:
             # Convert repository format from "owner/name" to directory name format "owner_name"
             repo_dir_name = repo.replace("/", "_")
             repo_path = os.path.join(repos_dir, repo_dir_name)
-            
+
             if not os.path.exists(repo_path):
                 repo_url = f"https://github.com/{repo}.git"
                 clone_tasks.append(asyncio.to_thread(clone_repo, repo_url, repo_path))
         # Wait for all clone tasks to complete
         await asyncio.gather(*clone_tasks)
-        
+
         logger.debug(f"Found {len(unique_repos)} unique repositories")
-        
+
         # Process each problem
         for problem in problems_list:
             problem_name = problem.get("instance_id")
-            
+
             repo = problem.get("repo")
             base_commit = problem.get("base_commit")
-            
+
             # Verify commit exists in repository
             repo_dir_name = repo.replace("/", "_")
             repo_path = os.path.join(repos_dir, repo_dir_name)
-        
+
             if not verify_commit_exists_in_local_repo(repo_path, base_commit):
                 logger.fatal(f"Problem {problem_name}: commit {base_commit} not found in repository {repo}")
 
-            self._add_problem(InfiniteSWEProblem(
-                name=problem_name,
-                difficulty=swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
-
-                problem_statement=problem.get("problem_statement"),
-                solution_diff=problem.get("patch"),
-                
-                swebench_instance=SWEbenchInstance(**problem)
-            ))
+            self._add_problem(
+                InfiniteSWEProblem(
+                    name=problem_name,
+                    difficulty=swebench_verified_difficulty_to_problem_difficulty(problem.get("difficulty")),
+                    problem_statement=problem.get("problem_statement"),
+                    solution_diff=problem.get("patch"),
+                    swebench_instance=SWEbenchInstance(**problem),
+                )
+            )
 
             # logger.debug(f"Problem {problem_name} verified successfully")
-        
+
         logger.info(f"Successfully loaded {len(self.problems)} problems from {INFINITE_SWE_DATASET_PATH}")
-
-
-
-
 
     def copy_problem_files_to_directory(
         self,
         problem: InfiniteSWEProblem,
         dir: str,
         *,
-        include_tests: bool = False # TODO ADAM
+        include_tests: bool = False,  # TODO ADAM
     ) -> None:
         # Get the SWE-Bench problem object
         swebench_instance = problem.swebench_instance
@@ -143,13 +144,12 @@ class InfiniteSWESuite(ProblemSuite):
             logger.warning(f"Repairing Infinite SWE repository for {repo} at {local_repo_dir}")
             shutil.rmtree(local_repo_dir, ignore_errors=True)
             clone_repo(f"https://github.com/{repo}.git", local_repo_dir)
-        
+
         # Clone the appropriate repository at the specific commit that the problem requires
         clone_local_repo_at_commit(local_repo_dir, commit_hash, dir)
 
         # Remove future commits from repo
         reset_local_repo_to_commit(local_repo_dir, commit_hash, dir)
-
 
     def initialize_eval_sandbox(
         self,
@@ -157,7 +157,7 @@ class InfiniteSWESuite(ProblemSuite):
         problem: InfiniteSWEProblem,
         evaluation_run_id: UUID,
         patch: str,
-        timeout_seconds: int
+        timeout_seconds: int,
     ) -> InfiniteSWEEvaluationSandbox:
         try:
             # Create temporary directory
@@ -171,33 +171,29 @@ class InfiniteSWESuite(ProblemSuite):
             if not is_valid:
                 raise EvaluationRunException(
                     EvaluationRunErrorCode.AGENT_INVALID_PATCH,
-                    f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}"
+                    f"{EvaluationRunErrorCode.AGENT_INVALID_PATCH.get_error_message()}: {error_message}",
                 )
 
             test_spec = make_test_spec(problem.swebench_instance)
 
-            pred = {
-                "model_name_or_path": str(evaluation_run_id),
-                "model_patch": patch,
-                "instance_id": problem.name
-            }
+            pred = {"model_name_or_path": str(evaluation_run_id), "model_patch": patch, "instance_id": problem.name}
 
-            return InfiniteSWEEvaluationSandbox(evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred, timeout_seconds=timeout_seconds)
-        
+            return InfiniteSWEEvaluationSandbox(
+                evaluation_run_id=evaluation_run_id, test_spec=test_spec, pred=pred, timeout_seconds=timeout_seconds
+            )
+
         except EvaluationRunException:
             raise
-        
+
         except Exception as e:
             raise EvaluationRunException(
                 EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL,
-                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}",
             )
-        
+
         finally:
             # Delete temporary directory
             delete_temp_dir(temp_dir)
-
-    
 
     def run_eval_sandbox(
         self,
@@ -212,25 +208,41 @@ class InfiniteSWESuite(ProblemSuite):
                 force_rebuild=False,
                 client=get_docker_client(),
                 run_id=str(eval_sandbox.evaluation_run_id),
-                timeout=eval_sandbox.timeout_seconds
+                timeout=eval_sandbox.timeout_seconds,
             )
 
             # NOTE ADAM: timeout
 
             test_results = []
-            
+
             tests_status = report[instance_id]["tests_status"]
-            
+
             for test_name in tests_status["FAIL_TO_PASS"]["success"]:
-                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.PASS))
+                test_results.append(
+                    ProblemTestResult(
+                        name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.PASS
+                    )
+                )
             for test_name in tests_status["FAIL_TO_PASS"]["failure"]:
-                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.FAIL))
-            
+                test_results.append(
+                    ProblemTestResult(
+                        name=test_name, category=ProblemTestCategory.fail_to_pass, status=ProblemTestResultStatus.FAIL
+                    )
+                )
+
             for test_name in tests_status["PASS_TO_PASS"]["success"]:
-                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.PASS))
+                test_results.append(
+                    ProblemTestResult(
+                        name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.PASS
+                    )
+                )
             for test_name in tests_status["PASS_TO_PASS"]["failure"]:
-                test_results.append(ProblemTestResult(name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.FAIL))
-            
+                test_results.append(
+                    ProblemTestResult(
+                        name=test_name, category=ProblemTestCategory.pass_to_pass, status=ProblemTestResultStatus.FAIL
+                    )
+                )
+
             # NOTE ADAM: /logs/run_evaluation/run_id/run_id/{run_instance.log,test_output.txt}
             eval_logs = "No evaluation logs available"
 
@@ -239,10 +251,8 @@ class InfiniteSWESuite(ProblemSuite):
         except Exception as e:
             raise EvaluationRunException(
                 EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL,
-                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}"
+                f"{EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}",
             )
-    
-
 
     def prebuild_problem_images(self, problem_names: list[str]):
         MAX_WORKERS = 4
@@ -255,7 +265,7 @@ class InfiniteSWESuite(ProblemSuite):
         logger.info(f"Prebuilding problem images:")
         for problem_name in problem_names:
             logger.info(f"  {problem_name}")
-        
+
         test_specs = []
 
         for problem_name in problem_names:
@@ -268,31 +278,34 @@ class InfiniteSWESuite(ProblemSuite):
         logger.debug(f"Prebuilding environment images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_env_images(
-            client=get_docker_client(),
-            dataset=test_specs, 
-            force_rebuild=False,
-            max_workers=MAX_WORKERS
+            client=get_docker_client(), dataset=test_specs, force_rebuild=False, max_workers=MAX_WORKERS
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
-            logger.warning(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
-            raise RuntimeError(f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems")
-        logger.debug(f"Successfully prebuilt environment images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
+            logger.warning(
+                f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems"
+            )
+            raise RuntimeError(
+                f"Failed to prebuild environment images for {len(build_failed)} of {len(test_specs)} problems"
+            )
+        logger.debug(
+            f"Successfully prebuilt environment images for {len(test_specs)} problems in {elapsed_time:.1f} seconds"
+        )
 
         logger.debug(f"Prebuilding instance images for {len(test_specs)} problems")
         start_time = time.time()
         build_successful, build_failed = build_instance_images(
-            client=get_docker_client(),
-            dataset=test_specs, 
-            force_rebuild=False,
-            max_workers=MAX_WORKERS
+            client=get_docker_client(), dataset=test_specs, force_rebuild=False, max_workers=MAX_WORKERS
         )
         elapsed_time = time.time() - start_time
         if len(build_failed) > 0:
             logger.warning(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
-            raise RuntimeError(f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems")
-        logger.debug(f"Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds")
-
+            raise RuntimeError(
+                f"Failed to prebuild instance images for {len(build_failed)} of {len(test_specs)} problems"
+            )
+        logger.debug(
+            f"Successfully prebuilt instance images for {len(test_specs)} problems in {elapsed_time:.1f} seconds"
+        )
 
 
 INFINITE_SWE_SUITE = InfiniteSWESuite()

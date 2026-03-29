@@ -1,6 +1,7 @@
 from models.problem import ProblemDifficulty
 from typing import Optional
 
+
 def swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Optional[ProblemDifficulty]:
     if difficulty == "<15 min fix":
         return ProblemDifficulty.EASY

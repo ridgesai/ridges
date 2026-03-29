@@ -1,5 +1,6 @@
 import math
 
+
 class ComplexNumber:
     def __init__(self, real=0, imaginary=0):
         self.real = real

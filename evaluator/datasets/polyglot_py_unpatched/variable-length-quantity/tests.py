@@ -75,9 +75,7 @@ class VariableLengthQuantityTest(unittest.TestCase):
         self.assertEqual(encode([0x40, 0x7F]), [0x40, 0x7F])
 
     def test_two_multi_byte_values(self):
-        self.assertEqual(
-            encode([0x4000, 0x123456]), [0x81, 0x80, 0x0, 0xC8, 0xE8, 0x56]
-        )
+        self.assertEqual(encode([0x4000, 0x123456]), [0x81, 0x80, 0x0, 0xC8, 0xE8, 0x56])
 
     def test_many_multi_byte_values(self):
         self.assertEqual(

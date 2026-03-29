@@ -207,9 +207,7 @@ class ZipperTest(unittest.TestCase):
         }
 
         zipper = Zipper.from_tree(initial)
-        result = (
-            zipper.left().set_left({"value": 5, "left": None, "right": None}).to_tree()
-        )
+        result = zipper.left().set_left({"value": 5, "left": None, "right": None}).to_tree()
         self.assertEqual(result, expected)
 
     def test_set_right_with_null(self):

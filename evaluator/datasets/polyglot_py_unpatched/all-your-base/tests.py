@@ -68,17 +68,13 @@ class AllYourBaseTest(unittest.TestCase):
         with self.assertRaises(ValueError) as err:
             rebase(2, [1, -1, 1, 0, 1, 0], 10)
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "all digits must satisfy 0 <= d < input base"
-        )
+        self.assertEqual(err.exception.args[0], "all digits must satisfy 0 <= d < input base")
 
     def test_invalid_positive_digit(self):
         with self.assertRaises(ValueError) as err:
             rebase(2, [1, 2, 1, 0, 1, 0], 10)
         self.assertEqual(type(err.exception), ValueError)
-        self.assertEqual(
-            err.exception.args[0], "all digits must satisfy 0 <= d < input base"
-        )
+        self.assertEqual(err.exception.args[0], "all digits must satisfy 0 <= d < input base")
 
     def test_output_base_is_one(self):
         with self.assertRaises(ValueError) as err:

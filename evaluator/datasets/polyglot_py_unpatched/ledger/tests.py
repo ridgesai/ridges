@@ -5,8 +5,8 @@
 import unittest
 
 from main import (
-    format_entries,
     create_entry,
+    format_entries,
 )
 
 

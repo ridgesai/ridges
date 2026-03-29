@@ -1,8 +1,7 @@
 from typing import Optional
 
 from models.banned_hotkey import BannedHotkey
-from utils.database import db_operation, DatabaseConnection
-
+from utils.database import DatabaseConnection, db_operation
 
 
 @db_operation
@@ -11,7 +10,7 @@ async def get_banned_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Opti
         """
         SELECT * FROM banned_hotkeys WHERE miner_hotkey = $1
         """,
-        miner_hotkey
+        miner_hotkey,
     )
 
     if not banned_hotkey:

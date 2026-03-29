@@ -1,12 +1,10 @@
 import os
-import utils.logger as logger
 
 from dotenv import load_dotenv
 
-
+import utils.logger as logger
 
 load_dotenv()
-
 
 
 HOST = os.getenv("HOST")
@@ -19,7 +17,6 @@ if not PORT:
 PORT = int(PORT)
 
 
-
 USE_DATABASE = os.getenv("USE_DATABASE")
 if not USE_DATABASE:
     logger.fatal("USE_DATABASE is not set in .env")
@@ -29,20 +26,20 @@ if USE_DATABASE:
     DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
     if not DATABASE_USERNAME:
         logger.fatal("DATABASE_USERNAME is not set in .env")
-    
+
     DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD")
     if not DATABASE_PASSWORD:
         logger.fatal("DATABASE_PASSWORD is not set in .env")
-    
+
     DATABASE_HOST = os.getenv("DATABASE_HOST")
     if not DATABASE_HOST:
         logger.fatal("DATABASE_HOST is not set in .env")
-    
+
     DATABASE_PORT = os.getenv("DATABASE_PORT")
     if not DATABASE_PORT:
         logger.fatal("DATABASE_PORT is not set in .env")
     DATABASE_PORT = int(DATABASE_PORT)
-    
+
     DATABASE_NAME = os.getenv("DATABASE_NAME")
     if not DATABASE_NAME:
         logger.fatal("DATABASE_NAME is not set in .env")
@@ -53,12 +50,10 @@ if USE_DATABASE:
     CHECK_EVALUATION_RUNS = CHECK_EVALUATION_RUNS.lower() == "true"
 
 
-
 MAX_COST_PER_EVALUATION_RUN_USD = os.getenv("MAX_COST_PER_EVALUATION_RUN_USD")
 if not MAX_COST_PER_EVALUATION_RUN_USD:
     logger.fatal("MAX_COST_PER_EVALUATION_RUN_USD is not set in .env")
 MAX_COST_PER_EVALUATION_RUN_USD = float(MAX_COST_PER_EVALUATION_RUN_USD)
-
 
 
 USE_CHUTES = os.getenv("USE_CHUTES")
@@ -83,7 +78,6 @@ if USE_CHUTES:
     if not CHUTES_WEIGHT:
         logger.fatal("CHUTES_WEIGHT is not set in .env")
     CHUTES_WEIGHT = int(CHUTES_WEIGHT)
-
 
 
 USE_TARGON = os.getenv("USE_TARGON")
@@ -125,7 +119,6 @@ if USE_OPENROUTER:
     OPENROUTER_WEIGHT = int(OPENROUTER_WEIGHT)
 
 
-
 if not USE_CHUTES and not USE_TARGON and not USE_OPENROUTER:
     logger.fatal("Either USE_CHUTES or USE_TARGON or USE_OPENROUTER must be set to True in .env")
 
@@ -139,7 +132,6 @@ TEST_EMBEDDING_MODELS = os.getenv("TEST_EMBEDDING_MODELS")
 if not TEST_EMBEDDING_MODELS:
     logger.fatal("TEST_EMBEDDING_MODELS is not set in .env")
 TEST_EMBEDDING_MODELS = TEST_EMBEDDING_MODELS.lower() == "true"
-
 
 
 logger.info("=== Inference Gateway Configuration ===")

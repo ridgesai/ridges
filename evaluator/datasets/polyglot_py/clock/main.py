@@ -8,11 +8,11 @@ class Clock:
     def __str__(self) -> str:
         pass
 
-    def __eq__(self, other: 'Clock') -> bool:
+    def __eq__(self, other: "Clock") -> bool:
         pass
 
-    def __add__(self, minutes: int) -> 'Clock':
+    def __add__(self, minutes: int) -> "Clock":
         pass
 
-    def __sub__(self, minutes: int) -> 'Clock':
+    def __sub__(self, minutes: int) -> "Clock":
         pass

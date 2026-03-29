@@ -1,30 +1,32 @@
-import os
-import json
-import click
 import asyncio
+import json
+import os
 import pathlib
 import traceback
-import utils.logger as logger
-
-from uuid import uuid4
 from datetime import datetime
 from typing import List, Optional
+from uuid import uuid4
+
+import click
+
+import utils.logger as logger
 from evaluator.models import EvaluationRunException
-from evaluator.sandbox.sandbox_manager import SandboxManager
+from evaluator.problem_suites.polyglot.polyglot_suite import (
+    POLYGLOT_JS_SUITE,
+    POLYGLOT_JS_UNPATCHED_SUITE,
+    POLYGLOT_PY_SUITE,
+    POLYGLOT_PY_UNPATCHED_SUITE,
+)
 from evaluator.problem_suites.problem_suite import ProblemSuite
-from models.problem import ProblemDifficulty, ProblemTestResultStatus
-from models.evaluation_run import EvaluationRun, EvaluationRunStatus, EvaluationRunErrorCode
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE, POLYGLOT_JS_UNPATCHED_SUITE, POLYGLOT_PY_UNPATCHED_SUITE
-
-
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
+from models.problem import ProblemDifficulty, ProblemTestResultStatus
 
 TEST_AGENT_RESULTS_DIR = pathlib.Path(__file__).parent / "test_agent_results"
 
 
-
 evaluation_id = uuid4()
-
 
 
 # Options
@@ -40,29 +42,24 @@ global polyglot_unpatched
 global problem_suites
 
 
-
 class LocalEvaluationRun(EvaluationRun):
     agent_logs: Optional[str] = None
     eval_logs: Optional[str] = None
 
 
-
-async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suites: List[ProblemSuite], problem_name: str):
+async def run_local_evaluation_run(
+    sandbox_manager: SandboxManager, problem_suites: List[ProblemSuite], problem_name: str
+):
     evaluation_run = LocalEvaluationRun(
         evaluation_run_id=uuid4(),
         evaluation_id=evaluation_id,
-
         problem_name=problem_name,
-
         status=EvaluationRunStatus.pending,
-
         patch=None,
         test_results=None,
-
         error_code=None,
         error_message=None,
-
-        created_at=datetime.now()
+        created_at=datetime.now(),
     )
 
     try:
@@ -72,17 +69,15 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             logger.error(f"[{problem_name}] The problem '{problem_name}' was not found")
 
             raise EvaluationRunException(
-                EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM,
-                f"The problem '{problem_name}' was not found"
+                EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM, f"The problem '{problem_name}' was not found"
             )
 
         problem = problem_suite.get_problem(problem_name)
-        if problem is None: # should never happen
+        if problem is None:  # should never happen
             logger.error(f"[{problem_name}] The problem '{problem_name}' was not found")
 
             raise EvaluationRunException(
-                EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM,
-                f"The problem '{problem_name}' was not found"
+                EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM, f"The problem '{problem_name}' was not found"
             )
 
         evaluation_run.status = EvaluationRunStatus.initializing_agent
@@ -91,13 +86,13 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         logger.info(f"[{problem_name}] Initializing agent...")
         agent_sandbox = await asyncio.to_thread(
             problem_suite.initialize_agent_sandbox,
-            sandbox_manager, 
-            problem, 
+            sandbox_manager,
+            problem,
             evaluation_run.evaluation_run_id,
             agent_code,
             running_agent_timeout_seconds,
             include_solutions=include_solutions,
-            include_tests=include_tests
+            include_tests=include_tests,
         )
         logger.info(f"[{problem_name}] Finished initializing agent")
 
@@ -105,12 +100,10 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         evaluation_run.started_running_agent_at = datetime.now()
 
         logger.info(f"[{problem_name}] Running agent...")
-        patch, agent_logs = await asyncio.to_thread(
-            problem_suite.run_agent_sandbox,
-            sandbox_manager,
-            agent_sandbox
+        patch, agent_logs = await asyncio.to_thread(problem_suite.run_agent_sandbox, sandbox_manager, agent_sandbox)
+        logger.info(
+            f"[{problem_name}] Finished running agent: {len(patch.splitlines())} line(s) of patch, {len(agent_logs.splitlines())} line(s) of agent logs"
         )
-        logger.info(f"[{problem_name}] Finished running agent: {len(patch.splitlines())} line(s) of patch, {len(agent_logs.splitlines())} line(s) of agent logs")
 
         evaluation_run.patch = patch
         evaluation_run.agent_logs = agent_logs
@@ -125,7 +118,7 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
             problem,
             evaluation_run.evaluation_run_id,
             patch,
-            running_eval_timeout_seconds
+            running_eval_timeout_seconds,
         )
         logger.info(f"[{problem_name}] Finished initializing evaluation")
 
@@ -133,18 +126,18 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
         evaluation_run.started_running_eval_at = datetime.now()
 
         logger.info(f"[{problem_name}] Running evaluation...")
-        test_results, eval_logs = await asyncio.to_thread(
-            problem_suite.run_eval_sandbox,
-            sandbox_manager,
-            eval_sandbox
-        )
+        test_results, eval_logs = await asyncio.to_thread(problem_suite.run_eval_sandbox, sandbox_manager, eval_sandbox)
         num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
         num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
         num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
         if num_failed > 0:
-            logger.error(f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs")
+            logger.error(
+                f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs"
+            )
         else:
-            logger.info(f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs")
+            logger.info(
+                f"[{problem_name}] Finished running evaluation: {num_passed} passed, {num_failed} failed, {num_skipped} skipped, {len(eval_logs.splitlines())} line(s) of eval logs"
+            )
 
         evaluation_run.test_results = test_results
         evaluation_run.eval_logs = eval_logs
@@ -170,13 +163,16 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
 
         logger.error(f"[{problem_name}] Errored: {str(e)}")
 
-
-
-    test_agent_result_evaluation_dir = TEST_AGENT_RESULTS_DIR / f"{datetime.now().strftime('%Y-%m-%d')}__{pathlib.Path(agent_path).name}__{evaluation_id}"
-    test_agent_result_evaluation_run_dir = test_agent_result_evaluation_dir / f"{problem_name}__{evaluation_run.evaluation_run_id}"
+    test_agent_result_evaluation_dir = (
+        TEST_AGENT_RESULTS_DIR
+        / f"{datetime.now().strftime('%Y-%m-%d')}__{pathlib.Path(agent_path).name}__{evaluation_id}"
+    )
+    test_agent_result_evaluation_run_dir = (
+        test_agent_result_evaluation_dir / f"{problem_name}__{evaluation_run.evaluation_run_id}"
+    )
 
     logger.info(f"[{problem_name}] Saving results to {test_agent_result_evaluation_run_dir}...")
-    
+
     os.makedirs(test_agent_result_evaluation_run_dir, exist_ok=True)
 
     with open(test_agent_result_evaluation_run_dir / "evaluation_run.json", "w") as f:
@@ -192,26 +188,22 @@ async def run_local_evaluation_run(sandbox_manager: SandboxManager, problem_suit
 
     logger.info(f"[{problem_name}] Saved results to {test_agent_result_evaluation_run_dir}...")
 
-
-
     return evaluation_run
-
 
 
 async def run_problems(agent_code: str, problem_names: List[str]):
     os.makedirs(TEST_AGENT_RESULTS_DIR, exist_ok=True)
 
-
-
-    test_agent_result_evaluation_dir = TEST_AGENT_RESULTS_DIR / f"{datetime.now().strftime('%Y-%m-%d')}__{pathlib.Path(agent_path).name}__{evaluation_id}"
+    test_agent_result_evaluation_dir = (
+        TEST_AGENT_RESULTS_DIR
+        / f"{datetime.now().strftime('%Y-%m-%d')}__{pathlib.Path(agent_path).name}__{evaluation_id}"
+    )
 
     os.makedirs(test_agent_result_evaluation_dir, exist_ok=True)
 
     with open(test_agent_result_evaluation_dir / pathlib.Path(agent_path).name, "w") as f:
         f.write(agent_code)
 
-
-    
     sandbox_manager = SandboxManager(inference_gateway_url)
 
     SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(problem_names)
@@ -224,16 +216,43 @@ async def run_problems(agent_code: str, problem_names: List[str]):
     await asyncio.gather(*tasks)
 
 
-
 @click.group()
-@click.option("--inference-url", required=True, type=str, help="The inference gateway URL (e.g., http://192.168.0.1:1234)")
-@click.option("--agent-path", "_agent_path", required=True, type=str, help="The path to the agent file (e.g., ~/agents/agent.py)")
-@click.option("--agent-timeout", default=2400, type=int, help="The timeout in seconds for running the agent, in seconds")
-@click.option("--eval-timeout", default=600, type=int, help="The timeout in seconds for running the evaluation, in seconds")
-@click.option("--include-solutions", "_include_solutions", is_flag=True, help="Whether or not to include solutions in the evaluation")
-@click.option("--include-tests", "_include_tests", is_flag=True, help="Whether or not to include tests in the evaluation")
-@click.option("--polyglot-unpatched", "polyglot_unpatched", is_flag=True, help="Whether or not to use the unpatched Polyglot suite")
-def cli(inference_url: str, _agent_path: str, agent_timeout: int, eval_timeout: int, _include_solutions: bool, _include_tests: bool, polyglot_unpatched: bool):
+@click.option(
+    "--inference-url", required=True, type=str, help="The inference gateway URL (e.g., http://192.168.0.1:1234)"
+)
+@click.option(
+    "--agent-path", "_agent_path", required=True, type=str, help="The path to the agent file (e.g., ~/agents/agent.py)"
+)
+@click.option(
+    "--agent-timeout", default=2400, type=int, help="The timeout in seconds for running the agent, in seconds"
+)
+@click.option(
+    "--eval-timeout", default=600, type=int, help="The timeout in seconds for running the evaluation, in seconds"
+)
+@click.option(
+    "--include-solutions",
+    "_include_solutions",
+    is_flag=True,
+    help="Whether or not to include solutions in the evaluation",
+)
+@click.option(
+    "--include-tests", "_include_tests", is_flag=True, help="Whether or not to include tests in the evaluation"
+)
+@click.option(
+    "--polyglot-unpatched",
+    "polyglot_unpatched",
+    is_flag=True,
+    help="Whether or not to use the unpatched Polyglot suite",
+)
+def cli(
+    inference_url: str,
+    _agent_path: str,
+    agent_timeout: int,
+    eval_timeout: int,
+    _include_solutions: bool,
+    _include_tests: bool,
+    polyglot_unpatched: bool,
+):
     global inference_gateway_url
     global agent_path
     global agent_code
@@ -266,13 +285,11 @@ def cli(inference_url: str, _agent_path: str, agent_timeout: int, eval_timeout: 
         problem_suites = [SWEBENCH_VERIFIED_SUITE, POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE]
 
 
-
 @cli.command()
 @click.argument("problem_name", required=True, type=str)
 @click.option("--num-runs", default=1, type=int, help="The number of times to run the problem")
 def test_problem(problem_name: str, num_runs: int):
     asyncio.run(run_problems(agent_code, [problem_name] * num_runs))
-
 
 
 with open(pathlib.Path(__file__).parent / "test_agent_problem_sets.json", "r") as f:
@@ -284,11 +301,26 @@ problem_sets["all-polyglot-js"] = [problem.name for problem in POLYGLOT_JS_SUITE
 
 # Register all-swebench-verified, all-swebench-verified-easy, all-swebench-verified-medium, all-swebench-verified-hard, all-swebench-verified-impossible
 problem_sets["all-swebench-verified"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values()]
-problem_sets["all-swebench-verified-easy"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.EASY]
-problem_sets["all-swebench-verified-medium"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.MEDIUM]
-problem_sets["all-swebench-verified-hard"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.HARD]
-problem_sets["all-swebench-verified-impossible"] = [problem.name for problem in SWEBENCH_VERIFIED_SUITE.problems.values() if problem.difficulty == ProblemDifficulty.IMPOSSIBLE]
-
+problem_sets["all-swebench-verified-easy"] = [
+    problem.name
+    for problem in SWEBENCH_VERIFIED_SUITE.problems.values()
+    if problem.difficulty == ProblemDifficulty.EASY
+]
+problem_sets["all-swebench-verified-medium"] = [
+    problem.name
+    for problem in SWEBENCH_VERIFIED_SUITE.problems.values()
+    if problem.difficulty == ProblemDifficulty.MEDIUM
+]
+problem_sets["all-swebench-verified-hard"] = [
+    problem.name
+    for problem in SWEBENCH_VERIFIED_SUITE.problems.values()
+    if problem.difficulty == ProblemDifficulty.HARD
+]
+problem_sets["all-swebench-verified-impossible"] = [
+    problem.name
+    for problem in SWEBENCH_VERIFIED_SUITE.problems.values()
+    if problem.difficulty == ProblemDifficulty.IMPOSSIBLE
+]
 
 
 @cli.command()
@@ -297,35 +329,34 @@ def test_problem_set(problem_set_name: str):
     asyncio.run(run_problems(agent_code, problem_sets[problem_set_name]))
 
 
-
 @cli.command()
 def list_problem_sets():
     click.echo("\nAvailable Problem Sets:")
     click.echo("=" * 80)
-    
+
     max_name_length = max(len(name) for name in problem_sets.keys())
     for problem_set_name in sorted(problem_sets.keys()):
         num_problems = len(problem_sets[problem_set_name])
         click.echo(f"  {problem_set_name:<{max_name_length}}    -    {num_problems:>4} problem(s)")
-    
+
     click.echo("=" * 80)
     click.echo(f"Total: {len(problem_sets)} problem set(s)\n")
+
 
 @cli.command()
 @click.argument("problem_set_name", required=True, type=click.Choice(list(problem_sets.keys())))
 def list_problems(problem_set_name: str):
     problems = problem_sets[problem_set_name]
-    
+
     click.echo(f"\nProblems in '{problem_set_name}':")
     click.echo("=" * 80)
-    
+
     for i, problem_name in enumerate(problems, 1):
         click.echo(f"  {i:>3}. {problem_name}")
-    
+
     click.echo("=" * 80)
     click.echo(f"Total: {len(problems)} problem(s)\n")
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     cli()

@@ -1,5 +1,4 @@
 class Allergies:
-
     def __init__(self, score):
         pass
 

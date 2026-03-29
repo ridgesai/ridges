@@ -1,5 +1,5 @@
-from itertools import permutations
 from functools import reduce
+from itertools import permutations
 
 
 def swap(item_1, item_2):

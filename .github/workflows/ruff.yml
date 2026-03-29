@@ -1,0 +1,33 @@
+# Attribution (MIT License): Opentensor Foundation 2026 (https://github.com/opentensor)
+# https://github.com/opentensor/bittensor/blob/bb526e6d61210ef2ee0e229f63ca5518381ff5a7/.github/workflows/ruff.yml
+
+name: Ruff - formatter check
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  ruff:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Ruff
+        uses: astral-sh/ruff-action@v3.6.1
+        with:
+          version: "0.15.7"
+          checksum: "2253ba7f064023def4b77aaef127756d3724e92a0fc69d666d4692f5c019af6d"
+          args: 
+            "--version"
+
+      - name: Ruff format check
+        run: |
+          ruff format --check --diff
+    
+      - name: Ruff lint check
+        run: |
+          ruff check
+            

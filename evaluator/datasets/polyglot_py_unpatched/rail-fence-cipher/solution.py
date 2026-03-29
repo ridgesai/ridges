@@ -1,4 +1,4 @@
-from itertools import cycle, chain
+from itertools import chain, cycle
 
 
 def fence_pattern(rails, size):
@@ -8,10 +8,10 @@ def fence_pattern(rails, size):
 
 def encode(msg, rails):
     fence = fence_pattern(rails, len(msg))
-    return ''.join(msg[idx] for _, idx in sorted(fence))
+    return "".join(msg[idx] for _, idx in sorted(fence))
 
 
 def decode(msg, rails):
     fence = fence_pattern(rails, len(msg))
     fence_msg = zip(msg, sorted(fence))
-    return ''.join(char for char, _ in sorted(fence_msg, key=lambda item: item[1][1]))
+    return "".join(char for char, _ in sorted(fence_msg, key=lambda item: item[1][1]))
