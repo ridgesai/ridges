@@ -7,16 +7,7 @@ from http import HTTPStatus
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
 
-from models.evaluation_set import EvaluationSetGroup, RawInfiniteSWEProblem
-from queries.evaluation_set import (
-    get_all_evaluation_set_problems_for_set_id,
-    get_infinite_swe_problems,
-    get_latest_set_id,
-)
-from utils.git import COMMIT_HASH
-from utils.debug_lock import DebugLock
-from http import HTTPStatus
-from fastapi import Depends, APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
@@ -43,6 +34,7 @@ from api.endpoints.validator_models import (
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup, RawInfiniteSWEProblem
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
@@ -62,6 +54,11 @@ from queries.evaluation_run import (
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
+)
+from queries.evaluation_set import (
+    get_all_evaluation_set_problems_for_set_id,
+    get_infinite_swe_problems,
+    get_latest_set_id,
 )
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock

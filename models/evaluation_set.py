@@ -1,9 +1,10 @@
 import datetime
 from enum import Enum
 from uuid import UUID
+
 from pydantic import BaseModel
 
-from models.problem import ProblemDifficulty, ProblemSuiteName
+from models.problem import ProblemSuiteName
 
 
 class EvaluationSetGroup(str, Enum):

@@ -1,6 +1,4 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
-from evaluator.problem_suites.problem_suite import ProblemSuite
-from validator.set_weights import set_weights_from_mapping
 import asyncio
 import os
 import pathlib
@@ -15,10 +13,7 @@ import httpx
 
 import utils.logger as logger
 import validator.config as config
-
-from typing import Any, Dict
 from api.endpoints.validator_models import *
-from models.problem import Problem, ProblemSuiteName, ProblemTestResultStatus
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
@@ -32,22 +27,17 @@ from api.endpoints.validator_models import (
     ValidatorUpdateEvaluationRunRequest,
 )
 from evaluator.models import EvaluationRunException
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE
+from evaluator.problem_suites.infinite_swe.infinite_swe_suite import INFINITE_SWE_SUITE
+from evaluator.problem_suites.problem_suite import ProblemSuite
 from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetProblem
-from models.problem import ProblemTestResultStatus
+from models.problem import Problem, ProblemSuiteName, ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
-from models.evaluation_run import EvaluationRunStatus, EvaluationRunErrorCode
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
-from evaluator.problem_suites.infinite_swe.infinite_swe_suite import INFINITE_SWE_SUITE
-
 from validator.set_weights import set_weights_from_mapping
-
 
 # The session ID for this validator
 session_id = None

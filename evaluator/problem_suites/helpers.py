@@ -1,5 +1,6 @@
-from models.problem import ProblemDifficulty
 from typing import Optional
+
+from models.problem import ProblemDifficulty
 
 
 def swebench_verified_difficulty_to_problem_difficulty(difficulty: str) -> Optional[ProblemDifficulty]:

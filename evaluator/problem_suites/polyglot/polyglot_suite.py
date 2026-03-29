@@ -6,15 +6,6 @@ import shutil
 import traceback
 from enum import Enum
 from typing import List, Tuple
-from models.problem import Problem
-from evaluator.models import Sandbox
-from models.problem import ProblemTestResult, ProblemSuiteName
-from evaluator.models import EvaluationRunException
-from models.evaluation_run import EvaluationRunErrorCode
-from utils.git import init_local_repo_with_initial_commit
-from evaluator.sandbox.sandbox_manager import SandboxManager
-from evaluator.problem_suites.problem_suite import ProblemSuite
-from utils.diff import get_file_diff, apply_diff_to_local_repo, validate_diff_for_local_repo
 from uuid import UUID
 
 import requests
@@ -24,7 +15,7 @@ from evaluator.models import EvaluationRunException, Sandbox
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
 from evaluator.sandbox.sandbox_manager import SandboxManager
 from models.evaluation_run import EvaluationRunErrorCode
-from models.problem import Problem, ProblemTestResult
+from models.problem import Problem, ProblemSuiteName, ProblemTestResult
 from utils.diff import apply_diff_to_local_repo, get_file_diff, validate_diff_for_local_repo
 from utils.git import init_local_repo_with_initial_commit
 

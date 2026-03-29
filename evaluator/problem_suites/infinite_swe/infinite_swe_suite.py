@@ -2,39 +2,38 @@
 
 import asyncio
 import os
-import json
-import time
-import shutil
 import pathlib
+import shutil
 import subprocess
+import time
 import traceback
-from models.evaluation_set import InfiniteSWEProblem
-import utils.logger as logger
-
-from uuid import UUID
-from pydantic import BaseModel
-from utils.docker import get_docker_client
 from typing import Any, Dict
-from utils.diff import validate_diff_for_local_repo
-from evaluator.models import EvaluationRunException
+from uuid import UUID
+
+from helpers import swebench_verified_difficulty_to_problem_difficulty
+from pydantic import BaseModel
 from swebench.harness.constants import SWEbenchInstance
-from utils.temp import create_temp_dir, delete_temp_dir
-from models.evaluation_run import EvaluationRunErrorCode
-from swebench.harness.test_spec.test_spec import TestSpec
-from evaluator.sandbox.sandbox_manager import SandboxManager
-from swebench.harness.run_evaluation import make_test_spec, run_instance
 from swebench.harness.docker_build import build_env_images, build_instance_images
+from swebench.harness.run_evaluation import make_test_spec, run_instance
+from swebench.harness.test_spec.test_spec import TestSpec
+
+import utils.logger as logger
+from evaluator.models import EvaluationRunException
 from evaluator.problem_suites.problem_suite import ProblemSuite, ProblemSuiteName
+from evaluator.sandbox.sandbox_manager import SandboxManager
+from models.evaluation_run import EvaluationRunErrorCode
+from models.evaluation_set import InfiniteSWEProblem
+from models.problem import Problem, ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
+from utils.diff import validate_diff_for_local_repo
+from utils.docker import get_docker_client
 from utils.git import (
-    clone_repo,
     clone_local_repo_at_commit,
+    clone_repo,
     reset_local_repo_to_commit,
     verify_commit_exists_in_local_repo,
 )
-from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus
+from utils.temp import create_temp_dir, delete_temp_dir
 from validator.http_utils import get_ridges_platform
-
-from helpers import swebench_verified_difficulty_to_problem_difficulty
 
 INFINITE_SWE_DATASET_PATH = str(pathlib.Path(__file__).parent.parent.parent / "datasets" / "infinite_swe")
 
@@ -59,7 +58,7 @@ class InfiniteSWESuite(ProblemSuite):
 
     async def setup(self):
         # Get problem list from platform
-        logger.info(f"Getting problem list from platform...")
+        logger.info("Getting problem list from platform...")
         problems_data = await get_ridges_platform("/validator/infinite-swe-problems", quiet=1)
         problems_list = [InfiniteSWEProblem(**problem) for problem in problems_data["problems"]]
 
@@ -262,7 +261,7 @@ class InfiniteSWESuite(ProblemSuite):
         if len(problem_names) == 0:
             return
 
-        logger.info(f"Prebuilding problem images:")
+        logger.info("Prebuilding problem images:")
         for problem_name in problem_names:
             logger.info(f"  {problem_name}")
 

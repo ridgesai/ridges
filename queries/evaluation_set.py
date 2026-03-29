@@ -1,10 +1,7 @@
 from datetime import datetime
 from uuid import UUID
-from utils.database import db_operation, DatabaseConnection
-from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem, RawInfiniteSWEProblem
-from typing import List
 
-from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
+from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem, RawInfiniteSWEProblem
 from utils.database import DatabaseConnection, db_operation
 
 

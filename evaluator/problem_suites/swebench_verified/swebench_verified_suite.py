@@ -1,7 +1,6 @@
 """The SWE-Bench Verified problem suite."""
 
 import asyncio
-import os
 import json
 import os
 import pathlib
@@ -13,28 +12,7 @@ import traceback
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
-from pydantic import BaseModel
-from utils.docker import get_docker_client
-from typing import Any, Dict, List, Tuple
-from utils.diff import validate_diff_for_local_repo
-from evaluator.models import EvaluationRunException
-from swebench.harness.constants import SWEbenchInstance
-from utils.temp import create_temp_dir, delete_temp_dir
-from models.evaluation_run import EvaluationRunErrorCode
-from swebench.harness.test_spec.test_spec import TestSpec
-from evaluator.sandbox.sandbox_manager import SandboxManager
-from swebench.harness.run_evaluation import make_test_spec, run_instance
-from swebench.harness.docker_build import build_env_images, build_instance_images
-from evaluator.problem_suites.problem_suite import ProblemSuite
-from utils.git import (
-    clone_repo,
-    clone_local_repo_at_commit,
-    reset_local_repo_to_commit,
-)  # , verify_commit_exists_in_local_repo
-from models.problem import Problem, ProblemTestResult, ProblemTestCategory, ProblemTestResultStatus, ProblemSuiteName
-
 from helpers import swebench_verified_difficulty_to_problem_difficulty
-
 from pydantic import BaseModel
 from swebench.harness.constants import SWEbenchInstance
 from swebench.harness.docker_build import build_env_images, build_instance_images
@@ -49,7 +27,7 @@ from models.evaluation_run import EvaluationRunErrorCode
 from models.problem import (
     Problem,
     ProblemDifficulty,
-    ProblemTest,
+    ProblemSuiteName,
     ProblemTestCategory,
     ProblemTestResult,
     ProblemTestResultStatus,
@@ -61,7 +39,7 @@ from utils.git import (
     clone_repo,
     reset_local_repo_to_commit,
     verify_commit_exists_in_local_repo,
-)
+)  # , verify_commit_exists_in_local_repo
 from utils.temp import create_temp_dir, delete_temp_dir
 
 
