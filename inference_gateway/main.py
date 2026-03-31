@@ -11,6 +11,7 @@ from pydantic import BaseModel
 import inference_gateway.config as config
 import utils.logger as logger
 from inference_gateway.cost_hash_map import CostHashMap
+from inference_gateway.error_hash_map import ErrorHashMap
 from inference_gateway.models import (
     EmbeddingModelInfo,
     EmbeddingRequest,
@@ -103,6 +104,18 @@ def handle_http_exceptions(func):
 
 
 cost_hash_map = CostHashMap()
+error_hash_map = ErrorHashMap()
+
+
+# Platform-side error codes that are not the agent's fault. 4xx errors like
+# 400/404/422 are excluded because those indicate bad agent requests (wrong
+# model, invalid format, etc). 429 is excluded because it means the cost
+# limit was intentionally reached.
+PLATFORM_ERROR_CODES = {500, 502, 503, 504, -1}
+
+
+def is_platform_error(status_code: int) -> bool:
+    return status_code in PLATFORM_ERROR_CODES
 
 
 # NOTE ADAM: inference@main.py -> Handles HTTP exceptions and database
@@ -149,6 +162,17 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
                 detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD).",
             )
 
+        # Make sure the evaluation run has not had too many platform-side inference errors
+        inference_errors = error_hash_map.get_inference_errors(request.evaluation_run_id)
+        if inference_errors >= config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN:
+            logger.warning(
+                f"Blocking inference for run {request.evaluation_run_id}: too many platform errors ({inference_errors}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=f"The evaluation run with ID {request.evaluation_run_id} has had too many platform-side inference errors ({inference_errors} errors, limit is {config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN}).",
+            )
+
     # Make sure we support the model for inference
     provider = get_provider_that_supports_model_for_inference(request.model)
     if not provider:
@@ -189,6 +213,14 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
     if response.status_code == 200:
         return InferenceResponse(content=response.content, tool_calls=response.tool_calls)
     else:
+        # Track platform errors (provider failures, not agent mistakes)
+        if is_platform_error(response.status_code):
+            error_hash_map.add_inference_error(request.evaluation_run_id)
+            error_count = error_hash_map.get_inference_errors(request.evaluation_run_id)
+            logger.warning(
+                f"Platform inference error for run {request.evaluation_run_id}: status {response.status_code} (error {error_count}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})"
+            )
+
         raise HTTPException(status_code=response.status_code, detail=response.error_message)
 
 
@@ -224,6 +256,17 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
                 detail=f"The evaluation run with ID {request.evaluation_run_id} has reached or exceeded the evaluation run cost limit of {config.MAX_COST_PER_EVALUATION_RUN_USD} USD (current cost: {cost} USD).",
             )
 
+        # Make sure the evaluation run has not had too many platform-side inference errors
+        inference_errors = error_hash_map.get_inference_errors(request.evaluation_run_id)
+        if inference_errors >= config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN:
+            logger.warning(
+                f"Blocking embedding for run {request.evaluation_run_id}: too many platform errors ({inference_errors}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=f"The evaluation run with ID {request.evaluation_run_id} has had too many platform-side inference errors ({inference_errors} errors, limit is {config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN}).",
+            )
+
     # Make sure we support the model for embedding
     provider = get_provider_that_supports_model_for_embedding(request.model)
     if not provider:
@@ -256,6 +299,14 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
     if response.status_code == 200:
         return EmbeddingResponse(embedding=response.embedding)
     else:
+        # Track platform errors (provider failures, not agent mistakes)
+        if is_platform_error(response.status_code):
+            error_hash_map.add_inference_error(request.evaluation_run_id)
+            error_count = error_hash_map.get_inference_errors(request.evaluation_run_id)
+            logger.warning(
+                f"Platform embedding error for run {request.evaluation_run_id}: status {response.status_code} (error {error_count}/{config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN})"
+            )
+
         raise HTTPException(status_code=response.status_code, detail=response.error_message)
 
 
@@ -263,6 +314,8 @@ class UsageResponse(BaseModel):
     used_cost_usd: float
     remaining_cost_usd: float
     max_cost_usd: float
+    inference_errors: int
+    max_inference_errors: int
 
 
 @app.get("/api/usage")
@@ -273,6 +326,8 @@ async def usage(evaluation_run_id: UUID) -> UsageResponse:
         used_cost_usd=used_cost_usd,
         remaining_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD - used_cost_usd,
         max_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD,
+        inference_errors=error_hash_map.get_inference_errors(evaluation_run_id),
+        max_inference_errors=config.MAX_INFERENCE_ERRORS_PER_EVALUATION_RUN,
     )
 
 

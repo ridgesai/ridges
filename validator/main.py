@@ -235,6 +235,28 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs"
             )
 
+            # Check if the agent was affected by platform-side inference errors.
+            # If the inference gateway saw too many non-halting errors for this
+            # run, the agent never had a fair chance, so we bail out early and
+            # mark this as a platform error instead of scoring a bad patch.
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    usage_response = await client.get(f"{config.RIDGES_INFERENCE_GATEWAY_URL}/api/usage?evaluation_run_id={evaluation_run_id}")
+                if usage_response.status_code == 200:
+                    usage = usage_response.json()
+                    inference_errors = usage.get("inference_errors", 0)
+                    max_inference_errors = usage.get("max_inference_errors", float("inf"))
+                    if inference_errors >= max_inference_errors:
+                        raise EvaluationRunException(
+                            EvaluationRunErrorCode.PLATFORM_TOO_MANY_INFERENCE_ERRORS,
+                            f"{EvaluationRunErrorCode.PLATFORM_TOO_MANY_INFERENCE_ERRORS.get_error_message()}: {inference_errors} inference errors (limit: {max_inference_errors})",
+                            extra={"agent_logs": truncate_logs_if_required(agent_logs)}
+                        )
+            except EvaluationRunException:
+                raise
+            except Exception as e:
+                logger.warning(f"Failed to check inference error count for evaluation run {evaluation_run_id}: {e}")
+
             # Move from running_agent -> initializing_eval
             await update_evaluation_run(
                 evaluation_run_id,
@@ -285,7 +307,7 @@ async def _run_evaluation_run(evaluation_run_id: UUID, problem_name: str, agent_
                 evaluation_run_id,
                 problem_name,
                 EvaluationRunStatus.error,
-                {"error_code": e.error_code.value, "error_message": e.error_message},
+                {"error_code": e.error_code.value, "error_message": e.error_message, **(e.extra or {})},
             )
 
         except Exception as e:
