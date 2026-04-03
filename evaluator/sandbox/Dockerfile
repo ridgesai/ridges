@@ -13,6 +13,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r /tmp/packages_py.txt && \
     rm /tmp/packages_py.txt
 
+# Pre-download tree-sitter language parsers (no network in sandbox at runtime)
+RUN python -c "\
+from tree_sitter_language_pack import get_language; \
+[get_language(lang) for lang in ['python', 'javascript', 'typescript', 'java', 'go', 'ruby', 'rust', 'c', 'cpp', 'c_sharp']];\
+print('Tree-sitter parsers cached successfully')" || echo "Tree-sitter pre-cache skipped"
+
 RUN pip cache purge && \
     rm -rf /root/.cache/pip
 
