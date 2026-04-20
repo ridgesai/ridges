@@ -11,4 +11,7 @@ router = APIRouter()
 # /evaluation-sets/all-latest-set-problems
 @router.get("/all-latest-set-problems")
 async def evaluation_sets_all_latest_set_problems() -> List[EvaluationSetProblem]:
-    return await get_all_evaluation_set_problems_for_set_id(await get_latest_set_id())
+    latest_set_id = await get_latest_set_id()
+    if latest_set_id is None:
+        return []
+    return await get_all_evaluation_set_problems_for_set_id(latest_set_id)
