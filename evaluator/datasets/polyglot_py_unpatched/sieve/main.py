@@ -1,2 +1,0 @@
-def primes(limit):
-    pass

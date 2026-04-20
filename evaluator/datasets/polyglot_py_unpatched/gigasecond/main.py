@@ -1,2 +1,0 @@
-def add(moment):
-    pass

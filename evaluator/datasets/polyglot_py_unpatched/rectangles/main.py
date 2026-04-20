@@ -1,2 +1,0 @@
-def rectangles(strings):
-    pass

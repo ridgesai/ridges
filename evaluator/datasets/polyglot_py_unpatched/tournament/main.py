@@ -1,2 +1,0 @@
-def tally(rows):
-    pass
