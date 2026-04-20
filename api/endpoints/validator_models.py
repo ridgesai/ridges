@@ -1,13 +1,13 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from models.agent import Agent
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRunStatus
-from models.problem import ProblemSuiteName, ProblemTestResult
+from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
 
 
@@ -45,20 +45,23 @@ class ValidatorRequestEvaluationRequest(BaseModel):
 class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel):  # :(
     evaluation_run_id: UUID
     problem_name: str
-    problem_suite_name: ProblemSuiteName
+    problem_suite_name: str | None = None
+    benchmark_family: str | None = None
+    execution_spec: dict[str, Any] | None = None
 
 
 class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
+    artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
 
 
-class ValidatorInfiniteSWESuiteProblemsRequest(BaseModel):
-    pass
+class ValidatorTaskDownloadUrlRequest(BaseModel):
+    task_digest: str
 
 
-class ValidatorInfiniteSWESuiteProblemsResponse(BaseModel):
-    problems: list[str]  # list of json objects
+class ValidatorTaskDownloadUrlResponse(BaseModel):
+    url: str
 
 
 class ValidatorHeartbeatRequest(BaseModel):
@@ -75,6 +78,7 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
 
     patch: Optional[str] = None
     test_results: Optional[List[ProblemTestResult]] = None
+    verifier_reward: Optional[float] = None
 
     agent_logs: Optional[str] = None
     eval_logs: Optional[str] = None
