@@ -14,6 +14,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "gitpython>=3.1.44",
     "greenlet>=3.1.0",
+    "harbor==0.3.0",
     "httpx>=0.27.0",
     "openai>=2.7.2",
     "psutil>=7.0.0",
@@ -21,12 +22,12 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
-    "swebench==4.0.3",
     "uvicorn>=0.30.5",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "pytest>=8.4.2",
     "ruff==0.15.7",
 ]
 
@@ -40,6 +41,8 @@ line-length = 120
 [tool.ruff.lint]
 extend-select = ["I"] # isort
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [tool.setuptools]
 py-modules = []
-
