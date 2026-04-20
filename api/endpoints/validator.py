@@ -23,20 +23,21 @@ from api.endpoints.validator_models import (
     ValidatorFinishEvaluationResponse,
     ValidatorHeartbeatRequest,
     ValidatorHeartbeatResponse,
-    ValidatorInfiniteSWESuiteProblemsRequest,
-    ValidatorInfiniteSWESuiteProblemsResponse,
     ValidatorRegistrationRequest,
     ValidatorRegistrationResponse,
     ValidatorRequestEvaluationRequest,
     ValidatorRequestEvaluationResponse,
     ValidatorRequestEvaluationResponseEvaluationRun,
+    ValidatorTaskDownloadUrlRequest,
+    ValidatorTaskDownloadUrlResponse,
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
-from models.evaluation_set import EvaluationSetGroup, RawInfiniteSWEProblem
+from models.evaluation_set import EvaluationSetGroup
+from models.harbor_task import read_execution_spec_metadata
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
@@ -58,14 +59,12 @@ from queries.evaluation_run import (
     update_evaluation_run_by_id,
 )
 from queries.evaluation_set import (
-    get_all_evaluation_set_problems_for_set_id,
-    get_infinite_swe_problems,
     get_latest_set_id,
 )
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
-from utils.s3 import download_text_file_from_s3
+from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
 
@@ -368,8 +367,18 @@ async def validator_request_evaluation(
             if agent_id is None:
                 return None
 
+            agent = await get_agent_by_id(agent_id)
+            try:
+                agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
+            except Exception as exc:
+                logger.error(f"Failed to download agent code for {agent_id}: {exc}")
+                return None
+
             # Create a new evaluation and evaluation runs for this agent & validator
-            evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
+            evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
+            if evaluation_bundle is None:
+                return None
+            evaluation, evaluation_runs = evaluation_bundle
     except asyncio.TimeoutError:
         # We couldn't acquire the lock, just act as though there are no evaluations available
         # The validator will automatically retry in a few seconds
@@ -378,24 +387,90 @@ async def validator_request_evaluation(
 
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
-    validator.current_agent = await get_agent_by_id(agent_id)
+    validator.current_agent = agent
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
     logger.info(f"  # of Evaluation Runs: {len(evaluation_runs)}")
 
-    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-    evaluation_runs = [
-        ValidatorRequestEvaluationResponseEvaluationRun(
-            evaluation_run_id=evaluation_run.evaluation_run_id,
-            problem_name=evaluation_run.problem_name,
-            problem_suite_name=evaluation_run.problem_suite_name,
+    response_runs: list[ValidatorRequestEvaluationResponseEvaluationRun] = []
+    for evaluation_run in evaluation_runs:
+        execution_metadata = read_execution_spec_metadata(
+            evaluation_run.execution_spec,
+            fallback_benchmark_family=evaluation_run.benchmark_family,
         )
-        for evaluation_run in evaluation_runs
-    ]
+        response_runs.append(
+            ValidatorRequestEvaluationResponseEvaluationRun(
+                evaluation_run_id=evaluation_run.evaluation_run_id,
+                problem_name=evaluation_run.problem_name,
+                problem_suite_name=execution_metadata.problem_suite_name if execution_metadata else None,
+                benchmark_family=(
+                    execution_metadata.benchmark_family if execution_metadata else evaluation_run.benchmark_family
+                ),
+                execution_spec=evaluation_run.execution_spec,
+            )
+        )
 
-    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
+    artifact_upload_urls: dict[str, str] = {}
+    for evaluation_run in evaluation_runs:
+        s3_key = f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
+        try:
+            artifact_upload_urls[str(evaluation_run.evaluation_run_id)] = await generate_presigned_upload_url(s3_key)
+        except Exception as exc:
+            logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
+
+    return ValidatorRequestEvaluationResponse(
+        agent_code=agent_code,
+        evaluation_runs=response_runs,
+        artifact_upload_urls=artifact_upload_urls,
+    )
+
+
+# /validator/task-download-url
+@router.post("/task-download-url")
+async def validator_task_download_url(
+    request: ValidatorTaskDownloadUrlRequest,
+    validator: Validator = Depends(get_request_validator),
+) -> ValidatorTaskDownloadUrlResponse:
+    """Generate a fresh presigned S3 URL for a task archive in the validator's current evaluation."""
+
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This validator is not currently running an evaluation.",
+        )
+
+    # Derive s3_key from the platform's own data — never trust the client for artifact lookup.
+    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
+
+    _NOT_FOUND = object()
+    s3_key: str | None | object = _NOT_FOUND
+    for er in evaluation_runs:
+        spec = er.execution_spec or {}
+        if spec.get("task_digest") == request.task_digest:
+            s3_key = spec.get("s3_key")
+            break
+
+    if s3_key is _NOT_FOUND:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No task with digest '{request.task_digest}' found in the current evaluation.",
+        )
+
+    if not s3_key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Task with digest '{request.task_digest}' exists but has no S3 key.",
+        )
+
+    try:
+        url = await generate_presigned_url(s3_key, ttl_seconds=300)
+    except Exception as exc:
+        logger.error(f"Failed to generate presigned URL for s3_key={s3_key}: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to generate download URL: {exc}")
+
+    return ValidatorTaskDownloadUrlResponse(url=url)
 
 
 def record_validator_heartbeat(validator: Validator, system_metrics: SystemMetrics | None = None) -> None:
@@ -417,42 +492,6 @@ async def validator_heartbeat(
     record_validator_heartbeat(validator, request.system_metrics)
 
     return ValidatorHeartbeatResponse()
-
-
-# /validator/heartbeat
-@router.post("/infinite-swe-problems")
-async def validator_infinite_swe_problems(
-    request: ValidatorInfiniteSWESuiteProblemsRequest,
-    validator: Validator = Depends(get_request_validator),  # No lock required
-) -> ValidatorInfiniteSWESuiteProblemsResponse:
-    logger.info(f"Validator '{validator.name}' requested Infinite SWE problems")
-    all_evaluation_set_problems = await get_all_evaluation_set_problems_for_set_id(await get_latest_set_id())
-
-    # Only send the problems for the appropriate validator/screener
-    if validator.hotkey.startswith("screener-1"):
-        infinite_swe_problem_ids = [
-            problem.problem_name
-            for problem in all_evaluation_set_problems
-            if problem.set_group == EvaluationSetGroup.screener_1
-        ]
-    elif validator.hotkey.startswith("screener-2"):
-        infinite_swe_problem_ids = [
-            problem.problem_name
-            for problem in all_evaluation_set_problems
-            if problem.set_group == EvaluationSetGroup.screener_2
-        ]
-    else:
-        infinite_swe_problem_ids = [
-            problem.problem_name
-            for problem in all_evaluation_set_problems
-            if problem.set_group == EvaluationSetGroup.validator
-        ]
-
-    problems: list[RawInfiniteSWEProblem] = await get_infinite_swe_problems(
-        [UUID(int=int(problem_name)) for problem_name in infinite_swe_problem_ids]
-    )
-
-    return ValidatorInfiniteSWESuiteProblemsResponse(problems=problems)
 
 
 # /validator/update-evaluation-run
@@ -570,10 +609,11 @@ async def validator_update_evaluation_run(
                     detail=f"An evaluation run can only be updated to finished if it is currently in the running_eval status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}.",
                 )
 
-            # Make sure the test results are provided
-            if request.test_results is None:
+            # Make sure the verifier reward is provided
+            if request.verifier_reward is None:
                 raise HTTPException(
-                    status_code=422, detail="The test results are required when updating an evaluation run to finished."
+                    status_code=422,
+                    detail="The verifier reward is required when updating an evaluation run to finished.",
                 )
 
             # Make sure the eval logs are provided
@@ -584,6 +624,7 @@ async def validator_update_evaluation_run(
 
             # Update the evaluation run to finished
             evaluation_run.status = EvaluationRunStatus.finished
+            evaluation_run.verifier_reward = request.verifier_reward
             evaluation_run.test_results = request.test_results
             evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
 
