@@ -31,6 +31,8 @@ class ProblemStatisticsResponse(BaseModel):
 @ttl_cache(ttl_seconds=15 * 60)  # 15 mins
 async def problem_statistics(set_id: Optional[int] = None) -> ProblemStatisticsResponse:
     max_problem_set_id = await get_latest_set_id()
+    if max_problem_set_id is None:
+        raise HTTPException(status_code=404, detail="No evaluation sets have been promoted yet.")
 
     if set_id is None:
         set_id = max_problem_set_id
