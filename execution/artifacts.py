@@ -19,7 +19,7 @@ from execution.failure_classifier import (
     classify_trial_failure,
     extract_runtime_failure,
 )
-from execution.types import ExecutionResult, FailureContext
+from execution.types import ExecutionResult, FailureContext, TrialSnapshot
 from models.problem import ProblemTestCategory, ProblemTestResult, ProblemTestResultStatus
 from ridges_harbor._stdlib_contract import AGENT_LOG_FILENAMES, HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.runner import HarborRunSummary
@@ -83,6 +83,15 @@ def collect_execution_logs(
         agent_logs=agent_logs,
         eval_logs=read_eval_logs(trial_paths=trial_paths),
         job_dir=summary.job_dir,
+    )
+
+
+def read_trial_snapshot(trial_dir: Path) -> TrialSnapshot:
+    """Read the patch and surfaced agent logs from a completed agent phase."""
+    trial_paths = TrialPaths(trial_dir=trial_dir)
+    return TrialSnapshot(
+        patch=read_text(trial_paths.agent_dir / "patch.diff"),
+        agent_logs=collect_named_logs(_agent_log_paths(trial_paths)),
     )
 
 
