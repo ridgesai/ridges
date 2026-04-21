@@ -44,3 +44,29 @@ async def download_text_file_from_s3(path: str) -> str:
         content = body.decode("utf-8")
         logger.info(f"Successfully downloaded text file from s3://{bucket}/{path}")
         return content
+
+
+async def generate_presigned_url(key: str, *, ttl_seconds: int = 300) -> str:
+    global session, bucket
+
+    async with session.client("s3") as s3_client:
+        url = await s3_client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=ttl_seconds,
+        )
+        logger.info(f"Generated presigned URL for s3://{bucket}/{key} (ttl={ttl_seconds}s)")
+        return url
+
+
+async def generate_presigned_upload_url(key: str, *, ttl_seconds: int = 7200) -> str:
+    global session, bucket
+
+    async with session.client("s3") as s3_client:
+        url = await s3_client.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=ttl_seconds,
+        )
+        logger.info(f"Generated presigned upload URL for s3://{bucket}/{key} (ttl={ttl_seconds}s)")
+        return url
