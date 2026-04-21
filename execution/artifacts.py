@@ -67,9 +67,7 @@ def result_from_summary(summary: HarborRunSummary) -> ExecutionResult:
     return parse_execution_artifacts(summary, trial_paths=trial_paths, context=context)
 
 
-# ---------------------------------------------------------------------------
 # Log collection
-# ---------------------------------------------------------------------------
 
 
 def collect_execution_logs(
@@ -177,9 +175,7 @@ def merge_logs(*sections: str) -> str:
     return "\n\n".join(section for section in sections if section)
 
 
-# ---------------------------------------------------------------------------
 # Success parsing
-# ---------------------------------------------------------------------------
 
 
 def parse_execution_artifacts(
@@ -358,9 +354,7 @@ def test_results_from_swebench_report(payload: Any) -> list[ProblemTestResult]:
     return results
 
 
-# ---------------------------------------------------------------------------
 # Report discovery
-# ---------------------------------------------------------------------------
 
 
 def render_discovered_report(*, trial_paths: TrialPaths) -> str:
@@ -447,9 +441,7 @@ def discover_verifier_report(*, trial_paths: TrialPaths) -> Path | None:
     return None
 
 
-# ---------------------------------------------------------------------------
 # Evaluation log reading
-# ---------------------------------------------------------------------------
 
 
 def read_eval_logs(*, trial_paths: TrialPaths) -> str:
@@ -470,9 +462,7 @@ def _read_eval_logs_best_effort(*, trial_paths: TrialPaths) -> str:
     return merge_logs(stdout_logs, report_logs)
 
 
-# ---------------------------------------------------------------------------
 # I/O helpers
-# ---------------------------------------------------------------------------
 
 
 def read_text(path: Path) -> str:
