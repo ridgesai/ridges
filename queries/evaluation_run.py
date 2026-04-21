@@ -6,15 +6,13 @@ import asyncpg
 
 import utils.logger as logger
 from models.evaluation_run import EvaluationRun, EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetProblem
+from queries._row_parsing import parse_jsonb_fields
 from utils.database import DatabaseConnection, db_operation
 
 
 def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:
-    # test_results is a jsonb column, as such, it is returned from asyncpg as a
-    # string. We need to parse it for pydantic to be able to use it.
-    row_dict = dict(row)
-    row_dict["test_results"] = json.loads(row_dict["test_results"]) if row_dict["test_results"] else None
-    return EvaluationRun(**row_dict)
+    return EvaluationRun(**parse_jsonb_fields(row, "test_results", "execution_spec"))
 
 
 @db_operation
@@ -75,21 +73,23 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
             status = $2,
             patch = $3,
             test_results = $4,
-            error_code = $5,
-            error_message = $6,
-            started_initializing_agent_at = $7,
-            started_running_agent_at = $8,
-            started_initializing_eval_at = $9,
-            started_running_eval_at = $10,
-            finished_or_errored_at = $11
+            verifier_reward = $5,
+            error_code = $6,
+            error_message = $7,
+            started_initializing_agent_at = $8,
+            started_running_agent_at = $9,
+            started_initializing_eval_at = $10,
+            started_running_eval_at = $11,
+            finished_or_errored_at = $12
         WHERE evaluation_run_id = $1
         """,
         evaluation_run.evaluation_run_id,
         evaluation_run.status.value,
         evaluation_run.patch,
         json.dumps([test_result.model_dump() for test_result in evaluation_run.test_results])
-        if evaluation_run.test_results
+        if evaluation_run.test_results is not None
         else None,
+        evaluation_run.verifier_reward,
         evaluation_run.error_code,
         evaluation_run.error_message,
         evaluation_run.started_initializing_agent_at,
@@ -128,21 +128,35 @@ async def create_evaluation_run(conn: DatabaseConnection, evaluation_id: UUID, p
 
 
 @db_operation
-async def create_evaluation_runs(conn: DatabaseConnection, evaluation_id: UUID, problem_names: List[str]) -> None:
+async def create_evaluation_runs(
+    conn: DatabaseConnection, evaluation_id: UUID, evaluation_set_problems: List[EvaluationSetProblem]
+) -> None:
     await conn.executemany(
         """
         INSERT INTO evaluation_runs (
             evaluation_run_id,
             evaluation_id,
             problem_name,
+            benchmark_family,
+            execution_spec,
             status,
             created_at
-        ) VALUES ($1, $2, $3, $4, NOW())
+        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
         """,
-        [(uuid4(), evaluation_id, problem_name, EvaluationRunStatus.pending.value) for problem_name in problem_names],
+        [
+            (
+                uuid4(),
+                evaluation_id,
+                problem.problem_name,
+                problem.benchmark_family,
+                json.dumps(problem.execution_spec) if problem.execution_spec is not None else None,
+                EvaluationRunStatus.pending.value,
+            )
+            for problem in evaluation_set_problems
+        ],
     )
 
-    logger.debug(f"Created {len(problem_names)} evaluation runs for evaluation {evaluation_id}")
+    logger.debug(f"Created {len(evaluation_set_problems)} evaluation runs for evaluation {evaluation_id}")
 
 
 @db_operation
