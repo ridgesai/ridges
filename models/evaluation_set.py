@@ -1,10 +1,8 @@
 import datetime
 from enum import Enum
-from uuid import UUID
+from typing import Any
 
 from pydantic import BaseModel
-
-from models.problem import ProblemSuiteName
 
 
 class EvaluationSetGroup(str, Enum):
@@ -26,21 +24,15 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
-    problem_suite_name: ProblemSuiteName
+    benchmark_family: str | None = None
+    problem_suite_name: str | None = None
+    execution_spec: dict[str, Any] | None = None
     created_at: datetime.datetime
 
 
-class RawInfiniteSWEProblem(BaseModel):
-    id: UUID
-    repo: str
-    instance_id: str
-    base_commit: str
-    patch: str
-    test_patch: str
-    problem_statement: str
-    hints_text: str
-    created_at: str
-    version: str
-    FAIL_TO_PASS: str
-    PASS_TO_PASS: str
-    environment_setup_commit: str
+class NewEvaluationSetProblem(BaseModel):
+    set_group: EvaluationSetGroup
+    problem_name: str
+    benchmark_family: str
+    problem_suite_name: str | None = None
+    execution_spec: dict[str, Any]
