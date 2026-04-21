@@ -13,6 +13,7 @@ from uuid import uuid4
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import (
+    TrialHook,
     build_enable_verifier_egress_hook,
     docker_environment_env,
     prune_dangling_images,
@@ -96,6 +97,8 @@ async def run_task(
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
     job_name: str | None = None,
+    on_agent_started: TrialHook | None = None,
+    on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
     """Run a pre-built Harbor task directory after verifying its digest.
 
@@ -114,10 +117,7 @@ async def run_task(
 
     actual_digest = await asyncio.to_thread(compute_task_digest, resolved_task_dir)
     if actual_digest != task_digest:
-        raise RuntimeError(
-            f"Harbor task digest mismatch for {task_name}: "
-            f"expected {task_digest}, got {actual_digest}"
-        )
+        raise RuntimeError(f"Harbor task digest mismatch for {task_name}: expected {task_digest}, got {actual_digest}")
 
     summary = await _run_task_dir(
         task_dir=resolved_task_dir,
@@ -130,6 +130,8 @@ async def run_task(
         results_dir=resolved_results_dir,
         debug=debug,
         job_name=job_name,
+        on_agent_started=on_agent_started,
+        on_verification_started=on_verification_started,
     )
 
     await prune_dangling_images()
@@ -149,6 +151,8 @@ async def _run_task_dir(
     results_dir: Path,
     debug: bool,
     job_name: str | None,
+    on_agent_started: TrialHook | None = None,
+    on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
     """Build and execute the one-task Harbor job for a single evaluation run.
 
@@ -198,9 +202,7 @@ async def _run_task_dir(
             )
         ],
     )
-    enable_verifier_egress = build_enable_verifier_egress_hook(
-        ridges_trial_id=ridges_trial_id
-    )
+    enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
     try:
         EnvironmentFactory.run_preflight(
@@ -208,7 +210,15 @@ async def _run_task_dir(
             import_path=config.environment.import_path,
         )
         job = await Job.create(config)
+
+        if on_agent_started is not None:
+            job.on_agent_started(on_agent_started)
+
         job.on_verification_started(enable_verifier_egress)
+
+        if on_verification_started is not None:
+            job.on_verification_started(on_verification_started)
+
         job_result = await job.run()
     except Exception as exception:
         error_path = _write_runner_exception(job_dir)
@@ -232,4 +242,3 @@ async def _run_task_dir(
     )
 
     return summary
- 
