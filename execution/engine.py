@@ -11,9 +11,10 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from execution.artifacts import collect_job_crash_context, result_from_summary
+import utils.logger as logger
+from execution.artifacts import collect_job_crash_context, read_trial_snapshot, result_from_summary
 from execution.errors import EvaluationRunException
-from execution.types import ExecutionResult, ExecutionRunRequest
+from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
@@ -87,6 +88,8 @@ class ExecutionEngine:
         agent_path: str | Path | None,
         agent_code: str | None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
+        on_agent_started: Callable[[], Awaitable[None]] | None = None,
+        on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
     ) -> ExecutionResult:
         """Run the task referenced by the evaluation set and normalize the result.
 
@@ -94,7 +97,7 @@ class ExecutionEngine:
         the outcome into either a success result or a classified failure.
         Unexpected engine-level crashes are wrapped as VALIDATOR_INTERNAL_ERROR.
         """
-        
+
         parsed_spec = self._parse_execution_spec(problem_name=problem_name, execution_spec=execution_spec)
         task_dir = await self._resolve_task_dir(
             execution_spec=parsed_spec, problem_name=problem_name, fetch_task_url=fetch_task_url
@@ -107,6 +110,20 @@ class ExecutionEngine:
         )
 
         try:
+
+            async def harbor_on_agent_started(_event: Any) -> None:
+                try:
+                    await on_agent_started()
+                except Exception as exception:
+                    logger.warning(f"Harbor on_agent_started callback failed: {exception}")
+
+            async def harbor_on_verification_started(event: Any) -> None:
+                try:
+                    trial_dir = Path(event.config.trials_dir) / event.trial_id
+                    await on_verification_started(read_trial_snapshot(trial_dir))
+                except Exception as exception:
+                    logger.warning(f"Harbor on_verification_started callback failed: {exception}")
+
             with resolved_agent_source(agent_path=agent_path, agent_code=agent_code) as resolved_agent_path:
                 summary = await run_task(
                     request.task_dir,
@@ -119,6 +136,10 @@ class ExecutionEngine:
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
+                    on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
+                    on_verification_started=(
+                        harbor_on_verification_started if on_verification_started is not None else None
+                    ),
                 )
             return result_from_summary(summary=summary)
 
