@@ -28,6 +28,7 @@ from api.endpoints.validator_models import (
 )
 from execution.engine import ExecutionEngine
 from execution.errors import EvaluationRunException
+from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.problem import ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
@@ -43,6 +44,7 @@ max_evaluation_run_log_size_bytes = None
 
 
 execution_engine = None
+STATUS_HOOK_TIMEOUT_SECONDS = 5
 
 
 # Disconnect from the Ridges platform (called when the program exits)
@@ -103,17 +105,28 @@ async def set_weights_loop():
 # parameter is for fields that are not sent in all requests, such as agent_logs
 # and eval_logs, which are only sent on some state transitions.
 async def update_evaluation_run(
-    evaluation_run_id: UUID, problem_name: str, updated_status: EvaluationRunStatus, extra: Dict[str, Any] = {}
+    evaluation_run_id: UUID,
+    problem_name: str,
+    updated_status: EvaluationRunStatus,
+    extra: Dict[str, Any] | None = None,
+    *,
+    timeout: int | None = None,
 ):
     logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
+
+    post_kwargs: dict[str, Any] = {
+        "bearer_token": session_id,
+        "quiet": 2,
+    }
+    if timeout is not None:
+        post_kwargs["timeout"] = timeout
 
     await post_ridges_platform(
         "/validator/update-evaluation-run",
         ValidatorUpdateEvaluationRunRequest(
             evaluation_run_id=evaluation_run_id, updated_status=updated_status, **(extra or {})
         ),
-        bearer_token=session_id,
-        quiet=2,
+        **post_kwargs,
     )
 
 
@@ -253,8 +266,32 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
             # Move from pending -> initializing_agent
             await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
-            # Move from initializing_agent -> running_agent
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
+            async def _on_agent_started() -> None:
+                await update_evaluation_run(
+                    evaluation_run_id,
+                    problem_name,
+                    EvaluationRunStatus.running_agent,
+                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+                )
+
+            async def _on_verification_started(snapshot: TrialSnapshot) -> None:
+                await update_evaluation_run(
+                    evaluation_run_id,
+                    problem_name,
+                    EvaluationRunStatus.initializing_eval,
+                    {
+                        "patch": snapshot.patch,
+                        "agent_logs": truncate_logs_if_required(snapshot.agent_logs),
+                    },
+                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+                )
+
+                await update_evaluation_run(
+                    evaluation_run_id,
+                    problem_name,
+                    EvaluationRunStatus.running_eval,
+                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+                )
 
             result = await execution_engine.evaluate(
                 evaluation_run_id=evaluation_run_id,
@@ -263,6 +300,8 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 agent_path=None,
                 agent_code=agent_code,
                 fetch_task_url=_fetch_task_download_url,
+                on_agent_started=_on_agent_started,
+                on_verification_started=_on_verification_started,
             )
             job_dir = result.job_dir
 
@@ -272,17 +311,6 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 f"{len(result.agent_logs.splitlines())} lines of agent logs, "
                 f"{len(result.eval_logs.splitlines())} lines of eval logs"
             )
-
-            # Move from running_agent -> initializing_eval
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.initializing_eval,
-                {"patch": result.patch, "agent_logs": truncate_logs_if_required(result.agent_logs)},
-            )
-
-            # Move from initializing_eval -> running_eval
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
             num_passed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.PASS)
             num_failed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.FAIL)
@@ -300,6 +328,8 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 problem_name,
                 EvaluationRunStatus.finished,
                 {
+                    "patch": result.patch,
+                    "agent_logs": truncate_logs_if_required(result.agent_logs),
                     "verifier_reward": result.verifier_reward,
                     "test_results": [test.model_dump() for test in result.test_results],
                     "eval_logs": truncate_logs_if_required(result.eval_logs),
@@ -310,16 +340,19 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
             logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
             extra = dict(e.extra or {})
             job_dir = extra.pop("job_dir", None)
-            if "agent_logs" in extra:
-                extra["agent_logs"] = truncate_logs_if_required(extra["agent_logs"])
-            if "eval_logs" in extra:
-                extra["eval_logs"] = truncate_logs_if_required(extra["eval_logs"])
+            for key in ("agent_logs", "eval_logs"):
+                if key in extra:
+                    extra[key] = truncate_logs_if_required(extra[key])
 
             await update_evaluation_run(
                 evaluation_run_id,
                 problem_name,
                 EvaluationRunStatus.error,
-                {"error_code": e.error_code.value, "error_message": e.error_message, **extra},
+                {
+                    "error_code": e.error_code.value,
+                    "error_message": e.error_message,
+                    **extra,
+                },
             )
 
         except Exception as e:
@@ -334,7 +367,10 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 EvaluationRunStatus.error,
                 {
                     "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
-                    "error_message": f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\nTraceback:\n{traceback.format_exc()}",
+                    "error_message": (
+                        f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\n"
+                        f"Traceback:\n{traceback.format_exc()}"
+                    ),
                 },
             )
 
