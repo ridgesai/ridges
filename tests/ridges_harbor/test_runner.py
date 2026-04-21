@@ -211,6 +211,40 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     assert os.environ == original_environ
 
 
+@pytest.mark.anyio
+async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    results_dir = tmp_path / "results"
+
+    async def on_agent_started(_event) -> None:
+        return None
+
+    async def on_verification_started(_event) -> None:
+        return None
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        evaluation_run_id="eval-run-1",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=results_dir,
+        debug=False,
+        job_name="job-1",
+        on_agent_started=on_agent_started,
+        on_verification_started=on_verification_started,
+    )
+
+    assert FakeJob.last_instance.agent_started_hooks == [on_agent_started]
+    assert len(FakeJob.last_instance.verification_started_hooks) == 2
+    assert FakeJob.last_instance.verification_started_hooks[1] is on_verification_started
+
+
 def test_populate_context_post_run_marks_context_handled(tmp_path: Path) -> None:
     agent_path = tmp_path / "agent.py"
     agent_path.write_text("def agent_main(input):\n    return 'patch'\n")
