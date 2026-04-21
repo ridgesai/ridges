@@ -169,4 +169,9 @@ if not MAX_CONCURRENT_EVALUATION_RUNS:
     MAX_CONCURRENT_EVALUATION_RUNS = 30  # high default for validators
 MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
 
+RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
+RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
+
+logger.info("Execution Backend: harbor")
+
 logger.info("===============================")
