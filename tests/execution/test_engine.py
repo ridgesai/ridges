@@ -6,11 +6,29 @@ import pytest
 import execution.engine as engine_module
 from execution.engine import ExecutionEngine
 from execution.errors import EvaluationRunException
+from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, SETUP_LOG_FILENAME
 
 from .helpers import make_summary, successful_verifier_result, valid_execution_spec, write
+
+
+async def _append_marker(target: list[str], marker: str) -> None:
+    target.append(marker)
+
+
+async def _append_snapshot(target: list[TrialSnapshot], snapshot: TrialSnapshot) -> None:
+    target.append(snapshot)
+
+
+async def _failing_callback() -> None:
+    raise RuntimeError("agent callback boom")
+
+
+async def _failing_snapshot_callback(snapshot: TrialSnapshot) -> None:
+    del snapshot
+    raise RuntimeError("verification callback boom")
 
 
 @pytest.mark.anyio
@@ -219,6 +237,116 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     assert captured["evaluation_run_id"] == str(evaluation_run_id)
     assert captured["results_dir"] == (tmp_path / "results").resolve()
     assert captured["job_name"] == f"update-status-file__{evaluation_run_id}"
+
+
+@pytest.mark.anyio
+async def test_evaluate_translates_harbor_hooks_into_domain_callbacks(tmp_path: Path, monkeypatch) -> None:
+    task_dir = tmp_path / "cache" / "sha256_fake" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+    snapshot_calls: list[TrialSnapshot] = []
+    agent_started_calls: list[str] = []
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(*args, **kwargs):
+        trial_dir = tmp_path / "trial"
+        write(trial_dir / "agent" / "patch.diff", "PATCH")
+        write(trial_dir / "agent" / SETUP_LOG_FILENAME, "setup ok")
+
+        agent_event = type("AgentEvent", (), {})()
+        await kwargs["on_agent_started"](agent_event)
+
+        verification_event = type(
+            "VerificationEvent",
+            (),
+            {
+                "trial_id": "trial-1",
+                "config": type("Config", (), {"trials_dir": tmp_path})(),
+            },
+        )()
+        write(tmp_path / "trial-1" / "agent" / "patch.diff", "PATCH")
+        write(tmp_path / "trial-1" / "agent" / SETUP_LOG_FILENAME, "setup ok")
+        await kwargs["on_verification_started"](verification_event)
+
+        return make_summary(
+            tmp_path,
+            test_results=None,
+            verifier_result=successful_verifier_result(),
+        )
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+
+    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+
+    result = await engine.evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=valid_execution_spec(),
+        agent_path=agent_path,
+        agent_code=None,
+        on_agent_started=lambda: _append_marker(agent_started_calls, "started"),
+        on_verification_started=lambda snapshot: _append_snapshot(snapshot_calls, snapshot),
+    )
+
+    assert result.backend == "harbor"
+    assert agent_started_calls == ["started"]
+    assert len(snapshot_calls) == 1
+    assert snapshot_calls[0].patch == "PATCH"
+    assert "# setup.log\nsetup ok" in snapshot_calls[0].agent_logs
+
+
+@pytest.mark.anyio
+async def test_evaluate_swallows_domain_callback_failures(tmp_path: Path, monkeypatch) -> None:
+    task_dir = tmp_path / "cache" / "sha256_fake" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    agent_path = tmp_path / "agent.py"
+    write(agent_path, "def agent_main(_input):\n    return ''\n")
+
+    async def fake_resolve_task_dir(self, execution_spec, problem_name, fetch_task_url):
+        return task_dir
+
+    async def fake_run_task(*args, **kwargs):
+        agent_event = type("AgentEvent", (), {})()
+        await kwargs["on_agent_started"](agent_event)
+
+        verification_event = type(
+            "VerificationEvent",
+            (),
+            {
+                "trial_id": "trial-1",
+                "config": type("Config", (), {"trials_dir": tmp_path})(),
+            },
+        )()
+        write(tmp_path / "trial-1" / "agent" / "patch.diff", "PATCH")
+        write(tmp_path / "trial-1" / "agent" / SETUP_LOG_FILENAME, "setup ok")
+        await kwargs["on_verification_started"](verification_event)
+
+        return make_summary(
+            tmp_path,
+            test_results=None,
+            verifier_result=successful_verifier_result(),
+        )
+
+    monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
+    monkeypatch.setattr(engine_module, "run_task", fake_run_task)
+
+    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+
+    result = await engine.evaluate(
+        evaluation_run_id=uuid4(),
+        problem_name="update-status-file",
+        execution_spec=valid_execution_spec(),
+        agent_path=agent_path,
+        agent_code=None,
+        on_agent_started=_failing_callback,
+        on_verification_started=_failing_snapshot_callback,
+    )
+
+    assert result.backend == "harbor"
 
 
 @pytest.mark.anyio

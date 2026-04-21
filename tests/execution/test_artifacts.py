@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from execution.artifacts import result_from_summary
+from execution.artifacts import read_trial_snapshot, result_from_summary
 from execution.errors import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode
 from ridges_harbor._stdlib_contract import (
@@ -39,6 +39,23 @@ def test_happy_path_returns_execution_result(tmp_path: Path) -> None:
     assert result.agent_logs.startswith(f"# {SETUP_LOG_FILENAME}\nsetup ok")
     assert f"# {RUNTIME_PAYLOAD_FILENAME}" not in result.agent_logs
     assert result.eval_logs == "verifier output"
+
+
+def test_read_trial_snapshot_returns_patch_and_surfaced_agent_logs(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        verifier_result=successful_verifier_result(),
+        runtime_log="runtime output",
+        trial_log="trial output",
+    )
+
+    snapshot = read_trial_snapshot(summary.trial_dir)
+
+    assert snapshot.patch == "--- a/status.txt\n+++ b/status.txt\n@@ -1 +1 @@\n-pending\n+done\n"
+    assert snapshot.agent_logs.startswith(f"# {SETUP_LOG_FILENAME}\nsetup ok")
+    assert "# runtime.log\nruntime output" in snapshot.agent_logs
+    assert "# trial.log\ntrial output" in snapshot.agent_logs
 
 
 def test_report_json_fills_structured_test_results_when_legacy_file_is_missing(tmp_path: Path) -> None:
