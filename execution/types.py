@@ -24,6 +24,14 @@ class ExecutionResult:
     job_dir: Path | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class TrialSnapshot:
+    """The completed agent-phase output at Harbor verifier start."""
+
+    patch: str
+    agent_logs: str
+
+
 @dataclass(slots=True)
 class ClassifiedExecutionFailure:
     """A Harbor failure after it has been mapped to a platform error code."""
