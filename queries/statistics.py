@@ -111,9 +111,7 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
 
 class PerfectlySolvedOverTime(BaseModel):
     hour: datetime
-    polyglot_py: int
-    polyglot_js: int
-    swebench: int
+    total_solved: int
 
 
 @db_operation
@@ -127,14 +125,9 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
                     '6 hours'::interval
                 ) as hour
             ),
-            problem_groups AS (
+            perfectly_solved_problems AS (
                 SELECT
-                    MIN(erh.created_at) as first_perfectly_solved_at,
-                    CASE
-                        WHEN erh.problem_name LIKE '%-py' THEN 'polyglot_py'
-                        WHEN erh.problem_name LIKE '%-js' THEN 'polyglot_js'
-                        ELSE 'swebench'
-                    END AS problem_group
+                    MIN(erh.created_at) as first_perfectly_solved_at
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
@@ -148,11 +141,9 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
             )
         SELECT
             ts.hour,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_py') as polyglot_py,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_js') as polyglot_js,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'swebench') as swebench
+            COUNT(psp.first_perfectly_solved_at) as total_solved
         FROM time_series ts
-        LEFT JOIN problem_groups pg ON pg.first_perfectly_solved_at <= ts.hour
+        LEFT JOIN perfectly_solved_problems psp ON psp.first_perfectly_solved_at <= ts.hour
         GROUP BY ts.hour
         ORDER BY ts.hour ASC;
     """
