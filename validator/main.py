@@ -23,16 +23,13 @@ from api.endpoints.validator_models import (
     ValidatorRegistrationResponse,
     ValidatorRequestEvaluationRequest,
     ValidatorRequestEvaluationResponse,
+    ValidatorTaskDownloadUrlRequest,
     ValidatorUpdateEvaluationRunRequest,
 )
-from evaluator.models import EvaluationRunException
-from evaluator.problem_suites.infinite_swe.infinite_swe_suite import INFINITE_SWE_SUITE
-from evaluator.problem_suites.problem_suite import ProblemSuite
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
-from evaluator.sandbox.sandbox_manager import SandboxManager
+from execution.engine import ExecutionEngine
+from execution.errors import EvaluationRunException
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
-from models.evaluation_set import EvaluationSetProblem
-from models.problem import Problem, ProblemSuiteName, ProblemTestResultStatus
+from models.problem import ProblemTestResultStatus
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
@@ -45,8 +42,7 @@ running_eval_timeout_seconds = None
 max_evaluation_run_log_size_bytes = None
 
 
-# The sandbox manager and problem suites
-sandbox_manager = None
+execution_engine = None
 
 
 # Disconnect from the Ridges platform (called when the program exits)
@@ -131,15 +127,65 @@ def truncate_logs_if_required(log: str) -> str:
     return log
 
 
+async def _fetch_task_download_url(task_digest: str) -> str:
+    """Ask the platform for a fresh presigned URL for a task archive."""
+    try:
+        resp = await post_ridges_platform(
+            "/validator/task-download-url",
+            ValidatorTaskDownloadUrlRequest(task_digest=task_digest),
+            bearer_token=session_id,
+            quiet=2,
+        )
+        url = resp.get("url") if isinstance(resp, dict) else None
+        if not url:
+            raise EvaluationRunException(
+                EvaluationRunErrorCode.PLATFORM_FAILED_PROVISIONING,
+                f"Platform returned no URL for task digest {task_digest}: {resp}",
+            )
+        return url
+    except httpx.HTTPStatusError as exc:
+        raise EvaluationRunException(
+            EvaluationRunErrorCode.PLATFORM_FAILED_PROVISIONING,
+            f"Platform failed to provide download URL for task digest {task_digest}: "
+            f"{exc.response.status_code} {exc.response.text}",
+        ) from exc
+    except Exception as exc:
+        raise EvaluationRunException(
+            EvaluationRunErrorCode.PLATFORM_FAILED_PROVISIONING,
+            f"Failed to fetch download URL for task digest {task_digest}: {type(exc).__name__}: {exc}",
+        ) from exc
+
+
+async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
+    """Tar the job directory and PUT it to a presigned S3 URL. Best-effort."""
+    try:
+        import io
+        import tarfile
+
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            tar.add(str(job_dir), arcname=job_dir.name)
+        buf.seek(0)
+        payload = buf.read()
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.put(upload_url, content=payload)
+            resp.raise_for_status()
+
+        logger.info(f"Uploaded {len(payload)} bytes of job artifacts to S3")
+    except Exception as exc:
+        logger.warning(f"Failed to upload job artifacts (best-effort): {exc}")
+
+
 async def _simulate_run_evaluation_run_with_semaphore(
-    evaluation_run_id: UUID, problem_name: str, problem_suites: list[ProblemSuite], semaphore: asyncio.Semaphore
+    evaluation_run_id: UUID, problem_name: str, semaphore: asyncio.Semaphore
 ):
     async with semaphore:
-        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name, problem_suites)
+        return await _simulate_run_evaluation_run(evaluation_run_id, problem_name)
 
 
 # Simulate a run of an evaluation run, useful for testing, set SIMULATE_EVALUATION_RUNS=True in .env
-async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str, problem_suites: list[ProblemSuite]):
+async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: str):
     logger.info(f"Starting simulated evaluation run {evaluation_run_id} for problem {problem_name}...")
 
     # Move from pending -> initializing_agent
@@ -173,6 +219,7 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
             "test_results": [
                 {"name": "fake_test", "category": "default", "status": f"{ProblemTestResultStatus.PASS.value}"}
             ],
+            "verifier_reward": 1.0,
             "eval_logs": "FAKE EVAL LOGS",
         },
     )
@@ -181,75 +228,49 @@ async def _simulate_run_evaluation_run(evaluation_run_id: UUID, problem_name: st
 
 
 async def _run_evaluation_run_with_semaphore(
-    evaluation_run_id: UUID,
-    problem_name: str,
+    evaluation_run,
     agent_code: str,
-    problem_suites: list[ProblemSuite],
     semaphore: asyncio.Semaphore,
+    artifact_upload_url: str | None = None,
 ):
     async with semaphore:
-        return await _run_evaluation_run(evaluation_run_id, problem_name, agent_code, problem_suites)
+        return await _run_evaluation_run(evaluation_run, agent_code, artifact_upload_url=artifact_upload_url)
 
 
 # Run an evaluation run
-async def _run_evaluation_run(
-    evaluation_run_id: UUID, problem_name: str, agent_code: str, problem_suites: list[ProblemSuite]
-):
+async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_url: str | None = None):
     try:
-        # Figure out what problem suite this problem belongs to
-        problem_suite = next((suite for suite in problem_suites if suite.has_problem_name(problem_name)), None)
+        global execution_engine
+        assert execution_engine is not None
 
-        # If we don't have a problem suite that supports this problem, mark the evaluation run as errored
-        if problem_suite is None:
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.error,
-                {
-                    "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
-                    "error_message": f"The problem '{problem_name}' was not found in any problem suite",
-                },
-            )
-            return
-
-        # Get the problem
-        problem: Problem | None = problem_suite.get_problem(problem_name)
-        if problem is None:  # should never happen
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.error,
-                {
-                    "error_code": EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
-                    "error_message": f"The problem '{problem_name}' was not found in problem suite {problem_suite.name}",
-                },
-            )
-            return
-
+        evaluation_run_id = evaluation_run.evaluation_run_id
+        problem_name = evaluation_run.problem_name
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
+
+        job_dir = None
 
         try:
             # Move from pending -> initializing_agent
             await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
 
-            # Start initializing the agent sandbox
-            agent_sandbox = await asyncio.to_thread(
-                problem_suite.initialize_agent_sandbox,
-                sandbox_manager,
-                problem,
-                evaluation_run_id,
-                agent_code,
-                running_agent_timeout_seconds,
-                include_solutions=config.INCLUDE_SOLUTIONS,
-            )
-
             # Move from initializing_agent -> running_agent
             await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_agent)
 
-            # Start running the agent sandbox
-            patch, agent_logs = await asyncio.to_thread(problem_suite.run_agent_sandbox, sandbox_manager, agent_sandbox)
+            result = await execution_engine.evaluate(
+                evaluation_run_id=evaluation_run_id,
+                problem_name=problem_name,
+                execution_spec=evaluation_run.execution_spec,
+                agent_path=None,
+                agent_code=agent_code,
+                fetch_task_url=_fetch_task_download_url,
+            )
+            job_dir = result.job_dir
+
             logger.info(
-                f"Finished running agent for problem {problem_name}: {len(patch.splitlines())} lines of patch, {len(agent_logs.splitlines())} lines of agent logs"
+                f"Finished {result.backend} execution for problem {problem_name}: "
+                f"{len(result.patch.splitlines())} lines of patch, "
+                f"{len(result.agent_logs.splitlines())} lines of agent logs, "
+                f"{len(result.eval_logs.splitlines())} lines of eval logs"
             )
 
             # Move from running_agent -> initializing_eval
@@ -257,31 +278,20 @@ async def _run_evaluation_run(
                 evaluation_run_id,
                 problem_name,
                 EvaluationRunStatus.initializing_eval,
-                {"patch": patch, "agent_logs": truncate_logs_if_required(agent_logs)},
-            )
-
-            # Start initializing the evaluation sandbox
-            eval_sandbox = await asyncio.to_thread(
-                problem_suite.initialize_eval_sandbox,
-                sandbox_manager,
-                problem,
-                evaluation_run_id,
-                patch,
-                running_eval_timeout_seconds,
+                {"patch": result.patch, "agent_logs": truncate_logs_if_required(result.agent_logs)},
             )
 
             # Move from initializing_eval -> running_eval
             await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.running_eval)
 
-            # Start running the evaluation sandbox
-            test_results, eval_logs = await asyncio.to_thread(
-                problem_suite.run_eval_sandbox, sandbox_manager, eval_sandbox
-            )
-            num_passed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.PASS)
-            num_failed = sum(1 for test in test_results if test.status == ProblemTestResultStatus.FAIL)
-            num_skipped = sum(1 for test in test_results if test.status == ProblemTestResultStatus.SKIP)
+            num_passed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.PASS)
+            num_failed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.FAIL)
+            num_skipped = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.SKIP)
             logger.info(
-                f"Finished running evaluation for problem {problem_name}: {len(test_results)} test results ({num_passed} passed, {num_failed} failed, {num_skipped} skipped), {len(eval_logs.splitlines())} lines of eval logs"
+                f"Finished running evaluation for problem {problem_name}: "
+                f"reward={result.verifier_reward}, {len(result.test_results)} test results "
+                f"({num_passed} passed, {num_failed} failed, {num_skipped} skipped), "
+                f"{len(result.eval_logs.splitlines())} lines of eval logs"
             )
 
             # Move from running_eval -> finished
@@ -290,19 +300,26 @@ async def _run_evaluation_run(
                 problem_name,
                 EvaluationRunStatus.finished,
                 {
-                    "test_results": [test.model_dump() for test in test_results],
-                    "eval_logs": truncate_logs_if_required(eval_logs),
+                    "verifier_reward": result.verifier_reward,
+                    "test_results": [test.model_dump() for test in result.test_results],
+                    "eval_logs": truncate_logs_if_required(result.eval_logs),
                 },
             )
 
         except EvaluationRunException as e:
             logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+            extra = dict(e.extra or {})
+            job_dir = extra.pop("job_dir", None)
+            if "agent_logs" in extra:
+                extra["agent_logs"] = truncate_logs_if_required(extra["agent_logs"])
+            if "eval_logs" in extra:
+                extra["eval_logs"] = truncate_logs_if_required(extra["eval_logs"])
 
             await update_evaluation_run(
                 evaluation_run_id,
                 problem_name,
                 EvaluationRunStatus.error,
-                {"error_code": e.error_code.value, "error_message": e.error_message},
+                {"error_code": e.error_code.value, "error_message": e.error_message, **extra},
             )
 
         except Exception as e:
@@ -321,6 +338,10 @@ async def _run_evaluation_run(
                 },
             )
 
+        # Upload artifacts for both success and error cases
+        if artifact_upload_url and job_dir:
+            await _upload_job_artifacts(job_dir, artifact_upload_url)
+
         logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}")
 
     except Exception as e:
@@ -330,9 +351,7 @@ async def _run_evaluation_run(
 
 
 # Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
-async def _run_evaluation(
-    request_evaluation_response: ValidatorRequestEvaluationResponse, problem_suites: list[ProblemSuite]
-):
+async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse):
     logger.info("Received evaluation:")
     logger.info(f"  # of evaluation runs: {len(request_evaluation_response.evaluation_runs)}")
 
@@ -350,20 +369,18 @@ async def _run_evaluation(
         if config.SIMULATE_EVALUATION_RUNS:
             tasks.append(
                 asyncio.create_task(
-                    _simulate_run_evaluation_run_with_semaphore(
-                        evaluation_run_id, problem_name, problem_suites, semaphore
-                    )
+                    _simulate_run_evaluation_run_with_semaphore(evaluation_run_id, problem_name, semaphore)
                 )
             )
         else:
+            upload_url = request_evaluation_response.artifact_upload_urls.get(str(evaluation_run_id))
             tasks.append(
                 asyncio.create_task(
                     _run_evaluation_run_with_semaphore(
-                        evaluation_run_id,
-                        problem_name,
+                        evaluation_run,
                         request_evaluation_response.agent_code,
-                        problem_suites,
                         semaphore,
+                        artifact_upload_url=upload_url,
                     )
                 )
             )
@@ -383,7 +400,7 @@ async def main():
     global running_agent_timeout_seconds
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
-    global sandbox_manager
+    global execution_engine
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
@@ -439,37 +456,10 @@ async def main():
     logger.info(f"  Running Evaluation Timeout: {running_eval_timeout_seconds} second(s)")
     logger.info(f"  Max Evaluation Run Log Size: {max_evaluation_run_log_size_bytes} byte(s)")
 
-    # Create the sandbox manager
-    sandbox_manager = SandboxManager(config.RIDGES_INFERENCE_GATEWAY_URL)
-
-    # Load all problem suites
-    problem_suites: list[ProblemSuite] = [
-        INFINITE_SWE_SUITE
-    ]  # [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]
-    await asyncio.gather(*[asyncio.to_thread(problem_suite.setup) for problem_suite in problem_suites])
-
-    # Get all the problems in the latest set
-    latest_set_problems_data = await get_ridges_platform("/evaluation-sets/all-latest-set-problems", quiet=1)
-    latest_set_problems = [EvaluationSetProblem(**prob) for prob in latest_set_problems_data]
-
-    # Prebuild the images for the SWE-Bench Verified problems
-    await asyncio.to_thread(
-        SWEBENCH_VERIFIED_SUITE.prebuild_problem_images(
-            [
-                prob.problem_name
-                for prob in latest_set_problems
-                if prob.problem_suite_name == ProblemSuiteName.swebench_verified
-            ]
-        )
-    )
-    await asyncio.to_thread(
-        INFINITE_SWE_SUITE.prebuild_problem_images(
-            [
-                prob.problem_name
-                for prob in latest_set_problems
-                if prob.problem_suite_name == ProblemSuiteName.infinite_swe
-            ]
-        )
+    execution_engine = ExecutionEngine(
+        inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
+        harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
+        harbor_debug=config.RIDGES_HARBOR_DEBUG,
     )
 
     # Start the send heartbeat loop
@@ -495,7 +485,7 @@ async def main():
             await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
             continue
 
-        await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data), problem_suites)
+        await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data))
 
 
 if __name__ == "__main__":
