@@ -18,7 +18,7 @@ from queries.agent import (
     get_top_agents,
 )
 from queries.evaluation import get_evaluations_for_agent_id
-from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id, get_evaluation_run_metrics_by_ids
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -30,6 +30,7 @@ from queries.statistics import (
     score_improvement_24_hrs,
     top_score,
 )
+from utils.problem_alias import make_problem_alias
 from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
 
@@ -95,8 +96,23 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
     runs_per_eval = await asyncio.gather(
         *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
+    all_run_ids = [run.evaluation_run_id for runs in runs_per_eval for run in runs]
+    metrics_by_run_id = await get_evaluation_run_metrics_by_ids(all_run_ids)
 
-    return [EvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, runs_per_eval)]
+    enriched_runs = [
+        [
+            run.model_copy(
+                update={
+                    "problem_alias": make_problem_alias(run.problem_name, run.benchmark_family),
+                    **metrics_by_run_id.get(run.evaluation_run_id, {}),
+                }
+            )
+            for run in runs
+        ]
+        for runs in runs_per_eval
+    ]
+
+    return [EvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, enriched_runs)]
 
 
 # /retrieval/agent-code?agent_id=
