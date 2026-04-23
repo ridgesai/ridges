@@ -65,6 +65,120 @@ async def get_all_evaluation_runs_in_evaluation_id(
     return [_parse_evaluation_run_from_row(row) for row in rows]
 
 
+def _parse_metrics_row(row: asyncpg.Record) -> dict:
+    return {
+        "run_time_seconds": row["run_time_seconds"],
+        "run_cost_usd": row["run_cost_usd"],
+        "problem_total_runs": row["problem_total_runs"],
+        "problem_average_time_seconds": row["problem_average_time_seconds"],
+        "problem_average_cost_usd": row["problem_average_cost_usd"],
+    }
+
+
+async def _get_evaluation_run_metrics_by_ids(
+    conn: DatabaseConnection, evaluation_run_ids: List[UUID]
+) -> dict[UUID, dict]:
+    if not evaluation_run_ids:
+        return {}
+
+    rows = await conn.fetch(
+        """
+        WITH target_runs AS (
+            SELECT
+                er.evaluation_run_id,
+                er.problem_name,
+                e.set_id,
+                CASE
+                    WHEN er.started_initializing_agent_at IS NOT NULL
+                     AND er.finished_or_errored_at IS NOT NULL
+                    THEN EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.started_initializing_agent_at))
+                    ELSE NULL
+                END AS run_time_seconds
+            FROM evaluation_runs er
+            JOIN evaluations e ON e.evaluation_id = er.evaluation_id
+            WHERE er.evaluation_run_id = ANY($1::uuid[])
+        ),
+        run_usage AS (
+            SELECT
+                tr.evaluation_run_id,
+                CASE
+                    WHEN COUNT(i.inference_id) = 0 THEN NULL
+                    ELSE erwc.total_cost_usd
+                END AS run_cost_usd
+            FROM target_runs tr
+            JOIN evaluation_runs_with_cost erwc ON erwc.evaluation_run_id = tr.evaluation_run_id
+            LEFT JOIN inferences i ON i.evaluation_run_id = tr.evaluation_run_id
+            GROUP BY tr.evaluation_run_id, erwc.total_cost_usd
+        ),
+        problem_aggregates AS (
+            SELECT
+                target_problem_keys.set_id,
+                target_problem_keys.problem_name,
+                COUNT(*) AS problem_total_runs,
+                AVG(
+                    CASE
+                        WHEN er.started_initializing_agent_at IS NOT NULL
+                         AND er.finished_or_errored_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.started_initializing_agent_at))
+                        ELSE NULL
+                    END
+                ) AS problem_average_time_seconds,
+                CASE
+                    WHEN COUNT(*) FILTER (WHERE usage.inference_count > 0) = 0 THEN NULL
+                    ELSE AVG(erwc.total_cost_usd) FILTER (WHERE usage.inference_count > 0)
+                END AS problem_average_cost_usd
+            FROM (
+                SELECT DISTINCT set_id, problem_name
+                FROM target_runs
+            ) AS target_problem_keys
+            JOIN evaluations e ON e.set_id = target_problem_keys.set_id
+            JOIN evaluation_runs er
+                ON er.evaluation_id = e.evaluation_id
+               AND er.problem_name = target_problem_keys.problem_name
+            JOIN agents a ON a.agent_id = e.agent_id
+            JOIN evaluation_runs_with_cost erwc ON erwc.evaluation_run_id = er.evaluation_run_id
+            LEFT JOIN LATERAL (
+                SELECT COUNT(*)::int AS inference_count
+                FROM inferences i
+                WHERE i.evaluation_run_id = er.evaluation_run_id
+            ) usage ON TRUE
+            WHERE a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+              AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+              AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+            GROUP BY target_problem_keys.set_id, target_problem_keys.problem_name
+        )
+        SELECT
+            tr.evaluation_run_id,
+            tr.run_time_seconds,
+            ru.run_cost_usd,
+            COALESCE(pa.problem_total_runs, 0) AS problem_total_runs,
+            pa.problem_average_time_seconds,
+            pa.problem_average_cost_usd
+        FROM target_runs tr
+        LEFT JOIN run_usage ru ON ru.evaluation_run_id = tr.evaluation_run_id
+        LEFT JOIN problem_aggregates pa
+            ON pa.set_id = tr.set_id
+           AND pa.problem_name = tr.problem_name
+        """,
+        evaluation_run_ids,
+    )
+
+    return {row["evaluation_run_id"]: _parse_metrics_row(row) for row in rows}
+
+
+@db_operation
+async def get_evaluation_run_metrics_by_ids(
+    conn: DatabaseConnection, evaluation_run_ids: List[UUID]
+) -> dict[UUID, dict]:
+    return await _get_evaluation_run_metrics_by_ids(conn, evaluation_run_ids)
+
+
+@db_operation
+async def get_evaluation_run_metrics_by_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[dict]:
+    metrics_by_id = await _get_evaluation_run_metrics_by_ids(conn, [evaluation_run_id])
+    return metrics_by_id.get(evaluation_run_id)
+
+
 @db_operation
 async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: EvaluationRun) -> None:
     await conn.execute(
