@@ -1,0 +1,5 @@
+httpx
+pydantic
+requests
+tree-sitter
+tree-sitter-language-pack
