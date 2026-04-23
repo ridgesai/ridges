@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import traceback
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
@@ -18,25 +16,9 @@ from ridges_harbor.docker_runtime import (
     docker_environment_env,
     prune_dangling_images,
 )
+from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
 
-if TYPE_CHECKING:
-    from harbor.models.trial.result import TrialResult
-
-DEFAULT_RESULTS_DIR = Path(__file__).resolve().parent.parent / "harbor_test_agent_results"
-DEFAULT_INFERENCE_UPSTREAM_URL = "http://127.0.0.1:9"
-DEFAULT_INFERENCE_UPSTREAM_HOST = "127.0.0.1"
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
-
-
-@dataclass(slots=True)
-class HarborRunSummary:
-    """The Harbor fields Ridges keeps after a run finishes."""
-
-    trial_result: TrialResult
-    task_name: str
-    job_dir: Path
-    task_dir: Path
-    trial_dir: Path
 
 
 def _write_runner_exception(job_dir: Path) -> Path:
@@ -45,23 +27,6 @@ def _write_runner_exception(job_dir: Path) -> Path:
     error_path = job_dir / HARBOR_RUNNER_ERROR_FILENAME
     error_path.write_text(traceback.format_exc())
     return error_path
-
-
-def resolve_inference_gateway(inference_url: str | None) -> tuple[str, str]:
-    """Normalize the gateway base URL and return the URL plus the host name."""
-    if not inference_url:
-        return DEFAULT_INFERENCE_UPSTREAM_URL, DEFAULT_INFERENCE_UPSTREAM_HOST
-
-    stripped_url = inference_url.strip().rstrip("/")
-    parsed = urlparse(stripped_url)
-    if not parsed.scheme or not parsed.netloc:
-        raise ValueError(f"Inference URL must include a scheme and host: {inference_url}")
-    if parsed.path not in ("", "/") or parsed.params or parsed.query or parsed.fragment:
-        raise ValueError(f"Inference URL must be a base URL without path/query/fragment: {inference_url}")
-    if not parsed.hostname:
-        raise ValueError(f"Failed to parse inference host from URL: {inference_url}")
-
-    return stripped_url, parsed.hostname
 
 
 def _harbor_agent_env(
