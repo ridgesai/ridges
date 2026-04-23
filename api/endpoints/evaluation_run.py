@@ -3,7 +3,12 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 
 from models.evaluation_run import EvaluationRun, EvaluationRunLogType
-from queries.evaluation_run import get_evaluation_run_by_id, get_evaluation_run_logs_by_id
+from queries.evaluation_run import (
+    get_evaluation_run_by_id,
+    get_evaluation_run_logs_by_id,
+    get_evaluation_run_metrics_by_id,
+)
+from utils.problem_alias import make_problem_alias
 
 router = APIRouter()
 
@@ -16,7 +21,15 @@ async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRun:
     if evaluation_run is None:
         raise HTTPException(status_code=404, detail=f"Evaluation run with ID {evaluation_run_id} does not exist.")
 
-    return evaluation_run
+    metrics = await get_evaluation_run_metrics_by_id(evaluation_run_id)
+    alias = make_problem_alias(evaluation_run.problem_name, evaluation_run.benchmark_family)
+
+    return evaluation_run.model_copy(
+        update={
+            "problem_alias": alias,
+            **(metrics or {}),
+        }
+    )
 
 
 # /evaluation-run/get-logs-by-id?evaluation_run_id=&type=
