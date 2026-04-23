@@ -13,7 +13,7 @@ from models.problem import ProblemTestResult
 class EvaluationRunErrorCode(IntEnum):
     """Platform error codes for evaluation runs.
 
-    The 1xxx, 2xxx, and 3xxx ranges are used by the platform 
+    The 1xxx, 2xxx, and 3xxx ranges are used by the platform
     to decide whether a run counts as agent fault, validator fault, or platform
     fault.
     """
@@ -107,6 +107,12 @@ class EvaluationRun(BaseModel):
     evaluation_run_id: UUID
     evaluation_id: UUID
     problem_name: str
+    problem_alias: str | None = None
+    run_time_seconds: float | None = None
+    run_cost_usd: float | None = None
+    problem_total_runs: int | None = None
+    problem_average_time_seconds: float | None = None
+    problem_average_cost_usd: float | None = None
     benchmark_family: str | None = None
     execution_spec: dict[str, Any] | None = None
 
