@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import rich_click as click
 from rich.text import Text
 from rich_click import rich_click as rc
 
@@ -104,3 +105,6 @@ def format_help(summary: str, *examples: str) -> str:
 
     example_lines = "\n".join(f"[dim]› {example}[/dim]" for example in examples)
     return f"{summary}\n\n\b\n[dim]Examples[/dim]\n{example_lines}"
+
+
+__all__ = ["HELP_CONTEXT_SETTINGS", "click", "format_help"]
