@@ -405,9 +405,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("agent_id"),
     )
     op.create_index(
-        "idx_agent_scores_agent_id", "agent_scores", ["agent_id"], unique=True
-    )
-    op.create_index(
         "idx_agent_scores_final_score", "agent_scores", ["final_score"]
     )
     op.create_index(
@@ -783,7 +780,6 @@ def downgrade() -> None:
 
     op.drop_index("idx_agent_scores_created_at", table_name="agent_scores")
     op.drop_index("idx_agent_scores_final_score", table_name="agent_scores")
-    op.drop_index("idx_agent_scores_agent_id", table_name="agent_scores")
     op.drop_table("agent_scores")
     op.drop_table("evaluation_payments")
     op.drop_table("approved_agents")
