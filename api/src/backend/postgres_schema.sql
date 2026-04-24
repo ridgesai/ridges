@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS agents (
     version_num INTEGER NOT NULL,
     status AgentStatus,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
-    ip_address TEXT NOT NULL
+    ip_address TEXT NOT NULL,
+    openrouter_api_key TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_agents_miner_hotkey_version ON agents (miner_hotkey, agent_id);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents (status) WHERE status = 'evaluating';
@@ -121,7 +122,8 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     started_running_agent_at TIMESTAMP WITH TIME ZONE,
     started_initializing_eval_at TIMESTAMP WITH TIME ZONE,
     started_running_eval_at TIMESTAMP WITH TIME ZONE,
-    finished_or_errored_at TIMESTAMP WITH TIME ZONE
+    finished_or_errored_at TIMESTAMP WITH TIME ZONE,
+    cost_usd DOUBLE PRECISION
 );
 CREATE INDEX IF NOT EXISTS idx_evaluation_runs_evaluation_id ON evaluation_runs (evaluation_id);
 
@@ -155,15 +157,8 @@ WHERE response_sent_at IS NOT NULL AND provider IS NOT NULL;
 CREATE OR REPLACE VIEW evaluation_runs_with_cost AS
 SELECT
     er.*,
-    COALESCE(SUM(i.cost_usd), 0) AS total_cost_usd,
-    COALESCE(SUM(i.num_input_tokens), 0) AS total_input_tokens,
-    COALESCE(SUM(i.num_output_tokens), 0) AS total_output_tokens,
-    COUNT(*) as num_inferences
-FROM
-    evaluation_runs er
-    LEFT JOIN inferences i ON er.evaluation_run_id = i.evaluation_run_id
-GROUP BY
-    er.evaluation_run_id;
+    COALESCE(er.cost_usd, 0) AS total_cost_usd
+FROM evaluation_runs er;
 
 CREATE TABLE embeddings (
 	embedding_id uuid NOT NULL PRIMARY KEY,

@@ -74,10 +74,12 @@ class ExecutionEngine:
         *,
         harbor_results_dir: str | Path | None = None,
         harbor_debug: bool = False,
+        max_cost_usd: float | None = None,
     ):
         self.inference_url = inference_url
         self.results_dir = harbor_results_dir
         self.debug = harbor_debug
+        self.max_cost_usd = max_cost_usd
 
     async def evaluate(
         self,
@@ -87,6 +89,7 @@ class ExecutionEngine:
         execution_spec: dict[str, Any] | None,
         agent_path: str | Path | None,
         agent_code: str | None,
+        openrouter_api_key: str | None = None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
         on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
@@ -136,6 +139,8 @@ class ExecutionEngine:
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
+                    openrouter_api_key=openrouter_api_key,
+                    max_cost_usd=self.max_cost_usd,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None

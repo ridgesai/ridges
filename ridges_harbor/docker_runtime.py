@@ -160,12 +160,18 @@ def docker_environment_env(
     ridges_trial_id: str,
     upstream_url: str,
     upstream_host: str,
+    evaluation_run_id: str,
+    max_cost_usd: str,
+    proxy_data_dir: str,
 ) -> dict[str, str]:
     """Build Docker-scaffold env vars for one Harbor trial."""
     return {
         "RIDGES_TRIAL_ID": ridges_trial_id,
         "RIDGES_HARBOR_UPSTREAM_URL": upstream_url,
         "RIDGES_HARBOR_UPSTREAM_HOST": upstream_host,
+        "RIDGES_EVALUATION_RUN_ID": evaluation_run_id,
+        "RIDGES_MAX_COST_USD": max_cost_usd,
+        "RIDGES_PROXY_DATA_DIR": proxy_data_dir,
         "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
         "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
         "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),

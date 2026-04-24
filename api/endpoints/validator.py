@@ -424,6 +424,7 @@ async def validator_request_evaluation(
         agent_code=agent_code,
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
+        openrouter_api_key=agent.openrouter_api_key,
     )
 
 
@@ -679,6 +680,7 @@ async def validator_update_evaluation_run(
             evaluation_run.verifier_reward = request.verifier_reward
             evaluation_run.test_results = request.test_results
             evaluation_run.finished_or_errored_at = now
+            evaluation_run.cost_usd = request.cost_usd
 
             if not agent_logs_exist:
                 await create_evaluation_run_log(
@@ -717,6 +719,7 @@ async def validator_update_evaluation_run(
             evaluation_run.error_code = request.error_code
             evaluation_run.error_message = request.error_message
             evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
+            evaluation_run.cost_usd = request.cost_usd
 
             # Create evaluation run logs
             await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)

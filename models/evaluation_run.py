@@ -126,6 +126,8 @@ class EvaluationRun(BaseModel):
     started_running_eval_at: Optional[datetime] = None
     finished_or_errored_at: Optional[datetime] = None
 
+    cost_usd: Optional[float] = None
+
 
 class EvaluationRunLogType(str, Enum):
     """The two log streams stored for an evaluation run."""

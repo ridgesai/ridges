@@ -26,6 +26,7 @@ from api.endpoints.validator_models import (
     ValidatorTaskDownloadUrlRequest,
     ValidatorUpdateEvaluationRunRequest,
 )
+from execution.artifacts import _read_proxy_cost
 from execution.engine import ExecutionEngine
 from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
@@ -245,13 +246,24 @@ async def _run_evaluation_run_with_semaphore(
     agent_code: str,
     semaphore: asyncio.Semaphore,
     artifact_upload_url: str | None = None,
+    openrouter_api_key: str | None = None,
 ):
     async with semaphore:
-        return await _run_evaluation_run(evaluation_run, agent_code, artifact_upload_url=artifact_upload_url)
+        return await _run_evaluation_run(
+            evaluation_run,
+            agent_code,
+            artifact_upload_url=artifact_upload_url,
+            openrouter_api_key=openrouter_api_key,
+        )
 
 
 # Run an evaluation run
-async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_url: str | None = None):
+async def _run_evaluation_run(
+    evaluation_run,
+    agent_code: str,
+    artifact_upload_url: str | None = None,
+    openrouter_api_key: str | None = None,
+):
     try:
         global execution_engine
         assert execution_engine is not None
@@ -299,6 +311,7 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 execution_spec=evaluation_run.execution_spec,
                 agent_path=None,
                 agent_code=agent_code,
+                openrouter_api_key=openrouter_api_key,
                 fetch_task_url=_fetch_task_download_url,
                 on_agent_started=_on_agent_started,
                 on_verification_started=_on_verification_started,
@@ -333,6 +346,7 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                     "verifier_reward": result.verifier_reward,
                     "test_results": [test.model_dump() for test in result.test_results],
                     "eval_logs": truncate_logs_if_required(result.eval_logs),
+                    "cost_usd": result.cost_usd,
                 },
             )
 
@@ -344,6 +358,8 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 if key in extra:
                     extra[key] = truncate_logs_if_required(extra[key])
 
+            cost_usd = _read_proxy_cost(job_dir) if job_dir else None
+
             await update_evaluation_run(
                 evaluation_run_id,
                 problem_name,
@@ -351,6 +367,7 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                 {
                     "error_code": e.error_code.value,
                     "error_message": e.error_message,
+                    "cost_usd": cost_usd,
                     **extra,
                 },
             )
@@ -417,6 +434,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
                         request_evaluation_response.agent_code,
                         semaphore,
                         artifact_upload_url=upload_url,
+                        openrouter_api_key=request_evaluation_response.openrouter_api_key,
                     )
                 )
             )
@@ -496,6 +514,7 @@ async def main():
         inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
         harbor_debug=config.RIDGES_HARBOR_DEBUG,
+        max_cost_usd=config.RIDGES_MAX_COST_USD,
     )
 
     # Start the send heartbeat loop

@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
         region=config.AWS_REGION,
         access_key_id=config.AWS_ACCESS_KEY_ID,
         secret_access_key=config.AWS_SECRET_ACCESS_KEY,
+        endpoint_url=config.S3_ENDPOINT_URL,
     )
 
     # Loops

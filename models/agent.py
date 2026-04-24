@@ -26,6 +26,7 @@ class Agent(BaseModel):
 
     created_at: datetime
     ip_address: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
 
 class PossiblyBenchmarkAgent(Agent):

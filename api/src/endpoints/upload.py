@@ -81,6 +81,7 @@ async def check_agent_post(
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    openrouter_api_key: Optional[str] = Form(None, description="OpenRouter API key for inference during evaluation"),
 ) -> AgentUploadResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
@@ -130,6 +131,7 @@ async def post_agent(
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    openrouter_api_key: Optional[str] = Form(None, description="OpenRouter API key for inference during evaluation"),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -259,6 +261,7 @@ async def post_agent(
                 created_at=datetime.now(timezone.utc),
                 status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
+                openrouter_api_key=openrouter_api_key,
             )
             await create_agent(agent, agent_text)
 

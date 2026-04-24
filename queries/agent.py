@@ -128,14 +128,15 @@ async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) 
 
     await conn.execute(
         f"""
-        INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-        VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+        INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, openrouter_api_key)
+        VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5, $6)
         """,
         agent.agent_id,
         agent.miner_hotkey,
         agent.name,
         agent.version_num,
         agent.ip_address,
+        agent.openrouter_api_key,
     )
 
 

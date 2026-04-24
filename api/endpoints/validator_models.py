@@ -54,6 +54,7 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
+    openrouter_api_key: Optional[str] = None
 
 
 class ValidatorTaskDownloadUrlRequest(BaseModel):
@@ -85,6 +86,8 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
 
     error_code: Optional[int] = None
     error_message: Optional[str] = None
+
+    cost_usd: Optional[float] = None
 
 
 class ValidatorUpdateEvaluationRunResponse(BaseModel):

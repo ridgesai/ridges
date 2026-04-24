@@ -195,14 +195,16 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "SANDBOX_PROXY_URL": runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL,
         "AGENT_TIMEOUT": "30",
     }
-    assert FakeJob.created_configs[0].environment.env == {
-        "RIDGES_TRIAL_ID": FakeJob.created_configs[0].environment.env["RIDGES_TRIAL_ID"],
-        "RIDGES_HARBOR_UPSTREAM_URL": "http://127.0.0.1:1234",
-        "RIDGES_HARBOR_UPSTREAM_HOST": "127.0.0.1",
-        "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
-        "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
-        "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),
-    }
+    env = FakeJob.created_configs[0].environment.env
+    assert env["RIDGES_HARBOR_UPSTREAM_URL"] == "http://127.0.0.1:1234"
+    assert env["RIDGES_HARBOR_UPSTREAM_HOST"] == "127.0.0.1"
+    assert env["RIDGES_EVALUATION_RUN_ID"] == "eval-run-1"
+    assert env["RIDGES_MAX_COST_USD"] == "999999"
+    assert env["RIDGES_PROXY_DATA_DIR"].endswith("proxy_data")
+    assert env["DOCKER_BUILDKIT"] == os.environ.get("DOCKER_BUILDKIT", "0")
+    assert env["COMPOSE_DOCKER_CLI_BUILD"] == os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0")
+    assert env["COMPOSE_BAKE"] == os.environ.get("COMPOSE_BAKE", "false")
+    assert "RIDGES_TRIAL_ID" in env
     assert len(FakeJob.last_instance.agent_started_hooks) == 0
     assert len(FakeJob.last_instance.verification_started_hooks) == 1
     assert len(FakeJob.last_instance.ended_hooks) == 0

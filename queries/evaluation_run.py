@@ -80,7 +80,8 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
             started_running_agent_at = $9,
             started_initializing_eval_at = $10,
             started_running_eval_at = $11,
-            finished_or_errored_at = $12
+            finished_or_errored_at = $12,
+            cost_usd = $13
         WHERE evaluation_run_id = $1
         """,
         evaluation_run.evaluation_run_id,
@@ -97,6 +98,7 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
         evaluation_run.started_initializing_eval_at,
         evaluation_run.started_running_eval_at,
         evaluation_run.finished_or_errored_at,
+        evaluation_run.cost_usd,
     )
 
 
