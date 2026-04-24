@@ -1,6 +1,9 @@
 # MacOS
 .DS_Store
 
+# JetBrains IDEs
+.idea/
+
 # .env
 *.env
 
