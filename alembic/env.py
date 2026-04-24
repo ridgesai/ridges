@@ -3,11 +3,12 @@ import logging
 import os
 from logging.config import fileConfig
 
+import db.models  # noqa: F401 — registers all tables on Base.metadata
+from alembic import context
+from db.base import Base
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
-
-from alembic import context
 from utils.logger import RidgesLogHandler
 
 # this is the Alembic Config object, which provides
@@ -24,11 +25,7 @@ _alembic_logger = logging.getLogger("alembic")
 _alembic_logger.handlers = [RidgesLogHandler()]
 _alembic_logger.propagate = False
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
