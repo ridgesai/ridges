@@ -1,10 +1,10 @@
 # ADAM: Black magic file
 import asyncio
 import contextvars
-import os
 import re
 import time
 from functools import wraps
+from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -161,8 +161,8 @@ async def run_migrations() -> None:
     """Run pending Alembic migrations.
     """
     logger.info("Running database migrations...")
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cfg = Config(os.path.join(project_root, "alembic.ini"))
+    project_root = Path(__file__).resolve().parents[1]
+    cfg = Config(project_root / "alembic.ini")
 
     await asyncio.to_thread(command.upgrade, cfg, "head")
 
