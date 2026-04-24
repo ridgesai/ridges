@@ -1,7 +1,6 @@
 import subprocess
 
 import docker
-
 import utils.logger as logger
 
 DOCKER_PREFIX = "ridges-ai"
