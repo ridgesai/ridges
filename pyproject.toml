@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12.3, <3.14"
 dependencies = [
     "aioboto3>=15.0.0",
+    "alembic>=1.13",
     "asyncpg>=0.30.0",
     "bittensor==10.2.1",
     "click>=8.1.0",
@@ -18,6 +19,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
+    "sqlalchemy[asyncio]>=2.0",
     "uvicorn>=0.30.5",
 ]
 
