@@ -15,8 +15,37 @@ At startup both the api and the validator execute the `run_migrations()` method 
 
 ### Managing migrations
 
-- Create new migration
-- Add manually functions and other aspects that are not automatically detected by alembic
+As a contributor whenever you change a database table, add a new one or remove an existing one, you will need to create a new migration file. To create a new migration file, you can use the following command:
+
+```bash
+make migrations-generate DATABASE_USERNAME=alice DATABASE_PASSWORD=alice DATABASE_NAME=postgres DATABASE_HOST=localhost DATABASE_PORT=5432
+```
+
+Some details are not tracked automatically by alembic (e.g. functions, views,...), so you will need to edit the generated migration file and add manually the necessary SQL commands to create or modify those aspects of the database schema.
+
+To apply the migrations to your local database, you can use the following command:
+
+```bash
+make migrations-upgrade DATABASE_USERNAME=alice DATABASE_PASSWORD=alice DATABASE_NAME=postgres DATABASE_HOST=localhost DATABASE_PORT=5432
+```
+
+To downgrade the database to a previous migration, you can use the following command:
+
+```bash
+make migrations-downgrade DATABASE_USERNAME=alice DATABASE_PASSWORD=alice DATABASE_NAME=postgres DATABASE_HOST=localhost DATABASE_PORT=5432
+```
+
+To check the current version of the database, you can use the following command:
+
+```bash
+make migrations-current DATABASE_USERNAME=alice DATABASE_PASSWORD=alice DATABASE_NAME=postgres DATABASE_HOST=localhost DATABASE_PORT=5432
+```
+
+To check the complete history of migrations, you can use the following command:
+
+```bash
+make migrations-history DATABASE_USERNAME=alice DATABASE_PASSWORD=alice DATABASE_NAME=postgres DATABASE_HOST=localhost DATABASE_PORT=5432
+```
 
 # TODO
 
