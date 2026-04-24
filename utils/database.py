@@ -1,6 +1,7 @@
 # ADAM: Black magic file
 import asyncio
 import contextvars
+import os
 import re
 import time
 from functools import wraps
@@ -8,8 +9,10 @@ from typing import Optional
 from uuid import UUID, uuid4
 
 import asyncpg
+from alembic.config import Config
 
 import utils.logger as logger
+from alembic import command
 
 
 async def initialize_database(*, username: str, password: str, host: str, port: int, name: str):
@@ -19,6 +22,8 @@ async def initialize_database(*, username: str, password: str, host: str, port: 
     pool = await asyncpg.create_pool(user=username, password=password, host=host, port=port, database=name)
 
     logger.info(f"Connected to database {name} as user {username} on {host}:{port}.")
+
+    await run_migrations()
 
 
 async def deinitialize_database():
@@ -150,3 +155,15 @@ def db_operation(func):
                 ACTIVE_CONNECTIONS -= 1
 
     return wrapper
+
+
+async def run_migrations() -> None:
+    """Run pending Alembic migrations.
+    """
+    logger.info("Running database migrations...")
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = Config(os.path.join(project_root, "alembic.ini"))
+
+    await asyncio.to_thread(command.upgrade, cfg, "head")
+
+    logger.info("Finished running database migrations.")
