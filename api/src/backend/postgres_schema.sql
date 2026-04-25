@@ -233,9 +233,7 @@ SELECT
     evaluation_runs.started_running_eval_at,
     evaluation_runs.finished_or_errored_at,
     CASE
-        WHEN evaluation_runs.verifier_reward IS NOT NULL AND evaluation_runs.verifier_reward = 1 THEN true
-        WHEN evaluation_runs.verifier_reward IS NOT NULL AND evaluation_runs.verifier_reward <= 0 THEN false
-        WHEN evaluation_runs.verifier_reward IS NOT NULL THEN NULL
+        WHEN evaluation_runs.verifier_reward IS NOT NULL THEN evaluation_runs.verifier_reward >= 1
         WHEN evaluation_runs.test_results IS NULL THEN NULL
         WHEN jsonb_array_length(evaluation_runs.test_results) = 0 THEN NULL
         WHEN (
