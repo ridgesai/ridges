@@ -331,7 +331,9 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                     "patch": result.patch,
                     "agent_logs": truncate_logs_if_required(result.agent_logs),
                     "verifier_reward": result.verifier_reward,
-                    "test_results": [test.model_dump() for test in result.test_results],
+                    "test_results": [
+                        test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
+                    ],
                     "eval_logs": truncate_logs_if_required(result.eval_logs),
                 },
             )
