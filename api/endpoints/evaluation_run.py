@@ -8,7 +8,7 @@ from queries.evaluation_run import (
     get_evaluation_run_logs_by_id,
     get_evaluation_run_metrics_by_id,
 )
-from utils.problem_alias import make_problem_alias
+from utils.problem_alias import add_test_aliases, make_problem_alias
 
 router = APIRouter()
 
@@ -23,10 +23,16 @@ async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRun:
 
     metrics = await get_evaluation_run_metrics_by_id(evaluation_run_id)
     alias = make_problem_alias(evaluation_run.problem_name, evaluation_run.benchmark_family)
+    test_results = add_test_aliases(
+        evaluation_run.test_results,
+        problem_name=evaluation_run.problem_name,
+        benchmark_family=evaluation_run.benchmark_family,
+    )
 
     return evaluation_run.model_copy(
         update={
             "problem_alias": alias,
+            "test_results": test_results,
             **(metrics or {}),
         }
     )
