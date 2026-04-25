@@ -30,7 +30,7 @@ from queries.statistics import (
     score_improvement_24_hrs,
     top_score,
 )
-from utils.problem_alias import make_problem_alias
+from utils.problem_alias import add_test_aliases, make_problem_alias
 from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
 
@@ -104,6 +104,11 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
             run.model_copy(
                 update={
                     "problem_alias": make_problem_alias(run.problem_name, run.benchmark_family),
+                    "test_results": add_test_aliases(
+                        run.test_results,
+                        problem_name=run.problem_name,
+                        benchmark_family=run.benchmark_family,
+                    ),
                     **metrics_by_run_id.get(run.evaluation_run_id, {}),
                 }
             )
