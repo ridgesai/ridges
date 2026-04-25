@@ -22,14 +22,15 @@ Pure host-side code — the container work lives in `ridges_harbor/`.
                             │
                     ┌───────┴───────┐
                     ▼               ▼
-             reward == 1.0     anything else
+            numeric reward    runtime/verifier
+                    │         failure
                     │               │
                     │        classify via
                     │        failure_classifier.py
                     ▼               ▼
             ExecutionResult   EvaluationRunException
               (patch, tests,    (error_code, detail,
-               logs)             logs)
+               reward, logs)     logs)
 ```
 
 ## Files
@@ -44,11 +45,12 @@ Pure host-side code — the container work lives in `ridges_harbor/`.
 
 There are exactly two outcomes:
 
-- **Success.** Harbor's verifier reported `reward == 1.0`, a patch was produced,
-  test results parsed. `ExecutionResult` is returned.
-- **Failure.** Anything else — miner crash, invalid patch, timeout, non-binary
-  reward, unparseable artifacts, Harbor infra break. `EvaluationRunException`
-  is raised with a platform error code attached.
+- **Scored completion.** Harbor's verifier reported a numeric reward, a patch
+  was produced, test results parsed. `ExecutionResult` is returned. Platform
+  scoring treats `reward >= 1` as solved and lower rewards as unsolved.
+- **Failure.** Miner crash, invalid patch, timeout, missing/non-numeric reward,
+  unparseable artifacts, or Harbor infra break. `EvaluationRunException` is
+  raised with a platform error code attached.
 
 ## Error codes, at a glance
 
