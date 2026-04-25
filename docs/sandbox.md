@@ -1,39 +1,33 @@
 # Sandbox
 
-The sandbox is the virtual environment in which every agent runs.
+The sandbox is the Harbor task environment in which every miner agent runs.
 
-## File System Structure
+## Runtime Layout
 
-The file system of the sandbox begins at the path `/sandbox`. Within it are four Ridges system files (`AGENT_RUNNER.py`, `agent.py`, `input.json`, and `output.json`), which should not be modified. Modifying any of them will cause the agent to fail. Agents which are known to modify these files will be banned.
+The agent runs inside the Harbor task's `main` container and inherits that task's
+working directory.
 
-The Git repository for the problem being solved by the agent can be found at the `/sandbox/repo` directory. All problem-related files are contained in here.
+Ridges installs two internal runtime files under `/installed-agent/`:
 
-I recommend that all agent developers scope their agents to run purely within the `/sandbox/repo` directory, to prevent having to manually exclude Ridges system files like `AGENT_RUNNER.py`, etc.
+- `agent.py`
+- `ridges_miner_runtime.py`
 
-```
-/sandbox/
-├── AGENT_RUNNER.py
-├── agent.py
-├── input.json
-├── output.json
-└── repo/
-    ├── .git/              
-    └── ...
-```
+Those files are owned by the runtime. Agents should treat the task container's
+working directory as the repo they need to inspect and patch.
 
 ## Environment Variables
 
-A few environment variables are set for your convenience. It is possible that your agent will be banned if it does not use an environment variable when appropriate, since if such code gets into a top agent, it quickly spreads and everyone's agent ends up doing the wrong thing.
+A few environment variables are set for the Ridges runtime and miner code.
 
 |Name|Description|Example|
 |-|-|-|
-|`SANDBOX_PROXY_URL`|The URL of the inference proxy.|`http://sandbox_proxy:80`|
+|`SANDBOX_PROXY_URL`|The URL of the inference proxy sidecar.|`http://sandbox-proxy:80`|
 |`EVALUATION_RUN_ID`|The UUID of the current evaluation run, which must be included in all requests to the inference proxy.|`00000000-0000-0000-0000-000000000000`|
-|`AGENT_TIMEOUT`|The number of seconds the agent is allowed to run for. Typically 25 minutes.|`1500`|
+|`AGENT_TIMEOUT`|The agent timeout in seconds captured in the promoted Harbor `execution_spec`, originally sourced from `[agent].timeout_sec` in `task.toml`.|`1500`|
 
 ## Entry Point
 
-The entry point to an agent is always `agent_main()`. The signature of this function must be:
+The entry point is still `agent_main()`. The signature must be:
 
 ```py
 def agent_main(input: dict[str, Any]) -> str:
@@ -41,31 +35,39 @@ def agent_main(input: dict[str, Any]) -> str:
     return diff
 ```
 
-## Available Commands
+Today the Ridges runtime passes:
 
-The `python`, `node`, `npm`, `npx`, `git`, `diff`, and `patch` commands are available. You may request more commands, but it is very unusual that we accept a command suggestion. We prefer to add more packages (Python or JavaScript), rather than global commands.
+```py
+{"problem_statement": "<task instruction markdown>"}
+```
 
-## Available Packages
+## Task Environment
 
-Many Python and JavaScript packages are available in the agent sandbox for agent developers to use. These are the whitelisted [Python packages](https://github.com/ridgesai/ridges/blob/main/evaluator/sandbox/packages_py.txt), and these are the whitelisted [JavaScript packages](https://github.com/ridgesai/ridges/blob/main/evaluator/sandbox/packages_js.txt). 
-
-If you, as an agent developer, ever want a new package, please [contact a member of our team](https://discord.com/invite/ridges), specifically, Stephen. If sound reasoning is provided, we will be happy to add it.
+Each promoted task archive includes the concrete `environment/`
+directory. `ridges` only executes the archived task and mounts the miner runtime on
+top of it.
 
 ## Limitations
 
-An agent must finish evaluating in 40 minutes. If it exceeds this timeout, it will be as though the agent failed.
+An agent still has a bounded runtime. The exact timeout is snapshotted into the
+promoted Harbor `execution_spec` from the task's `[agent].timeout_sec` value and is
+exposed to the agent through `AGENT_TIMEOUT`.
 
 ## Inference and Embedding
 
-For an agent to be useful, it needs to leverage inference and embedding. To see the models that are supported (and their cost details and constraints), please refer to our [Discord server](https://discord.com/invite/ridges).
+Ridges still runs Harbor tasks behind the proxy-sidecar networking model:
 
-To make an inference/embedding request, you must send an HTTP request to the inference proxy. The URL is always provided to you in the `SANDBOX_PROXY_URL` environment variable.
+- the `main` task container has no direct outbound internet
+- the `sandbox-proxy` sidecar is the only service with egress
+- the agent must talk to `SANDBOX_PROXY_URL`
+- the proxy forwards to the configured inference gateway
 
-For those who want to see the automatically generated FastAPI docs, these are always available [here](https://inference-v2.ridges.ai/docs). A simpler summary with examples is provided here.
+To make an inference or embedding request, send an HTTP request to the proxy URL from
+`SANDBOX_PROXY_URL`.
 
 ### Inference
 
-Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`. The payload should be a JSON, with this format, if you don't need tool calls:
+Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`.
 
 ```json
 {
@@ -82,7 +84,7 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`. The payload sh
 }
 ```
 
-If you *do* need tool calls, then use this format:
+If you need tool calls, add `tool_mode` and `tools`:
 
 ```json
 {
@@ -116,7 +118,7 @@ If you *do* need tool calls, then use this format:
 }
 ```
 
-Either way, you will always get a response in this format:
+The response format is:
 
 ```json
 {
@@ -135,12 +137,10 @@ Either way, you will always get a response in this format:
 }
 ```
 
-If you don't specify any tools, or have a `tool_mode` of `none`, you'll simply get an empty `tool_calls` array.
-
-A real-world example:
+Example:
 
 ```bash
-curl -s -X POST http://localhost:1234/api/inference \
+curl -s -X POST "$SANDBOX_PROXY_URL/api/inference" \
   -H "Content-Type: application/json" \
   -d '{
     "evaluation_run_id": "00000000-0000-0000-0000-000000000000",
@@ -169,28 +169,12 @@ curl -s -X POST http://localhost:1234/api/inference \
   }' | jq
 ```
 
-Which outputs:
-
-```json
-{
-  "content": "",
-  "tool_calls": [
-    {
-      "name": "print",
-      "arguments": [
-        {
-          "name": "str",
-          "value": "Hello, World! This is a cool message from an AI assistant."
-        }
-      ]
-    }
-  ]
-}
-```
-
 ### Embedding
 
-Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`. The payload should be a JSON, with this format:
+Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`.
+
+For usage/cost checks, send an HTTP `GET` request to
+`SANDBOX_PROXY_URL/api/usage?evaluation_run_id=...`.
 
 ```json
 {
@@ -200,12 +184,10 @@ Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`. The payload sh
 }
 ```
 
-You'll always get a response in this format:
+The response format is:
 
 ```json
 {
     "embedding": "float[]"
 }
 ```
-
-The length of the `embedding` array depends on the model you use. Refer to the [Discord server](https://discord.com/invite/ridges) for this information.

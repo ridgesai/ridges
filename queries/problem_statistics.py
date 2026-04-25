@@ -5,11 +5,9 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from evaluator.problem_suites.polyglot.polyglot_suite import POLYGLOT_JS_SUITE, POLYGLOT_PY_SUITE
-from evaluator.problem_suites.problem_suite import ProblemSuiteName
-from evaluator.problem_suites.swebench_verified.swebench_verified_suite import SWEBENCH_VERIFIED_SUITE
 from models.evaluation_run import EvaluationRunErrorCode
 from models.evaluation_set import EvaluationSetGroup
+from models.harbor_task import normalize_metadata_label, read_execution_spec_metadata
 from models.problem import ProblemDifficulty
 from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id
 from utils.database import DatabaseConnection, db_operation
@@ -73,7 +71,8 @@ class ProblemStatisticsFastestAgentInfo(BaseModel):
 
 class ProblemStatistics(BaseModel):
     problem_name: str
-    problem_suite_name: Optional[ProblemSuiteName] = None
+    benchmark_family: str | None = None
+    problem_suite_name: Optional[str] = None
     problem_difficulty: Optional[ProblemDifficulty] = None
 
     total_num_evaluation_runs: int = 0
@@ -96,13 +95,9 @@ class ProblemStatistics(BaseModel):
     fastest_agents: List[ProblemStatisticsFastestAgentInfo] = []
 
     def __init__(self, **data):
-        problem_name = data["problem_name"]
-
-        for problem_suite in [POLYGLOT_PY_SUITE, POLYGLOT_JS_SUITE, SWEBENCH_VERIFIED_SUITE]:
-            if problem_suite.has_problem_name(problem_name):
-                data["problem_suite_name"] = problem_suite.name
-                data["problem_difficulty"] = problem_suite.get_problem(problem_name).difficulty
-                break
+        benchmark_family = normalize_metadata_label(data.get("benchmark_family"))
+        data["benchmark_family"] = benchmark_family
+        data["problem_suite_name"] = normalize_metadata_label(data.get("problem_suite_name")) or benchmark_family
 
         if "tests" in data:
             data["tests"] = [ProblemStatisticsTestInfo(**item) for item in json.loads(data["tests"])]
@@ -125,6 +120,21 @@ class ProblemStatistics(BaseModel):
         super().__init__(**data)
 
 
+def _apply_execution_spec_metadata(problem_stat: ProblemStatistics, execution_spec: dict | None) -> None:
+    execution_metadata = read_execution_spec_metadata(
+        execution_spec,
+        fallback_benchmark_family=problem_stat.benchmark_family,
+        fallback_problem_suite_name=problem_stat.problem_suite_name,
+        fallback_problem_difficulty=problem_stat.problem_difficulty,
+    )
+    if execution_metadata is None:
+        return
+
+    problem_stat.benchmark_family = execution_metadata.benchmark_family
+    problem_stat.problem_suite_name = execution_metadata.problem_suite_name
+    problem_stat.problem_difficulty = execution_metadata.problem_difficulty
+
+
 @db_operation
 async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[ProblemStatistics]:
     rows = await conn.fetch(
@@ -132,6 +142,7 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
         WITH stats AS (
             SELECT
                 erh.problem_name,
+                MAX(erh.benchmark_family) AS benchmark_family,
                 COUNT(*) AS total_num_evaluation_runs,
                 COUNT(*) FILTER (WHERE erh.status = 'finished') AS num_finished_evaluation_runs,
                 COUNT(*) FILTER (WHERE erh.status = 'finished' AND erh.solved) AS num_finished_passed_evaluation_runs,
@@ -344,30 +355,38 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
         set_id,
     )
 
-    problem_stats = [ProblemStatistics(**row) for row in rows]
-
     evaluation_set_problems = await get_all_evaluation_set_problems_for_set_id(set_id)
+    metadata_by_problem_name = {
+        evaluation_set_problem.problem_name: evaluation_set_problem.execution_spec
+        for evaluation_set_problem in evaluation_set_problems
+    }
+
+    problem_stats = [ProblemStatistics(**row) for row in rows]
+    for problem_stat in problem_stats:
+        _apply_execution_spec_metadata(problem_stat, metadata_by_problem_name.get(problem_stat.problem_name))
+
     for evaluation_set_problem in evaluation_set_problems:
         if not any(problem_stat.problem_name == evaluation_set_problem.problem_name for problem_stat in problem_stats):
-            problem_stats.append(
-                ProblemStatistics(
-                    problem_name=evaluation_set_problem.problem_name,
-                    in_screener_1_set_group=any(
-                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
-                        and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1
-                        for _evaluation_set_problem in evaluation_set_problems
-                    ),
-                    in_screener_2_set_group=any(
-                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
-                        and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2
-                        for _evaluation_set_problem in evaluation_set_problems
-                    ),
-                    in_validator_set_group=any(
-                        _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
-                        and _evaluation_set_problem.set_group == EvaluationSetGroup.validator
-                        for _evaluation_set_problem in evaluation_set_problems
-                    ),
-                )
+            problem_stat = ProblemStatistics(
+                problem_name=evaluation_set_problem.problem_name,
+                benchmark_family=evaluation_set_problem.benchmark_family,
+                in_screener_1_set_group=any(
+                    _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                    and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_1
+                    for _evaluation_set_problem in evaluation_set_problems
+                ),
+                in_screener_2_set_group=any(
+                    _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                    and _evaluation_set_problem.set_group == EvaluationSetGroup.screener_2
+                    for _evaluation_set_problem in evaluation_set_problems
+                ),
+                in_validator_set_group=any(
+                    _evaluation_set_problem.problem_name == evaluation_set_problem.problem_name
+                    and _evaluation_set_problem.set_group == EvaluationSetGroup.validator
+                    for _evaluation_set_problem in evaluation_set_problems
+                ),
             )
+            _apply_execution_spec_metadata(problem_stat, evaluation_set_problem.execution_spec)
+            problem_stats.append(problem_stat)
 
     return problem_stats

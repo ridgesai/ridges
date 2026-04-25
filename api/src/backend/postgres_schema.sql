@@ -83,6 +83,9 @@ CREATE TABLE IF NOT EXISTS evaluation_sets (
     set_id INTEGER NOT NULL,
     set_group EvaluationSetGroup NOT NULL,
     problem_name TEXT,
+    problem_suite_name TEXT,
+    benchmark_family TEXT,
+    execution_spec JSONB,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     PRIMARY KEY (set_id, set_group, problem_name)
 );
@@ -105,9 +108,12 @@ CREATE TABLE IF NOT EXISTS evaluation_runs (
     evaluation_run_id UUID NOT NULL PRIMARY KEY,
     evaluation_id UUID NOT NULL REFERENCES evaluations,
     problem_name TEXT NOT NULL,
+    benchmark_family TEXT,
+    execution_spec JSONB,
     status EvaluationRunStatus,
     patch TEXT,
     test_results JSONB,
+    verifier_reward DOUBLE PRECISION,
     error_code INTEGER,
     error_message TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -212,8 +218,22 @@ CREATE TABLE IF NOT EXISTS evaluation_payments (
 -- First view: evaluation_runs with solved status
 CREATE OR REPLACE VIEW evaluation_runs_hydrated AS
 SELECT
-    evaluation_runs.*,
+    evaluation_runs.evaluation_run_id,
+    evaluation_runs.evaluation_id,
+    evaluation_runs.problem_name,
+    evaluation_runs.status,
+    evaluation_runs.patch,
+    evaluation_runs.test_results,
+    evaluation_runs.error_code,
+    evaluation_runs.error_message,
+    evaluation_runs.created_at,
+    evaluation_runs.started_initializing_agent_at,
+    evaluation_runs.started_running_agent_at,
+    evaluation_runs.started_initializing_eval_at,
+    evaluation_runs.started_running_eval_at,
+    evaluation_runs.finished_or_errored_at,
     CASE
+        WHEN evaluation_runs.verifier_reward IS NOT NULL THEN evaluation_runs.verifier_reward >= 1
         WHEN evaluation_runs.test_results IS NULL THEN NULL
         WHEN jsonb_array_length(evaluation_runs.test_results) = 0 THEN NULL
         WHEN (
@@ -221,7 +241,10 @@ SELECT
             FROM jsonb_array_elements(evaluation_runs.test_results) AS test
         ) = jsonb_array_length(evaluation_runs.test_results) THEN true
         ELSE false
-    END AS solved
+    END AS solved,
+    evaluation_runs.benchmark_family,
+    evaluation_runs.execution_spec,
+    evaluation_runs.verifier_reward
 FROM evaluation_runs;
 
 -- Second view: Evaluations hydrated view

@@ -1,2 +1,0 @@
-def value(colors):
-    pass

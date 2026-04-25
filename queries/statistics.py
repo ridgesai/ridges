@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import api.config as config
 from models.evaluation_set import EvaluationSetGroup
@@ -111,9 +111,8 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
 
 class PerfectlySolvedOverTime(BaseModel):
     hour: datetime
-    polyglot_py: int
-    polyglot_js: int
-    swebench: int
+    total_solved: int
+    by_family: dict[str, int] = Field(default_factory=dict)
 
 
 @db_operation
@@ -127,37 +126,59 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
                     '6 hours'::interval
                 ) as hour
             ),
-            problem_groups AS (
+            perfectly_solved_problems AS (
                 SELECT
-                    MIN(erh.created_at) as first_perfectly_solved_at,
-                    CASE
-                        WHEN erh.problem_name LIKE '%-py' THEN 'polyglot_py'
-                        WHEN erh.problem_name LIKE '%-js' THEN 'polyglot_js'
-                        ELSE 'swebench'
-                    END AS problem_group
+                    erh.benchmark_family,
+                    erh.problem_name,
+                    MIN(erh.created_at) as first_perfectly_solved_at
                 FROM evaluation_runs_hydrated erh
                     JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                     JOIN agents a ON e.agent_id = a.agent_id
                 WHERE erh.created_at >= TIMESTAMP WITH TIME ZONE '2025-11-27 15:30:00.000 -0500' -- Problem Set 6
                     AND erh.status = 'finished'
+                    AND erh.benchmark_family IS NOT NULL
+                    AND erh.benchmark_family <> ''
+                    AND erh.benchmark_family <> 'custom'
                     AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-                GROUP BY erh.problem_name
+                GROUP BY erh.benchmark_family, erh.problem_name
                 HAVING COUNT(*) FILTER (WHERE erh.solved = true)::float / COUNT(*) >= 0.90
             )
         SELECT
             ts.hour,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_py') as polyglot_py,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'polyglot_js') as polyglot_js,
-            COUNT(*) FILTER (WHERE pg.problem_group = 'swebench') as swebench
+            psp.benchmark_family,
+            COUNT(psp.problem_name)::int as solved_count
         FROM time_series ts
-        LEFT JOIN problem_groups pg ON pg.first_perfectly_solved_at <= ts.hour
-        GROUP BY ts.hour
-        ORDER BY ts.hour ASC;
+        LEFT JOIN perfectly_solved_problems psp ON psp.first_perfectly_solved_at <= ts.hour
+        GROUP BY ts.hour, psp.benchmark_family
+        ORDER BY ts.hour ASC, psp.benchmark_family ASC NULLS LAST;
     """
     rows = await conn.fetch(query)
-    return [PerfectlySolvedOverTime(**row) for row in rows]
+
+    results: list[PerfectlySolvedOverTime] = []
+    current_point: PerfectlySolvedOverTime | None = None
+
+    for row in rows:
+        hour = row["hour"]
+        if current_point is None or current_point.hour != hour:
+            if current_point is not None:
+                results.append(current_point)
+            current_point = PerfectlySolvedOverTime(hour=hour, total_solved=0, by_family={})
+
+        benchmark_family = row["benchmark_family"]
+        solved_count = int(row["solved_count"] or 0)
+
+        if benchmark_family is None or solved_count <= 0:
+            continue
+
+        current_point.by_family[benchmark_family] = solved_count
+        current_point.total_solved += solved_count
+
+    if current_point is not None:
+        results.append(current_point)
+
+    return results
 
 
 # NOTE: None is returned if there are no successful evaluations for a given

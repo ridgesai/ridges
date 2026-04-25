@@ -1,6 +1,8 @@
+"""Models and enums for a single evaluation run."""
+
 from datetime import datetime
 from enum import Enum, IntEnum
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -9,6 +11,13 @@ from models.problem import ProblemTestResult
 
 
 class EvaluationRunErrorCode(IntEnum):
+    """Platform error codes for evaluation runs.
+
+    The 1xxx, 2xxx, and 3xxx ranges are used by the platform
+    to decide whether a run counts as agent fault, validator fault, or platform
+    fault.
+    """
+
     # ADAM: Magic
     def __new__(cls, code: int, message: str):
         obj = int.__new__(cls, code)
@@ -65,6 +74,7 @@ class EvaluationRunErrorCode(IntEnum):
         3040,
         "The platform was restarted while the evaluation run was running the evaluation",
     )
+    PLATFORM_FAILED_PROVISIONING = (3050, "Platform failed to provision task resources")
 
     def get_error_message(self) -> str:
         return self.message
@@ -80,6 +90,8 @@ class EvaluationRunErrorCode(IntEnum):
 
 
 class EvaluationRunStatus(str, Enum):
+    """Lifecycle states for one problem inside an evaluation."""
+
     pending = "pending"
     initializing_agent = "initializing_agent"
     running_agent = "running_agent"
@@ -90,14 +102,25 @@ class EvaluationRunStatus(str, Enum):
 
 
 class EvaluationRun(BaseModel):
+    """Persisted state for one problem run inside a broader evaluation."""
+
     evaluation_run_id: UUID
     evaluation_id: UUID
     problem_name: str
+    problem_alias: str | None = None
+    run_time_seconds: float | None = None
+    run_cost_usd: float | None = None
+    problem_total_runs: int | None = None
+    problem_average_time_seconds: float | None = None
+    problem_average_cost_usd: float | None = None
+    benchmark_family: str | None = None
+    execution_spec: dict[str, Any] | None = None
 
     status: EvaluationRunStatus
 
     patch: Optional[str] = None
     test_results: Optional[List[ProblemTestResult]] = None
+    verifier_reward: Optional[float] = None
 
     error_code: Optional[EvaluationRunErrorCode] = None
     error_message: Optional[str] = None
@@ -111,5 +134,7 @@ class EvaluationRun(BaseModel):
 
 
 class EvaluationRunLogType(str, Enum):
+    """The two log streams stored for an evaluation run."""
+
     agent = "agent"
     eval = "eval"

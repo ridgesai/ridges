@@ -1,5 +1,6 @@
 import datetime
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -23,4 +24,15 @@ class EvaluationSetProblem(BaseModel):
     set_id: int
     set_group: EvaluationSetGroup
     problem_name: str
+    benchmark_family: str | None = None
+    problem_suite_name: str | None = None
+    execution_spec: dict[str, Any] | None = None
     created_at: datetime.datetime
+
+
+class NewEvaluationSetProblem(BaseModel):
+    set_group: EvaluationSetGroup
+    problem_name: str
+    benchmark_family: str
+    problem_suite_name: str | None = None
+    execution_spec: dict[str, Any]

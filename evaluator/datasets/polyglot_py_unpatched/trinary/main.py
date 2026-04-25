@@ -1,2 +1,0 @@
-def trinary(string):
-    pass

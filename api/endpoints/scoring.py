@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Dict, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import api.config as config
@@ -81,5 +81,7 @@ class ScoringLatestSetInfo(BaseModel):
 @router.get("/latest-set-info")
 async def latest_set_info() -> ScoringLatestSetInfo:
     latest_set_id = await get_latest_set_id()
+    if latest_set_id is None:
+        raise HTTPException(status_code=404, detail="No evaluation sets have been promoted yet.")
     latest_set_created_at = await get_set_created_at(latest_set_id)
     return ScoringLatestSetInfo(latest_set_id=latest_set_id, latest_set_created_at=latest_set_created_at)

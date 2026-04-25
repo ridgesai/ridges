@@ -28,12 +28,15 @@ from api.endpoints.validator_models import (
     ValidatorRequestEvaluationRequest,
     ValidatorRequestEvaluationResponse,
     ValidatorRequestEvaluationResponseEvaluationRun,
+    ValidatorTaskDownloadUrlRequest,
+    ValidatorTaskDownloadUrlResponse,
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
+from models.harbor_task import read_execution_spec_metadata
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
@@ -57,7 +60,7 @@ from queries.evaluation_run import (
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
-from utils.s3 import download_text_file_from_s3
+from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
 
@@ -360,8 +363,18 @@ async def validator_request_evaluation(
             if agent_id is None:
                 return None
 
+            agent = await get_agent_by_id(agent_id)
+            try:
+                agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
+            except Exception as exc:
+                logger.error(f"Failed to download agent code for {agent_id}: {exc}")
+                return None
+
             # Create a new evaluation and evaluation runs for this agent & validator
-            evaluation, evaluation_runs = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
+            evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
+            if evaluation_bundle is None:
+                return None
+            evaluation, evaluation_runs = evaluation_bundle
     except asyncio.TimeoutError:
         # We couldn't acquire the lock, just act as though there are no evaluations available
         # The validator will automatically retry in a few seconds
@@ -370,28 +383,108 @@ async def validator_request_evaluation(
 
     validator.current_evaluation_id = evaluation.evaluation_id
     validator.current_evaluation = evaluation
-    validator.current_agent = await get_agent_by_id(agent_id)
+    validator.current_agent = agent
 
     logger.info(f"Validator '{validator.name}' requested an evaluation")
     logger.info(f"  Agent ID: {agent_id}")
     logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
     logger.info(f"  # of Evaluation Runs: {len(evaluation_runs)}")
 
-    agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
-    evaluation_runs = [
-        ValidatorRequestEvaluationResponseEvaluationRun(
-            evaluation_run_id=evaluation_run.evaluation_run_id, problem_name=evaluation_run.problem_name
+    response_runs: list[ValidatorRequestEvaluationResponseEvaluationRun] = []
+    for evaluation_run in evaluation_runs:
+        execution_metadata = read_execution_spec_metadata(
+            evaluation_run.execution_spec,
+            fallback_benchmark_family=evaluation_run.benchmark_family,
         )
-        for evaluation_run in evaluation_runs
-    ]
+        response_runs.append(
+            ValidatorRequestEvaluationResponseEvaluationRun(
+                evaluation_run_id=evaluation_run.evaluation_run_id,
+                problem_name=evaluation_run.problem_name,
+                problem_suite_name=execution_metadata.problem_suite_name if execution_metadata else None,
+                benchmark_family=(
+                    execution_metadata.benchmark_family if execution_metadata else evaluation_run.benchmark_family
+                ),
+                execution_spec=evaluation_run.execution_spec,
+            )
+        )
 
-    return ValidatorRequestEvaluationResponse(agent_code=agent_code, evaluation_runs=evaluation_runs)
+    artifact_upload_urls: dict[str, str] = {}
+    for evaluation_run in evaluation_runs:
+        s3_key = f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
+        try:
+            artifact_upload_urls[str(evaluation_run.evaluation_run_id)] = await generate_presigned_upload_url(s3_key)
+        except Exception as exc:
+            logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
+
+    return ValidatorRequestEvaluationResponse(
+        agent_code=agent_code,
+        evaluation_runs=response_runs,
+        artifact_upload_urls=artifact_upload_urls,
+    )
+
+
+# /validator/task-download-url
+@router.post("/task-download-url")
+async def validator_task_download_url(
+    request: ValidatorTaskDownloadUrlRequest,
+    validator: Validator = Depends(get_request_validator),
+) -> ValidatorTaskDownloadUrlResponse:
+    """Generate a fresh presigned S3 URL for a task archive in the validator's current evaluation."""
+
+    if validator.current_evaluation_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This validator is not currently running an evaluation.",
+        )
+
+    # Derive s3_key from the platform's own data — never trust the client for artifact lookup.
+    evaluation_runs = await get_all_evaluation_runs_in_evaluation_id(validator.current_evaluation_id)
+
+    _NOT_FOUND = object()
+    s3_key: str | None | object = _NOT_FOUND
+    for er in evaluation_runs:
+        spec = er.execution_spec or {}
+        if spec.get("task_digest") == request.task_digest:
+            s3_key = spec.get("s3_key")
+            break
+
+    if s3_key is _NOT_FOUND:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No task with digest '{request.task_digest}' found in the current evaluation.",
+        )
+
+    if not s3_key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Task with digest '{request.task_digest}' exists but has no S3 key.",
+        )
+
+    try:
+        url = await generate_presigned_url(s3_key, ttl_seconds=300)
+    except Exception as exc:
+        logger.error(f"Failed to generate presigned URL for s3_key={s3_key}: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to generate download URL: {exc}")
+
+    return ValidatorTaskDownloadUrlResponse(url=url)
 
 
 def record_validator_heartbeat(validator: Validator, system_metrics: SystemMetrics | None = None) -> None:
     validator.time_last_heartbeat = datetime.now(timezone.utc)
     if system_metrics is not None:
         validator.system_metrics = system_metrics
+
+
+def _set_if_missing(evaluation_run, field_name: str, value: datetime) -> None:
+    if getattr(evaluation_run, field_name) is None:
+        setattr(evaluation_run, field_name, value)
+
+
+async def _create_log_if_new(evaluation_run_id: UUID, log_type: EvaluationRunLogType, logs: str | None) -> None:
+    if logs is None:
+        return
+    if not await check_if_evaluation_run_logs_exist(evaluation_run_id, log_type):
+        await create_evaluation_run_log(evaluation_run_id, log_type, logs)
 
 
 # /validator/heartbeat
@@ -517,17 +610,29 @@ async def validator_update_evaluation_run(
             evaluation_run.started_running_eval_at = datetime.now(timezone.utc)
 
         case EvaluationRunStatus.finished:
-            # A validator may only update an evaluation run to finished if the evaluation run is currently in the running_eval status
-            if evaluation_run.status != EvaluationRunStatus.running_eval:
+            # A validator may update an evaluation run to finished from any in-progress status.
+            if evaluation_run.status not in [
+                EvaluationRunStatus.pending,
+                EvaluationRunStatus.initializing_agent,
+                EvaluationRunStatus.running_agent,
+                EvaluationRunStatus.initializing_eval,
+                EvaluationRunStatus.running_eval,
+            ]:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"An evaluation run can only be updated to finished if it is currently in the running_eval status. The current status of evaluation run {request.evaluation_run_id} is {evaluation_run.status}.",
+                    detail=(
+                        "An evaluation run can only be updated to finished if it is currently in the "
+                        "pending, initializing_agent, running_agent, initializing_eval, or running_eval "
+                        f"status. The current status of evaluation run {request.evaluation_run_id} is "
+                        f"{evaluation_run.status}."
+                    ),
                 )
 
-            # Make sure the test results are provided
-            if request.test_results is None:
+            # Make sure the verifier reward is provided
+            if request.verifier_reward is None:
                 raise HTTPException(
-                    status_code=422, detail="The test results are required when updating an evaluation run to finished."
+                    status_code=422,
+                    detail="The verifier reward is required when updating an evaluation run to finished.",
                 )
 
             # Make sure the eval logs are provided
@@ -536,15 +641,46 @@ async def validator_update_evaluation_run(
                     status_code=422, detail="The eval logs are required when updating an evaluation run to finished."
                 )
 
-            # Update the evaluation run to finished
-            evaluation_run.status = EvaluationRunStatus.finished
-            evaluation_run.test_results = request.test_results
-            evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
-
-            # Create an evaluation run log
-            await create_evaluation_run_log(
-                evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs
+            agent_logs_exist = await check_if_evaluation_run_logs_exist(
+                evaluation_run.evaluation_run_id, EvaluationRunLogType.agent
             )
+
+            if evaluation_run.patch is None and request.patch is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="The patch is required when updating an evaluation run to finished if none exists yet.",
+                )
+
+            if not agent_logs_exist and request.agent_logs is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "The agent logs are required when updating an evaluation run to finished if none exist yet."
+                    ),
+                )
+
+            now = datetime.now(timezone.utc)
+
+            for field_name in (
+                "started_initializing_agent_at",
+                "started_running_agent_at",
+                "started_initializing_eval_at",
+                "started_running_eval_at",
+            ):
+                _set_if_missing(evaluation_run, field_name, now)
+
+            evaluation_run.status = EvaluationRunStatus.finished
+            if evaluation_run.patch is None:
+                evaluation_run.patch = request.patch
+            evaluation_run.verifier_reward = request.verifier_reward
+            evaluation_run.test_results = request.test_results
+            evaluation_run.finished_or_errored_at = now
+
+            if not agent_logs_exist:
+                await create_evaluation_run_log(
+                    evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs
+                )
+            await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
 
         case EvaluationRunStatus.error:
             # A validator may only update an evaluation run to error if the evaluation run is currently in the pending, initializing_agent, running_agent, initializing_eval, or running_eval status
@@ -572,20 +708,6 @@ async def validator_update_evaluation_run(
                     status_code=422, detail="The error message is required when updating an evaluation run to error."
                 )
 
-            # Agent logs can only be provided if none already exist
-            if request.agent_logs is not None and await check_if_evaluation_run_logs_exist(
-                evaluation_run.evaluation_run_id, EvaluationRunLogType.agent
-            ):
-                raise HTTPException(
-                    status_code=422, detail="The agent logs can only be provided if none already exist."
-                )
-
-            # Evaluation logs can only be provided if none already exist
-            if request.eval_logs is not None and await check_if_evaluation_run_logs_exist(
-                evaluation_run.evaluation_run_id, EvaluationRunLogType.eval
-            ):
-                raise HTTPException(status_code=422, detail="The eval logs can only be provided if none already exist.")
-
             # Update the evaluation run to error
             evaluation_run.status = EvaluationRunStatus.error
             evaluation_run.error_code = request.error_code
@@ -593,14 +715,8 @@ async def validator_update_evaluation_run(
             evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
 
             # Create evaluation run logs
-            if request.agent_logs is not None:
-                await create_evaluation_run_log(
-                    evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs
-                )
-            if request.eval_logs is not None:
-                await create_evaluation_run_log(
-                    evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs
-                )
+            await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.agent, request.agent_logs)
+            await _create_log_if_new(evaluation_run.evaluation_run_id, EvaluationRunLogType.eval, request.eval_logs)
 
     await update_evaluation_run_by_id(evaluation_run)
 
