@@ -88,9 +88,7 @@ def _build_failure_payload(
         "phase": phase,
         "traceback": traceback.format_exc(),
         "http_status": _http_status_from_exception(exception),
-        "missing_module": (
-            getattr(exception, "name", None) if isinstance(exception, ModuleNotFoundError) else None
-        ),
+        "missing_module": (getattr(exception, "name", None) if isinstance(exception, ModuleNotFoundError) else None),
         "exception_chain": _exception_chain(exception),
     }
 

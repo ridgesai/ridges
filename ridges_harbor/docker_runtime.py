@@ -47,9 +47,7 @@ def _resolve_single_match(output: str, *, resource: str, trial_id: str) -> str:
     """Require exactly one Docker resource match to avoid ambiguous host mutations."""
     matches = [line.strip() for line in output.splitlines() if line.strip()]
     if len(matches) != 1:
-        raise RuntimeError(
-            f"Expected exactly one {resource} for Harbor trial {trial_id}, found {len(matches)}"
-        )
+        raise RuntimeError(f"Expected exactly one {resource} for Harbor trial {trial_id}, found {len(matches)}")
     return matches[0]
 
 
@@ -129,6 +127,7 @@ def build_enable_verifier_egress_hook(
     The returned hook attaches the trial's main container to the sandbox
     egress network so the verifier can reach external hosts.
     """
+
     async def enable_verifier_egress(event) -> None:
         """Resolve Docker handles at verification time, then widen egress for the verifier."""
         handles = await _resolve_trial_docker_handles(

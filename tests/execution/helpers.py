@@ -131,7 +131,7 @@ def make_summary(
 
     if trial_exception_text is not None:
         write(trial_dir / "exception.txt", trial_exception_text)
-        
+
     runtime_payload_data = _runtime_payload(
         runtime_failure=runtime_failure,
         runtime_payload=runtime_payload,

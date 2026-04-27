@@ -35,16 +35,10 @@ def print_log(
         # BUG: This is currently pointing to the logging internal code instead of the caller's code. We should fix this to point to the caller's code.
         frame = inspect.currentframe()
         caller = frame.f_back if frame is not None else None
-        _file = (
-            caller.f_code.co_filename.split("/")[-1]
-            if caller is not None
-            else "?"
-        )
+        _file = caller.f_code.co_filename.split("/")[-1] if caller is not None else "?"
         _line = caller.f_lineno if caller is not None else 0
 
-    print(
-        f"{timestamp}.{ms:03d} - {_file}:{_line} - [{LEVEL_NAME_TO_COLOR[level]}{level}{RESET}] - {message}"
-    )
+    print(f"{timestamp}.{ms:03d} - {_file}:{_line} - [{LEVEL_NAME_TO_COLOR[level]}{level}{RESET}] - {message}")
 
 
 class RidgesLogHandler(logging.Handler):

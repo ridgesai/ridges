@@ -88,9 +88,7 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("miner_hotkey"),
     )
-    op.create_index(
-        "idx_banned_hotkeys_miner_hotkey", "banned_hotkeys", ["miner_hotkey"]
-    )
+    op.create_index("idx_banned_hotkeys_miner_hotkey", "banned_hotkeys", ["miner_hotkey"])
 
     op.create_table(
         "evaluation_sets",
@@ -246,9 +244,7 @@ def upgrade() -> None:
             sa.TIMESTAMP(timezone=True),
             nullable=True,
         ),
-        sa.ForeignKeyConstraint(
-            ["evaluation_id"], ["evaluations.evaluation_id"]
-        ),
+        sa.ForeignKeyConstraint(["evaluation_id"], ["evaluations.evaluation_id"]),
         sa.PrimaryKeyConstraint("evaluation_run_id"),
     )
     op.create_index(
@@ -281,9 +277,7 @@ def upgrade() -> None:
         sa.Column("provider", sa.Text(), nullable=False),
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("temperature", sa.Float(), nullable=False),
-        sa.Column(
-            "messages", postgresql.JSONB(astext_type=sa.Text()), nullable=False
-        ),
+        sa.Column("messages", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("status_code", sa.Integer(), nullable=True),
         sa.Column("response", sa.Text(), nullable=True),
         sa.Column("num_input_tokens", sa.Integer(), nullable=True),
@@ -295,12 +289,8 @@ def upgrade() -> None:
             server_default=sa.text("NOW()"),
             nullable=False,
         ),
-        sa.Column(
-            "response_sent_at", sa.TIMESTAMP(timezone=True), nullable=True
-        ),
-        sa.ForeignKeyConstraint(
-            ["evaluation_run_id"], ["evaluation_runs.evaluation_run_id"]
-        ),
+        sa.Column("response_sent_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["evaluation_run_id"], ["evaluation_runs.evaluation_run_id"]),
         sa.PrimaryKeyConstraint("inference_id"),
     )
     op.create_index(
@@ -314,9 +304,7 @@ def upgrade() -> None:
             "num_output_tokens",
             "cost_usd",
         ],
-        postgresql_where=sa.text(
-            "response_sent_at IS NOT NULL AND provider IS NOT NULL"
-        ),
+        postgresql_where=sa.text("response_sent_at IS NOT NULL AND provider IS NOT NULL"),
     )
 
     op.create_table(
@@ -327,20 +315,12 @@ def upgrade() -> None:
         sa.Column("model", sa.Text(), nullable=False),
         sa.Column("input", sa.Text(), nullable=False),
         sa.Column("status_code", sa.Integer(), nullable=True),
-        sa.Column(
-            "response", postgresql.JSONB(astext_type=sa.Text()), nullable=True
-        ),
+        sa.Column("response", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("num_input_tokens", sa.Integer(), nullable=True),
         sa.Column("cost_usd", sa.Float(), nullable=True),
-        sa.Column(
-            "request_received_at", sa.TIMESTAMP(timezone=True), nullable=False
-        ),
-        sa.Column(
-            "response_sent_at", sa.TIMESTAMP(timezone=True), nullable=True
-        ),
-        sa.ForeignKeyConstraint(
-            ["evaluation_run_id"], ["evaluation_runs.evaluation_run_id"]
-        ),
+        sa.Column("request_received_at", sa.TIMESTAMP(timezone=True), nullable=False),
+        sa.Column("response_sent_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(["evaluation_run_id"], ["evaluation_runs.evaluation_run_id"]),
         sa.PrimaryKeyConstraint("embedding_id"),
     )
 
@@ -380,9 +360,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["agent_id"], ["agents.agent_id"]),
-        sa.PrimaryKeyConstraint(
-            "payment_block_hash", "payment_extrinsic_index"
-        ),
+        sa.PrimaryKeyConstraint("payment_block_hash", "payment_extrinsic_index"),
     )
 
     op.create_table(
@@ -404,12 +382,8 @@ def upgrade() -> None:
         sa.Column("final_score", sa.Float(), nullable=False),
         sa.PrimaryKeyConstraint("agent_id"),
     )
-    op.create_index(
-        "idx_agent_scores_final_score", "agent_scores", ["final_score"]
-    )
-    op.create_index(
-        "idx_agent_scores_created_at", "agent_scores", ["created_at"]
-    )
+    op.create_index("idx_agent_scores_final_score", "agent_scores", ["final_score"])
+    op.create_index("idx_agent_scores_created_at", "agent_scores", ["created_at"])
 
     op.execute(
         """
@@ -698,9 +672,7 @@ def upgrade() -> None:
     """
     )
 
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;")
     op.execute(
         """
         CREATE TRIGGER tr_refresh_agent_scores
@@ -708,9 +680,7 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE PROCEDURE refresh_agent_scores();
     """
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved_agents ON approved_agents;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved_agents ON approved_agents;")
     op.execute(
         """
         CREATE TRIGGER tr_refresh_agent_scores_approved_agents
@@ -718,9 +688,7 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE PROCEDURE refresh_agent_scores();
     """
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;")
     op.execute(
         """
         CREATE TRIGGER tr_refresh_agent_scores_banned_hotkeys
@@ -728,9 +696,7 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE PROCEDURE refresh_agent_scores();
     """
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;")
     op.execute(
         """
         CREATE TRIGGER tr_refresh_agent_scores_delete_agents
@@ -738,9 +704,7 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE PROCEDURE refresh_agent_scores();
     """
     )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_unapproved_agent_ids ON unapproved_agent_ids;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_unapproved_agent_ids ON unapproved_agent_ids;")
     op.execute(
         """
         CREATE TRIGGER tr_refresh_agent_scores_unapproved_agent_ids
@@ -751,26 +715,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_unapproved_agent_ids ON unapproved_agent_ids;"
-    )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;"
-    )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;"
-    )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved_agents ON approved_agents;"
-    )
-    op.execute(
-        "DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;"
-    )
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_unapproved_agent_ids ON unapproved_agent_ids;")
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_delete_agents ON agents;")
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;")
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_approved_agents ON approved_agents;")
+    op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores ON evaluations;")
     op.execute("DROP FUNCTION IF EXISTS refresh_agent_scores() CASCADE;")
     op.execute("DROP FUNCTION IF EXISTS populate_agent_scores() CASCADE;")
-    op.execute(
-        "DROP FUNCTION IF EXISTS refresh_agent_scores_for_agent(UUID) CASCADE;"
-    )
+    op.execute("DROP FUNCTION IF EXISTS refresh_agent_scores_for_agent(UUID) CASCADE;")
     op.execute("DROP VIEW IF EXISTS validator_queue;")
     op.execute("DROP VIEW IF EXISTS screener_2_queue;")
     op.execute("DROP VIEW IF EXISTS screener_1_queue;")
@@ -794,24 +746,18 @@ def downgrade() -> None:
             "num_output_tokens",
             "cost_usd",
         ],
-        postgresql_where=sa.text(
-            "response_sent_at IS NOT NULL AND provider IS NOT NULL"
-        ),
+        postgresql_where=sa.text("response_sent_at IS NOT NULL AND provider IS NOT NULL"),
     )
     op.drop_table("inferences")
     op.drop_table("evaluation_run_logs")
-    op.drop_index(
-        "idx_evaluation_runs_evaluation_id", table_name="evaluation_runs"
-    )
+    op.drop_index("idx_evaluation_runs_evaluation_id", table_name="evaluation_runs")
     op.drop_table("evaluation_runs")
     op.drop_index(
         "idx_evaluations_validator_pattern",
         table_name="evaluations",
         postgresql_ops={"validator_hotkey": "text_pattern_ops"},
     )
-    op.drop_index(
-        "idx_evaluations_set_group_agent_id", table_name="evaluations"
-    )
+    op.drop_index("idx_evaluations_set_group_agent_id", table_name="evaluations")
     op.drop_index("idx_evaluations_agent_id", table_name="evaluations")
     op.drop_index("idx_evaluations_id", table_name="evaluations")
     op.drop_table("evaluations")
@@ -820,9 +766,7 @@ def downgrade() -> None:
     op.drop_table("upload_attempts")
     op.drop_table("infinite_swe_problems")
     op.drop_table("evaluation_sets")
-    op.drop_index(
-        "idx_banned_hotkeys_miner_hotkey", table_name="banned_hotkeys"
-    )
+    op.drop_index("idx_banned_hotkeys_miner_hotkey", table_name="banned_hotkeys")
     op.drop_table("banned_hotkeys")
     op.drop_index(
         "idx_agents_status",

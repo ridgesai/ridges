@@ -5,20 +5,21 @@ Revises: a7c2e5f1d8b4
 Create Date: 2026-04-16 00:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = 'b8d3f6e2c9a5'
-down_revision: Union[str, None] = 'a7c2e5f1d8b4'
+revision: str = "b8d3f6e2c9a5"
+down_revision: Union[str, None] = "a7c2e5f1d8b4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('evaluation_runs', sa.Column('verifier_reward', sa.Double(), nullable=True))
+    op.add_column("evaluation_runs", sa.Column("verifier_reward", sa.Double(), nullable=True))
 
     op.execute("""
         CREATE OR REPLACE VIEW evaluation_runs_hydrated AS
@@ -182,4 +183,4 @@ def downgrade() -> None:
             num_finished_evals DESC;
     """)
 
-    op.drop_column('evaluation_runs', 'verifier_reward')
+    op.drop_column("evaluation_runs", "verifier_reward")

@@ -25,9 +25,7 @@ def compute_task_digest(task_dir: Path) -> str:
     """Hash the exact task directory Harbor will execute."""
 
     digest = hashlib.sha256()
-    for path in sorted(
-        p for p in task_dir.rglob("*") if p.is_file() and not is_ignored_artifact(p)
-    ):
+    for path in sorted(p for p in task_dir.rglob("*") if p.is_file() and not is_ignored_artifact(p)):
         relative_path = path.relative_to(task_dir).as_posix()
         mode = stat.S_IMODE(path.stat().st_mode)
         digest.update(relative_path.encode("utf-8"))

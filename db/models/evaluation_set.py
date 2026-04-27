@@ -20,6 +20,4 @@ class EvaluationSet(Base, CreatedAtMixin):
     benchmark_family: Mapped[Optional[str]] = mapped_column(sa.Text)
     execution_spec: Mapped[Optional[Any]] = mapped_column(JSONB)
 
-    __table_args__ = (
-        sa.PrimaryKeyConstraint("set_id", "set_group", "problem_name"),
-    )
+    __table_args__ = (sa.PrimaryKeyConstraint("set_id", "set_group", "problem_name"),)

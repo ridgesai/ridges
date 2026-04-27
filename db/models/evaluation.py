@@ -13,17 +13,11 @@ from db.models.enums import EvaluationSetGroup
 class Evaluation(Base, CreatedAtMixin):
     __tablename__ = "evaluations"
 
-    evaluation_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True
-    )
-    agent_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id"), nullable=False
-    )
+    evaluation_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    agent_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id"), nullable=False)
     validator_hotkey: Mapped[str] = mapped_column(sa.Text, nullable=False)
     set_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    finished_at: Mapped[Optional[datetime]] = mapped_column(
-        sa.TIMESTAMP(timezone=True)
-    )
+    finished_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     evaluation_set_group: Mapped[EvaluationSetGroup] = mapped_column(
         sa.Enum(EvaluationSetGroup, name="evaluationsetgroup"), nullable=False
     )
@@ -52,9 +46,7 @@ class ApprovedAgent(Base):
         primary_key=True,
         server_default=sa.text("gen_random_uuid()"),
     )
-    agent_id: Mapped[Optional[UUID]] = mapped_column(
-        PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id")
-    )
+    agent_id: Mapped[Optional[UUID]] = mapped_column(PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id"))
     set_id: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     approved_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True),

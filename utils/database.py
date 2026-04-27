@@ -158,8 +158,7 @@ def db_operation(func):
 
 
 async def run_migrations() -> None:
-    """Run pending Alembic migrations.
-    """
+    """Run pending Alembic migrations."""
     logger.info("Running database migrations...")
     project_root = Path(__file__).resolve().parents[1]
     cfg = Config(project_root / "alembic.ini")
