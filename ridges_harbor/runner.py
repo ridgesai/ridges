@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import traceback
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import uuid4
 
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME

@@ -36,7 +36,6 @@ from api.endpoints.validator_models import (
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
-from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
 from queries.agent import (
     get_agent_by_id,
@@ -57,9 +56,6 @@ from queries.evaluation_run import (
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
-)
-from queries.evaluation_set import (
-    get_latest_set_id,
 )
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
