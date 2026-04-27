@@ -19,12 +19,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Ruff
-        uses: astral-sh/ruff-action@v3.6.1
-        with:
-          version: "0.15.7"
-          checksum: "2253ba7f064023def4b77aaef127756d3724e92a0fc69d666d4692f5c019af6d"
-          args: 
-            "--version"
+        uses: astral-sh/ruff-action@v4.0.0
 
       - name: Ruff format check
         run: |
