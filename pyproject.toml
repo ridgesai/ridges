@@ -29,7 +29,8 @@ miner = [
 ]
 dev = [
     "pytest>=8.4.2",
-    "ruff==0.15.7",
+    "pre-commit>=4.6.0",
+    "ruff>=0.15.7",
 ]
 
 [project.scripts]
@@ -57,3 +58,4 @@ packages = ["execution", "miners", "miners.cli", "miners.cli.commands", "models"
 
 [tool.setuptools.package-data]
 miners = ["baseline-requirements.txt", "env.miner.example"]
+
