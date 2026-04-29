@@ -112,6 +112,27 @@ def cleanup_harbor_docker_resources() -> None:
     logger.info("Finished cleaning up stale Harbor Docker resources")
 
 
+def prune_docker_disk_resources(*, include_build_cache: bool = False) -> None:
+    docker_client = get_docker_client()
+
+    logger.info("Pruning dangling Docker images...")
+    try:
+        result = docker_client.images.prune(filters={"dangling": True})
+        logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from dangling Docker images")
+    except Exception as e:
+        logger.warning(f"Failed to prune dangling Docker images: {e}")
+
+    if not include_build_cache:
+        return
+
+    logger.info("Pruning Docker build cache...")
+    try:
+        result = docker_client.api.prune_builds()
+        logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from Docker build cache")
+    except Exception as e:
+        logger.warning(f"Failed to prune Docker build cache: {e}")
+
+
 def create_internal_docker_network(name: str) -> None:
     docker_client = get_docker_client()
 
