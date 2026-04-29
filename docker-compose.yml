@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ridges-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: 
+      POSTGRES_PASSWORD: 
+      POSTGRES_DB: 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # TODO Remove this once the alembic logic is merged
+      - ./api/src/backend/postgres_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ridges -d ridges"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  s3mock:
+    image: adobe/s3mock:latest
+    environment:
+      - COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS=ridges-local
+    ports:
+      - "9090:9090"
+      - "9191:9191"
+
+volumes:
+  postgres_data:
