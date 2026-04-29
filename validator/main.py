@@ -31,6 +31,7 @@ from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.problem import ProblemTestResultStatus
+from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
@@ -423,13 +424,16 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
                 )
             )
 
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
 
-    logger.info("Finished evaluation")
+        logger.info("Finished evaluation")
 
-    await post_ridges_platform(
-        "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
-    )
+        await post_ridges_platform(
+            "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
+        )
+    finally:
+        await asyncio.to_thread(prune_docker_disk_resources)
 
 
 # Main loop
@@ -439,6 +443,9 @@ async def main():
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
     global execution_engine
+
+    cleanup_harbor_docker_resources()
+    prune_docker_disk_resources(include_build_cache=True)
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
