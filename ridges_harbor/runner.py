@@ -14,7 +14,6 @@ from ridges_harbor.docker_runtime import (
     TrialHook,
     build_enable_verifier_egress_hook,
     docker_environment_env,
-    prune_dangling_images,
 )
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
 
@@ -98,8 +97,6 @@ async def run_task(
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
     )
-
-    await prune_dangling_images()
 
     return summary
 
