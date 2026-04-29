@@ -86,6 +86,11 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 if not S3_BUCKET_NAME:
     logger.fatal("S3_BUCKET_NAME is not set in .env")
 
+# Load S3 endpoint URL (optional, used for testing with local S3 emulators or connecting to S3-compatible services)
+S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL")
+if not S3_ENDPOINT_URL:
+    logger.debug("S3_ENDPOINT_URL is not set in .env")
+
 
 # Load database configuration
 DATABASE_USERNAME = os.getenv("DATABASE_USERNAME")
@@ -214,6 +219,8 @@ logger.info("-------------------------")
 
 logger.info(f"S3 Bucket Name: {S3_BUCKET_NAME}")
 logger.info("-------------------------")
+
+logger.info(f"S3 Endpoint URL: {S3_ENDPOINT_URL if S3_ENDPOINT_URL else 'Not set, using default AWS S3 endpoint'}")
 
 logger.info(f"Database Username: {DATABASE_USERNAME}")
 logger.info(f"Database Host: {DATABASE_HOST}")
