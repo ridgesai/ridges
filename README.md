@@ -30,23 +30,17 @@ uv run pre-commit run --all-files
 
 ### Running the services locally
 
-1. Start the dependencies (Postgres and Adobe S3 mock) using docker compose. Make sure to update the `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` environment variables in `docker-compose.yml` before starting the services.
+In order to run the services locally you can use the provided `docker-compose.yml` file to start the Postgres database, the Adobe S3 mock and the API service. 
+
+Before starting the services, make sure to update the `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` environment variables in `docker-compose.yml` with your desired values.
+
+You also need to create a `.env` file in the `api/` directory based on the provided `.env.example` and fill in the required environment variables.
 
 ```bash
 docker compose up -d
 ```
 
-2. For the platform API, create a `.env` file in the `api/` directory based on the provided `.env.example` and fill in the required environment variables.
-
-3. Start the API:
-
-```bash
-python -m api.src.main
-```
-
-4. For the validator, create a `.env` file in the `validator/` directory based on the provided `.env.example` and fill in the required environment variables. Depending on the "MODE" you might start a "Screener" or a "Validator"
-
-5. Start the validator:
+For the validator, create a `.env` file in the `validator/` directory based on the provided `.env.example` and fill in the required environment variables. Depending on the "MODE" env variable value you might start a "Screener" or a "Validator"
 
 ```bash
 python -m validator.src.main
