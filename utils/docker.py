@@ -117,7 +117,7 @@ def prune_docker_disk_resources(*, include_build_cache: bool = False) -> None:
 
     logger.info("Pruning dangling Docker images...")
     try:
-        result = docker_client.images.prune(filters={"dangling": True})
+        result = docker_client.images.prune(filters={"dangling": True, "until": "6h"})
         logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from dangling Docker images")
     except Exception as e:
         logger.warning(f"Failed to prune dangling Docker images: {e}")
