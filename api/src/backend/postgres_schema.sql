@@ -257,7 +257,10 @@ SELECT
          WHEN EVERY(erh.status IN ('finished', 'error')) THEN 'failure'
          ELSE 'running'
         END)::EvaluationStatus AS status,
-    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score
+    COUNT(*) FILTER (WHERE erh.solved)::float / COUNT(*) AS score,
+    AVG(
+        EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_running_agent_at))
+    ) FILTER (WHERE erh.solved) AS avg_running_secs
 FROM evaluations
     INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
 GROUP BY evaluations.evaluation_id;
