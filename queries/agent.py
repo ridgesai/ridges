@@ -206,7 +206,7 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
     """Retrieve the top agents.
 
-    Agents are orderd by the score they got on "Validator" runs, then by their average running time on "Validator" runs, then by their creation time.
+    Agents are ordered by the score they got on "Validator" runs, then by their average running time on "Validator" runs, then by their creation time.
 
     You can specify the number of results to return and the page number (for pagination).
 
