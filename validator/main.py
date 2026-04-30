@@ -505,6 +505,7 @@ async def main():
         inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
         harbor_debug=config.RIDGES_HARBOR_DEBUG,
+        max_agent_timeout_sec=running_agent_timeout_seconds,
     )
 
     # Start the send heartbeat loop
