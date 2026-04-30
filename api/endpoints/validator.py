@@ -235,13 +235,20 @@ async def validator_register_as_validator(
     # Ensure that the validator is not already registered
     ip_address = request.client.host if request.client else None
     if (old_session_id_ := is_validator_registered(registration_request.hotkey)) is not None:
-        if ip_address != SESSION_ID_TO_VALIDATOR[old_session_id_].ip_address:
+        old_validator = SESSION_ID_TO_VALIDATOR[old_session_id_]
+        if ip_address != old_validator.ip_address:
             raise HTTPException(status_code=409, detail="There is already a validator connected with the given hotkey.")
         else:
-            # delete old session
-            old_session_id = delete_session_by_hotkey(registration_request.hotkey)
-            if old_session_id is not None:
-                logger.info(f"Deleted old session {old_session_id} for validator {registration_request.hotkey}")
+            async with DebugLock(
+                old_validator._lock, f"validator_register_as_validator() for {old_validator.name}'s lock"
+            ):
+                current_validator = SESSION_ID_TO_VALIDATOR.get(old_session_id_)
+                if current_validator is not None:
+                    await delete_validator(
+                        current_validator,
+                        "Validator re-registered from the same IP address; replacing the old session.",
+                    )
+                    logger.info(f"Deleted old session {old_session_id_} for validator {registration_request.hotkey}")
 
     # Register the validator with a new session ID
     session_id = uuid4()
