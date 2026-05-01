@@ -9,6 +9,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "bittensor==10.2.1",
     "click>=8.1.0",
+    "cryptography>=46.0.0",
     "docker>=7.1.0",
     "harbor==0.3.0",
     "httpx>=0.27.0",
@@ -58,4 +59,3 @@ packages = ["execution", "miners", "miners.cli", "miners.cli.commands", "models"
 
 [tool.setuptools.package-data]
 miners = ["baseline-requirements.txt", "env.miner.example"]
-
