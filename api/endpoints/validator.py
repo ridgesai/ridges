@@ -40,6 +40,7 @@ from models.harbor_task import read_execution_spec_metadata
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
+    get_openrouter_api_key_for_agent_id,
     get_top_agents,
     update_agent_status,
 )
@@ -57,6 +58,7 @@ from queries.evaluation_run import (
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
 )
+from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
@@ -377,6 +379,18 @@ async def validator_request_evaluation(
                 logger.error(f"Failed to download agent code for {agent_id}: {exc}")
                 return None
 
+            try:
+                openrouter_api_key = await get_openrouter_api_key_for_agent_id(agent_id)
+            except AgentKeyEncryptionConfigError as exc:
+                logger.error(
+                    f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
+                    f"configuration: {exc}"
+                )
+                openrouter_api_key = None
+            except AgentKeyDecryptError as exc:
+                logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
+                openrouter_api_key = None
+
             # Create a new evaluation and evaluation runs for this agent & validator
             evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
             if evaluation_bundle is None:
@@ -427,6 +441,7 @@ async def validator_request_evaluation(
         agent_code=agent_code,
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
+        openrouter_api_key=openrouter_api_key,
     )
 
 
@@ -681,6 +696,7 @@ async def validator_update_evaluation_run(
                 evaluation_run.patch = request.patch
             evaluation_run.verifier_reward = request.verifier_reward
             evaluation_run.test_results = request.test_results
+            evaluation_run.cost_usd = request.cost_usd
             evaluation_run.finished_or_errored_at = now
 
             if not agent_logs_exist:
@@ -719,6 +735,7 @@ async def validator_update_evaluation_run(
             evaluation_run.status = EvaluationRunStatus.error
             evaluation_run.error_code = request.error_code
             evaluation_run.error_message = request.error_message
+            evaluation_run.cost_usd = request.cost_usd
             evaluation_run.finished_or_errored_at = datetime.now(timezone.utc)
 
             # Create evaluation run logs
