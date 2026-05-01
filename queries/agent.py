@@ -7,6 +7,7 @@ import utils.logger as logger
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
+from utils.agent_secrets import decrypt_openrouter_api_key
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
 
@@ -123,20 +124,55 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 
 
 @db_operation
-async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) -> None:
+async def create_agent(
+    conn: DatabaseConnection,
+    agent: Agent,
+    agent_text: str,
+    *,
+    openrouter_api_key_ciphertext: bytes | None = None,
+) -> None:
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
-    await conn.execute(
-        f"""
-        INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-        VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+    async with conn.conn.transaction():
+        await conn.execute(
+            f"""
+            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
+            VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+            """,
+            agent.agent_id,
+            agent.miner_hotkey,
+            agent.name,
+            agent.version_num,
+            agent.ip_address,
+        )
+
+        if openrouter_api_key_ciphertext is not None:
+            await conn.execute(
+                """
+                INSERT INTO agent_openrouter_secrets (agent_id, ciphertext)
+                VALUES ($1, $2)
+                """,
+                agent.agent_id,
+                openrouter_api_key_ciphertext,
+            )
+
+
+@db_operation
+async def get_openrouter_api_key_for_agent_id(conn: DatabaseConnection, agent_id: UUID) -> str | None:
+    ciphertext = await conn.fetchval(
+        """
+        SELECT ciphertext
+        FROM agent_openrouter_secrets
+        WHERE agent_id = $1
+        LIMIT 1
         """,
-        agent.agent_id,
-        agent.miner_hotkey,
-        agent.name,
-        agent.version_num,
-        agent.ip_address,
+        agent_id,
     )
+
+    if ciphertext is None:
+        return None
+
+    return decrypt_openrouter_api_key(bytes(ciphertext))
 
 
 @db_operation
