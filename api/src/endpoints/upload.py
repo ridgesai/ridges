@@ -28,6 +28,7 @@ from queries.agent import (
 )
 from queries.banned_hotkey import get_banned_hotkey
 from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
+from utils.agent_secrets import encrypt_openrouter_api_key
 from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
 
@@ -130,6 +131,7 @@ async def post_agent(
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    openrouter_api_key: Optional[str] = Form(None, description="OpenRouter API key for inference during evaluation"),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -251,6 +253,10 @@ async def post_agent(
 
             if prod and latest_agent_created_at_in_latest_set_id:
                 check_rate_limit(latest_agent_created_at_in_latest_set_id)
+
+            encrypted_openrouter_api_key = None
+            if openrouter_api_key is not None and openrouter_api_key.strip():
+                encrypted_openrouter_api_key = encrypt_openrouter_api_key(openrouter_api_key.strip())
             agent = Agent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
@@ -260,7 +266,11 @@ async def post_agent(
                 status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
             )
-            await create_agent(agent, agent_text)
+            await create_agent(
+                agent,
+                agent_text,
+                openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+            )
 
         if prod:
             await record_evaluation_payment(
