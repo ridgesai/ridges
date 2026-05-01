@@ -74,10 +74,12 @@ class ExecutionEngine:
         *,
         harbor_results_dir: str | Path | None = None,
         harbor_debug: bool = False,
+        max_agent_timeout_sec: float | None = None,
     ):
         self.inference_url = inference_url
         self.results_dir = harbor_results_dir
         self.debug = harbor_debug
+        self.max_agent_timeout_sec = max_agent_timeout_sec
 
     async def evaluate(
         self,
@@ -194,11 +196,23 @@ class ExecutionEngine:
         job_name = _format_job_name(problem_name=problem_name, evaluation_run_id=evaluation_run_id)
         results_dir = Path(self.results_dir or DEFAULT_RESULTS_DIR).expanduser().resolve()
 
+        # If the Engine specifies a max agent timeout, compare it with the task
+        # spec timeout (if any) and use the lower of the two to avoid accidentally running tasks for too long.
+        spec_timeout = parsed_spec.agent_timeout_sec
+        if self.max_agent_timeout_sec is not None:
+            agent_timeout_sec = (
+                min(spec_timeout, self.max_agent_timeout_sec)
+                if spec_timeout is not None
+                else self.max_agent_timeout_sec
+            )
+        else:
+            agent_timeout_sec = spec_timeout
+
         return ExecutionRunRequest(
             task_dir=task_dir,
             task_name=parsed_spec.task_name,
             task_digest=parsed_spec.task_digest,
-            agent_timeout_sec=parsed_spec.agent_timeout_sec,
+            agent_timeout_sec=agent_timeout_sec,
             results_dir=results_dir,
             job_name=job_name,
         )
