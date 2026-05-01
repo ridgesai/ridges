@@ -32,6 +32,7 @@ def _harbor_agent_env(
     *,
     evaluation_run_id: str,
     agent_timeout_sec: float | None,
+    openrouter_api_key: str | None = None,
 ) -> dict[str, str]:
     """Build the env dict Harbor merges into every agent command."""
     normalized_timeout: str | None = None
@@ -46,6 +47,8 @@ def _harbor_agent_env(
     }
     if normalized_timeout is not None:
         env["AGENT_TIMEOUT"] = normalized_timeout
+    if openrouter_api_key:
+        env["OPENROUTER_API_KEY"] = openrouter_api_key
     return env
 
 
@@ -61,6 +64,8 @@ async def run_task(
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
     job_name: str | None = None,
+    openrouter_api_key: str | None = None,
+    max_cost_usd: float | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -94,6 +99,8 @@ async def run_task(
         results_dir=resolved_results_dir,
         debug=debug,
         job_name=job_name,
+        openrouter_api_key=openrouter_api_key,
+        max_cost_usd=max_cost_usd,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
     )
@@ -113,6 +120,8 @@ async def _run_task_dir(
     results_dir: Path,
     debug: bool,
     job_name: str | None,
+    openrouter_api_key: str | None = None,
+    max_cost_usd: float | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -129,6 +138,8 @@ async def _run_task_dir(
     job_dir = results_dir / resolved_job_name
     effective_timeout = agent_timeout_sec if agent_timeout_sec is not None and agent_timeout_sec > 0 else None
     ridges_trial_id = uuid4().hex
+    proxy_data_dir = job_dir / "proxy_data"
+    proxy_data_dir.mkdir(parents=True, exist_ok=True)
 
     agent_kwargs: dict[str, Any] = {
         "agent_path": str(agent_path),
@@ -136,6 +147,7 @@ async def _run_task_dir(
     agent_env = _harbor_agent_env(
         evaluation_run_id=evaluation_run_id,
         agent_timeout_sec=effective_timeout,
+        openrouter_api_key=openrouter_api_key,
     )
 
     environment_config = EnvironmentConfig(
@@ -143,6 +155,9 @@ async def _run_task_dir(
             ridges_trial_id=ridges_trial_id,
             upstream_url=upstream_url,
             upstream_host=upstream_host,
+            evaluation_run_id=evaluation_run_id,
+            max_cost_usd=str(max_cost_usd) if max_cost_usd is not None else "999999",
+            proxy_data_dir=str(proxy_data_dir),
         )
     )
     config = JobConfig(
