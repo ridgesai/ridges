@@ -88,6 +88,7 @@ async def _get_evaluation_run_metrics_by_ids(
                 er.evaluation_run_id,
                 er.problem_name,
                 e.set_id,
+                er.cost_usd AS persisted_cost_usd,
                 CASE
                     WHEN er.started_initializing_agent_at IS NOT NULL
                      AND er.finished_or_errored_at IS NOT NULL
@@ -102,13 +103,13 @@ async def _get_evaluation_run_metrics_by_ids(
             SELECT
                 tr.evaluation_run_id,
                 CASE
-                    WHEN COUNT(i.inference_id) = 0 THEN NULL
+                    WHEN tr.persisted_cost_usd IS NULL AND COUNT(i.inference_id) = 0 THEN NULL
                     ELSE erwc.total_cost_usd
                 END AS run_cost_usd
             FROM target_runs tr
             JOIN evaluation_runs_with_cost erwc ON erwc.evaluation_run_id = tr.evaluation_run_id
             LEFT JOIN inferences i ON i.evaluation_run_id = tr.evaluation_run_id
-            GROUP BY tr.evaluation_run_id, erwc.total_cost_usd
+            GROUP BY tr.evaluation_run_id, tr.persisted_cost_usd, erwc.total_cost_usd
         ),
         problem_aggregates AS (
             SELECT
@@ -124,8 +125,8 @@ async def _get_evaluation_run_metrics_by_ids(
                     END
                 ) AS problem_average_time_seconds,
                 CASE
-                    WHEN COUNT(*) FILTER (WHERE usage.inference_count > 0) = 0 THEN NULL
-                    ELSE AVG(erwc.total_cost_usd) FILTER (WHERE usage.inference_count > 0)
+                    WHEN COUNT(*) FILTER (WHERE usage.inference_count > 0 OR er.cost_usd IS NOT NULL) = 0 THEN NULL
+                    ELSE AVG(erwc.total_cost_usd) FILTER (WHERE usage.inference_count > 0 OR er.cost_usd IS NOT NULL)
                 END AS problem_average_cost_usd
             FROM (
                 SELECT DISTINCT set_id, problem_name
@@ -194,7 +195,8 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
             started_running_agent_at = $9,
             started_initializing_eval_at = $10,
             started_running_eval_at = $11,
-            finished_or_errored_at = $12
+            finished_or_errored_at = $12,
+            cost_usd = $13
         WHERE evaluation_run_id = $1
         """,
         evaluation_run.evaluation_run_id,
@@ -216,6 +218,7 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
         evaluation_run.started_initializing_eval_at,
         evaluation_run.started_running_eval_at,
         evaluation_run.finished_or_errored_at,
+        evaluation_run.cost_usd,
     )
 
 
