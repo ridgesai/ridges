@@ -115,6 +115,7 @@ async def update_evaluation_run(
     timeout: int | None = None,
 ):
     logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
+    clean_extra = {k: v for k, v in (extra or {}).items() if v is not None}
 
     post_kwargs: dict[str, Any] = {
         "bearer_token": session_id,
@@ -126,7 +127,7 @@ async def update_evaluation_run(
     await post_ridges_platform(
         "/validator/update-evaluation-run",
         ValidatorUpdateEvaluationRunRequest(
-            evaluation_run_id=evaluation_run_id, updated_status=updated_status, **(extra or {})
+            evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
         ),
         **post_kwargs,
     )
