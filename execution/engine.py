@@ -17,6 +17,7 @@ from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
+from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from utils.task_cache import get_cached_task, get_or_download_task
 
@@ -91,7 +92,7 @@ class ExecutionEngine:
         execution_spec: dict[str, Any] | None,
         agent_path: str | Path | None,
         agent_code: str | None,
-        openrouter_api_key: str | None = None,
+        openrouter_config: OpenRouterRuntimeConfig | None = None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
         on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
@@ -141,7 +142,7 @@ class ExecutionEngine:
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
-                    openrouter_api_key=openrouter_api_key,
+                    openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
