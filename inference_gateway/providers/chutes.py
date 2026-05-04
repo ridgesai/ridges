@@ -41,8 +41,6 @@ class WhitelistedChutesModel(BaseModel):
 if config.USE_CHUTES:
     WHITELISTED_CHUTES_INFERENCE_MODELS = [
         WhitelistedChutesModel(name="deepseek-ai/DeepSeek-R1-0528", chutes_name="deepseek-ai/DeepSeek-R1-0528-TEE"),
-        WhitelistedChutesModel(name="zai-org/GLM-4.6", chutes_name="zai-org/GLM-4.6-TEE"),
-        WhitelistedChutesModel(name="zai-org/GLM-4.6-FP8"),
         WhitelistedChutesModel(name="zai-org/GLM-4.7", chutes_name="zai-org/GLM-4.7-TEE"),
         WhitelistedChutesModel(name="zai-org/GLM-4.7-FP8"),
         WhitelistedChutesModel(name="zai-org/GLM-5-FP8", chutes_name="zai-org/GLM-5-TEE"),

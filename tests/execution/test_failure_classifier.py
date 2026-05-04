@@ -316,17 +316,16 @@ def test_verifier_egress_setup_failure_maps_to_validator_internal_error(tmp_path
     assert "Failed to connect verifier egress" in exc_info.value.error_message
 
 
-def test_unsuccessful_verifier_maps_to_agent_exception_running_eval(tmp_path: Path) -> None:
+def test_unsuccessful_verifier_returns_scored_execution_result(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,
         verifier_result={"rewards": {"reward": 0.0}},
     )
 
-    with pytest.raises(EvaluationRunException) as exc_info:
-        result_from_summary(summary)
+    result = result_from_summary(summary)
 
-    assert exc_info.value.error_code == EvaluationRunErrorCode.AGENT_EXCEPTION_RUNNING_EVAL
-    assert "reward=0.0" in exc_info.value.error_message
+    assert result.verifier_reward == 0.0
+    assert result.test_results == []
 
 
 def test_agent_timeout_exception_maps_to_agent_timeout_running_agent(tmp_path: Path) -> None:

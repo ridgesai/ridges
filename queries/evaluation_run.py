@@ -200,7 +200,12 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
         evaluation_run.evaluation_run_id,
         evaluation_run.status.value,
         evaluation_run.patch,
-        json.dumps([test_result.model_dump() for test_result in evaluation_run.test_results])
+        json.dumps(
+            [
+                test_result.model_dump(exclude={"test_alias"}, exclude_none=True)
+                for test_result in evaluation_run.test_results
+            ]
+        )
         if evaluation_run.test_results is not None
         else None,
         evaluation_run.verifier_reward,

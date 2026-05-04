@@ -23,6 +23,7 @@ class ProblemTestResultStatus(str, Enum):
 
 class ProblemTestResult(BaseModel):
     name: str
+    test_alias: Optional[str] = None
     category: ProblemTestCategory
     status: ProblemTestResultStatus
 

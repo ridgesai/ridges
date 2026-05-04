@@ -31,6 +31,7 @@ from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
 from models.problem import ProblemTestResultStatus
+from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
@@ -331,7 +332,9 @@ async def _run_evaluation_run(evaluation_run, agent_code: str, artifact_upload_u
                     "patch": result.patch,
                     "agent_logs": truncate_logs_if_required(result.agent_logs),
                     "verifier_reward": result.verifier_reward,
-                    "test_results": [test.model_dump() for test in result.test_results],
+                    "test_results": [
+                        test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
+                    ],
                     "eval_logs": truncate_logs_if_required(result.eval_logs),
                 },
             )
@@ -421,13 +424,16 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
                 )
             )
 
-    await asyncio.gather(*tasks)
+    try:
+        await asyncio.gather(*tasks)
 
-    logger.info("Finished evaluation")
+        logger.info("Finished evaluation")
 
-    await post_ridges_platform(
-        "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
-    )
+        await post_ridges_platform(
+            "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
+        )
+    finally:
+        await asyncio.to_thread(prune_docker_disk_resources)
 
 
 # Main loop
@@ -437,6 +443,9 @@ async def main():
     global running_eval_timeout_seconds
     global max_evaluation_run_log_size_bytes
     global execution_engine
+
+    cleanup_harbor_docker_resources()
+    prune_docker_disk_resources(include_build_cache=True)
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
@@ -496,6 +505,7 @@ async def main():
         inference_url=config.RIDGES_INFERENCE_GATEWAY_URL,
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
         harbor_debug=config.RIDGES_HARBOR_DEBUG,
+        max_agent_timeout_sec=running_agent_timeout_seconds,
     )
 
     # Start the send heartbeat loop
