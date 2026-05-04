@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME
 from ridges_harbor.digest import compute_task_digest
 from ridges_harbor.docker_runtime import (
@@ -32,7 +33,7 @@ def _harbor_agent_env(
     *,
     evaluation_run_id: str,
     agent_timeout_sec: float | None,
-    openrouter_api_key: str | None = None,
+    openrouter_config: OpenRouterRuntimeConfig | None = None,
 ) -> dict[str, str]:
     """Build the env dict Harbor merges into every agent command."""
     normalized_timeout: str | None = None
@@ -47,8 +48,8 @@ def _harbor_agent_env(
     }
     if normalized_timeout is not None:
         env["AGENT_TIMEOUT"] = normalized_timeout
-    if openrouter_api_key:
-        env["OPENROUTER_API_KEY"] = openrouter_api_key
+    if openrouter_config is not None:
+        env.update(openrouter_config.agent_env_vars())
     return env
 
 
@@ -64,7 +65,7 @@ async def run_task(
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
     job_name: str | None = None,
-    openrouter_api_key: str | None = None,
+    openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
@@ -99,7 +100,7 @@ async def run_task(
         results_dir=resolved_results_dir,
         debug=debug,
         job_name=job_name,
-        openrouter_api_key=openrouter_api_key,
+        openrouter_config=openrouter_config,
         max_cost_usd=max_cost_usd,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
@@ -120,7 +121,7 @@ async def _run_task_dir(
     results_dir: Path,
     debug: bool,
     job_name: str | None,
-    openrouter_api_key: str | None = None,
+    openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
@@ -147,7 +148,7 @@ async def _run_task_dir(
     agent_env = _harbor_agent_env(
         evaluation_run_id=evaluation_run_id,
         agent_timeout_sec=effective_timeout,
-        openrouter_api_key=openrouter_api_key,
+        openrouter_config=openrouter_config,
     )
 
     environment_config = EnvironmentConfig(
@@ -158,6 +159,7 @@ async def _run_task_dir(
             evaluation_run_id=evaluation_run_id,
             max_cost_usd=str(max_cost_usd) if max_cost_usd is not None else "999999",
             proxy_data_dir=str(proxy_data_dir),
+            openrouter_config=openrouter_config,
         )
     )
     config = JobConfig(
