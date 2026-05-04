@@ -14,13 +14,12 @@ from models.agent import (
 )
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
+from queries.errors import DuplicateAgentIDError
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
 
 
-def _derive_agent_id(
-    payment_block_hash: str, payment_extrinsic_index: str
-) -> UUID:
+def _derive_agent_id(payment_block_hash: str, payment_extrinsic_index: str) -> UUID:
     return uuid5(
         config.AGENT_UUID_NAMESPACE,
         f"{payment_block_hash}:{payment_extrinsic_index}",
@@ -139,11 +138,7 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 
 
 @db_operation
-async def create_agent(
-    conn: DatabaseConnection,
-    agent: AgentCreate,
-    agent_text: str
-) -> "UUID":
+async def create_agent(conn: DatabaseConnection, agent: AgentCreate, agent_text: str) -> "UUID":
     """Create a new Agent record in the database and upload the agent code to S3. The agent_id is derived from the payment block hash and extrinsic index to ensure uniqueness and traceability. This function returns the generated agent_id (UUID) for the newly created agent.
 
     Parameters
@@ -166,10 +161,12 @@ async def create_agent(
     await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
     # 3. Insert agent metadata into the database
-    await conn.execute(
+    result = await conn.fetchval(
         f"""
         INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
         VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+        ON CONFLICT (agent_id) DO NOTHING
+        RETURNING agent_id
         """,
         agent_id,
         agent.miner_hotkey,
@@ -177,6 +174,9 @@ async def create_agent(
         agent.version_num,
         agent.ip_address,
     )
+
+    if result is None:
+        raise DuplicateAgentIDError(agent_id)
 
     return agent_id
 
