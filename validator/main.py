@@ -31,6 +31,7 @@ from execution.engine import ExecutionEngine
 from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
+from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
 from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
@@ -248,14 +249,14 @@ async def _run_evaluation_run_with_semaphore(
     agent_code: str,
     semaphore: asyncio.Semaphore,
     artifact_upload_url: str | None = None,
-    openrouter_api_key: str | None = None,
+    openrouter_config: OpenRouterRuntimeConfig | None = None,
 ):
     async with semaphore:
         return await _run_evaluation_run(
             evaluation_run,
             agent_code,
             artifact_upload_url=artifact_upload_url,
-            openrouter_api_key=openrouter_api_key,
+            openrouter_config=openrouter_config,
         )
 
 
@@ -264,7 +265,7 @@ async def _run_evaluation_run(
     evaluation_run,
     agent_code: str,
     artifact_upload_url: str | None = None,
-    openrouter_api_key: str | None = None,
+    openrouter_config: OpenRouterRuntimeConfig | None = None,
 ):
     try:
         global execution_engine
@@ -313,7 +314,7 @@ async def _run_evaluation_run(
                 execution_spec=evaluation_run.execution_spec,
                 agent_path=None,
                 agent_code=agent_code,
-                openrouter_api_key=openrouter_api_key,
+                openrouter_config=openrouter_config,
                 fetch_task_url=_fetch_task_download_url,
                 on_agent_started=_on_agent_started,
                 on_verification_started=_on_verification_started,
@@ -438,7 +439,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
                         request_evaluation_response.agent_code,
                         semaphore,
                         artifact_upload_url=upload_url,
-                        openrouter_api_key=request_evaluation_response.openrouter_api_key,
+                        openrouter_config=request_evaluation_response.openrouter_config,
                     )
                 )
             )
