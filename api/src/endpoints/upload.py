@@ -1,6 +1,5 @@
 import asyncio
 import os
-import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from api import config
+from api.errors import PaymentAlreadyUsedError
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     check_agent_banned,
@@ -27,7 +27,12 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_hotkey import get_banned_hotkey
-from queries.payments import complete_payment, reserve_payment, retrieve_payment_by_hash
+from queries.errors import DuplicateAgentIDError
+from queries.payments import (
+    complete_payment,
+    reserve_payment,
+    retrieve_payment_by_hash,
+)
 from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
 
@@ -178,7 +183,7 @@ async def post_agent(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
             if existing_payment is not None and existing_payment.agent_id is not None:
-                raise HTTPException(status_code=402, detail="Payment already used")
+                raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
 
             # Retrieve payment details from the chain
             try:
@@ -261,7 +266,7 @@ async def post_agent(
                 )
 
                 if payment_row.agent_id is not None:
-                    raise HTTPException(status_code=402, detail="Payment already used")
+                    raise DuplicateAgentIDError(agent_id=payment_row.agent_id)
 
             agent = AgentCreate(
                 miner_hotkey=miner_hotkey,
@@ -290,6 +295,10 @@ async def post_agent(
         return AgentUploadResponse(
             status="success", message=f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
         )
+
+    except DuplicateAgentIDError as e:
+        logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
+        raise PaymentAlreadyUsedError() from e
 
     except HTTPException as e:
         # Determine error type and get ban reason if applicable
