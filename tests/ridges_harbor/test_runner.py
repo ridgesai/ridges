@@ -10,8 +10,8 @@ import pytest
 from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.models.agent.context import AgentContext
 
-from models.openrouter import OpenRouterRuntimeConfig
 import ridges_harbor.runner as runner_module
+from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import RUN_LOG_FILENAME, SETUP_LOG_FILENAME
 from ridges_harbor.agents import MinerRuntimeError, RidgesMinerAgent
 from ridges_harbor.runner import _run_task_dir
