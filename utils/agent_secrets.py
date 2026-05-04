@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import os
 from typing import Final
 
@@ -38,13 +39,13 @@ def _load_master_key() -> bytes:
     return key
 
 
-def encrypt_openrouter_api_key(plaintext: str) -> bytes:
+def encrypt_agent_secret(plaintext: str) -> bytes:
     nonce = os.urandom(NONCE_SIZE_BYTES)
     ciphertext = AESGCM(_load_master_key()).encrypt(nonce, plaintext.encode("utf-8"), None)
     return bytes([AGENT_SECRET_VERSION]) + nonce + ciphertext
 
 
-def decrypt_openrouter_api_key(ciphertext_blob: bytes) -> str:
+def decrypt_agent_secret(ciphertext_blob: bytes) -> str:
     if len(ciphertext_blob) <= 1 + NONCE_SIZE_BYTES:
         raise AgentKeyDecryptError("Ciphertext blob is truncated")
 
@@ -66,3 +67,15 @@ def decrypt_openrouter_api_key(ciphertext_blob: bytes) -> str:
         return plaintext.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise AgentKeyDecryptError("Decrypted agent secret is not valid UTF-8") from exc
+
+
+def encrypt_openrouter_api_key(plaintext: str) -> bytes:
+    return encrypt_agent_secret(plaintext)
+
+
+def decrypt_openrouter_api_key(ciphertext_blob: bytes) -> str:
+    return decrypt_agent_secret(ciphertext_blob)
+
+
+def sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
