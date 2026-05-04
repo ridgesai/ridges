@@ -55,7 +55,7 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
-    openrouter: OpenRouterRuntimeConfig | None = None
+    openrouter_config: OpenRouterRuntimeConfig | None = None
 
 
 class ValidatorTaskDownloadUrlRequest(BaseModel):
