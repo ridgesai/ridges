@@ -19,7 +19,7 @@ from api.src.utils.upload_agent_helpers import (
     check_signature,
     get_miner_hotkey,
 )
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentCreate, AgentStatus
 from queries.agent import (
     create_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
@@ -27,7 +27,7 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_hotkey import get_banned_hotkey
-from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
+from queries.payments import complete_payment, reserve_payment, retrieve_payment_by_hash
 from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
 
@@ -177,8 +177,7 @@ async def post_agent(
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
-
-            if existing_payment is not None:
+            if existing_payment is not None and existing_payment.agent_id is not None:
                 raise HTTPException(status_code=402, detail="Payment already used")
 
             # Retrieve payment details from the chain
@@ -249,36 +248,47 @@ async def post_agent(
                 await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
             )
 
-            if prod and latest_agent_created_at_in_latest_set_id:
-                check_rate_limit(latest_agent_created_at_in_latest_set_id)
-            agent = Agent(
-                agent_id=uuid.uuid4(),
+            if prod:
+                if latest_agent_created_at_in_latest_set_id:
+                    check_rate_limit(latest_agent_created_at_in_latest_set_id)
+
+                payment_row = await reserve_payment(
+                    payment_block_hash=payment_block_hash,
+                    payment_extrinsic_index=payment_extrinsic_index,
+                    miner_hotkey=miner_hotkey,
+                    miner_coldkey=coldkey,
+                    amount_rao=payment_value,
+                )
+
+                if payment_row.agent_id is not None:
+                    raise HTTPException(status_code=402, detail="Payment already used")
+
+            agent = AgentCreate(
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(timezone.utc),
                 status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
-            )
-            await create_agent(agent, agent_text)
-
-        if prod:
-            await record_evaluation_payment(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
-                amount_rao=payment_value,
-                agent_id=agent.agent_id,
-                miner_hotkey=miner_hotkey,
-                miner_coldkey=coldkey,
+            )
+            agent_id = await create_agent(agent, agent_text)
+
+        if prod:
+            await complete_payment(
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index,
+                agent_id=agent_id,
             )
 
-        logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
+        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
 
         # Record successful upload
-        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent.agent_id, **upload_data)
+        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
         return AgentUploadResponse(
-            status="success", message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
+            status="success", message=f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
         )
 
     except HTTPException as e:
