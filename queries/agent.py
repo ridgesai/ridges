@@ -1,14 +1,30 @@
 from datetime import datetime
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import api.config as config
 import utils.logger as logger
-from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from models.agent import (
+    Agent,
+    AgentCreate,
+    AgentScored,
+    AgentStatus,
+    BenchmarkAgentScored,
+    PossiblyBenchmarkAgent,
+)
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+
+
+def _derive_agent_id(
+    payment_block_hash: str, payment_extrinsic_index: str
+) -> UUID:
+    return uuid5(
+        config.AGENT_UUID_NAMESPACE,
+        f"{payment_block_hash}:{payment_extrinsic_index}",
+    )
 
 
 @db_operation
@@ -123,20 +139,46 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 
 
 @db_operation
-async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) -> None:
-    await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
+async def create_agent(
+    conn: DatabaseConnection,
+    agent: AgentCreate,
+    agent_text: str
+) -> "UUID":
+    """Create a new Agent record in the database and upload the agent code to S3. The agent_id is derived from the payment block hash and extrinsic index to ensure uniqueness and traceability. This function returns the generated agent_id (UUID) for the newly created agent.
 
+    Parameters
+    ----------
+    conn : DatabaseConnection
+        The database connection to use for the operation.
+    agent : AgentCreate
+        The agent schema containing the metadata for the agent to be created.
+    agent_text : str
+        The source code of the agent to be uploaded to S3.
+    Returns
+    -------
+    UUID
+        The UUID of the newly created agent.
+    """
+    # 1. Generate a new agent_id (UUID) for the agent
+    agent_id = _derive_agent_id(agent.payment_block_hash, agent.payment_extrinsic_index)
+
+    # 2. Store agent code in S3 with key as agent_id/agent.py
+    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
+
+    # 3. Insert agent metadata into the database
     await conn.execute(
         f"""
         INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
         VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
         """,
-        agent.agent_id,
+        agent_id,
         agent.miner_hotkey,
         agent.name,
         agent.version_num,
         agent.ip_address,
     )
+
+    return agent_id
 
 
 @db_operation
