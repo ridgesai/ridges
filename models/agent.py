@@ -39,7 +39,6 @@ class AgentCreate(AgentBase):
     payment_block_hash: str
     # Index of the payment extrinsic within the block
     payment_extrinsic_index: str
-    pass
 
 
 class PossiblyBenchmarkAgent(Agent):
