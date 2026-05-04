@@ -244,7 +244,7 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     assert captured["evaluation_run_id"] == str(evaluation_run_id)
     assert captured["results_dir"] == (tmp_path / "results").resolve()
     assert captured["job_name"] == f"update-status-file__{evaluation_run_id}"
-    assert captured["openrouter"] == OpenRouterRuntimeConfig(
+    assert captured["openrouter_config"] == OpenRouterRuntimeConfig(
         api_key="sk-or-v1-secret",
         management_key="sk-or-mgmt-secret",
         workspace_id="workspace-1",
