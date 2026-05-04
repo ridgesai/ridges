@@ -37,10 +37,11 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
 from models.harbor_task import read_execution_spec_metadata
+from models.openrouter import OpenRouterRuntimeConfig
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
-    get_openrouter_api_key_for_agent_id,
+    get_openrouter_secrets_for_agent_id,
     get_top_agents,
     update_agent_status,
 )
@@ -58,7 +59,7 @@ from queries.evaluation_run import (
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
 )
-from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError
+from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
@@ -379,17 +380,25 @@ async def validator_request_evaluation(
                 logger.error(f"Failed to download agent code for {agent_id}: {exc}")
                 return None
 
+            openrouter_config = None
+
             try:
-                openrouter_api_key = await get_openrouter_api_key_for_agent_id(agent_id)
+                openrouter_secrets = await get_openrouter_secrets_for_agent_id(agent_id)
             except AgentKeyEncryptionConfigError as exc:
                 logger.error(
                     f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
                     f"configuration: {exc}"
                 )
-                openrouter_api_key = None
             except AgentKeyDecryptError as exc:
                 logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
-                openrouter_api_key = None
+            else:
+                if openrouter_secrets is not None:
+                    openrouter_config = OpenRouterRuntimeConfig(
+                        api_key=openrouter_secrets.runtime_api_key,
+                        management_key=openrouter_secrets.management_api_key,
+                        workspace_id=openrouter_secrets.workspace_id,
+                        expected_api_key_sha256=sha256_hex(openrouter_secrets.runtime_api_key),
+                    )
 
             # Create a new evaluation and evaluation runs for this agent & validator
             evaluation_bundle = await create_new_evaluation_and_evaluation_runs(agent_id, validator.hotkey)
@@ -441,7 +450,7 @@ async def validator_request_evaluation(
         agent_code=agent_code,
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
-        openrouter_api_key=openrouter_api_key,
+        openrouter_config=openrouter_config,
     )
 
 
