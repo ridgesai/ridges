@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import Evaluation, EvaluationWithRuns
+from models.evaluation_run import EvaluationRun
 from models.evaluation_set import EvaluationSetGroup
 from queries.agent import (
     get_agent_by_id,
@@ -18,7 +19,7 @@ from queries.agent import (
     get_top_agents,
 )
 from queries.evaluation import get_evaluations_for_agent_id
-from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id, get_evaluation_run_metrics_by_ids
+from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -30,11 +31,25 @@ from queries.statistics import (
     score_improvement_24_hrs,
     top_score,
 )
-from utils.problem_alias import make_problem_alias
+from utils.problem_alias import add_test_aliases, make_problem_alias
 from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
 
 router = APIRouter()
+
+
+def _temp_evaluation_run_metrics(run: EvaluationRun) -> dict:
+    run_time_seconds = None
+    if run.started_initializing_agent_at is not None and run.finished_or_errored_at is not None:
+        run_time_seconds = (run.finished_or_errored_at - run.started_initializing_agent_at).total_seconds()
+
+    return {
+        "run_time_seconds": run_time_seconds,
+        "run_cost_usd": None,
+        "problem_total_runs": 0,
+        "problem_average_time_seconds": None,
+        "problem_average_cost_usd": None,
+    }
 
 
 # /retrieval/queue?stage={screener_1|screener_2|validator}
@@ -96,15 +111,18 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
     runs_per_eval = await asyncio.gather(
         *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
-    all_run_ids = [run.evaluation_run_id for runs in runs_per_eval for run in runs]
-    metrics_by_run_id = await get_evaluation_run_metrics_by_ids(all_run_ids)
 
     enriched_runs = [
         [
             run.model_copy(
                 update={
                     "problem_alias": make_problem_alias(run.problem_name, run.benchmark_family),
-                    **metrics_by_run_id.get(run.evaluation_run_id, {}),
+                    "test_results": add_test_aliases(
+                        run.test_results,
+                        problem_name=run.problem_name,
+                        benchmark_family=run.benchmark_family,
+                    ),
+                    **_temp_evaluation_run_metrics(run),
                 }
             )
             for run in runs

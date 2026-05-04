@@ -184,17 +184,9 @@ def parse_execution_artifacts(
     trial_paths: TrialPaths,
     context: FailureContext,
 ) -> ExecutionResult:
-    """Parse the successful verifier outputs from a Harbor trial into an ExecutionResult."""
+    """Parse completed verifier outputs from a Harbor trial into an ExecutionResult."""
 
     reward = extract_reward_value(summary, context=context)
-    if reward <= 0:
-        context.fail_agent_eval(f"Harbor verifier reported reward={reward}")
-
-    if reward != 1.0:
-        context.fail_validator(
-            "Harbor verifier produced an unsupported non-binary reward value "
-            f"for Ridges' pass/fail contract: reward={reward}"
-        )
 
     test_results = parse_structured_test_results(
         trial_paths.verifier_dir / "test_results.json",

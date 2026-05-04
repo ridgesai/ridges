@@ -74,6 +74,50 @@ def test_report_json_fills_structured_test_results_when_legacy_file_is_missing(t
     assert {test.category.value for test in result.test_results} == {"fail_to_pass", "pass_to_pass"}
 
 
+def test_zero_reward_returns_execution_result_with_report_failures(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        report_payload={
+            "update-status-file": {
+                "tests_status": {
+                    "FAIL_TO_PASS": {
+                        "success": [],
+                        "failure": ["status updated"],
+                    },
+                    "PASS_TO_PASS": {
+                        "success": ["regression check"],
+                        "failure": [],
+                    },
+                }
+            }
+        },
+        verifier_result={"rewards": {"reward": 0.0}},
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.patch
+    assert result.verifier_reward == 0.0
+    assert [(test.name, test.status.value) for test in result.test_results] == [
+        ("status updated", "fail"),
+        ("regression check", "pass"),
+    ]
+
+
+def test_fractional_reward_returns_execution_result(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        verifier_result={"rewards": {"reward": 0.8}},
+    )
+
+    result = result_from_summary(summary)
+
+    assert result.patch
+    assert result.verifier_reward == 0.8
+    assert len(result.test_results) == 1
+
+
 def test_runtime_log_is_included_in_agent_logs(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,
@@ -343,17 +387,17 @@ def test_single_nonstandard_reward_metric_is_accepted(tmp_path: Path) -> None:
     assert result.test_results == []
 
 
-def test_fractional_reward_maps_to_validator_internal_error(tmp_path: Path) -> None:
+def test_empty_reward_payload_maps_to_validator_internal_error(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,
-        verifier_result={"rewards": {"reward": 0.5}},
+        verifier_result={"rewards": {}},
     )
 
     with pytest.raises(EvaluationRunException) as exc_info:
         result_from_summary(summary)
 
     assert exc_info.value.error_code == EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR
-    assert "non-binary reward value" in exc_info.value.error_message
+    assert "usable reward payload" in exc_info.value.error_message
 
 
 def test_best_effort_verifier_report_is_appended_to_eval_logs(tmp_path: Path) -> None:

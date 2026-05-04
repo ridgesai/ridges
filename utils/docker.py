@@ -1,3 +1,4 @@
+import re
 import subprocess
 
 import docker
@@ -6,6 +7,8 @@ import utils.logger as logger
 
 DOCKER_PREFIX = "ridges-ai"
 SWEBENCH_DOCKER_PREFIX = "sweb"
+HARBOR_CONTAINER_NAME_PATTERN = re.compile(r".+__.+-(main|sandbox-proxy)-1$")
+HARBOR_NETWORK_NAME_PATTERN = re.compile(r".+__.+_sandbox_(internal|egress)$")
 
 
 docker_client = None
@@ -69,6 +72,65 @@ def stop_and_delete_all_docker_containers() -> None:
     docker_client.containers.prune()
 
     logger.info("Stopped and deleted all containers")
+
+
+def cleanup_harbor_docker_resources() -> None:
+    docker_client = get_docker_client()
+
+    logger.info("Cleaning up stale Harbor Docker containers...")
+
+    removed_containers = 0
+    for container in docker_client.containers.list(all=True):
+        if not HARBOR_CONTAINER_NAME_PATTERN.fullmatch(container.name):
+            continue
+
+        logger.info(f"Removing stale Harbor container {container.name}...")
+        try:
+            container.remove(force=True)
+            removed_containers += 1
+        except Exception as e:
+            logger.warning(f"Failed to remove stale Harbor container {container.name}: {e}")
+
+    logger.info(f"Removed {removed_containers} stale Harbor container(s)")
+    logger.info("Cleaning up stale Harbor Docker networks...")
+
+    removed_networks = 0
+    for network in docker_client.networks.list():
+        if network.name in ("bridge", "host", "none"):
+            continue
+        if not HARBOR_NETWORK_NAME_PATTERN.fullmatch(network.name):
+            continue
+
+        logger.info(f"Removing stale Harbor network {network.name}...")
+        try:
+            network.remove()
+            removed_networks += 1
+        except Exception as e:
+            logger.warning(f"Failed to remove stale Harbor network {network.name}: {e}")
+
+    logger.info(f"Removed {removed_networks} stale Harbor network(s)")
+    logger.info("Finished cleaning up stale Harbor Docker resources")
+
+
+def prune_docker_disk_resources(*, include_build_cache: bool = False) -> None:
+    docker_client = get_docker_client()
+
+    logger.info("Pruning dangling Docker images...")
+    try:
+        result = docker_client.images.prune(filters={"dangling": True, "until": "6h"})
+        logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from dangling Docker images")
+    except Exception as e:
+        logger.warning(f"Failed to prune dangling Docker images: {e}")
+
+    if not include_build_cache:
+        return
+
+    logger.info("Pruning Docker build cache...")
+    try:
+        result = docker_client.api.prune_builds()
+        logger.info(f"Reclaimed {result.get('SpaceReclaimed', 0)} byte(s) from Docker build cache")
+    except Exception as e:
+        logger.warning(f"Failed to prune Docker build cache: {e}")
 
 
 def create_internal_docker_network(name: str) -> None:

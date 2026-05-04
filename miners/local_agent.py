@@ -27,24 +27,31 @@ def _read_requirements(path: Path) -> tuple[str, ...]:
     return tuple(requirements)
 
 
-def _requirement_to_import_name(requirement: str) -> str:
-    """Best-effort import name for a baseline requirement."""
-    package_name = re.split(r"[<>=!~;\[]", requirement, maxsplit=1)[0].strip()
-    return package_name.replace("-", "_")
+def _requirement_to_distribution_name(requirement: str) -> str:
+    """Best-effort distribution name for a baseline requirement."""
+    return re.split(r"[<>=!~;\[]", requirement, maxsplit=1)[0].strip()
 
 
 LOCAL_RUNTIME_MINER_PACKAGES = _read_requirements(LOCAL_RUNTIME_BASELINE_REQUIREMENTS_PATH)
-LOCAL_RUNTIME_IMPORT_NAMES = tuple(_requirement_to_import_name(package) for package in LOCAL_RUNTIME_MINER_PACKAGES)
+LOCAL_RUNTIME_DISTRIBUTION_NAMES = tuple(
+    _requirement_to_distribution_name(package) for package in LOCAL_RUNTIME_MINER_PACKAGES
+)
 
 
 def _build_local_runtime_bootstrap_command() -> str:
     """Build the best-effort shell command that ensures local miner baseline deps."""
     packages = " ".join(LOCAL_RUNTIME_MINER_PACKAGES)
     probe = (
-        "import importlib.util, sys; "
-        f"mods={list(LOCAL_RUNTIME_IMPORT_NAMES)!r}; "
-        "missing=[m for m in mods if importlib.util.find_spec(m) is None]; "
-        "sys.exit(0 if not missing else 1)"
+        "import importlib.metadata as metadata\n"
+        "import sys\n"
+        f"dists={list(LOCAL_RUNTIME_DISTRIBUTION_NAMES)!r}\n"
+        "missing=[]\n"
+        "for dist in dists:\n"
+        "    try:\n"
+        "        metadata.version(dist)\n"
+        "    except metadata.PackageNotFoundError:\n"
+        "        missing.append(dist)\n"
+        "sys.exit(0 if not missing else 1)\n"
     )
     return (
         f"python3 -c {shlex.quote(probe)}"

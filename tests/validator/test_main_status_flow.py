@@ -146,6 +146,44 @@ async def test_run_evaluation_run_success_posts_expected_status_sequence(monkeyp
 
 
 @pytest.mark.anyio
+async def test_run_evaluation_run_posts_below_one_reward_as_finished(monkeypatch) -> None:
+    capture = _install_update_capture(monkeypatch)
+    updates = capture["updates"]
+    _set_common_globals(monkeypatch)
+    monkeypatch.setattr(
+        validator_main,
+        "execution_engine",
+        HookAwareEngine(
+            result=ExecutionResult(
+                backend="harbor",
+                patch="PATCH",
+                verifier_reward=0.8,
+                test_results=[_test_result("fail_case", ProblemTestResultStatus.FAIL)],
+                agent_logs="agent log line",
+                eval_logs="eval log line",
+            ),
+        ),
+    )
+
+    await validator_main._run_evaluation_run(_evaluation_run(), "print('agent')")
+
+    assert _status_names(updates) == [
+        EvaluationRunStatus.initializing_agent,
+        EvaluationRunStatus.running_agent,
+        EvaluationRunStatus.initializing_eval,
+        EvaluationRunStatus.running_eval,
+        EvaluationRunStatus.finished,
+    ]
+    assert updates[-1]["extra"] == {
+        "patch": "PATCH",
+        "agent_logs": "agent log line",
+        "verifier_reward": 0.8,
+        "test_results": [{"name": "fail_case", "category": "default", "status": "fail"}],
+        "eval_logs": "eval log line",
+    }
+
+
+@pytest.mark.anyio
 async def test_run_evaluation_run_still_finishes_when_hook_posts_time_out(monkeypatch) -> None:
     capture = _install_update_capture(
         monkeypatch,

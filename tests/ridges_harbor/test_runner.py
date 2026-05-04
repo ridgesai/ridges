@@ -245,17 +245,6 @@ async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path
     assert FakeJob.last_instance.verification_started_hooks[1] is on_verification_started
 
 
-def test_populate_context_post_run_marks_context_handled(tmp_path: Path) -> None:
-    agent_path = tmp_path / "agent.py"
-    agent_path.write_text("def agent_main(input):\n    return 'patch'\n")
-    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path))
-    context = AgentContext()
-
-    miner.populate_context_post_run(context)
-
-    assert context.metadata == {}
-
-
 @pytest.mark.anyio
 async def test_exec_with_log_writes_agent_timeout_marker_on_cancellation(tmp_path: Path, monkeypatch) -> None:
     agent_path = tmp_path / "agent.py"

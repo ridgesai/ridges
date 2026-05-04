@@ -114,7 +114,7 @@ def test_setup_flow_saves_provider_when_one_is_configured(tmp_path: Path, monkey
     _write_agent(agent_file)
 
     monkeypatch.setattr(setup_commands_module, "prompt_workspace", lambda default: tmp_path / "ws")
-    monkeypatch.setattr(setup_commands_module, "_prompt_validated_agent_path", lambda workspace, default: agent_file)
+    monkeypatch.setattr(setup_commands_module, "prompt_validated_agent_path", lambda workspace, default: agent_file)
     monkeypatch.setattr(
         setup_commands_module,
         "configured_provider_statuses",
@@ -144,7 +144,7 @@ def test_setup_flow_can_save_custom_provider(tmp_path: Path, monkeypatch) -> Non
     _write_agent(agent_file)
 
     monkeypatch.setattr(setup_commands_module, "prompt_workspace", lambda default: tmp_path / "ws")
-    monkeypatch.setattr(setup_commands_module, "_prompt_validated_agent_path", lambda workspace, default: agent_file)
+    monkeypatch.setattr(setup_commands_module, "prompt_validated_agent_path", lambda workspace, default: agent_file)
     monkeypatch.setattr(
         setup_commands_module,
         "configured_provider_statuses",
@@ -173,7 +173,7 @@ def test_setup_flow_saves_partial_config_when_no_provider_is_configured(tmp_path
     workspace = tmp_path / "ws"
 
     monkeypatch.setattr(setup_commands_module, "prompt_workspace", lambda default: workspace)
-    monkeypatch.setattr(setup_commands_module, "_prompt_validated_agent_path", lambda workspace, default: agent_file)
+    monkeypatch.setattr(setup_commands_module, "prompt_validated_agent_path", lambda workspace, default: agent_file)
     monkeypatch.setattr(setup_commands_module, "configured_provider_statuses", lambda workspace: [])
     monkeypatch.setattr(setup_commands_module, "render_setup_preview", lambda config: None)
     monkeypatch.setattr(setup_commands_module, "prompt_confirm", lambda message, default=True: True)
@@ -198,7 +198,7 @@ def test_setup_command_recovers_from_legacy_inference_url_config(tmp_path: Path,
     _write_agent(agent_file)
 
     monkeypatch.setattr(setup_commands_module, "prompt_workspace", lambda default: tmp_path / "ws")
-    monkeypatch.setattr(setup_commands_module, "_prompt_validated_agent_path", lambda workspace, default: agent_file)
+    monkeypatch.setattr(setup_commands_module, "prompt_validated_agent_path", lambda workspace, default: agent_file)
     monkeypatch.setattr(
         setup_commands_module,
         "configured_provider_statuses",

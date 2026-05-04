@@ -20,7 +20,9 @@ from api.endpoints.statistics import router as statistics_router
 # NEW fixed endpoints
 from api.endpoints.validator import router as validator_router
 from api.loops.fetch_metagraph import fetch_metagraph_loop
-from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
+from api.loops.validator_heartbeat_timeout import (
+    validator_heartbeat_timeout_loop,
+)
 from api.src.endpoints.upload import router as upload_router
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.database import deinitialize_database, initialize_database
@@ -44,6 +46,7 @@ async def lifespan(app: FastAPI):
         region=config.AWS_REGION,
         access_key_id=config.AWS_ACCESS_KEY_ID,
         secret_access_key=config.AWS_SECRET_ACCESS_KEY,
+        _endpoint_url=config.S3_ENDPOINT_URL,
     )
 
     # Loops
