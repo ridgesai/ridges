@@ -27,7 +27,7 @@ def upgrade() -> None:
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
                 CREATE TYPE agentstatus AS ENUM (
                     'screening_1', 'failed_screening_1', 'screening_2',
-                    'failed_screening_2', 'evaluating', 'finished'
+                    'failed_screening_2', 'evaluating', 'finished', 'cancelled'
                 );
             END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationsetgroup') THEN
