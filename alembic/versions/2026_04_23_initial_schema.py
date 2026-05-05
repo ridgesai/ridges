@@ -27,7 +27,7 @@ def upgrade() -> None:
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'agentstatus') THEN
                 CREATE TYPE agentstatus AS ENUM (
                     'screening_1', 'failed_screening_1', 'screening_2',
-                    'failed_screening_2', 'evaluating', 'finished'
+                    'failed_screening_2', 'evaluating', 'finished', 'cancelled'
                 );
             END IF;
             IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'evaluationsetgroup') THEN
@@ -86,7 +86,6 @@ def upgrade() -> None:
             server_default=sa.text("NOW()"),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("miner_hotkey"),
     )
     op.create_index("idx_banned_hotkeys_miner_hotkey", "banned_hotkeys", ["miner_hotkey"])
 
@@ -162,8 +161,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["agent_id"], ["agents.agent_id"]),
-        sa.PrimaryKeyConstraint("agent_id"),
     )
+    op.create_index("idx_unapproved_agent_ids_agent_id", "unapproved_agent_ids", ["agent_id"], unique=True)
 
     op.create_table(
         "evaluations",
@@ -364,6 +363,36 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "failed_upload_refunds",
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
+        sa.Column("block_hash", sa.Text(), nullable=False),
+        sa.Column("amount", sa.BigInteger(), nullable=False),
+        sa.Column("tx_hash", sa.Text(), nullable=False),
+        sa.Column("upload_tx_hash", sa.Text(), nullable=False),
+        sa.Column("upload_block_hash", sa.Text(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
+        sa.Column("coldkey", sa.Text(), nullable=False),
+        sa.Column("upload_amount", sa.BigInteger(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
+    op.create_table(
         "agent_scores",
         sa.Column("agent_id", sa.UUID(), nullable=False),
         sa.Column("miner_hotkey", sa.Text(), nullable=False),
@@ -382,6 +411,7 @@ def upgrade() -> None:
         sa.Column("final_score", sa.Float(), nullable=False),
         sa.PrimaryKeyConstraint("agent_id"),
     )
+    op.create_index("idx_agent_scores_agent_id", "agent_scores", ["agent_id"], unique=True)
     op.create_index("idx_agent_scores_final_score", "agent_scores", ["final_score"])
     op.create_index("idx_agent_scores_created_at", "agent_scores", ["created_at"])
 
@@ -732,8 +762,10 @@ def downgrade() -> None:
 
     op.drop_index("idx_agent_scores_created_at", table_name="agent_scores")
     op.drop_index("idx_agent_scores_final_score", table_name="agent_scores")
+    op.drop_index("idx_agent_scores_agent_id", table_name="agent_scores")
     op.drop_table("agent_scores")
     op.drop_table("evaluation_payments")
+    op.drop_table("failed_upload_refunds")
     op.drop_table("approved_agents")
     op.drop_table("embeddings")
     op.drop_index(
@@ -761,6 +793,7 @@ def downgrade() -> None:
     op.drop_index("idx_evaluations_agent_id", table_name="evaluations")
     op.drop_index("idx_evaluations_id", table_name="evaluations")
     op.drop_table("evaluations")
+    op.drop_index("idx_unapproved_agent_ids_agent_id", table_name="unapproved_agent_ids")
     op.drop_table("unapproved_agent_ids")
     op.drop_table("benchmark_agent_ids")
     op.drop_table("upload_attempts")

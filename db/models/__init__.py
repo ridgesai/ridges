@@ -4,6 +4,7 @@ from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
 from db.models.inference import Embedding, Inference
 from db.models.payment import EvaluationPayment
+from db.models.refund import FailedUploadRefund
 from db.models.upload import UploadAttempt
 
 __all__ = [
@@ -18,6 +19,7 @@ __all__ = [
     "EvaluationRun",
     "EvaluationRunLog",
     "EvaluationSet",
+    "FailedUploadRefund",
     "Inference",
     "UnapprovedAgentId",
     "UploadAttempt",
