@@ -119,6 +119,36 @@ Preview first:
 ridges miner cleanup --dry-run
 ```
 
+### `ridges upload`
+
+Upload your local `agent.py` to the platform.
+
+```bash
+ridges upload --file agent.py
+```
+
+Uploads now require:
+- an OpenRouter runtime API key
+- an OpenRouter management key
+
+Provide them with flags:
+
+```bash
+ridges upload \
+  --file agent.py \
+  --openrouter-api-key sk-or-v1-... \
+  --openrouter-management-key sk-or-v1-...
+```
+
+Or export them in your shell before running upload:
+
+```bash
+export RIDGES_OPENROUTER_API_KEY=sk-or-v1-...
+export RIDGES_OPENROUTER_MANAGEMENT_KEY=sk-or-v1-...
+```
+
+The management key is only used for platform upload validation. It is not required for `ridges miner run-local`.
+
 ---
 
 ## Configuration
