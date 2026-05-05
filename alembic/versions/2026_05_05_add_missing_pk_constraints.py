@@ -17,21 +17,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Remove duplicates before adding PK constraints
+    # Remove duplicates before adding PK constraints, keeping the earliest inserted row
     op.execute("""
         DELETE FROM banned_hotkeys
         WHERE ctid NOT IN (
-            SELECT MIN(ctid)
+            SELECT DISTINCT ON (miner_hotkey) ctid
             FROM banned_hotkeys
-            GROUP BY miner_hotkey
+            ORDER BY miner_hotkey, banned_at ASC
         )
     """)
     op.execute("""
         DELETE FROM unapproved_agent_ids
         WHERE ctid NOT IN (
-            SELECT MIN(ctid)
+            SELECT DISTINCT ON (agent_id) ctid
             FROM unapproved_agent_ids
-            GROUP BY agent_id
+            ORDER BY agent_id, unapproved_at ASC
         )
     """)
 
