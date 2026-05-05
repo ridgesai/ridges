@@ -194,6 +194,7 @@ async def test_run_local_task_injects_provider_env_without_scaffold(tmp_path: Pa
         "EVALUATION_RUN_ID": "eval-run-1",
         "RIDGES_INFERENCE_PROVIDER": "openrouter",
         "RIDGES_INFERENCE_API_KEY": "secret",
+        "OPENROUTER_API_KEY": "secret",
         "RIDGES_INFERENCE_BASE_URL": "https://openrouter.ai/api/v1",
         "RIDGES_INFERENCE_EMBEDDING_BASE_URL": "https://openrouter.ai/api/v1",
         "AGENT_TIMEOUT": "30",
