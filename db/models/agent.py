@@ -95,3 +95,29 @@ class AgentScore(Base):
         sa.Index("idx_agent_scores_final_score", "final_score"),
         sa.Index("idx_agent_scores_created_at", "created_at"),
     )
+
+
+class AgentOpenRouterSecret(Base):
+    __tablename__ = "agent_openrouter_secrets"
+
+    agent_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("agents.agent_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    runtime_api_key_ciphertext: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    management_api_key_ciphertext: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    workspace_id: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    api_key_label: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    api_key_creator_user_id: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    validated_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("NOW()"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("NOW()"),
+    )

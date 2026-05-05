@@ -29,6 +29,7 @@ class EvaluationRun(Base):
     patch: Mapped[Optional[str]] = mapped_column(sa.Text)
     test_results: Mapped[Optional[Any]] = mapped_column(JSONB)
     verifier_reward: Mapped[Optional[float]] = mapped_column(sa.Double)
+    cost_usd: Mapped[Optional[float]] = mapped_column(sa.Double)
     error_code: Mapped[Optional[int]] = mapped_column(sa.Integer)
     error_message: Mapped[Optional[str]] = mapped_column(sa.Text)
     # No server_default — the application always supplies this explicitly.
