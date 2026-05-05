@@ -9,3 +9,13 @@ class PaymentAlreadyUsedError(HTTPException):
             status_code=402,
             detail="Agent ID already exists for this payment information.",
         )
+
+
+class PaymentRefunded(HTTPException):
+    """Raised when a payment that was refunded is being used for an agent upload."""
+
+    def __init__(self):
+        super().__init__(
+            status_code=402,
+            detail="This payment has been refunded and cannot be used for agent upload.",
+        )

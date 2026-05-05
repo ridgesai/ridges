@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from api import config
-from api.errors import PaymentAlreadyUsedError
+from api.errors import PaymentAlreadyUsedError, PaymentRefunded
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     check_agent_banned,
@@ -33,6 +33,7 @@ from queries.payments import (
     reserve_payment,
     retrieve_payment_by_hash,
 )
+from queries.refund import is_payment_refunded
 from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
 
@@ -184,6 +185,10 @@ async def post_agent(
             )
             if existing_payment is not None and existing_payment.agent_id is not None:
                 raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
+
+            if await is_payment_refunded(upload_block_hash=payment_block_hash):
+                logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
+                raise PaymentRefunded()
 
             # Retrieve payment details from the chain
             try:
