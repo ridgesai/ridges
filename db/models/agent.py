@@ -35,7 +35,6 @@ class Agent(Base):
 class BannedHotkey(Base):
     __tablename__ = "banned_hotkeys"
 
-    # TODO: There is no PK in the original schema, should we consider the minor hotkey as the PK here ?
     miner_hotkey: Mapped[str] = mapped_column(sa.Text, nullable=False, primary_key=True)
     banned_reason: Mapped[Optional[str]] = mapped_column(sa.Text)
     banned_at: Mapped[datetime] = mapped_column(
@@ -61,7 +60,6 @@ class BenchmarkAgentId(Base):
 class UnapprovedAgentId(Base):
     __tablename__ = "unapproved_agent_ids"
 
-    # TODO: The original schema defined it as a unique index, should we consider the agent_id as the PK here ?
     agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         sa.ForeignKey("agents.agent_id"),
@@ -91,6 +89,7 @@ class AgentScore(Base):
     final_score: Mapped[float] = mapped_column(sa.Float, nullable=False)
 
     __table_args__ = (
+        sa.Index("idx_agent_scores_agent_id", "agent_id", unique=True),
         sa.Index("idx_agent_scores_final_score", "final_score"),
         sa.Index("idx_agent_scores_created_at", "created_at"),
     )

@@ -86,7 +86,6 @@ def upgrade() -> None:
             server_default=sa.text("NOW()"),
             nullable=False,
         ),
-        sa.PrimaryKeyConstraint("miner_hotkey"),
     )
     op.create_index("idx_banned_hotkeys_miner_hotkey", "banned_hotkeys", ["miner_hotkey"])
 
@@ -162,8 +161,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["agent_id"], ["agents.agent_id"]),
-        sa.PrimaryKeyConstraint("agent_id"),
     )
+    op.create_index("idx_unapproved_agent_ids_agent_id", "unapproved_agent_ids", ["agent_id"], unique=True)
 
     op.create_table(
         "evaluations",
@@ -382,6 +381,7 @@ def upgrade() -> None:
         sa.Column("final_score", sa.Float(), nullable=False),
         sa.PrimaryKeyConstraint("agent_id"),
     )
+    op.create_index("idx_agent_scores_agent_id", "agent_scores", ["agent_id"], unique=True)
     op.create_index("idx_agent_scores_final_score", "agent_scores", ["final_score"])
     op.create_index("idx_agent_scores_created_at", "agent_scores", ["created_at"])
 
@@ -732,6 +732,7 @@ def downgrade() -> None:
 
     op.drop_index("idx_agent_scores_created_at", table_name="agent_scores")
     op.drop_index("idx_agent_scores_final_score", table_name="agent_scores")
+    op.drop_index("idx_agent_scores_agent_id", table_name="agent_scores")
     op.drop_table("agent_scores")
     op.drop_table("evaluation_payments")
     op.drop_table("approved_agents")
@@ -761,6 +762,7 @@ def downgrade() -> None:
     op.drop_index("idx_evaluations_agent_id", table_name="evaluations")
     op.drop_index("idx_evaluations_id", table_name="evaluations")
     op.drop_table("evaluations")
+    op.drop_index("idx_unapproved_agent_ids_agent_id", table_name="unapproved_agent_ids")
     op.drop_table("unapproved_agent_ids")
     op.drop_table("benchmark_agent_ids")
     op.drop_table("upload_attempts")
