@@ -46,7 +46,12 @@ def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir
     logger.debug(f"Cloning local repository from {local_repo_dir} to {target_dir}...")
 
     try:
-        subprocess.run(["git", "clone", abs_local_repo_dir, target_dir], capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["git", "clone", abs_local_repo_dir, target_dir],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to clone local repository from {abs_local_repo_dir} to {target_dir}")
         logger.error(f"Git clone exit code: {e.returncode}")
@@ -60,7 +65,13 @@ def clone_local_repo_at_commit(local_repo_dir: str, commit_hash: str, target_dir
     logger.debug(f"Checking out commit {commit_hash} in {target_dir}...")
 
     try:
-        subprocess.run(["git", "checkout", commit_hash], capture_output=True, text=True, check=True, cwd=target_dir)
+        subprocess.run(
+            ["git", "checkout", commit_hash],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir,
+        )
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to checkout commit {commit_hash} in {target_dir}")
         logger.error(f"Git checkout exit code: {e.returncode}")
@@ -89,7 +100,13 @@ def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir
     # Reset the repository to the specific commit
     logger.debug(f"Resetting local repository to commit {commit_hash} in {target_dir}...")
 
-    subprocess.run(["git", "reset", "--hard", commit_hash], capture_output=True, text=True, check=True, cwd=target_dir)
+    subprocess.run(
+        ["git", "reset", "--hard", commit_hash],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir,
+    )
 
     logger.debug(f"Reset local repository to commit {commit_hash} in {target_dir}")
 
@@ -103,7 +120,13 @@ def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir
     # Delete all branch refs (we'll use detached HEAD instead)
     # This removes references to future commits
     try:
-        branches_result = subprocess.run(["git", "branch"], capture_output=True, text=True, check=True, cwd=target_dir)
+        branches_result = subprocess.run(
+            ["git", "branch"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir,
+        )
         # Parse branch names (remove leading * and whitespace)
         branches = []
         for line in branches_result.stdout.strip().split("\n"):
@@ -139,17 +162,33 @@ def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir
 
     # Delete all tag refs (they might point to future commits)
     try:
-        tags_result = subprocess.run(["git", "tag", "-l"], capture_output=True, text=True, check=True, cwd=target_dir)
+        tags_result = subprocess.run(
+            ["git", "tag", "-l"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=target_dir,
+        )
         tags = [t.strip() for t in tags_result.stdout.strip().split("\n") if t.strip()]
         for tag in tags:
-            subprocess.run(["git", "tag", "-d", tag], capture_output=True, text=True, check=False, cwd=target_dir)
+            subprocess.run(
+                ["git", "tag", "-d", tag],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=target_dir,
+            )
     except subprocess.CalledProcessError:
         pass  # No tags to delete
 
     # Set HEAD to point directly to the commit (detached HEAD state)
     # This ensures HEAD points to the exact commit, not a branch
     subprocess.run(
-        ["git", "checkout", "--detach", commit_hash], capture_output=True, text=True, check=True, cwd=target_dir
+        ["git", "checkout", "--detach", commit_hash],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir,
     )
 
     # Prune unreachable objects and garbage collect to actually remove them
@@ -163,7 +202,11 @@ def reset_local_repo_to_commit(local_repo_dir: str, commit_hash: str, target_dir
     )
 
     subprocess.run(
-        ["git", "gc", "--prune=now", "--aggressive"], capture_output=True, text=True, check=True, cwd=target_dir
+        ["git", "gc", "--prune=now", "--aggressive"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=target_dir,
     )
 
     logger.debug(f"Removed future commits from {target_dir}")
@@ -186,7 +229,12 @@ def verify_commit_exists_in_local_repo(local_repo_dir: str, commit_hash: str) ->
         return False
 
     # Use `git cat-file -e` to verify that the commit exists
-    result = subprocess.run(["git", "cat-file", "-e", commit_hash], capture_output=True, text=True, cwd=local_repo_dir)
+    result = subprocess.run(
+        ["git", "cat-file", "-e", commit_hash],
+        capture_output=True,
+        text=True,
+        cwd=local_repo_dir,
+    )
 
     # `git cat-file -e` return codes:
     #     0: commit exists
@@ -205,19 +253,35 @@ def init_local_repo_with_initial_commit(local_repo_dir: str, commit_message: str
 
     # Initialize git repository
     logger.debug(f"Initializing git repository in {local_repo_dir}")
-    subprocess.run(["git", "init"], capture_output=True, text=True, check=True, cwd=local_repo_dir)
+    subprocess.run(
+        ["git", "init"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=local_repo_dir,
+    )
     logger.debug(f"Initialized git repository in {local_repo_dir}")
 
     # Add all files
     logger.debug(f"Adding all files in {local_repo_dir}")
-    subprocess.run(["git", "add", "."], capture_output=True, text=True, check=True, cwd=local_repo_dir)
+    subprocess.run(
+        ["git", "add", "."],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=local_repo_dir,
+    )
     logger.debug(f"Added all files in {local_repo_dir}")
 
     # Make initial commit
     logger.debug(f"Making initial commit in {local_repo_dir}: {commit_message}")
     try:
         subprocess.run(
-            ["git", "commit", "-m", commit_message], capture_output=True, text=True, check=True, cwd=local_repo_dir
+            ["git", "commit", "-m", commit_message],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=local_repo_dir,
         )
         logger.debug(f"Made initial commit in {local_repo_dir}: {commit_message}")
     except subprocess.CalledProcessError as e:
@@ -242,7 +306,12 @@ def reset_local_repo(local_repo_dir: str, commit_hash: str) -> None:
     logger.info(f"Fetched repository at {local_repo_dir}")
 
     logger.info(f"Resetting {local_repo_dir} to commit {commit_hash}...")
-    subprocess.run(["git", "reset", "--hard", commit_hash], text=True, check=True, cwd=local_repo_dir)
+    subprocess.run(
+        ["git", "reset", "--hard", commit_hash],
+        text=True,
+        check=True,
+        cwd=local_repo_dir,
+    )
     logger.info(f"Reset {local_repo_dir} to commit {commit_hash}")
 
 
@@ -255,7 +324,11 @@ def get_local_repo_commit_hash(local_repo_dir: str) -> str:
     """
 
     return subprocess.run(
-        ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True, cwd=local_repo_dir
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=local_repo_dir,
     ).stdout.strip()
 
 
