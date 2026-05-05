@@ -117,6 +117,8 @@ class LocalInferenceConfig:
             "RIDGES_INFERENCE_PROVIDER": normalized.provider,
             "RIDGES_INFERENCE_API_KEY": normalized.api_key,
         }
+        if normalized.provider == "openrouter":
+            env["OPENROUTER_API_KEY"] = normalized.api_key
         if normalized.base_url:
             env["RIDGES_INFERENCE_BASE_URL"] = normalized.base_url
         if normalized.embedding_base_url:
