@@ -82,7 +82,7 @@ if not AWS_REGION:
 
 RIDGES_AGENT_KEY_ENCRYPTION_KEY = os.getenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY")
 if not RIDGES_AGENT_KEY_ENCRYPTION_KEY:
-    logger.warning(
+    logger.fatal(
         "RIDGES_AGENT_KEY_ENCRYPTION_KEY is not set in .env; miner OpenRouter secret encryption/decryption "
         "will be unavailable until it is configured."
     )
