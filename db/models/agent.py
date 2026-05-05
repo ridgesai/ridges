@@ -35,6 +35,7 @@ class Agent(Base):
 class BannedHotkey(Base):
     __tablename__ = "banned_hotkeys"
 
+    # TODO: The field is defined as a PK, even though the original schema does not define it as such. This was done to make sure sql alchemy/alembic work correctly (every table needs a primary key) and a new migration will be built on a follow up PR to make sure the pk constraint is created on the DB
     miner_hotkey: Mapped[str] = mapped_column(sa.Text, nullable=False, primary_key=True)
     banned_reason: Mapped[Optional[str]] = mapped_column(sa.Text)
     banned_at: Mapped[datetime] = mapped_column(
@@ -60,6 +61,7 @@ class BenchmarkAgentId(Base):
 class UnapprovedAgentId(Base):
     __tablename__ = "unapproved_agent_ids"
 
+    # TODO: The field is defined as a PK, even though the original schema does not define it as such. This was done to make sure sql alchemy/alembic work correctly (every table needs a primary key) and a new migration will be built on a follow up PR to make sure the pk constraint is created on the DB
     agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         sa.ForeignKey("agents.agent_id"),
