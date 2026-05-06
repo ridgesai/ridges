@@ -194,7 +194,7 @@ def _confirm_payment(payment_method_details: dict) -> bool:
 def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentReceipt:
     from bittensor import Subtensor
 
-    subtensor = Subtensor(network=os.environ.get("SUBTENSOR_NETWORK", "test"))
+    subtensor = Subtensor(network=os.environ.get("SUBTENSOR_NETWORK", "finney"))
     payment_time = time.time()
     payment_payload = subtensor.substrate.compose_call(
         call_module="Balances",
