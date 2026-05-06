@@ -114,10 +114,7 @@ async def validate_openrouter_keys(
                 params={"workspace_id": workspace_id},
             )
             for key_row in keys_response.get("data") or []:
-                if (
-                    key_row.get("label") == api_key_label
-                    # and key_row.get("creator_user_id") == api_key_creator_user_id
-                ):
+                if key_row.get("label") == api_key_label and key_row.get("creator_user_id") == api_key_creator_user_id:
                     matching_workspace_ids.append(workspace_id)
 
         if not matching_workspace_ids:
