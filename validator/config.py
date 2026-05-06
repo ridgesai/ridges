@@ -189,9 +189,4 @@ RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true
 
 logger.info("Execution Backend: harbor")
 
-RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
-RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
-
-logger.info("Execution Backend: harbor")
-
 logger.info("===============================")

@@ -11,7 +11,7 @@ Models are defined in the `db/models` submodule, using SQLAlchemy's ORM. Each mo
 
 We are using Alembic for database migrations. The migration files are stored in the `alembic/versions` directory. 
 
-At startup both the api and the validator execute the `run_migrations()` method as part of the `initialize_database()` process, which ensures that the database schema is up to date with the latest migration files. If something goes wrong during the migration process, the application will fail to start and log the error.
+At startup the platform executes the `run_migrations()` method as part of the `initialize_database()` process, which ensures that the database schema is up to date with the latest migration files. If something goes wrong during the migration process, the application will fail to start and log the error.
 
 ### Managing migrations
 
