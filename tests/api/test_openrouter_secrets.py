@@ -468,6 +468,7 @@ def _patch_validator_dependencies(
     agent_id,
     validator_hotkey: str,
     openrouter_secrets,
+    created_evaluations: list | None = None,
     updated_runs: list[EvaluationRun] | None = None,
     handled_evaluations: list | None = None,
 ):
@@ -487,6 +488,8 @@ def _patch_validator_dependencies(
         return "print('agent')\n"
 
     async def fake_create_bundle(_agent_id, _validator_hotkey):
+        if created_evaluations is not None:
+            created_evaluations.append((_agent_id, _validator_hotkey))
         return evaluation, evaluation_runs
 
     async def fake_generate_upload_url(_s3_key: str):
@@ -601,9 +604,12 @@ async def test_validator_request_evaluation_allows_missing_openrouter_record(mon
         AgentKeyEncryptionConfigError("missing master key"),
     ],
 )
-async def test_validator_request_evaluation_continues_when_secret_is_unreadable(monkeypatch, secret_error) -> None:
+async def test_validator_request_evaluation_skips_assignment_when_secret_is_unreadable(
+    monkeypatch, secret_error
+) -> None:
     agent_id = uuid4()
     validator_hotkey = "screener-1-test"
+    created_evaluations: list = []
     updated_runs: list[EvaluationRun] = []
     handled_evaluations: list = []
     _patch_validator_dependencies(
@@ -611,6 +617,7 @@ async def test_validator_request_evaluation_continues_when_secret_is_unreadable(
         agent_id=agent_id,
         validator_hotkey=validator_hotkey,
         openrouter_secrets=secret_error,
+        created_evaluations=created_evaluations,
         updated_runs=updated_runs,
         handled_evaluations=handled_evaluations,
     )
@@ -627,8 +634,9 @@ async def test_validator_request_evaluation_continues_when_secret_is_unreadable(
         validator=validator,
     )
 
-    assert response is not None
-    assert response.openrouter_config is None
-    assert validator.current_evaluation_id is not None
+    assert response is None
+    assert validator.current_evaluation_id is None
+    assert validator.current_agent is None
+    assert created_evaluations == []
     assert updated_runs == []
     assert handled_evaluations == []
