@@ -33,6 +33,7 @@ dev = [
     "pytest>=8.4.2",
     "pre-commit>=4.6.0",
     "ruff>=0.15.7",
+    "testcontainers[postgres]>=4.14.2",
 ]
 
 [project.scripts]
