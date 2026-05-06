@@ -389,8 +389,10 @@ async def validator_request_evaluation(
                     f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
                     f"configuration: {exc}"
                 )
+                return None
             except AgentKeyDecryptError as exc:
                 logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
+                return None
             else:
                 if openrouter_secrets is not None:
                     openrouter_config = OpenRouterRuntimeConfig(
