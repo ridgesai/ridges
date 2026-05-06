@@ -363,6 +363,36 @@ def upgrade() -> None:
     )
 
     op.create_table(
+        "failed_upload_refunds",
+        sa.Column(
+            "id",
+            sa.UUID(),
+            server_default=sa.text("gen_random_uuid()"),
+            nullable=False,
+        ),
+        sa.Column("block_hash", sa.Text(), nullable=False),
+        sa.Column("amount", sa.BigInteger(), nullable=False),
+        sa.Column("tx_hash", sa.Text(), nullable=False),
+        sa.Column("upload_tx_hash", sa.Text(), nullable=False),
+        sa.Column("upload_block_hash", sa.Text(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("NOW()"),
+            nullable=False,
+        ),
+        sa.Column("coldkey", sa.Text(), nullable=False),
+        sa.Column("upload_amount", sa.BigInteger(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+
+    op.create_table(
         "agent_scores",
         sa.Column("agent_id", sa.UUID(), nullable=False),
         sa.Column("miner_hotkey", sa.Text(), nullable=False),
@@ -735,6 +765,7 @@ def downgrade() -> None:
     op.drop_index("idx_agent_scores_agent_id", table_name="agent_scores")
     op.drop_table("agent_scores")
     op.drop_table("evaluation_payments")
+    op.drop_table("failed_upload_refunds")
     op.drop_table("approved_agents")
     op.drop_table("embeddings")
     op.drop_index(

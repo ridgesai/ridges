@@ -1,6 +1,7 @@
 """Git utilities for managing repository operations."""
 
 import os
+import pathlib
 import subprocess
 
 import utils.logger as logger
@@ -331,4 +332,4 @@ def get_local_repo_commit_hash(local_repo_dir: str) -> str:
     ).stdout.strip()
 
 
-COMMIT_HASH = "2220df6d34599df29d67fc028b79d879957c1c6c"
+COMMIT_HASH = get_local_repo_commit_hash(pathlib.Path(__file__).parent.parent)

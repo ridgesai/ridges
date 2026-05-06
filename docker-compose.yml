@@ -10,8 +10,6 @@ services:
       POSTGRES_DB: 
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # TODO Remove this once the alembic logic is merged
-      - ./api/src/backend/postgres_schema.sql:/docker-entrypoint-initdb.d/00_schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ridges -d ridges"]
       interval: 5s
