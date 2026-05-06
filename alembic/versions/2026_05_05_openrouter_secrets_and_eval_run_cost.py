@@ -1,7 +1,7 @@
 """add openrouter secrets and persisted evaluation run cost
 
 Revision ID: 34e1f2c7a9bd
-Revises: b8d3f6e2c9a5
+Revises: e3f8c1d4a2b9
 Create Date: 2026-05-05 12:30:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "34e1f2c7a9bd"
-down_revision: Union[str, None] = "b8d3f6e2c9a5"
+down_revision: Union[str, None] = "e3f8c1d4a2b9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
