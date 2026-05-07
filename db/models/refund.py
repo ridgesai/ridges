@@ -21,6 +21,7 @@ class FailedUploadRefund(Base, CreatedAtMixin):
     tx_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
     upload_tx_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
     upload_block_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    payment_extrinsic_index: Mapped[str] = mapped_column(sa.Text, nullable=False)
     updated_at: Mapped[sa.DateTime] = mapped_column(
         sa.TIMESTAMP(timezone=True),
         nullable=False,
