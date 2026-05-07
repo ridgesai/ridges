@@ -41,6 +41,20 @@ def test_happy_path_returns_execution_result(tmp_path: Path) -> None:
     assert result.eval_logs == "verifier output"
 
 
+def test_proxy_usage_total_cost_is_attached_to_execution_result(tmp_path: Path) -> None:
+    summary = make_summary(
+        tmp_path,
+        test_results=successful_test_results(),
+        eval_log="verifier output",
+        verifier_result=successful_verifier_result(),
+    )
+    write_json(summary.job_dir / "proxy_data" / "proxy_usage.json", {"total_cost_usd": 1.25})
+
+    result = result_from_summary(summary)
+
+    assert result.cost_usd == 1.25
+
+
 def test_read_trial_snapshot_returns_patch_and_surfaced_agent_logs(tmp_path: Path) -> None:
     summary = make_summary(
         tmp_path,

@@ -1,4 +1,6 @@
 httpx
+openai
+openrouter
 dill
 nltk
 toml

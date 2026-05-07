@@ -1,4 +1,4 @@
-from db.models.agent import Agent, AgentScore, BannedHotkey, BenchmarkAgentId, UnapprovedAgentId
+from db.models.agent import Agent, AgentOpenRouterSecret, AgentScore, BannedHotkey, BenchmarkAgentId, UnapprovedAgentId
 from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
@@ -9,6 +9,7 @@ from db.models.upload import UploadAttempt
 
 __all__ = [
     "Agent",
+    "AgentOpenRouterSecret",
     "AgentScore",
     "ApprovedAgent",
     "BannedHotkey",

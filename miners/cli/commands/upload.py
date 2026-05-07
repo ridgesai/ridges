@@ -46,11 +46,25 @@ class PaymentReceipt:
     payment_time: float
 
 
+@dataclass(frozen=True, slots=True)
+class OpenRouterUploadCredentials:
+    runtime_api_key: str
+    management_key: str
+
+
 def get_or_prompt(key: str, prompt: str, default: Optional[str] = None) -> str:
     """Get a value from env or ask interactively."""
     value = os.getenv(key)
     if not value:
         value = Prompt.ask(f"🎯 {prompt}", default=default) if default else Prompt.ask(f"🎯 {prompt}")
+    return value
+
+
+def get_secret_or_prompt(key: str, prompt: str) -> str:
+    """Get a secret from env or ask interactively without echoing input."""
+    value = (os.getenv(key) or "").strip()
+    if not value:
+        value = Prompt.ask(f"🔐 {prompt}", password=True).strip()
     return value
 
 
@@ -112,13 +126,40 @@ def _build_pending_upload(*, wallet, name: str, version_num: int, content_hash: 
     )
 
 
-def _check_upload_allowed(client: httpx.Client, *, target: UploadTarget, pending: PendingUpload) -> None:
+def _resolve_openrouter_upload_credentials(
+    *,
+    openrouter_api_key: Optional[str],
+    openrouter_management_key: Optional[str],
+) -> OpenRouterUploadCredentials:
+    runtime_api_key = (openrouter_api_key or "").strip() or get_secret_or_prompt(
+        "RIDGES_OPENROUTER_API_KEY",
+        "Enter your OpenRouter runtime API key",
+    )
+    management_key = (openrouter_management_key or "").strip() or get_secret_or_prompt(
+        "RIDGES_OPENROUTER_MANAGEMENT_KEY",
+        "Enter your OpenRouter management key",
+    )
+    return OpenRouterUploadCredentials(
+        runtime_api_key=runtime_api_key,
+        management_key=management_key,
+    )
+
+
+def _check_upload_allowed(
+    client: httpx.Client,
+    *,
+    target: UploadTarget,
+    pending: PendingUpload,
+    credentials: OpenRouterUploadCredentials,
+) -> None:
     check_payload = {
         "public_key": pending.public_key,
         "file_info": pending.file_info,
         "signature": pending.signature,
         "name": pending.name,
         "payment_time": time.time(),
+        "openrouter_api_key": credentials.runtime_api_key,
+        "openrouter_management_key": credentials.management_key,
     }
     response = client.post(
         f"{target.api_url}/upload/agent/check",
@@ -185,7 +226,12 @@ def _print_payment_receipt(receipt: PaymentReceipt) -> None:
     console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_index}\n")
 
 
-def _upload_payload(*, pending: PendingUpload, receipt: PaymentReceipt) -> dict[str, str | int | float]:
+def _upload_payload(
+    *,
+    pending: PendingUpload,
+    receipt: PaymentReceipt,
+    credentials: OpenRouterUploadCredentials,
+) -> dict[str, str | int | float]:
     return {
         "public_key": pending.public_key,
         "file_info": pending.file_info,
@@ -194,6 +240,8 @@ def _upload_payload(*, pending: PendingUpload, receipt: PaymentReceipt) -> dict[
         "payment_block_hash": receipt.block_hash,
         "payment_extrinsic_index": receipt.extrinsic_index,
         "payment_time": receipt.payment_time,
+        "openrouter_api_key": credentials.runtime_api_key,
+        "openrouter_management_key": credentials.management_key,
     }
 
 
@@ -238,7 +286,8 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
 @click.command(
     short_help="Upload a miner agent to Ridges.",
     help=format_help(
-        "Upload a local agent.py to the Ridges API to enter the competition.",
+        "Upload a local agent.py to the Ridges API to enter the competition. "
+        "Uploads require both an OpenRouter runtime API key and an OpenRouter management key.",
         "ridges upload --file agent.py",
         "ridges upload --file agent.py --coldkey-name miner --hotkey-name default",
     ),
@@ -246,8 +295,23 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
 @click.option("--file", help="Path to agent.py file")
 @click.option("--coldkey-name", help="Coldkey name")
 @click.option("--hotkey-name", help="Hotkey name")
+@click.option(
+    "--openrouter-api-key",
+    help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
+)
+@click.option(
+    "--openrouter-management-key",
+    help="OpenRouter management key. Falls back to RIDGES_OPENROUTER_MANAGEMENT_KEY or an interactive prompt.",
+)
 @click.pass_context
-def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: Optional[str]):
+def upload(
+    ctx,
+    file: Optional[str],
+    coldkey_name: Optional[str],
+    hotkey_name: Optional[str],
+    openrouter_api_key: Optional[str],
+    openrouter_management_key: Optional[str],
+):
     """Upload a miner agent to the Ridges API."""
     from bittensor_wallet.wallet import Wallet
 
@@ -259,6 +323,10 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
 
     file = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
     target = _read_upload_target(api_url, file)
+    credentials = _resolve_openrouter_upload_credentials(
+        openrouter_api_key=openrouter_api_key,
+        openrouter_management_key=openrouter_management_key,
+    )
     _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
 
     try:
@@ -274,7 +342,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
                 version_num=version_num,
                 content_hash=target.content_hash,
             )
-            _check_upload_allowed(client, target=target, pending=pending)
+            _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
 
             payment_method_details = _fetch_eval_pricing(client, api_url=target.api_url)
             if not _confirm_payment(payment_method_details):
@@ -284,7 +352,7 @@ def upload(ctx, file: Optional[str], coldkey_name: Optional[str], hotkey_name: O
             receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
             _print_payment_receipt(receipt)
 
-            payload = _upload_payload(pending=pending, receipt=receipt)
+            payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
             response = _submit_upload(client, target=target, payload=payload)
             _handle_upload_result(response, name=name)
 
