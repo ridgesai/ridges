@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import validator.main as validator_main
+from api.endpoints.validator_models import ValidatorUpdateEvaluationRunRequest
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
@@ -44,10 +45,20 @@ def _install_update_capture(
             remaining_failures[updated_status] -= 1
             raise httpx.ConnectTimeout(f"timeout posting {updated_status.value}")
 
+        request = ValidatorUpdateEvaluationRunRequest(
+            evaluation_run_id=evaluation_run_id,
+            updated_status=updated_status,
+            **{k: v for k, v in (extra or {}).items() if v is not None},
+        )
+
         capture["updates"].append(
             {
                 "status": updated_status,
-                "extra": dict(extra or {}),
+                "extra": request.model_dump(
+                    mode="json",
+                    exclude={"evaluation_run_id", "updated_status"},
+                    exclude_none=True,
+                ),
                 "timeout": timeout,
                 "evaluation_run_id": evaluation_run_id,
                 "problem_name": problem_name,

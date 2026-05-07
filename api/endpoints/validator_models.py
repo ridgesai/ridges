@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from models.agent import Agent
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRunStatus
+from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResult
 from utils.system_metrics import SystemMetrics
 
@@ -54,6 +55,7 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
+    openrouter_config: OpenRouterRuntimeConfig | None = None
 
 
 class ValidatorTaskDownloadUrlRequest(BaseModel):
@@ -85,6 +87,7 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
 
     error_code: Optional[int] = None
     error_message: Optional[str] = None
+    cost_usd: Optional[float] = None
 
 
 class ValidatorUpdateEvaluationRunResponse(BaseModel):

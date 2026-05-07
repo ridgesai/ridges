@@ -9,6 +9,7 @@ from execution.errors import EvaluationRunException
 from execution.types import TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
+from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, SETUP_LOG_FILENAME
 
 from .helpers import make_summary, successful_verifier_result, valid_execution_spec, write
@@ -219,7 +220,7 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results")
+    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results", max_cost_usd=12.5)
     evaluation_run_id = uuid4()
 
     result = await engine.evaluate(
@@ -228,6 +229,12 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
         execution_spec=valid_execution_spec(),
         agent_path=agent_path,
         agent_code=None,
+        openrouter_config=OpenRouterRuntimeConfig(
+            api_key="sk-or-v1-secret",
+            management_key="sk-or-mgmt-secret",
+            workspace_id="workspace-1",
+            expected_api_key_sha256="expected-hash",
+        ),
     )
 
     assert result.backend == "harbor"
@@ -237,6 +244,13 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     assert captured["evaluation_run_id"] == str(evaluation_run_id)
     assert captured["results_dir"] == (tmp_path / "results").resolve()
     assert captured["job_name"] == f"update-status-file__{evaluation_run_id}"
+    assert captured["openrouter_config"] == OpenRouterRuntimeConfig(
+        api_key="sk-or-v1-secret",
+        management_key="sk-or-mgmt-secret",
+        workspace_id="workspace-1",
+        expected_api_key_sha256="expected-hash",
+    )
+    assert captured["max_cost_usd"] == 12.5
 
 
 @pytest.mark.anyio
