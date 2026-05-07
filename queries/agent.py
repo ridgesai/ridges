@@ -289,16 +289,45 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 
 @db_operation
 async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
+    """Retrieve the top agents.
+
+    Agents are ordered by the score they got on "Validator" runs, then by their average running time on "Validator" runs, then by their creation time.
+
+    You can specify the number of results to return and the page number (for pagination).
+
+    Parameters
+    ----------
+    conn : DatabaseConnection
+        Database connection to use for the query
+    number_of_agents : int, optional
+        Number of agents to return, by default 10
+    page : int, optional
+        Page number for pagination, by default 1
+
+    Returns
+    -------
+    list[AgentScored]
+        List of top agents with their scores.
+    """
     # TODO ADAM: this query was supposed to be fixed to remove the pagination concept
     # TODO ADAM: maybe edge case bugs here if pagenum is 0,negative,or too high etc
     offset = (page - 1) * number_of_agents
 
     results = await conn.fetch(
         """
-        select * from agent_scores 
-        where set_id = (select max(set_id) from evaluation_sets)
-        and agent_id not in (select agent_id from benchmark_agent_ids)
-        order by round(final_score::numeric, 6) desc, created_at asc
+        select ass.*
+        from agent_scores ass
+        left join lateral (
+            select avg(eh.avg_running_secs) as avg_running_secs
+            from evaluations_hydrated eh
+            where eh.agent_id             = ass.agent_id
+              and eh.set_id               = ass.set_id
+              and eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+              and eh.status               = 'success'::EvaluationStatus
+        ) rt on true
+        where ass.set_id = (select max(set_id) from evaluation_sets)
+        and ass.agent_id not in (select agent_id from benchmark_agent_ids)
+        order by round(ass.final_score::numeric, 6) desc, rt.avg_running_secs asc nulls last, ass.created_at asc
         limit $1 offset $2
         """,
         number_of_agents,
