@@ -22,6 +22,7 @@ class ExecutionResult:
     agent_logs: str
     eval_logs: str
     job_dir: Path | None = None
+    cost_usd: float | None = None
 
 
 @dataclass(slots=True, frozen=True)
