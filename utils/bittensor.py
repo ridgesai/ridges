@@ -1,7 +1,4 @@
-import asyncio
-import json
-import os
-from typing import Set
+from typing import TYPE_CHECKING
 
 from bittensor.core.async_subtensor import AsyncSubtensor
 from bittensor_wallet.keypair import Keypair
@@ -9,54 +6,117 @@ from bittensor_wallet.keypair import Keypair
 import api.config as config
 import utils.logger as logger
 
-subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)
-
-REGISTERED_HOTKEYS_FILE = os.path.join(os.path.dirname(__file__), "registered_hotkeys.json")
-
-
-async def fetch_and_save_registered_hotkeys() -> None:
-    try:
-        metagraph = await subtensor.metagraph(netuid=config.NETUID)
-        registered_hotkeys = [neuron.hotkey for neuron in metagraph.neurons]
-
-        with open(REGISTERED_HOTKEYS_FILE, "w") as f:
-            json.dump(registered_hotkeys, f, indent=2)
-
-        logger.info(f"Successfully saved {len(registered_hotkeys)} registered hotkeys to {REGISTERED_HOTKEYS_FILE}")
-    except Exception as e:
-        logger.error(f"Error fetching and saving registered hotkeys: {e}")
-        raise
+if TYPE_CHECKING:
+    from async_substrate_interface import AsyncSubstrateInterface
+    from async_substrate_interface.substrate_addons import RetryAsyncSubstrate
+    from bittensor.core.async_subtensor import AsyncSubtensor
+    from bittensor.utils.balance import Balance
 
 
-def load_registered_hotkeys() -> Set[str]:
-    try:
-        if not os.path.exists(REGISTERED_HOTKEYS_FILE):
-            logger.warning(f"Registered hotkeys file not found: {REGISTERED_HOTKEYS_FILE}")
-            return set()
+class SubtensorClient:
+    """Subtensor client for interacting with the Subtensor network. Provides methods to check hotkey registration, get hotkey owner, and retrieve wallet balance.
 
-        with open(REGISTERED_HOTKEYS_FILE, "r") as f:
-            hotkeys_list = json.load(f)
+    This client is designed to be initialized once and used throughout the application. It maintains a connection to the Subtensor network and provides convenient methods for common operations.
 
-        return set(hotkeys_list)
-    except Exception as e:
-        logger.error(f"Error loading registered hotkeys from {REGISTERED_HOTKEYS_FILE}: {e}")
-        return set()
+    Example usage:
+        subtensor_client = SubtensorClient()
+        await subtensor_client.initialize()
 
+        hotkey = "5F3sa2TJAWMqDhXG6jhV4N8ko9rLxwYQqvM1uYjZqLh9VJ"
+        is_registered = await subtensor_client.is_hotkey_registered(hotkey)
+        print(f"Is hotkey registered? {is_registered}")
 
-async def check_if_hotkey_is_registered(hotkey: str) -> bool:
-    registered_hotkeys = load_registered_hotkeys()
+        owner = await subtensor_client.get_hotkey_owner(hotkey)
+        print(f"Hotkey owner: {owner}")
 
-    # If no hotkeys loaded from JSON, fall back to fetching from metagraph
-    if not registered_hotkeys:
-        logger.warning("No registered hotkeys found in JSON file, falling back to metagraph fetch")
-        metagraph = await subtensor.metagraph(netuid=config.NETUID)
-        registered_hotkeys = {neuron.hotkey for neuron in metagraph.neurons}
+        balance = await subtensor_client.get_balance(owner)
+        print(f"Wallet balance: {balance}")
 
-    return hotkey in registered_hotkeys
+        await subtensor_client.close()
+    """
 
+    def __init__(self) -> None:
+        self._subtensor: AsyncSubtensor | None = None
 
-# async def check_if_hotkey_is_registered(hotkey: str) -> bool:
-#     return await subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
+    async def initialize(self) -> None:
+        """Initialize connection to the Subtensor network."""
+        self._subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK)
+        await self._subtensor.initialize()
+        logger.info("Subtensor connection initialized")
+
+    async def close(self) -> None:
+        """Close connection to the Subtensor network."""
+        if self._subtensor:
+            await self._subtensor.close()
+            self._subtensor = None
+            logger.info("Subtensor connection closed")
+
+    async def is_hotkey_registered(self, hotkey: str) -> bool:
+        """Check if provided hotkey is registered on the
+        configured subnet.
+
+        Parameters
+        ----------
+        hotkey : str
+            Hotkey to check if it is registered on the subnet.
+
+        Returns
+        -------
+        bool
+            Returns True if the hotkey is registered on the subnet, False otherwise.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        logger.info(f"Checking if hotkey {hotkey} is registered on subnet {config.NETUID}...")
+        result = await self._subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
+        logger.info(f"Hotkey {hotkey} is {'registered' if result else 'not registered'} on subnet {config.NETUID}")
+        return result
+
+    async def get_hotkey_owner(self, hotkey: str, block: int | None = None) -> str | None:
+        """Retrieve the owner of a given hotkey at a specific block (or latest if block is None).
+
+        Parameters
+        ----------
+        hotkey : str
+            Hotkey for which to retrieve the owner.
+        block : int | None, optional
+            Block number at which to retrieve the owner, by default None.
+
+        Returns
+        -------
+        str | None
+            The owner of the specified hotkey, or None if not found.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block)
+
+    async def get_balance(self, address: str) -> "Balance":
+        """Retrieve the balance of a wallet with a specific
+        address.
+
+        Parameters
+        ----------
+        address : str
+            Wallet address.
+
+        Returns
+        -------
+        Balance
+            Wallet balance object.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.get_balance(address=address)
+
+    @property
+    def substrate(self) -> AsyncSubstrateInterface | RetryAsyncSubstrate:
+        """Retrieve the underlying substrate client for direct access to substrate methods.
+
+        Returns
+        -------
+        AsyncSubtensor | RetryAsyncSubstrate
+            The underlying substrate client instance.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return self._subtensor.substrate
 
 
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
@@ -70,5 +130,5 @@ def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str
         return False
 
 
-if __name__ == "__main__":
-    asyncio.run(fetch_and_save_registered_hotkeys())
+# Module-level singleton — connected only after initialize() is called from the FastAPI lifespan
+subtensor_client = SubtensorClient()
