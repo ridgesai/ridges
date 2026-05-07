@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from api import config
+from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     check_agent_banned,
@@ -27,6 +28,7 @@ from queries.agent import (
 )
 from queries.banned_hotkey import get_banned_hotkey
 from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
+from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import subtensor_client
 from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
@@ -78,6 +80,10 @@ async def check_agent_post(
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
+    openrouter_management_key: str = Form(
+        ..., description="OpenRouter management key used to validate workspace privacy settings"
+    ),
 ) -> AgentUploadResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
@@ -99,6 +105,10 @@ async def check_agent_post(
             status_code=402,
             detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO.",
         )
+    await validate_openrouter_keys(
+        openrouter_api_key=openrouter_api_key,
+        openrouter_management_key=openrouter_management_key,
+    )
     return AgentUploadResponse(status="success", message="Agent check successful")
 
 
@@ -127,6 +137,10 @@ async def post_agent(
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
     payment_time: float = Form(..., description="Timestamp of the payment"),
+    openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
+    openrouter_management_key: str = Form(
+        ..., description="OpenRouter management key used to validate workspace privacy settings"
+    ),
 ) -> AgentUploadResponse:
     """
     Upload a new agent version for evaluation
@@ -241,6 +255,11 @@ async def post_agent(
                     detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}",
                 )
 
+        validated_openrouter_keys = await validate_openrouter_keys(
+            openrouter_api_key=openrouter_api_key,
+            openrouter_management_key=openrouter_management_key,
+        )
+
         agent_text = (await agent_file.read()).decode("utf-8")
 
         hotkey_lock = await get_hotkey_lock(miner_hotkey)
@@ -253,6 +272,9 @@ async def post_agent(
 
             if prod and latest_agent_created_at_in_latest_set_id:
                 check_rate_limit(latest_agent_created_at_in_latest_set_id)
+
+            encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
+            encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
             agent = Agent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
@@ -262,7 +284,16 @@ async def post_agent(
                 status=AgentStatus.screening_1,
                 ip_address=request.client.host if request.client else None,
             )
-            await create_agent(agent, agent_text)
+            await create_agent(
+                agent,
+                agent_text,
+                runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                openrouter_validated_at=validated_openrouter_keys.validated_at,
+            )
 
         if prod:
             await record_evaluation_payment(

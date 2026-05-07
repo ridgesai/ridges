@@ -80,6 +80,13 @@ AWS_REGION = os.getenv("AWS_REGION")
 if not AWS_REGION:
     logger.fatal("AWS_REGION is not set in .env")
 
+RIDGES_AGENT_KEY_ENCRYPTION_KEY = os.getenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY")
+if not RIDGES_AGENT_KEY_ENCRYPTION_KEY:
+    logger.fatal(
+        "RIDGES_AGENT_KEY_ENCRYPTION_KEY is not set in .env; miner OpenRouter secret encryption/decryption "
+        "will be unavailable until it is configured."
+    )
+
 
 # Load S3 configuration
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")

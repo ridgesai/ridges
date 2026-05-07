@@ -11,6 +11,7 @@ from harbor.agents.installed.base import NonZeroAgentExitCodeError
 from harbor.models.agent.context import AgentContext
 
 import ridges_harbor.runner as runner_module
+from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import RUN_LOG_FILENAME, SETUP_LOG_FILENAME
 from ridges_harbor.agents import MinerRuntimeError, RidgesMinerAgent
 from ridges_harbor.runner import _run_task_dir
@@ -199,16 +200,58 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "RIDGES_TRIAL_ID": FakeJob.created_configs[0].environment.env["RIDGES_TRIAL_ID"],
         "RIDGES_HARBOR_UPSTREAM_URL": "http://127.0.0.1:1234",
         "RIDGES_HARBOR_UPSTREAM_HOST": "127.0.0.1",
+        "RIDGES_EVALUATION_RUN_ID": "eval-run-1",
+        "RIDGES_MAX_COST_USD": "999999",
+        "RIDGES_PROXY_DATA_DIR": str(results_dir / "job-1" / "proxy_data"),
+        "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
+        "RIDGES_OPENROUTER_WORKSPACE_ID": "",
+        "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",
         "DOCKER_BUILDKIT": os.environ.get("DOCKER_BUILDKIT", "0"),
         "COMPOSE_DOCKER_CLI_BUILD": os.environ.get("COMPOSE_DOCKER_CLI_BUILD", "0"),
         "COMPOSE_BAKE": os.environ.get("COMPOSE_BAKE", "false"),
     }
+    assert (results_dir / "job-1" / "proxy_data").is_dir()
     assert len(FakeJob.last_instance.agent_started_hooks) == 0
     assert len(FakeJob.last_instance.verification_started_hooks) == 1
     assert len(FakeJob.last_instance.ended_hooks) == 0
     assert summary.trial_result is FakeJob.last_instance._trial_result
     assert summary.trial_result.exception_info.occurred_at == "2026-04-09T09:14:51.454327"
     assert os.environ == original_environ
+
+
+@pytest.mark.anyio
+async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path: Path, monkeypatch) -> None:
+    _install_fake_harbor(monkeypatch)
+
+    task_dir = tmp_path / "dataset" / "update-status-file"
+    task_dir.mkdir(parents=True)
+    results_dir = tmp_path / "results"
+
+    await _run_task_dir(
+        task_dir=task_dir,
+        task_name="update-status-file",
+        evaluation_run_id="eval-run-2",
+        agent_path=tmp_path / "agent.py",
+        agent_timeout_sec=30.0,
+        upstream_url="http://127.0.0.1:1234",
+        upstream_host="127.0.0.1",
+        results_dir=results_dir,
+        debug=False,
+        job_name="job-2",
+        openrouter_config=OpenRouterRuntimeConfig(
+            api_key="sk-or-v1-secret",
+            management_key="sk-or-mgmt-secret",
+            workspace_id="workspace-1",
+            expected_api_key_sha256="expected-hash",
+        ),
+        max_cost_usd=12.5,
+    )
+
+    assert FakeJob.created_configs[0].agents[0].env["OPENROUTER_API_KEY"] == "sk-or-v1-secret"
+    assert FakeJob.created_configs[0].environment.env["RIDGES_MAX_COST_USD"] == "12.5"
+    assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_MANAGEMENT_KEY"] == "sk-or-mgmt-secret"
+    assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_WORKSPACE_ID"] == "workspace-1"
+    assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256"] == "expected-hash"
 
 
 @pytest.mark.anyio

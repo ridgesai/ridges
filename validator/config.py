@@ -186,6 +186,7 @@ logger.info(f"Max Concurrent Evaluation Runs: {MAX_CONCURRENT_EVALUATION_RUNS}")
 
 RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
 RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
+RIDGES_MAX_COST_USD = float(os.getenv("RIDGES_MAX_COST_USD", "9999"))
 
 logger.info("Execution Backend: harbor")
 

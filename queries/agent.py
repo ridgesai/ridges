@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID
@@ -7,8 +8,19 @@ import utils.logger as logger
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
+from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+
+
+@dataclass(slots=True, frozen=True)
+class AgentOpenRouterSecrets:
+    runtime_api_key: str
+    management_api_key: str
+    workspace_id: str
+    api_key_label: str
+    api_key_creator_user_id: str
+    validated_at: datetime
 
 
 @db_operation
@@ -123,20 +135,93 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 
 
 @db_operation
-async def create_agent(conn: DatabaseConnection, agent: Agent, agent_text: str) -> None:
+async def create_agent(
+    conn: DatabaseConnection,
+    agent: Agent,
+    agent_text: str,
+    *,
+    runtime_openrouter_api_key_ciphertext: bytes,
+    management_openrouter_api_key_ciphertext: bytes,
+    openrouter_workspace_id: str,
+    openrouter_api_key_label: str,
+    openrouter_api_key_creator_user_id: str,
+    openrouter_validated_at: datetime,
+) -> None:
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
-    await conn.execute(
-        f"""
-        INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-        VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+    async with conn.conn.transaction():
+        await conn.execute(
+            f"""
+            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
+            VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+            """,
+            agent.agent_id,
+            agent.miner_hotkey,
+            agent.name,
+            agent.version_num,
+            agent.ip_address,
+        )
+
+        await conn.execute(
+            """
+            INSERT INTO agent_openrouter_secrets (
+                agent_id,
+                runtime_api_key_ciphertext,
+                management_api_key_ciphertext,
+                workspace_id,
+                api_key_label,
+                api_key_creator_user_id,
+                validated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """,
+            agent.agent_id,
+            runtime_openrouter_api_key_ciphertext,
+            management_openrouter_api_key_ciphertext,
+            openrouter_workspace_id,
+            openrouter_api_key_label,
+            openrouter_api_key_creator_user_id,
+            openrouter_validated_at,
+        )
+
+
+@db_operation
+async def get_openrouter_secrets_for_agent_id(
+    conn: DatabaseConnection, agent_id: UUID
+) -> AgentOpenRouterSecrets | None:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            runtime_api_key_ciphertext,
+            management_api_key_ciphertext,
+            workspace_id,
+            api_key_label,
+            api_key_creator_user_id,
+            validated_at
+        FROM agent_openrouter_secrets
+        WHERE agent_id = $1
+        LIMIT 1
         """,
-        agent.agent_id,
-        agent.miner_hotkey,
-        agent.name,
-        agent.version_num,
-        agent.ip_address,
+        agent_id,
     )
+
+    if row is None:
+        return None
+
+    return AgentOpenRouterSecrets(
+        runtime_api_key=decrypt_agent_secret(bytes(row["runtime_api_key_ciphertext"])),
+        management_api_key=decrypt_agent_secret(bytes(row["management_api_key_ciphertext"])),
+        workspace_id=row["workspace_id"],
+        api_key_label=row["api_key_label"],
+        api_key_creator_user_id=row["api_key_creator_user_id"],
+        validated_at=row["validated_at"],
+    )
+
+
+@db_operation
+async def get_openrouter_api_key_for_agent_id(conn: DatabaseConnection, agent_id: UUID) -> str | None:
+    secrets = await get_openrouter_secrets_for_agent_id(agent_id)
+    return None if secrets is None else secrets.runtime_api_key
 
 
 @db_operation
@@ -204,16 +289,45 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 
 @db_operation
 async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
+    """Retrieve the top agents.
+
+    Agents are ordered by the score they got on "Validator" runs, then by their average running time on "Validator" runs, then by their creation time.
+
+    You can specify the number of results to return and the page number (for pagination).
+
+    Parameters
+    ----------
+    conn : DatabaseConnection
+        Database connection to use for the query
+    number_of_agents : int, optional
+        Number of agents to return, by default 10
+    page : int, optional
+        Page number for pagination, by default 1
+
+    Returns
+    -------
+    list[AgentScored]
+        List of top agents with their scores.
+    """
     # TODO ADAM: this query was supposed to be fixed to remove the pagination concept
     # TODO ADAM: maybe edge case bugs here if pagenum is 0,negative,or too high etc
     offset = (page - 1) * number_of_agents
 
     results = await conn.fetch(
         """
-        select * from agent_scores 
-        where set_id = (select max(set_id) from evaluation_sets)
-        and agent_id not in (select agent_id from benchmark_agent_ids)
-        order by round(final_score::numeric, 6) desc, created_at asc
+        select ass.*
+        from agent_scores ass
+        left join lateral (
+            select avg(eh.avg_running_secs) as avg_running_secs
+            from evaluations_hydrated eh
+            where eh.agent_id             = ass.agent_id
+              and eh.set_id               = ass.set_id
+              and eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+              and eh.status               = 'success'::EvaluationStatus
+        ) rt on true
+        where ass.set_id = (select max(set_id) from evaluation_sets)
+        and ass.agent_id not in (select agent_id from benchmark_agent_ids)
+        order by round(ass.final_score::numeric, 6) desc, rt.avg_running_secs asc nulls last, ass.created_at asc
         limit $1 offset $2
         """,
         number_of_agents,

@@ -178,6 +178,19 @@ def merge_logs(*sections: str) -> str:
 # Success parsing
 
 
+def _read_proxy_cost(job_dir: Path) -> float | None:
+    """Read total_cost_usd written by the proxy sidecar into proxy_data/proxy_usage.json."""
+    try:
+        usage = read_json(job_dir / "proxy_data" / "proxy_usage.json")
+        if isinstance(usage, dict):
+            value = usage.get("total_cost_usd")
+            if value is not None:
+                return float(value)
+    except Exception:
+        pass
+    return None
+
+
 def parse_execution_artifacts(
     summary: HarborRunSummary,
     *,
@@ -200,6 +213,8 @@ def parse_execution_artifacts(
     if not patch:
         context.fail_validator("Harbor completed without producing a patch artifact")
 
+    cost_usd = _read_proxy_cost(summary.job_dir) if summary.job_dir else None
+
     return ExecutionResult(
         backend="harbor",
         patch=patch,
@@ -208,6 +223,7 @@ def parse_execution_artifacts(
         agent_logs=context.agent_logs,
         eval_logs=context.eval_logs,
         job_dir=context.job_dir,
+        cost_usd=cost_usd,
     )
 
 
