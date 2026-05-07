@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.banned_hotkey import get_banned_hotkey
-from utils.bittensor import check_if_hotkey_is_registered
+from utils.bittensor import subtensor_client
 
 
 def get_miner_hotkey(file_info: str) -> str:
@@ -84,7 +84,7 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
 async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")
 
-    if not await check_if_hotkey_is_registered(miner_hotkey):
+    if not await subtensor_client.is_hotkey_registered(miner_hotkey):
         logger.error(
             f"A miner attempted to upload an agent with a hotkey that is not registered on subnet: {miner_hotkey}."
         )
