@@ -1,7 +1,7 @@
 """Update evaluations hydrated view
 
 Revision ID: 234ed0606f2a
-Revises: b8d3f6e2c9a5
+Revises: 34e1f2c7a9bd
 Create Date: 2026-05-06 11:03:17.836098
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "234ed0606f2a"
-down_revision: Union[str, Sequence[str], None] = "b8d3f6e2c9a5"
+down_revision: Union[str, Sequence[str], None] = "34e1f2c7a9bd"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
