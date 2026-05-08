@@ -197,6 +197,28 @@ if not FETCH_METAGRAPH_INTERVAL_SECONDS:
 else:
     FETCH_METAGRAPH_INTERVAL_SECONDS = int(FETCH_METAGRAPH_INTERVAL_SECONDS)
 
+PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
+PRE_SCREENING_JUDGE_URL = os.getenv("PRE_SCREENING_JUDGE_URL")
+PRE_SCREENING_JUDGE_INTERNAL_TOKEN = os.getenv("PRE_SCREENING_JUDGE_INTERNAL_TOKEN")
+
+PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = os.getenv("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS")
+if not PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS:
+    PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = 720
+else:
+    try:
+        PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = int(PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS)
+    except ValueError:
+        logger.fatal("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be an integer")
+
+
+if PRE_SCREENING_JUDGE_ENABLED:
+    if not PRE_SCREENING_JUDGE_URL:
+        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while PRE_SCREENING_JUDGE_ENABLED=true")
+    if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
+        logger.fatal(
+            "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while PRE_SCREENING_JUDGE_ENABLED=true"
+        )
+
 
 logger.info("=== API Configuration ===")
 
@@ -251,5 +273,9 @@ logger.info("-------------------------")
 
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
+logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
+if PRE_SCREENING_JUDGE_ENABLED:
+    logger.info(f"Pre-Screening Judge URL: {PRE_SCREENING_JUDGE_URL}")
+    logger.info(f"Pre-Screening Judge Request Timeout: {PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} second(s)")
 
 logger.info("=========================")
