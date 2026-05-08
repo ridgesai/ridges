@@ -194,7 +194,7 @@ async def post_agent(
 
             # Retrieve payment details from the chain
             try:
-                payment_block = await subtensor_client.substrate.get_block(block_hash=payment_block_hash)
+                payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
             except Exception as e:
                 logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
@@ -374,7 +374,7 @@ async def get_upload_price() -> UploadPriceResponse:
 
 
 async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = await subtensor_client.substrate.get_events(block_hash=block_hash)
+    events = await subtensor_client.get_events(block_hash=block_hash)
 
     for event in events:
         if event.get("extrinsic_idx") != extrinsic_index:

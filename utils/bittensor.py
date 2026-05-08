@@ -7,8 +7,6 @@ import api.config as config
 import utils.logger as logger
 
 if TYPE_CHECKING:
-    from async_substrate_interface import AsyncSubstrateInterface
-    from async_substrate_interface.substrate_addons import RetryAsyncSubstrate
     from bittensor.utils.balance import Balance
 
 
@@ -105,17 +103,37 @@ class SubtensorClient:
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.get_balance(address=address)
 
-    @property
-    def substrate(self) -> "AsyncSubstrateInterface | RetryAsyncSubstrate":
-        """Retrieve the underlying substrate client for direct access to substrate methods.
+    async def get_block(self, block_hash: str) -> dict | None:
+        """Retrieve a block by its hash.
+
+        Parameters
+        ----------
+        block_hash : str
+            The hash of the block to retrieve.
 
         Returns
         -------
-        AsyncSubtensor | RetryAsyncSubstrate
-            The underlying substrate client instance.
+        dict | None
+            The block data, or None if not found.
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
-        return self._subtensor.substrate
+        return await self._subtensor.substrate.get_block(block_hash=block_hash)
+
+    async def get_events(self, block_hash: str) -> list:
+        """Retrieve events for a given block hash.
+
+        Parameters
+        ----------
+        block_hash : str
+            The hash of the block whose events to retrieve.
+
+        Returns
+        -------
+        list
+            List of events in the block.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.substrate.get_events(block_hash=block_hash)
 
 
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
