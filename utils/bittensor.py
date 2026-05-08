@@ -9,7 +9,6 @@ import utils.logger as logger
 if TYPE_CHECKING:
     from async_substrate_interface import AsyncSubstrateInterface
     from async_substrate_interface.substrate_addons import RetryAsyncSubstrate
-    from bittensor.core.async_subtensor import AsyncSubtensor
     from bittensor.utils.balance import Balance
 
 
@@ -107,7 +106,7 @@ class SubtensorClient:
         return await self._subtensor.get_balance(address=address)
 
     @property
-    def substrate(self) -> AsyncSubstrateInterface | RetryAsyncSubstrate:
+    def substrate(self) -> "AsyncSubstrateInterface | RetryAsyncSubstrate":
         """Retrieve the underlying substrate client for direct access to substrate methods.
 
         Returns
