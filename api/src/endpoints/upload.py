@@ -274,7 +274,9 @@ async def post_agent(
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
-            initial_status = AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
+            initial_status = (
+                AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
+            )
             agent = Agent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,

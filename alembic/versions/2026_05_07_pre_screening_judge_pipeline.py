@@ -41,7 +41,9 @@ def upgrade() -> None:
 
     op.create_table(
         "pre_screening_jobs",
-        sa.Column("job_id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "job_id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column(
             "agent_id",
             postgresql.UUID(as_uuid=True),
@@ -84,7 +86,9 @@ def upgrade() -> None:
 
     op.create_table(
         "pre_screening_results",
-        sa.Column("result_id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column(
+            "result_id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")
+        ),
         sa.Column(
             "job_id",
             postgresql.UUID(as_uuid=True),

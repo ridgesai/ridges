@@ -215,9 +215,7 @@ if PRE_SCREENING_JUDGE_ENABLED:
     if not PRE_SCREENING_JUDGE_URL:
         logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while PRE_SCREENING_JUDGE_ENABLED=true")
     if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
-        logger.fatal(
-            "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while PRE_SCREENING_JUDGE_ENABLED=true"
-        )
+        logger.fatal("PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while PRE_SCREENING_JUDGE_ENABLED=true")
 
 
 logger.info("=== API Configuration ===")
