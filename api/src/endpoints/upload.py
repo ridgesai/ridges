@@ -14,6 +14,7 @@ from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     check_agent_banned,
+    check_file_size,
     check_hotkey_registered,
     check_if_python_file,
     check_rate_limit,
@@ -100,6 +101,7 @@ async def check_agent_post(
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey)
     check_if_python_file(agent_file.filename)
+    await check_file_size(agent_file)
     coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
     miner_balance = subtensor.get_balance(address=coldkey).rao
     payment_cost = await get_upload_price(cache_time=payment_time)
@@ -150,7 +152,7 @@ async def post_agent(
 
     This endpoint allows miners to upload their agent code for evaluation. The agent must:
     - Be a Python file
-    - Be under 1MB in size
+    - Be under 2MB in size
     - Pass static code safety checks
     - Pass similarity validation to prevent copying
     - Be properly signed with the miner's keypair
@@ -184,6 +186,7 @@ async def post_agent(
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey)
         check_if_python_file(agent_file.filename)
+        agent_text = await check_file_size(agent_file)
 
         if prod:
             # Verify payment
@@ -258,8 +261,6 @@ async def post_agent(
             openrouter_management_key=openrouter_management_key,
         )
 
-        agent_text = (await agent_file.read()).decode("utf-8")
-
         hotkey_lock = await get_hotkey_lock(miner_hotkey)
         async with DebugLock(hotkey_lock, f"Agent upload lock for miner {miner_hotkey}"):
             latest_agent: Optional[Agent] = await get_latest_agent_for_miner_hotkey(miner_hotkey=miner_hotkey)
@@ -273,13 +274,14 @@ async def post_agent(
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
+            initial_status = AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
             agent = Agent(
                 agent_id=uuid.uuid4(),
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(timezone.utc),
-                status=AgentStatus.screening_1,
+                status=initial_status,
                 ip_address=request.client.host if request.client else None,
             )
             await create_agent(
@@ -291,6 +293,7 @@ async def post_agent(
                 openrouter_api_key_label=validated_openrouter_keys.api_key_label,
                 openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
                 openrouter_validated_at=validated_openrouter_keys.validated_at,
+                create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
             )
 
         if prod:
