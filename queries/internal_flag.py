@@ -7,12 +7,10 @@ from utils.database import DatabaseConnection, db_operation
 # Set of flags that are expected to have boolean values (stored as "true"/"false" strings in DB)
 _BOOL_FLAGS: set[InternalFlagName] = {
     InternalFlagName.VALIDATORS_PAUSED,
-    InternalFlagName.SCREENERS_PAUSED,
 }
 # Set of flags that are expected to have list values (stored as JSON arrays in DB)
 _LIST_FLAGS: set[InternalFlagName] = {
     InternalFlagName.BLACKLISTED_VALIDATORS,
-    InternalFlagName.BLACKLISTED_SCREENERS,
 }
 
 

@@ -13,14 +13,10 @@ from db.base import Base, CreatedAtMixin
 class InternalFlagName(str, Enum):
     """Defines the known Internal Flags in the system. Each flag's value is stored as a string in the DB, but the application can interpret it according to the flag's expected type (e.g. boolean, list of strings)."""
 
-    # Pause/Unpause all validators
+    # Pause/Unpause all validators and screeners
     VALIDATORS_PAUSED = "VALIDATORS_PAUSED"
-    # Pause/Unpause all screeners
-    SCREENERS_PAUSED = "SCREENERS_PAUSED"
-    # List of blacklisted validators (stored as JSON array of hotkeys)
+    # List of blacklisted hotkeys (validators or screeners, stored as JSON array)
     BLACKLISTED_VALIDATORS = "BLACKLISTED_VALIDATORS"
-    # List of blacklisted screeners (stored as JSON array of hotkeys)
-    BLACKLISTED_SCREENERS = "BLACKLISTED_SCREENERS"
 
 
 class InternalFlag(Base, CreatedAtMixin):
@@ -39,8 +35,8 @@ class InternalFlag(Base, CreatedAtMixin):
         server_default=sa.text("gen_random_uuid()"),
         nullable=False,
     )
-    name: Mapped[str] = mapped_column(
-        sa.Text,
+    name: Mapped[InternalFlagName] = mapped_column(
+        sa.Enum(InternalFlagName, name="internalflagname"),
         unique=True,
         comment="The name of the flag, e.g. 'VALIDATORS_PAUSED'",
     )

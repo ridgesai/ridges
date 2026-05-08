@@ -356,19 +356,16 @@ async def validator_request_evaluation(
     record_validator_heartbeat(validator)
 
     # Check internal flags to determine if this validator/screener is allowed to take evaluations
-    is_screener = validator.hotkey.startswith("screener-")
-    global_flag = InternalFlagName.SCREENERS_PAUSED if is_screener else InternalFlagName.VALIDATORS_PAUSED
-    blacklist_flag = InternalFlagName.BLACKLISTED_SCREENERS if is_screener else InternalFlagName.BLACKLISTED_VALIDATORS
+    flags = await get_internal_flags_parsed(
+        [InternalFlagName.VALIDATORS_PAUSED, InternalFlagName.BLACKLISTED_VALIDATORS]
+    )
 
-    flags = await get_internal_flags_parsed([global_flag, blacklist_flag])
-    logger.debug(f"Internal flags for validator '{validator.name}': {flags}")
-
-    if flags[global_flag]:
-        logger.info(f"Validator '{validator.name}' blocked by {global_flag.value} flag")
+    if flags[InternalFlagName.VALIDATORS_PAUSED]:
+        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.VALIDATORS_PAUSED.value} flag")
         return None
 
-    if validator.hotkey in flags[blacklist_flag]:
-        logger.info(f"Validator '{validator.name}' blocked by {blacklist_flag.value} flag")
+    if validator.hotkey in flags[InternalFlagName.BLACKLISTED_VALIDATORS]:
+        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.BLACKLISTED_VALIDATORS.value} flag")
         return None
 
     # Choose the appropriate lock based on the validator's hotkey

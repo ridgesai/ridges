@@ -1,8 +1,8 @@
 """Add Internal Flag model
 
-Revision ID: 13c9e6526ce3
+Revision ID: e1bb1c104ea1
 Revises: 234ed0606f2a
-Create Date: 2026-05-08 15:57:39.553827
+Create Date: 2026-05-08 16:55:56.793355
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "13c9e6526ce3"
+revision: str = "e1bb1c104ea1"
 down_revision: Union[str, Sequence[str], None] = "234ed0606f2a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -25,7 +25,12 @@ def upgrade() -> None:
     op.create_table(
         "internal_flags",
         sa.Column("id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False),
-        sa.Column("name", sa.Text(), nullable=False, comment="The name of the flag, e.g. 'VALIDATORS_PAUSED'"),
+        sa.Column(
+            "name",
+            sa.Enum("VALIDATORS_PAUSED", "BLACKLISTED_VALIDATORS", name="internalflagname"),
+            nullable=False,
+            comment="The name of the flag, e.g. 'VALIDATORS_PAUSED'",
+        ),
         sa.Column(
             "value",
             sa.Text(),
