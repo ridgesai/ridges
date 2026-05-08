@@ -3,6 +3,7 @@ from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
 from db.models.inference import Embedding, Inference
+from db.models.internal_flag import InternalFlag
 from db.models.payment import EvaluationPayment
 from db.models.refund import FailedUploadRefund
 from db.models.upload import UploadAttempt
@@ -22,6 +23,7 @@ __all__ = [
     "EvaluationSet",
     "FailedUploadRefund",
     "Inference",
+    "InternalFlag",
     "UnapprovedAgentId",
     "UploadAttempt",
 ]
