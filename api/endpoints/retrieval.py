@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import Evaluation, EvaluationWithRuns
 from models.evaluation_run import EvaluationRun
-from models.evaluation_set import EvaluationSetGroup
+from models.queue import QueueStage
 from queries.agent import (
     get_agent_by_id,
     get_agents_in_queue,
@@ -52,10 +52,10 @@ def _temp_evaluation_run_metrics(run: EvaluationRun) -> dict:
     }
 
 
-# /retrieval/queue?stage={screener_1|screener_2|validator}
+# /retrieval/queue?stage={pre_screening|screener_1|screener_2|validator}
 @router.get("/queue")
 @ttl_cache(ttl_seconds=60)  # 1 minute
-async def queue(stage: EvaluationSetGroup) -> List[Agent]:
+async def queue(stage: QueueStage) -> List[Agent]:
     return await get_agents_in_queue(stage)
 
 
@@ -141,7 +141,15 @@ async def agent_code(agent_id: UUID) -> str:
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent with ID {agent_id} not found")
 
-    if agent.status in [AgentStatus.screening_1, AgentStatus.screening_2, AgentStatus.evaluating]:
+    hidden_statuses = [
+        AgentStatus.pre_screening,
+        AgentStatus.failed_pre_screening,
+        AgentStatus.pre_screening_needs_review,
+        AgentStatus.screening_1,
+        AgentStatus.screening_2,
+        AgentStatus.evaluating,
+    ]
+    if agent.status in hidden_statuses:
         raise HTTPException(status_code=403, detail=f"Agent {agent.agent_id} is still being screened/evaluated")
 
     return await download_text_file_from_s3(f"{agent_id}/agent.py")
