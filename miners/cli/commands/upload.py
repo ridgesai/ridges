@@ -20,6 +20,7 @@ from miners.cli.click_ext import click, format_help
 console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
 UPLOAD_TIMEOUT_SECONDS = 120
+MAX_AGENT_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,10 @@ def _resolve_agent_file(path_str: str) -> Path:
 
 def _read_upload_target(api_url: str, path_str: str) -> UploadTarget:
     agent_path = _resolve_agent_file(path_str)
+    file_size = agent_path.stat().st_size
+    if file_size > MAX_AGENT_FILE_SIZE_BYTES:
+        raise click.ClickException("Agent file must not exceed 2MB")
+
     file_content = agent_path.read_bytes()
     return UploadTarget(
         api_url=api_url,
