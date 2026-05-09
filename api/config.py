@@ -212,9 +212,7 @@ if PRE_SCREENING_JUDGE_RUN_LOOP:
             logger.fatal("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be an integer")
 
     if not PRE_SCREENING_JUDGE_URL:
-        logger.fatal(
-            "PRE_SCREENING_JUDGE_URL is not set in .env while the pre-screening judge loop is enabled"
-        )
+        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while the pre-screening judge loop is enabled")
     if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
         logger.fatal(
             "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
