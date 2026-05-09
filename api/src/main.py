@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
             validator_heartbeat_timeout_loop(),
         )
 
-    if config.PRE_SCREENING_JUDGE_ENABLED:
+    if config.PRE_SCREENING_JUDGE_RUN_LOOP:
         _start_background_task(background_tasks, "pre_screening_judge_loop", pre_screening_judge_loop())
 
     _start_background_task(background_tasks, "fetch_metagraph_loop", fetch_metagraph_loop())
