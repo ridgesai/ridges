@@ -17,6 +17,7 @@ from api.endpoints import validator as validator_endpoint
 from api.endpoints.validator_models import ValidatorRequestEvaluationRequest
 from api.src.utils import openrouter_validation as openrouter_validation_module
 from api.src.utils.openrouter_validation import OPENROUTER_API_BASE_URL, ValidatedOpenRouterKeys
+from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
@@ -512,6 +513,13 @@ def _patch_validator_dependencies(
         if handled_evaluations is not None:
             handled_evaluations.append(evaluation_id)
 
+    async def fake_get_internal_flags_parsed(_flags):
+        return {
+            InternalFlagName.VALIDATORS_PAUSED: False,
+            InternalFlagName.BLACKLISTED_VALIDATORS: [],
+        }
+
+    monkeypatch.setattr(validator_endpoint, "get_internal_flags_parsed", fake_get_internal_flags_parsed)
     monkeypatch.setattr(validator_endpoint, "record_validator_heartbeat", lambda _validator: None)
     monkeypatch.setattr(
         validator_endpoint,
