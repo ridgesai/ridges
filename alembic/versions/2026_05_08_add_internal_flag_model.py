@@ -1,7 +1,7 @@
 """Add Internal Flag model
 
 Revision ID: e1bb1c104ea1
-Revises: 234ed0606f2a
+Revises: d8e2f4a6c1b0
 Create Date: 2026-05-08 16:55:56.793355
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e1bb1c104ea1"
-down_revision: Union[str, Sequence[str], None] = "234ed0606f2a"
+down_revision: Union[str, Sequence[str], None] = "d8e2f4a6c1b0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
