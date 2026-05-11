@@ -13,6 +13,10 @@ class AgentStatus(str, Enum):
     failed_screening_2 = "failed_screening_2"
     evaluating = "evaluating"
     finished = "finished"
+    cancelled = "cancelled"
+    pre_screening = "pre_screening"
+    failed_pre_screening = "failed_pre_screening"
+    pre_screening_needs_review = "pre_screening_needs_review"
 
 
 class AgentBase(BaseModel):

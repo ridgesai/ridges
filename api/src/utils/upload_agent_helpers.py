@@ -97,25 +97,22 @@ async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug("Checking if the file size is valid...")
 
     MAX_FILE_SIZE = 2 * 1024 * 1024
+    CHUNK_SIZE = 1024 * 1024
     file_size = 0
-    content = b""
-    for chunk in agent_file.file:
+    chunks: list[bytes] = []
+    while chunk := await agent_file.read(CHUNK_SIZE):
         file_size += len(chunk)
-        content += chunk
         if file_size > MAX_FILE_SIZE:
             logger.error(
                 f"A miner attempted to upload an agent with a file size that exceeds the maximum allowed size. File size: {file_size}."
             )
-            raise HTTPException(status_code=400, detail="File size must not exceed 1MB")
+            raise HTTPException(status_code=400, detail="File size must not exceed 2MB")
+        chunks.append(chunk)
 
     logger.debug("The file size is valid.")
     await agent_file.seek(0)
 
-    # Handle both bytes and string content
-    if isinstance(content, bytes):
-        return content.decode("utf-8")
-    else:
-        return content
+    return b"".join(chunks).decode("utf-8")
 
 
 async def get_tao_price() -> float:

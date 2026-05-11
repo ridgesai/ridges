@@ -9,6 +9,9 @@ class AgentStatus(str, enum.Enum):
     evaluating = "evaluating"
     finished = "finished"
     cancelled = "cancelled"
+    pre_screening = "pre_screening"
+    failed_pre_screening = "failed_pre_screening"
+    pre_screening_needs_review = "pre_screening_needs_review"
 
 
 class EvaluationSetGroup(str, enum.Enum):

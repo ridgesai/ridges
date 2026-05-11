@@ -21,9 +21,9 @@ A few environment variables are set for the Ridges runtime and miner code.
 
 |Name|Description|Example|
 |-|-|-|
-|`SANDBOX_PROXY_URL`|The URL of the inference proxy sidecar.|`http://sandbox-proxy:80`|
-|`EVALUATION_RUN_ID`|The UUID of the current evaluation run, which must be included in all requests to the inference proxy.|`00000000-0000-0000-0000-000000000000`|
+|`EVALUATION_RUN_ID`|The UUID of the current evaluation run.|`00000000-0000-0000-0000-000000000000`|
 |`AGENT_TIMEOUT`|The agent timeout in seconds captured in the promoted Harbor `execution_spec`, originally sourced from `[agent].timeout_sec` in `task.toml`.|`1500`|
+|`OPENROUTER_API_KEY`|Your OpenRouter API key, provided at agent upload time.|`sk-or-v1-...`|
 
 ## Entry Point
 
@@ -55,139 +55,106 @@ exposed to the agent through `AGENT_TIMEOUT`.
 
 ## Inference and Embedding
 
-Ridges still runs Harbor tasks behind the proxy-sidecar networking model:
+For an agent to be useful, it needs to leverage inference. The sandbox uses a **transparent proxy** that intercepts all traffic to `openrouter.ai` via DNS aliasing and MITM SSL certificates. This means agents can use the standard OpenRouter API without any special configuration — just use your `OPENROUTER_API_KEY` as normal.
 
-- the `main` task container has no direct outbound internet
-- the `sandbox-proxy` sidecar is the only service with egress
-- the agent must talk to `SANDBOX_PROXY_URL`
-- the proxy forwards to the configured inference gateway
+The proxy enforces an allowed model list and a per-run cost budget. Requests to disallowed models or that exceed the budget are rejected with a `403` or `429` respectively.
 
-To make an inference or embedding request, send an HTTP request to the proxy URL from
-`SANDBOX_PROXY_URL`.
+### Using the OpenRouter Python SDK (recommended)
 
-### Inference
+```python
+import os
+from openrouter import OpenRouter
 
-Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/inference`.
+client = OpenRouter(api_key=os.environ["OPENROUTER_API_KEY"])
 
-```json
-{
-    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
-    "model": "str",
-    "temperature": "float [0,1]",
-    "messages": [
-        {
-            "role": "str [system, user, assistant, tool]",
-            "content": "str"
-        },
-        ...
-    ]
-}
+response = client.chat.send(
+    model="qwen/qwen3-coder-next",
+    messages=[{"role": "user", "content": "Hello, world!"}],
+)
+print(response.choices[0].message.content)
 ```
 
-If you need tool calls, add `tool_mode` and `tools`:
+### Tool Calling
 
-```json
-{
-    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
-    "model": "str",
-    "temperature": "float [0,1]",
-    "messages": [
-        {
-            "role": "str [system, user, assistant, tool]",
-            "content": "str"
-        },
-        ...
-    ],
-    "tool_mode": "str [none, auto, required]",
-    "tools": [
-        {
-            "name": "str",
-            "description": "str",
-            "parameters": [
-                {
-                    "type": "str [boolean, integer, number, string, array, object]",
-                    "name": "str",
-                    "description": "str",
-                    "required": "bool"
+The OpenRouter SDK supports native tool calling via the same `tools` and `tool_choice` parameters as the OpenAI API:
+
+```python
+import json, os
+from openrouter import OpenRouter
+
+client = OpenRouter(api_key=os.environ["OPENROUTER_API_KEY"])
+
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Read the contents of a file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the file"}
                 },
-                ...
-            ]
+                "required": ["path"],
+            },
         },
-        ...
-    ]
-}
+    }
+]
+
+response = client.chat.send(
+    model="qwen/qwen3-coder-next",
+    messages=[{"role": "user", "content": "Read the README.md file"}],
+    tools=tools,
+    tool_choice="auto",
+)
+
+if response.choices[0].message.tool_calls:
+    for call in response.choices[0].message.tool_calls:
+        print(call.function.name, json.loads(call.function.arguments))
 ```
 
-The response format is:
+### Using the OpenAI Python SDK
 
-```json
-{
-    "content": "str",
-    "tool_calls": [
-        {
-            "name": "str",
-            "arguments": [
-                {
-                    "name": "str",
-                    "value": "*"
-                }
-            ]
-        }
-    ]
-}
+The OpenAI SDK is also compatible by pointing it at the OpenRouter base URL:
+
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    api_key=os.environ["OPENROUTER_API_KEY"],
+    base_url="https://openrouter.ai/api/v1",
+)
+
+response = client.chat.completions.create(
+    model="qwen/qwen3-coder-next",
+    messages=[{"role": "user", "content": "Hello, world!"}],
+)
+print(response.choices[0].message.content)
 ```
 
-Example:
+### Allowed Models
+
+Please refer to our [Discord server](https://discord.com/invite/ridges) for the current list of allowed models and their cost details.
+
+### Cost Usage
+
+You can query the current cost and remaining budget for your evaluation run at any time:
 
 ```bash
-curl -s -X POST "$SANDBOX_PROXY_URL/api/inference" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "evaluation_run_id": "00000000-0000-0000-0000-000000000000",
-    "model": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
-    "temperature": 0.5,
-    "messages": [
-      {
-        "role": "user",
-        "content": "Please use the print(str) tool to say something cool."
-      }
-    ],
-    "tool_mode": "required",
-    "tools": [
-      {
-        "name": "print",
-        "description": "Print a string",
-        "parameters": [
-          {
-            "name": "str",
-            "type": "string",
-            "description": "The string to print"
-          }
-        ]
-      }
-    ]
-  }' | jq
+curl http://sandbox-proxy:80/api/v1/usage
 ```
 
-### Embedding
-
-Send an HTTP `POST` request to `SANDBOX_PROXY_URL/api/embedding`.
-
-For usage/cost checks, send an HTTP `GET` request to
-`SANDBOX_PROXY_URL/api/usage?evaluation_run_id=...`.
+Response format:
 
 ```json
 {
-    "evaluation_run_id": "UUID [EVALUATION_RUN_ID]",
-    "model": "str",
-    "input": "str"
-}
-```
-
-The response format is:
-
-```json
-{
-    "embedding": "float[]"
+  "evaluation_run_id": "00000000-0000-0000-0000-000000000000",
+  "total_cost_usd": 0.0123,
+  "budget_remaining_usd": 4.9877,
+  "requests": 5,
+  "prompt_tokens": 1200,
+  "completion_tokens": 800,
+  "models": ["qwen/qwen3-coder-next"]
 }
 ```

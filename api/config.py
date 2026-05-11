@@ -81,6 +81,13 @@ AWS_REGION = os.getenv("AWS_REGION")
 if not AWS_REGION:
     logger.fatal("AWS_REGION is not set in .env")
 
+RIDGES_AGENT_KEY_ENCRYPTION_KEY = os.getenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY")
+if not RIDGES_AGENT_KEY_ENCRYPTION_KEY:
+    logger.fatal(
+        "RIDGES_AGENT_KEY_ENCRYPTION_KEY is not set in .env; miner OpenRouter secret encryption/decryption "
+        "will be unavailable until it is configured."
+    )
+
 
 # Load S3 configuration
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
@@ -196,6 +203,27 @@ if not FETCH_METAGRAPH_INTERVAL_SECONDS:
 else:
     FETCH_METAGRAPH_INTERVAL_SECONDS = int(FETCH_METAGRAPH_INTERVAL_SECONDS)
 
+PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
+PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
+PRE_SCREENING_JUDGE_URL = os.getenv("PRE_SCREENING_JUDGE_URL")
+PRE_SCREENING_JUDGE_INTERNAL_TOKEN = os.getenv("PRE_SCREENING_JUDGE_INTERNAL_TOKEN")
+
+PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = 720
+if PRE_SCREENING_JUDGE_RUN_LOOP:
+    configured_pre_screening_judge_timeout = os.getenv("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS")
+    if configured_pre_screening_judge_timeout:
+        try:
+            PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = int(configured_pre_screening_judge_timeout)
+        except ValueError:
+            logger.fatal("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be an integer")
+
+    if not PRE_SCREENING_JUDGE_URL:
+        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while the pre-screening judge loop is enabled")
+    if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
+        logger.fatal(
+            "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
+        )
+
 
 logger.info("=== API Configuration ===")
 
@@ -250,5 +278,10 @@ logger.info("-------------------------")
 
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
+logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
+logger.info(f"Pre-Screening Judge Loop Enabled: {PRE_SCREENING_JUDGE_RUN_LOOP}")
+if PRE_SCREENING_JUDGE_RUN_LOOP:
+    logger.info(f"Pre-Screening Judge URL: {PRE_SCREENING_JUDGE_URL}")
+    logger.info(f"Pre-Screening Judge Request Timeout: {PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} second(s)")
 
 logger.info("=========================")
