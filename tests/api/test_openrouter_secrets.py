@@ -110,6 +110,7 @@ def _patch_upload_dependencies(
     upload_endpoint = _load_upload_endpoint(monkeypatch)
     monkeypatch.setenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY", _encoded_key())
     monkeypatch.setattr(upload_endpoint, "prod", False)
+    monkeypatch.setattr(upload_endpoint.config, "PRE_SCREENING_JUDGE_ENABLED", False)
     monkeypatch.setattr(upload_endpoint, "get_miner_hotkey", lambda *_args, **_kwargs: "miner-hotkey")
     monkeypatch.setattr(upload_endpoint, "check_if_python_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(upload_endpoint, "check_signature", lambda *_args, **_kwargs: None)
@@ -398,6 +399,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         openrouter_api_key_label=None,
         openrouter_api_key_creator_user_id=None,
         openrouter_validated_at=None,
+        create_pre_screening_job=False,
     ) -> None:
         captured["agent"] = agent
         captured["agent_text"] = agent_text
@@ -407,6 +409,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         captured["api_key_label"] = openrouter_api_key_label
         captured["api_key_creator_user_id"] = openrouter_api_key_creator_user_id
         captured["validated_at"] = openrouter_validated_at
+        captured["create_pre_screening_job"] = create_pre_screening_job
 
     upload_endpoint = _patch_upload_dependencies(
         monkeypatch,
@@ -436,6 +439,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
     assert captured["api_key_label"] == validated_keys.api_key_label
     assert captured["api_key_creator_user_id"] == validated_keys.api_key_creator_user_id
     assert captured["validated_at"] == validated_keys.validated_at
+    assert captured["create_pre_screening_job"] is False
 
 
 @pytest.mark.anyio

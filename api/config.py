@@ -187,6 +187,27 @@ if not SHOULD_RUN_LOOPS:
     logger.fatal("SHOULD_RUN_LOOPS is not set in .env")
 SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
 
+PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
+PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
+PRE_SCREENING_JUDGE_URL = os.getenv("PRE_SCREENING_JUDGE_URL")
+PRE_SCREENING_JUDGE_INTERNAL_TOKEN = os.getenv("PRE_SCREENING_JUDGE_INTERNAL_TOKEN")
+
+PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = 720
+if PRE_SCREENING_JUDGE_RUN_LOOP:
+    configured_pre_screening_judge_timeout = os.getenv("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS")
+    if configured_pre_screening_judge_timeout:
+        try:
+            PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = int(configured_pre_screening_judge_timeout)
+        except ValueError:
+            logger.fatal("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be an integer")
+
+    if not PRE_SCREENING_JUDGE_URL:
+        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while the pre-screening judge loop is enabled")
+    if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
+        logger.fatal(
+            "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
+        )
+
 
 logger.info("=== API Configuration ===")
 
@@ -241,5 +262,10 @@ logger.info("-------------------------")
 
 logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
+logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
+logger.info(f"Pre-Screening Judge Loop Enabled: {PRE_SCREENING_JUDGE_RUN_LOOP}")
+if PRE_SCREENING_JUDGE_RUN_LOOP:
+    logger.info(f"Pre-Screening Judge URL: {PRE_SCREENING_JUDGE_URL}")
+    logger.info(f"Pre-Screening Judge Request Timeout: {PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} second(s)")
 
 logger.info("=========================")
