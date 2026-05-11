@@ -364,7 +364,7 @@ class UploadPriceResponse(BaseModel):
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
     TAO_PRICE = await get_tao_price()
-    eval_cost_usd = 30
+    eval_cost_usd = 5
 
     # Get the amount of tao required per eval
     eval_cost_tao = eval_cost_usd / TAO_PRICE
