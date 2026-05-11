@@ -6,6 +6,7 @@ One container starts per module; tables are truncated between tests.
 """
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -72,7 +73,11 @@ def _make_upload_file(content: bytes = b"async def agent_main(input): return 'ok
     f.filename = "agent.py"
     f.file = MagicMock()
     f.file.tell.return_value = len(content)
-    f.read = AsyncMock(return_value=content)
+    _CHUNK_SIZE = 1024 * 1024
+    chunks = [content[i : i + _CHUNK_SIZE] for i in range(0, len(content), _CHUNK_SIZE)] if content else []
+    chunks.append(b"")
+    f.read = AsyncMock(side_effect=chunks)
+    f.seek = AsyncMock()
     return f
 
 
@@ -107,6 +112,18 @@ def _install_mocks(monkeypatch) -> None:
         upload_module, "get_upload_price", AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO))
     )
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
+    response_validate_open_router_keys = MagicMock()
+    response_validate_open_router_keys.runtime_api_key = "fake-runtime-key"
+    response_validate_open_router_keys.management_api_key = "fake-management-key"
+    response_validate_open_router_keys.workspace_id = "fake-workspace-id"
+    response_validate_open_router_keys.api_key_label = "fake-label"
+    response_validate_open_router_keys.api_key_creator_user_id = "fake-creator-id"
+    response_validate_open_router_keys.validated_at = datetime.now(timezone.utc)
+    monkeypatch.setattr(
+        upload_module,
+        "validate_openrouter_keys",
+        AsyncMock(return_value=response_validate_open_router_keys),
+    )
 
 
 async def _call_post_agent() -> AgentUploadResponse:
