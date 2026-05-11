@@ -1,7 +1,7 @@
 """payment agent ID optional
 
 Revision ID: de54176da579
-Revises: b8d3f6e2c9a5
+Revises: d8e2f4a6c1b0
 Create Date: 2026-04-28 17:27:59.460081
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "de54176da579"
-down_revision: Union[str, Sequence[str], None] = "b8d3f6e2c9a5"
+down_revision: Union[str, Sequence[str], None] = "d8e2f4a6c1b0"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
