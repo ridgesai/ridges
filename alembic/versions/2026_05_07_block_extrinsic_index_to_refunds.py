@@ -1,7 +1,7 @@
 """block_extrinsic_index_to_refunds
 
 Revision ID: c880b27e2afe
-Revises: 234ed0606f2a
+Revises: e1bb1c104ea1
 Create Date: 2026-05-07 11:03:36.448663
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "c880b27e2afe"
-down_revision: Union[str, Sequence[str], None] = "234ed0606f2a"
+down_revision: Union[str, Sequence[str], None] = "e1bb1c104ea1"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
