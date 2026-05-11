@@ -8,9 +8,12 @@ import utils.logger as logger
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
+from models.queue import QueueStage
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+
+DEFAULT_PRE_SCREENING_POLICY_VERSION = "hardcoding-v1"
 
 
 @dataclass(slots=True, frozen=True)
@@ -146,19 +149,22 @@ async def create_agent(
     openrouter_api_key_label: str,
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
+    create_pre_screening_job: bool = False,
+    pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
 ) -> None:
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
         await conn.execute(
-            f"""
+            """
             INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-            VALUES ($1, $2, $3, $4, NOW(), '{AgentStatus.screening_1.value}', $5)
+            VALUES ($1, $2, $3, $4, NOW(), $5, $6)
             """,
             agent.agent_id,
             agent.miner_hotkey,
             agent.name,
             agent.version_num,
+            agent.status.value,
             agent.ip_address,
         )
 
@@ -183,6 +189,16 @@ async def create_agent(
             openrouter_api_key_creator_user_id,
             openrouter_validated_at,
         )
+
+        if create_pre_screening_job:
+            await conn.execute(
+                """
+                INSERT INTO pre_screening_jobs (agent_id, policy_version)
+                VALUES ($1, $2)
+                """,
+                agent.agent_id,
+                pre_screening_policy_version,
+            )
 
 
 @db_operation
@@ -338,12 +354,12 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
 
 
 @db_operation
-async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: EvaluationSetGroup) -> list[Agent]:
+async def get_agents_in_queue(conn: DatabaseConnection, queue_stage: QueueStage) -> list[Agent]:
     # TODO ALEX from ADAM: Modify this in the view itself rather than branching explicitly here.
     # The view apparently does not sort by created_at.
     queue_to_query = f"{queue_stage.value}_queue"
 
-    if queue_stage == EvaluationSetGroup.screener_1:
+    if queue_stage in (QueueStage.pre_screening, QueueStage.screener_1):
         queue = await conn.fetch(f"""
             SELECT a.*
             from agents a

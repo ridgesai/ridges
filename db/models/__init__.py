@@ -15,12 +15,15 @@ from db.models.internal_flag import (
     InternalFlagName,  # noqa: F401
 )
 from db.models.payment import EvaluationPayment
+from db.models.pre_screening_judge import PreScreeningJob, PreScreeningResult
 from db.models.refund import FailedUploadRefund
 from db.models.upload import UploadAttempt
 
 __all__ = [
     "Agent",
     "AgentOpenRouterSecret",
+    "PreScreeningJob",
+    "PreScreeningResult",
     "AgentScore",
     "ApprovedAgent",
     "BannedHotkey",
