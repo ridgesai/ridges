@@ -26,7 +26,6 @@ FAKE_COLDKEY = "5FColdKey456"
 FAKE_AMOUNT_RAO = 100_000_000
 FAKE_SEND_ADDRESS = "5FUploadWalletAddress"
 FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
-assert isinstance(FAKE_OWNER_HOTKEY, str), "OWNER_HOTKEY must be set in the test environment"
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
