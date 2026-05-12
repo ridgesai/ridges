@@ -33,6 +33,7 @@ from api.endpoints.validator_models import (
     ValidatorUpdateEvaluationRunRequest,
     ValidatorUpdateEvaluationRunResponse,
 )
+from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
 from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
@@ -59,6 +60,7 @@ from queries.evaluation_run import (
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
 )
+from queries.internal_flag import get_internal_flags_parsed
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
@@ -352,6 +354,19 @@ async def validator_request_evaluation(
 
     # Record a heartbeat for the validator
     record_validator_heartbeat(validator)
+
+    # Check internal flags to determine if this validator/screener is allowed to take evaluations
+    flags = await get_internal_flags_parsed(
+        [InternalFlagName.VALIDATORS_PAUSED, InternalFlagName.BLACKLISTED_VALIDATORS]
+    )
+
+    if flags[InternalFlagName.VALIDATORS_PAUSED]:
+        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.VALIDATORS_PAUSED.value} flag")
+        return None
+
+    if validator.hotkey in flags[InternalFlagName.BLACKLISTED_VALIDATORS]:
+        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.BLACKLISTED_VALIDATORS.value} flag")
+        return None
 
     # Choose the appropriate lock based on the validator's hotkey
     if validator.hotkey.startswith("screener-1"):
