@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from api import config
-from api.errors import PaymentAlreadyUsedError, PaymentRefunded
+from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenError
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
@@ -166,11 +166,9 @@ async def post_agent(
     Rate limiting may apply based on configuration.
     """
 
-    if config.DISALLOW_UPLOADS:
-        raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
+    miner_hotkey = get_miner_hotkey(file_info)
 
     # Extract upload attempt data for tracking
-    miner_hotkey = get_miner_hotkey(file_info)
     agent_file.file.seek(0, 2)
     file_size_bytes = agent_file.file.tell()
     agent_file.file.seek(0)
@@ -191,10 +189,16 @@ async def post_agent(
             check_signature(public_key, file_info, signature)
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey)
+
+        # If is owner upload skip payment verification, rate limit checks and the DISALLOW_UPLOADS check.
+        is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
+        logger.info("Owner upload: " + str(is_owner_upload))
+        if config.DISALLOW_UPLOADS and not is_owner_upload:
+            raise PlatformFrozenError(config.DISALLOW_UPLOADS_REASON)
         check_if_python_file(agent_file.filename)
         agent_text = await check_file_size(agent_file)
 
-        if prod:
+        if prod and not is_owner_upload:
             # Verify payment
             # Check if payment has already been used for an agent
             existing_payment = await retrieve_payment_by_hash(
@@ -280,7 +284,7 @@ async def post_agent(
                 await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
             )
 
-            if prod:
+            if prod and not is_owner_upload:
                 if latest_agent_created_at_in_latest_set_id:
                     check_rate_limit(latest_agent_created_at_in_latest_set_id)
 
@@ -322,7 +326,7 @@ async def post_agent(
                 create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
             )
 
-        if prod:
+        if prod and not is_owner_upload:
             await complete_payment(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
@@ -341,6 +345,10 @@ async def post_agent(
     except DuplicateAgentIDError as e:
         logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
         raise PaymentAlreadyUsedError() from e
+
+    except PlatformFrozenError as e:
+        logger.warning(f"Upload attempt rejected due to platform freeze: {e}")
+        raise
 
     except HTTPException as e:
         # Determine error type and get ban reason if applicable
