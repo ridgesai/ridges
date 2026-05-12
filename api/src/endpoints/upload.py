@@ -203,7 +203,9 @@ async def post_agent(
             if existing_payment is not None and existing_payment.agent_id is not None:
                 raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
 
-            if await is_payment_refunded(upload_block_hash=payment_block_hash):
+            if await is_payment_refunded(
+                upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
+            ):
                 logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
                 raise PaymentRefunded()
 
