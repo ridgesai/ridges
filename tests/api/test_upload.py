@@ -25,6 +25,8 @@ FAKE_HOTKEY = "5FHneTesthKey123"
 FAKE_COLDKEY = "5FColdKey456"
 FAKE_AMOUNT_RAO = 100_000_000
 FAKE_SEND_ADDRESS = "5FUploadWalletAddress"
+FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
+assert isinstance(FAKE_OWNER_HOTKEY, str), "OWNER_HOTKEY must be set in the test environment"
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -145,17 +147,45 @@ def _install_mocks(monkeypatch) -> None:
     )
 
 
-async def _call_post_agent() -> AgentUploadResponse:
+async def _call_post_agent(hotkey: str = FAKE_HOTKEY, name: str = "test-agent") -> AgentUploadResponse:
+    """Call the post agent endpoint with the given hotkey and name, using default mocks for all blockchain and S3 interactions.
+
+    Parameters
+    ----------
+    hotkey : str, optional
+        The hotkey of the miner, by default FAKE_HOTKEY
+    name : str, optional
+        The name of the agent, by default "test-agent"
+
+    Returns
+    -------
+    AgentUploadResponse
+        The response from the agent upload endpoint.
+    """
     return await upload_module.post_agent(
         request=_make_request(),
         agent_file=_make_upload_file(),
         public_key="deadbeef",
-        file_info=f"{FAKE_HOTKEY}:0",
+        file_info=f"{hotkey}:0",
         signature="fakesig",
-        name="test-agent",
+        name=name,
         payment_block_hash=FAKE_BLOCK_HASH,
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
         payment_time=0.0,
+    )
+
+
+async def _call_post_agent_as_owner() -> AgentUploadResponse:
+    """Call post agent using the owner hotkey.
+
+    Returns
+    -------
+    AgentUploadResponse
+        The response from the agent upload endpoint.
+    """
+    return await _call_post_agent(
+        hotkey=FAKE_OWNER_HOTKEY,
+        name="owner-agent",
     )
 
 
@@ -274,3 +304,72 @@ async def test_amount_mismatch_raises_402(monkeypatch):
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
     )
     assert payment is None
+
+
+@pytest.mark.anyio
+async def test_owner_bypasses_disallow_uploads():
+    """Owner hotkey succeeds even when DISALLOW_UPLOADS is True; regular miner is blocked."""
+    from fastapi import HTTPException
+
+    original_flag = upload_module.config.DISALLOW_UPLOADS
+    upload_module.config.DISALLOW_UPLOADS = True
+    upload_module.config.DISALLOW_UPLOADS_REASON = "test freeze"
+    try:
+        response = await _call_post_agent_as_owner()
+        assert response.status == "success"
+
+        with pytest.raises(HTTPException) as exc_info:
+            await _call_post_agent()
+        assert exc_info.value.status_code == 503
+    finally:
+        upload_module.config.DISALLOW_UPLOADS = original_flag
+        del upload_module.config.DISALLOW_UPLOADS_REASON
+
+
+@pytest.mark.anyio
+async def test_owner_bypasses_payment_creates_agent_without_payment_row():
+    """Owner upload creates an agent record but writes no evaluation_payments row."""
+    response = await _call_post_agent_as_owner()
+
+    assert response.status == "success"
+
+    payment = await retrieve_payment_by_hash(
+        payment_block_hash="owner-placeholder-hash",
+        payment_extrinsic_index="0",
+    )
+    assert payment is None
+
+    async with _db.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT agent_id FROM agents WHERE miner_hotkey = $1",
+            FAKE_OWNER_HOTKEY,
+        )
+    assert row is not None
+
+
+@pytest.mark.anyio
+async def test_owner_bypasses_rate_limit(monkeypatch):
+    """Owner upload succeeds even when the rate-limit window has not expired."""
+    from datetime import datetime, timezone
+
+    from fastapi import HTTPException
+
+    # Make the query return a just-now timestamp so check_rate_limit would fire
+    monkeypatch.setattr(
+        upload_module,
+        "get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id",
+        AsyncMock(return_value=datetime.now(timezone.utc)),
+    )
+    # Make check_rate_limit always raise so we can confirm the owner bypass skips it
+    monkeypatch.setattr(
+        upload_module,
+        "check_rate_limit",
+        MagicMock(side_effect=HTTPException(status_code=429, detail="rate limited")),
+    )
+
+    response = await _call_post_agent_as_owner()
+    assert response.status == "success"
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent()
+    assert exc_info.value.status_code == 429
