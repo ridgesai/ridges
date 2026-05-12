@@ -68,7 +68,9 @@ def _make_request() -> MagicMock:
     return req
 
 
-def _make_upload_file(content: bytes = b"async def agent_main(input): return 'ok'") -> MagicMock:
+def _make_upload_file(
+    content: bytes = b"async def agent_main(input): return 'ok'",
+) -> MagicMock:
     f = MagicMock()
     f.filename = "agent.py"
     f.file = MagicMock()
@@ -83,7 +85,14 @@ def _make_upload_file(content: bytes = b"async def agent_main(input): return 'ok
 
 def _make_fake_extrinsic(coldkey: str, amount_rao: int, dest: str) -> MagicMock:
     ext = MagicMock()
-    ext.value = {"call": {"call_args": [{"name": "dest", "value": dest}, {"name": "value", "value": amount_rao}]}}
+    ext.value = {
+        "call": {
+            "call_args": [
+                {"name": "dest", "value": dest},
+                {"name": "value", "value": amount_rao},
+            ]
+        }
+    }
     ext.__getitem__ = MagicMock(side_effect=lambda key: coldkey if key == "address" else None)
     return ext
 
@@ -93,7 +102,11 @@ def _install_mocks(monkeypatch) -> None:
     monkeypatch.setattr(upload_module, "check_signature", MagicMock())
     monkeypatch.setattr(upload_module, "check_hotkey_registered", AsyncMock())
     monkeypatch.setattr(upload_module, "check_agent_banned", AsyncMock())
-    monkeypatch.setattr(upload_module, "check_if_extrinsic_failed", MagicMock(return_value=False))
+    monkeypatch.setattr(
+        upload_module,
+        "check_if_extrinsic_failed",
+        MagicMock(return_value=False),
+    )
     monkeypatch.setattr(
         upload_module.subtensor.substrate,
         "get_block",
@@ -107,9 +120,15 @@ def _install_mocks(monkeypatch) -> None:
             }
         ),
     )
-    monkeypatch.setattr(upload_module.subtensor, "get_hotkey_owner", MagicMock(return_value=FAKE_COLDKEY))
     monkeypatch.setattr(
-        upload_module, "get_upload_price", AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO))
+        upload_module.subtensor,
+        "get_hotkey_owner",
+        MagicMock(return_value=FAKE_COLDKEY),
+    )
+    monkeypatch.setattr(
+        upload_module,
+        "get_upload_price",
+        AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO)),
     )
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     response_validate_open_router_keys = MagicMock()
@@ -209,15 +228,17 @@ async def test_refunded_payment_raises_402():
         await conn.execute(
             """
             INSERT INTO failed_upload_refunds
-                (id, block_hash, amount, tx_hash, upload_tx_hash, upload_block_hash, coldkey, upload_amount)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                (id, block_hash, block_extrinsic_index, amount, tx_hash, upload_tx_hash, upload_block_hash, upload_block_extrinsic_index, coldkey, upload_amount)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             """,
             uuid.uuid4(),
-            FAKE_BLOCK_HASH,
+            "0xdeadbeef1235",
+            "1",
             FAKE_AMOUNT_RAO,
             "0xrefundtxhash",
             "0xuploadtxhash",
             FAKE_BLOCK_HASH,
+            FAKE_EXTRINSIC_INDEX,
             FAKE_COLDKEY,
             FAKE_AMOUNT_RAO,
         )
