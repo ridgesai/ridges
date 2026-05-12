@@ -37,6 +37,7 @@ from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_reso
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
+from validator.retry_utils import retry_transient
 from validator.set_weights import set_weights_from_mapping
 
 # The session ID for this validator
@@ -62,28 +63,29 @@ async def disconnect(reason: str):
         )
         logger.info("Disconnected validator")
     except Exception as e:
-        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
-        os._exit(1)
+        logger.error(f"Error in disconnect() (non-fatal during shutdown): {type(e).__name__}: {e}")
 
 
 # A loop that sends periodic heartbeats to the Ridges platform
 async def send_heartbeat_loop():
+    logger.info("Starting send heartbeat loop...")
     try:
-        logger.info("Starting send heartbeat loop...")
         while True:
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
-            await post_ridges_platform(
-                "/validator/heartbeat",
-                ValidatorHeartbeatRequest(system_metrics=system_metrics),
-                bearer_token=session_id,
-                quiet=2,
-                timeout=5,
+            await retry_transient(
+                lambda: post_ridges_platform(
+                    "/validator/heartbeat",
+                    ValidatorHeartbeatRequest(system_metrics=system_metrics),
+                    bearer_token=session_id,
+                    quiet=2,
+                    timeout=5,
+                ),
+                max_attempts=config.MAX_HEARTBEAT_FAILURES,
             )
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
-        logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
+        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
 
@@ -92,7 +94,9 @@ async def send_heartbeat_loop():
 async def set_weights_loop():
     logger.info("Starting set weights loop...")
     while True:
-        weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
+        weights_mapping = await retry_transient(
+            lambda: get_ridges_platform("/scoring/weights", quiet=1),
+        )
 
         try:
             await asyncio.wait_for(
@@ -125,12 +129,13 @@ async def update_evaluation_run(
     if timeout is not None:
         post_kwargs["timeout"] = timeout
 
-    await post_ridges_platform(
-        "/validator/update-evaluation-run",
-        ValidatorUpdateEvaluationRunRequest(
-            evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
-        ),
-        **post_kwargs,
+    request = ValidatorUpdateEvaluationRunRequest(
+        evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
+    )
+    await retry_transient(
+        lambda: post_ridges_platform("/validator/update-evaluation-run", request, **post_kwargs),
+        max_attempts=3,
+        base_delay=2.0,
     )
 
 
