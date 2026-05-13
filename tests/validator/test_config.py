@@ -33,6 +33,6 @@ def test_validator_mode_hardcodes_ridges_max_cost_usd(monkeypatch) -> None:
 
 
 def test_screener_mode_hardcodes_ridges_max_cost_usd(monkeypatch) -> None:
-    config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="9999")
+    config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="9")
 
     assert config.RIDGES_MAX_COST_USD == 0.29

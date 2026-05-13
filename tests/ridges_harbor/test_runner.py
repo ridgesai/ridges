@@ -193,6 +193,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
     }
     assert FakeJob.created_configs[0].agents[0].env == {
         "EVALUATION_RUN_ID": "eval-run-1",
+        "RIDGES_MAX_COST_USD": "9",
         "SANDBOX_PROXY_URL": runner_module.DEFAULT_AGENT_SANDBOX_PROXY_URL,
         "AGENT_TIMEOUT": "30",
     }
@@ -201,7 +202,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "RIDGES_HARBOR_UPSTREAM_URL": "http://127.0.0.1:1234",
         "RIDGES_HARBOR_UPSTREAM_HOST": "127.0.0.1",
         "RIDGES_EVALUATION_RUN_ID": "eval-run-1",
-        "RIDGES_MAX_COST_USD": "999999",
+        "RIDGES_MAX_COST_USD": "9",
         "RIDGES_PROXY_DATA_DIR": str(results_dir / "job-1" / "proxy_data"),
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
@@ -248,6 +249,7 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
     )
 
     assert FakeJob.created_configs[0].agents[0].env["OPENROUTER_API_KEY"] == "sk-or-v1-secret"
+    assert FakeJob.created_configs[0].agents[0].env["RIDGES_MAX_COST_USD"] == "12.5"
     assert FakeJob.created_configs[0].environment.env["RIDGES_MAX_COST_USD"] == "12.5"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_MANAGEMENT_KEY"] == "sk-or-mgmt-secret"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_WORKSPACE_ID"] == "workspace-1"

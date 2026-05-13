@@ -147,7 +147,7 @@ async def _run_task_dir(
     agent_kwargs: dict[str, Any] = {
         "agent_path": str(agent_path),
     }
-    effective_max_cost_usd = str(max_cost_usd) if max_cost_usd is not None else "9999999"
+    effective_max_cost_usd = str(max_cost_usd) if max_cost_usd is not None else "9"
     agent_env = _harbor_agent_env(
         evaluation_run_id=evaluation_run_id,
         max_cost_usd=effective_max_cost_usd,
