@@ -187,16 +187,6 @@ if not SHOULD_RUN_LOOPS:
     logger.fatal("SHOULD_RUN_LOOPS is not set in .env")
 SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
 
-FETCH_METAGRAPH_INTERVAL_SECONDS = os.getenv("FETCH_METAGRAPH_INTERVAL_SECONDS")
-if not FETCH_METAGRAPH_INTERVAL_SECONDS:
-    default_fetch_metagraph_interval_seconds = 120
-    logger.warning(
-        f"FETCH_METAGRAPH_INTERVAL_SECONDS is not set in .env, using default of {default_fetch_metagraph_interval_seconds} seconds"
-    )
-    FETCH_METAGRAPH_INTERVAL_SECONDS = default_fetch_metagraph_interval_seconds
-else:
-    FETCH_METAGRAPH_INTERVAL_SECONDS = int(FETCH_METAGRAPH_INTERVAL_SECONDS)
-
 PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
 PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
 PRE_SCREENING_JUDGE_URL = os.getenv("PRE_SCREENING_JUDGE_URL")
