@@ -32,6 +32,7 @@ def _write_runner_exception(job_dir: Path) -> Path:
 def _harbor_agent_env(
     *,
     evaluation_run_id: str,
+    max_cost_usd: str,
     agent_timeout_sec: float | None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
 ) -> dict[str, str]:
@@ -44,6 +45,7 @@ def _harbor_agent_env(
 
     env = {
         "EVALUATION_RUN_ID": evaluation_run_id,
+        "RIDGES_MAX_COST_USD": max_cost_usd,
         "SANDBOX_PROXY_URL": DEFAULT_AGENT_SANDBOX_PROXY_URL,
     }
     if normalized_timeout is not None:
@@ -145,8 +147,10 @@ async def _run_task_dir(
     agent_kwargs: dict[str, Any] = {
         "agent_path": str(agent_path),
     }
+    effective_max_cost_usd = str(max_cost_usd) if max_cost_usd is not None else "9"
     agent_env = _harbor_agent_env(
         evaluation_run_id=evaluation_run_id,
+        max_cost_usd=effective_max_cost_usd,
         agent_timeout_sec=effective_timeout,
         openrouter_config=openrouter_config,
     )
@@ -157,7 +161,7 @@ async def _run_task_dir(
             upstream_url=upstream_url,
             upstream_host=upstream_host,
             evaluation_run_id=evaluation_run_id,
-            max_cost_usd=str(max_cost_usd) if max_cost_usd is not None else "999999",
+            max_cost_usd=effective_max_cost_usd,
             proxy_data_dir=str(proxy_data_dir),
             openrouter_config=openrouter_config,
         )
