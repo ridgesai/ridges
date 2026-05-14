@@ -119,6 +119,7 @@ class EvaluationRun(BaseModel):
     verifier_reward: Optional[float] = None
 
     error_code: Optional[EvaluationRunErrorCode] = None
+    error_message: Optional[str] = None
     cost_usd: Optional[float] = None
 
     created_at: datetime
@@ -136,7 +137,6 @@ class EvaluationRunDetail(EvaluationRun):
     problem_total_runs: int | None = None
     problem_average_time_seconds: float | None = None
     problem_average_cost_usd: float | None = None
-    error_message: Optional[str] = None
 
 
 class EvaluationRunLogType(str, Enum):
