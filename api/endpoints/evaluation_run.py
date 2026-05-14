@@ -2,7 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from models.evaluation_run import EvaluationRunLogType, EvaluationRunWithMetrics
+from models.evaluation_run import EvaluationRunDetail, EvaluationRunLogType
 from queries.evaluation_run import (
     get_evaluation_run_by_id,
     get_evaluation_run_logs_by_id,
@@ -15,7 +15,7 @@ router = APIRouter()
 
 # /evaluation-run/get-by-id?evaluation_run_id=
 @router.get("/get-by-id")
-async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRunWithMetrics:
+async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRunDetail:
     evaluation_run = await get_evaluation_run_by_id(evaluation_run_id)
 
     if evaluation_run is None:
@@ -29,7 +29,7 @@ async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRunWith
         benchmark_family=evaluation_run.benchmark_family,
     )
 
-    return EvaluationRunWithMetrics(
+    return EvaluationRunDetail(
         **evaluation_run.model_dump(),
         problem_alias=alias,
         test_results=test_results,
