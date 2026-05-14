@@ -20,6 +20,7 @@ from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.retrieval import router as retrieval_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
+from api.endpoints.scaling import router as scaling_router
 from api.endpoints.validator import router as validator_router
 from api.loops.approval_projector import approval_projector_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
@@ -132,6 +133,7 @@ app.include_router(agent_router, prefix="/agent")
 app.include_router(evaluation_run_router, prefix="/evaluation-run")
 app.include_router(evaluations_router, prefix="/evaluation")
 app.include_router(statistics_router, prefix="/statistics")
+app.include_router(scaling_router, prefix="/scaling")
 
 
 if __name__ == "__main__":

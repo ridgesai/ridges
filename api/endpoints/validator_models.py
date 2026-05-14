@@ -55,6 +55,8 @@ class ValidatorRequestEvaluationResponse(BaseModel):
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
     openrouter_config: OpenRouterRuntimeConfig | None = None
+    proxy_version: str | None = None
+    proxy_source_url: str | None = None
 
 
 class ValidatorTaskDownloadUrlRequest(BaseModel):
