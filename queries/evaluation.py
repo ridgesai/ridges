@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import api.config as config
 import utils.logger as logger
+from models.agent import AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
@@ -239,15 +240,22 @@ async def get_local_evaluation_score_upper_bound(
 
 
 @db_operation
-async def cancel_agent_if_evaluating(conn: DatabaseConnection, agent_id: UUID) -> bool:
+async def transition_agent_status_if_matches(
+    conn: DatabaseConnection,
+    agent_id: UUID,
+    expected_status: AgentStatus,
+    new_status: AgentStatus,
+) -> bool:
     result = await conn.execute(
         """
         UPDATE agents
-        SET status = 'cancelled'
+        SET status = $3
         WHERE agent_id = $1
-          AND status = 'evaluating'
+          AND status = $2
         """,
         agent_id,
+        expected_status.value,
+        new_status.value,
     )
     return result == "UPDATE 1"
 
