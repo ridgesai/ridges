@@ -34,3 +34,5 @@ subnet_hotkeys_cache.json
 
 # Operational metadata
 utils/registered_hotkeys.json
+
+.idea/
