@@ -433,6 +433,11 @@ async def _poll_evaluation_cancellation(
         cancellation_reason: Mutable holder for the platform-provided reason.
     """
 
+    logger.info(
+        f"Starting cancellation polling for evaluation {evaluation_id} "
+        f"every {config.VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS}s"
+    )
+
     while not cancellation_event.is_set():
         try:
             response_data = await post_ridges_platform(
