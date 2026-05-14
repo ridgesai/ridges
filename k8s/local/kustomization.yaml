@@ -1,0 +1,5 @@
+resources:
+  - dockerhost.yaml
+  - registry.yaml
+  - screener-statefulsets.yaml
+  - network-policies.yaml
