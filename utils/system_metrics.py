@@ -16,7 +16,7 @@ class SystemMetrics(BaseModel):
     ram_total_gb: Total RAM in GB
     disk_percent: Disk percentage (0-100)
     disk_total_gb: Total disk in GB
-    num_containers: Number of Docker containers
+    num_containers: Number of running containers (Docker or k8s eval Pods)
     """
 
     cpu_percent: Optional[float] = None
@@ -41,7 +41,13 @@ async def get_system_metrics() -> SystemMetrics:
         metrics.disk_percent = disk.percent
         metrics.disk_total_gb = disk.total / (1000**3)
 
-        metrics.num_containers = get_num_docker_containers()
+        from validator.config import RIDGES_ENVIRONMENT_TYPE
+
+        if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
+            from utils.k8s import get_num_k8s_eval_pods
+            metrics.num_containers = get_num_k8s_eval_pods()
+        else:
+            metrics.num_containers = get_num_docker_containers()
 
     except Exception as e:
         logger.warning(f"Error in get_system_metrics(): {e}")
