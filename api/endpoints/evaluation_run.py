@@ -29,12 +29,14 @@ async def evaluation_run_get_by_id(evaluation_run_id: UUID) -> EvaluationRunDeta
         benchmark_family=evaluation_run.benchmark_family,
     )
 
-    return EvaluationRunDetail(
+    response = EvaluationRunDetail(
         **evaluation_run.model_dump(),
-        problem_alias=alias,
-        test_results=test_results,
         **(metrics or {}),
     )
+    response.problem_alias = alias
+    response.test_results = test_results
+
+    return response
 
 
 # /evaluation-run/get-logs-by-id?evaluation_run_id=&type=
