@@ -63,7 +63,9 @@ async def disconnect(reason: str):
         )
         logger.info("Disconnected validator")
     except Exception as e:
-        logger.error(f"Error in disconnect() (non-fatal during shutdown): {type(e).__name__}: {e}")
+        logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
+        logger.error(traceback.format_exc())
+        os._exit(1)
 
 
 # A loop that sends periodic heartbeats to the Ridges platform
