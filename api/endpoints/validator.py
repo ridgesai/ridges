@@ -382,7 +382,7 @@ async def validator_request_evaluation(
     # Try to acquire the lock, but don't hang forever
     # TODO: .env
     try:
-        async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=30):
+        async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=60):
             # Find the next agent awaiting an evaluation from this validator
             agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
             if agent_id is None:
