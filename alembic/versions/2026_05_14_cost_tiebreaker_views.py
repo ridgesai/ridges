@@ -64,10 +64,7 @@ SELECT
     AVG(
         EXTRACT(EPOCH FROM (erh.finished_or_errored_at - erh.started_running_agent_at))
     ) FILTER (WHERE erh.solved) AS avg_running_secs,
-    CASE
-        WHEN COUNT(*) FILTER (WHERE erh.cost_usd IS NULL) > 0 THEN NULL
-        ELSE AVG(erh.cost_usd)
-    END AS avg_cost_usd
+    AVG(erh.cost_usd) AS avg_cost_usd
 FROM evaluations
     INNER JOIN evaluation_runs_hydrated erh USING (evaluation_id)
 GROUP BY evaluations.evaluation_id;
