@@ -18,7 +18,7 @@ from queries.agent import (
     get_top_agents,
 )
 from queries.evaluation import get_evaluations_for_agent_id
-from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id, get_evaluation_run_metrics_by_ids
+from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -96,8 +96,6 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
     runs_per_eval = await asyncio.gather(
         *[get_all_evaluation_runs_in_evaluation_id(evaluation_id=e.evaluation_id) for e in evaluations]
     )
-    all_run_ids = [run.evaluation_run_id for runs in runs_per_eval for run in runs]
-    metrics_by_run_id = await get_evaluation_run_metrics_by_ids(all_run_ids)
 
     enriched_runs = [
         [
@@ -109,7 +107,6 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
                         problem_name=run.problem_name,
                         benchmark_family=run.benchmark_family,
                     ),
-                    **metrics_by_run_id.get(run.evaluation_run_id, {}),
                 }
             )
             for run in runs
