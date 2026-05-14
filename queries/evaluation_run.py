@@ -68,7 +68,6 @@ async def get_all_evaluation_runs_in_evaluation_id(
 def _parse_metrics_row(row: asyncpg.Record) -> dict:
     return {
         "run_time_seconds": row["run_time_seconds"],
-        "run_cost_usd": row["run_cost_usd"],
         "problem_total_runs": row["problem_total_runs"],
         "problem_average_time_seconds": row["problem_average_time_seconds"],
         "problem_average_cost_usd": row["problem_average_cost_usd"],
@@ -88,7 +87,6 @@ async def _get_evaluation_run_metrics_by_ids(
                 er.evaluation_run_id,
                 er.problem_name,
                 e.set_id,
-                er.cost_usd AS persisted_cost_usd,
                 CASE
                     WHEN er.started_initializing_agent_at IS NOT NULL
                      AND er.finished_or_errored_at IS NOT NULL
@@ -150,7 +148,6 @@ async def _get_evaluation_run_metrics_by_ids(
         SELECT
             tr.evaluation_run_id,
             tr.run_time_seconds,
-            tr.persisted_cost_usd as run_cost_usd,
             COALESCE(pa.problem_total_runs, 0) AS problem_total_runs,
             pa.problem_average_time_seconds,
             pa.problem_average_cost_usd

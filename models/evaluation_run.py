@@ -110,7 +110,6 @@ class EvaluationRun(BaseModel):
     problem_name: str
     problem_alias: str | None = None
     run_time_seconds: float | None = None
-    run_cost_usd: float | None = None
     problem_total_runs: int | None = None
     problem_average_time_seconds: float | None = None
     problem_average_cost_usd: float | None = None
