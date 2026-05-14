@@ -37,7 +37,7 @@ from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_reso
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
-from validator.retry_utils import retry_transient
+from validator.retry_utils import retry_with_backoff
 from validator.set_weights import set_weights_from_mapping
 
 # The session ID for this validator
@@ -75,7 +75,7 @@ async def send_heartbeat_loop():
         while True:
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
-            await retry_transient(
+            await retry_with_backoff(
                 lambda: post_ridges_platform(
                     "/validator/heartbeat",
                     ValidatorHeartbeatRequest(system_metrics=system_metrics),
@@ -96,7 +96,7 @@ async def send_heartbeat_loop():
 async def set_weights_loop():
     logger.info("Starting set weights loop...")
     while True:
-        weights_mapping = await retry_transient(
+        weights_mapping = await retry_with_backoff(
             lambda: get_ridges_platform("/scoring/weights", quiet=1),
         )
 
@@ -134,7 +134,7 @@ async def update_evaluation_run(
     request = ValidatorUpdateEvaluationRunRequest(
         evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
     )
-    await retry_transient(
+    await retry_with_backoff(
         lambda: post_ridges_platform("/validator/update-evaluation-run", request, **post_kwargs),
         max_attempts=3,
         base_delay=2.0,

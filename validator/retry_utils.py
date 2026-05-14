@@ -12,7 +12,7 @@ TRANSIENT_HTTP_ERRORS = (
 )
 
 
-async def retry_transient(
+async def retry_with_backoff(
     coro_fn: Callable[[], Coroutine[Any, Any, Any]],
     *,
     max_attempts: int = 3,
