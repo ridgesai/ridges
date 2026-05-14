@@ -85,6 +85,11 @@ if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
 SEND_HEARTBEAT_INTERVAL_SECONDS = max(int(SEND_HEARTBEAT_INTERVAL_SECONDS), 10)  # minimum 10 seconds
 
+VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS = max(
+    int(os.getenv("VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS", "15")),
+    15,
+)
+
 SET_WEIGHTS_INTERVAL_SECONDS = os.getenv("SET_WEIGHTS_INTERVAL_SECONDS")
 if not SET_WEIGHTS_INTERVAL_SECONDS:
     logger.fatal("SET_WEIGHTS_INTERVAL_SECONDS is not set in .env")
@@ -146,6 +151,7 @@ logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
 
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Validator Cancellation Check Interval: {VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Timeout: {SET_WEIGHTS_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
