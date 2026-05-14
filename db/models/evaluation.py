@@ -35,6 +35,7 @@ class Evaluation(Base, CreatedAtMixin):
             "validator_hotkey",
             postgresql_ops={"validator_hotkey": "text_pattern_ops"},
         ),
+        sa.Index("idx_evaluations_set_id", "set_id"),
     )
 
 
