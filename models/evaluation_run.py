@@ -78,7 +78,7 @@ class EvaluationRunErrorCode(IntEnum):
     PLATFORM_FAILED_PROVISIONING = (3050, "Platform failed to provision task resources")
     PLATFORM_PRUNED_BY_SCORE_BOUND = (
         3060,
-        "The platform cancelled this run because the agent could no longer exceed the approved leader score",
+        "The platform stopped this run because the agent could no longer meet the required score bound",
     )
 
     def get_error_message(self) -> str:
