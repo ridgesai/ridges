@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import traceback
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -69,6 +71,9 @@ async def run_task(
     job_name: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
+    proxy_version: str | None = None,
+    proxy_source_url: str | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -94,6 +99,7 @@ async def run_task(
     summary = await _run_task_dir(
         task_dir=resolved_task_dir,
         task_name=task_name,
+        task_digest=task_digest,
         evaluation_run_id=evaluation_run_id,
         agent_path=resolved_agent_path,
         agent_timeout_sec=agent_timeout_sec,
@@ -104,6 +110,9 @@ async def run_task(
         job_name=job_name,
         openrouter_config=openrouter_config,
         max_cost_usd=max_cost_usd,
+        fetch_task_url=fetch_task_url,
+        proxy_version=proxy_version,
+        proxy_source_url=proxy_source_url,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
     )
@@ -115,6 +124,7 @@ async def _run_task_dir(
     *,
     task_dir: Path,
     task_name: str,
+    task_digest: str = "",
     evaluation_run_id: str,
     agent_path: Path,
     agent_timeout_sec: float | None,
@@ -125,6 +135,9 @@ async def _run_task_dir(
     job_name: str | None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
+    proxy_version: str | None = None,
+    proxy_source_url: str | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -136,6 +149,8 @@ async def _run_task_dir(
     from harbor.job import Job
     from harbor.models.job.config import JobConfig, RetryConfig
     from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig
+
+    ridges_environment_type = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
 
     resolved_job_name = job_name or f"{task_name}__{uuid4().hex[:8]}"
     job_dir = results_dir / resolved_job_name
@@ -155,18 +170,95 @@ async def _run_task_dir(
         openrouter_config=openrouter_config,
     )
 
-    environment_config = EnvironmentConfig(
-        env=docker_environment_env(
-            ridges_trial_id=ridges_trial_id,
-            upstream_url=upstream_url,
-            upstream_host=upstream_host,
-            evaluation_run_id=evaluation_run_id,
-            max_cost_usd=effective_max_cost_usd,
-            proxy_data_dir=str(proxy_data_dir),
-            openrouter_config=openrouter_config,
+    if ridges_environment_type == "kubernetes":
+        # K8s proxy listens on 8080 (non-root can't bind to 80).
+        agent_env["SANDBOX_PROXY_URL"] = "http://sandbox-proxy:8080"
+
+        from kubernetes import client as k8s_client_mod
+        from kubernetes import config as k8s_config_mod
+
+        K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "ridges")
+        K8S_REGISTRY = os.getenv("K8S_REGISTRY", "registry.ridges.svc:5000")
+        K8S_CONTEXT = os.getenv("K8S_CONTEXT")
+        _node_selector_raw = os.getenv("K8S_NODE_SELECTOR")
+        K8S_NODE_SELECTOR = (
+            dict(kv.split("=", 1) for kv in _node_selector_raw.split(",")) if _node_selector_raw else None
         )
-    )
-    config = JobConfig(
+        K8S_REGISTRY_SECRET = os.getenv("K8S_REGISTRY_SECRET")
+        K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")
+        K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
+        K8S_OWNER_POD_NAME = os.getenv("MY_POD_NAME")
+        K8S_OWNER_POD_UID = os.getenv("MY_POD_UID")
+
+        from ridges_harbor.k8s_runtime import build_k8s_verifier_egress_hook
+
+        digest_tag = task_digest.split(":")[1][:12]
+
+        # Generate a fresh presigned URL for the Kaniko init container (5-min TTL).
+        if fetch_task_url is None:
+            raise RuntimeError("fetch_task_url callback is required in Kubernetes mode")
+        presigned_url = await fetch_task_url(task_digest)
+
+        # proxy_version is provided by the API (read from S3 on the API side and
+        # included in ValidatorRequestEvaluationResponse). This avoids the screener
+        # needing its own S3 client, following the same pattern as task downloads.
+        if not proxy_version:
+            raise RuntimeError("proxy_version is required in Kubernetes mode (should be provided by the API)")
+        proxy_image = f"{K8S_REGISTRY}/sandbox-proxy:{proxy_version}"
+
+        environment_config = EnvironmentConfig(
+            import_path="ridges_harbor.k8s_environment:RidgesKubernetesEnvironment",
+            env={},
+            kwargs={
+                "namespace": K8S_NAMESPACE,
+                "registry": K8S_REGISTRY,
+                "task_name": task_name,
+                "digest_tag": digest_tag,
+                "task_archive_presigned_url": presigned_url,
+                "proxy_image": proxy_image,
+                "evaluation_run_id": evaluation_run_id,
+                "max_cost_usd": str(max_cost_usd) if max_cost_usd is not None else "999999",
+                "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
+                "proxy_data_dir": str(proxy_data_dir),
+                "kubeconfig_context": K8S_CONTEXT,
+                "node_selector": K8S_NODE_SELECTOR,
+                "labels": {"ridges.ai/trial-id": ridges_trial_id},
+                "registry_credentials_secret": K8S_REGISTRY_SECRET,
+                "registry_password": K8S_REGISTRY_PASSWORD,
+                "registry_insecure": K8S_REGISTRY_INSECURE,
+                "owner_pod_name": K8S_OWNER_POD_NAME,
+                "owner_pod_uid": K8S_OWNER_POD_UID,
+                "proxy_source_url": proxy_source_url,
+                "proxy_version": proxy_version,
+            },
+        )
+
+        # Build k8s client for the egress hook
+        try:
+            k8s_config_mod.load_incluster_config()
+        except k8s_config_mod.ConfigException:
+            k8s_config_mod.load_kube_config(context=K8S_CONTEXT)
+        core_api = k8s_client_mod.CoreV1Api()
+
+        enable_verifier_egress = build_k8s_verifier_egress_hook(
+            namespace=K8S_NAMESPACE,
+            core_api=core_api,
+        )
+    else:
+        environment_config = EnvironmentConfig(
+            env=docker_environment_env(
+                ridges_trial_id=ridges_trial_id,
+                upstream_url=upstream_url,
+                upstream_host=upstream_host,
+                evaluation_run_id=evaluation_run_id,
+                max_cost_usd=effective_max_cost_usd,
+                proxy_data_dir=str(proxy_data_dir),
+                openrouter_config=openrouter_config,
+            )
+        )
+        enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
+
+    job_config = JobConfig(
         job_name=resolved_job_name,
         jobs_dir=results_dir,
         n_attempts=1,
@@ -185,14 +277,13 @@ async def _run_task_dir(
             )
         ],
     )
-    enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
     try:
         EnvironmentFactory.run_preflight(
-            type=config.environment.type,
-            import_path=config.environment.import_path,
+            type=job_config.environment.type,
+            import_path=job_config.environment.import_path,
         )
-        job = await Job.create(config)
+        job = await Job.create(job_config)
 
         if on_agent_started is not None:
             job.on_agent_started(on_agent_started)

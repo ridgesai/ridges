@@ -96,6 +96,8 @@ class ExecutionEngine:
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
         on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
+        proxy_version: str | None = None,
+        proxy_source_url: str | None = None,
     ) -> ExecutionResult:
         """Run the task referenced by the evaluation set and normalize the result.
 
@@ -144,6 +146,9 @@ class ExecutionEngine:
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
+                    fetch_task_url=fetch_task_url,
+                    proxy_version=proxy_version,
+                    proxy_source_url=proxy_source_url,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None
