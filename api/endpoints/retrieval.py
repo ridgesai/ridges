@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import Evaluation, EvaluationWithRuns
-from models.evaluation_run import EvaluationRun
 from models.queue import QueueStage
 from queries.agent import (
     get_agent_by_id,
@@ -36,20 +35,6 @@ from utils.s3 import download_text_file_from_s3
 from utils.ttl import ttl_cache
 
 router = APIRouter()
-
-
-def _temp_evaluation_run_metrics(run: EvaluationRun) -> dict:
-    run_time_seconds = None
-    if run.started_initializing_agent_at is not None and run.finished_or_errored_at is not None:
-        run_time_seconds = (run.finished_or_errored_at - run.started_initializing_agent_at).total_seconds()
-
-    return {
-        "run_time_seconds": run_time_seconds,
-        "run_cost_usd": None,
-        "problem_total_runs": 0,
-        "problem_average_time_seconds": None,
-        "problem_average_cost_usd": None,
-    }
 
 
 # /retrieval/queue?stage={pre_screening|screener_1|screener_2|validator}
@@ -122,7 +107,6 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
                         problem_name=run.problem_name,
                         benchmark_family=run.benchmark_family,
                     ),
-                    **_temp_evaluation_run_metrics(run),
                 }
             )
             for run in runs
