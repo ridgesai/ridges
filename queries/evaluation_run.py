@@ -150,7 +150,7 @@ async def _get_evaluation_run_metrics_by_ids(
         SELECT
             tr.evaluation_run_id,
             tr.run_time_seconds,
-            tr.persisted_cost_usd,
+            tr.persisted_cost_usd as run_cost_usd,
             COALESCE(pa.problem_total_runs, 0) AS problem_total_runs,
             pa.problem_average_time_seconds,
             pa.problem_average_cost_usd
