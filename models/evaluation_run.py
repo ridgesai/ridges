@@ -109,10 +109,6 @@ class EvaluationRun(BaseModel):
     evaluation_id: UUID
     problem_name: str
     problem_alias: str | None = None
-    run_time_seconds: float | None = None
-    problem_total_runs: int | None = None
-    problem_average_time_seconds: float | None = None
-    problem_average_cost_usd: float | None = None
     benchmark_family: str | None = None
     execution_spec: dict[str, Any] | None = None
 
@@ -132,6 +128,15 @@ class EvaluationRun(BaseModel):
     started_initializing_eval_at: Optional[datetime] = None
     started_running_eval_at: Optional[datetime] = None
     finished_or_errored_at: Optional[datetime] = None
+
+
+class EvaluationRunWithMetrics(EvaluationRun):
+    """EvaluationRun enriched with peer-comparison metrics."""
+
+    run_time_seconds: float | None = None
+    problem_total_runs: int | None = None
+    problem_average_time_seconds: float | None = None
+    problem_average_cost_usd: float | None = None
 
 
 class EvaluationRunLogType(str, Enum):
