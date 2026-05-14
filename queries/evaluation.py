@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from uuid import UUID, uuid4
 
+import api.config as config
 import utils.logger as logger
 from models.evaluation import Evaluation, EvaluationStatus, HydratedEvaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunStatus
@@ -8,6 +10,13 @@ from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation_run import create_evaluation_runs, get_all_evaluation_runs_in_evaluation_id
 from queries.evaluation_set import get_all_evaluation_set_problems_in_set_group_in_set_id, get_latest_set_id
 from utils.database import DatabaseConnection, db_operation
+
+
+@dataclass(slots=True, frozen=True)
+class LocalEvaluationScoreBound:
+    total_runs: int
+    impossible_runs: int
+    upper_bound: float
 
 
 @db_operation
@@ -160,6 +169,113 @@ async def get_num_successful_validator_evaluations_for_agent_id(conn: DatabaseCo
             AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
         """,
         agent_id,
+    )
+
+
+@db_operation
+async def get_approved_validator_leader_score_for_set(
+    conn: DatabaseConnection,
+    set_id: int,
+    excluded_agent_id: UUID,
+    required_validator_count: int = config.NUM_EVALS_PER_AGENT,
+) -> Optional[float]:
+    return await conn.fetchval(
+        """
+        SELECT MAX(agent_score.final_score)
+        FROM agent_scores agent_score
+        WHERE agent_score.set_id = $1
+          AND agent_score.approved IS TRUE
+          AND agent_score.approved_at <= NOW()
+          AND agent_score.validator_count = $2
+          AND agent_score.agent_id <> $3
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark_agent
+              WHERE benchmark_agent.agent_id = agent_score.agent_id
+          )
+        """,
+        set_id,
+        required_validator_count,
+        excluded_agent_id,
+    )
+
+
+@db_operation
+async def get_local_evaluation_score_upper_bound(
+    conn: DatabaseConnection, evaluation_id: UUID
+) -> Optional[LocalEvaluationScoreBound]:
+    row = await conn.fetchrow(
+        f"""
+        SELECT
+            COUNT(*)::int AS total_runs,
+            COUNT(*) FILTER (
+                WHERE
+                    (
+                        status = '{EvaluationRunStatus.finished.value}'::evaluationrunstatus
+                        AND solved IS NOT TRUE
+                    )
+                    OR (
+                        status = '{EvaluationRunStatus.error.value}'::evaluationrunstatus
+                        AND error_code >= 1000
+                        AND error_code < 2000
+                    )
+            )::int AS impossible_runs
+        FROM evaluation_runs_hydrated
+        WHERE evaluation_id = $1
+        """,
+        evaluation_id,
+    )
+
+    if row is None or row["total_runs"] == 0:
+        return None
+
+    total_runs = row["total_runs"]
+    impossible_runs = row["impossible_runs"]
+    return LocalEvaluationScoreBound(
+        total_runs=total_runs,
+        impossible_runs=impossible_runs,
+        upper_bound=(total_runs - impossible_runs) / total_runs,
+    )
+
+
+@db_operation
+async def cancel_agent_if_evaluating(conn: DatabaseConnection, agent_id: UUID) -> bool:
+    result = await conn.execute(
+        """
+        UPDATE agents
+        SET status = 'cancelled'
+        WHERE agent_id = $1
+          AND status = 'evaluating'
+        """,
+        agent_id,
+    )
+    return result == "UPDATE 1"
+
+
+@db_operation
+async def set_unfinished_evaluation_runs_to_score_pruned(
+    conn: DatabaseConnection, evaluation_id: UUID, error_message: str
+) -> int:
+    return await conn.fetchval(
+        f"""
+        WITH updated AS (
+            UPDATE evaluation_runs
+            SET
+                status = '{EvaluationRunStatus.error.value}',
+                error_code = {EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.value},
+                error_message = $2,
+                finished_or_errored_at = NOW()
+            WHERE evaluation_id = $1
+              AND status NOT IN (
+                  '{EvaluationRunStatus.finished.value}'::evaluationrunstatus,
+                  '{EvaluationRunStatus.error.value}'::evaluationrunstatus
+              )
+            RETURNING 1
+        )
+        SELECT COUNT(*)::int FROM updated
+        """,
+        evaluation_id,
+        error_message,
     )
 
 
