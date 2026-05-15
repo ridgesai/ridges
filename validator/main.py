@@ -699,6 +699,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
             "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
         )
     finally:
+        await _cancel_background_tasks(poll_task)
         if config.RIDGES_ENVIRONMENT_TYPE == "docker":
             await asyncio.to_thread(prune_docker_disk_resources)
         elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
