@@ -47,6 +47,25 @@ data:
       },
       "log": {
         "level": "info"
+      },
+      "extensions": {
+        "sync": {
+          "downloadDir": "/tmp/zot/sync",
+          "registries": [
+            {
+              "urls": ["https://registry-1.docker.io"],
+              "onDemand": true,
+              "tlsVerify": true,
+              "maxRetries": 3,
+              "retryDelay": "5m",
+              "content": [
+                {
+                  "prefix": "swebench/**"
+                }
+              ]
+            }
+          ]
+        }
       }
     }
 ---

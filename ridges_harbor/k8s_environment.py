@@ -970,6 +970,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             f"--destination={image_ref}",
             "--cache=true",
             f"--cache-repo={self.registry}/cache",
+            f"--registry-mirror={self.registry}",
         ]
         if self._registry_insecure:
             kaniko_args.append(f"--insecure-registry={self.registry}")
