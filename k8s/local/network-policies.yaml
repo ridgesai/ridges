@@ -1,0 +1,132 @@
+---
+# Agent phase: allow only DNS + outbound port 443.
+# All HTTPS traffic from the main container is transparently intercepted by the
+# iptables REDIRECT rule and forwarded to the proxy SNI router on port 15443.
+# The proxy sidecar (UID 1337, exempt from REDIRECT) reaches the internet directly.
+# Port 80 is intentionally omitted: agents have no legitimate use for plain HTTP.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-agent-egress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      ridges.ai/phase: agent
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Outbound HTTPS only (proxy sidecar intercepts via iptables REDIRECT)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - port: 443
+          protocol: TCP
+---
+# Verification phase: unrestricted egress so the verifier can reach any host.
+# Pods are promoted to this phase by the k8s_runtime verifier egress hook
+# (label ridges.ai/phase changes from "agent" → "verification" at verification time).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-verification-egress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      ridges.ai/phase: verification
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+---
+# Allow the in-cluster registry to be reached by all traffic (pods and kubelets).
+# Authentication is enforced by htpasswd inside Zot — the NetworkPolicy is not
+# the access-control boundary here.  Restricting to a namespace selector would
+# block kubelet image pulls from nodes that don't host the registry pod, which
+# breaks in any multi-node topology.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-registry-ingress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      app: registry
+  policyTypes:
+    - Ingress
+  ingress:
+    - {}
+---
+# Default deny: catch-all that blocks egress for any pod not matched by a
+# more-specific allow policy below.  Must be listed last so that the
+# explicit allows above take precedence (NetworkPolicy rules are additive,
+# but the empty egress list here means "deny all" for unmatched pods).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: ridges
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+---
+# Screener pods need unrestricted egress: S3, Postgres, OpenRouter, the
+# in-cluster registry, and arbitrary outbound for task archiving / fetching.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-screener-egress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      app: ridges-screener
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+---
+# Registry needs outbound to pull base images (DockerHub, swebench, etc.)
+# during Kaniko builds.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-registry-egress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      app: registry
+  policyTypes:
+    - Egress
+  egress:
+    - {}
+---
+# Kaniko build pods need unrestricted egress:
+# - DNS to resolve registry / S3 hostnames
+# - S3 / S3mock to fetch build context tarballs via presigned URLs
+# - In-cluster registry to push the built image
+# - DockerHub / external registries to pull base images
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ridges-build-egress
+  namespace: ridges
+spec:
+  podSelector:
+    matchLabels:
+      ridges.ai/build-job: "true"
+  policyTypes:
+    - Egress
+  egress:
+    - {}

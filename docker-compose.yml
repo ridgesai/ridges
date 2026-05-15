@@ -5,9 +5,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: 
-      POSTGRES_PASSWORD: 
-      POSTGRES_DB: 
+      POSTGRES_USER: ridges
+      POSTGRES_PASSWORD: ridges123
+      POSTGRES_DB: ridges
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -20,7 +20,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: ./api/Dockerfile
+      dockerfile: ./Dockerfile.api
     ports:
       - "8000:8000"
     env_file:
@@ -28,16 +28,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      s3mock:
+      s3:
         condition: service_started
 
-  s3mock:
+  s3:
     image: adobe/s3mock:latest
     environment:
-      - COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS=ridges-local
+      - COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS=ridges-local,ridges-registry
+      - COM_ADOBE_TESTING_S3MOCK_STORE_ROOT=/s3mockroot
+      - COM_ADOBE_TESTING_S3MOCK_STORE_RETAINFILESONEXIT=true
     ports:
       - "9090:9090"
       - "9191:9191"
+    volumes:
+      - s3_data:/s3mockroot
 
 volumes:
   postgres_data:
+  s3_data:

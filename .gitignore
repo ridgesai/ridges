@@ -31,3 +31,8 @@ analyzer/
 # OLD
 subnet_hotkeys_cache.json
 .python-version
+
+# Operational metadata
+utils/registered_hotkeys.json
+
+.idea/

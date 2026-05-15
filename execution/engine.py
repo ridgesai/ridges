@@ -144,6 +144,7 @@ class ExecutionEngine:
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
+                    fetch_task_url=fetch_task_url,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None
