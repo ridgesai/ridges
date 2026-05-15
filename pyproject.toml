@@ -12,6 +12,7 @@ dependencies = [
     "click>=8.1.0",
     "cryptography==46.0.0",
     "docker>=7.1.0",
+    "fastapi>=0.135.2",
     "harbor==0.3.0",
     "httpx>=0.27.0",
     "openai>=2.7.2",
@@ -20,6 +21,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.20",
     "requests>=2.32.3",
+    "sentry-sdk>=2.60.0",
     "sqlalchemy[asyncio]>=2.0",
     "uvicorn>=0.30.5",
 ]
