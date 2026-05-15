@@ -24,6 +24,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
             AND ass.approved_at <= NOW()
             AND ass.approved_at >= NOW() - INTERVAL '12 hours'
             AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND ass.status::text <> 'cancelled'
             AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
         LIMIT 1
@@ -55,6 +56,7 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
             AND ass.approved_at <= NOW()
             AND ass.approved_at >= NOW() - INTERVAL '12 hours'
             AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND ass.status::text <> 'cancelled'
             AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
         LIMIT 1
