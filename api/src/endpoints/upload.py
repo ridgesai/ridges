@@ -1,6 +1,5 @@
 import asyncio
 import os
-import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -9,6 +8,7 @@ from pydantic import BaseModel, Field
 
 import utils.logger as logger
 from api import config
+from api.errors import PaymentAlreadyUsedError, PaymentRefunded
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
@@ -19,8 +19,9 @@ from api.src.utils.upload_agent_helpers import (
     check_rate_limit,
     check_signature,
     get_miner_hotkey,
+    get_tao_price,
 )
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentCreate, AgentStatus
 from queries.agent import (
     create_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
@@ -28,10 +29,15 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_hotkey import get_banned_hotkey
-from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
+from queries.errors import DuplicateAgentIDError
+from queries.payments import (
+    complete_payment,
+    reserve_payment,
+    retrieve_payment_by_hash,
+)
+from queries.refund import is_payment_refunded
 from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import subtensor_client
-from utils.coingecko import get_tao_price
 from utils.debug_lock import DebugLock
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
@@ -191,9 +197,14 @@ async def post_agent(
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
+            if existing_payment is not None and existing_payment.agent_id is not None:
+                raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
 
-            if existing_payment is not None:
-                raise HTTPException(status_code=402, detail="Payment already used")
+            if await is_payment_refunded(
+                upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
+            ):
+                logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
+                raise PaymentRefunded()
 
             # Retrieve payment details from the chain
             try:
@@ -271,24 +282,37 @@ async def post_agent(
                 await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
             )
 
-            if prod and latest_agent_created_at_in_latest_set_id:
-                check_rate_limit(latest_agent_created_at_in_latest_set_id)
+            if prod:
+                if latest_agent_created_at_in_latest_set_id:
+                    check_rate_limit(latest_agent_created_at_in_latest_set_id)
+
+                payment_row = await reserve_payment(
+                    payment_block_hash=payment_block_hash,
+                    payment_extrinsic_index=payment_extrinsic_index,
+                    miner_hotkey=miner_hotkey,
+                    miner_coldkey=coldkey,
+                    amount_rao=payment_value,
+                )
+
+                if payment_row.agent_id is not None:
+                    raise DuplicateAgentIDError(agent_id=payment_row.agent_id)
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
             initial_status = (
                 AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
             )
-            agent = Agent(
-                agent_id=uuid.uuid4(),
+            agent = AgentCreate(
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(timezone.utc),
                 status=initial_status,
                 ip_address=request.client.host if request.client else None,
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index,
             )
-            await create_agent(
+            agent_id = await create_agent(
                 agent,
                 agent_text,
                 runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
@@ -301,23 +325,24 @@ async def post_agent(
             )
 
         if prod:
-            await record_evaluation_payment(
+            await complete_payment(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
-                amount_rao=payment_value,
-                agent_id=agent.agent_id,
-                miner_hotkey=miner_hotkey,
-                miner_coldkey=coldkey,
+                agent_id=agent_id,
             )
 
-        logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
+        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
 
         # Record successful upload
-        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent.agent_id, **upload_data)
+        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
         return AgentUploadResponse(
-            status="success", message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
+            status="success", message=f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
         )
+
+    except DuplicateAgentIDError as e:
+        logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
+        raise PaymentAlreadyUsedError() from e
 
     except HTTPException as e:
         # Determine error type and get ban reason if applicable
