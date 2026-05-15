@@ -12,7 +12,7 @@ from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
 )
-from utils.bittensor import check_if_hotkey_is_registered
+from utils.bittensor import subtensor_client
 from utils.ttl import ttl_cache
 
 router = APIRouter()
@@ -30,7 +30,7 @@ async def weights() -> Dict[str, float]:
     # emissions to it.
     weight_receiving_hotkey = await get_weight_receiving_agent_hotkey()
     if weight_receiving_hotkey:
-        if await check_if_hotkey_is_registered(weight_receiving_hotkey):
+        if await subtensor_client.is_hotkey_registered(weight_receiving_hotkey):
             return {weight_receiving_hotkey: 1.0}
 
     # If no weight-receiving agent is found, assign 100% of emissions to the
