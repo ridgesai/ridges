@@ -105,12 +105,12 @@ def _install_mocks(monkeypatch) -> None:
     monkeypatch.setattr(
         upload_module,
         "check_if_extrinsic_failed",
-        MagicMock(return_value=False),
+        AsyncMock(return_value=False),
     )
     monkeypatch.setattr(
-        upload_module.subtensor.substrate,
+        upload_module.subtensor_client,
         "get_block",
-        MagicMock(
+        AsyncMock(
             return_value={
                 "header": {"number": 42},
                 "extrinsics": [
@@ -121,9 +121,9 @@ def _install_mocks(monkeypatch) -> None:
         ),
     )
     monkeypatch.setattr(
-        upload_module.subtensor,
+        upload_module.subtensor_client,
         "get_hotkey_owner",
-        MagicMock(return_value=FAKE_COLDKEY),
+        AsyncMock(return_value=FAKE_COLDKEY),
     )
     monkeypatch.setattr(
         upload_module,
