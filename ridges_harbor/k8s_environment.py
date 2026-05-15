@@ -901,15 +901,22 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         """HEAD-check an arbitrary image name:tag in the in-cluster registry."""
         import base64
         import http.client
+        import ssl
         import urllib.parse
 
         try:
-            parsed = urllib.parse.urlsplit(f"http://{self.registry}")
+            scheme = "http" if self._registry_insecure else "https"
+            default_port = 5000 if self._registry_insecure else 443
+            parsed = urllib.parse.urlsplit(f"{scheme}://{self.registry}")
             host = parsed.hostname or self.registry.split(":")[0]
-            port = parsed.port or 5000
+            port = parsed.port or default_port
 
             def _head() -> bool:
-                conn = http.client.HTTPConnection(host, port, timeout=10)
+                if self._registry_insecure:
+                    conn: http.client.HTTPConnection = http.client.HTTPConnection(host, port, timeout=10)
+                else:
+                    ctx = ssl.create_default_context()
+                    conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
                 headers: dict[str, str] = {}
                 if self.registry_credentials_secret and self._registry_password:
                     cred = base64.b64encode(
