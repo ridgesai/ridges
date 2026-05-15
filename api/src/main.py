@@ -27,6 +27,7 @@ from api.loops.validator_heartbeat_timeout import (
     validator_heartbeat_timeout_loop,
 )
 from api.src.endpoints.upload import router as upload_router
+from api.src.utils.sentry import initialize_sentry
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
@@ -101,6 +102,9 @@ async def lifespan(app: FastAPI):
     await deinitialize_s3()
     await subtensor_client.close()
 
+
+# Initialize Sentry SDK for monitoring
+initialize_sentry()
 
 app = FastAPI(lifespan=lifespan)
 

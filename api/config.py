@@ -208,6 +208,9 @@ if PRE_SCREENING_JUDGE_RUN_LOOP:
             "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
         )
 
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if not SENTRY_DSN:
+    logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
 logger.info("=== API Configuration ===")
 
