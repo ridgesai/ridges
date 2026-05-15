@@ -145,8 +145,6 @@ async def _run_task_dir(
     max_cost_usd: float | None = None,
     inference_seed: int | None = None,
     fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
-    proxy_version: str | None = None,
-    proxy_source_url: str | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -211,12 +209,8 @@ async def _run_task_dir(
             raise RuntimeError("fetch_task_url callback is required in Kubernetes mode")
         presigned_url = await fetch_task_url(task_digest)
 
-        # proxy_version is provided by the API (read from S3 on the API side and
-        # included in ValidatorRequestEvaluationResponse). This avoids the screener
-        # needing its own S3 client, following the same pattern as task downloads.
-        if not proxy_version:
-            raise RuntimeError("proxy_version is required in Kubernetes mode (should be provided by the API)")
-        proxy_image = f"{K8S_REGISTRY}/sandbox-proxy:{proxy_version}"
+        from validator.config import PROXY_IMAGE
+        proxy_image = PROXY_IMAGE
 
         environment_config = EnvironmentConfig(
             import_path="ridges_harbor.k8s_environment:RidgesKubernetesEnvironment",
@@ -240,8 +234,6 @@ async def _run_task_dir(
                 "registry_insecure": K8S_REGISTRY_INSECURE,
                 "owner_pod_name": K8S_OWNER_POD_NAME,
                 "owner_pod_uid": K8S_OWNER_POD_UID,
-                "proxy_source_url": proxy_source_url,
-                "proxy_version": proxy_version,
             },
         )
 

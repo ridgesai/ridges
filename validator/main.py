@@ -546,21 +546,6 @@ def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEv
         Scheduled tasks for each problem run.
     """
 
-    # Pre-build the proxy image once before dispatching eval runs so a single
-    # build failure doesn't produce N identical error tracebacks.
-    if (
-        config.RIDGES_ENVIRONMENT_TYPE == "kubernetes"
-        and not config.SIMULATE_EVALUATION_RUNS
-        and request_evaluation_response.proxy_version
-        and request_evaluation_response.proxy_source_url
-    ):
-        from ridges_harbor.k8s_prebuild import ensure_proxy_image
-
-        await ensure_proxy_image(
-            proxy_version=request_evaluation_response.proxy_version,
-            proxy_source_url=request_evaluation_response.proxy_source_url,
-        )
-
     tasks = []
     semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_EVALUATION_RUNS)
 
