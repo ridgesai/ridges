@@ -475,14 +475,6 @@ async def validator_request_evaluation(
         except Exception as exc:
             logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
 
-    proxy_version: str | None = None
-    proxy_source_url: str | None = None
-    try:
-        proxy_version = (await download_text_file_from_s3("proxy/version")).strip()
-        proxy_source_url = await generate_presigned_url(f"proxy/proxy-source-{proxy_version}.tar.gz")
-    except Exception as exc:
-        logger.warning(f"Failed to resolve proxy version/URL from S3: {exc}")
-
     return ValidatorRequestEvaluationResponse(
         evaluation_id=evaluation.evaluation_id,
         agent_id=agent_id,
@@ -490,8 +482,6 @@ async def validator_request_evaluation(
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
         openrouter_config=openrouter_config,
-        proxy_version=proxy_version,
-        proxy_source_url=proxy_source_url,
     )
 
 

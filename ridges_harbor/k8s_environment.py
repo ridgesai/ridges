@@ -684,8 +684,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         registry_credentials_secret: str | None = None,
         registry_password: str | None = None,
         registry_insecure: bool = True,
-        proxy_source_url: str | None = None,
-        proxy_version: str | None = None,
         **kwargs,
     ):
         self.registry = registry
@@ -700,8 +698,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         self.registry_credentials_secret = registry_credentials_secret
         self._registry_password = registry_password
         self._registry_insecure = registry_insecure
-        self.proxy_source_url = proxy_source_url
-        self.proxy_version = proxy_version
 
         image = f"{registry}/{task_name}:{digest_tag}"
         # Eval pods need credentials to pull the task image from the in-cluster registry.
@@ -724,7 +720,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     async def start(self, force_build: bool) -> None:
         """Ensure the task image exists in the registry, then start the Pod."""
         await self._ensure_client()
-        await self._ensure_proxy_image()
         await self._ensure_image(force_build=force_build)
         await super().start(force_build=False)
 
@@ -865,175 +860,6 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
     # ------------------------------------------------------------------
     # On-demand image building via Kaniko
     # ------------------------------------------------------------------
-
-    async def _ensure_proxy_image(self) -> None:
-        """Build the proxy sidecar image from S3 if the current version is missing.
-
-        ``proxy_source_url`` is a presigned URL for the proxy tarball, generated
-        by the API (same pattern as task archive URLs). ``proxy_version`` is the
-        content hash used as the image tag.
-
-        Concurrency safety is identical to ``_ensure_image()``: a 409 conflict
-        means another screener is already building; we log and wait.
-
-        If either value is None this method is a no-op.
-        """
-        if not self.proxy_source_url or not self.proxy_version:
-            return
-
-        tag = self.proxy_version
-        proxy_ref = f"{self.registry}/sandbox-proxy:{tag}"
-
-        if await self._image_exists_in_registry_by_ref("sandbox-proxy", tag):
-            self.logger.debug(f"Proxy image {proxy_ref} already in registry – skipping build")
-            self.proxy_image = proxy_ref
-            return
-
-        job_name = f"build-proxy-{tag}"
-        secret_name = f"{job_name}-url"
-        self.logger.info(f"Building proxy image {proxy_ref} via Kaniko job {job_name}")
-
-        try:
-            await asyncio.to_thread(self._create_proxy_build_secret_sync, secret_name, self.proxy_source_url)
-            await asyncio.to_thread(self._create_proxy_kaniko_job_sync, job_name, secret_name, proxy_ref)
-        except ApiException as exc:
-            if exc.status == 409:
-                if await self._is_job_failed(job_name):
-                    self.logger.warning(
-                        f"Proxy Kaniko job {job_name} previously failed — deleting and retrying"
-                    )
-                    await self._delete_job(job_name)
-                    await self._delete_secret(secret_name)
-                    # Reuse the same presigned URL (still valid within the evaluation window)
-                    await asyncio.to_thread(self._create_proxy_build_secret_sync, secret_name, self.proxy_source_url)
-                    await asyncio.to_thread(self._create_proxy_kaniko_job_sync, job_name, secret_name, proxy_ref)
-                else:
-                    self.logger.debug(f"Proxy Kaniko job {job_name} already exists — another screener is building")
-            else:
-                raise
-
-        await self._wait_for_build_job(job_name, secret_name, timeout_sec=300)
-        self.proxy_image = proxy_ref
-
-    def _create_proxy_build_secret_sync(self, secret_name: str, presigned_url: str) -> None:
-        """Create a Secret holding the presigned URL for the proxy Kaniko init container."""
-        secret = k8s_client.V1Secret(
-            metadata=k8s_client.V1ObjectMeta(
-                name=secret_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-url": "true"},
-            ),
-            string_data={"url": presigned_url},
-        )
-        self._api.create_namespaced_secret(namespace=self.namespace, body=secret)
-
-    def _create_proxy_kaniko_job_sync(self, job_name: str, secret_name: str, image_ref: str) -> None:
-        """Create a Kaniko Job that builds the proxy sidecar from a flat S3 tarball.
-
-        Differs from ``_create_kaniko_job_sync`` in two ways:
-        - The proxy tarball is flat (Dockerfile at root), so no ``--strip-components``.
-        - The Kaniko context is ``dir:///workspace`` (not ``dir:///workspace/environment``).
-        """
-        init_container = k8s_client.V1Container(
-            name="fetch-context",
-            image="curlimages/curl:latest",
-            command=["/bin/sh", "-c"],
-            args=[
-                'curl -sSfL "$PRESIGNED_URL" -o /tmp/proxy.tar.gz && '
-                "mkdir -p /workspace && "
-                "tar -xzf /tmp/proxy.tar.gz -C /workspace && "
-                "test -f /workspace/Dockerfile"
-            ],
-            env=[
-                k8s_client.V1EnvVar(
-                    name="PRESIGNED_URL",
-                    value_from=k8s_client.V1EnvVarSource(
-                        secret_key_ref=k8s_client.V1SecretKeySelector(
-                            name=secret_name,
-                            key="url",
-                        )
-                    ),
-                )
-            ],
-            volume_mounts=[k8s_client.V1VolumeMount(name="context", mount_path="/workspace")],
-        )
-
-        kaniko_args = [
-            "--dockerfile=Dockerfile",
-            "--context=dir:///workspace",
-            f"--destination={image_ref}",
-            "--cache=true",
-            f"--cache-repo={self.registry}/cache",
-        ]
-        if self._registry_insecure:
-            kaniko_args.append(f"--insecure-registry={self.registry}")
-
-        kaniko_volume_mounts = [
-            k8s_client.V1VolumeMount(name="context", mount_path="/workspace"),
-        ]
-        if self.registry_credentials_secret:
-            kaniko_volume_mounts.append(
-                k8s_client.V1VolumeMount(
-                    name="docker-config",
-                    mount_path="/kaniko/.docker",
-                    read_only=True,
-                )
-            )
-
-        kaniko_container = k8s_client.V1Container(
-            name="kaniko",
-            image="gcr.io/kaniko-project/executor:latest",
-            args=kaniko_args,
-            volume_mounts=kaniko_volume_mounts,
-        )
-
-        volumes = [
-            k8s_client.V1Volume(
-                name="context",
-                empty_dir=k8s_client.V1EmptyDirVolumeSource(size_limit="200Mi"),
-            )
-        ]
-        if self.registry_credentials_secret:
-            volumes.append(
-                k8s_client.V1Volume(
-                    name="docker-config",
-                    secret=k8s_client.V1SecretVolumeSource(
-                        secret_name=self.registry_credentials_secret,
-                        items=[
-                            k8s_client.V1KeyToPath(
-                                key=".dockerconfigjson",
-                                path="config.json",
-                            )
-                        ],
-                    ),
-                )
-            )
-
-        job = k8s_client.V1Job(
-            api_version="batch/v1",
-            kind="Job",
-            metadata=k8s_client.V1ObjectMeta(
-                name=job_name,
-                namespace=self.namespace,
-                labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-            ),
-            spec=k8s_client.V1JobSpec(
-                backoff_limit=2,
-                ttl_seconds_after_finished=300,
-                template=k8s_client.V1PodTemplateSpec(
-                    metadata=k8s_client.V1ObjectMeta(
-                        labels={"ridges.ai/managed-by": "screener", "ridges.ai/build-job": "true"},
-                    ),
-                    spec=k8s_client.V1PodSpec(
-                        init_containers=[init_container],
-                        containers=[kaniko_container],
-                        restart_policy="Never",
-                        volumes=volumes,
-                    ),
-                ),
-            ),
-        )
-        self._batch.create_namespaced_job(namespace=self.namespace, body=job)
 
     async def _ensure_image(self, *, force_build: bool = False) -> None:
         """Check registry for the task image; build with Kaniko if missing."""
