@@ -63,6 +63,7 @@ async def run_task(
     evaluation_run_id: str,
     agent_path: str | Path,
     agent_timeout_sec: float | None = None,
+    verifier_timeout_sec: float | None = None,
     inference_url: str | None = None,
     results_dir: str | Path | None = DEFAULT_RESULTS_DIR,
     debug: bool = False,
@@ -97,6 +98,7 @@ async def run_task(
         evaluation_run_id=evaluation_run_id,
         agent_path=resolved_agent_path,
         agent_timeout_sec=agent_timeout_sec,
+        verifier_timeout_sec=verifier_timeout_sec,
         upstream_url=upstream_url,
         upstream_host=upstream_host,
         results_dir=resolved_results_dir,
@@ -118,6 +120,7 @@ async def _run_task_dir(
     evaluation_run_id: str,
     agent_path: Path,
     agent_timeout_sec: float | None,
+    verifier_timeout_sec: float | None,
     upstream_url: str,
     upstream_host: str,
     results_dir: Path,
@@ -135,11 +138,14 @@ async def _run_task_dir(
     from harbor.environments.factory import EnvironmentFactory
     from harbor.job import Job
     from harbor.models.job.config import JobConfig, RetryConfig
-    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig
+    from harbor.models.trial.config import AgentConfig, EnvironmentConfig, TaskConfig, VerifierConfig
 
     resolved_job_name = job_name or f"{task_name}__{uuid4().hex[:8]}"
     job_dir = results_dir / resolved_job_name
     effective_timeout = agent_timeout_sec if agent_timeout_sec is not None and agent_timeout_sec > 0 else None
+    effective_verifier_timeout = (
+        verifier_timeout_sec if verifier_timeout_sec is not None and verifier_timeout_sec > 0 else None
+    )
     ridges_trial_id = uuid4().hex
     proxy_data_dir = job_dir / "proxy_data"
     proxy_data_dir.mkdir(parents=True, exist_ok=True)
@@ -175,6 +181,7 @@ async def _run_task_dir(
         quiet=True,
         retry=RetryConfig(max_retries=0),
         environment=environment_config,
+        verifier=VerifierConfig(max_timeout_sec=effective_verifier_timeout),
         tasks=[TaskConfig(path=task_dir)],
         agents=[
             AgentConfig(
