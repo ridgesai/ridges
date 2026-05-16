@@ -55,6 +55,19 @@ class FakeEnvironmentConfig:
         self.import_path = import_path
 
 
+class FakeVerifierConfig:
+    def __init__(
+        self,
+        *,
+        max_timeout_sec: float | None = None,
+        override_timeout_sec: float | None = None,
+        disable: bool = False,
+    ):
+        self.max_timeout_sec = max_timeout_sec
+        self.override_timeout_sec = override_timeout_sec
+        self.disable = disable
+
+
 class FakeJobConfig:
     def __init__(self, **kwargs):
         self.__dict__.update(kwargs)
@@ -62,6 +75,7 @@ class FakeJobConfig:
             "environment",
             FakeEnvironmentConfig(),
         )
+        self.verifier = kwargs.get("verifier", FakeVerifierConfig())
 
 
 class FakeEnvironmentFactory:
@@ -151,6 +165,7 @@ def _install_fake_harbor(monkeypatch) -> None:
     trial_config_module.AgentConfig = FakeAgentConfig
     trial_config_module.EnvironmentConfig = FakeEnvironmentConfig
     trial_config_module.TaskConfig = FakeTaskConfig
+    trial_config_module.VerifierConfig = FakeVerifierConfig
 
     monkeypatch.setitem(sys.modules, "harbor", harbor_module)
     monkeypatch.setitem(sys.modules, "harbor.environments", environments_module)
@@ -178,6 +193,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         evaluation_run_id="eval-run-1",
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
+        verifier_timeout_sec=60.0,
         upstream_url="http://127.0.0.1:1234",
         upstream_host="127.0.0.1",
         results_dir=results_dir,
@@ -187,6 +203,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
 
     assert FakeEnvironmentFactory.calls == [("docker", None)]
     assert FakeJob.created_configs[0].tasks[0].path == task_dir
+    assert FakeJob.created_configs[0].verifier.max_timeout_sec == 60.0
     assert FakeJob.created_configs[0].agents[0].override_timeout_sec == 30.0
     assert FakeJob.created_configs[0].agents[0].kwargs == {
         "agent_path": str(tmp_path / "agent.py"),
@@ -234,6 +251,7 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
         evaluation_run_id="eval-run-2",
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
         upstream_url="http://127.0.0.1:1234",
         upstream_host="127.0.0.1",
         results_dir=results_dir,
@@ -276,6 +294,7 @@ async def test_run_task_dir_registers_lifecycle_hooks_in_expected_order(tmp_path
         evaluation_run_id="eval-run-1",
         agent_path=tmp_path / "agent.py",
         agent_timeout_sec=30.0,
+        verifier_timeout_sec=None,
         upstream_url="http://127.0.0.1:1234",
         upstream_host="127.0.0.1",
         results_dir=results_dir,

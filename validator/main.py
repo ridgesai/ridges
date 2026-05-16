@@ -747,6 +747,7 @@ async def main():
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
         harbor_debug=config.RIDGES_HARBOR_DEBUG,
         max_agent_timeout_sec=running_agent_timeout_seconds,
+        max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
     )
 

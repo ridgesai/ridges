@@ -343,6 +343,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         ) rt on true
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
+        and ass.status::text <> 'cancelled'
         order by
             round(ass.final_score::numeric, 6) desc,
             rt.avg_cost_usd asc nulls last,

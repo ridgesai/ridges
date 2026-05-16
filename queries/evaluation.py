@@ -188,6 +188,7 @@ async def get_approved_validator_leader_score_for_set(
           AND agent_score.approved IS TRUE
           AND agent_score.approved_at <= NOW()
           AND agent_score.validator_count = $2
+          AND agent_score.status::text <> 'cancelled'
           AND agent_score.agent_id <> $3
           AND NOT EXISTS (
               SELECT 1

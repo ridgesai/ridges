@@ -16,7 +16,11 @@ from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRun, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup
-from queries.evaluation import LocalEvaluationScoreBound, get_local_evaluation_score_upper_bound
+from queries.evaluation import (
+    LocalEvaluationScoreBound,
+    get_approved_validator_leader_score_for_set,
+    get_local_evaluation_score_upper_bound,
+)
 
 
 def _agent(agent_id, *, status: AgentStatus = AgentStatus.evaluating) -> Agent:
@@ -382,6 +386,15 @@ class _FakeBoundConn:
         return {"total_runs": 20, "impossible_runs": 10}
 
 
+class _FakeLeaderConn:
+    def __init__(self):
+        self.query: str | None = None
+
+    async def fetchval(self, query: str, *_args):
+        self.query = query
+        return 0.5
+
+
 @pytest.mark.anyio
 async def test_local_upper_bound_only_reduces_for_unsolved_or_agent_errors() -> None:
     conn = _FakeBoundConn()
@@ -393,3 +406,13 @@ async def test_local_upper_bound_only_reduces_for_unsolved_or_agent_errors() -> 
     assert "solved IS NOT TRUE" in conn.query
     assert "error_code >= 1000" in conn.query
     assert "error_code < 2000" in conn.query
+
+
+@pytest.mark.anyio
+async def test_approved_validator_leader_ignores_cancelled_agents() -> None:
+    conn = _FakeLeaderConn()
+
+    await get_approved_validator_leader_score_for_set.__wrapped__(conn, 21, uuid4(), 3)
+
+    assert conn.query is not None
+    assert "agent_score.status::text <> 'cancelled'" in conn.query

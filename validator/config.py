@@ -5,6 +5,7 @@ from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
 import utils.logger as logger
+from utils.validator_hotkeys import validator_hotkey_to_name
 
 load_dotenv()
 
@@ -171,26 +172,34 @@ if UPDATE_AUTOMATICALLY:
 else:
     logger.warning("Not Updating Automatically!")
 
-VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 7
+VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 30
 SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 30
 HARDCODED_MAX_COST_USD = 0.29
+VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
+    "Opentensor Foundation": 10,
+    "Yuma": 10,
+}
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
-if not MAX_CONCURRENT_EVALUATION_RUNS:
-    logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
-    MAX_CONCURRENT_EVALUATION_RUNS = (
-        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS
-        if MODE == "validator"
-        else SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+if MODE == "validator":
+    validator_name = validator_hotkey_to_name(VALIDATOR_HOTKEY.ss58_address)
+    validator_concurrency_cap = min(
+        VALIDATOR_CONCURRENCY_CAPS_BY_NAME.get(validator_name, VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS),
+        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS,
     )
-
-MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
-if MODE == "validator" and MAX_CONCURRENT_EVALUATION_RUNS > VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
-    logger.warning(
-        f"Clamping MAX_CONCURRENT_EVALUATION_RUNS from {MAX_CONCURRENT_EVALUATION_RUNS} "
-        f"to {VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS}"
-    )
-    MAX_CONCURRENT_EVALUATION_RUNS = VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS
+    if MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.warning(
+            "Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; "
+            f"using configured cap of {validator_concurrency_cap} for {validator_name}"
+        )
+    if validator_concurrency_cap != VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.info(f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}")
+    MAX_CONCURRENT_EVALUATION_RUNS = validator_concurrency_cap
+else:
+    if not MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
+        MAX_CONCURRENT_EVALUATION_RUNS = SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+    MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
 logger.info(f"Max Concurrent Evaluation Runs: {MAX_CONCURRENT_EVALUATION_RUNS}")
 
 RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
