@@ -5,6 +5,7 @@ from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
 import utils.logger as logger
+from utils.validator_hotkeys import validator_hotkey_to_name
 
 load_dotenv()
 
@@ -174,15 +175,28 @@ else:
 VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 30
 SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 30
 HARDCODED_MAX_COST_USD = 0.29
+VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
+    "Opentensor Foundation": 6,
+    "Yuma": 10,
+}
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
 if MODE == "validator":
+    validator_name = validator_hotkey_to_name(VALIDATOR_HOTKEY.ss58_address)
+    validator_concurrency_cap = min(
+        VALIDATOR_CONCURRENCY_CAPS_BY_NAME.get(validator_name, VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS),
+        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS,
+    )
     if MAX_CONCURRENT_EVALUATION_RUNS:
         logger.warning(
             "Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; "
-            f"using hardcoded cap of {VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS}"
+            f"using configured cap of {validator_concurrency_cap} for {validator_name}"
         )
-    MAX_CONCURRENT_EVALUATION_RUNS = VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS
+    if validator_concurrency_cap != VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.info(
+            f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}"
+        )
+    MAX_CONCURRENT_EVALUATION_RUNS = validator_concurrency_cap
 else:
     if not MAX_CONCURRENT_EVALUATION_RUNS:
         logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
