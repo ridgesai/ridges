@@ -220,7 +220,12 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     monkeypatch.setattr(ExecutionEngine, "_resolve_task_dir", fake_resolve_task_dir)
     monkeypatch.setattr(engine_module, "run_task", fake_run_task)
 
-    engine = ExecutionEngine("http://inference", harbor_results_dir=tmp_path / "results", max_cost_usd=12.5)
+    engine = ExecutionEngine(
+        "http://inference",
+        harbor_results_dir=tmp_path / "results",
+        max_eval_timeout_sec=600.0,
+        max_cost_usd=12.5,
+    )
     evaluation_run_id = uuid4()
 
     result = await engine.evaluate(
@@ -244,6 +249,7 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     assert captured["evaluation_run_id"] == str(evaluation_run_id)
     assert captured["results_dir"] == (tmp_path / "results").resolve()
     assert captured["job_name"] == f"update-status-file__{evaluation_run_id}"
+    assert captured["verifier_timeout_sec"] == 600.0
     assert captured["openrouter_config"] == OpenRouterRuntimeConfig(
         api_key="sk-or-v1-secret",
         management_key="sk-or-mgmt-secret",
