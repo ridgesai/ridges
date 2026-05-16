@@ -193,9 +193,7 @@ if MODE == "validator":
             f"using configured cap of {validator_concurrency_cap} for {validator_name}"
         )
     if validator_concurrency_cap != VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
-        logger.info(
-            f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}"
-        )
+        logger.info(f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}")
     MAX_CONCURRENT_EVALUATION_RUNS = validator_concurrency_cap
 else:
     if not MAX_CONCURRENT_EVALUATION_RUNS:
