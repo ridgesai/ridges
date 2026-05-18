@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 from miners.cli.click_ext import HELP_CONTEXT_SETTINGS, click, format_help
 from miners.cli.commands import miner
-from miners.cli.commands.upload import DEFAULT_API_BASE_URL, resume_upload, upload
+from miners.cli.commands.upload import DEFAULT_API_BASE_URL, resume_upload, team_upload, upload
 
 load_dotenv(".env")
 
@@ -34,6 +34,7 @@ def cli(ctx, url):
 
 cli.add_command(upload)
 cli.add_command(resume_upload)
+cli.add_command(team_upload)
 cli.add_command(miner)
 
 __all__ = ["cli"]

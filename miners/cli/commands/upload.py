@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import os
 import time
+import uuid as _uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import httpx
 from rich.console import Console
@@ -21,6 +22,9 @@ console = Console()
 DEFAULT_API_BASE_URL = "https://agent-upload.ridges.ai"
 UPLOAD_TIMEOUT_SECONDS = 120
 MAX_AGENT_FILE_SIZE_BYTES = 2 * 1024 * 1024
+
+if TYPE_CHECKING:
+    from bittensor_wallet.wallet import Wallet
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,12 +295,29 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
 def _execute_upload(
     client: httpx.Client,
     *,
-    wallet,
+    wallet: Wallet,
     target: UploadTarget,
     credentials: OpenRouterUploadCredentials,
     receipt: PaymentReceipt,
+    run_check: bool = True,
 ) -> None:
-    """Shared post-payment upload steps used by both upload and resume-upload."""
+    """Shared post-payment upload steps used by both upload and resume-upload.
+
+    Parameters
+    ----------
+    client : httpx.Client
+        HTTP Client.
+    wallet : Wallet
+        Wallet object.
+    target : UploadTarget
+        Detailed information about the upload endpoint.
+    credentials : OpenRouterUploadCredentials
+        Open Router credentials
+    receipt : PaymentReceipt
+        Payment receipt previously submitted.
+    run_check : bool, optional
+        If True validate if upload is allowed, by default True
+    """
     name, version_num = _resolve_upload_name_and_version(
         client, api_url=target.api_url, hotkey=wallet.hotkey.ss58_address
     )
@@ -306,7 +327,8 @@ def _execute_upload(
         version_num=version_num,
         content_hash=target.content_hash,
     )
-    _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
+    if run_check:
+        _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
     payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
     response = _submit_upload(client, target=target, payload=payload)
     _handle_upload_result(response, name=name)
@@ -379,6 +401,65 @@ def upload(
             _print_payment_receipt(receipt)
 
             _execute_upload(client, wallet=wallet, target=target, credentials=credentials, receipt=receipt)
+
+    except click.ClickException:
+        raise
+    except Exception as exception:
+        console.print(f"Error: {exception}", style="bold red")
+        raise
+
+
+@click.command(
+    name="team-upload",
+    hidden=True,
+    short_help="Upload an agent as the platform owner (no payment required).",
+    help=format_help(
+        "Upload an agent to Ridges as the platform owner, bypassing the normal payment flow. "
+        "The signing hotkey must match the OWNER_HOTKEY configured on the server.",
+        "ridges team-upload --file agent.py",
+        "ridges team-upload --file agent.py --coldkey-name owner --hotkey-name default",
+    ),
+)
+@click.option("--file", help="Path to agent.py file")
+@click.option("--coldkey-name", help="Coldkey name")
+@click.option("--hotkey-name", help="Hotkey name")
+@click.option(
+    "--openrouter-api-key",
+    help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
+)
+@click.option(
+    "--openrouter-management-key",
+    help="OpenRouter management key. Falls back to RIDGES_OPENROUTER_MANAGEMENT_KEY or an interactive prompt.",
+)
+@click.pass_context
+def team_upload(
+    ctx,
+    file: Optional[str],
+    coldkey_name: Optional[str],
+    hotkey_name: Optional[str],
+    openrouter_api_key: Optional[str],
+    openrouter_management_key: Optional[str],
+):
+    """Upload an agent as the platform owner, bypassing payment."""
+    wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
+    credentials = _resolve_openrouter_upload_credentials(
+        openrouter_api_key=openrouter_api_key,
+        openrouter_management_key=openrouter_management_key,
+    )
+    _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
+
+    # Create a random Payment Receipt that will be used to generate the Agent ID
+    receipt = PaymentReceipt(
+        block_hash=_uuid.uuid4().hex,
+        extrinsic_index=0,
+        payment_time=time.time(),
+    )
+
+    try:
+        with httpx.Client() as client:
+            _execute_upload(
+                client, wallet=wallet, target=target, credentials=credentials, receipt=receipt, run_check=False
+            )
 
     except click.ClickException:
         raise
