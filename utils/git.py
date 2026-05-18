@@ -335,6 +335,4 @@ def get_local_repo_commit_hash(local_repo_dir: str) -> str:
 
 # In production images GIT_COMMIT is baked in as a build arg; fall back to
 # live git for local development where .git is available.
-COMMIT_HASH = os.environ.get("GIT_COMMIT") or get_local_repo_commit_hash(
-    pathlib.Path(__file__).parent.parent
-)
+COMMIT_HASH = os.environ.get("GIT_COMMIT") or get_local_repo_commit_hash(pathlib.Path(__file__).parent.parent)

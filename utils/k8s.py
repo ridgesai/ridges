@@ -64,10 +64,7 @@ def cleanup_harbor_k8s_resources() -> None:
             pass
         elif my_pod_name and my_pod_uid:
             # Delete only if an owner ref points to this screener with a stale UID.
-            dominated_by_us = any(
-                ref.name == my_pod_name and ref.uid != my_pod_uid
-                for ref in owner_refs
-            )
+            dominated_by_us = any(ref.name == my_pod_name and ref.uid != my_pod_uid for ref in owner_refs)
             if not dominated_by_us:
                 continue  # Owned by a different screener, or current UID matches.
         else:
@@ -114,9 +111,7 @@ def cleanup_completed_k8s_eval_pods() -> None:
 
         for pod in pods.items:
             owner_refs = pod.metadata.owner_references or []
-            is_ours = not owner_refs or (
-                my_pod_name and any(ref.name == my_pod_name for ref in owner_refs)
-            )
+            is_ours = not owner_refs or (my_pod_name and any(ref.name == my_pod_name for ref in owner_refs))
             if not is_ours:
                 continue
 

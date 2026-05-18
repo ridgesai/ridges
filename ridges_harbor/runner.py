@@ -210,6 +210,7 @@ async def _run_task_dir(
         presigned_url = await fetch_task_url(task_digest)
 
         from validator.config import PROXY_IMAGE
+
         proxy_image = PROXY_IMAGE
 
         environment_config = EnvironmentConfig(

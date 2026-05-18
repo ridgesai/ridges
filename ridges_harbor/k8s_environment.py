@@ -219,9 +219,7 @@ class KubernetesEnvironment(BaseEnvironment):
         if self.service_account_name:
             spec.service_account_name = self.service_account_name
         if self._image_pull_secrets:
-            spec.image_pull_secrets = [
-                k8s_client.V1LocalObjectReference(name=s) for s in self._image_pull_secrets
-            ]
+            spec.image_pull_secrets = [k8s_client.V1LocalObjectReference(name=s) for s in self._image_pull_secrets]
         return spec
 
     def _build_pod(self) -> k8s_client.V1Pod:
@@ -594,7 +592,9 @@ class KubernetesEnvironment(BaseEnvironment):
                 elif phase == "Pending" and pod.status.container_statuses:
                     for cs in pod.status.container_statuses:
                         if cs.state.waiting and cs.state.waiting.reason in ("ImagePullBackOff", "ErrImagePull"):
-                            raise RuntimeError(f"Failed to pull image for Pod {self.pod_name}: {cs.state.waiting.message}")
+                            raise RuntimeError(
+                                f"Failed to pull image for Pod {self.pod_name}: {cs.state.waiting.message}"
+                            )
             except ApiException as exc:
                 if exc.status != 404:
                     raise RuntimeError(f"Kubernetes API error while waiting for Pod: {exc}") from exc
@@ -800,17 +800,23 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 name="iptables-init",
                 image="alpine:3.20",
                 image_pull_policy="IfNotPresent",
-                command=["sh", "-c", " && ".join([
-                    "apk add --no-cache iptables",
-                    "iptables -t nat -N PROXY_OUTPUT",
-                    "iptables -t nat -A PROXY_OUTPUT -m owner --uid-owner 1337 -j RETURN",
-                    "iptables -t nat -A PROXY_OUTPUT -d 127.0.0.0/8 -j RETURN",
-                    "iptables -t nat -A PROXY_OUTPUT -d 10.0.0.0/8 -j RETURN",
-                    "iptables -t nat -A PROXY_OUTPUT -d 172.16.0.0/12 -j RETURN",
-                    "iptables -t nat -A PROXY_OUTPUT -d 192.168.0.0/16 -j RETURN",
-                    "iptables -t nat -A PROXY_OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports 15443",
-                    "iptables -t nat -A OUTPUT -p tcp -j PROXY_OUTPUT",
-                ])],
+                command=[
+                    "sh",
+                    "-c",
+                    " && ".join(
+                        [
+                            "apk add --no-cache iptables",
+                            "iptables -t nat -N PROXY_OUTPUT",
+                            "iptables -t nat -A PROXY_OUTPUT -m owner --uid-owner 1337 -j RETURN",
+                            "iptables -t nat -A PROXY_OUTPUT -d 127.0.0.0/8 -j RETURN",
+                            "iptables -t nat -A PROXY_OUTPUT -d 10.0.0.0/8 -j RETURN",
+                            "iptables -t nat -A PROXY_OUTPUT -d 172.16.0.0/12 -j RETURN",
+                            "iptables -t nat -A PROXY_OUTPUT -d 192.168.0.0/16 -j RETURN",
+                            "iptables -t nat -A PROXY_OUTPUT -p tcp --dport 443 -j REDIRECT --to-ports 15443",
+                            "iptables -t nat -A OUTPUT -p tcp -j PROXY_OUTPUT",
+                        ]
+                    ),
+                ],
                 security_context=k8s_client.V1SecurityContext(
                     capabilities=k8s_client.V1Capabilities(add=["NET_ADMIN"]),
                     run_as_user=0,
@@ -879,9 +885,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
         except ApiException as exc:
             if exc.status == 409:
                 if await self._is_job_failed(job_name):
-                    self.logger.warning(
-                        f"Kaniko job {job_name} previously failed — deleting and retrying"
-                    )
+                    self.logger.warning(f"Kaniko job {job_name} previously failed — deleting and retrying")
                     await self._delete_job(job_name)
                     await self._delete_secret(secret_name)
                     await asyncio.to_thread(self._create_build_secret_sync, secret_name)
@@ -919,9 +923,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                     conn = http.client.HTTPSConnection(host, port, timeout=10, context=ctx)
                 headers: dict[str, str] = {}
                 if self.registry_credentials_secret and self._registry_password:
-                    cred = base64.b64encode(
-                        b"kaniko:" + self._registry_password.encode()
-                    ).decode()
+                    cred = base64.b64encode(b"kaniko:" + self._registry_password.encode()).decode()
                     headers["Authorization"] = f"Basic {cred}"
                 conn.request("HEAD", f"/v2/{name}/manifests/{tag}", headers=headers)
                 resp = conn.getresponse()
@@ -952,7 +954,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
             image="curlimages/curl:latest",
             command=["/bin/sh", "-c"],
             args=[
-                "curl -sSfL \"$PRESIGNED_URL\" -o /tmp/task.tar.gz && "
+                'curl -sSfL "$PRESIGNED_URL" -o /tmp/task.tar.gz && '
                 "mkdir -p /workspace && "
                 "tar -xzf /tmp/task.tar.gz -C /workspace --strip-components=1 && "
                 "test -f /workspace/environment/Dockerfile"
@@ -1091,7 +1093,7 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
                 name=job_name,
                 namespace=self.namespace,
             )
-            for cond in (job.status.conditions or []):
+            for cond in job.status.conditions or []:
                 if cond.type == "Failed" and cond.status == "True":
                     return True
             return False

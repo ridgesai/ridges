@@ -92,8 +92,10 @@ async def _run_startup_tasks() -> None:
         prune_docker_disk_resources(include_build_cache=True)
     elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
         import validator.healthz as healthz
+
         asyncio.create_task(healthz.serve(get_session_id=lambda: session_id))
         from utils.k8s import cleanup_harbor_k8s_resources
+
         await asyncio.to_thread(cleanup_harbor_k8s_resources)
 
     asyncio.get_event_loop().add_signal_handler(
@@ -705,6 +707,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
             await asyncio.to_thread(prune_docker_disk_resources)
         elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
             from utils.k8s import cleanup_completed_k8s_eval_pods
+
             await asyncio.to_thread(cleanup_completed_k8s_eval_pods)
 
 

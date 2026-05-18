@@ -45,6 +45,7 @@ async def get_system_metrics() -> SystemMetrics:
 
         if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
             from utils.k8s import get_num_k8s_eval_pods
+
             metrics.num_containers = get_num_k8s_eval_pods()
         else:
             metrics.num_containers = get_num_docker_containers()

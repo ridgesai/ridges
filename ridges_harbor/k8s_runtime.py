@@ -56,6 +56,7 @@ def build_k8s_verifier_egress_hook(
         # 2. Signal the SNI router to unlock passthrough for all egress.
         try:
             from kubernetes.stream import stream as k8s_stream
+
             await asyncio.to_thread(
                 k8s_stream,
                 core_api.connect_get_namespaced_pod_exec,
@@ -71,8 +72,6 @@ def build_k8s_verifier_egress_hook(
         except Exception as exc:
             # Non-fatal: the NetworkPolicy label flip already grants egress at
             # the network layer.  Log and continue so verification is not blocked.
-            logger.warning(
-                "Failed to touch egress-unlocked sentinel in pod %s: %s", pod_name, exc
-            )
+            logger.warning("Failed to touch egress-unlocked sentinel in pod %s: %s", pod_name, exc)
 
     return enable_verifier_egress
