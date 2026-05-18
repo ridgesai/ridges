@@ -288,6 +288,49 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
     raise click.ClickException(f"Upload failed ({response.status_code}): {error}")
 
 
+def _execute_upload(
+    client: httpx.Client,
+    *,
+    wallet,
+    target: UploadTarget,
+    credentials: OpenRouterUploadCredentials,
+    receipt: PaymentReceipt,
+) -> None:
+    """Shared post-payment upload steps used by both upload and resume-upload."""
+    name, version_num = _resolve_upload_name_and_version(
+        client, api_url=target.api_url, hotkey=wallet.hotkey.ss58_address
+    )
+    pending = _build_pending_upload(
+        wallet=wallet,
+        name=name,
+        version_num=version_num,
+        content_hash=target.content_hash,
+    )
+    _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
+    payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
+    response = _submit_upload(client, target=target, payload=payload)
+    _handle_upload_result(response, name=name)
+
+
+def _resolve_wallet_and_target(
+    ctx,
+    *,
+    file: Optional[str],
+    coldkey_name: Optional[str],
+    hotkey_name: Optional[str],
+):
+    """Shared wallet + file resolution used by both upload and resume-upload."""
+    from bittensor_wallet.wallet import Wallet
+
+    api_url = ctx.obj.get("url") or DEFAULT_API_BASE_URL
+    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
+    hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
+    wallet = Wallet(name=coldkey, hotkey=hotkey)
+    file_path = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
+    target = _read_upload_target(api_url, file_path)
+    return wallet, target
+
+
 @click.command(
     short_help="Upload a miner agent to Ridges.",
     help=format_help(
@@ -318,16 +361,7 @@ def upload(
     openrouter_management_key: Optional[str],
 ):
     """Upload a miner agent to the Ridges API."""
-    from bittensor_wallet.wallet import Wallet
-
-    api_url = ctx.obj.get("url") or DEFAULT_API_BASE_URL
-
-    coldkey = coldkey_name or get_or_prompt("RIDGES_COLDKEY_NAME", "Enter your coldkey name", "miner")
-    hotkey = hotkey_name or get_or_prompt("RIDGES_HOTKEY_NAME", "Enter your hotkey name", "default")
-    wallet = Wallet(name=coldkey, hotkey=hotkey)
-
-    file = file or get_or_prompt("RIDGES_AGENT_FILE", "Enter the path to your agent.py file", "agent.py")
-    target = _read_upload_target(api_url, file)
+    wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
     credentials = _resolve_openrouter_upload_credentials(
         openrouter_api_key=openrouter_api_key,
         openrouter_management_key=openrouter_management_key,
@@ -336,19 +370,6 @@ def upload(
 
     try:
         with httpx.Client() as client:
-            name, version_num = _resolve_upload_name_and_version(
-                client,
-                api_url=target.api_url,
-                hotkey=wallet.hotkey.ss58_address,
-            )
-            pending = _build_pending_upload(
-                wallet=wallet,
-                name=name,
-                version_num=version_num,
-                content_hash=target.content_hash,
-            )
-            _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
-
             payment_method_details = _fetch_eval_pricing(client, api_url=target.api_url)
             if not _confirm_payment(payment_method_details):
                 console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
@@ -357,9 +378,70 @@ def upload(
             receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
             _print_payment_receipt(receipt)
 
-            payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
-            response = _submit_upload(client, target=target, payload=payload)
-            _handle_upload_result(response, name=name)
+            _execute_upload(client, wallet=wallet, target=target, credentials=credentials, receipt=receipt)
+
+    except click.ClickException:
+        raise
+    except Exception as exception:
+        console.print(f"Error: {exception}", style="bold red")
+        raise
+
+
+@click.command(
+    name="resume-upload",
+    short_help="Resume a failed upload using an existing payment receipt.",
+    help=format_help(
+        "Resume an upload that failed after payment was already submitted on-chain. "
+        "Provide the Payment Block Hash and Payment Extrinsic Index printed after the original payment.",
+        "ridges resume-upload --file agent.py --payment-block-hash 0x87d2... --payment-extrinsic-index 7",
+    ),
+)
+@click.option("--file", help="Path to agent.py file")
+@click.option("--coldkey-name", help="Coldkey name")
+@click.option("--hotkey-name", help="Hotkey name")
+@click.option(
+    "--openrouter-api-key",
+    help="OpenRouter runtime API key. Falls back to RIDGES_OPENROUTER_API_KEY or an interactive prompt.",
+)
+@click.option(
+    "--openrouter-management-key",
+    help="OpenRouter management key. Falls back to RIDGES_OPENROUTER_MANAGEMENT_KEY or an interactive prompt.",
+)
+@click.option("--payment-block-hash", required=True, help="Payment Block Hash printed after the original payment.")
+@click.option(
+    "--payment-extrinsic-index",
+    required=True,
+    type=int,
+    help="Payment Extrinsic Index printed after the original payment.",
+)
+@click.pass_context
+def resume_upload(
+    ctx,
+    file: Optional[str],
+    coldkey_name: Optional[str],
+    hotkey_name: Optional[str],
+    openrouter_api_key: Optional[str],
+    openrouter_management_key: Optional[str],
+    payment_block_hash: str,
+    payment_extrinsic_index: int,
+):
+    """Resume a failed upload using an existing payment receipt."""
+    wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
+    credentials = _resolve_openrouter_upload_credentials(
+        openrouter_api_key=openrouter_api_key,
+        openrouter_management_key=openrouter_management_key,
+    )
+    _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
+
+    receipt = PaymentReceipt(
+        block_hash=payment_block_hash,
+        extrinsic_index=payment_extrinsic_index,
+        payment_time=time.time(),
+    )
+
+    try:
+        with httpx.Client() as client:
+            _execute_upload(client, wallet=wallet, target=target, credentials=credentials, receipt=receipt)
 
     except click.ClickException:
         raise

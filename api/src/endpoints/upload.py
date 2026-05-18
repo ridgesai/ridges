@@ -3,7 +3,6 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from bittensor import Subtensor
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
@@ -38,10 +37,8 @@ from queries.payments import (
 )
 from queries.refund import is_payment_refunded
 from utils.agent_secrets import encrypt_agent_secret
+from utils.bittensor import subtensor_client
 from utils.debug_lock import DebugLock
-
-# TODO STEPHEN: we should have a global singleton
-subtensor = Subtensor(network=config.SUBTENSOR_NETWORK)
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -108,8 +105,8 @@ async def check_agent_post(
     await check_agent_banned(miner_hotkey=miner_hotkey)
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
-    coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
-    miner_balance = subtensor.get_balance(address=coldkey).rao
+    coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
+    miner_balance = (await subtensor_client.get_balance(coldkey)).rao
     payment_cost = await get_upload_price(cache_time=payment_time)
     if payment_cost.amount_rao > miner_balance:
         raise HTTPException(
@@ -215,10 +212,13 @@ async def post_agent(
 
             # Retrieve payment details from the chain
             try:
-                payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+                payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
             except Exception as e:
                 logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
+
+            if payment_block is None:
+                raise HTTPException(status_code=402, detail="Payment block not found")
 
             # example payment block:
             """
@@ -234,7 +234,7 @@ async def post_agent(
                 'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
             """
             block_number = payment_block["header"]["number"]
-            coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(block_number))
             payment_extrinsic = payment_block["extrinsics"][int(payment_extrinsic_index)]
 
             payment_cost = await get_upload_price(cache_time=payment_time)
@@ -249,7 +249,9 @@ async def post_agent(
                     payment_value = arg["value"]
                     break
 
-            if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
+            if payment_value is None or await check_if_extrinsic_failed(
+                payment_block_hash, int(payment_extrinsic_index)
+            ):
                 raise HTTPException(status_code=402, detail="Payment value not found")
 
             if payment_value != payment_cost.amount_rao:
@@ -409,8 +411,8 @@ async def get_upload_price() -> UploadPriceResponse:
     return UploadPriceResponse(amount_rao=amount_rao, send_address=config.UPLOAD_SEND_ADDRESS)
 
 
-def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = subtensor.substrate.get_events(block_hash=block_hash)
+async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
+    events = await subtensor_client.get_events(block_hash=block_hash)
 
     for event in events:
         if event.get("extrinsic_idx") != extrinsic_index:
