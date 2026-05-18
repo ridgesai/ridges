@@ -54,6 +54,7 @@ max_evaluation_run_log_size_bytes = None
 
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
+_shutdown_requested = False
 
 # Task-cache digests of in-flight evaluation runs. The cleanup loop excludes these
 # so it never deletes a cached task a live run is still reading (a task is read for
@@ -79,9 +80,9 @@ async def disconnect(reason: str):
 
 
 async def _handle_sigterm() -> None:
-    logger.warning("SIGTERM received — disconnecting before shutdown")
-    await disconnect("SIGTERM")
-    os._exit(0)
+    global _shutdown_requested
+    logger.warning("SIGTERM received — will shut down after current evaluation finishes")
+    _shutdown_requested = True
 
 
 async def _run_startup_tasks() -> None:
@@ -794,6 +795,11 @@ async def main():
 
     # Loop forever, just keep requesting evaluations and running them
     while True:
+        if _shutdown_requested:
+            logger.info("Shutdown requested — disconnecting gracefully")
+            await disconnect("SIGTERM (graceful)")
+            os._exit(0)
+
         logger.info("Requesting an evaluation...")
 
         request_evaluation_response_data = await post_ridges_platform(
