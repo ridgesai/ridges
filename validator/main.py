@@ -676,8 +676,6 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     cancellation_event = asyncio.Event()
     cancellation_reason: dict[str, str | None] = {"reason": None}
     poll_task: asyncio.Task | None = None
-    cancellation_wait_task: asyncio.Task | None = None
-    run_tasks_task: asyncio.Task | None = None
 
     _log_received_evaluation(request_evaluation_response)
     logger.info("Starting evaluation...")
