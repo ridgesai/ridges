@@ -199,11 +199,18 @@ else:
 
 PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
 PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
+AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").lower() == "true"
+AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
+AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 PRE_SCREENING_JUDGE_URL = os.getenv("PRE_SCREENING_JUDGE_URL")
 PRE_SCREENING_JUDGE_INTERNAL_TOKEN = os.getenv("PRE_SCREENING_JUDGE_INTERNAL_TOKEN")
+JUDGE_SERVICE_POLL_INTERVAL_SECONDS = 10
+JUDGE_SERVICE_JOB_LEASE_SECONDS = 840
+JUDGE_SERVICE_MAX_ATTEMPTS = 3
+JUDGE_SERVICE_ERROR_BACKOFF_SECONDS = 60
 
 PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS = 720
-if PRE_SCREENING_JUDGE_RUN_LOOP:
+if PRE_SCREENING_JUDGE_RUN_LOOP or AUTO_APPROVAL_RUN_LOOP:
     configured_pre_screening_judge_timeout = os.getenv("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS")
     if configured_pre_screening_judge_timeout:
         try:
@@ -212,11 +219,9 @@ if PRE_SCREENING_JUDGE_RUN_LOOP:
             logger.fatal("PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be an integer")
 
     if not PRE_SCREENING_JUDGE_URL:
-        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while the pre-screening judge loop is enabled")
+        logger.fatal("PRE_SCREENING_JUDGE_URL is not set in .env while a judge-backed loop is enabled")
     if not PRE_SCREENING_JUDGE_INTERNAL_TOKEN:
-        logger.fatal(
-            "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
-        )
+        logger.fatal("PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while a judge-backed loop is enabled")
 
 
 logger.info("=== API Configuration ===")
@@ -274,7 +279,9 @@ logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECO
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
 logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
 logger.info(f"Pre-Screening Judge Loop Enabled: {PRE_SCREENING_JUDGE_RUN_LOOP}")
-if PRE_SCREENING_JUDGE_RUN_LOOP:
+logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
+logger.info(f"Auto Approval Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
+if PRE_SCREENING_JUDGE_RUN_LOOP or AUTO_APPROVAL_RUN_LOOP:
     logger.info(f"Pre-Screening Judge URL: {PRE_SCREENING_JUDGE_URL}")
     logger.info(f"Pre-Screening Judge Request Timeout: {PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} second(s)")
 
