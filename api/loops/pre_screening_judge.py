@@ -21,27 +21,23 @@ from queries.pre_screening_judge import (
 from utils.s3 import generate_presigned_url
 
 CLAIMED_BY = f"{socket.gethostname()}:{uuid4()}"
-POLL_INTERVAL_SECONDS = 10
-JOB_LEASE_SECONDS = 840
-MAX_ATTEMPTS = 3
-ERROR_BACKOFF_SECONDS = 60
 
 
 async def pre_screening_judge_loop() -> None:
     """Poll for pre-screening jobs and send them to the judge service."""
 
-    if config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS >= JOB_LEASE_SECONDS:
+    if config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS >= config.JUDGE_SERVICE_JOB_LEASE_SECONDS:
         logger.fatal(
             "PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be less than "
-            f"the hardcoded pre-screening judge job lease ({JOB_LEASE_SECONDS} seconds)"
+            f"the hardcoded pre-screening judge job lease ({config.JUDGE_SERVICE_JOB_LEASE_SECONDS} seconds)"
         )
 
     logger.info(
         f"Starting pre-screening judge loop: url={config.PRE_SCREENING_JUDGE_URL} "
-        f"interval_seconds={POLL_INTERVAL_SECONDS} "
+        f"interval_seconds={config.JUDGE_SERVICE_POLL_INTERVAL_SECONDS} "
         f"timeout_seconds={config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} "
-        f"lease_seconds={JOB_LEASE_SECONDS} "
-        f"max_attempts={MAX_ATTEMPTS} "
+        f"lease_seconds={config.JUDGE_SERVICE_JOB_LEASE_SECONDS} "
+        f"max_attempts={config.JUDGE_SERVICE_MAX_ATTEMPTS} "
         f"claimed_by={CLAIMED_BY}"
     )
 
@@ -51,18 +47,18 @@ async def pre_screening_judge_loop() -> None:
         except Exception as exc:
             logger.error(f"Unexpected error in pre-screening judge loop: {type(exc).__name__}: {exc}")
 
-        await asyncio.sleep(POLL_INTERVAL_SECONDS)
+        await asyncio.sleep(config.JUDGE_SERVICE_POLL_INTERVAL_SECONDS)
 
 
 async def process_next_pre_screening_job() -> None:
     """Claim one eligible job, run it through the judge, and persist the outcome."""
 
-    await move_exhausted_pre_screening_jobs_to_review(max_attempts=MAX_ATTEMPTS)
+    await move_exhausted_pre_screening_jobs_to_review(max_attempts=config.JUDGE_SERVICE_MAX_ATTEMPTS)
 
     job = await claim_next_pre_screening_job(
         claimed_by=CLAIMED_BY,
-        lease_seconds=JOB_LEASE_SECONDS,
-        max_attempts=MAX_ATTEMPTS,
+        lease_seconds=config.JUDGE_SERVICE_JOB_LEASE_SECONDS,
+        max_attempts=config.JUDGE_SERVICE_MAX_ATTEMPTS,
     )
     if job is None:
         return
@@ -73,7 +69,7 @@ async def process_next_pre_screening_job() -> None:
     try:
         source_url = await generate_presigned_url(
             f"{job.agent_id}/agent.py",
-            ttl_seconds=JOB_LEASE_SECONDS,
+            ttl_seconds=config.JUDGE_SERVICE_JOB_LEASE_SECONDS,
         )
         request_body = PreScreeningJudgeRequest(
             job_id=job.job_id,
@@ -112,8 +108,8 @@ async def process_next_pre_screening_job() -> None:
             job_id=job.job_id,
             claim_token=job.claim_token,
             error_message=error_message,
-            backoff_seconds=ERROR_BACKOFF_SECONDS,
-            max_attempts=MAX_ATTEMPTS,
+            backoff_seconds=config.JUDGE_SERVICE_ERROR_BACKOFF_SECONDS,
+            max_attempts=config.JUDGE_SERVICE_MAX_ATTEMPTS,
             policy_version=job.policy_version,
         )
 
