@@ -44,18 +44,31 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
     return Agent(**result)
 
 
+LATEST_AGENT_APPROVAL_JOINS = """
+LEFT JOIN LATERAL (
+    SELECT approval_review_status
+    FROM agent_final_review_statuses
+    WHERE agent_final_review_statuses.agent_id = a.agent_id
+    ORDER BY agent_final_review_statuses.updated_at DESC, agent_final_review_statuses.set_id DESC
+    LIMIT 1
+) latest_review ON TRUE
+"""
+
+
 @db_operation
 async def get_possibly_benchmark_agent_by_id(
     conn: DatabaseConnection, agent_id: UUID
 ) -> Optional[PossiblyBenchmarkAgent]:
     result = await conn.fetchrow(
-        """
+        f"""
         SELECT
             a.*,
+            latest_review.approval_review_status AS approval_review_status,
             (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
             bai.description AS benchmark_description
         FROM agents a
         LEFT JOIN benchmark_agent_ids bai ON a.agent_id = bai.agent_id
+        {LATEST_AGENT_APPROVAL_JOINS}
         WHERE a.agent_id = $1
         LIMIT 1
         """,
@@ -71,9 +84,13 @@ async def get_possibly_benchmark_agent_by_id(
 @db_operation
 async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow(
-        """
-        SELECT * FROM agents
-        WHERE agent_id = (
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.agent_id = (
             SELECT agent_id FROM evaluations WHERE evaluation_id = (
                 SELECT evaluation_id FROM evaluation_runs WHERE evaluation_run_id = $1 LIMIT 1
             ) LIMIT 1
@@ -91,10 +108,14 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
 @db_operation
 async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> List[Agent]:
     result = await conn.fetch(
-        """
-        SELECT * FROM agents 
-        WHERE miner_hotkey = $1
-        ORDER BY created_at DESC
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.miner_hotkey = $1
+        ORDER BY a.created_at DESC
         """,
         miner_hotkey,
     )
@@ -105,10 +126,14 @@ async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey:
 @db_operation
 async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
     result = await conn.fetchrow(
-        """
-        SELECT * FROM agents 
-        WHERE miner_hotkey = $1
-        ORDER BY created_at DESC
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.miner_hotkey = $1
+        ORDER BY a.created_at DESC
         LIMIT 1
         """,
         miner_hotkey,
@@ -259,6 +284,7 @@ async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentS
         """
         SELECT
             ass.*,
+            NULL::text AS approval_review_status,
             bai.description AS benchmark_description
         FROM agent_scores ass
         LEFT JOIN benchmark_agent_ids bai ON ass.agent_id = bai.agent_id
@@ -331,8 +357,13 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
 
     results = await conn.fetch(
         """
-        select ass.*
+        select
+            ass.*,
+            review.approval_review_status AS approval_review_status
         from agent_scores ass
+        left join agent_final_review_statuses review
+            on review.agent_id = ass.agent_id
+           and review.set_id = ass.set_id
         left join lateral (
             select avg(eh.avg_cost_usd) as avg_cost_usd
             from evaluations_hydrated eh
@@ -344,6 +375,10 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
         and ass.status::text <> 'cancelled'
+        and (
+            ass.approved is true
+            or review.approval_review_status is distinct from 'rejected'
+        )
         order by
             round(ass.final_score::numeric, 6) desc,
             rt.avg_cost_usd asc nulls last,
