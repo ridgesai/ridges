@@ -22,6 +22,7 @@ from api.endpoints.statistics import router as statistics_router
 
 # NEW fixed endpoints
 from api.endpoints.validator import router as validator_router
+from api.loops.approval_judge import approval_judge_loop
 from api.loops.fetch_metagraph import fetch_metagraph_loop
 from api.loops.pre_screening_judge import pre_screening_judge_loop
 from api.loops.validator_heartbeat_timeout import (
@@ -83,6 +84,9 @@ async def lifespan(app: FastAPI):
 
     if config.PRE_SCREENING_JUDGE_RUN_LOOP:
         _start_background_task(background_tasks, "pre_screening_judge_loop", pre_screening_judge_loop())
+
+    if config.AUTO_APPROVAL_RUN_LOOP:
+        _start_background_task(background_tasks, "approval_judge_loop", approval_judge_loop())
 
     _start_background_task(background_tasks, "fetch_metagraph_loop", fetch_metagraph_loop())
 
