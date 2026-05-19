@@ -29,18 +29,15 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
+from harbor.environments.base import BaseEnvironment, ExecResult
+from harbor.models.environment_type import EnvironmentType
+from harbor.models.task.config import EnvironmentConfig
+from harbor.models.trial.paths import EnvironmentPaths, TrialPaths
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 from kubernetes.stream import stream
 from tenacity import retry, stop_after_attempt, wait_exponential
-
-from harbor.environments.base import BaseEnvironment, ExecResult
-from harbor.models.environment_type import EnvironmentType
-from harbor.models.task.config import EnvironmentConfig
-from harbor.models.trial.paths import EnvironmentPaths, TrialPaths
-from harbor.utils.logger import logger as global_logger
-
 
 # ---------------------------------------------------------------------------
 # KubernetesEnvironment – generic base
@@ -566,7 +563,7 @@ class KubernetesEnvironment(BaseEnvironment):
                     await asyncio.sleep(3)
                 else:
                     raise
-            except Exception as exc:
+            except Exception:
                 if attempt < max_attempts - 1:
                     await asyncio.sleep(3)
                 else:

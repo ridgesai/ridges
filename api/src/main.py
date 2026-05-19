@@ -21,6 +21,8 @@ from api.endpoints.retrieval import router as retrieval_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
 from api.endpoints.scaling import router as scaling_router
+from api.endpoints.scoring import router as scoring_router
+from api.endpoints.statistics import router as statistics_router
 from api.endpoints.validator import router as validator_router
 from api.loops.approval_projector import approval_projector_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
