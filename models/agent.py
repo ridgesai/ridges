@@ -19,6 +19,13 @@ class AgentStatus(str, Enum):
     pre_screening_needs_review = "pre_screening_needs_review"
 
 
+class ApprovalReviewStatus(str, Enum):
+    pending = "pending"
+    under_review = "under_review"
+    approved = "approved"
+    rejected = "rejected"
+
+
 class Agent(BaseModel):
     agent_id: UUID
     miner_hotkey: str
@@ -30,6 +37,7 @@ class Agent(BaseModel):
 
     created_at: datetime
     ip_address: Optional[str] = None
+    approval_review_status: ApprovalReviewStatus | None = None
 
 
 class PossiblyBenchmarkAgent(Agent):
