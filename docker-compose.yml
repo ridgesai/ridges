@@ -25,6 +25,8 @@ services:
       - "8000:8000"
     env_file:
       - ./api/.env
+    volumes:
+      - ./.git:/app/.git:ro
     depends_on:
       db:
         condition: service_healthy
