@@ -53,6 +53,10 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
 
 
 prod = os.getenv("ENV") == "prod"
+if os.getenv("ENV") == "prod":
+    logger.info("Agent Upload running in production mode.")
+else:
+    logger.info("Agent Upload running in development mode.")
 
 
 class AgentUploadResponse(BaseModel):
@@ -197,7 +201,7 @@ async def post_agent(
             if await is_payment_refunded(
                 upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
             ):
-                logger.warning(f"Payment refunded for block_hash={payment_block_hash}; rejecting upload")
+                logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
                 raise PaymentRefunded()
 
             # Retrieve payment details from the chain
@@ -335,7 +339,7 @@ async def post_agent(
         )
 
     except DuplicateAgentIDError as e:
-        logger.warning(f"Duplicate agent ID; upload rejected: {e}")
+        logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
         raise PaymentAlreadyUsedError() from e
 
     except HTTPException as e:
