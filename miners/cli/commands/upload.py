@@ -412,9 +412,9 @@ def upload(
 @click.command(
     name="team-upload",
     hidden=True,
-    short_help="Upload an agent as the platform owner (no payment required).",
+    short_help="Upload an agent as the platform owner.",
     help=format_help(
-        "Upload an agent to Ridges as the platform owner, bypassing the normal payment flow. "
+        "Upload an agent to Ridges as the platform owner. "
         "The signing hotkey must match the OWNER_HOTKEY configured on the server.",
         "ridges team-upload --file agent.py",
         "ridges team-upload --file agent.py --coldkey-name owner --hotkey-name default",
@@ -440,7 +440,7 @@ def team_upload(
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
 ):
-    """Upload an agent as the platform owner, bypassing payment."""
+    """Upload an agent as the platform owner."""
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
     credentials = _resolve_openrouter_upload_credentials(
         openrouter_api_key=openrouter_api_key,
