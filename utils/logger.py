@@ -88,3 +88,28 @@ def fatal(message: str) -> None:
     """Log at CRITICAL level and exit the process."""
     logging.getLogger("ridges").critical(message)
     raise SystemExit(1)
+
+
+# ---------------------------------------------------------------------------
+# Backward-compat shims for modules not yet migrated to stdlib logging.
+# These route through a named logger so filename:lineno is still correct.
+# TODO: remove once all callers use logging.getLogger(__name__) directly.
+# ---------------------------------------------------------------------------
+_compat_logger = logging.getLogger("ridges.compat")
+
+
+def debug(message: str) -> None:
+    if os.getenv("DEBUG", "false").lower() == "true":
+        _compat_logger.debug(message, stacklevel=2)
+
+
+def info(message: str) -> None:
+    _compat_logger.info(message, stacklevel=2)
+
+
+def warning(message: str) -> None:
+    _compat_logger.warning(message, stacklevel=2)
+
+
+def error(message: str) -> None:
+    _compat_logger.error(message, stacklevel=2)

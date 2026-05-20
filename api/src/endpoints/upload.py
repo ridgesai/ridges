@@ -178,7 +178,7 @@ async def post_agent(
     }
 
     try:
-        logger.info("Agent upload started", extra={"miner_hotkey": miner_hotkey, "name": name})
+        logger.info("Agent upload started", extra={"miner_hotkey": miner_hotkey, "agent_name": name})
 
         if prod:
             check_signature(public_key, file_info, signature)

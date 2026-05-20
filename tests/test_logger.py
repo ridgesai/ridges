@@ -112,10 +112,18 @@ def test_setup_logging_suppresses_third_party_loggers(monkeypatch):
     assert logging.getLogger("uvicorn.access").level == logging.WARNING
 
 
-def test_old_convenience_functions_removed():
+def test_compat_shims_route_through_stdlib_logging(capsys):
+    # Compat shims (info/warning/error/debug) are intentionally kept for
+    # modules not yet migrated to logging.getLogger(__name__).
+    # They must route through stdlib logging (not print directly).
     import utils.logger as ul
 
-    assert not hasattr(ul, "info"), "info() shim should be removed"
-    assert not hasattr(ul, "warning"), "warning() shim should be removed"
-    assert not hasattr(ul, "error"), "error() shim should be removed"
-    assert not hasattr(ul, "debug"), "debug() shim should be removed"
+    assert hasattr(ul, "info")
+    assert hasattr(ul, "warning")
+    assert hasattr(ul, "error")
+    assert hasattr(ul, "debug")
+
+    # Calling them should not raise
+    ul.info("compat info")
+    ul.warning("compat warning")
+    ul.error("compat error")
