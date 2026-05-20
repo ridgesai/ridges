@@ -69,3 +69,41 @@ def test_fatal_logs_and_raises():
 
     with pytest.raises(SystemExit):
         ul.fatal("boom")
+
+
+def test_setup_logging_attaches_ridges_handler(monkeypatch):
+    monkeypatch.setenv("DEBUG", "false")
+    import importlib
+
+    import utils.logger as ul
+
+    importlib.reload(ul)
+    ul.setup_logging()
+
+    root = logging.getLogger()
+    from utils.logger import RidgesLogHandler
+
+    assert any(isinstance(h, RidgesLogHandler) for h in root.handlers)
+
+
+def test_setup_logging_suppresses_third_party_loggers(monkeypatch):
+    monkeypatch.setenv("DEBUG", "false")
+    import importlib
+
+    import utils.logger as ul
+
+    importlib.reload(ul)
+    ul.setup_logging()
+
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("chain_utils").level == logging.WARNING
+    assert logging.getLogger("uvicorn.access").level == logging.WARNING
+
+
+def test_old_convenience_functions_removed():
+    import utils.logger as ul
+
+    assert not hasattr(ul, "info"), "info() shim should be removed"
+    assert not hasattr(ul, "warning"), "warning() shim should be removed"
+    assert not hasattr(ul, "error"), "error() shim should be removed"
+    assert not hasattr(ul, "debug"), "debug() shim should be removed"
