@@ -514,24 +514,12 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                                     ELSE 'running' :: EvaluationStatus
                                 END
                             ) AS computed_status,
-                            COUNT(*) FILTER (
-                                WHERE
-                                    er.test_results IS NOT NULL
-                                    AND jsonb_array_length(er.test_results) > 0
-                                    AND (
-                                        SELECT
-                                            COUNT(*) FILTER (
-                                                WHERE
-                                                    t ->> 'status' = 'pass'
-                                            )
-                                        FROM
-                                            jsonb_array_elements(er.test_results) t
-                                    ) = jsonb_array_length(er.test_results)
-                            ) :: float / NULLIF(COUNT(*), 0) AS score
+                            COUNT(*) FILTER (WHERE er.solved) :: float / NULLIF(COUNT(*), 0) AS score
                         FROM
-                            evaluation_runs er
+                            evaluation_runs_hydrated er
                         WHERE
                             er.evaluation_id = e.evaluation_id
+                        HAVING COUNT(*) > 0
                     ) agg ON (
                         (
                             e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
