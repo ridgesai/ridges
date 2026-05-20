@@ -1,3 +1,4 @@
+from typing import Optional
 from uuid import UUID
 
 import sqlalchemy as sa
@@ -12,7 +13,12 @@ class EvaluationPayment(Base, CreatedAtMixin):
 
     payment_block_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
     payment_extrinsic_index: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    agent_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), sa.ForeignKey("agents.agent_id"), nullable=False)
+    agent_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("agents.agent_id"),
+        nullable=True,
+        comment="Agent ID associated with this evaluation payment. The payment row is first created with no agent ID to claim an evaluation payment for a specific block hash + extrinsic index.",
+    )
     miner_hotkey: Mapped[str] = mapped_column(sa.Text, nullable=False)
     miner_coldkey: Mapped[str] = mapped_column(sa.Text, nullable=False)
     amount_rao: Mapped[int] = mapped_column(sa.Integer, nullable=False)
