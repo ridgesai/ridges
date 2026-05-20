@@ -32,9 +32,10 @@ def print_log(
     ms = now.microsecond // 1000
 
     if _file is None:
-        # BUG: This is currently pointing to the logging internal code instead of the caller's code. We should fix this to point to the caller's code.
+        # Walk back two frames: past print_log itself, then past the info/warning/etc. wrapper.
         frame = inspect.currentframe()
-        caller = frame.f_back if frame is not None else None
+        wrapper = frame.f_back if frame is not None else None
+        caller = wrapper.f_back if wrapper is not None else None
         _file = caller.f_code.co_filename.split("/")[-1] if caller is not None else "?"
         _line = caller.f_lineno if caller is not None else 0
 

@@ -1,14 +1,22 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import api.config as config
 import utils.logger as logger
-from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from models.agent import (
+    Agent,
+    AgentCreate,
+    AgentScored,
+    AgentStatus,
+    BenchmarkAgentScored,
+    PossiblyBenchmarkAgent,
+)
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
+from queries.errors import DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
@@ -24,6 +32,13 @@ class AgentOpenRouterSecrets:
     api_key_label: str
     api_key_creator_user_id: str
     validated_at: datetime
+
+
+def _derive_agent_id(payment_block_hash: str, payment_extrinsic_index: str) -> UUID:
+    return uuid5(
+        config.AGENT_UUID_NAMESPACE,
+        f"{payment_block_hash}:{payment_extrinsic_index}",
+    )
 
 
 @db_operation
@@ -140,7 +155,7 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 @db_operation
 async def create_agent(
     conn: DatabaseConnection,
-    agent: Agent,
+    agent: AgentCreate,
     agent_text: str,
     *,
     runtime_openrouter_api_key_ciphertext: bytes,
@@ -151,16 +166,38 @@ async def create_agent(
     openrouter_validated_at: datetime,
     create_pre_screening_job: bool = False,
     pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
-) -> None:
-    await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
+) -> "UUID":
+    """Create a new Agent record in the database and upload the agent code to S3. The agent_id is derived from the payment block hash and extrinsic index to ensure uniqueness and traceability. This function returns the generated agent_id (UUID) for the newly created agent.
+
+    Parameters
+    ----------
+    conn : DatabaseConnection
+        The database connection to use for the operation.
+    agent : AgentCreate
+        The agent schema containing the metadata for the agent to be created.
+    agent_text : str
+        The source code of the agent to be uploaded to S3.
+    Returns
+    -------
+    UUID
+        The UUID of the newly created agent.
+    """
+    # 1. Generate a new agent_id (UUID) for the agent
+    agent_id = _derive_agent_id(agent.payment_block_hash, agent.payment_extrinsic_index)
+
+    # 2. Store agent code in S3 with key as agent_id/agent.py
+    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
-        await conn.execute(
+        # 3. Insert agent metadata into the database
+        result = await conn.fetchval(
             """
             INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
             VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+            ON CONFLICT (agent_id) DO NOTHING
+            RETURNING agent_id
             """,
-            agent.agent_id,
+            agent_id,
             agent.miner_hotkey,
             agent.name,
             agent.version_num,
@@ -168,6 +205,10 @@ async def create_agent(
             agent.ip_address,
         )
 
+        if result is None:
+            raise DuplicateAgentIDError(agent_id)
+
+        # 4. Insert OpenRouter secrets into the database
         await conn.execute(
             """
             INSERT INTO agent_openrouter_secrets (
@@ -181,7 +222,7 @@ async def create_agent(
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            agent.agent_id,
+            agent_id,
             runtime_openrouter_api_key_ciphertext,
             management_openrouter_api_key_ciphertext,
             openrouter_workspace_id,
@@ -190,15 +231,17 @@ async def create_agent(
             openrouter_validated_at,
         )
 
+        # 5. Optionally create a pre-screening job for the agent
         if create_pre_screening_job:
             await conn.execute(
                 """
                 INSERT INTO pre_screening_jobs (agent_id, policy_version)
                 VALUES ($1, $2)
                 """,
-                agent.agent_id,
+                agent_id,
                 pre_screening_policy_version,
             )
+    return agent_id
 
 
 @db_operation
