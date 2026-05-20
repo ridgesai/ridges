@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -12,7 +13,6 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import api.config as config
-import utils.logger as logger
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
@@ -69,6 +69,8 @@ from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, 
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
 
+logger = logging.getLogger(__name__)
+
 
 # A validator
 class Validator(BaseModel):
@@ -120,8 +122,7 @@ def get_all_connected_validator_ip_addresses() -> List[str]:
 
 # Deletes a validator from the SESSION_ID_TO_VALIDATOR map, and cleans up its associated state
 async def delete_validator(validator: Validator, reason: str) -> None:
-    logger.info(f"Deleting validator {validator.name} ({validator.hotkey})...")
-    logger.info(f"  Reason: {reason}")
+    logger.info("Deleting validator", extra={"validator": validator.name, "hotkey": validator.hotkey, "reason": reason})
 
     if validator.current_evaluation_id:
         await update_unfinished_evaluation_runs_in_evaluation_id_to_errored(validator.current_evaluation_id, reason)
@@ -130,12 +131,12 @@ async def delete_validator(validator: Validator, reason: str) -> None:
 
     del SESSION_ID_TO_VALIDATOR[validator.session_id]
 
-    logger.info(f"Deleted validator {validator.name} ({validator.hotkey})")
+    logger.info("Validator deleted", extra={"validator": validator.name, "hotkey": validator.hotkey})
 
 
 # Deletes all validators that have not sent a heartbeat in long enough
 async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
-    logger.info("Deleting validators that have not sent a heartbeat...")
+    logger.debug("Checking for heartbeat-timed-out validators")
 
     _validators = list(SESSION_ID_TO_VALIDATOR.values())
     for validator in _validators:
@@ -152,7 +153,7 @@ async def delete_validators_that_have_not_sent_a_heartbeat() -> None:
                         f"The validator was disconnected because it did not send a heartbeat in {config.VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} seconds.",
                     )
 
-    logger.info("Deleted validators that have not sent a heartbeat")
+    logger.debug("Heartbeat timeout check complete")
 
 
 # Dependency to get the validator associated with the request
@@ -190,7 +191,10 @@ def handle_validator_http_exceptions(func):
         try:
             return await func(*args, **kwargs)
         except HTTPException as e:
-            logger.error(f"Validator HTTP exception: {e.status_code} {e.detail}")
+            logger.error(
+                "Validator HTTP exception",
+                extra={"validator": kwargs["validator"].name, "status": e.status_code, "detail": e.detail},
+            )
             await delete_validator(
                 kwargs["validator"],
                 f"An HTTP exception was raised in {func.__name__}(): {e.status_code} {HTTPStatus(e.status_code).phrase}: {e.detail}",
@@ -253,7 +257,10 @@ async def validator_register_as_validator(
                         current_validator,
                         "Validator re-registered from the same IP address; replacing the old session.",
                     )
-                    logger.info(f"Deleted old session {old_session_id_} for validator {registration_request.hotkey}")
+                    logger.info(
+                        "Replaced stale validator session",
+                        extra={"hotkey": registration_request.hotkey, "old_session_id": str(old_session_id_)},
+                    )
 
     # Register the validator with a new session ID
     session_id = uuid4()
@@ -266,10 +273,14 @@ async def validator_register_as_validator(
     )
 
     logger.info(
-        f"Validator '{validator_hotkey_to_name(registration_request.hotkey)}' ({registration_request.hotkey}) was registered"
+        "Validator registered",
+        extra={
+            "name": validator_hotkey_to_name(registration_request.hotkey),
+            "hotkey": registration_request.hotkey,
+            "session_id": str(session_id),
+            "ip_address": ip_address,
+        },
     )
-    logger.info(f"  Session ID: {session_id}")
-    logger.info(f"  IP Address: {ip_address}")
 
     return ValidatorRegistrationResponse(
         session_id=session_id,
@@ -321,9 +332,10 @@ async def validator_register_as_screener(
         ip_address=ip_address,
     )
 
-    logger.info(f"Screener {registration_request.name} was registered")
-    logger.info(f"  Session ID: {session_id}")
-    logger.info(f"  IP Address: {ip_address}")
+    logger.info(
+        "Screener registered",
+        extra={"name": registration_request.name, "session_id": str(session_id), "ip_address": ip_address},
+    )
 
     return ScreenerRegistrationResponse(
         session_id=session_id,
@@ -361,11 +373,17 @@ async def validator_request_evaluation(
     )
 
     if flags[InternalFlagName.VALIDATORS_PAUSED]:
-        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.VALIDATORS_PAUSED.value} flag")
+        logger.info(
+            "Validator blocked by flag",
+            extra={"validator": validator.name, "flag": InternalFlagName.VALIDATORS_PAUSED.value},
+        )
         return None
 
     if validator.hotkey in flags[InternalFlagName.BLACKLISTED_VALIDATORS]:
-        logger.info(f"Validator '{validator.name}' blocked by {InternalFlagName.BLACKLISTED_VALIDATORS.value} flag")
+        logger.info(
+            "Validator blocked by flag",
+            extra={"validator": validator.name, "flag": InternalFlagName.BLACKLISTED_VALIDATORS.value},
+        )
         return None
 
     # Choose the appropriate lock based on the validator's hotkey
@@ -392,7 +410,7 @@ async def validator_request_evaluation(
             try:
                 agent_code = await download_text_file_from_s3(f"{agent_id}/agent.py")
             except Exception as exc:
-                logger.error(f"Failed to download agent code for {agent_id}: {exc}")
+                logger.error("Failed to download agent code", extra={"agent_id": str(agent_id), "error": str(exc)})
                 return None
 
             openrouter_config = None
@@ -401,12 +419,11 @@ async def validator_request_evaluation(
                 openrouter_secrets = await get_openrouter_secrets_for_agent_id(agent_id)
             except AgentKeyEncryptionConfigError as exc:
                 logger.error(
-                    f"OpenRouter secret decryption is unavailable for agent {agent_id} due to encryption "
-                    f"configuration: {exc}"
+                    "OpenRouter secret decryption unavailable", extra={"agent_id": str(agent_id), "error": str(exc)}
                 )
                 return None
             except AgentKeyDecryptError as exc:
-                logger.error(f"OpenRouter secret unreadable for agent {agent_id}: {exc}")
+                logger.error("OpenRouter secret unreadable", extra={"agent_id": str(agent_id), "error": str(exc)})
                 return None
             else:
                 if openrouter_secrets is not None:
@@ -432,10 +449,15 @@ async def validator_request_evaluation(
     validator.current_evaluation = evaluation
     validator.current_agent = agent
 
-    logger.info(f"Validator '{validator.name}' requested an evaluation")
-    logger.info(f"  Agent ID: {agent_id}")
-    logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
-    logger.info(f"  # of Evaluation Runs: {len(evaluation_runs)}")
+    logger.info(
+        "Evaluation requested",
+        extra={
+            "validator": validator.name,
+            "agent_id": str(agent_id),
+            "evaluation_id": str(evaluation.evaluation_id),
+            "num_runs": len(evaluation_runs),
+        },
+    )
 
     response_runs: list[ValidatorRequestEvaluationResponseEvaluationRun] = []
     for evaluation_run in evaluation_runs:
@@ -461,7 +483,10 @@ async def validator_request_evaluation(
         try:
             artifact_upload_urls[str(evaluation_run.evaluation_run_id)] = await generate_presigned_upload_url(s3_key)
         except Exception as exc:
-            logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
+            logger.warning(
+                "Failed to generate artifact upload URL",
+                extra={"evaluation_run_id": str(evaluation_run.evaluation_run_id), "error": str(exc)},
+            )
 
     return ValidatorRequestEvaluationResponse(
         agent_code=agent_code,
@@ -511,7 +536,7 @@ async def validator_task_download_url(
     try:
         url = await generate_presigned_url(s3_key, ttl_seconds=300)
     except Exception as exc:
-        logger.error(f"Failed to generate presigned URL for s3_key={s3_key}: {exc}")
+        logger.error("Failed to generate presigned URL", extra={"s3_key": s3_key, "error": str(exc)})
         raise HTTPException(status_code=502, detail=f"Failed to generate download URL: {exc}")
 
     return ValidatorTaskDownloadUrlResponse(url=url)
@@ -542,8 +567,7 @@ async def validator_heartbeat(
     validator: Validator = Depends(get_request_validator),  # No lock required
 ) -> ValidatorHeartbeatResponse:
 
-    # logger.info(f"Validator '{validator.name}' sent a heartbeat")
-    # logger.info(f"  System metrics: {request.system_metrics}")
+    logger.info("Validator heartbeat", extra={"validator": validator.name})
 
     record_validator_heartbeat(validator, request.system_metrics)
 
@@ -770,9 +794,14 @@ async def validator_update_evaluation_run(
 
     await update_evaluation_run_by_id(evaluation_run)
 
-    logger.info(f"Validator '{validator.name}' updated an evaluation run")
-    logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
-    logger.info(f"  Updated status: {request.updated_status}")
+    logger.info(
+        "Evaluation run updated",
+        extra={
+            "validator": validator.name,
+            "evaluation_run_id": str(request.evaluation_run_id),
+            "status": str(request.updated_status),
+        },
+    )
 
     return ValidatorUpdateEvaluationRunResponse()
 
@@ -785,8 +814,7 @@ async def validator_disconnect(
 
     await delete_validator(validator, f"The validator disconnected. Reason: {request.reason}")
 
-    logger.info(f"Validator '{validator.name}' disconnected")
-    logger.info(f"  Reason: {request.reason}")
+    logger.info("Validator disconnected", extra={"validator": validator.name, "reason": request.reason})
 
     return ValidatorDisconnectResponse()
 
@@ -821,8 +849,10 @@ async def validator_finish_evaluation(
 
     await handle_evaluation_if_finished(validator.current_evaluation_id)
 
-    logger.info(f"Validator '{validator.name}' finished an evaluation")
-    logger.info(f"  Evaluation ID: {validator.current_evaluation_id}")
+    logger.info(
+        "Evaluation finished",
+        extra={"validator": validator.name, "evaluation_id": str(validator.current_evaluation_id)},
+    )
 
     validator.current_evaluation_id = None
 
