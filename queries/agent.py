@@ -427,7 +427,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 SELECT
                     c.agent_id,
                     BOOL_OR(
-                        e.validator_hotkey = $ 1
+                        e.validator_hotkey = $1
                         AND e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
                     ) AS already_evaluated,
                     COUNT(*) FILTER (
@@ -514,7 +514,7 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
                 LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
             WHERE
                 NOT COALESCE(s.already_evaluated, false)
-                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0) < $ 2
+                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0) < $2
             ORDER BY
                 COALESCE(s.screener_2_score, 0) DESC,
                 c.created_at ASC
