@@ -1,6 +1,7 @@
 import datetime
 import logging
 import os
+import traceback
 
 from asgi_correlation_id import CorrelationIdFilter
 
@@ -51,8 +52,8 @@ class RidgesLogHandler(logging.Handler):
                 k: v for k, v in record.__dict__.items() if k not in _BUILTIN_LOG_RECORD_ATTRS and not k.startswith("_")
             }
 
-            now = datetime.datetime.now()
-            ts = now.strftime("%Y-%m-%d %H:%M:%S") + f".{now.microsecond // 1000:03d}"
+            ts_dt = datetime.datetime.fromtimestamp(record.created)
+            ts = ts_dt.strftime("%Y-%m-%d %H:%M:%S") + f".{ts_dt.microsecond // 1000:03d}"
 
             msg = record.getMessage()
             suffix = (" | " + " ".join(f"{k}={v}" for k, v in extra.items())) if extra else ""
@@ -60,8 +61,6 @@ class RidgesLogHandler(logging.Handler):
             print(f"{ts} - {record.filename}:{record.lineno} - [{color}{level}{RESET}] - {msg}{suffix}")
 
             if record.exc_info:
-                import traceback
-
                 traceback.print_exception(*record.exc_info)
 
         except Exception:
@@ -76,6 +75,7 @@ def setup_logging() -> None:
     root = logging.getLogger()
     root.setLevel(level)
     root.handlers.clear()
+    root.filters.clear()
     root.addHandler(RidgesLogHandler())
     root.addFilter(CorrelationIdFilter(default_value="-"))
 

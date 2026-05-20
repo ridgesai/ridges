@@ -3,6 +3,18 @@ import logging
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def restore_root_logger():
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    original_level = root.level
+    original_filters = root.filters[:]
+    yield
+    root.handlers = original_handlers
+    root.level = original_level
+    root.filters = original_filters
+
+
 def test_handler_formats_message_with_extra_fields(capsys):
     from utils.logger import RidgesLogHandler
 
