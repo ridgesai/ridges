@@ -112,6 +112,7 @@ class ExecutionRunRequest:
     task_name: str
     task_digest: str
     agent_timeout_sec: float | None
+    verifier_timeout_sec: float | None
     results_dir: Path
     job_name: str
 

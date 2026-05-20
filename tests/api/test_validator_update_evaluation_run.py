@@ -121,6 +121,33 @@ async def test_finished_from_running_eval_still_works(monkeypatch) -> None:
 
 
 @pytest.mark.anyio
+async def test_terminal_update_succeeds_when_score_pruning_fails(monkeypatch) -> None:
+    evaluation_run = _make_evaluation_run(status=EvaluationRunStatus.running_eval, patch="existing patch")
+    capture = _install_endpoint_capture(monkeypatch, evaluation_run, existing_logs={EvaluationRunLogType.agent})
+    validator = _make_validator(evaluation_run.evaluation_id)
+    validator.current_evaluation = object()
+
+    async def fake_maybe_stop_agent_by_score_bound(_evaluation):
+        raise RuntimeError("leader query failed")
+
+    monkeypatch.setattr(validator_endpoint, "_maybe_stop_agent_by_score_bound", fake_maybe_stop_agent_by_score_bound)
+
+    await _call_update(
+        ValidatorUpdateEvaluationRunRequest(
+            evaluation_run_id=evaluation_run.evaluation_run_id,
+            updated_status=EvaluationRunStatus.finished,
+            verifier_reward=1.0,
+            test_results=[_test_result()],
+            eval_logs="eval logs",
+        ),
+        validator,
+    )
+
+    assert evaluation_run.status == EvaluationRunStatus.finished
+    assert capture["updated_runs"][-1].status == EvaluationRunStatus.finished
+
+
+@pytest.mark.anyio
 async def test_finished_from_initializing_eval_backfills_running_eval_timestamp(monkeypatch) -> None:
     started_initializing_eval_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     evaluation_run = _make_evaluation_run(
