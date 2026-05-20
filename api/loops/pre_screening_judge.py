@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import socket
 from uuid import uuid4
 
@@ -7,6 +6,7 @@ import httpx
 from pydantic import ValidationError
 
 import api.config as config
+import utils.logger as logger
 from models.pre_screening_judge import (
     PreScreeningJudgeRequest,
     PreScreeningJudgeResponse,
@@ -18,10 +18,7 @@ from queries.pre_screening_judge import (
     move_exhausted_pre_screening_jobs_to_review,
     record_pre_screening_job_error,
 )
-from utils.logger import fatal
 from utils.s3 import generate_presigned_url
-
-logger = logging.getLogger(__name__)
 
 CLAIMED_BY = f"{socket.gethostname()}:{uuid4()}"
 POLL_INTERVAL_SECONDS = 10
@@ -34,28 +31,25 @@ async def pre_screening_judge_loop() -> None:
     """Poll for pre-screening jobs and send them to the judge service."""
 
     if config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS >= JOB_LEASE_SECONDS:
-        fatal(
+        logger.fatal(
             "PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS must be less than "
             f"the hardcoded pre-screening judge job lease ({JOB_LEASE_SECONDS} seconds)"
         )
 
     logger.info(
-        "Pre-screening judge loop started",
-        extra={
-            "url": config.PRE_SCREENING_JUDGE_URL,
-            "interval_s": POLL_INTERVAL_SECONDS,
-            "timeout_s": config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS,
-            "lease_s": JOB_LEASE_SECONDS,
-            "max_attempts": MAX_ATTEMPTS,
-            "claimed_by": CLAIMED_BY,
-        },
+        f"Starting pre-screening judge loop: url={config.PRE_SCREENING_JUDGE_URL} "
+        f"interval_seconds={POLL_INTERVAL_SECONDS} "
+        f"timeout_seconds={config.PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} "
+        f"lease_seconds={JOB_LEASE_SECONDS} "
+        f"max_attempts={MAX_ATTEMPTS} "
+        f"claimed_by={CLAIMED_BY}"
     )
 
     while True:
         try:
             await process_next_pre_screening_job()
         except Exception as exc:
-            logger.error("Pre-screening judge loop error", extra={"error": f"{type(exc).__name__}: {exc}"})
+            logger.error(f"Unexpected error in pre-screening judge loop: {type(exc).__name__}: {exc}")
 
         await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
@@ -73,7 +67,7 @@ async def process_next_pre_screening_job() -> None:
     if job is None:
         return
     if job.claim_token is None:
-        logger.error("Claimed pre-screening job without claim token", extra={"job_id": str(job.job_id)})
+        logger.error(f"Claimed pre-screening job {job.job_id} without a claim token")
         return
 
     try:
@@ -104,21 +98,16 @@ async def process_next_pre_screening_job() -> None:
             result=_result_payload(result),
         )
         if not finalized:
-            logger.warning("Pre-screening job not finalized (stale claim)", extra={"job_id": str(job.job_id)})
+            logger.warning(f"Pre-screening job {job.job_id} was not finalized because its claim is stale")
         else:
             logger.info(
-                "Pre-screening judge completed",
-                extra={
-                    "job_id": str(job.job_id),
-                    "agent_id": str(job.agent_id),
-                    "verdict": result.verdict.value,
-                    "confidence": round(result.confidence, 2),
-                },
+                f"Pre-screening judge completed: job_id={job.job_id} agent_id={job.agent_id} "
+                f"verdict={result.verdict.value} confidence={result.confidence:.2f}"
             )
 
     except Exception as exc:
         error_message = f"{type(exc).__name__}: {exc}"
-        logger.error("Pre-screening judge job failed", extra={"job_id": str(job.job_id), "error": error_message})
+        logger.error(f"Pre-screening judge job {job.job_id} failed: {error_message}")
         recorded = await record_pre_screening_job_error(
             job_id=job.job_id,
             claim_token=job.claim_token,
@@ -129,7 +118,7 @@ async def process_next_pre_screening_job() -> None:
         )
 
         if not recorded:
-            logger.warning("Pre-screening job error not recorded (stale claim)", extra={"job_id": str(job.job_id)})
+            logger.warning(f"Pre-screening job {job.job_id} error was not recorded because its claim is stale")
 
 
 async def _call_judge_service(request_body: PreScreeningJudgeRequest) -> PreScreeningJudgeResponse:

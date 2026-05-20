@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import os
 from datetime import datetime, timezone
 from typing import Optional
@@ -7,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
+import utils.logger as logger
 from api import config
 from api.errors import PaymentAlreadyUsedError, PaymentRefunded
 from api.src.utils.openrouter_validation import validate_openrouter_keys
@@ -43,8 +43,6 @@ from utils.debug_lock import DebugLock
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
 hotkey_locks_lock = asyncio.Lock()
-
-logger = logging.getLogger(__name__)
 
 
 async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
@@ -178,7 +176,7 @@ async def post_agent(
     }
 
     try:
-        logger.info("Agent upload started", extra={"miner_hotkey": miner_hotkey, "agent_name": name})
+        logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
         if prod:
             check_signature(public_key, file_info, signature)
@@ -199,16 +197,14 @@ async def post_agent(
             if await is_payment_refunded(
                 upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
             ):
-                logger.warning("Payment refunded; rejecting upload", extra={"block_hash": payment_block_hash})
+                logger.warning(f"Payment refunded for block_hash={payment_block_hash}; rejecting upload")
                 raise PaymentRefunded()
 
             # Retrieve payment details from the chain
             try:
                 payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
             except Exception as e:
-                logger.error(
-                    "Failed to retrieve payment block", extra={"block_hash": payment_block_hash, "error": str(e)}
-                )
+                logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
 
             if payment_block is None:
@@ -329,7 +325,7 @@ async def post_agent(
                 agent_id=agent_id,
             )
 
-        logger.info("Agent upload successful", extra={"agent_id": str(agent_id), "miner_hotkey": miner_hotkey})
+        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
 
         # Record successful upload
         await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
@@ -339,7 +335,7 @@ async def post_agent(
         )
 
     except DuplicateAgentIDError as e:
-        logger.warning("Duplicate agent ID; upload rejected", extra={"error": str(e)})
+        logger.warning(f"Duplicate agent ID; upload rejected: {e}")
         raise PaymentAlreadyUsedError() from e
 
     except HTTPException as e:
