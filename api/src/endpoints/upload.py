@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Optional
@@ -6,7 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-import utils.logger as logger
 from api import config
 from api.errors import PaymentAlreadyUsedError, PaymentRefunded
 from api.src.utils.openrouter_validation import validate_openrouter_keys
@@ -44,6 +44,8 @@ from utils.debug_lock import DebugLock
 hotkey_locks: dict[str, asyncio.Lock] = {}
 hotkey_locks_lock = asyncio.Lock()
 
+logger = logging.getLogger(__name__)
+
 
 async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
     async with hotkey_locks_lock:
@@ -52,12 +54,7 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
         return hotkey_locks[hotkey]
 
 
-prod = False
-if os.getenv("ENV") == "prod":
-    logger.info("Agent Upload running in production mode.")
-    prod = True
-else:
-    logger.info("Agent Upload running in development mode.")
+prod = os.getenv("ENV") == "prod"
 
 
 class AgentUploadResponse(BaseModel):
@@ -181,8 +178,7 @@ async def post_agent(
     }
 
     try:
-        logger.debug("Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
-        logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
+        logger.info("Agent upload started", extra={"miner_hotkey": miner_hotkey, "name": name})
 
         if prod:
             check_signature(public_key, file_info, signature)
@@ -203,14 +199,16 @@ async def post_agent(
             if await is_payment_refunded(
                 upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
             ):
-                logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
+                logger.warning("Payment refunded; rejecting upload", extra={"block_hash": payment_block_hash})
                 raise PaymentRefunded()
 
             # Retrieve payment details from the chain
             try:
                 payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
             except Exception as e:
-                logger.error(f"Error retrieving payment block: {e}")
+                logger.error(
+                    "Failed to retrieve payment block", extra={"block_hash": payment_block_hash, "error": str(e)}
+                )
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
 
             if payment_block is None:
@@ -331,7 +329,7 @@ async def post_agent(
                 agent_id=agent_id,
             )
 
-        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
+        logger.info("Agent upload successful", extra={"agent_id": str(agent_id), "miner_hotkey": miner_hotkey})
 
         # Record successful upload
         await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
@@ -341,7 +339,7 @@ async def post_agent(
         )
 
     except DuplicateAgentIDError as e:
-        logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
+        logger.warning("Duplicate agent ID; upload rejected", extra={"error": str(e)})
         raise PaymentAlreadyUsedError() from e
 
     except HTTPException as e:
