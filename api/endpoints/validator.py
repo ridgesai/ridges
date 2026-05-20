@@ -275,7 +275,7 @@ async def validator_register_as_validator(
     logger.info(
         "Validator registered",
         extra={
-            "name": validator_hotkey_to_name(registration_request.hotkey),
+            "validator_name": validator_hotkey_to_name(registration_request.hotkey),
             "hotkey": registration_request.hotkey,
             "session_id": str(session_id),
             "ip_address": ip_address,
@@ -334,7 +334,7 @@ async def validator_register_as_screener(
 
     logger.info(
         "Screener registered",
-        extra={"name": registration_request.name, "session_id": str(session_id), "ip_address": ip_address},
+        extra={"screener_name": registration_request.name, "session_id": str(session_id), "ip_address": ip_address},
     )
 
     return ScreenerRegistrationResponse(
