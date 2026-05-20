@@ -1,79 +1,90 @@
-import inspect
+import datetime
 import logging
 import os
-from datetime import datetime
 
-# We want some loggers from third-party libraries to be quieter
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("chain_utils").setLevel(logging.WARNING)
+from asgi_correlation_id import CorrelationIdFilter
 
+_BUILTIN_LOG_RECORD_ATTRS = frozenset(
+    {
+        "args",
+        "created",
+        "exc_info",
+        "exc_text",
+        "filename",
+        "funcName",
+        "levelname",
+        "levelno",
+        "lineno",
+        "message",
+        "module",
+        "msecs",
+        "msg",
+        "name",
+        "pathname",
+        "process",
+        "processName",
+        "relativeCreated",
+        "stack_info",
+        "thread",
+        "threadName",
+        "taskName",
+    }
+)
 
 LEVEL_NAME_TO_COLOR = {
-    "DEBUG": "\033[90m",  # Gray
-    "INFO": "\033[32m",  # Green
-    "WARNING": "\033[33m",  # Yellow
-    "ERROR": "\033[31m",  # Red
-    "FATAL": "\033[31m",  # Red
+    "DEBUG": "\033[90m",
+    "INFO": "\033[32m",
+    "WARNING": "\033[33m",
+    "ERROR": "\033[31m",
+    "CRITICAL": "\033[31m",
 }
-
-GRAY = "\033[90m"
 RESET = "\033[0m"
 
 
-def print_log(
-    level: str,
-    message: str,
-    *,
-    _file: str | None = None,
-    _line: int | None = None,
-):
-    now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-    ms = now.microsecond // 1000
-
-    if _file is None:
-        # Walk back two frames: past print_log itself, then past the info/warning/etc. wrapper.
-        frame = inspect.currentframe()
-        wrapper = frame.f_back if frame is not None else None
-        caller = wrapper.f_back if wrapper is not None else None
-        _file = caller.f_code.co_filename.split("/")[-1] if caller is not None else "?"
-        _line = caller.f_lineno if caller is not None else 0
-
-    print(f"{timestamp}.{ms:03d} - {_file}:{_line} - [{LEVEL_NAME_TO_COLOR[level]}{level}{RESET}] - {message}")
-
-
 class RidgesLogHandler(logging.Handler):
-    _LEVEL_MAP = {"CRITICAL": "FATAL"}
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = record.levelname
+            color = LEVEL_NAME_TO_COLOR.get(level, "")
 
-    def emit(self, record: logging.LogRecord):
-        level = self._LEVEL_MAP.get(record.levelname, record.levelname)
-        if level not in LEVEL_NAME_TO_COLOR:
-            level = "INFO"
-        print_log(
-            level,
-            record.getMessage(),
-            _file=record.filename,
-            _line=record.lineno,
-        )
+            extra = {
+                k: v for k, v in record.__dict__.items() if k not in _BUILTIN_LOG_RECORD_ATTRS and not k.startswith("_")
+            }
 
+            now = datetime.datetime.now()
+            ts = now.strftime("%Y-%m-%d %H:%M:%S") + f".{now.microsecond // 1000:03d}"
 
-def debug(message: str):
-    if os.getenv("DEBUG", "false").lower() == "true":
-        print_log("DEBUG", GRAY + message + RESET)
+            msg = record.getMessage()
+            suffix = (" | " + " ".join(f"{k}={v}" for k, v in extra.items())) if extra else ""
 
+            print(f"{ts} - {record.filename}:{record.lineno} - [{color}{level}{RESET}] - {msg}{suffix}")
 
-def info(message: str):
-    print_log("INFO", message)
+            if record.exc_info:
+                import traceback
 
+                traceback.print_exception(*record.exc_info)
 
-def warning(message: str):
-    print_log("WARNING", message)
-
-
-def error(message: str):
-    print_log("ERROR", message)
+        except Exception:
+            self.handleError(record)
 
 
-def fatal(message: str):
-    print_log("FATAL", message)
-    raise Exception(message)
+def setup_logging() -> None:
+    """Configure the root logger with RidgesLogHandler. Call once at startup."""
+    debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+    level = logging.DEBUG if debug_mode else logging.INFO
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+    root.addHandler(RidgesLogHandler())
+    root.addFilter(CorrelationIdFilter(default_value="-"))
+
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("chain_utils").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
+def fatal(message: str) -> None:
+    """Log at CRITICAL level and exit the process."""
+    logging.getLogger("ridges").critical(message)
+    raise SystemExit(1)
