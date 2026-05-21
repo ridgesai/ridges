@@ -100,7 +100,7 @@ async def check_agent_post(
     )
     if latest_agent_created_at_in_latest_set_id:
         check_rate_limit(latest_agent_created_at_in_latest_set_id)
-    check_signature(public_key, file_info, signature)
+    check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey)
     check_if_python_file(agent_file.filename)
@@ -182,16 +182,19 @@ async def post_agent(
         logger.debug("Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
+        is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
+        logger.info("Owner upload: " + str(is_owner_upload))
+
         if prod:
-            check_signature(public_key, file_info, signature)
+            check_signature(public_key, file_info, signature, miner_hotkey)
+
+        if config.DISALLOW_UPLOADS and not is_owner_upload:
+            raise PlatformFrozenError(config.DISALLOW_UPLOADS_REASON)
+
+        if prod:
             await check_hotkey_registered(miner_hotkey)
             await check_agent_banned(miner_hotkey=miner_hotkey)
 
-        # If is owner upload skip payment verification, rate limit checks and the DISALLOW_UPLOADS check.
-        is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
-        logger.info("Owner upload: " + str(is_owner_upload))
-        if config.DISALLOW_UPLOADS and not is_owner_upload:
-            raise PlatformFrozenError(config.DISALLOW_UPLOADS_REASON)
         check_if_python_file(agent_file.filename)
         agent_text = await check_file_size(agent_file)
 
