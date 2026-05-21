@@ -1,9 +1,13 @@
+import logging
 import os
 import uuid
 
 from dotenv import load_dotenv
 
-import utils.logger as logger
+from utils.logger import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Load everything from .env
 load_dotenv()
@@ -221,6 +225,11 @@ logger.info(
     f"subtensor_network={SUBTENSOR_NETWORK} subtensor_address={SUBTENSOR_ADDRESS} "
     f"s3_bucket={S3_BUCKET_NAME} db_host={DATABASE_HOST} db_name={DATABASE_NAME}"
 )
+if ENV == "prod":
+    logger.info("Agent Upload running in production mode.")
+else:
+    logger.info("Agent Upload running in development mode.")
+
 if BURN:
     logger.warning("Burn mode is active — all payments will be burned")
 if DISALLOW_UPLOADS:

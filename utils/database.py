@@ -1,6 +1,7 @@
 # ADAM: Black magic file
 import asyncio
 import contextvars
+import logging
 import re
 import time
 from functools import wraps
@@ -11,8 +12,9 @@ from uuid import UUID, uuid4
 import asyncpg
 from alembic.config import Config
 
-import utils.logger as logger
 from alembic import command
+
+logger = logging.getLogger(__name__)
 
 
 async def initialize_database(*, username: str, password: str, host: str, port: int, name: str):

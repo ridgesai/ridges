@@ -1,3 +1,4 @@
+import logging
 from time import time
 from typing import List, Optional
 
@@ -6,7 +7,6 @@ from openai import APIStatusError, AsyncOpenAI
 from pydantic import BaseModel
 
 import inference_gateway.config as config
-import utils.logger as logger
 from inference_gateway.models import (
     EmbeddingModelInfo,
     EmbeddingResult,
@@ -20,6 +20,8 @@ from inference_gateway.models import (
     openai_tool_calls_to_inference_tool_calls,
 )
 from inference_gateway.providers.provider import Provider
+
+logger = logging.getLogger(__name__)
 
 if config.USE_TARGON:
     TARGON_MODELS_URL = f"{config.TARGON_BASE_URL}/models"

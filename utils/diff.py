@@ -1,11 +1,12 @@
 """Utilities for computing diffs between files."""
 
+import logging
 import os
 import subprocess
 import tempfile
 from typing import Optional, Tuple
 
-import utils.logger as logger
+logger = logging.getLogger(__name__)
 
 
 def get_file_diff(old_path, new_path) -> str:
@@ -70,7 +71,12 @@ def validate_diff_for_local_repo(diff, local_repo_dir) -> Tuple[bool, Optional[s
         diff_file = f.name
 
     # Use `git apply --check` to validate without applying
-    result = subprocess.run(["git", "apply", "--check", diff_file], cwd=local_repo_dir, capture_output=True, text=True)
+    result = subprocess.run(
+        ["git", "apply", "--check", diff_file],
+        cwd=local_repo_dir,
+        capture_output=True,
+        text=True,
+    )
 
     # Delete the temp file
     os.unlink(diff_file)
@@ -97,7 +103,12 @@ def apply_diff_to_local_repo(diff, local_repo_dir) -> None:
         diff_file = f.name
 
     # Use `git apply` to apply the diff
-    result = subprocess.run(["git", "apply", diff_file], cwd=local_repo_dir, capture_output=True, text=True)
+    result = subprocess.run(
+        ["git", "apply", diff_file],
+        cwd=local_repo_dir,
+        capture_output=True,
+        text=True,
+    )
 
     # Delete the temp file
     os.unlink(diff_file)

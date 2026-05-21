@@ -1,14 +1,9 @@
 # TODO ADAM: slowly fixing this
 
 import asyncio
+import logging
 from collections.abc import Coroutine
 from typing import Any
-
-# Set up logging before any other local imports so that module-level log calls
-# (e.g. in api.config) are captured by the configured handlers.
-from utils.logger import setup_logging
-
-setup_logging()
 
 import uvicorn
 from asgi_correlation_id import CorrelationIdMiddleware
@@ -17,7 +12,6 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 
 import api.config as config
-import utils.logger as logger
 from api.endpoints.agent import router as agent_router
 from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
@@ -35,7 +29,10 @@ from api.src.utils.sentry import initialize_sentry
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
+from utils.logger import setup_logging
 from utils.s3 import deinitialize_s3, initialize_s3
+
+logger = logging.getLogger("api")
 
 
 def _start_background_task(
@@ -58,6 +55,8 @@ def _start_background_task(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
+
     background_tasks: set[asyncio.Task[None]] = set()
 
     await initialize_database(

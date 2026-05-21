@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import socket
 from uuid import uuid4
 
@@ -6,7 +7,6 @@ import httpx
 from pydantic import ValidationError
 
 import api.config as config
-import utils.logger as logger
 from models.pre_screening_judge import (
     PreScreeningJudgeRequest,
     PreScreeningJudgeResponse,
@@ -25,6 +25,8 @@ POLL_INTERVAL_SECONDS = 10
 JOB_LEASE_SECONDS = 840
 MAX_ATTEMPTS = 3
 ERROR_BACKOFF_SECONDS = 60
+
+logger = logging.getLogger(__name__)
 
 
 async def pre_screening_judge_loop() -> None:

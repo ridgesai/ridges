@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -11,8 +12,11 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-import utils.logger as logger
-from execution.artifacts import collect_job_crash_context, read_trial_snapshot, result_from_summary
+from execution.artifacts import (
+    collect_job_crash_context,
+    read_trial_snapshot,
+    result_from_summary,
+)
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
@@ -20,6 +24,8 @@ from models.harbor_task import HarborRemoteTaskExecutionSpec
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from utils.task_cache import get_cached_task, get_or_download_task
+
+logger = logging.getLogger(__name__)
 
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
 
@@ -95,7 +101,7 @@ class ExecutionEngine:
         openrouter_config: OpenRouterRuntimeConfig | None = None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
-        on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
+        on_verification_started: (Callable[[TrialSnapshot], Awaitable[None]] | None) = None,
     ) -> ExecutionResult:
         """Run the task referenced by the evaluation set and normalize the result.
 
@@ -106,7 +112,9 @@ class ExecutionEngine:
 
         parsed_spec = self._parse_execution_spec(problem_name=problem_name, execution_spec=execution_spec)
         task_dir = await self._resolve_task_dir(
-            execution_spec=parsed_spec, problem_name=problem_name, fetch_task_url=fetch_task_url
+            execution_spec=parsed_spec,
+            problem_name=problem_name,
+            fetch_task_url=fetch_task_url,
         )
         request = self._build_run_request(
             evaluation_run_id=evaluation_run_id,
@@ -144,7 +152,7 @@ class ExecutionEngine:
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
-                    on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
+                    on_agent_started=(harbor_on_agent_started if on_agent_started is not None else None),
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None
                     ),
@@ -230,7 +238,10 @@ class ExecutionEngine:
         fetch_task_url: Callable[[str], Awaitable[str]] | None,
     ) -> Path:
         """Resolve the task directory from the local cache, downloading if needed."""
-        cached = get_cached_task(task_name=execution_spec.task_name, task_digest=execution_spec.task_digest)
+        cached = get_cached_task(
+            task_name=execution_spec.task_name,
+            task_digest=execution_spec.task_digest,
+        )
         if cached:
             return cached
 
@@ -242,5 +253,7 @@ class ExecutionEngine:
 
         url = await fetch_task_url(execution_spec.task_digest)
         return await get_or_download_task(
-            presigned_url=url, task_name=execution_spec.task_name, task_digest=execution_spec.task_digest
+            presigned_url=url,
+            task_name=execution_spec.task_name,
+            task_digest=execution_spec.task_digest,
         )

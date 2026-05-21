@@ -1,3 +1,4 @@
+import logging
 import random
 from contextlib import asynccontextmanager
 from functools import wraps
@@ -9,7 +10,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 import inference_gateway.config as config
-import utils.logger as logger
 from inference_gateway.cost_hash_map import CostHashMap
 from inference_gateway.models import (
     EmbeddingModelInfo,
@@ -29,6 +29,9 @@ from queries.embedding import create_new_embedding, update_embedding_by_id
 from queries.evaluation_run import get_evaluation_run_status_by_id
 from queries.inference import create_new_inference, update_inference_by_id
 from utils.database import deinitialize_database, get_debug_query_info, initialize_database
+from utils.logger import setup_logging
+
+logger = logging.getLogger("inference_gateway")
 
 
 class WeightedProvider:
@@ -58,6 +61,7 @@ def get_provider_that_supports_model_for_embedding(model_name: str) -> Provider:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     if config.USE_DATABASE:
         await initialize_database(
             username=config.DATABASE_USERNAME,

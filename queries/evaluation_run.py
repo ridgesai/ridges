@@ -1,14 +1,16 @@
 import json
+import logging
 from typing import List, Optional
 from uuid import UUID, uuid4
 
 import asyncpg
 
-import utils.logger as logger
 from models.evaluation_run import EvaluationRun, EvaluationRunLogType, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetProblem
 from queries._row_parsing import parse_jsonb_fields
 from utils.database import DatabaseConnection, db_operation
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:

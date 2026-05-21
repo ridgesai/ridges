@@ -1,5 +1,6 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
 import asyncio
+import logging
 import os
 import pathlib
 import random
@@ -11,7 +12,6 @@ from uuid import UUID
 
 import httpx
 
-import utils.logger as logger
 import validator.config as config
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
@@ -35,9 +35,12 @@ from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResultStatus
 from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
+from utils.logger import setup_logging
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
 from validator.set_weights import set_weights_from_mapping
+
+logger = logging.getLogger("validator")
 
 # The session ID for this validator
 session_id = None
@@ -464,6 +467,7 @@ async def main():
     global max_evaluation_run_log_size_bytes
     global execution_engine
 
+    setup_logging()
     cleanup_harbor_docker_resources()
     prune_docker_disk_resources(include_build_cache=True)
 
