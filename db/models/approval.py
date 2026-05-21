@@ -9,10 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
 
-APPROVAL_JOB_STATUSES = ("pending", "running", "error", "completed")
-ACTIVE_APPROVAL_JOB_STATUSES = ("pending", "running", "error")
+APPROVAL_JOB_STATUSES = ("pending", "running", "error", "completed", "needs_review")
+ACTIVE_APPROVAL_JOB_STATUSES = ("pending", "running", "error", "needs_review")
 APPROVAL_VERDICTS = ("approved", "rejected", "needs_review")
-APPROVAL_PROCESSING_STATUSES = ("pending", "running", "error", "completed")
+APPROVAL_PROCESSING_STATUSES = ("pending", "running", "error", "completed", "needs_review")
 
 
 class ApprovalJob(Base):
@@ -42,6 +42,14 @@ class ApprovalJob(Base):
     aggregate_score: Mapped[Optional[float]] = mapped_column(sa.Float)
     aggregate_confidence: Mapped[Optional[float]] = mapped_column(sa.Float)
     aggregate_summary: Mapped[Optional[str]] = mapped_column(sa.Text)
+    projected_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    decision_source: Mapped[Optional[str]] = mapped_column(sa.Text)
+    discord_channel_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    discord_message_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    review_requested_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    reviewer_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    review_decision_reason: Mapped[Optional[str]] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
     )
@@ -51,22 +59,35 @@ class ApprovalJob(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "status IN ('pending', 'running', 'error', 'completed')",
+            "status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_approval_jobs_status",
         ),
         sa.CheckConstraint(
             "aggregate_verdict IS NULL OR aggregate_verdict IN ('approved', 'rejected', 'needs_review')",
             name="ck_approval_jobs_aggregate_verdict",
         ),
+        sa.CheckConstraint(
+            "decision_source IS NULL OR decision_source IN ('auto_judge', 'discord_review')",
+            name="ck_approval_jobs_decision_source",
+        ),
+        sa.CheckConstraint(
+            "(discord_channel_id IS NULL) = (discord_message_id IS NULL)",
+            name="ck_approval_jobs_discord_message_pair",
+        ),
         sa.Index(
             "idx_approval_jobs_active_agent_set",
             "agent_id",
             "set_id",
             unique=True,
-            postgresql_where=sa.text("status IN ('pending', 'running', 'error')"),
+            postgresql_where=sa.text("status IN ('pending', 'running', 'error', 'needs_review')"),
         ),
         sa.Index("idx_approval_jobs_claimable", "status", "next_attempt_at", "created_at"),
         sa.Index("idx_approval_jobs_running_lease", "status", "lease_expires_at"),
+        sa.Index(
+            "idx_approval_jobs_unprojected_review_states",
+            "created_at",
+            postgresql_where=sa.text("status IN ('needs_review', 'completed') AND projected_at IS NULL"),
+        ),
     )
 
 
@@ -126,7 +147,7 @@ class AgentApprovalState(Base):
 
     __table_args__ = (
         sa.CheckConstraint(
-            "processing_status IN ('pending', 'running', 'error', 'completed')",
+            "processing_status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_agent_approval_states_processing_status",
         ),
         sa.CheckConstraint(
