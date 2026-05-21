@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from dotenv import load_dotenv
 
@@ -182,6 +183,11 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
+AGENT_UUID_NAMESPACE = os.getenv("AGENT_UUID_NAMESPACE")
+if not AGENT_UUID_NAMESPACE:
+    logger.fatal("AGENT_UUID_NAMESPACE is not set in .env")
+AGENT_UUID_NAMESPACE = uuid.UUID(AGENT_UUID_NAMESPACE)
+
 SHOULD_RUN_LOOPS = os.getenv("SHOULD_RUN_LOOPS")
 if not SHOULD_RUN_LOOPS:
     logger.fatal("SHOULD_RUN_LOOPS is not set in .env")
@@ -208,6 +214,9 @@ if PRE_SCREENING_JUDGE_RUN_LOOP:
             "PRE_SCREENING_JUDGE_INTERNAL_TOKEN is not set in .env while the pre-screening judge loop is enabled"
         )
 
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if not SENTRY_DSN:
+    logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
 logger.info("=== API Configuration ===")
 

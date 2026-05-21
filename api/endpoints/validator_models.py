@@ -1,11 +1,8 @@
-from datetime import datetime
 from typing import Any, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from models.agent import Agent
-from models.evaluation import Evaluation
 from models.evaluation_run import EvaluationRunStatus
 from models.openrouter import OpenRouterRuntimeConfig
 from models.problem import ProblemTestResult
@@ -52,6 +49,8 @@ class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel):  # :(
 
 
 class ValidatorRequestEvaluationResponse(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
@@ -71,6 +70,26 @@ class ValidatorHeartbeatRequest(BaseModel):
 
 
 class ValidatorHeartbeatResponse(BaseModel):
+    pass
+
+
+class ValidatorCheckCancellationRequest(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
+
+
+class ValidatorCheckCancellationResponse(BaseModel):
+    should_cancel: bool
+    reason: str | None = None
+
+
+class ValidatorCancelCurrentEvaluationRequest(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
+    reason: str | None = None
+
+
+class ValidatorCancelCurrentEvaluationResponse(BaseModel):
     pass
 
 
@@ -108,15 +127,3 @@ class ValidatorFinishEvaluationRequest(BaseModel):
 
 class ValidatorFinishEvaluationResponse(BaseModel):
     pass
-
-
-class ConnectedValidatorInfo(BaseModel):
-    name: str
-    hotkey: str
-    time_connected: datetime
-
-    time_last_heartbeat: Optional[datetime] = None
-    system_metrics: Optional[SystemMetrics] = None
-
-    evaluation: Optional[Evaluation] = None
-    agent: Optional[Agent] = None
