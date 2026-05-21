@@ -438,51 +438,123 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
              SELECT agent_id FROM screener_2_queue LIMIT 1
         """)
     else:
-        # Restrict to candidate agents first so we only hydrate evaluations for agents
-        # in evaluating status (avoids full evaluations_hydrated scan and heavy JSONB work).
+        # The query is structured to force a candidates-first execution order, avoiding a
+        # full scan of evaluation_runs that the planner would otherwise choose.
+        #
+        # Root cause of the bad plan: evaluations_hydrated is a view that groups by
+        # evaluation_id. PostgreSQL cannot push a predicate past a GROUP BY from outside
+        # the view, so any WHERE agent_id IN (...) filter applied to the view is evaluated
+        # *after* the full aggregation — meaning all evaluation_runs are scanned and the
+        # JSONB solved computation runs on every row before the candidate filter is applied.
+        #
+        # Here we bypass the view entirely and inline its logic using an explicit join chain:
+        #   candidates (MATERIALIZED, ~1–50 rows)
+        #     → evaluations by agent_id (index seek, ~10–50 rows per candidate)
+        #       → evaluation_runs via JOIN LATERAL by evaluation_id (index seek, ~20–50 rows each)
         result = await conn.fetchrow(
             f"""
-            WITH
-                candidates AS (
-                    SELECT agent_id, created_at
-                    FROM agents
-                    WHERE agents.status = '{AgentStatus.evaluating.value}'
-                      AND NOT EXISTS (SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = agents.agent_id)
-                ),
-                validator_eval_counts AS (
-                    SELECT
-                        agent_id,
-                        BOOL_OR(validator_hotkey = $1) AS already_evaluated,
-                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.running.value}') AS num_running_evals,
-                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.success.value}') AS num_finished_evals
-                    FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
-                      AND evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
-                      AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
-                    GROUP BY agent_id
-                ),
-                screener_2_scores AS (
-                    SELECT agent_id, COALESCE(MAX(score), 0) AS score
-                    FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
-                      AND evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
-                      AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
-                    GROUP BY agent_id
-                )
+            WITH candidates AS MATERIALIZED (
+                SELECT
+                    agent_id,
+                    created_at
+                FROM
+                    agents
+                WHERE
+                    agents.status = '{AgentStatus.evaluating.value}'
+                    AND NOT EXISTS (
+                        SELECT
+                            1
+                        FROM
+                            benchmark_agent_ids b
+                        WHERE
+                            b.agent_id = agents.agent_id
+                    )
+            ),
+            combined_eval_stats AS (
+                SELECT
+                    c.agent_id,
+                    BOOL_OR(
+                        e.validator_hotkey = $1
+                        AND e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                    ) AS already_evaluated,
+                    COUNT(*) FILTER (
+                        WHERE
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.running.value}' :: EvaluationStatus
+                    ) AS num_running_evals,
+                    COUNT(*) FILTER (
+                        WHERE
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                    ) AS num_finished_evals,
+                    COALESCE(
+                        MAX(agg.score) FILTER (
+                            WHERE
+                                e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                                AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                        ),
+                        0
+                    ) AS screener_2_score
+                FROM
+                    candidates c
+                    JOIN evaluations e ON e.agent_id = c.agent_id
+                    AND e.evaluation_set_group IN (
+                        '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup,
+                        '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                    )
+                    JOIN LATERAL (
+                        SELECT
+                            (
+                                CASE
+                                    WHEN EVERY(
+                                        er.status = 'finished'
+                                        OR (
+                                            er.status = 'error'
+                                            AND er.error_code BETWEEN 1000
+                                            AND 1999
+                                        )
+                                    ) THEN 'success' :: EvaluationStatus
+                                    WHEN EVERY(er.status IN ('finished', 'error')) THEN 'failure' :: EvaluationStatus
+                                    ELSE 'running' :: EvaluationStatus
+                                END
+                            ) AS computed_status,
+                            COUNT(*) FILTER (WHERE er.solved) :: float / NULLIF(COUNT(*), 0) AS score
+                        FROM
+                            evaluation_runs_hydrated er
+                        WHERE
+                            er.evaluation_id = e.evaluation_id
+                        HAVING COUNT(*) > 0
+                    ) agg ON (
+                        (
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status IN (
+                                '{EvaluationStatus.success.value}' :: EvaluationStatus,
+                                '{EvaluationStatus.running.value}' :: EvaluationStatus
+                            )
+                        )
+                        OR (
+                            e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                        )
+                    )
+                GROUP BY
+                    c.agent_id
+            )
             SELECT
                 c.agent_id,
-                COALESCE(v.num_running_evals, 0) AS num_running_evals,
-                COALESCE(v.num_finished_evals, 0) AS num_finished_evals
-            FROM candidates c
-                 LEFT JOIN screener_2_scores s ON s.agent_id = c.agent_id
-                 LEFT JOIN validator_eval_counts v ON v.agent_id = c.agent_id
+                COALESCE(s.num_running_evals, 0) AS num_running_evals,
+                COALESCE(s.num_finished_evals, 0) AS num_finished_evals
+            FROM
+                candidates c
+                LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
             WHERE
-                NOT COALESCE(v.already_evaluated, false)
-              AND COALESCE(v.num_running_evals, 0) + COALESCE(v.num_finished_evals, 0) < $2
+                NOT COALESCE(s.already_evaluated, false)
+                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0) < $2
             ORDER BY
-                s.score DESC NULLS LAST,
+                COALESCE(s.screener_2_score, 0) DESC,
                 c.created_at ASC
-            LIMIT 1
+            LIMIT
+                1
             """,
             validator_hotkey,
             config.NUM_EVALS_PER_AGENT,
