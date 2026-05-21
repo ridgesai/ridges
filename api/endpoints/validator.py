@@ -1,6 +1,8 @@
 import asyncio
 import re
 import time
+import traceback
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from http import HTTPStatus
@@ -14,9 +16,12 @@ from pydantic import BaseModel
 import api.config as config
 import utils.logger as logger
 from api.endpoints.validator_models import (
-    ConnectedValidatorInfo,
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
+    ValidatorCancelCurrentEvaluationRequest,
+    ValidatorCancelCurrentEvaluationResponse,
+    ValidatorCheckCancellationRequest,
+    ValidatorCheckCancellationResponse,
     ValidatorDisconnectRequest,
     ValidatorDisconnectResponse,
     ValidatorFinishEvaluationRequest,
@@ -36,9 +41,11 @@ from api.endpoints.validator_models import (
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
 from models.openrouter import OpenRouterRuntimeConfig
+from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
@@ -48,8 +55,13 @@ from queries.agent import (
 )
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
+    get_approved_validator_leader_score_for_set,
+    get_evaluation_by_id,
     get_hydrated_evaluation_by_id,
+    get_local_evaluation_score_upper_bound,
     get_num_successful_validator_evaluations_for_agent_id,
+    set_unfinished_evaluation_runs_to_score_pruned,
+    transition_agent_status_if_matches,
     update_evaluation_finished_at,
     update_unfinished_evaluation_runs_in_evaluation_id_to_errored,
 )
@@ -382,7 +394,7 @@ async def validator_request_evaluation(
     # Try to acquire the lock, but don't hang forever
     # TODO: .env
     try:
-        async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=30):
+        async with DebugLock(lock, f"{validator.name} ({validator.hotkey}) for {lock_name}", timeout=60):
             # Find the next agent awaiting an evaluation from this validator
             agent_id = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(validator.hotkey)
             if agent_id is None:
@@ -464,6 +476,8 @@ async def validator_request_evaluation(
             logger.warning(f"Failed to generate artifact upload URL for {evaluation_run.evaluation_run_id}: {exc}")
 
     return ValidatorRequestEvaluationResponse(
+        evaluation_id=evaluation.evaluation_id,
+        agent_id=agent_id,
         agent_code=agent_code,
         evaluation_runs=response_runs,
         artifact_upload_urls=artifact_upload_urls,
@@ -535,6 +549,168 @@ async def _create_log_if_new(evaluation_run_id: UUID, log_type: EvaluationRunLog
         await create_evaluation_run_log(evaluation_run_id, log_type, logs)
 
 
+def _score_bound_active_status(evaluation_set_group: EvaluationSetGroup) -> AgentStatus:
+    """Return the agent status expected while a given evaluation group is active."""
+
+    match evaluation_set_group:
+        case EvaluationSetGroup.screener_1:
+            return AgentStatus.screening_1
+        case EvaluationSetGroup.screener_2:
+            return AgentStatus.screening_2
+        case EvaluationSetGroup.validator:
+            return AgentStatus.evaluating
+
+
+def _score_bound_stopped_status(evaluation_set_group: EvaluationSetGroup) -> AgentStatus:
+    """Return the terminal agent status used when score-bound pruning stops a stage."""
+
+    match evaluation_set_group:
+        case EvaluationSetGroup.screener_1:
+            return AgentStatus.failed_screening_1
+        case EvaluationSetGroup.screener_2:
+            return AgentStatus.failed_screening_2
+        case EvaluationSetGroup.validator:
+            return AgentStatus.cancelled
+
+
+@dataclass(frozen=True, slots=True)
+class ScoreBoundStopDecision:
+    active_status: AgentStatus
+    stopped_status: AgentStatus
+    required_score: float
+    required_score_label: str
+
+
+def _assert_validator_current_evaluation_agent(validator: Validator, evaluation_id: UUID, agent_id: UUID) -> None:
+    """Verify a validator request targets the exact evaluation and agent assigned to its session."""
+
+    if validator.current_evaluation_id is None or validator.current_agent is None:
+        raise HTTPException(status_code=409, detail="This validator is not currently running an evaluation.")
+
+    if validator.current_evaluation_id != evaluation_id or validator.current_agent.agent_id != agent_id:
+        raise HTTPException(
+            status_code=409,
+            detail=("The requested evaluation_id and agent_id do not match this validator's current evaluation."),
+        )
+
+
+async def _get_score_bound_stop_decision(
+    evaluation: Evaluation,
+    agent: Agent,
+) -> Optional[ScoreBoundStopDecision]:
+    """Build the active/stopped status and score target for the evaluation's stage."""
+
+    active_status = _score_bound_active_status(evaluation.evaluation_set_group)
+    if agent.status != active_status:
+        return None
+
+    stopped_status = _score_bound_stopped_status(evaluation.evaluation_set_group)
+
+    match evaluation.evaluation_set_group:
+        case EvaluationSetGroup.screener_1:
+            return ScoreBoundStopDecision(
+                active_status=active_status,
+                stopped_status=stopped_status,
+                required_score=config.SCREENER_1_THRESHOLD,
+                required_score_label="screener 1 threshold",
+            )
+
+        case EvaluationSetGroup.screener_2:
+            return ScoreBoundStopDecision(
+                active_status=active_status,
+                stopped_status=stopped_status,
+                required_score=config.SCREENER_2_THRESHOLD,
+                required_score_label="screener 2 threshold",
+            )
+
+        case EvaluationSetGroup.validator:
+            leader_score = await get_approved_validator_leader_score_for_set(
+                evaluation.set_id,
+                evaluation.agent_id,
+                config.NUM_EVALS_PER_AGENT,
+            )
+            if leader_score is None:
+                return None
+
+            return ScoreBoundStopDecision(
+                active_status=active_status,
+                stopped_status=stopped_status,
+                required_score=leader_score,
+                required_score_label="approved validator leader score",
+            )
+
+
+async def _maybe_stop_agent_by_score_bound(evaluation: Evaluation) -> bool:
+    """Stop an active evaluation stage when this local evaluation can no longer meet its score target."""
+
+    agent = await get_agent_by_id(evaluation.agent_id)
+    if agent is None:
+        return False
+
+    stop_decision = await _get_score_bound_stop_decision(evaluation, agent)
+    if stop_decision is None:
+        return False
+
+    score_bound = await get_local_evaluation_score_upper_bound(evaluation.evaluation_id)
+    if score_bound is None:
+        return False
+
+    if score_bound.upper_bound >= stop_decision.required_score:
+        return False
+
+    stopped = await transition_agent_status_if_matches(
+        evaluation.agent_id,
+        expected_status=stop_decision.active_status,
+        new_status=stop_decision.stopped_status,
+    )
+    if stopped:
+        logger.info("Stopped agent by score-bound pruning")
+        logger.info(f"  Agent ID: {evaluation.agent_id}")
+        logger.info(f"  Evaluation ID: {evaluation.evaluation_id}")
+        logger.info(f"  Evaluation group: {evaluation.evaluation_set_group}")
+        logger.info(f"  Set ID: {evaluation.set_id}")
+        logger.info(f"  Local upper bound: {score_bound.upper_bound}")
+        logger.info(f"  Required score ({stop_decision.required_score_label}): {stop_decision.required_score}")
+        logger.info(f"  New agent status: {stop_decision.stopped_status}")
+        logger.info(f"  Impossible runs: {score_bound.impossible_runs}/{score_bound.total_runs}")
+
+    return stopped
+
+
+async def _is_stale_update_for_score_stopped_evaluation(validator: Validator, evaluation_run: EvaluationRun) -> bool:
+    """Return true when a late run update belongs to this validator's already-closed stopped evaluation."""
+
+    evaluation = await get_evaluation_by_id(evaluation_run.evaluation_id)
+    if evaluation.validator_hotkey != validator.hotkey:
+        return False
+    if evaluation.finished_at is None:
+        return False
+
+    agent = await get_agent_by_id(evaluation.agent_id)
+    return agent is not None and agent.status == _score_bound_stopped_status(evaluation.evaluation_set_group)
+
+
+def _log_ignored_stale_score_stopped_update(
+    validator: Validator, request: ValidatorUpdateEvaluationRunRequest, evaluation_run: EvaluationRun
+) -> None:
+    """Log a stale update that was safely ignored after cancellation cleanup."""
+
+    logger.info("Ignoring stale evaluation-run update for score-stopped evaluation")
+    logger.info(f"  Validator: {validator.name} ({validator.hotkey})")
+    logger.info(f"  Evaluation ID: {evaluation_run.evaluation_id}")
+    logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
+    logger.info(f"  Requested status: {request.updated_status}")
+
+
+def _get_current_evaluation_for_request(validator: Validator, evaluation_id: UUID) -> Evaluation:
+    """Return the assigned evaluation from session memory."""
+
+    if validator.current_evaluation is not None and validator.current_evaluation.evaluation_id == evaluation_id:
+        return validator.current_evaluation
+
+    raise HTTPException(status_code=409, detail="This validator's current evaluation state is incomplete.")
+
+
 # /validator/heartbeat
 @router.post("/heartbeat")
 async def validator_heartbeat(
@@ -550,19 +726,72 @@ async def validator_heartbeat(
     return ValidatorHeartbeatResponse()
 
 
+# /validator/check-cancellation
+@router.post("/check-cancellation")
+async def validator_check_cancellation(
+    request: ValidatorCheckCancellationRequest,
+    validator: Validator = Depends(get_request_validator_with_lock),
+) -> ValidatorCheckCancellationResponse:
+    """Tell the validator whether its currently assigned evaluation was stopped by the platform."""
+
+    _assert_validator_current_evaluation_agent(validator, request.evaluation_id, request.agent_id)
+    evaluation = _get_current_evaluation_for_request(validator, request.evaluation_id)
+
+    agent = await get_agent_by_id(request.agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent with ID {request.agent_id} does not exist.")
+
+    if agent.status == _score_bound_stopped_status(evaluation.evaluation_set_group):
+        return ValidatorCheckCancellationResponse(
+            should_cancel=True,
+            reason=EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.get_error_message(),
+        )
+
+    return ValidatorCheckCancellationResponse(should_cancel=False)
+
+
+# /validator/cancel-current-evaluation
+@router.post("/cancel-current-evaluation")
+async def validator_cancel_current_evaluation(
+    request: ValidatorCancelCurrentEvaluationRequest,
+    validator: Validator = Depends(get_request_validator_with_lock),
+) -> ValidatorCancelCurrentEvaluationResponse:
+    """Acknowledge platform stop and close the validator's active evaluation."""
+
+    _assert_validator_current_evaluation_agent(validator, request.evaluation_id, request.agent_id)
+    evaluation = _get_current_evaluation_for_request(validator, request.evaluation_id)
+    stopped_status = _score_bound_stopped_status(evaluation.evaluation_set_group)
+
+    agent = await get_agent_by_id(request.agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"Agent with ID {request.agent_id} does not exist.")
+    if agent.status != stopped_status:
+        raise HTTPException(status_code=409, detail="This agent has not been stopped by the platform.")
+
+    reason = request.reason or EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.get_error_message()
+    updated_count = await set_unfinished_evaluation_runs_to_score_pruned(request.evaluation_id, reason)
+    await handle_evaluation_if_finished(request.evaluation_id)
+
+    logger.info(f"Validator '{validator.name}' closed its score-stopped evaluation")
+    logger.info(f"  Agent ID: {request.agent_id}")
+    logger.info(f"  Evaluation ID: {request.evaluation_id}")
+    logger.info(f"  Evaluation group: {evaluation.evaluation_set_group}")
+    logger.info(f"  Agent status: {agent.status}")
+    logger.info(f"  Score-pruned runs: {updated_count}")
+
+    validator.current_evaluation_id = None
+    validator.current_evaluation = None
+    validator.current_agent = None
+
+    return ValidatorCancelCurrentEvaluationResponse()
+
+
 # /validator/update-evaluation-run
 @router.post("/update-evaluation-run")
 @handle_validator_http_exceptions
 async def validator_update_evaluation_run(
     request: ValidatorUpdateEvaluationRunRequest, validator: Validator = Depends(get_request_validator_with_lock)
 ) -> ValidatorUpdateEvaluationRunResponse:
-
-    # Make sure the validator is currently running an evaluation
-    if validator.current_evaluation_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail="This validator is not currently running an evaluation, and therefore cannot update an evaluation run.",
-        )
 
     # Record a heartbeat for the validator
     record_validator_heartbeat(validator)
@@ -576,8 +805,22 @@ async def validator_update_evaluation_run(
             status_code=404, detail=f"Evaluation run with ID {request.evaluation_run_id} does not exist."
         )
 
+    if validator.current_evaluation_id is None:
+        if await _is_stale_update_for_score_stopped_evaluation(validator, evaluation_run):
+            _log_ignored_stale_score_stopped_update(validator, request, evaluation_run)
+            return ValidatorUpdateEvaluationRunResponse()
+
+        raise HTTPException(
+            status_code=409,
+            detail="This validator is not currently running an evaluation, and therefore cannot update an evaluation run.",
+        )
+
     # Make sure that the evaluation run is associated with the validator's current evaluation
     if evaluation_run.evaluation_id != validator.current_evaluation_id:
+        if await _is_stale_update_for_score_stopped_evaluation(validator, evaluation_run):
+            _log_ignored_stale_score_stopped_update(validator, request, evaluation_run)
+            return ValidatorUpdateEvaluationRunResponse()
+
         raise HTTPException(
             status_code=403,
             detail=f"The evaluation run with ID {request.evaluation_run_id} is not associated with the validator's current evaluation.",
@@ -770,6 +1013,18 @@ async def validator_update_evaluation_run(
 
     await update_evaluation_run_by_id(evaluation_run)
 
+    if request.updated_status in (EvaluationRunStatus.finished, EvaluationRunStatus.error):
+        if validator.current_evaluation is not None:
+            current_evaluation = validator.current_evaluation
+            try:
+                await _maybe_stop_agent_by_score_bound(current_evaluation)
+            except Exception as exc:
+                evaluation_id = getattr(current_evaluation, "evaluation_id", "unknown")
+                logger.error(
+                    f"Failed to run score-bound pruning for evaluation {evaluation_id}: {type(exc).__name__}: {exc}"
+                )
+                logger.error(traceback.format_exc())
+
     logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
     logger.info(f"  Updated status: {request.updated_status}")
@@ -832,14 +1087,33 @@ async def validator_finish_evaluation(
 # /validator/connected-validators-info
 @router.get("/connected-validators-info")
 async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
+    """Retrieve information about the Validators connected to the platform."""
+    # 1. Retrieve the Internal Flags
+    flags = await get_internal_flags_parsed(
+        [InternalFlagName.VALIDATORS_PAUSED, InternalFlagName.BLACKLISTED_VALIDATORS]
+    )
+    all_paused: bool = flags[InternalFlagName.VALIDATORS_PAUSED]
+    blacklisted: list[str] = flags[InternalFlagName.BLACKLISTED_VALIDATORS]
+
     connected_validators: List[ConnectedValidatorInfo] = []
 
     _validators = list(SESSION_ID_TO_VALIDATOR.values())
+    # 2. Build the Validator objects
     for validator in _validators:
+        if all_paused or validator.hotkey in blacklisted:
+            status = ValidatorStatus.paused
+        elif validator.current_agent is not None:
+            status = (
+                ValidatorStatus.screening if validator.hotkey.startswith("screener-") else ValidatorStatus.evaluating
+            )
+        else:
+            status = ValidatorStatus.available
+
         connected_validator = ConnectedValidatorInfo(
             name=validator.name,
             hotkey=validator.hotkey,
             time_connected=validator.time_connected,
+            status=status,
             time_last_heartbeat=validator.time_last_heartbeat,
             system_metrics=validator.system_metrics,
         )

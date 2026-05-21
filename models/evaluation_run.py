@@ -76,6 +76,10 @@ class EvaluationRunErrorCode(IntEnum):
         "The platform was restarted while the evaluation run was running the evaluation",
     )
     PLATFORM_FAILED_PROVISIONING = (3050, "Platform failed to provision task resources")
+    PLATFORM_PRUNED_BY_SCORE_BOUND = (
+        3060,
+        "The platform stopped this run because the agent could no longer meet the required score bound",
+    )
 
     def get_error_message(self) -> str:
         return self.message
@@ -109,11 +113,6 @@ class EvaluationRun(BaseModel):
     evaluation_id: UUID
     problem_name: str
     problem_alias: str | None = None
-    run_time_seconds: float | None = None
-    run_cost_usd: float | None = None
-    problem_total_runs: int | None = None
-    problem_average_time_seconds: float | None = None
-    problem_average_cost_usd: float | None = None
     benchmark_family: str | None = None
     execution_spec: dict[str, Any] | None = None
 
@@ -133,6 +132,15 @@ class EvaluationRun(BaseModel):
     started_initializing_eval_at: Optional[datetime] = None
     started_running_eval_at: Optional[datetime] = None
     finished_or_errored_at: Optional[datetime] = None
+
+
+class EvaluationRunDetail(EvaluationRun):
+    """EvaluationRun enriched with peer-comparison metrics."""
+
+    run_time_seconds: float | None = None
+    problem_total_runs: int | None = None
+    problem_average_time_seconds: float | None = None
+    problem_average_cost_usd: float | None = None
 
 
 class EvaluationRunLogType(str, Enum):
