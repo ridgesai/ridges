@@ -1,115 +1,146 @@
-import datetime
+"""
+Logging configuration for the Ridges platform.
+
+Provides three things:
+  - ConsoleFormatter: human-readable coloured output.
+  - RidgesLogger: logging.Logger subclass that adds a fatal() method (logs at
+    CRITICAL then raises Exception).
+  - setup_logging(): configures the root handler and per-namespace levels.
+"""
+
 import logging
 import os
+import time
 import traceback
 
 from asgi_correlation_id import CorrelationIdFilter
 
-_BUILTIN_LOG_RECORD_ATTRS = frozenset(
-    {
-        "args",
-        "created",
-        "exc_info",
-        "exc_text",
-        "filename",
-        "funcName",
-        "levelname",
-        "levelno",
-        "lineno",
-        "message",
-        "module",
-        "msecs",
-        "msg",
-        "name",
-        "pathname",
-        "process",
-        "processName",
-        "relativeCreated",
-        "stack_info",
-        "thread",
-        "threadName",
-        "taskName",
+
+class ConsoleFormatter(logging.Formatter):
+    """Human-readable coloured formatter for local development."""
+
+    _BUILTIN_ATTRS: frozenset[str] = frozenset(
+        {
+            "args",
+            "created",
+            "exc_info",
+            "exc_text",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "message",
+            "module",
+            "msecs",
+            "msg",
+            "name",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+            "taskName",
+            "color_message",
+        }
+    )
+
+    _COLORS: dict[str, str] = {
+        "DEBUG": "\033[90m",
+        "INFO": "\033[32m",
+        "WARNING": "\033[33m",
+        "ERROR": "\033[31m",
+        "CRITICAL": "\033[31m",
     }
-)
+    _RESET = "\033[0m"
 
-LEVEL_NAME_TO_COLOR = {
-    "DEBUG": "\033[90m",
-    "INFO": "\033[32m",
-    "WARNING": "\033[33m",
-    "ERROR": "\033[31m",
-    "CRITICAL": "\033[31m",
-}
-RESET = "\033[0m"
+    @staticmethod
+    def _extra(record: logging.LogRecord) -> dict:
+        """Return extra fields added by the caller, excluding stdlib attrs."""
+        return {
+            k: v
+            for k, v in record.__dict__.items()
+            if k not in ConsoleFormatter._BUILTIN_ATTRS
+            and not k.startswith("_")
+            and not (k == "correlation_id" and v == "-")
+        }
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        ct = self.converter(record.created)
+        t = time.strftime("%Y-%m-%d %H:%M:%S", ct)
+        return f"{t}.{record.msecs:03.0f}"
+
+    def format(self, record: logging.LogRecord) -> str:
+        color = self._COLORS.get(record.levelname, "")
+        ts = self.formatTime(record)
+        msg = record.getMessage()
+        extra = self._extra(record)
+        suffix = (" | " + " ".join(f"{k}={v}" for k, v in extra.items())) if extra else ""
+        name_col = record.name[:26].ljust(26)
+        source_col = f"{record.filename}:{record.lineno}"[:20].ljust(20)
+        level_col = f"[{color}{record.levelname}{self._RESET}]"
+        line = f"{ts}  {name_col}  {source_col}  {level_col} {msg}{suffix}"
+        if record.exc_info:
+            line += "\n" + "".join(traceback.format_exception(*record.exc_info))
+        return line
 
 
-class RidgesLogHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            level = record.levelname
-            color = LEVEL_NAME_TO_COLOR.get(level, "")
+class RidgesLogger(logging.Logger):
+    def fatal(self, message: str) -> None:
+        self.critical(message)
+        raise Exception(message)
 
-            extra = {
-                k: v for k, v in record.__dict__.items() if k not in _BUILTIN_LOG_RECORD_ATTRS and not k.startswith("_")
-            }
 
-            ts_dt = datetime.datetime.fromtimestamp(record.created)
-            ts = ts_dt.strftime("%Y-%m-%d %H:%M:%S") + f".{ts_dt.microsecond // 1000:03d}"
-
-            msg = record.getMessage()
-            suffix = (" | " + " ".join(f"{k}={v}" for k, v in extra.items())) if extra else ""
-
-            print(f"{ts} - {record.filename}:{record.lineno} - [{color}{level}{RESET}] - {msg}{suffix}")
-
-            if record.exc_info:
-                traceback.print_exception(*record.exc_info)
-
-        except Exception:
-            self.handleError(record)
+# Must be called at import time so every subsequent logging.getLogger() call
+# returns a RidgesLogger instance with .fatal() available.
+logging.setLoggerClass(RidgesLogger)
 
 
 def setup_logging() -> None:
-    """Configure the root logger with RidgesLogHandler. Call once at startup."""
-    debug_mode = os.getenv("DEBUG", "false").lower() == "true"
-    level = logging.DEBUG if debug_mode else logging.INFO
+    """Configure logging for the application.
 
-    root = logging.getLogger()
-    root.setLevel(level)
-    root.handlers.clear()
-    root.filters.clear()
-    root.addHandler(RidgesLogHandler())
-    root.addFilter(CorrelationIdFilter(default_value="-"))
+    - Root logger: WARNING (suppresses noisy third-party output by default).
+    - Named app namespaces (api, execution, inference_gateway, queries, utils,
+      validator, …): DEBUG.
+    - Selected third-party loggers: INFO/WARNING as appropriate.
 
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("chain_utils").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    Safe to call multiple times (clears and rebuilds handlers each time).
+    """
+    level = logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO
+    handler = logging.StreamHandler()
+    handler.setFormatter(ConsoleFormatter())
+    handler.setLevel(level)
+    handler.addFilter(CorrelationIdFilter(uuid_length=32, default_value="-"))
 
+    logging.root.handlers.clear()
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.WARNING)
 
-def fatal(message: str) -> None:
-    """Log at CRITICAL level and exit the process."""
-    logging.getLogger("ridges").critical(message)
-    raise SystemExit(1)
+    logger_config = {
+        # Application namespaces
+        "api": level,
+        "db": level,
+        "execution": level,
+        "inference_gateway": level,
+        "miners": level,
+        "models": level,
+        "queries": level,
+        "utils": level,
+        "utils.database": level,
+        "utils.s3": level,
+        "validator": level,
+        # Third-party loggers
+        "alembic.runtime.migration": logging.INFO,
+        "uvicorn": logging.INFO,
+        "uvicorn.error": logging.INFO,
+        "uvicorn.access": logging.WARNING,
+    }
 
-
-# ---------------------------------------------------------------------------
-# Backward-compat shims for modules not yet migrated to stdlib logging.
-# These route through a named logger so filename:lineno is still correct.
-# TODO: remove once all callers use logging.getLogger(__name__) directly.
-# ---------------------------------------------------------------------------
-_compat_logger = logging.getLogger("ridges.compat")
-
-
-def debug(message: str) -> None:
-    if os.getenv("DEBUG", "false").lower() == "true":
-        _compat_logger.debug(message, stacklevel=2)
-
-
-def info(message: str) -> None:
-    _compat_logger.info(message, stacklevel=2)
-
-
-def warning(message: str) -> None:
-    _compat_logger.warning(message, stacklevel=2)
-
-
-def error(message: str) -> None:
-    _compat_logger.error(message, stacklevel=2)
+    for name, level in logger_config.items():
+        lg = logging.getLogger(name)
+        lg.setLevel(level)
+        lg.propagate = False
+        lg.handlers.clear()
+        lg.addHandler(handler)
