@@ -47,15 +47,31 @@ def upgrade() -> None:
         sa.Column("aggregate_score", sa.Float(), nullable=True),
         sa.Column("aggregate_confidence", sa.Float(), nullable=True),
         sa.Column("aggregate_summary", sa.Text(), nullable=True),
+        sa.Column("projected_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("decision_source", sa.Text(), nullable=True),
+        sa.Column("discord_channel_id", sa.Text(), nullable=True),
+        sa.Column("discord_message_id", sa.Text(), nullable=True),
+        sa.Column("review_requested_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("reviewer_id", sa.Text(), nullable=True),
+        sa.Column("reviewed_at", sa.TIMESTAMP(timezone=True), nullable=True),
+        sa.Column("review_decision_reason", sa.Text(), nullable=True),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
         sa.CheckConstraint(
-            "status IN ('pending', 'running', 'error', 'completed')",
+            "status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_approval_jobs_status",
         ),
         sa.CheckConstraint(
             "aggregate_verdict IS NULL OR aggregate_verdict IN ('approved', 'rejected', 'needs_review')",
             name="ck_approval_jobs_aggregate_verdict",
+        ),
+        sa.CheckConstraint(
+            "decision_source IS NULL OR decision_source IN ('auto_judge', 'discord_review')",
+            name="ck_approval_jobs_decision_source",
+        ),
+        sa.CheckConstraint(
+            "(discord_channel_id IS NULL) = (discord_message_id IS NULL)",
+            name="ck_approval_jobs_discord_message_pair",
         ),
     )
     op.create_index(
@@ -63,7 +79,7 @@ def upgrade() -> None:
         "approval_jobs",
         ["agent_id", "set_id"],
         unique=True,
-        postgresql_where=sa.text("status IN ('pending', 'running', 'error')"),
+        postgresql_where=sa.text("status IN ('pending', 'running', 'error', 'needs_review')"),
     )
     op.create_index(
         "idx_approval_jobs_claimable",
@@ -74,6 +90,12 @@ def upgrade() -> None:
         "idx_approval_jobs_running_lease",
         "approval_jobs",
         ["status", "lease_expires_at"],
+    )
+    op.create_index(
+        "idx_approval_jobs_unprojected_review_states",
+        "approval_jobs",
+        ["created_at"],
+        postgresql_where=sa.text("status IN ('needs_review', 'completed') AND projected_at IS NULL"),
     )
 
     op.create_table(
@@ -131,7 +153,7 @@ def upgrade() -> None:
         sa.Column("published_score", sa.Float(), nullable=True),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
         sa.CheckConstraint(
-            "processing_status IN ('pending', 'running', 'error', 'completed')",
+            "processing_status IN ('pending', 'running', 'error', 'completed', 'needs_review')",
             name="ck_agent_approval_states_processing_status",
         ),
         sa.CheckConstraint(
@@ -153,6 +175,7 @@ def upgrade() -> None:
             CASE
                 WHEN approval_state.processing_status = 'pending' THEN 'pending'
                 WHEN approval_state.processing_status IN ('running', 'error') THEN 'under_review'
+                WHEN approval_state.processing_status = 'needs_review' THEN 'under_review'
                 WHEN approval_state.system_verdict = 'approved' THEN 'approved'
                 WHEN approval_state.system_verdict = 'rejected' THEN 'rejected'
                 WHEN approval_state.system_verdict = 'needs_review' THEN 'under_review'
@@ -162,13 +185,60 @@ def upgrade() -> None:
         FROM agent_approval_states approval_state
         """
     )
+    _apply_optional_judge_role_grants()
 
 
 def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS agent_final_review_statuses")
     op.drop_table("agent_approval_states")
     op.drop_table("approval_job_rounds")
+    op.drop_index("idx_approval_jobs_unprojected_review_states", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_running_lease", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_claimable", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_active_agent_set", table_name="approval_jobs")
     op.drop_table("approval_jobs")
+
+
+def _apply_optional_judge_role_grants() -> None:
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hardcoding_judge') THEN
+                EXECUTE 'GRANT USAGE ON SCHEMA public TO hardcoding_judge';
+                EXECUTE 'GRANT SELECT ON approval_jobs TO hardcoding_judge';
+                EXECUTE 'GRANT UPDATE (
+                    status,
+                    attempt_count,
+                    claim_token,
+                    claimed_at,
+                    claimed_by,
+                    lease_expires_at,
+                    next_attempt_at,
+                    last_error,
+                    source_sha256,
+                    aggregate_verdict,
+                    aggregate_score,
+                    aggregate_confidence,
+                    aggregate_summary,
+                    projected_at,
+                    decision_source,
+                    discord_channel_id,
+                    discord_message_id,
+                    review_requested_at,
+                    reviewer_id,
+                    reviewed_at,
+                    review_decision_reason,
+                    updated_at
+                ) ON approval_jobs TO hardcoding_judge';
+                EXECUTE 'GRANT SELECT, INSERT ON approval_job_rounds TO hardcoding_judge';
+                IF to_regclass('public.agent_approval_states') IS NOT NULL THEN
+                    EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON agent_approval_states FROM hardcoding_judge';
+                END IF;
+                IF to_regclass('public.approved_agents') IS NOT NULL THEN
+                    EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON approved_agents FROM hardcoding_judge';
+                END IF;
+            END IF;
+        END $$;
+        """
+    )
