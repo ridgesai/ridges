@@ -49,6 +49,8 @@ class ValidatorRequestEvaluationResponseEvaluationRun(BaseModel):  # :(
 
 
 class ValidatorRequestEvaluationResponse(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
     agent_code: str
     evaluation_runs: List[ValidatorRequestEvaluationResponseEvaluationRun]
     artifact_upload_urls: dict[str, str] = Field(default_factory=dict)
@@ -68,6 +70,26 @@ class ValidatorHeartbeatRequest(BaseModel):
 
 
 class ValidatorHeartbeatResponse(BaseModel):
+    pass
+
+
+class ValidatorCheckCancellationRequest(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
+
+
+class ValidatorCheckCancellationResponse(BaseModel):
+    should_cancel: bool
+    reason: str | None = None
+
+
+class ValidatorCancelCurrentEvaluationRequest(BaseModel):
+    evaluation_id: UUID
+    agent_id: UUID
+    reason: str | None = None
+
+
+class ValidatorCancelCurrentEvaluationResponse(BaseModel):
     pass
 
 

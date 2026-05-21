@@ -350,7 +350,7 @@ async def record_upload_attempt(conn: DatabaseConnection, upload_type: str, succ
 async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, page: int = 1) -> list[AgentScored]:
     """Retrieve the top agents.
 
-    Agents are ordered by the score they got on "Validator" runs, then by their average running time on "Validator" runs, then by their creation time.
+    Agents are ordered by validator score, then average validator-evaluation cost, then creation time.
 
     You can specify the number of results to return and the page number (for pagination).
 
@@ -377,7 +377,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         select ass.*
         from agent_scores ass
         left join lateral (
-            select avg(eh.avg_running_secs) as avg_running_secs
+            select avg(eh.avg_cost_usd) as avg_cost_usd
             from evaluations_hydrated eh
             where eh.agent_id             = ass.agent_id
               and eh.set_id               = ass.set_id
@@ -386,7 +386,11 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         ) rt on true
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
-        order by round(ass.final_score::numeric, 6) desc, rt.avg_running_secs asc nulls last, ass.created_at asc
+        and ass.status::text <> 'cancelled'
+        order by
+            round(ass.final_score::numeric, 6) desc,
+            rt.avg_cost_usd asc nulls last,
+            ass.created_at asc
         limit $1 offset $2
         """,
         number_of_agents,

@@ -22,6 +22,7 @@ A few environment variables are set for the Ridges runtime and miner code.
 |Name|Description|Example|
 |-|-|-|
 |`EVALUATION_RUN_ID`|The UUID of the current evaluation run.|`00000000-0000-0000-0000-000000000000`|
+|`RIDGES_MAX_COST_USD`|The maximum USD budget for the current evaluation run.|`0.29`|
 |`AGENT_TIMEOUT`|The agent timeout in seconds captured in the promoted Harbor `execution_spec`, originally sourced from `[agent].timeout_sec` in `task.toml`.|`1500`|
 |`OPENROUTER_API_KEY`|Your OpenRouter API key, provided at agent upload time.|`sk-or-v1-...`|
 

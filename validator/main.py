@@ -16,6 +16,9 @@ import validator.config as config
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
+    ValidatorCancelCurrentEvaluationRequest,
+    ValidatorCheckCancellationRequest,
+    ValidatorCheckCancellationResponse,
     ValidatorDisconnectRequest,
     ValidatorFinishEvaluationRequest,
     ValidatorHeartbeatRequest,
@@ -37,6 +40,7 @@ from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_reso
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.system_metrics import get_system_metrics
 from validator.http_utils import get_ridges_platform, post_ridges_platform
+from validator.retry_utils import retry_with_backoff
 from validator.set_weights import set_weights_from_mapping
 
 # The session ID for this validator
@@ -69,21 +73,24 @@ async def disconnect(reason: str):
 
 # A loop that sends periodic heartbeats to the Ridges platform
 async def send_heartbeat_loop():
+    logger.info("Starting send heartbeat loop...")
     try:
-        logger.info("Starting send heartbeat loop...")
         while True:
             logger.info("Sending heartbeat...")
             system_metrics = await get_system_metrics()
-            await post_ridges_platform(
-                "/validator/heartbeat",
-                ValidatorHeartbeatRequest(system_metrics=system_metrics),
-                bearer_token=session_id,
-                quiet=2,
-                timeout=5,
+            await retry_with_backoff(
+                lambda: post_ridges_platform(
+                    "/validator/heartbeat",
+                    ValidatorHeartbeatRequest(system_metrics=system_metrics),
+                    bearer_token=session_id,
+                    quiet=2,
+                    timeout=5,
+                ),
+                max_attempts=config.MAX_HEARTBEAT_FAILURES,
             )
             await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
     except Exception as e:
-        logger.error(f"Error in send_heartbeat_loop(): {type(e).__name__}: {e}")
+        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
 
@@ -92,7 +99,9 @@ async def send_heartbeat_loop():
 async def set_weights_loop():
     logger.info("Starting set weights loop...")
     while True:
-        weights_mapping = await get_ridges_platform("/scoring/weights", quiet=1)
+        weights_mapping = await retry_with_backoff(
+            lambda: get_ridges_platform("/scoring/weights", quiet=1),
+        )
 
         try:
             await asyncio.wait_for(
@@ -125,12 +134,13 @@ async def update_evaluation_run(
     if timeout is not None:
         post_kwargs["timeout"] = timeout
 
-    await post_ridges_platform(
-        "/validator/update-evaluation-run",
-        ValidatorUpdateEvaluationRunRequest(
-            evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
-        ),
-        **post_kwargs,
+    request = ValidatorUpdateEvaluationRunRequest(
+        evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
+    )
+    await retry_with_backoff(
+        lambda: post_ridges_platform("/validator/update-evaluation-run", request, **post_kwargs),
+        max_attempts=3,
+        base_delay=2.0,
     )
 
 
@@ -408,18 +418,97 @@ async def _run_evaluation_run(
         os._exit(1)
 
 
-# Run an evaluation, automatically dispatches all runs to either _simulate_run_evaluation_run or _run_evaluation_run
-async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse):
+async def _poll_evaluation_cancellation(
+    evaluation_id: UUID,
+    agent_id: UUID,
+    cancellation_event: asyncio.Event,
+    cancellation_reason: dict[str, str | None],
+) -> None:
+    """Poll the platform for a stop signal.
+
+    Args:
+        evaluation_id: Active evaluation on the platform.
+        agent_id: Agent being evaluated.
+        cancellation_event: Set when the platform asks this process to stop.
+        cancellation_reason: Mutable holder for the platform-provided reason.
+    """
+
+    logger.info(
+        f"Starting cancellation polling for evaluation {evaluation_id} "
+        f"every {config.VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS}s"
+    )
+
+    while not cancellation_event.is_set():
+        try:
+            response_data = await post_ridges_platform(
+                "/validator/check-cancellation",
+                ValidatorCheckCancellationRequest(evaluation_id=evaluation_id, agent_id=agent_id),
+                bearer_token=session_id,
+                quiet=2,
+                timeout=5,
+            )
+            response = ValidatorCheckCancellationResponse(**response_data)
+            if response.should_cancel:
+                cancellation_reason["reason"] = response.reason
+                cancellation_event.set()
+                return
+
+        except asyncio.CancelledError:
+            raise
+        except httpx.HTTPStatusError as exc:
+            logger.warning(f"Cancellation check failed with HTTP {exc.response.status_code}; continuing evaluation.")
+        except httpx.TimeoutException as exc:
+            logger.warning(f"Cancellation check timed out; continuing evaluation. {type(exc).__name__}: {exc}")
+        except Exception as exc:
+            logger.warning(f"Cancellation check failed; continuing evaluation. {type(exc).__name__}: {exc}")
+
+        try:
+            await asyncio.wait_for(
+                cancellation_event.wait(),
+                timeout=config.VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _wait_for_evaluation_run_tasks(tasks: list[asyncio.Task]) -> None:
+    """Wait for problem-run tasks.
+
+    Args:
+        tasks: Local problem-run tasks.
+    """
+    await asyncio.gather(*tasks)
+
+
+def _log_received_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse) -> None:
+    """Log an evaluation assignment.
+
+    Args:
+        request_evaluation_response: Assignment returned by the platform.
+    """
+
     logger.info("Received evaluation:")
+    logger.info(f"  Evaluation ID: {request_evaluation_response.evaluation_id}")
+    logger.info(f"  Agent ID: {request_evaluation_response.agent_id}")
     logger.info(f"  # of evaluation runs: {len(request_evaluation_response.evaluation_runs)}")
 
     for evaluation_run in request_evaluation_response.evaluation_runs:
         logger.info(f"    {evaluation_run.problem_name}")
 
-    logger.info("Starting evaluation...")
+
+def _create_evaluation_run_tasks(request_evaluation_response: ValidatorRequestEvaluationResponse) -> list[asyncio.Task]:
+    """Create local problem-run tasks.
+
+    Args:
+        request_evaluation_response: Assignment returned by the platform.
+
+    Returns:
+        Scheduled tasks for each problem run.
+    """
 
     tasks = []
     semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_EVALUATION_RUNS)
+
     for evaluation_run in request_evaluation_response.evaluation_runs:
         evaluation_run_id = evaluation_run.evaluation_run_id
         problem_name = evaluation_run.problem_name
@@ -444,8 +533,139 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
                 )
             )
 
+    return tasks
+
+
+async def _wait_for_runs_or_cancellation(
+    run_tasks: list[asyncio.Task],
+    cancellation_event: asyncio.Event,
+) -> tuple[asyncio.Task, asyncio.Task]:
+    """Wait for local completion or a platform stop signal.
+
+    Starts one task that waits for all problem runs and one task that waits
+    for the platform stop event. Returns as soon as either one finishes.
+
+    Args:
+        run_tasks: Local problem-run tasks.
+        cancellation_event: Set by the polling task when the platform asks us to stop.
+
+    Returns:
+        The wrapper task for all runs and the task waiting on cancellation.
+    """
+
+    run_tasks_task = asyncio.create_task(_wait_for_evaluation_run_tasks(run_tasks))
+    cancellation_wait_task = asyncio.create_task(cancellation_event.wait())
+    await asyncio.wait(
+        {run_tasks_task, cancellation_wait_task},
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    return run_tasks_task, cancellation_wait_task
+
+
+async def _cancel_evaluation_run_tasks(run_tasks: list[asyncio.Task], run_tasks_task: asyncio.Task) -> None:
+    """Cancel unfinished problem-run tasks.
+
+    Args:
+        run_tasks: Local problem-run tasks.
+        run_tasks_task: Wrapper task waiting for all problem-run tasks.
+    """
+
+    for task in run_tasks:
+        if not task.done():
+            task.cancel()
+    await asyncio.gather(*run_tasks, return_exceptions=True)
+
+    if not run_tasks_task.done():
+        run_tasks_task.cancel()
+    await asyncio.gather(run_tasks_task, return_exceptions=True)
+
+
+async def _acknowledge_platform_cancellation(
+    request_evaluation_response: ValidatorRequestEvaluationResponse,
+    reason: str,
+) -> None:
+    """Acknowledge a platform-requested stop.
+
+    Args:
+        request_evaluation_response: Active evaluation assignment.
+        reason: Reason sent back to the platform.
+    """
+
+    await retry_with_backoff(
+        lambda: post_ridges_platform(
+            "/validator/cancel-current-evaluation",
+            ValidatorCancelCurrentEvaluationRequest(
+                evaluation_id=request_evaluation_response.evaluation_id,
+                agent_id=request_evaluation_response.agent_id,
+                reason=reason,
+            ),
+            bearer_token=session_id,
+            quiet=1,
+        ),
+        max_attempts=3,
+        base_delay=2.0,
+    )
+
+
+async def _cancel_background_tasks(*tasks: asyncio.Task | None) -> None:
+    """Cancel optional background tasks.
+
+    Args:
+        *tasks: Background tasks that may or may not exist.
+    """
+
+    cleanup_tasks = []
+    for task in tasks:
+        if task is not None:
+            task.cancel()
+            cleanup_tasks.append(task)
+
+    if cleanup_tasks:
+        await asyncio.gather(*cleanup_tasks, return_exceptions=True)
+
+
+async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluationResponse):
+    """Run one assigned evaluation.
+
+    Args:
+        request_evaluation_response: Evaluation and problem runs assigned by the platform.
+    """
+    cancellation_event = asyncio.Event()
+    cancellation_reason: dict[str, str | None] = {"reason": None}
+    poll_task: asyncio.Task | None = None
+    cancellation_wait_task: asyncio.Task | None = None
+    run_tasks_task: asyncio.Task | None = None
+
+    _log_received_evaluation(request_evaluation_response)
+    logger.info("Starting evaluation...")
+
+    tasks = _create_evaluation_run_tasks(request_evaluation_response)
+
+    poll_task = asyncio.create_task(
+        _poll_evaluation_cancellation(
+            request_evaluation_response.evaluation_id,
+            request_evaluation_response.agent_id,
+            cancellation_event,
+            cancellation_reason,
+        )
+    )
+
     try:
-        await asyncio.gather(*tasks)
+        run_tasks_task, cancellation_wait_task = await _wait_for_runs_or_cancellation(tasks, cancellation_event)
+
+        if cancellation_event.is_set():
+            reason = cancellation_reason["reason"] or "The platform cancelled this evaluation."
+            logger.info(f"Platform requested evaluation cancellation: {reason}")
+            await _cancel_evaluation_run_tasks(tasks, run_tasks_task)
+            await _acknowledge_platform_cancellation(request_evaluation_response, reason)
+            logger.info("Cancelled evaluation")
+            return
+
+        if poll_task is not None:
+            await _cancel_background_tasks(poll_task)
+            poll_task = None
+
+        await run_tasks_task
 
         logger.info("Finished evaluation")
 
@@ -453,6 +673,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
             "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
         )
     finally:
+        await _cancel_background_tasks(cancellation_wait_task, poll_task)
         await asyncio.to_thread(prune_docker_disk_resources)
 
 
@@ -526,6 +747,7 @@ async def main():
         harbor_results_dir=config.RIDGES_HARBOR_RESULTS_DIR,
         harbor_debug=config.RIDGES_HARBOR_DEBUG,
         max_agent_timeout_sec=running_agent_timeout_seconds,
+        max_eval_timeout_sec=running_eval_timeout_seconds,
         max_cost_usd=config.RIDGES_MAX_COST_USD,
     )
 
