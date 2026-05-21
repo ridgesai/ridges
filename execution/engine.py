@@ -12,11 +12,7 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from execution.artifacts import (
-    collect_job_crash_context,
-    read_trial_snapshot,
-    result_from_summary,
-)
+from execution.artifacts import collect_job_crash_context, read_trial_snapshot, result_from_summary
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode
@@ -26,7 +22,6 @@ from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from utils.task_cache import get_cached_task, get_or_download_task
 
 logger = logging.getLogger(__name__)
-
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
 
 
@@ -82,12 +77,14 @@ class ExecutionEngine:
         harbor_results_dir: str | Path | None = None,
         harbor_debug: bool = False,
         max_agent_timeout_sec: float | None = None,
+        max_eval_timeout_sec: float | None = None,
         max_cost_usd: float | None = None,
     ):
         self.inference_url = inference_url
         self.results_dir = harbor_results_dir
         self.debug = harbor_debug
         self.max_agent_timeout_sec = max_agent_timeout_sec
+        self.max_eval_timeout_sec = max_eval_timeout_sec
         self.max_cost_usd = max_cost_usd
 
     async def evaluate(
@@ -101,7 +98,7 @@ class ExecutionEngine:
         openrouter_config: OpenRouterRuntimeConfig | None = None,
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
-        on_verification_started: (Callable[[TrialSnapshot], Awaitable[None]] | None) = None,
+        on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
     ) -> ExecutionResult:
         """Run the task referenced by the evaluation set and normalize the result.
 
@@ -112,9 +109,7 @@ class ExecutionEngine:
 
         parsed_spec = self._parse_execution_spec(problem_name=problem_name, execution_spec=execution_spec)
         task_dir = await self._resolve_task_dir(
-            execution_spec=parsed_spec,
-            problem_name=problem_name,
-            fetch_task_url=fetch_task_url,
+            execution_spec=parsed_spec, problem_name=problem_name, fetch_task_url=fetch_task_url
         )
         request = self._build_run_request(
             evaluation_run_id=evaluation_run_id,
@@ -146,13 +141,14 @@ class ExecutionEngine:
                     evaluation_run_id=str(evaluation_run_id),
                     agent_path=resolved_agent_path,
                     agent_timeout_sec=request.agent_timeout_sec,
+                    verifier_timeout_sec=request.verifier_timeout_sec,
                     inference_url=self.inference_url,
                     results_dir=request.results_dir,
                     debug=self.debug,
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
-                    on_agent_started=(harbor_on_agent_started if on_agent_started is not None else None),
+                    on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None
                     ),
@@ -227,6 +223,7 @@ class ExecutionEngine:
             task_name=parsed_spec.task_name,
             task_digest=parsed_spec.task_digest,
             agent_timeout_sec=agent_timeout_sec,
+            verifier_timeout_sec=self.max_eval_timeout_sec,
             results_dir=results_dir,
             job_name=job_name,
         )
@@ -238,10 +235,7 @@ class ExecutionEngine:
         fetch_task_url: Callable[[str], Awaitable[str]] | None,
     ) -> Path:
         """Resolve the task directory from the local cache, downloading if needed."""
-        cached = get_cached_task(
-            task_name=execution_spec.task_name,
-            task_digest=execution_spec.task_digest,
-        )
+        cached = get_cached_task(task_name=execution_spec.task_name, task_digest=execution_spec.task_digest)
         if cached:
             return cached
 
@@ -253,7 +247,5 @@ class ExecutionEngine:
 
         url = await fetch_task_url(execution_spec.task_digest)
         return await get_or_download_task(
-            presigned_url=url,
-            task_name=execution_spec.task_name,
-            task_digest=execution_spec.task_digest,
+            presigned_url=url, task_name=execution_spec.task_name, task_digest=execution_spec.task_digest
         )
