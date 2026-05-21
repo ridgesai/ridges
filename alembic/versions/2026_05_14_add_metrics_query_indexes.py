@@ -1,7 +1,7 @@
 """Add indexes for evaluation run metrics query performance
 
 Revision ID: a3f7c9d2e841
-Revises: c880b27e2afe
+Revises: de54176da579
 Create Date: 2026-05-14 00:00:00.000000
 
 """
@@ -12,7 +12,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a3f7c9d2e841"
-down_revision: Union[str, None] = "c880b27e2afe"
+down_revision: Union[str, None] = "de54176da579"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
