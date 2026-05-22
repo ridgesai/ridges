@@ -4,7 +4,7 @@ from typing import List
 
 import asyncpg
 
-from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem, NewEvaluationSetProblem
+from models.evaluation_set import EvaluationSet, EvaluationSetGroup, EvaluationSetProblem, NewEvaluationSetProblem
 from queries._row_parsing import parse_jsonb_fields
 from utils.database import DatabaseConnection, db_operation
 
@@ -104,3 +104,11 @@ async def create_evaluation_set_problems(
             for problem in problems
         ],
     )
+
+
+@db_operation
+async def get_all_evaluation_sets(conn: DatabaseConnection) -> list[EvaluationSet]:
+    results = await conn.fetch(
+        "SELECT set_id, MIN(created_at) AS created_at FROM evaluation_sets GROUP BY set_id ORDER BY set_id"
+    )
+    return [EvaluationSet(**row) for row in results]

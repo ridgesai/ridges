@@ -2,7 +2,7 @@ import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class EvaluationSetGroup(str, Enum):
@@ -18,6 +18,11 @@ class EvaluationSetGroup(str, Enum):
             return EvaluationSetGroup.screener_2
         else:
             return EvaluationSetGroup.validator
+
+
+class EvaluationSet(BaseModel):
+    id: int = Field(validation_alias="set_id")
+    created_at: datetime.datetime
 
 
 class EvaluationSetProblem(BaseModel):
