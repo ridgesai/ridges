@@ -156,8 +156,6 @@ async def post_agent(
     Rate limiting may apply based on configuration.
     """
     prod = config.ENV == "prod"
-    if config.DISALLOW_UPLOADS:
-        raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
 
     miner_hotkey = get_miner_hotkey(file_info)
 
