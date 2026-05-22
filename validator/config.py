@@ -6,6 +6,7 @@ from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
 from utils.logger import setup_logging
+from utils.validator_hotkeys import validator_hotkey_to_name
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -90,6 +91,11 @@ if not SEND_HEARTBEAT_INTERVAL_SECONDS:
     logger.fatal("SEND_HEARTBEAT_INTERVAL_SECONDS is not set in .env")
 SEND_HEARTBEAT_INTERVAL_SECONDS = max(int(SEND_HEARTBEAT_INTERVAL_SECONDS), 10)  # minimum 10 seconds
 
+VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS = max(
+    int(os.getenv("VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS", "15")),
+    15,
+)
+
 SET_WEIGHTS_INTERVAL_SECONDS = os.getenv("SET_WEIGHTS_INTERVAL_SECONDS")
 if not SET_WEIGHTS_INTERVAL_SECONDS:
     logger.fatal("SET_WEIGHTS_INTERVAL_SECONDS is not set in .env")
@@ -103,7 +109,9 @@ SET_WEIGHTS_TIMEOUT_SECONDS = int(SET_WEIGHTS_TIMEOUT_SECONDS)
 REQUEST_EVALUATION_INTERVAL_SECONDS = os.getenv("REQUEST_EVALUATION_INTERVAL_SECONDS")
 if not REQUEST_EVALUATION_INTERVAL_SECONDS:
     logger.fatal("REQUEST_EVALUATION_INTERVAL_SECONDS is not set in .env")
-REQUEST_EVALUATION_INTERVAL_SECONDS = int(REQUEST_EVALUATION_INTERVAL_SECONDS)
+REQUEST_EVALUATION_INTERVAL_SECONDS = 30
+
+MAX_HEARTBEAT_FAILURES: int = int(os.getenv("MAX_HEARTBEAT_FAILURES", "5"))
 
 
 SIMULATE_EVALUATION_RUNS = os.getenv("SIMULATE_EVALUATION_RUNS")
@@ -149,6 +157,7 @@ logger.info(f"Ridges Inference Gateway URL: {RIDGES_INFERENCE_GATEWAY_URL}")
 logger.info("-------------------------------")
 
 logger.info(f"Send Heartbeat Interval: {SEND_HEARTBEAT_INTERVAL_SECONDS} second(s)")
+logger.info(f"Validator Cancellation Check Interval: {VALIDATOR_CANCELLATION_CHECK_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Interval: {SET_WEIGHTS_INTERVAL_SECONDS} second(s)")
 logger.info(f"Set Weights Timeout: {SET_WEIGHTS_TIMEOUT_SECONDS} second(s)")
 logger.info(f"Request Evaluation Interval: {REQUEST_EVALUATION_INTERVAL_SECONDS} second(s)")
@@ -168,30 +177,39 @@ if UPDATE_AUTOMATICALLY:
 else:
     logger.warning("Not Updating Automatically!")
 
-VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 7
+VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 30
 SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 30
+HARDCODED_MAX_COST_USD = 0.29
+VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
+    "Opentensor Foundation": 10,
+    "Yuma": 10,
+}
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
-if not MAX_CONCURRENT_EVALUATION_RUNS:
-    logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
-    MAX_CONCURRENT_EVALUATION_RUNS = (
-        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS
-        if MODE == "validator"
-        else SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+if MODE == "validator":
+    validator_name = validator_hotkey_to_name(VALIDATOR_HOTKEY.ss58_address)
+    validator_concurrency_cap = min(
+        VALIDATOR_CONCURRENCY_CAPS_BY_NAME.get(validator_name, VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS),
+        VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS,
     )
-
-MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
-if MODE == "validator" and MAX_CONCURRENT_EVALUATION_RUNS > VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
-    logger.warning(
-        f"Clamping MAX_CONCURRENT_EVALUATION_RUNS from {MAX_CONCURRENT_EVALUATION_RUNS} "
-        f"to {VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS}"
-    )
-    MAX_CONCURRENT_EVALUATION_RUNS = VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS
+    if MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.warning(
+            "Ignoring MAX_CONCURRENT_EVALUATION_RUNS in validator mode; "
+            f"using configured cap of {validator_concurrency_cap} for {validator_name}"
+        )
+    if validator_concurrency_cap != VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.info(f"Applying validator-specific concurrency cap for {validator_name}: {validator_concurrency_cap}")
+    MAX_CONCURRENT_EVALUATION_RUNS = validator_concurrency_cap
+else:
+    if not MAX_CONCURRENT_EVALUATION_RUNS:
+        logger.warning("MAX_CONCURRENT_EVALUATION_RUNS is not set in .env")
+        MAX_CONCURRENT_EVALUATION_RUNS = SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS
+    MAX_CONCURRENT_EVALUATION_RUNS = int(MAX_CONCURRENT_EVALUATION_RUNS)
 logger.info(f"Max Concurrent Evaluation Runs: {MAX_CONCURRENT_EVALUATION_RUNS}")
 
 RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
 RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
-RIDGES_MAX_COST_USD = float(os.getenv("RIDGES_MAX_COST_USD", "9999"))
+RIDGES_MAX_COST_USD = HARDCODED_MAX_COST_USD
 
 logger.info("Execution Backend: harbor")
 

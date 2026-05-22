@@ -40,7 +40,10 @@ class EvaluationRun(Base):
     started_running_eval_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     finished_or_errored_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
 
-    __table_args__ = (sa.Index("idx_evaluation_runs_evaluation_id", "evaluation_id"),)
+    __table_args__ = (
+        sa.Index("idx_evaluation_runs_evaluation_id", "evaluation_id"),
+        sa.Index("idx_evaluation_runs_eval_id_problem", "evaluation_id", "problem_name"),
+    )
 
 
 class EvaluationRunLog(Base):

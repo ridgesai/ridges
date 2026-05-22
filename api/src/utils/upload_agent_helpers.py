@@ -69,11 +69,17 @@ def check_rate_limit(latest_agent_created_at_in_latest_set_id: datetime) -> None
     logger.debug("Miner is not rate limited.")
 
 
-def check_signature(public_key: str, file_info: str, signature: str) -> None:
+def check_signature(public_key: str, file_info: str, signature: str, miner_hotkey: str) -> None:
     logger.debug("Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
 
     keypair = Keypair(public_key=public_key)
+    if keypair.ss58_address != miner_hotkey:
+        logger.error(
+            f"Attempt to upload an agent with a public key that does not correspond to the miner hotkey. Public key ss58 address: {keypair.ss58_address}, Miner hotkey: {miner_hotkey}."
+        )
+        raise HTTPException(status_code=400, detail="Public key does not correspond to miner hotkey")
+
     if not keypair.verify(file_info, bytes.fromhex(signature)):
         logger.error(
             f"A miner attempted to upload an agent with an invalid signature. Public key: {public_key}, File info: {file_info}, Signature: {signature}."
