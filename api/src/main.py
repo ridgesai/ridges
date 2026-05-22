@@ -24,7 +24,7 @@ from api.endpoints.validator import router as validator_router
 from api.loops.pre_screening_judge import pre_screening_judge_loop
 from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 from api.src.endpoints.upload import router as upload_router
-from api.src.middleware.logging import LoggingMiddleware
+from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
 from api.src.utils.sentry import initialize_sentry
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
 from utils.bittensor import subtensor_client
@@ -104,7 +104,7 @@ initialize_sentry()
 app = FastAPI(lifespan=lifespan)
 
 # Middleware registration order: last added = outermost (runs first on requests).
-# CorrelationIdMiddleware must be outermost so the ID is set before LoggingMiddleware reads it.
+# CorrelationIdMiddleware must be outermost so the ID is set before RequestInterceptorMiddleware reads it.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "https://www.ridges.ai"],
@@ -112,7 +112,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.add_middleware(LoggingMiddleware)
+app.add_middleware(RequestInterceptorMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")

@@ -30,7 +30,14 @@ def _redact(obj: Any) -> Any:
     return obj
 
 
-class LoggingMiddleware(BaseHTTPMiddleware):
+class RequestInterceptorMiddleware(BaseHTTPMiddleware):
+    """This Middleware intercepts incoming requests.
+
+    When the request arrives it logs the request metadata
+    and once the request is processed it logs the response
+    metadata before returning the response to the caller.
+    """
+
     async def dispatch(self, request: Request, call_next) -> Response:
         start = time.perf_counter()
 
