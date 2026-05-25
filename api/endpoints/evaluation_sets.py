@@ -14,6 +14,7 @@ router = APIRouter(tags=["evaluation-sets"])
 
 @router.get("/")
 async def evaluation_sets_list() -> list[EvaluationSet]:
+    """Retrieve all evaluation sets."""
     return await get_all_evaluation_sets()
 
 
