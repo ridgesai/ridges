@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -14,7 +15,7 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, benchmark_agent_ids RESTART IDENTITY CASCADE"
         )
 
 
@@ -341,8 +342,6 @@ async def test_evaluation_set_approved_agents_returns_404_for_unknown_set():
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
-    from unittest.mock import AsyncMock
-
     monkeypatch.setattr(
         evaluation_sets_endpoint.subtensor_client,
         "get_emission",
@@ -356,8 +355,6 @@ async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatch):
-    from unittest.mock import AsyncMock
-
     monkeypatch.setattr(
         evaluation_sets_endpoint.subtensor_client,
         "get_emission",
@@ -400,8 +397,6 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_excludes_benchmark_agents(monkeypatch):
-    from unittest.mock import AsyncMock
-
     monkeypatch.setattr(
         evaluation_sets_endpoint.subtensor_client,
         "get_emission",
@@ -451,3 +446,32 @@ async def test_evaluation_set_approved_agents_excludes_benchmark_agents(monkeypa
 
     assert len(result) == 1
     assert result[0].miner_hotkey == "hotkey-regular"
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_approved_agents_emission_defaults_to_zero_on_subtensor_error(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        evaluation_sets_endpoint.subtensor_client,
+        "get_emission",
+        AsyncMock(side_effect=RuntimeError("subtensor down")),
+    )
+    agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_id,
+            miner_hotkey="hotkey-a",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
+        await _insert_agent_score(conn, agent_id=agent_id, miner_hotkey="hotkey-a", set_id=1, final_score=80.0)
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert len(result) == 1
+    assert result[0].emission == 0.0
+    assert result[0].final_score == 80.0
