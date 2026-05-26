@@ -3,6 +3,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 
 from models.evaluation_set import (
+    ApprovedAgent,
     EvaluationSet,
     EvaluationSetDetail,
     EvaluationSetDetailBenchmarkThreshold,
@@ -16,11 +17,13 @@ from queries.competition import get_competition_for_set
 from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
+    get_approved_agents_for_set,
     get_evaluation_set_score_stats,
     get_evaluation_set_submission_stats,
     get_latest_set_id,
     get_set_created_at,
 )
+from utils.bittensor import subtensor_client
 
 router = APIRouter(tags=["evaluation-sets"])
 
@@ -153,3 +156,27 @@ async def evaluation_set_detail(set_id: int) -> EvaluationSetDetail:
         scores=scores,
         vs_previous_set=vs_previous_set,
     )
+
+
+@router.get("/{set_id}/approved-agents")
+async def evaluation_set_approved_agents(set_id: int) -> list[ApprovedAgent]:
+    created_at = await get_set_created_at(set_id)
+    if created_at is None:
+        raise HTTPException(status_code=404, detail=f"Evaluation set {set_id} not found.")
+
+    agent_rows = await get_approved_agents_for_set(set_id)
+
+    emissions = await asyncio.gather(*[subtensor_client.get_emission(row["miner_hotkey"]) for row in agent_rows])
+
+    return [
+        ApprovedAgent(
+            id=row["agent_id"],
+            miner_hotkey=row["miner_hotkey"],
+            name=row["name"],
+            version_num=row["version_num"],
+            created_at=row["created_at"],
+            final_score=row["final_score"],
+            emission=emission,
+        )
+        for row, emission in zip(agent_rows, emissions)
+    ]
