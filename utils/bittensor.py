@@ -135,6 +135,13 @@ class SubtensorClient:
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.substrate.get_events(block_hash=block_hash)
 
+    async def get_emission(self, hotkey: str) -> float:
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        neuron = await self._subtensor.get_neuron_for_hotkey_and_netuid(hotkey_ss58=hotkey, netuid=config.NETUID)
+        if neuron is None or neuron.is_null:
+            return 0.0
+        return float(neuron.emission)
+
 
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
     try:
