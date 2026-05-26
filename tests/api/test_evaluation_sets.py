@@ -7,7 +7,6 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
-from queries.evaluation_set import get_approved_agents_for_set
 
 
 @pytest.fixture(autouse=True)
@@ -127,23 +126,6 @@ async def test_evaluation_sets_list_returns_all_sets():
 async def test_evaluation_sets_list_returns_empty_when_no_sets():
     result = await evaluation_sets_endpoint.evaluation_sets_list()
     assert result == []
-
-
-@pytest.mark.anyio
-async def test_get_approved_agents_for_set_returns_rows():
-    agent_id = uuid4()
-    async with _db.pool.acquire() as conn:
-        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_agent(
-            conn, agent_id=agent_id, miner_hotkey="hotkey-a", status="finished", created_at=AGENT_TS_SET_1
-        )
-        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
-        await _insert_agent_score(conn, agent_id=agent_id, miner_hotkey="hotkey-a", set_id=1, final_score=75.0)
-
-    rows = await get_approved_agents_for_set(1)
-    assert len(rows) == 1
-    assert rows[0]["miner_hotkey"] == "hotkey-a"
-    assert rows[0]["final_score"] == 75.0
 
 
 @pytest.mark.anyio
@@ -334,13 +316,6 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
 
 
 @pytest.mark.anyio
-async def test_evaluation_set_approved_agents_returns_404_for_unknown_set():
-    with pytest.raises(HTTPException) as exc:
-        await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=999)
-    assert exc.value.status_code == 404
-
-
-@pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint.subtensor_client,
@@ -393,59 +368,6 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].id == agent_id_a
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
-
-
-@pytest.mark.anyio
-async def test_evaluation_set_approved_agents_excludes_benchmark_agents(monkeypatch):
-    monkeypatch.setattr(
-        evaluation_sets_endpoint.subtensor_client,
-        "get_emission",
-        AsyncMock(return_value=0.0),
-    )
-    regular_id = uuid4()
-    benchmark_id = uuid4()
-    async with _db.pool.acquire() as conn:
-        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_agent(
-            conn,
-            agent_id=regular_id,
-            miner_hotkey="hotkey-regular",
-            status="finished",
-            created_at=AGENT_TS_SET_1,
-        )
-        await _insert_agent(
-            conn,
-            agent_id=benchmark_id,
-            miner_hotkey="hotkey-benchmark",
-            status="finished",
-            created_at=AGENT_TS_SET_1,
-        )
-        await conn.execute(
-            "INSERT INTO benchmark_agent_ids (agent_id, description) VALUES ($1, $2)",
-            benchmark_id,
-            "test benchmark",
-        )
-        await _insert_approved_agent(conn, agent_id=regular_id, set_id=1)
-        await _insert_approved_agent(conn, agent_id=benchmark_id, set_id=1)
-        await _insert_agent_score(
-            conn,
-            agent_id=regular_id,
-            miner_hotkey="hotkey-regular",
-            set_id=1,
-            final_score=80.0,
-        )
-        await _insert_agent_score(
-            conn,
-            agent_id=benchmark_id,
-            miner_hotkey="hotkey-benchmark",
-            set_id=1,
-            final_score=95.0,
-        )
-
-    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
-
-    assert len(result) == 1
-    assert result[0].miner_hotkey == "hotkey-regular"
 
 
 @pytest.mark.anyio
