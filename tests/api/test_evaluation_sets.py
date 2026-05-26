@@ -312,3 +312,33 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     assert result.scores.average is None
     assert all(t.agents_above == 0 for t in result.scores.benchmark_thresholds)
     assert result.vs_previous_set is None
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
+    agent_a = uuid4()
+
+    async with _db.pool.acquire() as conn:
+        # Two sets exist; set 2 is the latest (highest set_id)
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_a,
+            miner_hotkey="miner-a",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+        )
+        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_1")
+
+    result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=-1)
+
+    assert result.id == 2
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_detail_minus_one_returns_404_when_no_sets_exist():
+    with pytest.raises(HTTPException) as exc_info:
+        await evaluation_sets_endpoint.evaluation_set_detail(set_id=-1)
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "No evaluation sets found."
