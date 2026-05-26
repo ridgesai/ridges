@@ -6,6 +6,7 @@ from db.models.agent import (
     BenchmarkAgentId,
     UnapprovedAgentId,
 )
+from db.models.competition import Competition
 from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
@@ -39,4 +40,5 @@ __all__ = [
     "InternalFlag",
     "UnapprovedAgentId",
     "UploadAttempt",
+    "Competition",
 ]
