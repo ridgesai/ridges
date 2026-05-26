@@ -294,7 +294,7 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
                     FROM
                         evaluation_sets
                     WHERE
-                        set_id < $ 1
+                        set_id < $1
                 )
                 AND agent_id NOT IN (
                     SELECT
@@ -336,7 +336,7 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
         FROM
             agent_scores s
         WHERE
-            s.set_id = $ 1
+            s.set_id = $1
             AND s.agent_id NOT IN (
                 SELECT
                     agent_id
