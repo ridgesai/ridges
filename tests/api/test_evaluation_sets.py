@@ -14,7 +14,7 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, benchmark_agent_ids RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, benchmark_agent_ids RESTART IDENTITY CASCADE"
         )
 
 
@@ -397,3 +397,26 @@ async def test_evaluation_set_approved_agents_emission_defaults_to_zero_on_subte
     assert len(result) == 1
     assert result[0].emission == 0.0
     assert result[0].final_score == 80.0
+
+
+async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
+    agent_a = uuid4()
+
+    async with _db.pool.acquire() as conn:
+        # Two sets exist; set 2 is the latest (highest set_id)
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_a,
+            miner_hotkey="miner-a",
+            status="failed_screening_1",
+            created_at=AGENT_TS_SET_2,
+        )
+        await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_1")
+
+    result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=-1)
+
+    assert result.id == 2

@@ -50,6 +50,12 @@ async def evaluation_set_detail(set_id: int) -> EvaluationSetDetail:
     - Comparison against the previous evaluation set's best score (if available)
     """
 
+    if set_id == -1:
+        resolved = await get_latest_set_id()
+        if resolved is None:
+            raise HTTPException(status_code=404, detail="No evaluation sets found.")
+        set_id = resolved
+
     def _pass_rate(count: int, total: int) -> float:
         """Calculates the pass rate for a given count of agents at a pipeline stage, relative to the total number of agents that entered the pipeline.
 
