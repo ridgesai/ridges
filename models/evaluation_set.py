@@ -41,3 +41,52 @@ class NewEvaluationSetProblem(BaseModel):
     benchmark_family: str
     problem_suite_name: str | None = None
     execution_spec: dict[str, Any]
+
+
+class EvaluationSetDetailPipelineStage(BaseModel):
+    """Detailed information about a specific stage in the evaluation pipeline, including the stage name, how many agents passed that stage, and the pass rate for that stage."""
+
+    stage: str
+    count: int
+    pass_rate: float
+
+
+class EvaluationSetDetailSubmissions(BaseModel):
+    """Detailed submission statistics for an evaluation set, including total agents, unique miners, hardcoded rejection rate, and a breakdown of how many agents passed each stage of the evaluation pipeline."""
+
+    total_agents: int
+    unique_miners: int
+    hardcoded_rejection_rate: float
+    pipeline: list[EvaluationSetDetailPipelineStage]
+
+
+class EvaluationSetDetailBenchmarkThreshold(BaseModel):
+    """Information about a specific benchmark threshold, including the threshold value and how many agents exceeded it"""
+
+    threshold: int
+    agents_above: int
+
+
+class EvaluationSetDetailScores(BaseModel):
+    """Detailed score information for an evaluation set, including the best score, average score, and how many agents exceeded certain benchmark thresholds."""
+
+    best: float | None
+    average: float | None
+    benchmark_thresholds: list[EvaluationSetDetailBenchmarkThreshold]
+
+
+class EvaluationSetDetailVsPreviousSet(BaseModel):
+    """Information about how the current evaluation set compares to the previous one, including the delta of the top score and how many agents beat the previous best score."""
+
+    top_score_delta: str
+    agents_beating_previous_best: int
+
+
+class EvaluationSetDetail(BaseModel):
+    """Detailed information about an evaluation set, including submission statistics, scores, and comparison to the previous set."""
+
+    id: int
+    created_at: datetime.datetime
+    submissions: EvaluationSetDetailSubmissions
+    scores: EvaluationSetDetailScores
+    vs_previous_set: EvaluationSetDetailVsPreviousSet | None
