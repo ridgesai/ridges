@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -21,6 +21,17 @@ SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
 SET_2_CREATED = datetime(2026, 5, 22, tzinfo=timezone.utc)
 AGENT_TS_SET_2 = datetime(2026, 5, 22, 1, tzinfo=timezone.utc)  # 1 h after SET_2_CREATED
 AGENT_TS_SET_1 = datetime(2026, 5, 1, 1, tzinfo=timezone.utc)  # 1 h after SET_1_CREATED
+
+
+async def _insert_competition(conn, set_id: int, created_at: datetime) -> None:
+    await conn.execute(
+        "INSERT INTO competitions (set_id, name, start_date, end_date, created_at) VALUES ($1, $2, $3, $4, $5)",
+        set_id,
+        f"competition-{set_id}",
+        created_at,
+        created_at + timedelta(days=7),
+        created_at,
+    )
 
 
 async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
@@ -126,7 +137,9 @@ async def test_evaluation_set_detail_happy_path():
     async with _db.pool.acquire() as conn:
         # Two evaluation sets; set 2 is the target
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
 
         # Agents inside set-2 window
         await _insert_agent(
@@ -161,13 +174,24 @@ async def test_evaluation_set_detail_happy_path():
 
         # Evaluations for set 2
         await _insert_evaluations(
-            conn, agent_id=agent_a, set_id=2, set_groups=["screener_1", "screener_2", "validator"]
+            conn,
+            agent_id=agent_a,
+            set_id=2,
+            set_groups=["screener_1", "screener_2", "validator"],
         )
-        await _insert_evaluations(conn, agent_id=agent_b, set_id=2, set_groups=["screener_1", "screener_2"])
+        await _insert_evaluations(
+            conn,
+            agent_id=agent_b,
+            set_id=2,
+            set_groups=["screener_1", "screener_2"],
+        )
 
         # Evaluations for set 1
         await _insert_evaluations(
-            conn, agent_id=agent_d, set_id=1, set_groups=["screener_1", "screener_2", "validator"]
+            conn,
+            agent_id=agent_d,
+            set_id=1,
+            set_groups=["screener_1", "screener_2", "validator"],
         )
 
         # Approved agent
