@@ -160,8 +160,7 @@ async def evaluation_set_detail(set_id: int) -> EvaluationSetDetail:
 
 @router.get("/{set_id}/approved-agents")
 async def evaluation_set_approved_agents(set_id: int) -> list[ApprovedAgent]:
-    created_at = await get_set_created_at(set_id)
-    if created_at is None:
+    if await get_set_created_at(set_id) is None:
         raise HTTPException(status_code=404, detail=f"Evaluation set {set_id} not found.")
 
     agent_rows = await get_approved_agents_for_set(set_id)

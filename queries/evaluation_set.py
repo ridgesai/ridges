@@ -366,7 +366,7 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         JOIN agent_scores ass ON ass.agent_id = aa.agent_id AND ass.set_id = $1
         WHERE aa.set_id = $1
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-          AND ass.status::text = 'finished'
+          AND ass.status = 'finished'
         ORDER BY ass.final_score DESC
         """,
         set_id,
