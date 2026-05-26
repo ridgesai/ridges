@@ -1,6 +1,7 @@
 import datetime
 from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -96,3 +97,13 @@ class EvaluationSetDetail(BaseModel):
     submissions: EvaluationSetDetailSubmissions
     scores: EvaluationSetDetailScores
     vs_previous_set: EvaluationSetDetailVsPreviousSet | None
+
+
+class ApprovedAgent(BaseModel):
+    id: UUID
+    miner_hotkey: str
+    name: str
+    version_num: int
+    created_at: datetime.datetime
+    final_score: float
+    emission: float
