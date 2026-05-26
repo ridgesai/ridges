@@ -399,6 +399,7 @@ async def test_evaluation_set_approved_agents_emission_defaults_to_zero_on_subte
     assert result[0].final_score == 80.0
 
 
+@pytest.mark.anyio
 async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
     agent_a = uuid4()
 
