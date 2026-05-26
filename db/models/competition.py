@@ -8,7 +8,7 @@ from db.base import Base, CreatedAtMixin
 
 
 class Competition(Base, CreatedAtMixin):
-    __tablename__ = "competition"
+    __tablename__ = "competitions"
 
     set_id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(sa.Text)

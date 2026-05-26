@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.create_table(
-        "competition",
+        "competitions",
         sa.Column("set_id", sa.Integer(), nullable=False),
         sa.Column("name", sa.Text(), nullable=True),
         sa.Column("start_date", sa.TIMESTAMP(timezone=True), nullable=True),
@@ -35,4 +35,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("competition")
+    op.drop_table("competitions")

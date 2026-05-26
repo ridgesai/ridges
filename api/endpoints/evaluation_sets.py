@@ -12,10 +12,10 @@ from models.evaluation_set import (
     EvaluationSetDetailVsPreviousSet,
     EvaluationSetProblem,
 )
+from queries.competition import get_competition_for_set
 from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
-    get_competition_for_set,
     get_evaluation_set_score_stats,
     get_evaluation_set_submission_stats,
     get_latest_set_id,

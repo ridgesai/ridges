@@ -128,26 +128,12 @@ async def get_all_evaluation_sets(
             c.start_date AS competition_start_date,
             c.end_date AS competition_end_date
         FROM evaluation_sets es
-        LEFT JOIN competition c ON c.set_id = es.set_id
+        LEFT JOIN competitions c ON c.set_id = es.set_id
         GROUP BY es.set_id, c.name, c.start_date, c.end_date
         ORDER BY es.set_id
         """
     )
     return [EvaluationSet(**row) for row in results]
-
-
-@db_operation
-async def get_competition_for_set(conn: DatabaseConnection, set_id: int) -> asyncpg.Record | None:
-    """
-    Retrieve competition details for a specific evaluation set."""
-    return await conn.fetchrow(
-        """
-        SELECT name AS competition_name, start_date AS competition_start_date, end_date AS competition_end_date
-        FROM competition
-        WHERE set_id = $1
-        """,
-        set_id,
-    )
 
 
 @db_operation
@@ -177,13 +163,13 @@ async def get_evaluation_set_submission_stats(conn: DatabaseConnection, set_id: 
         with set_window as (
             select
                 COALESCE(
-                    (SELECT start_date FROM competition WHERE set_id = $1),
+                    (SELECT start_date FROM competitions WHERE set_id = $1),
                     (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
                 ) as set_start,
                 -- TODO: fallback end-boundary via next set's created_at may not correctly
                 -- capture all competing agents; set competition_end_date explicitly to fix.
                 COALESCE(
-                    (SELECT end_date FROM competition WHERE set_id = $1),
+                    (SELECT end_date FROM competitions WHERE set_id = $1),
                     (SELECT MIN(created_at) FROM evaluation_sets
                      WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
                 ) as set_end
