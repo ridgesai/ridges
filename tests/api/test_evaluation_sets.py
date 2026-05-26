@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
+from queries.evaluation_set import get_approved_agents_for_set
 
 
 @pytest.fixture(autouse=True)
@@ -125,6 +126,23 @@ async def test_evaluation_sets_list_returns_all_sets():
 async def test_evaluation_sets_list_returns_empty_when_no_sets():
     result = await evaluation_sets_endpoint.evaluation_sets_list()
     assert result == []
+
+
+@pytest.mark.anyio
+async def test_get_approved_agents_for_set_returns_rows():
+    agent_id = uuid4()
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn, agent_id=agent_id, miner_hotkey="hotkey-a", status="finished", created_at=AGENT_TS_SET_1
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
+        await _insert_agent_score(conn, agent_id=agent_id, miner_hotkey="hotkey-a", set_id=1, final_score=75.0)
+
+    rows = await get_approved_agents_for_set(1)
+    assert len(rows) == 1
+    assert rows[0]["miner_hotkey"] == "hotkey-a"
+    assert rows[0]["final_score"] == 75.0
 
 
 @pytest.mark.anyio
