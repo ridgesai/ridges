@@ -23,6 +23,9 @@ class EvaluationSetGroup(str, Enum):
 class EvaluationSet(BaseModel):
     id: int = Field(validation_alias="set_id")
     created_at: datetime.datetime
+    competition_name: str | None = None
+    competition_start_date: datetime.datetime | None = None
+    competition_end_date: datetime.datetime | None = None
 
 
 class EvaluationSetProblem(BaseModel):
@@ -87,6 +90,9 @@ class EvaluationSetDetail(BaseModel):
 
     id: int
     created_at: datetime.datetime
+    competition_name: str | None
+    competition_start_date: datetime.datetime | None
+    competition_end_date: datetime.datetime | None
     submissions: EvaluationSetDetailSubmissions
     scores: EvaluationSetDetailScores
     vs_previous_set: EvaluationSetDetailVsPreviousSet | None

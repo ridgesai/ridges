@@ -15,6 +15,7 @@ from models.evaluation_set import (
 from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
+    get_competition_for_set,
     get_evaluation_set_score_stats,
     get_evaluation_set_submission_stats,
     get_latest_set_id,
@@ -60,18 +61,23 @@ async def evaluation_set_detail(set_id: int) -> EvaluationSetDetail:
         float
             The pass rate as a decimal (e.g., 0.85 for 85% pass rate). Returns 0.0 if total is 0 to avoid division by zero.
         """
-        return round(count / total, 3) if total > 0 else 0.0
+        return round(count / total, 4) if total > 0 else 0.0
 
     # 1. Validate that the evaluation set exists
     created_at = await get_set_created_at(set_id)
     if created_at is None:
         raise HTTPException(status_code=404, detail=f"Evaluation set {set_id} not found.")
 
-    # 2. Fetch submission and score statistics concurrently
-    submission_row, score_row = await asyncio.gather(
+    # 2. Fetch submission, score statistics, and competition info concurrently
+    submission_row, score_row, competition_row = await asyncio.gather(
         get_evaluation_set_submission_stats(set_id),
         get_evaluation_set_score_stats(set_id),
+        get_competition_for_set(set_id),
     )
+
+    competition_name = competition_row["competition_name"] if competition_row else None
+    competition_start_date = competition_row["competition_start_date"] if competition_row else None
+    competition_end_date = competition_row["competition_end_date"] if competition_row else None
 
     # 3. Calculate pipeline stage counts and pass rates
     total = submission_row["total_agents"]
@@ -140,6 +146,9 @@ async def evaluation_set_detail(set_id: int) -> EvaluationSetDetail:
     return EvaluationSetDetail(
         id=set_id,
         created_at=created_at,
+        competition_name=competition_name,
+        competition_start_date=competition_start_date,
+        competition_end_date=competition_end_date,
         submissions=submissions,
         scores=scores,
         vs_previous_set=vs_previous_set,
