@@ -166,7 +166,10 @@ async def evaluation_set_approved_agents(set_id: int) -> list[ApprovedAgent]:
 
     agent_rows = await get_approved_agents_for_set(set_id)
 
-    emissions = await asyncio.gather(*[subtensor_client.get_emission(row["miner_hotkey"]) for row in agent_rows])
+    emission_results = await asyncio.gather(
+        *[subtensor_client.get_emission(row["miner_hotkey"]) for row in agent_rows],
+        return_exceptions=True,
+    )
 
     return [
         ApprovedAgent(
@@ -176,7 +179,7 @@ async def evaluation_set_approved_agents(set_id: int) -> list[ApprovedAgent]:
             version_num=row["version_num"],
             created_at=row["created_at"],
             final_score=row["final_score"],
-            emission=emission,
+            emission=emission if isinstance(emission, float) else 0.0,
         )
-        for row, emission in zip(agent_rows, emissions)
+        for row, emission in zip(agent_rows, emission_results)
     ]
