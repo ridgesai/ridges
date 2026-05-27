@@ -44,6 +44,7 @@ class ApprovalPreScreeningContext(BaseModel):
     confidence: float | None = None
     summary: str | None = None
     policy_version: str | None = None
+    resolution: Literal["auto", "human"] | None = None
 
 
 class ApprovalEvaluationContext(BaseModel):
@@ -74,7 +75,6 @@ class ApprovalJob(BaseModel):
     last_error: str | None = None
     policy_version: str
     input_snapshot: dict[str, Any]
-    source_sha256: str | None = None
     aggregate_verdict: ApprovalVerdict | None = None
     aggregate_score: float | None = None
     aggregate_confidence: float | None = None
@@ -87,6 +87,7 @@ class ApprovalJob(BaseModel):
     reviewer_id: str | None = None
     reviewed_at: datetime | None = None
     review_decision_reason: str | None = None
+    announcement_sent_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -21,6 +21,7 @@ class AgentStatus(str, Enum):
 
 class ApprovalReviewStatus(str, Enum):
     pending = "pending"
+    processing = "processing"
     under_review = "under_review"
     approved = "approved"
     rejected = "rejected"

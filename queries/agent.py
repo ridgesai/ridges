@@ -168,6 +168,7 @@ async def create_agent(
     agent: Agent,
     agent_text: str,
     *,
+    source_sha256: str,
     runtime_openrouter_api_key_ciphertext: bytes,
     management_openrouter_api_key_ciphertext: bytes,
     openrouter_workspace_id: str,
@@ -177,13 +178,37 @@ async def create_agent(
     create_pre_screening_job: bool = False,
     pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
 ) -> None:
+    # TODO: Abstract away stuff so no circular imports
+    from queries.pre_screening_judge import (
+        duplicate_source_result,
+        insert_pending_pre_screening_job,
+        insert_terminal_pre_screening_job_with_result,
+    )
+
     await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
+        current_set = await conn.fetchrow(
+            """
+            SELECT set_id, created_at
+            FROM evaluation_sets
+            ORDER BY set_id DESC
+            LIMIT 1
+            """
+        )
+        current_set_id = current_set["set_id"] if current_set else 0
+        current_set_boundary = current_set["created_at"] if current_set else None
+
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+            current_set_id,
+            source_sha256,
+        )
+
         await conn.execute(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-            VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256)
+            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7)
             """,
             agent.agent_id,
             agent.miner_hotkey,
@@ -191,6 +216,7 @@ async def create_agent(
             agent.version_num,
             agent.status.value,
             agent.ip_address,
+            source_sha256,
         )
 
         await conn.execute(
@@ -216,14 +242,29 @@ async def create_agent(
         )
 
         if create_pre_screening_job:
-            await conn.execute(
-                """
-                INSERT INTO pre_screening_jobs (agent_id, policy_version)
-                VALUES ($1, $2)
-                """,
-                agent.agent_id,
-                pre_screening_policy_version,
-            )
+            duplicate_agent_id: Optional[UUID] = None
+            if current_set_boundary is not None:
+                duplicate_agent_id = await find_duplicate_source_agent_in_current_set(
+                    agent.agent_id, current_set_boundary
+                )
+
+            if duplicate_agent_id is not None:
+                await insert_terminal_pre_screening_job_with_result(
+                    conn,
+                    agent_id=agent.agent_id,
+                    policy_version=pre_screening_policy_version,
+                    job_status="failed",
+                    result=duplicate_source_result(
+                        policy_version=pre_screening_policy_version,
+                        matched_agent_id=duplicate_agent_id,
+                    ),
+                )
+            else:
+                await insert_pending_pre_screening_job(
+                    conn,
+                    agent_id=agent.agent_id,
+                    policy_version=pre_screening_policy_version,
+                )
 
 
 @db_operation
@@ -263,6 +304,66 @@ async def get_openrouter_secrets_for_agent_id(
 async def get_openrouter_api_key_for_agent_id(conn: DatabaseConnection, agent_id: UUID) -> str | None:
     secrets = await get_openrouter_secrets_for_agent_id(agent_id)
     return None if secrets is None else secrets.runtime_api_key
+
+
+@db_operation
+async def find_duplicate_source_agent_in_current_set(
+    conn: DatabaseConnection, agent_id: UUID, set_boundary: Optional[datetime] = None
+) -> Optional[UUID]:
+    """Return the earliest other agent in the current set sharing this agent's source hash, if any.
+
+    Pass `set_boundary` (the created_at of the latest evaluation_set captured by the caller) to
+    keep the duplicate check pinned to the same set identity that any surrounding advisory lock
+    used. Defaults to looking up the latest set inline.
+    """
+    if set_boundary is None:
+        return await conn.fetchval(
+            """
+            WITH self AS (
+                SELECT agent_id, source_sha256, created_at
+                FROM agents
+                WHERE agent_id = $1
+            ),
+            latest_set_boundary AS (
+                SELECT created_at
+                FROM evaluation_sets
+                WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            )
+            SELECT a.agent_id
+            FROM agents a, self s, latest_set_boundary lsb
+            WHERE a.agent_id <> s.agent_id
+              AND s.source_sha256 IS NOT NULL
+              AND a.source_sha256 = s.source_sha256
+              AND a.created_at < s.created_at
+              AND a.created_at >= lsb.created_at
+              AND s.created_at >= lsb.created_at
+            ORDER BY a.created_at ASC
+            LIMIT 1
+            """,
+            agent_id,
+        )
+
+    return await conn.fetchval(
+        """
+        WITH self AS (
+            SELECT agent_id, source_sha256, created_at
+            FROM agents
+            WHERE agent_id = $1
+        )
+        SELECT a.agent_id
+        FROM agents a, self s
+        WHERE a.agent_id <> s.agent_id
+          AND s.source_sha256 IS NOT NULL
+          AND a.source_sha256 = s.source_sha256
+          AND a.created_at < s.created_at
+          AND a.created_at >= $2
+          AND s.created_at >= $2
+        ORDER BY a.created_at ASC
+        LIMIT 1
+        """,
+        agent_id,
+        set_boundary,
+    )
 
 
 @db_operation
