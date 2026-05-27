@@ -387,6 +387,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         agent,
         agent_text,
         *,
+        source_sha256=None,
         runtime_openrouter_api_key_ciphertext=None,
         management_openrouter_api_key_ciphertext=None,
         openrouter_workspace_id=None,

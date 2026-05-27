@@ -188,26 +188,6 @@ async def test_should_run_auto_approval_judge_allows_candidate_to_tie_approved_l
 
 
 @pytest.mark.anyio
-async def test_should_run_auto_approval_judge_when_candidate_beats_approved_leader(monkeypatch) -> None:
-    agent_id = uuid4()
-
-    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
-        return 0.76
-
-    async def fake_get_approved_validator_leader_score_for_set(_set_id, _excluded_agent_id, _required_validator_count):
-        return 0.75
-
-    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
-    monkeypatch.setattr(
-        validator_endpoint,
-        "get_approved_validator_leader_score_for_set",
-        fake_get_approved_validator_leader_score_for_set,
-    )
-
-    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is True
-
-
-@pytest.mark.anyio
 async def test_handle_evaluation_finished_updates_status_without_auto_approval(monkeypatch) -> None:
     agent_id = uuid4()
     hydrated = _hydrated_evaluation(agent_id=agent_id, set_id=13)

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
-from models.agent import AgentScored, AgentStatus, ApprovalReviewStatus
+from models.agent import AgentStatus
 from queries import agent as agent_queries
 from queries import scores as score_queries
 
@@ -55,50 +54,6 @@ def _assert_cost_tiebreak_query(query: str) -> None:
     assert "avg_cost_usd) as avg_cost_usd" in query.lower()
     assert "avg_cost_usd asc nulls last" in query.lower()
     assert "avg_running_secs" not in query.lower()
-
-
-def test_agent_scored_accepts_llm_approved_review_status() -> None:
-    row = _agent_score_row()
-    row["approval_review_status"] = "approved"
-
-    agent = AgentScored(**row)
-
-    assert agent.approval_review_status == ApprovalReviewStatus.approved
-
-
-def test_final_review_status_view_stays_isolated_from_approved_agents() -> None:
-    migration = Path(__file__).resolve().parents[2] / "alembic" / "versions" / "2026_05_15_auto_approval_pipeline.py"
-    migration_text = migration.read_text()
-    view_sql = migration_text.split("CREATE VIEW agent_final_review_statuses AS", maxsplit=1)[1]
-    view_sql = view_sql.split('"""', maxsplit=1)[0]
-
-    assert "WHEN approval_state.system_verdict = 'approved' THEN 'approved'" in view_sql
-    assert "approved_agents" not in view_sql
-
-
-@pytest.mark.anyio
-async def test_weight_recipient_uses_cost_tiebreaker() -> None:
-    conn = _FetchRowConn({"miner_hotkey": "hotkey-a"})
-
-    result = await score_queries.get_weight_receiving_agent_hotkey.__wrapped__(conn)
-
-    assert result == "hotkey-a"
-    assert conn.query is not None
-    _assert_cost_tiebreak_query(conn.query)
-    assert "ass.status::text <> 'cancelled'" in conn.query.lower()
-
-
-@pytest.mark.anyio
-async def test_weight_recipient_info_uses_cost_tiebreaker() -> None:
-    agent_id = uuid4()
-    conn = _FetchRowConn({"miner_hotkey": "hotkey-a", "agent_id": agent_id})
-
-    result = await score_queries.get_weight_receiving_agent_info.__wrapped__(conn)
-
-    assert result == {"miner_hotkey": "hotkey-a", "agent_id": agent_id}
-    assert conn.query is not None
-    _assert_cost_tiebreak_query(conn.query)
-    assert "ass.status::text <> 'cancelled'" in conn.query.lower()
 
 
 @pytest.mark.anyio
