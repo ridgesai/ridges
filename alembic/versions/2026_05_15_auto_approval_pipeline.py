@@ -75,9 +75,7 @@ def upgrade() -> None:
             name="ck_approval_jobs_discord_message_pair",
         ),
         sa.CheckConstraint(
-            "discord_thread_id IS NULL OR ("
-            "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
-            ")",
+            "discord_thread_id IS NULL OR (discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL)",
             name="ck_approval_jobs_discord_thread_requires_message",
         ),
     )
@@ -109,9 +107,7 @@ def upgrade() -> None:
         "approval_jobs",
         ["created_at"],
         postgresql_where=sa.text(
-            "status = 'completed' "
-            "AND decision_source = 'auto_judge' "
-            "AND announcement_sent_at IS NULL"
+            "status = 'completed' AND decision_source = 'auto_judge' AND announcement_sent_at IS NULL"
         ),
     )
 

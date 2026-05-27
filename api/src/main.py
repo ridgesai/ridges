@@ -83,9 +83,7 @@ async def lifespan(app: FastAPI):
         )
 
     if config.PRE_SCREENING_JUDGE_RUN_LOOP:
-        _start_background_task(
-            background_tasks, "pre_screening_projector_loop", pre_screening_projector_loop()
-        )
+        _start_background_task(background_tasks, "pre_screening_projector_loop", pre_screening_projector_loop())
 
     if config.AUTO_APPROVAL_RUN_LOOP:
         _start_background_task(background_tasks, "approval_projector_loop", approval_projector_loop())

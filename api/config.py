@@ -199,9 +199,7 @@ else:
 
 PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
 PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
-PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS = int(
-    os.getenv("PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS", "5")
-)
+PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 AUTO_APPROVAL_ENABLED = os.getenv("AUTO_APPROVAL_ENABLED", "false").lower() == "true"
 AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
@@ -263,9 +261,7 @@ logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECO
 logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
 logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
 logger.info(f"Pre-Screening Projector Loop Enabled: {PRE_SCREENING_JUDGE_RUN_LOOP}")
-logger.info(
-    f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)"
-)
+logger.info(f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")

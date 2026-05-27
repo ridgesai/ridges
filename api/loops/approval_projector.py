@@ -8,10 +8,7 @@ from queries.approval import project_next_approval_job_state
 async def approval_projector_loop() -> None:
     """Mirror completed or human-review approval jobs into platform-owned state tables."""
 
-    logger.info(
-        "Starting approval projector loop: "
-        f"interval_seconds={config.APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS}"
-    )
+    logger.info(f"Starting approval projector loop: interval_seconds={config.APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS}")
 
     while True:
         try:

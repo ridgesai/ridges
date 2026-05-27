@@ -55,9 +55,7 @@ class PreScreeningJob(Base):
             name="ck_pre_screening_jobs_discord_message_pair",
         ),
         sa.CheckConstraint(
-            "discord_thread_id IS NULL OR ("
-            "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
-            ")",
+            "discord_thread_id IS NULL OR (discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL)",
             name="ck_pre_screening_jobs_discord_thread_requires_message",
         ),
         sa.CheckConstraint(
@@ -79,26 +77,18 @@ class PreScreeningJob(Base):
         sa.Index(
             "idx_pre_screening_jobs_unprojected_terminal",
             "created_at",
-            postgresql_where=sa.text(
-                "status IN ('succeeded', 'failed', 'needs_review') AND projected_at IS NULL"
-            ),
+            postgresql_where=sa.text("status IN ('succeeded', 'failed', 'needs_review') AND projected_at IS NULL"),
         ),
         sa.Index(
             "idx_pre_screening_jobs_needs_review_discord_unposted",
             "review_requested_at",
             "created_at",
-            postgresql_where=sa.text(
-                "status = 'needs_review' AND discord_message_id IS NULL"
-            ),
+            postgresql_where=sa.text("status = 'needs_review' AND discord_message_id IS NULL"),
         ),
         sa.Index(
             "idx_pre_screening_jobs_pending_announcement",
             "created_at",
-            postgresql_where=sa.text(
-                "status = 'failed' "
-                "AND announcement_sent_at IS NULL "
-                "AND reviewer_id IS NULL"
-            ),
+            postgresql_where=sa.text("status = 'failed' AND announcement_sent_at IS NULL AND reviewer_id IS NULL"),
         ),
     )
 

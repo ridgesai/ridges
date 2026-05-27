@@ -23,18 +23,10 @@ def upgrade() -> None:
         "pre_screening_jobs",
         sa.Column("projected_at", sa.TIMESTAMP(timezone=True), nullable=True),
     )
-    op.add_column(
-        "pre_screening_jobs", sa.Column("discord_channel_id", sa.Text(), nullable=True)
-    )
-    op.add_column(
-        "pre_screening_jobs", sa.Column("discord_message_id", sa.Text(), nullable=True)
-    )
-    op.add_column(
-        "pre_screening_jobs", sa.Column("discord_thread_id", sa.Text(), nullable=True)
-    )
-    op.add_column(
-        "pre_screening_jobs", sa.Column("reviewer_id", sa.Text(), nullable=True)
-    )
+    op.add_column("pre_screening_jobs", sa.Column("discord_channel_id", sa.Text(), nullable=True))
+    op.add_column("pre_screening_jobs", sa.Column("discord_message_id", sa.Text(), nullable=True))
+    op.add_column("pre_screening_jobs", sa.Column("discord_thread_id", sa.Text(), nullable=True))
+    op.add_column("pre_screening_jobs", sa.Column("reviewer_id", sa.Text(), nullable=True))
     op.add_column(
         "pre_screening_jobs",
         sa.Column("reviewed_at", sa.TIMESTAMP(timezone=True), nullable=True),
@@ -56,9 +48,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         "ck_pre_screening_jobs_discord_thread_requires_message",
         "pre_screening_jobs",
-        "discord_thread_id IS NULL OR ("
-        "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
-        ")",
+        "discord_thread_id IS NULL OR (discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL)",
     )
     op.create_check_constraint(
         "ck_pre_screening_jobs_reviewer_pair",
@@ -75,27 +65,19 @@ def upgrade() -> None:
         "idx_pre_screening_jobs_unprojected_terminal",
         "pre_screening_jobs",
         ["created_at"],
-        postgresql_where=sa.text(
-            "status IN ('succeeded', 'failed', 'needs_review') AND projected_at IS NULL"
-        ),
+        postgresql_where=sa.text("status IN ('succeeded', 'failed', 'needs_review') AND projected_at IS NULL"),
     )
     op.create_index(
         "idx_pre_screening_jobs_needs_review_discord_unposted",
         "pre_screening_jobs",
         ["review_requested_at", "created_at"],
-        postgresql_where=sa.text(
-            "status = 'needs_review' AND discord_message_id IS NULL"
-        ),
+        postgresql_where=sa.text("status = 'needs_review' AND discord_message_id IS NULL"),
     )
     op.create_index(
         "idx_pre_screening_jobs_pending_announcement",
         "pre_screening_jobs",
         ["created_at"],
-        postgresql_where=sa.text(
-            "status = 'failed' "
-            "AND announcement_sent_at IS NULL "
-            "AND reviewer_id IS NULL"
-        ),
+        postgresql_where=sa.text("status = 'failed' AND announcement_sent_at IS NULL AND reviewer_id IS NULL"),
     )
 
 
