@@ -1,6 +1,7 @@
 import json
 from uuid import UUID, uuid4
 
+import utils.logger as logger
 from models.agent import AgentStatus
 from models.approval import (
     ApprovalEvaluationContext,
@@ -14,6 +15,16 @@ from models.approval import (
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import DatabaseConnection, db_operation
+
+
+def _pre_screening_verdict_from_job_status(job_status: str) -> str:
+    """Map a pre_screening_jobs.status value to the verdict label exposed downstream."""
+
+    if job_status == "succeeded":
+        return "pass"
+    if job_status == "failed":
+        return "fail"
+    return "needs_review"
 
 
 @db_operation
@@ -232,24 +243,46 @@ async def _build_approval_input_snapshot(
     if validator_scores:
         computed_average = sum(score.score for score in validator_scores) / len(validator_scores)
 
-    pre_screening_row = await conn.fetchrow(
+    pre_screening = None
+    job_row = await conn.fetchrow(
         """
-        SELECT verdict, confidence, summary, policy_version
-        FROM pre_screening_results
+        SELECT job_id, status, reviewer_id
+        FROM pre_screening_jobs
         WHERE agent_id = $1
         ORDER BY created_at DESC
         LIMIT 1
         """,
         agent_id,
     )
-    pre_screening = None
-    if pre_screening_row is not None:
+    if job_row is not None and job_row["reviewer_id"] is not None:
         pre_screening = ApprovalPreScreeningContext(
-            verdict=pre_screening_row["verdict"],
-            confidence=pre_screening_row["confidence"],
-            summary=pre_screening_row["summary"],
-            policy_version=pre_screening_row["policy_version"],
+            verdict=_pre_screening_verdict_from_job_status(job_row["status"]),
+            resolution="human",
         )
+    elif job_row is not None:
+        result_row = await conn.fetchrow(
+            """
+            SELECT verdict, confidence, summary, policy_version
+            FROM pre_screening_results
+            WHERE job_id = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            job_row["job_id"],
+        )
+        if result_row is None:
+            logger.warning(
+                f"Pre-screening job {job_row['job_id']} has no result row; "
+                f"omitting pre-screening context for agent {agent_id}"
+            )
+        else:
+            pre_screening = ApprovalPreScreeningContext(
+                verdict=_pre_screening_verdict_from_job_status(job_row["status"]),
+                confidence=result_row["confidence"],
+                summary=result_row["summary"],
+                policy_version=result_row["policy_version"],
+                resolution="auto",
+            )
 
     return ApprovalInputSnapshot(
         agent_id=agent_id,
