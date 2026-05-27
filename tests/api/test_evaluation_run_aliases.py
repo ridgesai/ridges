@@ -37,13 +37,23 @@ async def test_evaluation_run_get_by_id_adds_test_aliases(monkeypatch) -> None:
     async def fake_get_evaluation_run_by_id(_evaluation_run_id):
         return evaluation_run
 
+    async def fake_get_evaluation_run_metrics_by_id(_evaluation_run_id):
+        return {
+            "run_time_seconds": 12.5,
+            "problem_total_runs": 0,
+            "problem_average_time_seconds": None,
+            "problem_average_cost_usd": None,
+        }
+
     monkeypatch.setattr(evaluation_run_endpoint, "get_evaluation_run_by_id", fake_get_evaluation_run_by_id)
+    monkeypatch.setattr(
+        evaluation_run_endpoint, "get_evaluation_run_metrics_by_id", fake_get_evaluation_run_metrics_by_id
+    )
 
     response = await evaluation_run_endpoint.evaluation_run_get_by_id(evaluation_run_id)
 
     assert response.problem_alias == make_problem_alias("acronym-py", "polyglot_py")
     assert response.run_time_seconds == 12.5
-    assert response.run_cost_usd is None
     assert response.problem_total_runs == 0
     assert response.problem_average_time_seconds is None
     assert response.problem_average_cost_usd is None

@@ -7,7 +7,7 @@ from fastapi import HTTPException, UploadFile
 import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.banned_hotkey import get_banned_hotkey
-from utils.bittensor import check_if_hotkey_is_registered
+from utils.bittensor import subtensor_client
 
 
 def get_miner_hotkey(file_info: str) -> str:
@@ -67,11 +67,17 @@ def check_rate_limit(latest_agent_created_at_in_latest_set_id: datetime) -> None
     logger.debug("Miner is not rate limited.")
 
 
-def check_signature(public_key: str, file_info: str, signature: str) -> None:
+def check_signature(public_key: str, file_info: str, signature: str, miner_hotkey: str) -> None:
     logger.debug("Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
 
     keypair = Keypair(public_key=public_key)
+    if keypair.ss58_address != miner_hotkey:
+        logger.error(
+            f"Attempt to upload an agent with a public key that does not correspond to the miner hotkey. Public key ss58 address: {keypair.ss58_address}, Miner hotkey: {miner_hotkey}."
+        )
+        raise HTTPException(status_code=400, detail="Public key does not correspond to miner hotkey")
+
     if not keypair.verify(file_info, bytes.fromhex(signature)):
         logger.error(
             f"A miner attempted to upload an agent with an invalid signature. Public key: {public_key}, File info: {file_info}, Signature: {signature}."
@@ -84,7 +90,7 @@ def check_signature(public_key: str, file_info: str, signature: str) -> None:
 async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Checking if miner hotkey {miner_hotkey} is registered on subnet...")
 
-    if not await check_if_hotkey_is_registered(miner_hotkey):
+    if not await subtensor_client.is_hotkey_registered(miner_hotkey):
         logger.error(
             f"A miner attempted to upload an agent with a hotkey that is not registered on subnet: {miner_hotkey}."
         )

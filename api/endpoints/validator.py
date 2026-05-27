@@ -16,7 +16,6 @@ from pydantic import BaseModel
 import api.config as config
 import utils.logger as logger
 from api.endpoints.validator_models import (
-    ConnectedValidatorInfo,
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
     ValidatorCancelCurrentEvaluationRequest,
@@ -46,6 +45,7 @@ from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, Evaluat
 from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
 from models.openrouter import OpenRouterRuntimeConfig
+from models.validator import ConnectedValidatorInfo, ValidatorStatus
 from queries.agent import (
     get_agent_by_id,
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
@@ -1089,14 +1089,33 @@ async def validator_finish_evaluation(
 # /validator/connected-validators-info
 @router.get("/connected-validators-info")
 async def validator_connected_validators_info() -> List[ConnectedValidatorInfo]:
+    """Retrieve information about the Validators connected to the platform."""
+    # 1. Retrieve the Internal Flags
+    flags = await get_internal_flags_parsed(
+        [InternalFlagName.VALIDATORS_PAUSED, InternalFlagName.BLACKLISTED_VALIDATORS]
+    )
+    all_paused: bool = flags[InternalFlagName.VALIDATORS_PAUSED]
+    blacklisted: list[str] = flags[InternalFlagName.BLACKLISTED_VALIDATORS]
+
     connected_validators: List[ConnectedValidatorInfo] = []
 
     _validators = list(SESSION_ID_TO_VALIDATOR.values())
+    # 2. Build the Validator objects
     for validator in _validators:
+        if all_paused or validator.hotkey in blacklisted:
+            status = ValidatorStatus.paused
+        elif validator.current_agent is not None:
+            status = (
+                ValidatorStatus.screening if validator.hotkey.startswith("screener-") else ValidatorStatus.evaluating
+            )
+        else:
+            status = ValidatorStatus.available
+
         connected_validator = ConnectedValidatorInfo(
             name=validator.name,
             hotkey=validator.hotkey,
             time_connected=validator.time_connected,
+            status=status,
             time_last_heartbeat=validator.time_last_heartbeat,
             system_metrics=validator.system_metrics,
         )

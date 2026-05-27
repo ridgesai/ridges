@@ -1,4 +1,5 @@
 import os
+import uuid
 
 from dotenv import load_dotenv
 
@@ -182,20 +183,15 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
+AGENT_UUID_NAMESPACE = os.getenv("AGENT_UUID_NAMESPACE")
+if not AGENT_UUID_NAMESPACE:
+    logger.fatal("AGENT_UUID_NAMESPACE is not set in .env")
+AGENT_UUID_NAMESPACE = uuid.UUID(AGENT_UUID_NAMESPACE)
+
 SHOULD_RUN_LOOPS = os.getenv("SHOULD_RUN_LOOPS")
 if not SHOULD_RUN_LOOPS:
     logger.fatal("SHOULD_RUN_LOOPS is not set in .env")
 SHOULD_RUN_LOOPS = SHOULD_RUN_LOOPS.lower() == "true"
-
-FETCH_METAGRAPH_INTERVAL_SECONDS = os.getenv("FETCH_METAGRAPH_INTERVAL_SECONDS")
-if not FETCH_METAGRAPH_INTERVAL_SECONDS:
-    default_fetch_metagraph_interval_seconds = 120
-    logger.warning(
-        f"FETCH_METAGRAPH_INTERVAL_SECONDS is not set in .env, using default of {default_fetch_metagraph_interval_seconds} seconds"
-    )
-    FETCH_METAGRAPH_INTERVAL_SECONDS = default_fetch_metagraph_interval_seconds
-else:
-    FETCH_METAGRAPH_INTERVAL_SECONDS = int(FETCH_METAGRAPH_INTERVAL_SECONDS)
 
 PRE_SCREENING_JUDGE_ENABLED = os.getenv("PRE_SCREENING_JUDGE_ENABLED", "false").lower() == "true"
 PRE_SCREENING_JUDGE_RUN_LOOP = SHOULD_RUN_LOOPS and PRE_SCREENING_JUDGE_ENABLED
@@ -205,6 +201,9 @@ AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if not SENTRY_DSN:
+    logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
 logger.info("=== API Configuration ===")
 

@@ -23,13 +23,14 @@ from api.endpoints.statistics import router as statistics_router
 # NEW fixed endpoints
 from api.endpoints.validator import router as validator_router
 from api.loops.approval_projector import approval_projector_loop
-from api.loops.fetch_metagraph import fetch_metagraph_loop
 from api.loops.pre_screening_judge import pre_screening_projector_loop
 from api.loops.validator_heartbeat_timeout import (
     validator_heartbeat_timeout_loop,
 )
 from api.src.endpoints.upload import router as upload_router
+from api.src.utils.sentry import initialize_sentry
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
+from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
 from utils.s3 import deinitialize_s3, initialize_s3
 
@@ -74,6 +75,9 @@ async def lifespan(app: FastAPI):
         _endpoint_url=config.S3_ENDPOINT_URL,
     )
 
+    # Subtensor setup
+    await subtensor_client.initialize()
+
     # Loops
     if config.SHOULD_RUN_LOOPS:  # validator loops; TODO: rename env var
         _start_background_task(
@@ -88,8 +92,6 @@ async def lifespan(app: FastAPI):
     if config.AUTO_APPROVAL_RUN_LOOP:
         _start_background_task(background_tasks, "approval_projector_loop", approval_projector_loop())
 
-    _start_background_task(background_tasks, "fetch_metagraph_loop", fetch_metagraph_loop())
-
     # TODO ADAM: fix this, the error message isn't useful and it sets it to a 2xxx error when it should be a 3xxx error
     await set_all_unfinished_evaluation_runs_to_errored(error_message="Platform crashed while running this evaluation")
 
@@ -102,7 +104,11 @@ async def lifespan(app: FastAPI):
 
     await deinitialize_database()
     await deinitialize_s3()
+    await subtensor_client.close()
 
+
+# Initialize Sentry SDK for monitoring
+initialize_sentry()
 
 app = FastAPI(lifespan=lifespan)
 

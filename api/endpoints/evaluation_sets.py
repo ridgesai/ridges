@@ -2,10 +2,20 @@ from typing import List
 
 from fastapi import APIRouter
 
-from models.evaluation_set import EvaluationSetProblem
-from queries.evaluation_set import get_all_evaluation_set_problems_for_set_id, get_latest_set_id
+from models.evaluation_set import EvaluationSet, EvaluationSetProblem
+from queries.evaluation_set import (
+    get_all_evaluation_set_problems_for_set_id,
+    get_all_evaluation_sets,
+    get_latest_set_id,
+)
 
-router = APIRouter()
+router = APIRouter(tags=["evaluation-sets"])
+
+
+@router.get("/")
+async def evaluation_sets_list() -> list[EvaluationSet]:
+    """Retrieve all evaluation sets."""
+    return await get_all_evaluation_sets()
 
 
 # /evaluation-sets/all-latest-set-problems
