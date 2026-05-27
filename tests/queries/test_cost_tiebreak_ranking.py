@@ -7,7 +7,6 @@ import pytest
 
 from models.agent import AgentStatus
 from queries import agent as agent_queries
-from queries import scores as score_queries
 
 
 class _FetchRowConn:
