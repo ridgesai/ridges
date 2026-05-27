@@ -37,7 +37,6 @@ class ApprovalJob(Base):
     last_error: Mapped[Optional[str]] = mapped_column(sa.Text)
     policy_version: Mapped[str] = mapped_column(sa.Text, nullable=False)
     input_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    source_sha256: Mapped[Optional[str]] = mapped_column(sa.Text)
     aggregate_verdict: Mapped[Optional[str]] = mapped_column(sa.Text)
     aggregate_score: Mapped[Optional[float]] = mapped_column(sa.Float)
     aggregate_confidence: Mapped[Optional[float]] = mapped_column(sa.Float)
@@ -46,10 +45,12 @@ class ApprovalJob(Base):
     decision_source: Mapped[Optional[str]] = mapped_column(sa.Text)
     discord_channel_id: Mapped[Optional[str]] = mapped_column(sa.Text)
     discord_message_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    discord_thread_id: Mapped[Optional[str]] = mapped_column(sa.Text)
     review_requested_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     reviewer_id: Mapped[Optional[str]] = mapped_column(sa.Text)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     review_decision_reason: Mapped[Optional[str]] = mapped_column(sa.Text)
+    announcement_sent_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
     )
@@ -74,6 +75,12 @@ class ApprovalJob(Base):
             "(discord_channel_id IS NULL) = (discord_message_id IS NULL)",
             name="ck_approval_jobs_discord_message_pair",
         ),
+        sa.CheckConstraint(
+            "discord_thread_id IS NULL OR ("
+            "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
+            ")",
+            name="ck_approval_jobs_discord_thread_requires_message",
+        ),
         sa.Index(
             "idx_approval_jobs_active_agent_set",
             "agent_id",
@@ -87,6 +94,15 @@ class ApprovalJob(Base):
             "idx_approval_jobs_unprojected_review_states",
             "created_at",
             postgresql_where=sa.text("status IN ('needs_review', 'completed') AND projected_at IS NULL"),
+        ),
+        sa.Index(
+            "idx_approval_jobs_pending_announcement",
+            "created_at",
+            postgresql_where=sa.text(
+                "status = 'completed' "
+                "AND decision_source = 'auto_judge' "
+                "AND announcement_sent_at IS NULL"
+            ),
         ),
     )
 

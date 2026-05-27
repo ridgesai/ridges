@@ -1,7 +1,7 @@
 """Add auto-approval pipeline tables
 
 Revision ID: b3f91c0d4e62
-Revises: a6c9d2f4e801
+Revises: a3f7c9d2e841
 Create Date: 2026-05-15 10:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 from alembic import op
 
 revision: str = "b3f91c0d4e62"
-down_revision: Union[str, Sequence[str], None] = "a6c9d2f4e801"
+down_revision: Union[str, Sequence[str], None] = "a3f7c9d2e841"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -42,7 +42,6 @@ def upgrade() -> None:
         sa.Column("last_error", sa.Text(), nullable=True),
         sa.Column("policy_version", sa.Text(), nullable=False),
         sa.Column("input_snapshot", postgresql.JSONB(), nullable=False),
-        sa.Column("source_sha256", sa.Text(), nullable=True),
         sa.Column("aggregate_verdict", sa.Text(), nullable=True),
         sa.Column("aggregate_score", sa.Float(), nullable=True),
         sa.Column("aggregate_confidence", sa.Float(), nullable=True),
@@ -51,10 +50,12 @@ def upgrade() -> None:
         sa.Column("decision_source", sa.Text(), nullable=True),
         sa.Column("discord_channel_id", sa.Text(), nullable=True),
         sa.Column("discord_message_id", sa.Text(), nullable=True),
+        sa.Column("discord_thread_id", sa.Text(), nullable=True),
         sa.Column("review_requested_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("reviewer_id", sa.Text(), nullable=True),
         sa.Column("reviewed_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("review_decision_reason", sa.Text(), nullable=True),
+        sa.Column("announcement_sent_at", sa.TIMESTAMP(timezone=True), nullable=True),
         sa.Column("created_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
         sa.Column("updated_at", sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")),
         sa.CheckConstraint(
@@ -72,6 +73,12 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "(discord_channel_id IS NULL) = (discord_message_id IS NULL)",
             name="ck_approval_jobs_discord_message_pair",
+        ),
+        sa.CheckConstraint(
+            "discord_thread_id IS NULL OR ("
+            "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
+            ")",
+            name="ck_approval_jobs_discord_thread_requires_message",
         ),
     )
     op.create_index(
@@ -96,6 +103,16 @@ def upgrade() -> None:
         "approval_jobs",
         ["created_at"],
         postgresql_where=sa.text("status IN ('needs_review', 'completed') AND projected_at IS NULL"),
+    )
+    op.create_index(
+        "idx_approval_jobs_pending_announcement",
+        "approval_jobs",
+        ["created_at"],
+        postgresql_where=sa.text(
+            "status = 'completed' "
+            "AND decision_source = 'auto_judge' "
+            "AND announcement_sent_at IS NULL"
+        ),
     )
 
     op.create_table(
@@ -173,72 +190,27 @@ def upgrade() -> None:
             approval_state.agent_id,
             approval_state.set_id,
             CASE
-                WHEN approval_state.processing_status = 'pending' THEN 'pending'
-                WHEN approval_state.processing_status IN ('running', 'error') THEN 'under_review'
-                WHEN approval_state.processing_status = 'needs_review' THEN 'under_review'
+                WHEN job.status = 'pending' THEN 'pending'
+                WHEN job.status IN ('running', 'error') THEN 'processing'
+                WHEN job.status = 'needs_review' THEN 'under_review'
                 WHEN approval_state.system_verdict = 'approved' THEN 'approved'
                 WHEN approval_state.system_verdict = 'rejected' THEN 'rejected'
-                WHEN approval_state.system_verdict = 'needs_review' THEN 'under_review'
                 ELSE 'under_review'
             END AS approval_review_status,
             approval_state.updated_at
         FROM agent_approval_states approval_state
+        LEFT JOIN approval_jobs job ON job.job_id = approval_state.latest_job_id
         """
     )
-    _apply_optional_judge_role_grants()
 
 
 def downgrade() -> None:
     op.execute("DROP VIEW IF EXISTS agent_final_review_statuses")
     op.drop_table("agent_approval_states")
     op.drop_table("approval_job_rounds")
+    op.drop_index("idx_approval_jobs_pending_announcement", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_unprojected_review_states", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_running_lease", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_claimable", table_name="approval_jobs")
     op.drop_index("idx_approval_jobs_active_agent_set", table_name="approval_jobs")
     op.drop_table("approval_jobs")
-
-
-def _apply_optional_judge_role_grants() -> None:
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'hardcoding_judge') THEN
-                EXECUTE 'GRANT USAGE ON SCHEMA public TO hardcoding_judge';
-                EXECUTE 'GRANT SELECT ON approval_jobs TO hardcoding_judge';
-                EXECUTE 'GRANT UPDATE (
-                    status,
-                    attempt_count,
-                    claim_token,
-                    claimed_at,
-                    claimed_by,
-                    lease_expires_at,
-                    next_attempt_at,
-                    last_error,
-                    source_sha256,
-                    aggregate_verdict,
-                    aggregate_score,
-                    aggregate_confidence,
-                    aggregate_summary,
-                    projected_at,
-                    decision_source,
-                    discord_channel_id,
-                    discord_message_id,
-                    review_requested_at,
-                    reviewer_id,
-                    reviewed_at,
-                    review_decision_reason,
-                    updated_at
-                ) ON approval_jobs TO hardcoding_judge';
-                EXECUTE 'GRANT SELECT, INSERT ON approval_job_rounds TO hardcoding_judge';
-                IF to_regclass('public.agent_approval_states') IS NOT NULL THEN
-                    EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON agent_approval_states FROM hardcoding_judge';
-                END IF;
-                IF to_regclass('public.approved_agents') IS NOT NULL THEN
-                    EXECUTE 'REVOKE INSERT, UPDATE, DELETE ON approved_agents FROM hardcoding_judge';
-                END IF;
-            END IF;
-        END $$;
-        """
-    )
