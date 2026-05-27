@@ -9,10 +9,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from db.base import Base
 
-PRE_SCREENING_JOB_STATUSES = ("pending", "running", "error", "succeeded", "failed", "needs_review")
-ACTIVE_PRE_SCREENING_JOB_STATUSES = ("pending", "running", "error")
-PRE_SCREENING_VERDICTS = ("pass", "fail", "needs_review")
-
 
 class PreScreeningJob(Base):
     __tablename__ = "pre_screening_jobs"
@@ -34,6 +30,14 @@ class PreScreeningJob(Base):
     )
     last_error: Mapped[Optional[str]] = mapped_column(sa.Text)
     policy_version: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    projected_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    discord_channel_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    discord_message_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    discord_thread_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    reviewer_id: Mapped[Optional[str]] = mapped_column(sa.Text)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    review_requested_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    announcement_sent_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         sa.TIMESTAMP(timezone=True), nullable=False, server_default=sa.text("NOW()")
     )
@@ -46,6 +50,24 @@ class PreScreeningJob(Base):
             "status IN ('pending', 'running', 'error', 'succeeded', 'failed', 'needs_review')",
             name="ck_pre_screening_jobs_status",
         ),
+        sa.CheckConstraint(
+            "(discord_channel_id IS NULL) = (discord_message_id IS NULL)",
+            name="ck_pre_screening_jobs_discord_message_pair",
+        ),
+        sa.CheckConstraint(
+            "discord_thread_id IS NULL OR ("
+            "discord_channel_id IS NOT NULL AND discord_message_id IS NOT NULL"
+            ")",
+            name="ck_pre_screening_jobs_discord_thread_requires_message",
+        ),
+        sa.CheckConstraint(
+            "(reviewer_id IS NULL) = (reviewed_at IS NULL)",
+            name="ck_pre_screening_jobs_reviewer_pair",
+        ),
+        sa.CheckConstraint(
+            "reviewed_at IS NULL OR status IN ('succeeded', 'failed')",
+            name="ck_pre_screening_jobs_reviewer_requires_terminal_status",
+        ),
         sa.Index(
             "idx_pre_screening_jobs_active_agent",
             "agent_id",
@@ -54,6 +76,30 @@ class PreScreeningJob(Base):
         ),
         sa.Index("idx_pre_screening_jobs_claimable", "status", "next_attempt_at", "created_at"),
         sa.Index("idx_pre_screening_jobs_running_lease", "status", "lease_expires_at"),
+        sa.Index(
+            "idx_pre_screening_jobs_unprojected_terminal",
+            "created_at",
+            postgresql_where=sa.text(
+                "status IN ('succeeded', 'failed', 'needs_review') AND projected_at IS NULL"
+            ),
+        ),
+        sa.Index(
+            "idx_pre_screening_jobs_needs_review_discord_unposted",
+            "review_requested_at",
+            "created_at",
+            postgresql_where=sa.text(
+                "status = 'needs_review' AND discord_message_id IS NULL"
+            ),
+        ),
+        sa.Index(
+            "idx_pre_screening_jobs_pending_announcement",
+            "created_at",
+            postgresql_where=sa.text(
+                "status = 'failed' "
+                "AND announcement_sent_at IS NULL "
+                "AND reviewer_id IS NULL"
+            ),
+        ),
     )
 
 
