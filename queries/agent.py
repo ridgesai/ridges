@@ -268,9 +268,7 @@ async def create_agent(
         if create_pre_screening_job:
             duplicate_agent_id: Optional[UUID] = None
             if current_set_boundary is not None:
-                duplicate_agent_id = await find_duplicate_source_agent_in_current_set(
-                    agent_id, current_set_boundary
-                )
+                duplicate_agent_id = await find_duplicate_source_agent_in_current_set(agent_id, current_set_boundary)
 
             if duplicate_agent_id is not None:
                 await insert_terminal_pre_screening_job_with_result(
