@@ -346,3 +346,210 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
         """,
         set_id,
     )
+
+
+@db_operation
+async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
+    """Return all competition-window agents with leaderboard fields for an evaluation set."""
+
+    return await conn.fetch(
+        """
+        WITH set_window AS (
+            SELECT
+                COALESCE(
+                    (SELECT start_date FROM competitions WHERE set_id = $1),
+                    (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
+                ) AS set_start,
+                COALESCE(
+                    (SELECT end_date FROM competitions WHERE set_id = $1),
+                    (SELECT MIN(created_at) FROM evaluation_sets
+                     WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
+                ) AS set_end
+        ),
+        agents_in_window AS MATERIALIZED (
+            SELECT
+                a.agent_id,
+                a.miner_hotkey,
+                a.name,
+                a.version_num,
+                a.status::text AS agent_status,
+                a.created_at AS submitted_at
+            FROM agents a
+            CROSS JOIN set_window sw
+            WHERE a.created_at >= sw.set_start
+              AND (
+                  sw.set_end IS NULL
+                  OR a.created_at < sw.set_end
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM benchmark_agent_ids b
+                  WHERE b.agent_id = a.agent_id
+              )
+        ),
+        validator_metrics AS MATERIALIZED (
+            SELECT
+                eh.agent_id,
+                AVG(eh.avg_cost_usd) AS average_cost_usd,
+                AVG(eh.avg_running_secs) AS average_runtime_seconds,
+                COALESCE(
+                    ARRAY_AGG(DISTINCT eh.validator_hotkey ORDER BY eh.validator_hotkey)
+                        FILTER (WHERE eh.validator_hotkey IS NOT NULL),
+                    ARRAY[]::text[]
+                ) AS validator_hotkeys
+            FROM evaluations_hydrated eh
+            JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id
+            WHERE eh.set_id = $1
+              AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+              AND eh.status = 'success'::EvaluationStatus
+            GROUP BY eh.agent_id
+        ),
+        ranked_scores AS (
+            SELECT
+                ass.agent_id,
+                ass.final_score,
+                ass.validator_count,
+                ROW_NUMBER() OVER (
+                    ORDER BY
+                        ROUND(ass.final_score::numeric, 6) DESC,
+                        vm.average_cost_usd ASC NULLS LAST,
+                        aiw.submitted_at ASC,
+                        ass.agent_id ASC
+                )::int AS rank
+            FROM agent_scores ass
+            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
+            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
+            WHERE ass.set_id = $1
+              AND ass.status::text <> 'cancelled'
+        )
+        SELECT
+            rs.rank,
+            aiw.agent_id,
+            aiw.miner_hotkey,
+            aiw.name,
+            aiw.version_num,
+            aiw.agent_status,
+            (aa.agent_id IS NOT NULL) AS approved_for_emission,
+            rs.final_score,
+            rs.validator_count,
+            vm.average_cost_usd,
+            vm.average_runtime_seconds,
+            COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
+            aiw.submitted_at
+        FROM agents_in_window aiw
+        LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
+        LEFT JOIN validator_metrics vm ON vm.agent_id = aiw.agent_id
+        LEFT JOIN approved_agents aa
+            ON aa.agent_id = aiw.agent_id
+           AND aa.set_id = $1
+        ORDER BY
+            rs.rank ASC NULLS LAST,
+            aiw.submitted_at ASC,
+            aiw.agent_id ASC
+        """,
+        set_id,
+    )
+
+
+@db_operation
+async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_id: int) -> asyncpg.Record:
+    """Return top-agent and efficiency summary fields without returning all agents."""
+
+    return await conn.fetchrow(
+        """
+        WITH set_window AS (
+            SELECT
+                COALESCE(
+                    (SELECT start_date FROM competitions WHERE set_id = $1),
+                    (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
+                ) AS set_start,
+                COALESCE(
+                    (SELECT end_date FROM competitions WHERE set_id = $1),
+                    (SELECT MIN(created_at) FROM evaluation_sets
+                     WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
+                ) AS set_end
+        ),
+        agents_in_window AS MATERIALIZED (
+            SELECT
+                a.agent_id,
+                a.name,
+                a.version_num,
+                a.created_at AS submitted_at
+            FROM agents a
+            CROSS JOIN set_window sw
+            WHERE a.created_at >= sw.set_start
+              AND (
+                  sw.set_end IS NULL
+                  OR a.created_at < sw.set_end
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM benchmark_agent_ids b
+                  WHERE b.agent_id = a.agent_id
+              )
+        ),
+        validator_metrics AS MATERIALIZED (
+            SELECT
+                eh.agent_id,
+                AVG(eh.avg_cost_usd) AS average_cost_usd,
+                AVG(eh.avg_running_secs) AS average_runtime_seconds
+            FROM evaluations_hydrated eh
+            JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id
+            WHERE eh.set_id = $1
+              AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+              AND eh.status = 'success'::EvaluationStatus
+            GROUP BY eh.agent_id
+        ),
+        ranked_scores AS MATERIALIZED (
+            SELECT
+                ass.agent_id,
+                aiw.name,
+                aiw.version_num,
+                ass.final_score,
+                ROW_NUMBER() OVER (
+                    ORDER BY
+                        ROUND(ass.final_score::numeric, 6) DESC,
+                        vm.average_cost_usd ASC NULLS LAST,
+                        aiw.submitted_at ASC,
+                        ass.agent_id ASC
+                )::int AS rank
+            FROM agent_scores ass
+            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
+            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
+            WHERE ass.set_id = $1
+              AND ass.status::text <> 'cancelled'
+        ),
+        top_agent AS (
+            SELECT
+                agent_id,
+                name,
+                version_num,
+                final_score
+            FROM ranked_scores
+            WHERE rank = 1
+        ),
+        efficiency AS (
+            SELECT
+                MIN(vm.average_cost_usd) FILTER (WHERE rs.agent_id IS NOT NULL)
+                    AS lowest_average_cost_usd_top_agents,
+                MIN(vm.average_runtime_seconds) FILTER (WHERE rs.agent_id IS NOT NULL)
+                    AS lowest_average_runtime_seconds_top_agents,
+                AVG(vm.average_cost_usd) AS average_agent_cost_usd,
+                AVG(vm.average_runtime_seconds) AS average_agent_runtime_seconds
+            FROM validator_metrics vm
+            LEFT JOIN ranked_scores rs ON rs.agent_id = vm.agent_id
+        )
+        SELECT
+            ta.agent_id AS top_agent_id,
+            ta.name AS top_agent_name,
+            ta.version_num AS top_agent_version_num,
+            ta.final_score AS top_agent_final_score,
+            e.lowest_average_cost_usd_top_agents,
+            e.lowest_average_runtime_seconds_top_agents,
+            e.average_agent_cost_usd,
+            e.average_agent_runtime_seconds
+        FROM efficiency e
+        LEFT JOIN top_agent ta ON TRUE
+        """,
+        set_id,
+    )

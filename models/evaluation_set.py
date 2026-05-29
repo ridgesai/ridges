@@ -1,6 +1,7 @@
 import datetime
 from enum import Enum
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -60,6 +61,7 @@ class EvaluationSetDetailSubmissions(BaseModel):
     total_agents: int
     unique_miners: int
     hardcoded_rejection_rate: float
+    approved_emission_count: int
     pipeline: list[EvaluationSetDetailPipelineStage]
 
 
@@ -85,6 +87,36 @@ class EvaluationSetDetailVsPreviousSet(BaseModel):
     agents_beating_previous_best: int
 
 
+class EvaluationSetDetailTopAgent(BaseModel):
+    agent_id: UUID
+    name: str
+    version_num: int
+    final_score: float
+
+
+class EvaluationSetDetailEfficiency(BaseModel):
+    lowest_average_cost_usd_top_agents: float | None
+    lowest_average_runtime_seconds_top_agents: float | None
+    average_agent_cost_usd: float | None
+    average_agent_runtime_seconds: float | None
+
+
+class EvaluationSetDetailAgent(BaseModel):
+    rank: int | None
+    agent_id: UUID
+    miner_hotkey: str
+    name: str
+    version_num: int
+    agent_status: str
+    approved_for_emission: bool
+    final_score: float | None
+    validator_count: int | None
+    average_cost_usd: float | None
+    average_runtime_seconds: float | None
+    validator_hotkeys: list[str]
+    submitted_at: datetime.datetime
+
+
 class EvaluationSetDetail(BaseModel):
     """Detailed information about an evaluation set, including submission statistics, scores, and comparison to the previous set."""
 
@@ -96,3 +128,5 @@ class EvaluationSetDetail(BaseModel):
     submissions: EvaluationSetDetailSubmissions
     scores: EvaluationSetDetailScores
     vs_previous_set: EvaluationSetDetailVsPreviousSet | None
+    top_agent: EvaluationSetDetailTopAgent | None
+    efficiency: EvaluationSetDetailEfficiency
