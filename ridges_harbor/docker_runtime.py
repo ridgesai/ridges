@@ -165,6 +165,7 @@ def docker_environment_env(
     max_cost_usd: str,
     proxy_data_dir: str,
     openrouter_config: OpenRouterRuntimeConfig | None,
+    inference_seed: int | None = None,
 ) -> dict[str, str]:
     """Build Docker-scaffold env vars for one Harbor trial."""
     env = {
@@ -174,6 +175,7 @@ def docker_environment_env(
         "RIDGES_EVALUATION_RUN_ID": evaluation_run_id,
         "RIDGES_MAX_COST_USD": max_cost_usd,
         "RIDGES_PROXY_DATA_DIR": proxy_data_dir,
+        "RIDGES_INFERENCE_SEED": str(inference_seed) if inference_seed is not None else "",
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
         "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",

@@ -19,6 +19,7 @@ from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
+from ridges_harbor.seed import problem_seed
 from utils.task_cache import get_cached_task, get_or_download_task
 
 logger = logging.getLogger(__name__)
@@ -117,6 +118,7 @@ class ExecutionEngine:
             task_dir=task_dir,
             problem_name=problem_name,
         )
+        inference_seed = problem_seed(problem_name)
 
         try:
 
@@ -148,6 +150,7 @@ class ExecutionEngine:
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
+                    inference_seed=inference_seed,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None

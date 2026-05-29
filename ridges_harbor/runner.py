@@ -70,6 +70,7 @@ async def run_task(
     job_name: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    inference_seed: int | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -106,6 +107,7 @@ async def run_task(
         job_name=job_name,
         openrouter_config=openrouter_config,
         max_cost_usd=max_cost_usd,
+        inference_seed=inference_seed,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
     )
@@ -128,6 +130,7 @@ async def _run_task_dir(
     job_name: str | None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    inference_seed: int | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -170,6 +173,7 @@ async def _run_task_dir(
             max_cost_usd=effective_max_cost_usd,
             proxy_data_dir=str(proxy_data_dir),
             openrouter_config=openrouter_config,
+            inference_seed=inference_seed,
         )
     )
     config = JobConfig(
