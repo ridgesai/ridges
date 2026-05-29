@@ -1,11 +1,13 @@
+import logging
 from typing import Optional
 
 import aioboto3
 from botocore.config import Config
 
-import utils.logger as logger
-
 S3_CLIENT_CONFIG = Config(signature_version="s3v4")
+
+
+logger = logging.getLogger(__name__)
 
 
 async def initialize_s3(

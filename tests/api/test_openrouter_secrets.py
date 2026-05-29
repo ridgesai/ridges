@@ -110,7 +110,7 @@ def _patch_upload_dependencies(
 ):
     upload_endpoint = _load_upload_endpoint(monkeypatch)
     monkeypatch.setenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY", _encoded_key())
-    monkeypatch.setattr(upload_endpoint, "prod", False)
+    monkeypatch.setattr(upload_endpoint.config, "ENV", "dev")
     monkeypatch.setattr(upload_endpoint.config, "PRE_SCREENING_JUDGE_ENABLED", False)
     monkeypatch.setattr(upload_endpoint, "get_miner_hotkey", lambda *_args, **_kwargs: "miner-hotkey")
     monkeypatch.setattr(upload_endpoint, "check_if_python_file", lambda *_args, **_kwargs: None)

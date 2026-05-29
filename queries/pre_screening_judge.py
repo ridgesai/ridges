@@ -1,11 +1,13 @@
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-import utils.logger as logger
 from models.agent import AgentStatus
 from models.pre_screening_judge import PreScreeningResultPayload, PreScreeningVerdict
 from utils.database import DatabaseConnection, db_operation
+
+logger = logging.getLogger(__name__)
 
 
 async def insert_pending_pre_screening_job(

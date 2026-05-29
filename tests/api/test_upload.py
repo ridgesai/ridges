@@ -33,12 +33,12 @@ FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
 @pytest.fixture(scope="module", autouse=True)
 def upload_prod_mode():
     """Run all tests in this module against the prod code path."""
-    original_prod = upload_module.prod
+    original_env = upload_module.config.ENV
     original_send_address = upload_module.config.UPLOAD_SEND_ADDRESS
-    upload_module.prod = True
+    upload_module.config.ENV = "prod"
     upload_module.config.UPLOAD_SEND_ADDRESS = FAKE_SEND_ADDRESS
     yield
-    upload_module.prod = original_prod
+    upload_module.config.ENV = original_env
     upload_module.config.UPLOAD_SEND_ADDRESS = original_send_address
 
 

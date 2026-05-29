@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -11,7 +12,6 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-import utils.logger as logger
 from execution.artifacts import collect_job_crash_context, read_trial_snapshot, result_from_summary
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
@@ -21,6 +21,7 @@ from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
 from utils.task_cache import get_cached_task, get_or_download_task
 
+logger = logging.getLogger(__name__)
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
 
 

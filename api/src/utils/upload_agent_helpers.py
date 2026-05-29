@@ -1,13 +1,15 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
 from bittensor_wallet.keypair import Keypair
 from fastapi import HTTPException, UploadFile
 
-import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.banned_hotkey import get_banned_hotkey
 from utils.bittensor import subtensor_client
+
+logger = logging.getLogger(__name__)
 
 
 def get_miner_hotkey(file_info: str) -> str:

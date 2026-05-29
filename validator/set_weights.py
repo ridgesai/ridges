@@ -1,10 +1,13 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
+import logging
 from typing import Dict
 
 from bittensor.core.async_subtensor import AsyncSubtensor
 
-import utils.logger as logger
 import validator.config as config
+
+logger = logging.getLogger(__name__)
+
 
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=[config.SUBTENSOR_ADDRESS])
 

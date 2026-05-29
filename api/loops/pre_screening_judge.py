@@ -1,8 +1,10 @@
 import asyncio
+import logging
 
 import api.config as config
-import utils.logger as logger
 from queries.pre_screening_judge import project_next_pre_screening_job_state
+
+logger = logging.getLogger(__name__)
 
 
 async def pre_screening_projector_loop() -> None:
