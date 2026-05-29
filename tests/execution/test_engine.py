@@ -11,6 +11,7 @@ from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor._stdlib_contract import HARBOR_RUNNER_ERROR_FILENAME, SETUP_LOG_FILENAME
+from ridges_harbor.seed import problem_seed
 
 from .helpers import make_summary, successful_verifier_result, valid_execution_spec, write
 
@@ -250,6 +251,7 @@ async def test_evaluate_orchestrates_run_task_with_stable_request(tmp_path: Path
     assert captured["results_dir"] == (tmp_path / "results").resolve()
     assert captured["job_name"] == f"update-status-file__{evaluation_run_id}"
     assert captured["verifier_timeout_sec"] == 600.0
+    assert captured["inference_seed"] == problem_seed("update-status-file")
     assert captured["openrouter_config"] == OpenRouterRuntimeConfig(
         api_key="sk-or-v1-secret",
         management_key="sk-or-mgmt-secret",
