@@ -6,6 +6,7 @@ from db.models.agent import (
     BenchmarkAgentId,
     UnapprovedAgentId,
 )
+from db.models.approval import AgentApprovalState, ApprovalJob, ApprovalJobRound
 from db.models.evaluation import ApprovedAgent, Evaluation
 from db.models.evaluation_run import EvaluationRun, EvaluationRunLog
 from db.models.evaluation_set import EvaluationSet
@@ -21,7 +22,10 @@ from db.models.upload import UploadAttempt
 
 __all__ = [
     "Agent",
+    "AgentApprovalState",
     "AgentOpenRouterSecret",
+    "ApprovalJob",
+    "ApprovalJobRound",
     "PreScreeningJob",
     "PreScreeningResult",
     "AgentScore",

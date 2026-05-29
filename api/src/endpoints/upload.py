@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Optional
@@ -189,7 +190,8 @@ async def post_agent(
             await check_agent_banned(miner_hotkey=miner_hotkey)
 
         check_if_python_file(agent_file.filename)
-        agent_text = await check_file_size(agent_file)
+        agent_bytes, agent_text = await check_file_size(agent_file)
+        source_sha256 = hashlib.sha256(agent_bytes).hexdigest()
 
         if prod and not is_owner_upload:
             # Verify payment
@@ -315,6 +317,7 @@ async def post_agent(
             agent_id = await create_agent(
                 agent,
                 agent_text,
+                source_sha256=source_sha256,
                 runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
                 management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
                 openrouter_workspace_id=validated_openrouter_keys.workspace_id,

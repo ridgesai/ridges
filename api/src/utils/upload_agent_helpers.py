@@ -101,7 +101,7 @@ async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Miner hotkey {miner_hotkey} is registered on the subnet.")
 
 
-async def check_file_size(agent_file: UploadFile) -> str:
+async def check_file_size(agent_file: UploadFile) -> tuple[bytes, str]:
     logger.debug("Checking if the file size is valid...")
 
     MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -120,7 +120,8 @@ async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug("The file size is valid.")
     await agent_file.seek(0)
 
-    return b"".join(chunks).decode("utf-8")
+    raw = b"".join(chunks)
+    return raw, raw.decode("utf-8")
 
 
 async def get_tao_price() -> float:

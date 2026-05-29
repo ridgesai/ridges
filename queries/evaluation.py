@@ -205,6 +205,34 @@ async def get_approved_validator_leader_score_for_set(
 
 
 @db_operation
+async def get_validator_agent_score_for_set(
+    conn: DatabaseConnection,
+    agent_id: UUID,
+    set_id: int,
+    required_validator_count: int = config.NUM_EVALS_PER_AGENT,
+) -> Optional[float]:
+    return await conn.fetchval(
+        """
+        SELECT agent_score.final_score
+        FROM agent_scores agent_score
+        WHERE agent_score.agent_id = $1
+          AND agent_score.set_id = $2
+          AND agent_score.validator_count = $3
+          AND agent_score.status::text <> 'cancelled'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark_agent
+              WHERE benchmark_agent.agent_id = agent_score.agent_id
+          )
+        LIMIT 1
+        """,
+        agent_id,
+        set_id,
+        required_validator_count,
+    )
+
+
+@db_operation
 async def get_local_evaluation_score_upper_bound(
     conn: DatabaseConnection, evaluation_id: UUID
 ) -> Optional[LocalEvaluationScoreBound]:
