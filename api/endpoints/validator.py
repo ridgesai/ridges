@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import time
 import traceback
@@ -14,7 +15,6 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import api.config as config
-import utils.logger as logger
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
@@ -80,6 +80,8 @@ from utils.git import COMMIT_HASH
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
+
+logger = logging.getLogger(__name__)
 
 
 # A validator

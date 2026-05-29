@@ -1,9 +1,13 @@
+import logging
 import os
 import uuid
 
 from dotenv import load_dotenv
 
-import utils.logger as logger
+from utils.logger import setup_logging
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Load everything from .env
 load_dotenv()
@@ -215,66 +219,18 @@ if PRE_SCREENING_JUDGE_RUN_LOOP:
         )
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
-if not SENTRY_DSN:
-    logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
 
-logger.info("=== API Configuration ===")
-
-logger.info(f"Host: {HOST}")
-logger.info(f"Port: {PORT}")
-logger.info("-------------------------")
-
-logger.info(f"Network ID: {NETUID}")
-logger.info(f"Subtensor Address: {SUBTENSOR_ADDRESS}")
-logger.info(f"Subtensor Network: {SUBTENSOR_NETWORK}")
-logger.info(f"Owner Hotkey: {OWNER_HOTKEY}")
-logger.info("-------------------------")
+logger.info(
+    f"API configuration loaded: host={HOST} port={PORT} env={ENV} netuid={NETUID} "
+    f"subtensor_network={SUBTENSOR_NETWORK} subtensor_address={SUBTENSOR_ADDRESS} "
+    f"s3_bucket={S3_BUCKET_NAME} db_host={DATABASE_HOST} db_name={DATABASE_NAME}"
+)
+if ENV == "prod":
+    logger.info("Agent Upload running in production mode.")
+else:
+    logger.info("Agent Upload running in development mode.")
 
 if BURN:
-    logger.warning("Burning!")
-    logger.info("-------------------------")
-
+    logger.warning("Burn mode is active — all payments will be burned")
 if DISALLOW_UPLOADS:
-    logger.warning(f"Disallowing Uploads: {DISALLOW_UPLOADS_REASON}")
-    logger.info("-------------------------")
-
-logger.info(f"Environment: {'Production' if ENV == 'prod' else 'Development'}")
-logger.info("-------------------------")
-
-logger.info(f"AWS Region: {AWS_REGION}")
-logger.info("-------------------------")
-
-logger.info(f"S3 Bucket Name: {S3_BUCKET_NAME}")
-logger.info("-------------------------")
-
-logger.info(f"S3 Endpoint URL: {S3_ENDPOINT_URL if S3_ENDPOINT_URL else 'Not set, using default AWS S3 endpoint'}")
-
-logger.info(f"Database Username: {DATABASE_USERNAME}")
-logger.info(f"Database Host: {DATABASE_HOST}")
-logger.info(f"Database Port: {DATABASE_PORT}")
-logger.info(f"Database Name: {DATABASE_NAME}")
-logger.info("-------------------------")
-
-logger.info(f"Screener 1 Threshold: {SCREENER_1_THRESHOLD}")
-logger.info(f"Screener 2 Threshold: {SCREENER_2_THRESHOLD}")
-logger.info(f"Prune Threshold: {PRUNE_THRESHOLD}")
-logger.info("-------------------------")
-
-logger.info(f"Validator Heartbeat Timeout: {VALIDATOR_HEARTBEAT_TIMEOUT_SECONDS} second(s)")
-logger.info(f"Validator Heartbeat Timeout Interval: {VALIDATOR_HEARTBEAT_TIMEOUT_INTERVAL_SECONDS} second(s)")
-logger.info("-------------------------")
-
-logger.info(f"Validator Running Agent Timeout: {VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS} second(s)")
-logger.info(f"Validator Running Evaluation Timeout: {VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS} second(s)")
-logger.info(f"Validator Max Evaluation Run Log Size: {VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES} byte(s)")
-logger.info("-------------------------")
-
-logger.info(f"Miner Agent Upload Rate Limit: {MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS} second(s)")
-logger.info(f"Number of Evaluations per Agent: {NUM_EVALS_PER_AGENT}")
-logger.info(f"Pre-Screening Judge Enabled: {PRE_SCREENING_JUDGE_ENABLED}")
-logger.info(f"Pre-Screening Judge Loop Enabled: {PRE_SCREENING_JUDGE_RUN_LOOP}")
-if PRE_SCREENING_JUDGE_RUN_LOOP:
-    logger.info(f"Pre-Screening Judge URL: {PRE_SCREENING_JUDGE_URL}")
-    logger.info(f"Pre-Screening Judge Request Timeout: {PRE_SCREENING_JUDGE_REQUEST_TIMEOUT_SECONDS} second(s)")
-
-logger.info("=========================")
+    logger.warning(f"Uploads are disallowed: {DISALLOW_UPLOADS_REASON}")

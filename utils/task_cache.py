@@ -6,6 +6,7 @@ Once cached, a task is never re-downloaded — the digest guarantees immutabilit
 
 from __future__ import annotations
 
+import logging
 import shutil
 import tarfile
 from pathlib import Path
@@ -13,8 +14,9 @@ from uuid import uuid4
 
 import httpx
 
-import utils.logger as logger
 from ridges_harbor.digest import compute_task_digest
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "ridges" / "tasks"
 

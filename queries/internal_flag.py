@@ -1,8 +1,10 @@
 import json
+import logging
 
-import utils.logger as logger
 from db.models.internal_flag import InternalFlagName
 from utils.database import DatabaseConnection, db_operation
+
+logger = logging.getLogger(__name__)
 
 # Set of flags that are expected to have boolean values (stored as "true"/"false" strings in DB)
 _BOOL_FLAGS: set[InternalFlagName] = {

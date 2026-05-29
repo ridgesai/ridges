@@ -1,3 +1,4 @@
+import logging
 from time import time
 from types import SimpleNamespace
 from typing import List, Optional
@@ -7,7 +8,6 @@ from openai import APIStatusError, AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
 import inference_gateway.config as config
-import utils.logger as logger
 from inference_gateway.models import (
     EmbeddingModelInfo,
     EmbeddingResult,
@@ -27,6 +27,9 @@ if config.USE_OPENROUTER:
     OPENROUTER_EMBEDDING_MODELS_URL = (
         f"{config.OPENROUTER_BASE_URL}/embeddings/models"  # https://openrouter.ai/api/v1/embeddings/models
     )
+
+
+logger = logging.getLogger(__name__)
 
 
 class WhitelistedOpenRouterModel(BaseModel):

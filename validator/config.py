@@ -1,11 +1,16 @@
+import logging
 import os
 import re
 
 from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
-import utils.logger as logger
+from utils.logger import setup_logging
 from utils.validator_hotkeys import validator_hotkey_to_name
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 

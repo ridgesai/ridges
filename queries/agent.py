@@ -1,10 +1,10 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
 from uuid import UUID, uuid5
 
 import api.config as config
-import utils.logger as logger
 from models.agent import (
     Agent,
     AgentCreate,
@@ -20,6 +20,8 @@ from queries.errors import DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PRE_SCREENING_POLICY_VERSION = "hardcoding-v1"
 

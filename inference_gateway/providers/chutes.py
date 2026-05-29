@@ -1,3 +1,4 @@
+import logging
 from time import time
 from types import SimpleNamespace
 from typing import List, Optional
@@ -7,7 +8,6 @@ from openai import APIStatusError, AsyncOpenAI, AsyncStream
 from pydantic import BaseModel
 
 import inference_gateway.config as config
-import utils.logger as logger
 from inference_gateway.models import (
     EmbeddingModelInfo,
     EmbeddingModelPricingMode,
@@ -22,6 +22,8 @@ from inference_gateway.models import (
     openai_tool_calls_to_inference_tool_calls,
 )
 from inference_gateway.providers.provider import Provider
+
+logger = logging.getLogger(__name__)
 
 if config.USE_CHUTES:
     CHUTES_INFERENCE_MODELS_URL = f"{config.CHUTES_INFERENCE_BASE_URL}/models"  # https://llm.chutes.ai/v1/models

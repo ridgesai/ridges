@@ -1,12 +1,11 @@
 import asyncio
-import os
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-import utils.logger as logger
 from api import config
 from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenError
 from api.src.utils.openrouter_validation import validate_openrouter_keys
@@ -40,6 +39,8 @@ from utils.agent_secrets import encrypt_agent_secret
 from utils.bittensor import subtensor_client
 from utils.debug_lock import DebugLock
 
+logger = logging.getLogger(__name__)
+
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
 hotkey_locks_lock = asyncio.Lock()
@@ -50,14 +51,6 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
         if hotkey not in hotkey_locks:
             hotkey_locks[hotkey] = asyncio.Lock()
         return hotkey_locks[hotkey]
-
-
-prod = False
-if os.getenv("ENV") == "prod":
-    logger.info("Agent Upload running in production mode.")
-    prod = True
-else:
-    logger.info("Agent Upload running in development mode.")
 
 
 class AgentUploadResponse(BaseModel):
@@ -162,6 +155,7 @@ async def post_agent(
 
     Rate limiting may apply based on configuration.
     """
+    prod = config.ENV == "prod"
 
     miner_hotkey = get_miner_hotkey(file_info)
 
@@ -179,7 +173,6 @@ async def post_agent(
     }
 
     try:
-        logger.debug("Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
         is_owner_upload = miner_hotkey == config.OWNER_HOTKEY

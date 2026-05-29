@@ -1,9 +1,10 @@
+import logging
 import re
 import subprocess
 
 import docker
 
-import utils.logger as logger
+logger = logging.getLogger(__name__)
 
 DOCKER_PREFIX = "ridges-ai"
 SWEBENCH_DOCKER_PREFIX = "sweb"
