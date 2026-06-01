@@ -1,8 +1,14 @@
+import logging
 import os
 
 from dotenv import load_dotenv
 
-import utils.logger as logger
+from utils.logger import setup_logging
+
+setup_logging()
+
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 

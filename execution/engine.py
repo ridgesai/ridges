@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -11,7 +12,6 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-import utils.logger as logger
 from execution.artifacts import collect_job_crash_context, read_trial_snapshot, result_from_summary
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, ExecutionRunRequest, TrialSnapshot
@@ -19,8 +19,10 @@ from models.evaluation_run import EvaluationRunErrorCode
 from models.harbor_task import HarborRemoteTaskExecutionSpec
 from models.openrouter import OpenRouterRuntimeConfig
 from ridges_harbor.runner import DEFAULT_RESULTS_DIR, run_task
+from ridges_harbor.seed import problem_seed
 from utils.task_cache import get_cached_task, get_or_download_task
 
+logger = logging.getLogger(__name__)
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
 
 
@@ -116,6 +118,7 @@ class ExecutionEngine:
             task_dir=task_dir,
             problem_name=problem_name,
         )
+        inference_seed = problem_seed(problem_name)
 
         try:
 
@@ -147,6 +150,7 @@ class ExecutionEngine:
                     job_name=request.job_name,
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
+                    inference_seed=inference_seed,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None

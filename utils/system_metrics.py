@@ -1,10 +1,12 @@
+import logging
 from typing import Optional
 
 import psutil
 from pydantic import BaseModel
 
-import utils.logger as logger
 from utils.docker import get_num_docker_containers
+
+logger = logging.getLogger(__name__)
 
 
 class SystemMetrics(BaseModel):
