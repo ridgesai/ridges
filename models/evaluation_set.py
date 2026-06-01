@@ -150,5 +150,5 @@ class ApprovedAgent(BaseModel):
     name: str
     version_num: int
     created_at: datetime.datetime
-    final_score: float
+    final_score: Float4
     emission: float

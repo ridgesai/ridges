@@ -29,8 +29,13 @@ from queries.evaluation_set import (
     get_latest_set_id,
     get_set_created_at,
 )
+from utils.ttl import ttl_cache
 
 router = APIRouter(tags=["evaluation-sets"])
+CACHE_PAST_SET_DATA_TTL_SECONDS = 24 * 60 * 60  # Cache past set data for 24 hours, since it won't change
+
+# Retrieve the latest set ID once and cache it for 30 seconds, since it's used in multiple places in the detail and leaderboard endpoints.
+_get_latest_set_id = ttl_cache(ttl_seconds=30)(get_latest_set_id)
 
 
 async def resolve_set_id(set_id: int) -> int:
@@ -51,7 +56,7 @@ async def resolve_set_id(set_id: int) -> int:
 
     resolved_set_id = None
     if set_id == -1:
-        resolved_set_id = await get_latest_set_id()
+        resolved_set_id = await _get_latest_set_id()
     else:
         if await get_set_created_at(set_id) is not None:
             resolved_set_id = set_id
@@ -76,16 +81,10 @@ async def evaluation_sets_all_latest_set_problems() -> list[EvaluationSetProblem
     return await get_all_evaluation_set_problems_for_set_id(latest_set_id)
 
 
-@router.get("/{set_id}")
-async def evaluation_set_detail(
-    set_id: Annotated[int, Depends(resolve_set_id)],
-) -> EvaluationSetDetail:
-    """Returns detailed information about a specific evaluation set, including:
-    - Submission statistics at each stage of the evaluation pipeline
-    - Score statistics (best, average, and benchmark thresholds)
-    - Comparison against the previous evaluation set's best score (if available)
-    """
-
+#
+# GET evaluation-sets/{set_id}/
+#
+async def _build_detail(set_id: int) -> EvaluationSetDetail:
     def _pass_rate(count: int, total: int) -> float:
         """Calculates the pass rate for a given count of agents at a pipeline stage, relative to the total number of agents that entered the pipeline.
 
@@ -149,7 +148,6 @@ async def evaluation_set_detail(
         ),
     ]
 
-    # 4. Construct the response model
     submissions = EvaluationSetDetailSubmissions(
         total_agents=total,
         unique_miners=submission_row["unique_miners"],
@@ -208,8 +206,51 @@ async def evaluation_set_detail(
     )
 
 
-@router.get("/{set_id}/approved-agents")
-async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
+_cached_build_detail = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_detail)
+
+
+@router.get("/{set_id}")
+async def evaluation_set_detail(
+    set_id: Annotated[int, Depends(resolve_set_id)],
+) -> EvaluationSetDetail:
+    """Returns detailed information about a specific evaluation set, including:
+    - Submission statistics at each stage of the evaluation pipeline
+    - Score statistics (best, average, and benchmark thresholds)
+    - Comparison against the previous evaluation set's best score (if available)
+    """
+    latest = await _get_latest_set_id()
+    if set_id != latest:
+        return await _cached_build_detail(set_id)
+    return await _build_detail(set_id)
+
+
+#
+# GET evaluation-sets/{set_id}/leaderboard
+#
+async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailAgent]:
+    agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
+    return [EvaluationSetDetailAgent(**dict(row)) for row in agent_rows]
+
+
+_cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)
+
+
+@router.get("/{set_id}/leaderboard")
+async def evaluation_set_leaderboard(
+    set_id: Annotated[int, Depends(resolve_set_id)],
+) -> list[EvaluationSetDetailAgent]:
+    latest = await _get_latest_set_id()
+    if set_id != latest:
+        return await _cached_build_leaderboard(set_id)
+    return await _build_leaderboard(set_id)
+
+
+#
+# GET evaluation-sets/{set_id}/approved-agents
+#
+
+
+async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
     agent_rows = await get_approved_agents_for_set(set_id)
 
     return [
@@ -226,9 +267,12 @@ async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_
     ]
 
 
-@router.get("/{set_id}/leaderboard")
-async def evaluation_set_leaderboard(
-    set_id: Annotated[int, Depends(resolve_set_id)],
-) -> list[EvaluationSetDetailAgent]:
-    agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
-    return [EvaluationSetDetailAgent(**dict(row)) for row in agent_rows]
+_cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_approved_agents)
+
+
+@router.get("/{set_id}/approved-agents")
+async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
+    latest = await _get_latest_set_id()
+    if set_id != latest:
+        return await _cached_build_approved_agents(set_id)
+    return await _build_approved_agents(set_id)
