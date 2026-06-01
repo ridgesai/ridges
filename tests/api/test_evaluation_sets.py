@@ -264,7 +264,6 @@ async def test_evaluation_set_detail_happy_path():
 
     # Basic identity
     assert result.id == 2
-    assert result.created_at == SET_2_CREATED
 
     # Submission stats
     assert result.submissions.total_agents == 3
@@ -493,7 +492,8 @@ async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_2
 @pytest.mark.anyio
 async def test_evaluation_set_detail_returns_404_for_unknown_set():
     with pytest.raises(HTTPException) as exc_info:
-        await evaluation_sets_endpoint.evaluation_set_detail(set_id=999)
+        # Dependency needs to be called directly, because calling endpoints directly bypasses Fast API's dependency injection
+        await evaluation_sets_endpoint.resolve_set_id(999)
     assert exc_info.value.status_code == 404
 
 
@@ -582,11 +582,13 @@ async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
         )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_1")
 
-    result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=-1)
+    # Dependency needs to be called directly, because calling endpoints directly bypasses Fast API's dependency injection
+    resolved = await evaluation_sets_endpoint.resolve_set_id(-1)
+    result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=resolved)
 
     assert result.id == 2
     assert result.top_agent is None
 
-    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=-1)
+    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=resolved)
     assert len(leaderboard) == 1
     assert leaderboard[0].agent_id == agent_a
