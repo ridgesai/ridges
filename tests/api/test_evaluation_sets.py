@@ -620,35 +620,6 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
 
 
 @pytest.mark.anyio
-async def test_evaluation_set_approved_agents_emission_defaults_to_zero_on_subtensor_error(
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        evaluation_sets_endpoint.subtensor_client,
-        "get_emission",
-        AsyncMock(side_effect=RuntimeError("subtensor down")),
-    )
-    agent_id = uuid4()
-    async with _db.pool.acquire() as conn:
-        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_agent(
-            conn,
-            agent_id=agent_id,
-            miner_hotkey="hotkey-a",
-            status="finished",
-            created_at=AGENT_TS_SET_1,
-        )
-        await _insert_approved_agent(conn, agent_id=agent_id, set_id=1)
-        await _insert_agent_score(conn, agent_id=agent_id, miner_hotkey="hotkey-a", set_id=1, final_score=80.0)
-
-    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
-
-    assert len(result) == 1
-    assert result[0].emission == 0.0
-    assert result[0].final_score == 80.0
-
-
-@pytest.mark.anyio
 async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
     agent_a = uuid4()
 

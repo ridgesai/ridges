@@ -29,7 +29,6 @@ from queries.evaluation_set import (
     get_latest_set_id,
     get_set_created_at,
 )
-from utils.bittensor import subtensor_client
 
 router = APIRouter(tags=["evaluation-sets"])
 
@@ -213,11 +212,6 @@ async def evaluation_set_detail(
 async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
     agent_rows = await get_approved_agents_for_set(set_id)
 
-    emission_results = await asyncio.gather(
-        *[subtensor_client.get_emission(row["miner_hotkey"]) for row in agent_rows],
-        return_exceptions=True,
-    )
-
     return [
         ApprovedAgent(
             id=row["agent_id"],
@@ -226,9 +220,9 @@ async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_
             version_num=row["version_num"],
             created_at=row["created_at"],
             final_score=row["final_score"],
-            emission=emission if isinstance(emission, float) else 0.0,
+            emission=0.0,  # TODO Set to zero until we start collecting emissions for approved agents
         )
-        for row, emission in zip(agent_rows, emission_results)
+        for row in agent_rows
     ]
 
 
