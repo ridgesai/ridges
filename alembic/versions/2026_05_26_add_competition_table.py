@@ -1,7 +1,7 @@
 """Add competition table
 
 Revision ID: b1d5e8a3f902
-Revises: a3f7c9d2e841
+Revises: f2a8b1d7e904
 Create Date: 2026-05-26 00:00:00.000000
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "b1d5e8a3f902"
-down_revision: Union[str, Sequence[str], None] = "a3f7c9d2e841"
+down_revision: Union[str, Sequence[str], None] = "f2a8b1d7e904"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
