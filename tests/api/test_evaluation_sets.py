@@ -13,8 +13,20 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, benchmark_agent_ids RESTART IDENTITY CASCADE"
         )
+
+
+@pytest.fixture(autouse=True)
+async def remove_caching(monkeypatch):
+    monkeypatch.setattr(evaluation_sets_endpoint, "_get_latest_set_id", evaluation_sets_endpoint.get_latest_set_id)
+    monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_leaderboard", evaluation_sets_endpoint._build_leaderboard
+    )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
+    )
 
 
 SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -561,6 +573,51 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     assert leaderboard[0].agent_id == agent_a
     assert leaderboard[0].rank is None
     assert leaderboard[0].final_score is None
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+    assert result == []
+
+
+@pytest.mark.anyio
+async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatch):
+    agent_id_a = uuid4()
+    agent_id_b = uuid4()
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=agent_id_a,
+            miner_hotkey="hotkey-a",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=agent_id_b,
+            miner_hotkey="hotkey-b",
+            status="finished",
+            created_at=AGENT_TS_SET_1,
+        )
+        await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1)
+        await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1)
+        await _insert_agent_score(conn, agent_id=agent_id_a, miner_hotkey="hotkey-a", set_id=1, final_score=90.0)
+        await _insert_agent_score(conn, agent_id=agent_id_b, miner_hotkey="hotkey-b", set_id=1, final_score=70.0)
+
+    result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
+
+    assert len(result) == 2
+    # Ordered by final_score DESC
+    assert result[0].miner_hotkey == "hotkey-a"
+    assert result[0].final_score == 90.0
+    assert result[0].emission == 0.0
+    assert result[0].id == agent_id_a
+    assert result[1].miner_hotkey == "hotkey-b"
+    assert result[1].final_score == 70.0
 
 
 @pytest.mark.anyio

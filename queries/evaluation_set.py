@@ -484,3 +484,28 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
         """,
         set_id,
     )
+
+
+@db_operation
+async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        -- agent_scores has one row per agent; set_id tracks the most recent set.
+        -- Agents approved for this set but re-scored in a later set will not appear here.
+        SELECT
+            a.agent_id,
+            a.miner_hotkey,
+            a.name,
+            a.version_num,
+            a.created_at,
+            ass.final_score
+        FROM approved_agents aa
+        JOIN agents a ON a.agent_id = aa.agent_id
+        JOIN agent_scores ass ON ass.agent_id = aa.agent_id AND ass.set_id = $1
+        WHERE aa.set_id = $1
+          AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+          AND ass.status = 'finished'
+        ORDER BY ass.final_score DESC
+        """,
+        set_id,
+    )

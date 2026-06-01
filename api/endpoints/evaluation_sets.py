@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from models.evaluation_set import (
+    ApprovedAgent,
     EvaluationSet,
     EvaluationSetDetail,
     EvaluationSetDetailAgent,
@@ -20,6 +21,7 @@ from queries.competition import get_competition_for_set
 from queries.evaluation_set import (
     get_all_evaluation_set_problems_for_set_id,
     get_all_evaluation_sets,
+    get_approved_agents_for_set,
     get_evaluation_set_leaderboard_agents,
     get_evaluation_set_leaderboard_summary,
     get_evaluation_set_score_stats,
@@ -30,6 +32,7 @@ from queries.evaluation_set import (
 from utils.ttl import ttl_cache
 
 router = APIRouter(tags=["evaluation-sets"])
+CACHE_PAST_SET_DATA_TTL_SECONDS = 24 * 60 * 60  # Cache past set data for 24 hours, since it won't change
 
 # Retrieve the latest set ID once and cache it for 30 seconds, since it's used in multiple places in the detail and leaderboard endpoints.
 _get_latest_set_id = ttl_cache(ttl_seconds=30)(get_latest_set_id)
@@ -203,7 +206,7 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
     )
 
 
-_cached_build_detail = ttl_cache(ttl_seconds=24 * 60 * 60)(_build_detail)
+_cached_build_detail = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_detail)
 
 
 @router.get("/{set_id}")
@@ -229,7 +232,7 @@ async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailAgent]:
     return [EvaluationSetDetailAgent(**dict(row)) for row in agent_rows]
 
 
-_cached_build_leaderboard = ttl_cache(ttl_seconds=24 * 60 * 60)(_build_leaderboard)
+_cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)
 
 
 @router.get("/{set_id}/leaderboard")
@@ -240,3 +243,36 @@ async def evaluation_set_leaderboard(
     if set_id != latest:
         return await _cached_build_leaderboard(set_id)
     return await _build_leaderboard(set_id)
+
+
+#
+# GET evaluation-sets/{set_id}/approved-agents
+#
+
+
+async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
+    agent_rows = await get_approved_agents_for_set(set_id)
+
+    return [
+        ApprovedAgent(
+            id=row["agent_id"],
+            miner_hotkey=row["miner_hotkey"],
+            name=row["name"],
+            version_num=row["version_num"],
+            created_at=row["created_at"],
+            final_score=row["final_score"],
+            emission=0.0,  # TODO Set to zero until we start collecting emissions for approved agents
+        )
+        for row in agent_rows
+    ]
+
+
+_cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_approved_agents)
+
+
+@router.get("/{set_id}/approved-agents")
+async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
+    latest = await _get_latest_set_id()
+    if set_id != latest:
+        return await _cached_build_approved_agents(set_id)
+    return await _build_approved_agents(set_id)

@@ -142,3 +142,13 @@ class EvaluationSetDetail(BaseModel):
     vs_previous_set: EvaluationSetDetailVsPreviousSet | None
     top_agent: EvaluationSetDetailTopAgent | None
     efficiency: EvaluationSetDetailEfficiency
+
+
+class ApprovedAgent(BaseModel):
+    id: UUID
+    miner_hotkey: str
+    name: str
+    version_num: int
+    created_at: datetime.datetime
+    final_score: Float4
+    emission: float
