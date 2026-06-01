@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import time
 import traceback
@@ -14,7 +15,6 @@ from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 
 import api.config as config
-import utils.logger as logger
 from api.endpoints.validator_models import (
     ScreenerRegistrationRequest,
     ScreenerRegistrationResponse,
@@ -53,6 +53,7 @@ from queries.agent import (
     get_top_agents,
     update_agent_status,
 )
+from queries.approval import finish_agent_and_enqueue_approval
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
     get_approved_validator_leader_score_for_set,
@@ -60,6 +61,7 @@ from queries.evaluation import (
     get_hydrated_evaluation_by_id,
     get_local_evaluation_score_upper_bound,
     get_num_successful_validator_evaluations_for_agent_id,
+    get_validator_agent_score_for_set,
     set_unfinished_evaluation_runs_to_score_pruned,
     transition_agent_status_if_matches,
     update_evaluation_finished_at,
@@ -80,6 +82,8 @@ from utils.git import COMMIT_HASH
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
+
+logger = logging.getLogger(__name__)
 
 
 # A validator
@@ -1170,4 +1174,41 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 # raise ValueError(f"Invalid agent status: {agent.status}, this should never happen")
                 return
 
-        await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+        if (
+            new_agent_status == AgentStatus.finished
+            and config.AUTO_APPROVAL_ENABLED
+            and await _should_run_auto_approval_judge(
+                agent_id=hydrated_evaluation.agent_id,
+                set_id=hydrated_evaluation.set_id,
+            )
+        ):
+            await finish_agent_and_enqueue_approval(
+                agent_id=hydrated_evaluation.agent_id,
+                set_id=hydrated_evaluation.set_id,
+                policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
+            )
+        else:
+            await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+
+
+async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
+    candidate_score = await get_validator_agent_score_for_set(
+        agent_id,
+        set_id,
+        config.NUM_EVALS_PER_AGENT,
+    )
+    if candidate_score is None:
+        logger.warning(
+            f"Skipping auto approval for agent_id={agent_id} set_id={set_id}: no complete validator score found"
+        )
+        return False
+
+    approved_leader_score = await get_approved_validator_leader_score_for_set(
+        set_id,
+        agent_id,
+        config.NUM_EVALS_PER_AGENT,
+    )
+    if approved_leader_score is None:
+        return True
+
+    return candidate_score >= approved_leader_score

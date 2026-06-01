@@ -1,12 +1,15 @@
 import json
+import logging
 import textwrap
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
-import utils.logger as logger
 import validator.config as config
+
+logger = logging.getLogger(__name__)
+
 
 # TODO ADAM: .env
 HTTP_TIMEOUT_SECONDS = 120

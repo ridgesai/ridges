@@ -1,10 +1,11 @@
 """Git utilities for managing repository operations."""
 
+import logging
 import os
 import pathlib
 import subprocess
 
-import utils.logger as logger
+logger = logging.getLogger(__name__)
 
 
 def clone_repo(repo_url: str, target_dir: str) -> None:

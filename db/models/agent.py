@@ -21,6 +21,7 @@ class Agent(Base):
     # No server_default — the application always supplies this explicitly via NOW()
     created_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
     ip_address: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source_sha256: Mapped[Optional[str]] = mapped_column(sa.Text)
 
     __table_args__ = (
         sa.Index("idx_agents_miner_hotkey_version", "miner_hotkey", "agent_id"),
@@ -29,6 +30,7 @@ class Agent(Base):
             "status",
             postgresql_where=sa.text("status = 'evaluating'"),
         ),
+        sa.Index("idx_agents_source_sha256", "source_sha256"),
     )
 
 

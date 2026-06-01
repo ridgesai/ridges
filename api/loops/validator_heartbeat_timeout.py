@@ -1,8 +1,12 @@
 import asyncio
+import logging
 
 import api.config as config
-import utils.logger as logger
-from api.endpoints.validator import delete_validators_that_have_not_sent_a_heartbeat
+from api.endpoints.validator import (
+    delete_validators_that_have_not_sent_a_heartbeat,
+)
+
+logger = logging.getLogger(__name__)
 
 
 async def validator_heartbeat_timeout_loop():

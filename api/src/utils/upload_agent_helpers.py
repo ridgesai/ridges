@@ -1,13 +1,15 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 import httpx
 from bittensor_wallet.keypair import Keypair
 from fastapi import HTTPException, UploadFile
 
-import utils.logger as logger
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
 from queries.banned_hotkey import get_banned_hotkey
 from utils.bittensor import subtensor_client
+
+logger = logging.getLogger(__name__)
 
 
 def get_miner_hotkey(file_info: str) -> str:
@@ -99,7 +101,7 @@ async def check_hotkey_registered(miner_hotkey: str) -> None:
     logger.debug(f"Miner hotkey {miner_hotkey} is registered on the subnet.")
 
 
-async def check_file_size(agent_file: UploadFile) -> str:
+async def check_file_size(agent_file: UploadFile) -> tuple[bytes, str]:
     logger.debug("Checking if the file size is valid...")
 
     MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -118,7 +120,8 @@ async def check_file_size(agent_file: UploadFile) -> str:
     logger.debug("The file size is valid.")
     await agent_file.seek(0)
 
-    return b"".join(chunks).decode("utf-8")
+    raw = b"".join(chunks)
+    return raw, raw.decode("utf-8")
 
 
 async def get_tao_price() -> float:

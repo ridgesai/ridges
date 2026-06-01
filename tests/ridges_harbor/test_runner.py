@@ -221,6 +221,7 @@ async def test_run_task_dir_uses_task_config_and_environment_env(tmp_path: Path,
         "RIDGES_EVALUATION_RUN_ID": "eval-run-1",
         "RIDGES_MAX_COST_USD": "9",
         "RIDGES_PROXY_DATA_DIR": str(results_dir / "job-1" / "proxy_data"),
+        "RIDGES_INFERENCE_SEED": "",
         "RIDGES_OPENROUTER_MANAGEMENT_KEY": "",
         "RIDGES_OPENROUTER_WORKSPACE_ID": "",
         "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": "",
@@ -264,11 +265,13 @@ async def test_run_task_dir_passes_optional_openrouter_key_and_cost_cap(tmp_path
             expected_api_key_sha256="expected-hash",
         ),
         max_cost_usd=12.5,
+        inference_seed=123,
     )
 
     assert FakeJob.created_configs[0].agents[0].env["OPENROUTER_API_KEY"] == "sk-or-v1-secret"
     assert FakeJob.created_configs[0].agents[0].env["RIDGES_MAX_COST_USD"] == "12.5"
     assert FakeJob.created_configs[0].environment.env["RIDGES_MAX_COST_USD"] == "12.5"
+    assert FakeJob.created_configs[0].environment.env["RIDGES_INFERENCE_SEED"] == "123"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_MANAGEMENT_KEY"] == "sk-or-mgmt-secret"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_WORKSPACE_ID"] == "workspace-1"
     assert FakeJob.created_configs[0].environment.env["RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256"] == "expected-hash"
