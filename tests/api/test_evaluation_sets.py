@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -566,11 +565,6 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
-    monkeypatch.setattr(
-        evaluation_sets_endpoint.subtensor_client,
-        "get_emission",
-        AsyncMock(return_value=0.0),
-    )
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
     result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
@@ -579,11 +573,6 @@ async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatch):
-    monkeypatch.setattr(
-        evaluation_sets_endpoint.subtensor_client,
-        "get_emission",
-        AsyncMock(return_value=0.005),
-    )
     agent_id_a = uuid4()
     agent_id_b = uuid4()
     async with _db.pool.acquire() as conn:
@@ -613,7 +602,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     # Ordered by final_score DESC
     assert result[0].miner_hotkey == "hotkey-a"
     assert result[0].final_score == 90.0
-    assert result[0].emission == 0.005
+    assert result[0].emission == 0.0
     assert result[0].id == agent_id_a
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
