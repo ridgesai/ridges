@@ -17,6 +17,18 @@ async def clean_tables(postgres_db):
         )
 
 
+@pytest.fixture(autouse=True)
+async def remove_caching(monkeypatch):
+    monkeypatch.setattr(evaluation_sets_endpoint, "_get_latest_set_id", evaluation_sets_endpoint.get_latest_set_id)
+    monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_leaderboard", evaluation_sets_endpoint._build_leaderboard
+    )
+    monkeypatch.setattr(
+        evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
+    )
+
+
 SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
 SET_2_CREATED = datetime(2026, 5, 22, tzinfo=timezone.utc)
 AGENT_TS_SET_2 = datetime(2026, 5, 22, 1, tzinfo=timezone.utc)  # 1 h after SET_2_CREATED
