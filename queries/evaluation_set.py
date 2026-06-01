@@ -13,6 +13,92 @@ from models.evaluation_set import (
 from queries._row_parsing import parse_jsonb_fields
 from utils.database import DatabaseConnection, db_operation
 
+# ---------------------------------------------------------------------------
+# Shared SQL fragments for evaluation-set window queries.
+# These CTEs appear across get_evaluation_set_submission_stats,
+# get_evaluation_set_leaderboard_agents, and get_evaluation_set_leaderboard_summary.
+# $1 is always the set_id parameter.
+# ---------------------------------------------------------------------------
+
+_SQL_SET_WINDOW_CTE = """\
+set_window AS (
+    SELECT
+        COALESCE(
+            (SELECT start_date FROM competitions WHERE set_id = $1),
+            (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
+        ) as set_start,
+        -- TODO: fallback end-boundary via next set's created_at may not correctly
+        -- capture all competing agents; set competition_end_date explicitly to fix.
+        COALESCE(
+            (SELECT end_date FROM competitions WHERE set_id = $1),
+            (SELECT MIN(created_at) FROM evaluation_sets
+                WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
+        ) as set_end
+)"""
+
+_SQL_AGENTS_IN_WINDOW_WHERE = """\
+    FROM agents a
+    CROSS JOIN set_window sw
+    WHERE a.created_at >= sw.set_start
+      AND (sw.set_end IS NULL OR a.created_at < sw.set_end)
+      AND NOT EXISTS (
+          SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id
+      )"""
+
+
+def _sql_agents_in_window_cte(select_columns: str) -> str:
+    return f"agents_in_window AS MATERIALIZED (\n    SELECT\n        {select_columns}\n{_SQL_AGENTS_IN_WINDOW_WHERE}\n)"
+
+
+def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
+    hotkeys_col = (
+        ",\n        COALESCE(\n"
+        "            ARRAY_AGG(DISTINCT eh.validator_hotkey ORDER BY eh.validator_hotkey)\n"
+        "                FILTER (WHERE eh.validator_hotkey IS NOT NULL),\n"
+        "            ARRAY[]::text[]\n"
+        "        ) AS validator_hotkeys"
+        if include_validator_hotkeys
+        else ""
+    )
+    return (
+        f"validator_metrics AS MATERIALIZED (\n"
+        f"    SELECT\n"
+        f"        eh.agent_id,\n"
+        f"        AVG(eh.avg_cost_usd) AS average_cost_usd,\n"
+        f"        AVG(eh.avg_running_secs) AS average_runtime_seconds"
+        f"{hotkeys_col}\n"
+        f"    FROM evaluations_hydrated eh\n"
+        f"    JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id\n"
+        f"    WHERE eh.set_id = $1\n"
+        f"      AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
+        f"      AND eh.status = 'success'::EvaluationStatus\n"
+        f"    GROUP BY eh.agent_id\n"
+        f")"
+    )
+
+
+def _sql_ranked_scores_cte(extra_select_columns: str, materialized: bool) -> str:
+    mat = " MATERIALIZED" if materialized else ""
+    return (
+        f"ranked_scores AS{mat} (\n"
+        f"    SELECT\n"
+        f"        ass.agent_id"
+        f"{extra_select_columns},\n"
+        f"        ROW_NUMBER() OVER (\n"
+        f"            ORDER BY\n"
+        f"                ROUND(ass.final_score::numeric, 6) DESC,\n"
+        f"                vm.average_cost_usd ASC NULLS LAST,\n"
+        f"                aiw.submitted_at ASC,\n"
+        f"                ass.agent_id ASC\n"
+        f"        )::int AS rank\n"
+        f"    FROM agent_scores ass\n"
+        f"    JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id\n"
+        f"    LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id\n"
+        f"    WHERE ass.set_id = $1\n"
+        f"      AND ass.status::text <> 'cancelled'\n"
+        f")"
+    )
+
 
 def _parse_evaluation_set_problem_from_row(
     row: asyncpg.Record,
@@ -159,42 +245,9 @@ async def get_evaluation_set_submission_stats(conn: DatabaseConnection, set_id: 
         - approved_emission_count: The count of agents that were approved for emission.
     """
     return await conn.fetchrow(
-        """
-        with set_window as (
-            select
-                COALESCE(
-                    (SELECT start_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
-                ) as set_start,
-                -- TODO: fallback end-boundary via next set's created_at may not correctly
-                -- capture all competing agents; set competition_end_date explicitly to fix.
-                COALESCE(
-                    (SELECT end_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets
-                     WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
-                ) as set_end
-        ),
-        agents_in_window as materialized (
-            select
-                a.agent_id,
-                a.miner_hotkey,
-                a.status
-            from
-                agents a
-                cross join set_window sw
-            where
-                a.created_at >= sw.set_start
-                and (
-                    sw.set_end is null
-                    or a.created_at < sw.set_end
-                )
-                and a.agent_id not in (
-                    select
-                        agent_id
-                    from
-                        benchmark_agent_ids
-                )
-        ),
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.status")},
         last_evaluation_per_agent as (
             select
                 distinct on (agent_id) *
@@ -353,75 +406,11 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
     """Return all competition-window agents with leaderboard fields for an evaluation set."""
 
     return await conn.fetch(
-        """
-        WITH set_window AS (
-            SELECT
-                COALESCE(
-                    (SELECT start_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
-                ) AS set_start,
-                COALESCE(
-                    (SELECT end_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets
-                     WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
-                ) AS set_end
-        ),
-        agents_in_window AS MATERIALIZED (
-            SELECT
-                a.agent_id,
-                a.miner_hotkey,
-                a.name,
-                a.version_num,
-                a.status::text AS agent_status,
-                a.created_at AS submitted_at
-            FROM agents a
-            CROSS JOIN set_window sw
-            WHERE a.created_at >= sw.set_start
-              AND (
-                  sw.set_end IS NULL
-                  OR a.created_at < sw.set_end
-              )
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM benchmark_agent_ids b
-                  WHERE b.agent_id = a.agent_id
-              )
-        ),
-        validator_metrics AS MATERIALIZED (
-            SELECT
-                eh.agent_id,
-                AVG(eh.avg_cost_usd) AS average_cost_usd,
-                AVG(eh.avg_running_secs) AS average_runtime_seconds,
-                COALESCE(
-                    ARRAY_AGG(DISTINCT eh.validator_hotkey ORDER BY eh.validator_hotkey)
-                        FILTER (WHERE eh.validator_hotkey IS NOT NULL),
-                    ARRAY[]::text[]
-                ) AS validator_hotkeys
-            FROM evaluations_hydrated eh
-            JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id
-            WHERE eh.set_id = $1
-              AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
-              AND eh.status = 'success'::EvaluationStatus
-            GROUP BY eh.agent_id
-        ),
-        ranked_scores AS (
-            SELECT
-                ass.agent_id,
-                ass.final_score,
-                ass.validator_count,
-                ROW_NUMBER() OVER (
-                    ORDER BY
-                        ROUND(ass.final_score::numeric, 6) DESC,
-                        vm.average_cost_usd ASC NULLS LAST,
-                        aiw.submitted_at ASC,
-                        ass.agent_id ASC
-                )::int AS rank
-            FROM agent_scores ass
-            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
-            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
-            WHERE ass.set_id = $1
-              AND ass.status::text <> 'cancelled'
-        )
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text AS agent_status, a.created_at AS submitted_at")},
+        {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
+        {_sql_ranked_scores_cte(",\n        ass.final_score,\n        ass.validator_count", materialized=False)}
         SELECT
             rs.rank,
             aiw.agent_id,
@@ -456,69 +445,11 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
     """Return top-agent and efficiency summary fields without returning all agents."""
 
     return await conn.fetchrow(
-        """
-        WITH set_window AS (
-            SELECT
-                COALESCE(
-                    (SELECT start_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets WHERE set_id = $1)
-                ) AS set_start,
-                COALESCE(
-                    (SELECT end_date FROM competitions WHERE set_id = $1),
-                    (SELECT MIN(created_at) FROM evaluation_sets
-                     WHERE set_id = (SELECT MIN(set_id) FROM evaluation_sets WHERE set_id > $1))
-                ) AS set_end
-        ),
-        agents_in_window AS MATERIALIZED (
-            SELECT
-                a.agent_id,
-                a.name,
-                a.version_num,
-                a.created_at AS submitted_at
-            FROM agents a
-            CROSS JOIN set_window sw
-            WHERE a.created_at >= sw.set_start
-              AND (
-                  sw.set_end IS NULL
-                  OR a.created_at < sw.set_end
-              )
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM benchmark_agent_ids b
-                  WHERE b.agent_id = a.agent_id
-              )
-        ),
-        validator_metrics AS MATERIALIZED (
-            SELECT
-                eh.agent_id,
-                AVG(eh.avg_cost_usd) AS average_cost_usd,
-                AVG(eh.avg_running_secs) AS average_runtime_seconds
-            FROM evaluations_hydrated eh
-            JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id
-            WHERE eh.set_id = $1
-              AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
-              AND eh.status = 'success'::EvaluationStatus
-            GROUP BY eh.agent_id
-        ),
-        ranked_scores AS MATERIALIZED (
-            SELECT
-                ass.agent_id,
-                aiw.name,
-                aiw.version_num,
-                ass.final_score,
-                ROW_NUMBER() OVER (
-                    ORDER BY
-                        ROUND(ass.final_score::numeric, 6) DESC,
-                        vm.average_cost_usd ASC NULLS LAST,
-                        aiw.submitted_at ASC,
-                        ass.agent_id ASC
-                )::int AS rank
-            FROM agent_scores ass
-            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
-            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
-            WHERE ass.set_id = $1
-              AND ass.status::text <> 'cancelled'
-        ),
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.name, a.version_num, a.created_at AS submitted_at")},
+        {_sql_validator_metrics_cte(include_validator_hotkeys=False)},
+        {_sql_ranked_scores_cte(",\n        aiw.name,\n        aiw.version_num,\n        ass.final_score", materialized=True)},
         top_agent AS (
             SELECT
                 agent_id,
