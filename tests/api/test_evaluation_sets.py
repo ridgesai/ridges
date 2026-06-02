@@ -326,11 +326,15 @@ async def test_evaluation_set_detail_happy_path():
     assert set(agents_by_id) == {agent_a, agent_b, agent_c}
     assert agents_by_id[agent_a].rank == 1
     assert agents_by_id[agent_a].approved is True
+    assert agents_by_id[agent_a].final_score == 0.8
+    assert agents_by_id[agent_a].validator_count == 1
     assert agents_by_id[agent_a].average_cost_usd == 0.2
     assert agents_by_id[agent_a].average_runtime_seconds == 75
     assert agents_by_id[agent_a].validator_hotkeys == ["validator-hotkey"]
     assert agents_by_id[agent_b].rank is None
+    assert agents_by_id[agent_b].final_score is None
     assert agents_by_id[agent_c].rank is None
+    assert agents_by_id[agent_c].final_score is None
 
 
 @pytest.mark.anyio
@@ -439,6 +443,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
 
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
     assert agents_by_id[unscored_agent].rank is None
+    assert agents_by_id[unscored_agent].final_score is None
 
     result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
     assert result.efficiency.lowest_average_cost_usd_top_agents == 1.0
@@ -567,6 +572,7 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     assert len(leaderboard) == 1
     assert leaderboard[0].agent_id == agent_a
     assert leaderboard[0].rank is None
+    assert leaderboard[0].final_score is None
 
 
 @pytest.mark.anyio

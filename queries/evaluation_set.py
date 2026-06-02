@@ -68,7 +68,8 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
         f"    SELECT\n"
         f"        eh.agent_id,\n"
         f"        AVG(eh.avg_cost_usd) AS average_cost_usd,\n"
-        f"        AVG(eh.avg_running_secs) AS average_runtime_seconds"
+        f"        AVG(eh.avg_running_secs) AS average_runtime_seconds,\n"
+        f"        COUNT(*) AS validator_count"
         f"{hotkeys_col}\n"
         f"    FROM evaluations_hydrated eh\n"
         f"    JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id\n"
@@ -80,7 +81,7 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
     )
 
 
-def _sql_ranked_scores_cte(extra_select_columns: str = "", *, materialized: bool) -> str:
+def _sql_ranked_scores_cte(extra_select_columns: str, materialized: bool) -> str:
     mat = " MATERIALIZED" if materialized else ""
     return (
         f"ranked_scores AS{mat} (\n"
@@ -413,7 +414,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
         WITH {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
-        {_sql_ranked_scores_cte(materialized=False)}
+        {_sql_ranked_scores_cte(",\n        ass.final_score,\n        ass.validator_count", materialized=False)}
         SELECT
             rs.rank,
             aiw.agent_id,
@@ -422,6 +423,8 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aiw.version_num,
             aiw.status,
             (aa.agent_id IS NOT NULL) AS approved,
+            rs.final_score,
+            rs.validator_count,
             vm.average_cost_usd,
             vm.average_runtime_seconds,
             COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,

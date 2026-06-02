@@ -229,7 +229,7 @@ async def evaluation_set_detail(
 #
 async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailLeaderboardAgent]:
     agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
-    return [EvaluationSetDetailLeaderboardAgent(**dict(row)) for row in agent_rows]
+    return [EvaluationSetDetailLeaderboardAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
 _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)

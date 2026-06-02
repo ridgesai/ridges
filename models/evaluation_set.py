@@ -124,10 +124,13 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     version_num: int
     status: AgentStatus
     approved: bool
+    final_score: Float4 | None
     average_cost_usd: Float4 | None
     average_runtime_seconds: Float4 | None
+    validator_count: int | None
     validator_hotkeys: list[str]
     created_at: datetime.datetime
+    set_id: int
 
 
 class EvaluationSetDetail(BaseModel):
