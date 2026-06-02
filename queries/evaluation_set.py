@@ -36,18 +36,28 @@ set_window AS (
         ) as set_end
 )"""
 
-_SQL_AGENTS_IN_WINDOW_WHERE = """\
-    FROM agents a
-    CROSS JOIN set_window sw
-    WHERE a.created_at >= sw.set_start
-      AND (sw.set_end IS NULL OR a.created_at < sw.set_end)
-      AND NOT EXISTS (
-          SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id
-      )"""
 
-
-def _sql_agents_in_window_cte(select_columns: str) -> str:
-    return f"agents_in_window AS MATERIALIZED (\n    SELECT\n        {select_columns}\n{_SQL_AGENTS_IN_WINDOW_WHERE}\n)"
+def _sql_agents_in_window_cte(select_columns: str, include_benchmarks: bool = False) -> str:
+    benchmark_filter = (
+        ""
+        if include_benchmarks
+        else (
+            "\n      AND NOT EXISTS (\n"
+            "          SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id\n"
+            "      )"
+        )
+    )
+    return (
+        f"agents_in_window AS MATERIALIZED (\n"
+        f"    SELECT\n"
+        f"        {select_columns}\n"
+        f"    FROM agents a\n"
+        f"    CROSS JOIN set_window sw\n"
+        f"    WHERE a.created_at >= sw.set_start\n"
+        f"      AND (sw.set_end IS NULL OR a.created_at < sw.set_end)"
+        f"{benchmark_filter}\n"
+        f")"
+    )
 
 
 def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
@@ -77,7 +87,7 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
     )
 
 
-def _sql_ranked_scores_cte(extra_select_columns: str, materialized: bool) -> str:
+def _sql_ranked_scores_cte(extra_select_columns: str = "", *, materialized: bool) -> str:
     mat = " MATERIALIZED" if materialized else ""
     return (
         f"ranked_scores AS{mat} (\n"
@@ -88,7 +98,7 @@ def _sql_ranked_scores_cte(extra_select_columns: str, materialized: bool) -> str
         f"            ORDER BY\n"
         f"                ROUND(ass.final_score::numeric, 6) DESC,\n"
         f"                vm.average_cost_usd ASC NULLS LAST,\n"
-        f"                aiw.submitted_at ASC,\n"
+        f"                aiw.created_at ASC,\n"
         f"                ass.agent_id ASC\n"
         f"        )::int AS rank\n"
         f"    FROM agent_scores ass\n"
@@ -408,32 +418,33 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
     return await conn.fetch(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text AS agent_status, a.created_at AS submitted_at")},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at", include_benchmarks=True)},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
-        {_sql_ranked_scores_cte(",\n        ass.final_score,\n        ass.validator_count", materialized=False)}
+        {_sql_ranked_scores_cte(materialized=False)}
         SELECT
             rs.rank,
             aiw.agent_id,
             aiw.miner_hotkey,
             aiw.name,
             aiw.version_num,
-            aiw.agent_status,
-            (aa.agent_id IS NOT NULL) AS approved_for_emission,
-            rs.final_score,
-            rs.validator_count,
+            aiw.status,
+            (aa.agent_id IS NOT NULL) AS approved,
             vm.average_cost_usd,
             vm.average_runtime_seconds,
             COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
-            aiw.submitted_at
+            aiw.created_at,
+            (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
+            bai.description AS benchmark_description
         FROM agents_in_window aiw
         LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
         LEFT JOIN validator_metrics vm ON vm.agent_id = aiw.agent_id
         LEFT JOIN approved_agents aa
             ON aa.agent_id = aiw.agent_id
            AND aa.set_id = $1
+        LEFT JOIN benchmark_agent_ids bai ON bai.agent_id = aiw.agent_id
         ORDER BY
             rs.rank ASC NULLS LAST,
-            aiw.submitted_at ASC,
+            aiw.created_at ASC,
             aiw.agent_id ASC
         """,
         set_id,
@@ -447,7 +458,7 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
     return await conn.fetchrow(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.name, a.version_num, a.created_at AS submitted_at")},
+        {_sql_agents_in_window_cte("a.agent_id, a.name, a.version_num, a.created_at")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=False)},
         {_sql_ranked_scores_cte(",\n        aiw.name,\n        aiw.version_num,\n        ass.final_score", materialized=True)},
         top_agent AS (
