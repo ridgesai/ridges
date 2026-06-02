@@ -37,16 +37,7 @@ set_window AS (
 )"""
 
 
-def _sql_agents_in_window_cte(select_columns: str, include_benchmarks: bool = False) -> str:
-    benchmark_filter = (
-        ""
-        if include_benchmarks
-        else (
-            "\n      AND NOT EXISTS (\n"
-            "          SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id\n"
-            "      )"
-        )
-    )
+def _sql_agents_in_window_cte(select_columns: str) -> str:
     return (
         f"agents_in_window AS MATERIALIZED (\n"
         f"    SELECT\n"
@@ -54,8 +45,10 @@ def _sql_agents_in_window_cte(select_columns: str, include_benchmarks: bool = Fa
         f"    FROM agents a\n"
         f"    CROSS JOIN set_window sw\n"
         f"    WHERE a.created_at >= sw.set_start\n"
-        f"      AND (sw.set_end IS NULL OR a.created_at < sw.set_end)"
-        f"{benchmark_filter}\n"
+        f"      AND (sw.set_end IS NULL OR a.created_at < sw.set_end)\n"
+        f"      AND NOT EXISTS (\n"
+        f"          SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id\n"
+        f"      )\n"
         f")"
     )
 
@@ -418,7 +411,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
     return await conn.fetch(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
-        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at", include_benchmarks=True)},
+        {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
         {_sql_ranked_scores_cte(materialized=False)}
         SELECT
@@ -432,16 +425,13 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             vm.average_cost_usd,
             vm.average_runtime_seconds,
             COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
-            aiw.created_at,
-            (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
-            bai.description AS benchmark_description
+            aiw.created_at
         FROM agents_in_window aiw
         LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
         LEFT JOIN validator_metrics vm ON vm.agent_id = aiw.agent_id
         LEFT JOIN approved_agents aa
             ON aa.agent_id = aiw.agent_id
            AND aa.set_id = $1
-        LEFT JOIN benchmark_agent_ids bai ON bai.agent_id = aiw.agent_id
         ORDER BY
             rs.rank ASC NULLS LAST,
             aiw.created_at ASC,

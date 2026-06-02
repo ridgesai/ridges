@@ -128,8 +128,6 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     average_runtime_seconds: Float4 | None
     validator_hotkeys: list[str]
     created_at: datetime.datetime
-    is_benchmark_agent: bool
-    benchmark_description: str | None
 
 
 class EvaluationSetDetail(BaseModel):
