@@ -54,10 +54,9 @@ max_evaluation_run_log_size_bytes = None
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
 
-# Directories belonging to in-flight evaluation runs. The cleanup loop excludes
-# these so it can never delete a job dir / task cache entry a live run is using.
-# Mutated only from the event loop; snapshotted (copied) before each prune.
-_active_job_dir_names: set[str] = set()
+# Task-cache digests of in-flight evaluation runs. The cleanup loop excludes these
+# so it never deletes a cached task a live run is still reading (a task is read for
+# the whole run and reused across days, so its mtime can be old while in use).
 _active_task_digests: set[str] = set()
 
 
@@ -153,6 +152,7 @@ async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
     # TODO(cleanup): a future iteration could eagerly delete `job_dir` here once the
     # upload succeeds, keeping the age-based cleanup_loop only as the fallback for
     # failed/never-uploaded runs. Kept decoupled for now (fail-safe + local debugging).
+    upload_url = upload_url.replace("s3mock", "localhost", 1)  # httpx doesn't support s3:// URLs
     try:
         import io
         import tarfile
@@ -247,10 +247,7 @@ async def _run_evaluation_run(
 ):
     evaluation_run_id = evaluation_run.evaluation_run_id
     problem_name = evaluation_run.problem_name
-    job_name = f"{problem_name}__{evaluation_run_id}"
     task_digest = (evaluation_run.execution_spec or {}).get("task_digest")
-    # Guard this run's job dir + cached task from the cleanup loop while it is in flight.
-    _active_job_dir_names.add(job_name)
     if task_digest:
         _active_task_digests.add(task_digest)
 
@@ -392,7 +389,6 @@ async def _run_evaluation_run(
         logger.error(traceback.format_exc())
         os._exit(1)
     finally:
-        _active_job_dir_names.discard(job_name)
         if task_digest:
             _active_task_digests.discard(task_digest)
 
@@ -739,9 +735,8 @@ async def main():
         asyncio.create_task(set_weights_loop())
 
     # Start the low-priority local-storage cleanup loop (validator and screener).
-    # The guard sets are passed by reference so the loop sees runs registered here.
     if config.CLEANUP_ENABLED:
-        asyncio.create_task(cleanup_loop(_active_job_dir_names, _active_task_digests))
+        asyncio.create_task(cleanup_loop(_active_task_digests))
 
     # Loop forever, just keep requesting evaluations and running them
     while True:

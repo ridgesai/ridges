@@ -72,11 +72,7 @@ async def set_weights_loop():
 # A low-priority background loop that prunes the task cache and Harbor job
 # artifacts by age. Fail-safe: unlike the heartbeat loop it must NEVER exit the
 # validator — every sweep is wrapped so errors are logged and the loop continues.
-#
-# ``active_job_dir_names`` / ``active_task_digests`` are the live guard sets owned
-# and mutated by ``validator.main``; the loop only reads (snapshots) them so it
-# never deletes a directory an in-flight evaluation run is still using.
-async def cleanup_loop(active_job_dir_names: Set[str], active_task_digests: Set[str]):
+async def cleanup_loop(active_task_digests: Set[str]):
     logger.info("Starting cleanup loop...")
     task_cache_max_age = config.CLEANUP_TASK_CACHE_RETENTION_HOURS * 3600
     artifact_max_age = config.CLEANUP_ARTIFACT_RETENTION_HOURS * 3600
@@ -84,18 +80,15 @@ async def cleanup_loop(active_job_dir_names: Set[str], active_task_digests: Set[
 
     while True:
         try:
-            # Snapshot the active-run guards (copies, not the live sets) so the
+            # Snapshot the active-run guard (a copy, not the live set) so the
             # blocking prune running in a worker thread can't observe a mutation.
-            job_guard = set(active_job_dir_names)
             task_guard = {digest.replace(":", "_") for digest in active_task_digests}
 
             # rmtree is blocking; run off the event loop like prune_docker_disk_resources.
             tasks_removed = await asyncio.to_thread(
                 prune_task_cache, max_age_seconds=task_cache_max_age, exclude_names=task_guard
             )
-            artifacts_removed = await asyncio.to_thread(
-                prune_dirs_older_than, results_dir, artifact_max_age, exclude_names=job_guard
-            )
+            artifacts_removed = await asyncio.to_thread(prune_dirs_older_than, results_dir, artifact_max_age)
             if tasks_removed or artifacts_removed:
                 logger.info(f"Cleanup pruned {tasks_removed} cached task(s) and {artifacts_removed} job artifact(s)")
         except Exception as e:
