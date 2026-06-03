@@ -17,6 +17,7 @@ from harbor.models.agent.context import AgentContext
 from harbor.models.trial.paths import EnvironmentPaths
 
 from ridges_harbor._stdlib_contract import (
+    GIT_BASELINE_LOG_FILENAME,
     INSTRUCTION_FILENAME,
     PATCH_APPLY_LOG_FILENAME,
     PATCH_CHECK_LOG_FILENAME,
@@ -226,6 +227,33 @@ class RidgesMinerAgent(BaseInstalledAgent):
         await environment.upload_file(self.stdlib_contract_path, self._env_stdlib_contract_path)
         await environment.upload_file(self.runtime_script_path, self._env_runtime_path)
 
+    async def _ensure_git_baseline(self, environment: "BaseEnvironment") -> None:
+        """Ensure the task workdir has a valid git HEAD before patch generation."""
+        command = (
+            "command -v git >/dev/null 2>&1 || { "
+            "echo 'git is required for Ridges patch workflow' >&2; "
+            "exit 127; "
+            "}; "
+            "git rev-parse HEAD >/dev/null 2>&1 || ("
+            "git init && "
+            "git config user.email ridges@example.invalid && "
+            "git config user.name 'Ridges Baseline' && "
+            "git config commit.gpgsign false && "
+            "git add -A && "
+            "git commit --allow-empty -m 'ridges baseline'"
+            ")"
+        )
+        await self._exec_with_log(
+            environment,
+            executor=self.exec_as_agent,
+            command=command,
+            cwd=self.workdir,
+            log_filename=GIT_BASELINE_LOG_FILENAME,
+            cancelled_detail="git baseline initialization was cancelled",
+            error_summary="Failed to initialize git baseline",
+            error_type=MinerRuntimeError,
+        )
+
     @with_prompt_template
     async def run(
         self,
@@ -246,6 +274,7 @@ class RidgesMinerAgent(BaseInstalledAgent):
             instruction_host_path = Path(host_tmp_dir) / INSTRUCTION_FILENAME
             instruction_host_path.write_text(instruction)
             await environment.upload_file(instruction_host_path, self._env_instruction_path)
+            await self._ensure_git_baseline(environment)
             command = (
                 f"python3 -u {shlex.quote(self._env_runtime_path)} "
                 f"--agent {shlex.quote(self._env_agent_path)} "

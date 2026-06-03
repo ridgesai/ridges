@@ -325,7 +325,7 @@ async def test_evaluation_set_detail_happy_path():
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
     assert set(agents_by_id) == {agent_a, agent_b, agent_c}
     assert agents_by_id[agent_a].rank == 1
-    assert agents_by_id[agent_a].approved_for_emission is True
+    assert agents_by_id[agent_a].approved is True
     assert agents_by_id[agent_a].final_score == 0.8
     assert agents_by_id[agent_a].validator_count == 1
     assert agents_by_id[agent_a].average_cost_usd == 0.2

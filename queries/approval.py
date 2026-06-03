@@ -1,7 +1,7 @@
 import json
+import logging
 from uuid import UUID, uuid4
 
-import utils.logger as logger
 from models.agent import AgentStatus
 from models.approval import (
     ApprovalEvaluationContext,
@@ -15,6 +15,8 @@ from models.approval import (
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from utils.database import DatabaseConnection, db_operation
+
+logger = logging.getLogger(__name__)
 
 
 def _pre_screening_verdict_from_job_status(job_status: str) -> str:
