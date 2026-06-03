@@ -7,9 +7,9 @@ from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
     EvaluationSetDetail,
-    EvaluationSetDetailAgent,
     EvaluationSetDetailBenchmarkThreshold,
     EvaluationSetDetailEfficiency,
+    EvaluationSetDetailLeaderboardAgent,
     EvaluationSetDetailPipelineStage,
     EvaluationSetDetailScores,
     EvaluationSetDetailSubmissions,
@@ -227,9 +227,9 @@ async def evaluation_set_detail(
 #
 # GET evaluation-sets/{set_id}/leaderboard
 #
-async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailAgent]:
+async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailLeaderboardAgent]:
     agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
-    return [EvaluationSetDetailAgent(**dict(row)) for row in agent_rows]
+    return [EvaluationSetDetailLeaderboardAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
 _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_leaderboard)
@@ -238,7 +238,7 @@ _cached_build_leaderboard = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECOND
 @router.get("/{set_id}/leaderboard")
 async def evaluation_set_leaderboard(
     set_id: Annotated[int, Depends(resolve_set_id)],
-) -> list[EvaluationSetDetailAgent]:
+) -> list[EvaluationSetDetailLeaderboardAgent]:
     latest = await _get_latest_set_id()
     if set_id != latest:
         return await _cached_build_leaderboard(set_id)
