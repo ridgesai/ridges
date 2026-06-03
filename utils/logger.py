@@ -131,6 +131,7 @@ def setup_logging() -> None:
         "utils.database": level,
         "utils.s3": level,
         "utils.ttl": level,
+        "utils.cleanup": level,
         "validator": level,
         # Third-party loggers
         "alembic.runtime.migration": logging.INFO,

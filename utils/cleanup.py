@@ -72,6 +72,7 @@ def prune_dirs_older_than(
             continue
 
         try:
+            logger.debug(f"Cleanup: removing {path} (age {age_seconds:.1f}s exceeds {max_age_seconds:.1f}s)")
             shutil.rmtree(path, ignore_errors=False)
             removed += 1
         except OSError as exc:
