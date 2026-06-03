@@ -21,7 +21,6 @@ from api.endpoints.validator_models import (
     ValidatorCheckCancellationResponse,
     ValidatorDisconnectRequest,
     ValidatorFinishEvaluationRequest,
-    ValidatorHeartbeatRequest,
     ValidatorRegistrationRequest,
     ValidatorRegistrationResponse,
     ValidatorRequestEvaluationRequest,
@@ -39,10 +38,9 @@ from models.problem import ProblemTestResultStatus
 from utils.docker import cleanup_harbor_docker_resources, prune_docker_disk_resources
 from utils.git import COMMIT_HASH, reset_local_repo
 from utils.logger import setup_logging
-from utils.system_metrics import get_system_metrics
-from validator.http_utils import get_ridges_platform, post_ridges_platform
+from validator.background_loops import cleanup_loop, send_heartbeat_loop, set_weights_loop
+from validator.http_utils import post_ridges_platform
 from validator.retry_utils import retry_with_backoff
-from validator.set_weights import set_weights_from_mapping
 
 logger = logging.getLogger("validator")
 
@@ -55,6 +53,11 @@ max_evaluation_run_log_size_bytes = None
 
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
+
+# Task-cache digests of in-flight evaluation runs. The cleanup loop excludes these
+# so it never deletes a cached task a live run is still reading (a task is read for
+# the whole run and reused across days, so its mtime can be old while in use).
+_active_task_digests: set[str] = set()
 
 
 # Disconnect from the Ridges platform (called when the program exits)
@@ -72,48 +75,6 @@ async def disconnect(reason: str):
         logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
-
-
-# A loop that sends periodic heartbeats to the Ridges platform
-async def send_heartbeat_loop():
-    logger.info("Starting send heartbeat loop...")
-    try:
-        while True:
-            logger.info("Sending heartbeat...")
-            system_metrics = await get_system_metrics()
-            await retry_with_backoff(
-                lambda: post_ridges_platform(
-                    "/validator/heartbeat",
-                    ValidatorHeartbeatRequest(system_metrics=system_metrics),
-                    bearer_token=session_id,
-                    quiet=2,
-                    timeout=5,
-                ),
-                max_attempts=config.MAX_HEARTBEAT_FAILURES,
-            )
-            await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
-    except Exception as e:
-        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
-        os._exit(1)
-
-
-# A loop that periodically sets weights
-async def set_weights_loop():
-    logger.info("Starting set weights loop...")
-    while True:
-        weights_mapping = await retry_with_backoff(
-            lambda: get_ridges_platform("/scoring/weights", quiet=1),
-        )
-
-        try:
-            await asyncio.wait_for(
-                set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS
-            )
-        except asyncio.TimeoutError as e:
-            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
-
-        await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
 
 
 # Sends an update-evaluation-run request to the Ridges platform. The extra
@@ -188,6 +149,9 @@ async def _fetch_task_download_url(task_digest: str) -> str:
 
 async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
     """Tar the job directory and PUT it to a presigned S3 URL. Best-effort."""
+    # TODO(cleanup): a future iteration could eagerly delete `job_dir` here once the
+    # upload succeeds, keeping the age-based cleanup_loop only as the fallback for
+    # failed/never-uploaded runs. Kept decoupled for now (fail-safe + local debugging).
     try:
         import io
         import tarfile
@@ -280,12 +244,16 @@ async def _run_evaluation_run(
     artifact_upload_url: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
 ):
+    evaluation_run_id = evaluation_run.evaluation_run_id
+    problem_name = evaluation_run.problem_name
+    task_digest = (evaluation_run.execution_spec or {}).get("task_digest")
+    if task_digest:
+        _active_task_digests.add(task_digest)
+
     try:
         global execution_engine
         assert execution_engine is not None
 
-        evaluation_run_id = evaluation_run.evaluation_run_id
-        problem_name = evaluation_run.problem_name
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
         job_dir = None
@@ -419,6 +387,9 @@ async def _run_evaluation_run(
         logger.error(f"Error in _run_evaluation_run(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
+    finally:
+        if task_digest:
+            _active_task_digests.discard(task_digest)
 
 
 async def _poll_evaluation_cancellation(
@@ -756,11 +727,15 @@ async def main():
     )
 
     # Start the send heartbeat loop
-    asyncio.create_task(send_heartbeat_loop())
+    asyncio.create_task(send_heartbeat_loop(session_id))
 
     if config.MODE == "validator":
         # Start the set weights loop
         asyncio.create_task(set_weights_loop())
+
+    # Start the low-priority local-storage cleanup loop (validator and screener).
+    if config.CLEANUP_ENABLED:
+        asyncio.create_task(cleanup_loop(_active_task_digests))
 
     # Loop forever, just keep requesting evaluations and running them
     while True:

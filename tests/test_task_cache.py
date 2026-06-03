@@ -28,6 +28,15 @@ def _loose_task_archive_bytes(task_dir: Path) -> bytes:
     return buffer.getvalue()
 
 
+def _seed_cached_digest(cache_root: Path, digest: str, *, task_name: str = "task") -> Path:
+    """Create a cached task dir on disk under <digest>/<task_name>/ for tests."""
+    digest_dir = cache_root / digest.replace(":", "_")
+    task_dir = digest_dir / task_name
+    task_dir.mkdir(parents=True)
+    (task_dir / "instruction.md").write_text("Solve.\n")
+    return task_dir
+
+
 class _FakeStreamResponse:
     def __init__(self, payload: bytes):
         self._payload = payload
@@ -191,3 +200,67 @@ def test_compute_task_digest_changes_when_file_mode_changes(tmp_path: Path) -> N
     executable_digest = compute_task_digest(task_dir)
 
     assert executable_digest != non_executable_digest
+
+
+def test_get_cached_task_touches_digest_dir(tmp_path: Path) -> None:
+    import os
+    import time
+
+    cache_root = tmp_path / "cache"
+    digest = "sha256:abc"
+    _seed_cached_digest(cache_root, digest)
+    digest_dir = cache_root / digest.replace(":", "_")
+
+    old = time.time() - 10_000
+    os.utime(digest_dir, (old, old))
+
+    resolved = task_cache_module.get_cached_task("task", digest, cache_root=cache_root)
+
+    assert resolved is not None
+    assert time.time() - digest_dir.stat().st_mtime < 60
+
+
+def test_prune_task_cache_removes_stale_keeps_fresh_and_excluded(tmp_path: Path) -> None:
+    import os
+    import time
+
+    cache_root = tmp_path / "cache"
+    stale = "sha256:stale"
+    fresh = "sha256:fresh"
+    pinned = "sha256:pinned"
+    for digest in (stale, fresh, pinned):
+        _seed_cached_digest(cache_root, digest)
+
+    old = time.time() - 10_000
+    for digest in (stale, pinned):
+        os.utime(cache_root / digest.replace(":", "_"), (old, old))
+
+    removed = task_cache_module.prune_task_cache(
+        cache_root,
+        max_age_seconds=3600,
+        exclude_names={pinned.replace(":", "_")},
+    )
+
+    assert removed == 1
+    assert not (cache_root / stale.replace(":", "_")).exists()
+    assert (cache_root / fresh.replace(":", "_")).exists()
+    assert (cache_root / pinned.replace(":", "_")).exists()
+
+
+def test_prune_task_cache_reaps_orphaned_tmp_dir(tmp_path: Path) -> None:
+    """A crash-orphaned .tmp-* staging dir is reaped once it ages out."""
+    import os
+    import time
+
+    cache_root = tmp_path / "cache"
+    orphan = cache_root / ".tmp-deadbeef" / "extracted"
+    orphan.mkdir(parents=True)
+    (orphan / "leftover.txt").write_text("interrupted download")
+
+    old = time.time() - 10_000
+    os.utime(cache_root / ".tmp-deadbeef", (old, old))
+
+    removed = task_cache_module.prune_task_cache(cache_root, max_age_seconds=3600)
+
+    assert removed == 1
+    assert not (cache_root / ".tmp-deadbeef").exists()
