@@ -217,6 +217,11 @@ CLEANUP_ENABLED = os.getenv("CLEANUP_ENABLED", "true").lower() == "true"
 CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
 CLEANUP_ARTIFACT_RETENTION_HOURS = int(os.getenv("CLEANUP_ARTIFACT_RETENTION_HOURS", "48"))
 CLEANUP_TASK_CACHE_RETENTION_HOURS = int(os.getenv("CLEANUP_TASK_CACHE_RETENTION_HOURS", "168"))
+logger.info(f"Cleanup Enabled: {CLEANUP_ENABLED}")
+if CLEANUP_ENABLED:
+    logger.info(f"Cleanup Interval: {CLEANUP_INTERVAL_SECONDS} second(s)")
+    logger.info(f"Cleanup Artifact Retention: {CLEANUP_ARTIFACT_RETENTION_HOURS} hour(s)")
+    logger.info(f"Cleanup Task Cache Retention: {CLEANUP_TASK_CACHE_RETENTION_HOURS} hour(s)")
 
 logger.info("Execution Backend: harbor")
 
