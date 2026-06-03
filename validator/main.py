@@ -152,7 +152,6 @@ async def _upload_job_artifacts(job_dir: pathlib.Path, upload_url: str) -> None:
     # TODO(cleanup): a future iteration could eagerly delete `job_dir` here once the
     # upload succeeds, keeping the age-based cleanup_loop only as the fallback for
     # failed/never-uploaded runs. Kept decoupled for now (fail-safe + local debugging).
-    upload_url = upload_url.replace("s3mock", "localhost", 1)  # httpx doesn't support s3:// URLs
     try:
         import io
         import tarfile
