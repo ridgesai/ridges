@@ -211,6 +211,13 @@ RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
 RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
 RIDGES_MAX_COST_USD = HARDCODED_MAX_COST_USD
 
+# Local-storage cleanup: a low-priority background loop prunes the task cache and
+# Harbor job artifacts by age. Deliberately non-aggressive; safe to disable.
+CLEANUP_ENABLED = os.getenv("CLEANUP_ENABLED", "true").lower() == "true"
+CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
+CLEANUP_ARTIFACT_RETENTION_HOURS = int(os.getenv("CLEANUP_ARTIFACT_RETENTION_HOURS", "48"))
+CLEANUP_TASK_CACHE_RETENTION_HOURS = int(os.getenv("CLEANUP_TASK_CACHE_RETENTION_HOURS", "168"))
+
 logger.info("Execution Backend: harbor")
 
 logger.info("===============================")
