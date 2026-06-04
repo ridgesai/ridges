@@ -1,78 +1,148 @@
-import inspect
+"""
+Logging configuration for the Ridges platform.
+
+Provides three things:
+  - ConsoleFormatter: human-readable coloured output.
+  - RidgesLogger: logging.Logger subclass that adds a fatal() method (logs at
+    CRITICAL then raises Exception).
+  - setup_logging(): configures the root handler and per-namespace levels.
+"""
+
 import logging
 import os
-from datetime import datetime
+import time
+import traceback
 
-# We want some loggers from third-party libraries to be quieter
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("chain_utils").setLevel(logging.WARNING)
-
-
-LEVEL_NAME_TO_COLOR = {
-    "DEBUG": "\033[90m",  # Gray
-    "INFO": "\033[32m",  # Green
-    "WARNING": "\033[33m",  # Yellow
-    "ERROR": "\033[31m",  # Red
-    "FATAL": "\033[31m",  # Red
-}
-
-GRAY = "\033[90m"
-RESET = "\033[0m"
+from asgi_correlation_id import CorrelationIdFilter
 
 
-def print_log(
-    level: str,
-    message: str,
-    *,
-    _file: str | None = None,
-    _line: int | None = None,
-):
-    now = datetime.now()
-    timestamp = now.strftime("%Y-%m-%d %H:%M:%S")
-    ms = now.microsecond // 1000
+class ConsoleFormatter(logging.Formatter):
+    """Human-readable coloured formatter for local development."""
 
-    if _file is None:
-        # BUG: This is currently pointing to the logging internal code instead of the caller's code. We should fix this to point to the caller's code.
-        frame = inspect.currentframe()
-        caller = frame.f_back if frame is not None else None
-        _file = caller.f_code.co_filename.split("/")[-1] if caller is not None else "?"
-        _line = caller.f_lineno if caller is not None else 0
+    _BUILTIN_ATTRS: frozenset[str] = frozenset(
+        {
+            "args",
+            "created",
+            "exc_info",
+            "exc_text",
+            "filename",
+            "funcName",
+            "levelname",
+            "levelno",
+            "lineno",
+            "message",
+            "module",
+            "msecs",
+            "msg",
+            "name",
+            "pathname",
+            "process",
+            "processName",
+            "relativeCreated",
+            "stack_info",
+            "thread",
+            "threadName",
+            "taskName",
+            "color_message",
+        }
+    )
 
-    print(f"{timestamp}.{ms:03d} - {_file}:{_line} - [{LEVEL_NAME_TO_COLOR[level]}{level}{RESET}] - {message}")
+    _COLORS: dict[str, str] = {
+        "DEBUG": "\033[90m",
+        "INFO": "\033[32m",
+        "WARNING": "\033[33m",
+        "ERROR": "\033[31m",
+        "CRITICAL": "\033[31m",
+    }
+    _RESET = "\033[0m"
+
+    @staticmethod
+    def _extra(record: logging.LogRecord) -> dict:
+        """Return extra fields added by the caller, excluding stdlib attrs."""
+        return {
+            k: v
+            for k, v in record.__dict__.items()
+            if k not in ConsoleFormatter._BUILTIN_ATTRS
+            and not k.startswith("_")
+            and not (k == "correlation_id" and v == "-")
+        }
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        ct = self.converter(record.created)
+        t = time.strftime("%Y-%m-%d %H:%M:%S", ct)
+        return f"{t}.{record.msecs:03.0f}"
+
+    def format(self, record: logging.LogRecord) -> str:
+        color = self._COLORS.get(record.levelname, "")
+        ts = self.formatTime(record)
+        msg = record.getMessage()
+        extra = self._extra(record)
+        suffix = (" | " + " ".join(f"{k}={v}" for k, v in extra.items())) if extra else ""
+        name_col = record.name[:26].ljust(26)
+        source_col = f"{record.filename}:{record.lineno}"[:20].ljust(20)
+        level_col = f"[{color}{record.levelname}{self._RESET}]"
+        line = f"{ts}  {name_col}  {source_col}  {level_col} {msg}{suffix}"
+        if record.exc_info:
+            line += "\n" + "".join(traceback.format_exception(*record.exc_info))
+        return line
 
 
-class RidgesLogHandler(logging.Handler):
-    _LEVEL_MAP = {"CRITICAL": "FATAL"}
-
-    def emit(self, record: logging.LogRecord):
-        level = self._LEVEL_MAP.get(record.levelname, record.levelname)
-        if level not in LEVEL_NAME_TO_COLOR:
-            level = "INFO"
-        print_log(
-            level,
-            record.getMessage(),
-            _file=record.filename,
-            _line=record.lineno,
-        )
+class RidgesLogger(logging.Logger):
+    def fatal(self, message: str) -> None:
+        self.critical(message)
+        raise Exception(message)
 
 
-def debug(message: str):
-    if os.getenv("DEBUG", "false").lower() == "true":
-        print_log("DEBUG", GRAY + message + RESET)
+# Must be called at import time so every subsequent logging.getLogger() call
+# returns a RidgesLogger instance with .fatal() available.
+logging.setLoggerClass(RidgesLogger)
 
 
-def info(message: str):
-    print_log("INFO", message)
+def setup_logging() -> None:
+    """Configure logging for the application.
 
+    - Root logger: WARNING (suppresses noisy third-party output by default).
+    - Named app namespaces (api, execution, inference_gateway, queries, utils,
+      validator, …): DEBUG.
+    - Selected third-party loggers: INFO/WARNING as appropriate.
 
-def warning(message: str):
-    print_log("WARNING", message)
+    Safe to call multiple times (clears and rebuilds handlers each time).
+    """
+    level = logging.DEBUG if os.getenv("DEBUG", "false").lower() == "true" else logging.INFO
+    handler = logging.StreamHandler()
+    handler.setFormatter(ConsoleFormatter())
+    handler.setLevel(level)
+    handler.addFilter(CorrelationIdFilter(uuid_length=32, default_value="-"))
 
+    logging.root.handlers.clear()
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.WARNING)
 
-def error(message: str):
-    print_log("ERROR", message)
+    logger_config = {
+        # Application namespaces
+        "api": level,
+        "db": level,
+        "execution": level,
+        "inference_gateway": level,
+        "miners": level,
+        "models": level,
+        "queries": level,
+        "utils": level,
+        "utils.database": level,
+        "utils.s3": level,
+        "utils.ttl": level,
+        "utils.cleanup": level,
+        "validator": level,
+        # Third-party loggers
+        "alembic.runtime.migration": logging.INFO,
+        "uvicorn": logging.INFO,
+        "uvicorn.error": logging.INFO,
+        "uvicorn.access": logging.WARNING,
+    }
 
-
-def fatal(message: str):
-    print_log("FATAL", message)
-    raise Exception(message)
+    for name, level in logger_config.items():
+        lg = logging.getLogger(name)
+        lg.setLevel(level)
+        lg.propagate = False
+        lg.handlers.clear()
+        lg.addHandler(handler)

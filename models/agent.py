@@ -19,8 +19,15 @@ class AgentStatus(str, Enum):
     pre_screening_needs_review = "pre_screening_needs_review"
 
 
-class Agent(BaseModel):
-    agent_id: UUID
+class ApprovalReviewStatus(str, Enum):
+    pending = "pending"
+    processing = "processing"
+    under_review = "under_review"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class AgentBase(BaseModel):
     miner_hotkey: str
 
     name: str
@@ -30,6 +37,21 @@ class Agent(BaseModel):
 
     created_at: datetime
     ip_address: Optional[str] = None
+
+
+class Agent(AgentBase):
+    agent_id: UUID
+    approval_review_status: ApprovalReviewStatus | None = None
+
+
+class AgentCreate(AgentBase):
+    """Schema used to create a new agent."""
+
+    # Hash of the block containing the payment extrinsic associated with this
+    # agent upload
+    payment_block_hash: str
+    # Index of the payment extrinsic within the block
+    payment_extrinsic_index: str
 
 
 class PossiblyBenchmarkAgent(Agent):

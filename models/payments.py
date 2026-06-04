@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -8,7 +9,7 @@ class Payment(BaseModel):
     payment_block_hash: str
     payment_extrinsic_index: str
 
-    agent_id: UUID
+    agent_id: Optional[UUID] = None
 
     miner_hotkey: str
     miner_coldkey: str

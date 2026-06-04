@@ -1,14 +1,16 @@
 import json
+import logging
 from typing import List, Optional
 from uuid import UUID, uuid4
 
 import asyncpg
 
-import utils.logger as logger
 from models.evaluation_run import EvaluationRun, EvaluationRunLogType, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetProblem
 from queries._row_parsing import parse_jsonb_fields
 from utils.database import DatabaseConnection, db_operation
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_evaluation_run_from_row(row: asyncpg.Record) -> EvaluationRun:
@@ -68,7 +70,6 @@ async def get_all_evaluation_runs_in_evaluation_id(
 def _parse_metrics_row(row: asyncpg.Record) -> dict:
     return {
         "run_time_seconds": row["run_time_seconds"],
-        "run_cost_usd": row["run_cost_usd"],
         "problem_total_runs": row["problem_total_runs"],
         "problem_average_time_seconds": row["problem_average_time_seconds"],
         "problem_average_cost_usd": row["problem_average_cost_usd"],
@@ -88,7 +89,6 @@ async def _get_evaluation_run_metrics_by_ids(
                 er.evaluation_run_id,
                 er.problem_name,
                 e.set_id,
-                er.cost_usd AS persisted_cost_usd,
                 CASE
                     WHEN er.started_initializing_agent_at IS NOT NULL
                      AND er.finished_or_errored_at IS NOT NULL
@@ -99,64 +99,61 @@ async def _get_evaluation_run_metrics_by_ids(
             JOIN evaluations e ON e.evaluation_id = er.evaluation_id
             WHERE er.evaluation_run_id = ANY($1::uuid[])
         ),
-        run_usage AS (
+        distinct_pairs AS (
             SELECT
-                tr.evaluation_run_id,
-                CASE
-                    WHEN tr.persisted_cost_usd IS NULL AND COUNT(i.inference_id) = 0 THEN NULL
-                    ELSE erwc.total_cost_usd
-                END AS run_cost_usd
-            FROM target_runs tr
-            JOIN evaluation_runs_with_cost erwc ON erwc.evaluation_run_id = tr.evaluation_run_id
-            LEFT JOIN inferences i ON i.evaluation_run_id = tr.evaluation_run_id
-            GROUP BY tr.evaluation_run_id, tr.persisted_cost_usd, erwc.total_cost_usd
+                DISTINCT set_id,
+                problem_name
+            FROM
+                target_runs
         ),
         problem_aggregates AS (
             SELECT
-                target_problem_keys.set_id,
-                target_problem_keys.problem_name,
-                COUNT(*) AS problem_total_runs,
-                AVG(
-                    CASE
-                        WHEN er.started_initializing_agent_at IS NOT NULL
-                         AND er.finished_or_errored_at IS NOT NULL
-                        THEN EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.started_initializing_agent_at))
-                        ELSE NULL
-                    END
-                ) AS problem_average_time_seconds,
-                CASE
-                    WHEN COUNT(*) FILTER (WHERE usage.inference_count > 0 OR er.cost_usd IS NOT NULL) = 0 THEN NULL
-                    ELSE AVG(erwc.total_cost_usd) FILTER (WHERE usage.inference_count > 0 OR er.cost_usd IS NOT NULL)
-                END AS problem_average_cost_usd
-            FROM (
-                SELECT DISTINCT set_id, problem_name
-                FROM target_runs
-            ) AS target_problem_keys
-            JOIN evaluations e ON e.set_id = target_problem_keys.set_id
-            JOIN evaluation_runs er
-                ON er.evaluation_id = e.evaluation_id
-               AND er.problem_name = target_problem_keys.problem_name
-            JOIN agents a ON a.agent_id = e.agent_id
-            JOIN evaluation_runs_with_cost erwc ON erwc.evaluation_run_id = er.evaluation_run_id
-            LEFT JOIN LATERAL (
-                SELECT COUNT(*)::int AS inference_count
-                FROM inferences i
-                WHERE i.evaluation_run_id = er.evaluation_run_id
-            ) usage ON TRUE
-            WHERE a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
-              AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
-              AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
-            GROUP BY target_problem_keys.set_id, target_problem_keys.problem_name
+                dp.set_id,
+                dp.problem_name,
+                agg.problem_total_runs,
+                agg.problem_average_time_seconds,
+                agg.problem_average_cost_usd
+            FROM
+                distinct_pairs dp,
+                LATERAL (
+                    SELECT
+                        COUNT(*) AS problem_total_runs,
+                        AVG(
+                            CASE
+                                WHEN er2.started_initializing_agent_at IS NOT NULL
+                                AND er2.finished_or_errored_at IS NOT NULL THEN EXTRACT(
+                                    EPOCH
+                                    FROM
+                                        (
+                                            er2.finished_or_errored_at - er2.started_initializing_agent_at
+                                        )
+                                )
+                                ELSE NULL
+                            END
+                        ) AS problem_average_time_seconds,
+                        AVG(COALESCE(er2.cost_usd, 0)) AS problem_average_cost_usd
+                    FROM
+                        evaluations e2
+                        JOIN evaluation_runs er2 ON er2.evaluation_id = e2.evaluation_id
+                        AND er2.problem_name = dp.problem_name
+                        JOIN agents a ON a.agent_id = e2.agent_id
+                        LEFT JOIN banned_hotkeys bh ON bh.miner_hotkey = a.miner_hotkey
+                        LEFT JOIN unapproved_agent_ids uai ON uai.agent_id = a.agent_id
+                        LEFT JOIN benchmark_agent_ids bai ON bai.agent_id = a.agent_id
+                    WHERE
+                        e2.set_id = dp.set_id
+                        AND bh.miner_hotkey IS NULL
+                        AND uai.agent_id IS NULL
+                        AND bai.agent_id IS NULL
+                ) agg
         )
         SELECT
             tr.evaluation_run_id,
             tr.run_time_seconds,
-            ru.run_cost_usd,
             COALESCE(pa.problem_total_runs, 0) AS problem_total_runs,
             pa.problem_average_time_seconds,
             pa.problem_average_cost_usd
         FROM target_runs tr
-        LEFT JOIN run_usage ru ON ru.evaluation_run_id = tr.evaluation_run_id
         LEFT JOIN problem_aggregates pa
             ON pa.set_id = tr.set_id
            AND pa.problem_name = tr.problem_name

@@ -1,16 +1,17 @@
 # TODO ADAM: slowly fixing this
 
 import asyncio
+import logging
 from collections.abc import Coroutine
 from typing import Any
 
 import uvicorn
+from asgi_correlation_id import CorrelationIdMiddleware
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 
 import api.config as config
-import utils.logger as logger
 from api.endpoints.agent import router as agent_router
 from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
@@ -19,18 +20,20 @@ from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.retrieval import router as retrieval_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
-
-# NEW fixed endpoints
 from api.endpoints.validator import router as validator_router
-from api.loops.fetch_metagraph import fetch_metagraph_loop
-from api.loops.pre_screening_judge import pre_screening_judge_loop
-from api.loops.validator_heartbeat_timeout import (
-    validator_heartbeat_timeout_loop,
-)
+from api.loops.approval_projector import approval_projector_loop
+from api.loops.pre_screening_judge import pre_screening_projector_loop
+from api.loops.validator_heartbeat_timeout import validator_heartbeat_timeout_loop
 from api.src.endpoints.upload import router as upload_router
+from api.src.middleware.request_interceptor import RequestInterceptorMiddleware
+from api.src.utils.sentry import initialize_sentry
 from queries.evaluation import set_all_unfinished_evaluation_runs_to_errored
+from utils.bittensor import subtensor_client
 from utils.database import deinitialize_database, initialize_database
+from utils.logger import setup_logging
 from utils.s3 import deinitialize_s3, initialize_s3
+
+logger = logging.getLogger("api")
 
 
 def _start_background_task(
@@ -53,9 +56,10 @@ def _start_background_task(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
+
     background_tasks: set[asyncio.Task[None]] = set()
 
-    # Database setup
     await initialize_database(
         username=config.DATABASE_USERNAME,
         password=config.DATABASE_PASSWORD,
@@ -63,8 +67,6 @@ async def lifespan(app: FastAPI):
         port=config.DATABASE_PORT,
         name=config.DATABASE_NAME,
     )
-
-    # S3 setup
     await initialize_s3(
         _bucket=config.S3_BUCKET_NAME,
         region=config.AWS_REGION,
@@ -72,21 +74,21 @@ async def lifespan(app: FastAPI):
         secret_access_key=config.AWS_SECRET_ACCESS_KEY,
         _endpoint_url=config.S3_ENDPOINT_URL,
     )
+    await subtensor_client.initialize()
 
-    # Loops
-    if config.SHOULD_RUN_LOOPS:  # validator loops; TODO: rename env var
+    if config.SHOULD_RUN_LOOPS:
         _start_background_task(
             background_tasks,
             "validator_heartbeat_timeout_loop",
             validator_heartbeat_timeout_loop(),
         )
 
-    if config.PRE_SCREENING_JUDGE_RUN_LOOP:
-        _start_background_task(background_tasks, "pre_screening_judge_loop", pre_screening_judge_loop())
+    if config.PRE_SCREENING_PROJECTOR_RUN_LOOP:
+        _start_background_task(background_tasks, "pre_screening_projector_loop", pre_screening_projector_loop())
 
-    _start_background_task(background_tasks, "fetch_metagraph_loop", fetch_metagraph_loop())
+    if config.AUTO_APPROVAL_RUN_LOOP:
+        _start_background_task(background_tasks, "approval_projector_loop", approval_projector_loop())
 
-    # TODO ADAM: fix this, the error message isn't useful and it sets it to a 2xxx error when it should be a 3xxx error
     await set_all_unfinished_evaluation_runs_to_errored(error_message="Platform crashed while running this evaluation")
 
     yield
@@ -98,12 +100,15 @@ async def lifespan(app: FastAPI):
 
     await deinitialize_database()
     await deinitialize_s3()
+    await subtensor_client.close()
 
+
+initialize_sentry()
 
 app = FastAPI(lifespan=lifespan)
 
-
-# Configure CORS
+# Middleware registration order: last added = outermost (runs first on requests).
+# CorrelationIdMiddleware must be outermost so the ID is set before RequestInterceptorMiddleware reads it.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "https://www.ridges.ai"],
@@ -111,6 +116,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestInterceptorMiddleware)
+app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")
 app.include_router(retrieval_router, prefix="/retrieval")

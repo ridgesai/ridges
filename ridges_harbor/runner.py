@@ -16,7 +16,10 @@ from ridges_harbor.docker_runtime import (
     build_enable_verifier_egress_hook,
     docker_environment_env,
 )
+from ridges_harbor.progress_logging import install_logging_harbor_progress
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
+
+install_logging_harbor_progress()
 
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
 
@@ -70,6 +73,7 @@ async def run_task(
     job_name: str | None = None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    inference_seed: int | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -106,6 +110,7 @@ async def run_task(
         job_name=job_name,
         openrouter_config=openrouter_config,
         max_cost_usd=max_cost_usd,
+        inference_seed=inference_seed,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
     )
@@ -128,6 +133,7 @@ async def _run_task_dir(
     job_name: str | None,
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
+    inference_seed: int | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
 ) -> HarborRunSummary:
@@ -170,6 +176,7 @@ async def _run_task_dir(
             max_cost_usd=effective_max_cost_usd,
             proxy_data_dir=str(proxy_data_dir),
             openrouter_config=openrouter_config,
+            inference_seed=inference_seed,
         )
     )
     config = JobConfig(

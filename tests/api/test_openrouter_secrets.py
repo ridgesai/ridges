@@ -110,15 +110,22 @@ def _patch_upload_dependencies(
 ):
     upload_endpoint = _load_upload_endpoint(monkeypatch)
     monkeypatch.setenv("RIDGES_AGENT_KEY_ENCRYPTION_KEY", _encoded_key())
-    monkeypatch.setattr(upload_endpoint, "prod", False)
+    monkeypatch.setattr(upload_endpoint.config, "ENV", "dev")
     monkeypatch.setattr(upload_endpoint.config, "PRE_SCREENING_JUDGE_ENABLED", False)
     monkeypatch.setattr(upload_endpoint, "get_miner_hotkey", lambda *_args, **_kwargs: "miner-hotkey")
     monkeypatch.setattr(upload_endpoint, "check_if_python_file", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(upload_endpoint, "check_signature", lambda *_args, **_kwargs: None)
+
+    async def _fake_get_hotkey_owner(*args, **kwargs):
+        return "coldkey"
+
+    async def _fake_get_balance(*args, **kwargs):
+        return SimpleNamespace(rao=10**12)
+
     monkeypatch.setattr(
         upload_endpoint,
-        "subtensor",
-        SimpleNamespace(get_hotkey_owner=lambda **_: "coldkey", get_balance=lambda **_: SimpleNamespace(rao=10**12)),
+        "subtensor_client",
+        SimpleNamespace(get_hotkey_owner=_fake_get_hotkey_owner, get_balance=_fake_get_balance),
     )
 
     async def fake_validate_openrouter_keys(*, openrouter_api_key: str | None, openrouter_management_key: str | None):
@@ -387,6 +394,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         agent,
         agent_text,
         *,
+        source_sha256=None,
         runtime_openrouter_api_key_ciphertext=None,
         management_openrouter_api_key_ciphertext=None,
         openrouter_workspace_id=None,

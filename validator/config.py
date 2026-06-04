@@ -1,11 +1,16 @@
+import logging
 import os
 import re
 
 from bittensor_wallet.wallet import Wallet
 from dotenv import load_dotenv
 
-import utils.logger as logger
+from utils.logger import setup_logging
 from utils.validator_hotkeys import validator_hotkey_to_name
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
 
 load_dotenv()
 
@@ -172,12 +177,12 @@ if UPDATE_AUTOMATICALLY:
 else:
     logger.warning("Not Updating Automatically!")
 
-VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 30
+VALIDATOR_MAX_CONCURRENT_EVALUATION_RUNS = 50
 SCREENER_DEFAULT_MAX_CONCURRENT_EVALUATION_RUNS = 30
 HARDCODED_MAX_COST_USD = 0.29
 VALIDATOR_CONCURRENCY_CAPS_BY_NAME = {
-    "Opentensor Foundation": 10,
-    "Yuma": 10,
+    # "Opentensor Foundation": 10,
+    # "Yuma": 10,
 }
 
 MAX_CONCURRENT_EVALUATION_RUNS = os.getenv("MAX_CONCURRENT_EVALUATION_RUNS")
@@ -205,6 +210,18 @@ logger.info(f"Max Concurrent Evaluation Runs: {MAX_CONCURRENT_EVALUATION_RUNS}")
 RIDGES_HARBOR_RESULTS_DIR = os.getenv("RIDGES_HARBOR_RESULTS_DIR")
 RIDGES_HARBOR_DEBUG = os.getenv("RIDGES_HARBOR_DEBUG", "false").lower() == "true"
 RIDGES_MAX_COST_USD = HARDCODED_MAX_COST_USD
+
+# Local-storage cleanup: a low-priority background loop prunes the task cache and
+# Harbor job artifacts by age. Deliberately non-aggressive; safe to disable.
+CLEANUP_ENABLED = os.getenv("CLEANUP_ENABLED", "true").lower() == "true"
+CLEANUP_INTERVAL_SECONDS = int(os.getenv("CLEANUP_INTERVAL_SECONDS", "3600"))
+CLEANUP_ARTIFACT_RETENTION_HOURS = int(os.getenv("CLEANUP_ARTIFACT_RETENTION_HOURS", "48"))
+CLEANUP_TASK_CACHE_RETENTION_HOURS = int(os.getenv("CLEANUP_TASK_CACHE_RETENTION_HOURS", "168"))
+logger.info(f"Cleanup Enabled: {CLEANUP_ENABLED}")
+if CLEANUP_ENABLED:
+    logger.info(f"Cleanup Interval: {CLEANUP_INTERVAL_SECONDS} second(s)")
+    logger.info(f"Cleanup Artifact Retention: {CLEANUP_ARTIFACT_RETENTION_HOURS} hour(s)")
+    logger.info(f"Cleanup Task Cache Retention: {CLEANUP_TASK_CACHE_RETENTION_HOURS} hour(s)")
 
 logger.info("Execution Backend: harbor")
 

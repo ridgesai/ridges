@@ -1,7 +1,5 @@
 import asyncio
-import logging
 import os
-from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
@@ -10,21 +8,10 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import db.models  # noqa: F401 — registers all tables on Base.metadata
 from alembic import context
 from db.base import Base
-from utils.logger import RidgesLogHandler
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name, disable_existing_loggers=False)
-
-# Route alembic logs through the project's print format instead of the ini formatter.
-_alembic_logger = logging.getLogger("alembic")
-_alembic_logger.handlers = [RidgesLogHandler()]
-_alembic_logger.propagate = False
 
 target_metadata = Base.metadata
 

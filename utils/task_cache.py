@@ -6,15 +6,20 @@ Once cached, a task is never re-downloaded — the digest guarantees immutabilit
 
 from __future__ import annotations
 
+import logging
+import os
 import shutil
 import tarfile
+from collections.abc import Iterable
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
 
-import utils.logger as logger
 from ridges_harbor.digest import compute_task_digest
+from utils.cleanup import prune_dirs_older_than
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "ridges" / "tasks"
 
@@ -22,6 +27,27 @@ DEFAULT_CACHE_DIR = Path.home() / ".cache" / "ridges" / "tasks"
 def _cache_dir_for_digest(digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> Path:
     safe_digest = digest.replace(":", "_")
     return cache_root / safe_digest
+
+
+def _touch_digest_dir(task_digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> None:
+    """Bump the digest directory's mtime so 'age' tracks last use, not creation.
+
+    This makes age-based pruning (see ``prune_task_cache``) behave like an LRU:
+    frequently-reused tasks stay fresh while tasks from retired sets age out.
+    Best-effort — a failure here must never break a cache lookup.
+
+    Parameters
+    ----------
+    task_digest : str
+        Task digest to touch.
+    cache_root : Path, optional
+        Cache root directory, by default DEFAULT_CACHE_DIR
+    """
+    digest_dir = _cache_dir_for_digest(task_digest, cache_root=cache_root)
+    try:
+        os.utime(digest_dir, None)
+    except OSError as exc:
+        logger.debug(f"Could not touch task cache dir {digest_dir}: {exc}")
 
 
 def _cached_task_dir_for_name(task_name: str, digest: str, *, cache_root: Path = DEFAULT_CACHE_DIR) -> Path:
@@ -101,7 +127,38 @@ def get_cached_task(
     cache_root: Path = DEFAULT_CACHE_DIR,
 ) -> Path | None:
     """Return the cached task directory if it exists, otherwise None."""
-    return _resolve_cached_task_dir(task_name, task_digest, cache_root=cache_root)
+    cached = _resolve_cached_task_dir(task_name, task_digest, cache_root=cache_root)
+    if cached is not None:
+        _touch_digest_dir(task_digest, cache_root=cache_root)
+    return cached
+
+
+def prune_task_cache(
+    cache_root: Path = DEFAULT_CACHE_DIR,
+    *,
+    max_age_seconds: float,
+    exclude_names: Iterable[str] = frozenset(),
+) -> int:
+    """Delete cached tasks not used within `max_age_seconds`.
+
+    Include hidden directories (e.g. in-progress downloads that failed) in pruning, but never delete directories with excluded names.
+
+    Parameters
+    ----------
+    max_age_seconds : float
+        Max amount of seconds since the task was last used.
+    cache_root : Path, optional
+        Cache root directory, by default DEFAULT_CACHE_DIR
+    exclude_names : Iterable[str], optional
+        Names of directories to exclude from pruning, by default frozenset()
+
+    Returns
+    -------
+    int
+        Number of removed directories
+    """
+
+    return prune_dirs_older_than(cache_root, max_age_seconds, exclude_names=exclude_names, skip_hidden=False)
 
 
 async def get_or_download_task(
@@ -124,6 +181,7 @@ async def get_or_download_task(
     )
     if cached_task_dir is not None:
         logger.info(f"Task cache hit for {task_digest}")
+        _touch_digest_dir(task_digest, cache_root=cache_root)
         return cached_task_dir
 
     logger.info(f"Task cache miss for {task_digest}, downloading...")

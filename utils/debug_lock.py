@@ -1,8 +1,9 @@
 # ADAM: Black magic file
 import asyncio
+import logging
 import time
 
-import utils.logger as logger
+logger = logging.getLogger(__name__)
 
 DEBUG_LOCKS = {"waiting": [], "locked": [], "slow": []}
 

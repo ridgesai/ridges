@@ -1,17 +1,27 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid5
 
 import api.config as config
-import utils.logger as logger
-from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
+from models.agent import (
+    Agent,
+    AgentCreate,
+    AgentScored,
+    AgentStatus,
+    BenchmarkAgentScored,
+    PossiblyBenchmarkAgent,
+)
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
+from queries.errors import DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PRE_SCREENING_POLICY_VERSION = "hardcoding-v1"
 
@@ -24,6 +34,13 @@ class AgentOpenRouterSecrets:
     api_key_label: str
     api_key_creator_user_id: str
     validated_at: datetime
+
+
+def _derive_agent_id(payment_block_hash: str, payment_extrinsic_index: str) -> UUID:
+    return uuid5(
+        config.AGENT_UUID_NAMESPACE,
+        f"{payment_block_hash}:{payment_extrinsic_index}",
+    )
 
 
 @db_operation
@@ -44,18 +61,31 @@ async def get_agent_by_id(conn: DatabaseConnection, agent_id: UUID) -> Optional[
     return Agent(**result)
 
 
+LATEST_AGENT_APPROVAL_JOINS = """
+LEFT JOIN LATERAL (
+    SELECT approval_review_status
+    FROM agent_final_review_statuses
+    WHERE agent_final_review_statuses.agent_id = a.agent_id
+    ORDER BY agent_final_review_statuses.updated_at DESC, agent_final_review_statuses.set_id DESC
+    LIMIT 1
+) latest_review ON TRUE
+"""
+
+
 @db_operation
 async def get_possibly_benchmark_agent_by_id(
     conn: DatabaseConnection, agent_id: UUID
 ) -> Optional[PossiblyBenchmarkAgent]:
     result = await conn.fetchrow(
-        """
+        f"""
         SELECT
             a.*,
+            latest_review.approval_review_status AS approval_review_status,
             (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
             bai.description AS benchmark_description
         FROM agents a
         LEFT JOIN benchmark_agent_ids bai ON a.agent_id = bai.agent_id
+        {LATEST_AGENT_APPROVAL_JOINS}
         WHERE a.agent_id = $1
         LIMIT 1
         """,
@@ -71,9 +101,13 @@ async def get_possibly_benchmark_agent_by_id(
 @db_operation
 async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_run_id: UUID) -> Optional[Agent]:
     result = await conn.fetchrow(
-        """
-        SELECT * FROM agents
-        WHERE agent_id = (
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.agent_id = (
             SELECT agent_id FROM evaluations WHERE evaluation_id = (
                 SELECT evaluation_id FROM evaluation_runs WHERE evaluation_run_id = $1 LIMIT 1
             ) LIMIT 1
@@ -91,10 +125,14 @@ async def get_agent_by_evaluation_run_id(conn: DatabaseConnection, evaluation_ru
 @db_operation
 async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> List[Agent]:
     result = await conn.fetch(
-        """
-        SELECT * FROM agents 
-        WHERE miner_hotkey = $1
-        ORDER BY created_at DESC
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.miner_hotkey = $1
+        ORDER BY a.created_at DESC
         """,
         miner_hotkey,
     )
@@ -105,10 +143,14 @@ async def get_all_agents_by_miner_hotkey(conn: DatabaseConnection, miner_hotkey:
 @db_operation
 async def get_latest_agent_for_miner_hotkey(conn: DatabaseConnection, miner_hotkey: str) -> Optional[Agent]:
     result = await conn.fetchrow(
-        """
-        SELECT * FROM agents 
-        WHERE miner_hotkey = $1
-        ORDER BY created_at DESC
+        f"""
+        SELECT
+            a.*,
+            latest_review.approval_review_status AS approval_review_status
+        FROM agents a
+        {LATEST_AGENT_APPROVAL_JOINS}
+        WHERE a.miner_hotkey = $1
+        ORDER BY a.created_at DESC
         LIMIT 1
         """,
         miner_hotkey,
@@ -140,9 +182,10 @@ async def get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
 @db_operation
 async def create_agent(
     conn: DatabaseConnection,
-    agent: Agent,
+    agent: AgentCreate,
     agent_text: str,
     *,
+    source_sha256: str,
     runtime_openrouter_api_key_ciphertext: bytes,
     management_openrouter_api_key_ciphertext: bytes,
     openrouter_workspace_id: str,
@@ -151,23 +194,56 @@ async def create_agent(
     openrouter_validated_at: datetime,
     create_pre_screening_job: bool = False,
     pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
-) -> None:
-    await upload_text_file_to_s3(f"{agent.agent_id}/agent.py", agent_text)
+) -> UUID:
+    """Create an agent using the deterministic payment-derived agent_id."""
+
+    from queries.pre_screening_judge import (
+        duplicate_source_result,
+        insert_pending_pre_screening_job,
+        insert_terminal_pre_screening_job_with_result,
+    )
+
+    agent_id = _derive_agent_id(agent.payment_block_hash, agent.payment_extrinsic_index)
+    await upload_text_file_to_s3(f"{agent_id}/agent.py", agent_text)
 
     async with conn.conn.transaction():
-        await conn.execute(
+        current_set = await conn.fetchrow(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address)
-            VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+            SELECT set_id, created_at
+            FROM evaluation_sets
+            ORDER BY set_id DESC
+            LIMIT 1
+            """
+        )
+        current_set_id = current_set["set_id"] if current_set else 0
+        current_set_boundary = current_set["created_at"] if current_set else None
+
+        await conn.execute(
+            "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+            current_set_id,
+            source_sha256,
+        )
+
+        result = await conn.fetchval(
+            """
+            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256)
+            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7)
+            ON CONFLICT (agent_id) DO NOTHING
+            RETURNING agent_id
             """,
-            agent.agent_id,
+            agent_id,
             agent.miner_hotkey,
             agent.name,
             agent.version_num,
             agent.status.value,
             agent.ip_address,
+            source_sha256,
         )
 
+        if result is None:
+            raise DuplicateAgentIDError(agent_id)
+
+        # 4. Insert OpenRouter secrets into the database
         await conn.execute(
             """
             INSERT INTO agent_openrouter_secrets (
@@ -181,7 +257,7 @@ async def create_agent(
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
-            agent.agent_id,
+            agent_id,
             runtime_openrouter_api_key_ciphertext,
             management_openrouter_api_key_ciphertext,
             openrouter_workspace_id,
@@ -190,15 +266,31 @@ async def create_agent(
             openrouter_validated_at,
         )
 
+        # 5. Optionally create a pre-screening job for the agent
         if create_pre_screening_job:
-            await conn.execute(
-                """
-                INSERT INTO pre_screening_jobs (agent_id, policy_version)
-                VALUES ($1, $2)
-                """,
-                agent.agent_id,
-                pre_screening_policy_version,
-            )
+            duplicate_agent_id: Optional[UUID] = None
+            if current_set_boundary is not None:
+                duplicate_agent_id = await find_duplicate_source_agent_in_current_set(agent_id, current_set_boundary)
+
+            if duplicate_agent_id is not None:
+                await insert_terminal_pre_screening_job_with_result(
+                    conn,
+                    agent_id=agent_id,
+                    policy_version=pre_screening_policy_version,
+                    job_status="failed",
+                    result=duplicate_source_result(
+                        policy_version=pre_screening_policy_version,
+                        matched_agent_id=duplicate_agent_id,
+                    ),
+                )
+            else:
+                await insert_pending_pre_screening_job(
+                    conn,
+                    agent_id=agent_id,
+                    policy_version=pre_screening_policy_version,
+                )
+
+    return agent_id
 
 
 @db_operation
@@ -241,6 +333,66 @@ async def get_openrouter_api_key_for_agent_id(conn: DatabaseConnection, agent_id
 
 
 @db_operation
+async def find_duplicate_source_agent_in_current_set(
+    conn: DatabaseConnection, agent_id: UUID, set_boundary: Optional[datetime] = None
+) -> Optional[UUID]:
+    """Return the earliest other agent in the current set sharing this agent's source hash, if any.
+
+    Pass `set_boundary` (the created_at of the latest evaluation_set captured by the caller) to
+    keep the duplicate check pinned to the same set identity that any surrounding advisory lock
+    used. Defaults to looking up the latest set inline.
+    """
+    if set_boundary is None:
+        return await conn.fetchval(
+            """
+            WITH self AS (
+                SELECT agent_id, source_sha256, created_at
+                FROM agents
+                WHERE agent_id = $1
+            ),
+            latest_set_boundary AS (
+                SELECT created_at
+                FROM evaluation_sets
+                WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            )
+            SELECT a.agent_id
+            FROM agents a, self s, latest_set_boundary lsb
+            WHERE a.agent_id <> s.agent_id
+              AND s.source_sha256 IS NOT NULL
+              AND a.source_sha256 = s.source_sha256
+              AND a.created_at < s.created_at
+              AND a.created_at >= lsb.created_at
+              AND s.created_at >= lsb.created_at
+            ORDER BY a.created_at ASC
+            LIMIT 1
+            """,
+            agent_id,
+        )
+
+    return await conn.fetchval(
+        """
+        WITH self AS (
+            SELECT agent_id, source_sha256, created_at
+            FROM agents
+            WHERE agent_id = $1
+        )
+        SELECT a.agent_id
+        FROM agents a, self s
+        WHERE a.agent_id <> s.agent_id
+          AND s.source_sha256 IS NOT NULL
+          AND a.source_sha256 = s.source_sha256
+          AND a.created_at < s.created_at
+          AND a.created_at >= $2
+          AND s.created_at >= $2
+        ORDER BY a.created_at ASC
+        LIMIT 1
+        """,
+        agent_id,
+        set_boundary,
+    )
+
+
+@db_operation
 async def update_agent_status(conn: DatabaseConnection, agent_id: UUID, status: AgentStatus) -> None:
     await conn.execute(
         """
@@ -259,6 +411,7 @@ async def get_benchmark_agents(conn: DatabaseConnection) -> List[BenchmarkAgentS
         """
         SELECT
             ass.*,
+            NULL::text AS approval_review_status,
             bai.description AS benchmark_description
         FROM agent_scores ass
         LEFT JOIN benchmark_agent_ids bai ON ass.agent_id = bai.agent_id
@@ -331,8 +484,13 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
 
     results = await conn.fetch(
         """
-        select ass.*
+        select
+            ass.*,
+            review.approval_review_status AS approval_review_status
         from agent_scores ass
+        left join agent_final_review_statuses review
+            on review.agent_id = ass.agent_id
+           and review.set_id = ass.set_id
         left join lateral (
             select avg(eh.avg_cost_usd) as avg_cost_usd
             from evaluations_hydrated eh
@@ -344,6 +502,10 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
         and ass.status::text <> 'cancelled'
+        and (
+            ass.approved is true
+            or review.approval_review_status is distinct from 'rejected'
+        )
         order by
             round(ass.final_score::numeric, 6) desc,
             rt.avg_cost_usd asc nulls last,
@@ -395,51 +557,123 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
              SELECT agent_id FROM screener_2_queue LIMIT 1
         """)
     else:
-        # Restrict to candidate agents first so we only hydrate evaluations for agents
-        # in evaluating status (avoids full evaluations_hydrated scan and heavy JSONB work).
+        # The query is structured to force a candidates-first execution order, avoiding a
+        # full scan of evaluation_runs that the planner would otherwise choose.
+        #
+        # Root cause of the bad plan: evaluations_hydrated is a view that groups by
+        # evaluation_id. PostgreSQL cannot push a predicate past a GROUP BY from outside
+        # the view, so any WHERE agent_id IN (...) filter applied to the view is evaluated
+        # *after* the full aggregation — meaning all evaluation_runs are scanned and the
+        # JSONB solved computation runs on every row before the candidate filter is applied.
+        #
+        # Here we bypass the view entirely and inline its logic using an explicit join chain:
+        #   candidates (MATERIALIZED, ~1–50 rows)
+        #     → evaluations by agent_id (index seek, ~10–50 rows per candidate)
+        #       → evaluation_runs via JOIN LATERAL by evaluation_id (index seek, ~20–50 rows each)
         result = await conn.fetchrow(
             f"""
-            WITH
-                candidates AS (
-                    SELECT agent_id, created_at
-                    FROM agents
-                    WHERE agents.status = '{AgentStatus.evaluating.value}'
-                      AND NOT EXISTS (SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = agents.agent_id)
-                ),
-                validator_eval_counts AS (
-                    SELECT
-                        agent_id,
-                        BOOL_OR(validator_hotkey = $1) AS already_evaluated,
-                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.running.value}') AS num_running_evals,
-                        COUNT(*) FILTER (WHERE status = '{EvaluationStatus.success.value}') AS num_finished_evals
-                    FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
-                      AND evaluations_hydrated.status IN ('{EvaluationStatus.success.value}', '{EvaluationStatus.running.value}')
-                      AND evaluation_set_group = '{EvaluationSetGroup.validator.value}'::EvaluationSetGroup
-                    GROUP BY agent_id
-                ),
-                screener_2_scores AS (
-                    SELECT agent_id, COALESCE(MAX(score), 0) AS score
-                    FROM evaluations_hydrated
-                    WHERE evaluations_hydrated.agent_id IN (SELECT agent_id FROM candidates)
-                      AND evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
-                      AND evaluations_hydrated.status = '{EvaluationStatus.success.value}'
-                    GROUP BY agent_id
-                )
+            WITH candidates AS MATERIALIZED (
+                SELECT
+                    agent_id,
+                    created_at
+                FROM
+                    agents
+                WHERE
+                    agents.status = '{AgentStatus.evaluating.value}'
+                    AND NOT EXISTS (
+                        SELECT
+                            1
+                        FROM
+                            benchmark_agent_ids b
+                        WHERE
+                            b.agent_id = agents.agent_id
+                    )
+            ),
+            combined_eval_stats AS (
+                SELECT
+                    c.agent_id,
+                    BOOL_OR(
+                        e.validator_hotkey = $1
+                        AND e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                    ) AS already_evaluated,
+                    COUNT(*) FILTER (
+                        WHERE
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.running.value}' :: EvaluationStatus
+                    ) AS num_running_evals,
+                    COUNT(*) FILTER (
+                        WHERE
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                    ) AS num_finished_evals,
+                    COALESCE(
+                        MAX(agg.score) FILTER (
+                            WHERE
+                                e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                                AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                        ),
+                        0
+                    ) AS screener_2_score
+                FROM
+                    candidates c
+                    JOIN evaluations e ON e.agent_id = c.agent_id
+                    AND e.evaluation_set_group IN (
+                        '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup,
+                        '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                    )
+                    JOIN LATERAL (
+                        SELECT
+                            (
+                                CASE
+                                    WHEN EVERY(
+                                        er.status = 'finished'
+                                        OR (
+                                            er.status = 'error'
+                                            AND er.error_code BETWEEN 1000
+                                            AND 1999
+                                        )
+                                    ) THEN 'success' :: EvaluationStatus
+                                    WHEN EVERY(er.status IN ('finished', 'error')) THEN 'failure' :: EvaluationStatus
+                                    ELSE 'running' :: EvaluationStatus
+                                END
+                            ) AS computed_status,
+                            COUNT(*) FILTER (WHERE er.solved) :: float / NULLIF(COUNT(*), 0) AS score
+                        FROM
+                            evaluation_runs_hydrated er
+                        WHERE
+                            er.evaluation_id = e.evaluation_id
+                        HAVING COUNT(*) > 0
+                    ) agg ON (
+                        (
+                            e.evaluation_set_group = '{EvaluationSetGroup.validator.value}' :: EvaluationSetGroup
+                            AND agg.computed_status IN (
+                                '{EvaluationStatus.success.value}' :: EvaluationStatus,
+                                '{EvaluationStatus.running.value}' :: EvaluationStatus
+                            )
+                        )
+                        OR (
+                            e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}' :: EvaluationSetGroup
+                            AND agg.computed_status = '{EvaluationStatus.success.value}' :: EvaluationStatus
+                        )
+                    )
+                GROUP BY
+                    c.agent_id
+            )
             SELECT
                 c.agent_id,
-                COALESCE(v.num_running_evals, 0) AS num_running_evals,
-                COALESCE(v.num_finished_evals, 0) AS num_finished_evals
-            FROM candidates c
-                 LEFT JOIN screener_2_scores s ON s.agent_id = c.agent_id
-                 LEFT JOIN validator_eval_counts v ON v.agent_id = c.agent_id
+                COALESCE(s.num_running_evals, 0) AS num_running_evals,
+                COALESCE(s.num_finished_evals, 0) AS num_finished_evals
+            FROM
+                candidates c
+                LEFT JOIN combined_eval_stats s ON s.agent_id = c.agent_id
             WHERE
-                NOT COALESCE(v.already_evaluated, false)
-              AND COALESCE(v.num_running_evals, 0) + COALESCE(v.num_finished_evals, 0) < $2
+                NOT COALESCE(s.already_evaluated, false)
+                AND COALESCE(s.num_running_evals, 0) + COALESCE(s.num_finished_evals, 0) < $2
             ORDER BY
-                s.score DESC NULLS LAST,
+                COALESCE(s.screener_2_score, 0) DESC,
                 c.created_at ASC
-            LIMIT 1
+            LIMIT
+                1
             """,
             validator_hotkey,
             config.NUM_EVALS_PER_AGENT,

@@ -4,8 +4,17 @@ import base64
 import os
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
+import bittensor
 import pytest
+from testcontainers.postgres import PostgresContainer
+
+from utils.database import deinitialize_database, initialize_database
+
+# upload.py instantiates Subtensor at module level; replace the class before
+# any test module is collected so the WebSocket connection is never attempted.
+bittensor.Subtensor = MagicMock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,12 +66,57 @@ TEST_ENV_DEFAULTS = {
     "VALIDATOR_MAX_EVALUATION_RUN_LOG_SIZE_BYTES": "1048576",
     "VALIDATOR_RUNNING_AGENT_TIMEOUT_SECONDS": "60",
     "VALIDATOR_RUNNING_EVAL_TIMEOUT_SECONDS": "60",
+    "AGENT_UUID_NAMESPACE": "37c807fa-a7d2-4ac5-985b-e5ad6bbbc1c9",
 }
 
 for key, value in TEST_ENV_DEFAULTS.items():
     os.environ.setdefault(key, value)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="module")
+async def postgres_db():
+    with PostgresContainer("postgres:16") as container:
+        host = container.get_container_host_ip()
+        port = container.get_exposed_port(5432)
+
+        saved = {
+            k: os.environ.get(k)
+            for k in (
+                "DATABASE_USERNAME",
+                "DATABASE_PASSWORD",
+                "DATABASE_HOST",
+                "DATABASE_PORT",
+                "DATABASE_NAME",
+            )
+        }
+        os.environ.update(
+            {
+                "DATABASE_USERNAME": container.username,
+                "DATABASE_PASSWORD": container.password,
+                "DATABASE_HOST": host,
+                "DATABASE_PORT": str(port),
+                "DATABASE_NAME": container.dbname,
+            }
+        )
+
+        try:
+            await initialize_database(
+                username=container.username,
+                password=container.password,
+                host=host,
+                port=port,
+                name=container.dbname,
+            )
+            yield
+        finally:
+            await deinitialize_database()
+            for key, val in saved.items():
+                if val is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = val

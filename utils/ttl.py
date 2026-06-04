@@ -1,12 +1,12 @@
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any, Callable, Dict, Tuple, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
-import utils.logger as logger
-
+logger = logging.getLogger(__name__)
 TTLCacheKey: TypeAlias = Tuple[Any, ...]
 
 

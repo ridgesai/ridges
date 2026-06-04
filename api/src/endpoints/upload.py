@@ -1,15 +1,14 @@
 import asyncio
-import os
-import uuid
+import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from bittensor import Subtensor
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-import utils.logger as logger
 from api import config
+from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenError
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
@@ -20,8 +19,9 @@ from api.src.utils.upload_agent_helpers import (
     check_rate_limit,
     check_signature,
     get_miner_hotkey,
+    get_tao_price,
 )
-from models.agent import Agent, AgentStatus
+from models.agent import Agent, AgentCreate, AgentStatus
 from queries.agent import (
     create_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
@@ -29,13 +29,18 @@ from queries.agent import (
     record_upload_attempt,
 )
 from queries.banned_hotkey import get_banned_hotkey
-from queries.payments import record_evaluation_payment, retrieve_payment_by_hash
+from queries.errors import DuplicateAgentIDError
+from queries.payments import (
+    complete_payment,
+    reserve_payment,
+    retrieve_payment_by_hash,
+)
+from queries.refund import is_payment_refunded
 from utils.agent_secrets import encrypt_agent_secret
-from utils.coingecko import get_tao_price
+from utils.bittensor import subtensor_client
 from utils.debug_lock import DebugLock
 
-# TODO STEPHEN: we should have a global singleton
-subtensor = Subtensor(network=config.SUBTENSOR_NETWORK)
+logger = logging.getLogger(__name__)
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -47,14 +52,6 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
         if hotkey not in hotkey_locks:
             hotkey_locks[hotkey] = asyncio.Lock()
         return hotkey_locks[hotkey]
-
-
-prod = False
-if os.getenv("ENV") == "prod":
-    logger.info("Agent Upload running in production mode.")
-    prod = True
-else:
-    logger.info("Agent Upload running in development mode.")
 
 
 class AgentUploadResponse(BaseModel):
@@ -97,13 +94,13 @@ async def check_agent_post(
     )
     if latest_agent_created_at_in_latest_set_id:
         check_rate_limit(latest_agent_created_at_in_latest_set_id)
-    check_signature(public_key, file_info, signature)
+    check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
     await check_agent_banned(miner_hotkey=miner_hotkey)
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
-    coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey)
-    miner_balance = subtensor.get_balance(address=coldkey).rao
+    coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
+    miner_balance = (await subtensor_client.get_balance(coldkey)).rao
     payment_cost = await get_upload_price(cache_time=payment_time)
     if payment_cost.amount_rao > miner_balance:
         raise HTTPException(
@@ -159,12 +156,11 @@ async def post_agent(
 
     Rate limiting may apply based on configuration.
     """
+    prod = config.ENV == "prod"
 
-    if config.DISALLOW_UPLOADS:
-        raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
+    miner_hotkey = get_miner_hotkey(file_info)
 
     # Extract upload attempt data for tracking
-    miner_hotkey = get_miner_hotkey(file_info)
     agent_file.file.seek(0, 2)
     file_size_bytes = agent_file.file.tell()
     agent_file.file.seek(0)
@@ -178,32 +174,49 @@ async def post_agent(
     }
 
     try:
-        logger.debug("Platform received a /upload/agent API request. Beginning process handle-upload-agent.")
         logger.info(f"Uploading agent {name} for miner {miner_hotkey}.")
 
-        if prod:
-            check_signature(public_key, file_info, signature)
-            await check_hotkey_registered(miner_hotkey)
-            await check_agent_banned(miner_hotkey=miner_hotkey)
-        check_if_python_file(agent_file.filename)
-        agent_text = await check_file_size(agent_file)
+        is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
+        logger.info("Owner upload: " + str(is_owner_upload))
 
         if prod:
+            check_signature(public_key, file_info, signature, miner_hotkey)
+
+        if config.DISALLOW_UPLOADS and not is_owner_upload:
+            raise PlatformFrozenError(config.DISALLOW_UPLOADS_REASON)
+
+        if prod:
+            await check_hotkey_registered(miner_hotkey)
+            await check_agent_banned(miner_hotkey=miner_hotkey)
+
+        check_if_python_file(agent_file.filename)
+        agent_bytes, agent_text = await check_file_size(agent_file)
+        source_sha256 = hashlib.sha256(agent_bytes).hexdigest()
+
+        if prod and not is_owner_upload:
             # Verify payment
             # Check if payment has already been used for an agent
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
+            if existing_payment is not None and existing_payment.agent_id is not None:
+                raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
 
-            if existing_payment is not None:
-                raise HTTPException(status_code=402, detail="Payment already used")
+            if await is_payment_refunded(
+                upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
+            ):
+                logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
+                raise PaymentRefunded()
 
             # Retrieve payment details from the chain
             try:
-                payment_block = subtensor.substrate.get_block(block_hash=payment_block_hash)
+                payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
             except Exception as e:
                 logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
+
+            if payment_block is None:
+                raise HTTPException(status_code=402, detail="Payment block not found")
 
             # example payment block:
             """
@@ -219,7 +232,7 @@ async def post_agent(
                 'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
             """
             block_number = payment_block["header"]["number"]
-            coldkey = subtensor.get_hotkey_owner(hotkey_ss58=miner_hotkey, block=int(block_number))
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(block_number))
             payment_extrinsic = payment_block["extrinsics"][int(payment_extrinsic_index)]
 
             payment_cost = await get_upload_price(cache_time=payment_time)
@@ -234,7 +247,9 @@ async def post_agent(
                     payment_value = arg["value"]
                     break
 
-            if payment_value is None or check_if_extrinsic_failed(payment_block_hash, int(payment_extrinsic_index)):
+            if payment_value is None or await check_if_extrinsic_failed(
+                payment_block_hash, int(payment_extrinsic_index)
+            ):
                 raise HTTPException(status_code=402, detail="Payment value not found")
 
             if payment_value != payment_cost.amount_rao:
@@ -269,26 +284,40 @@ async def post_agent(
                 await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(miner_hotkey=miner_hotkey)
             )
 
-            if prod and latest_agent_created_at_in_latest_set_id:
-                check_rate_limit(latest_agent_created_at_in_latest_set_id)
+            if prod and not is_owner_upload:
+                if latest_agent_created_at_in_latest_set_id:
+                    check_rate_limit(latest_agent_created_at_in_latest_set_id)
+
+                payment_row = await reserve_payment(
+                    payment_block_hash=payment_block_hash,
+                    payment_extrinsic_index=payment_extrinsic_index,
+                    miner_hotkey=miner_hotkey,
+                    miner_coldkey=coldkey,
+                    amount_rao=payment_value,
+                )
+
+                if payment_row.agent_id is not None:
+                    raise DuplicateAgentIDError(agent_id=payment_row.agent_id)
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
             initial_status = (
                 AgentStatus.pre_screening if config.PRE_SCREENING_JUDGE_ENABLED else AgentStatus.screening_1
             )
-            agent = Agent(
-                agent_id=uuid.uuid4(),
+            agent = AgentCreate(
                 miner_hotkey=miner_hotkey,
                 name=name if not latest_agent else latest_agent.name,
                 version_num=latest_agent.version_num + 1 if latest_agent else 0,
                 created_at=datetime.now(timezone.utc),
                 status=initial_status,
                 ip_address=request.client.host if request.client else None,
+                payment_block_hash=payment_block_hash,
+                payment_extrinsic_index=payment_extrinsic_index,
             )
-            await create_agent(
+            agent_id = await create_agent(
                 agent,
                 agent_text,
+                source_sha256=source_sha256,
                 runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
                 management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
                 openrouter_workspace_id=validated_openrouter_keys.workspace_id,
@@ -298,24 +327,29 @@ async def post_agent(
                 create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
             )
 
-        if prod:
-            await record_evaluation_payment(
+        if prod and not is_owner_upload:
+            await complete_payment(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
-                amount_rao=payment_value,
-                agent_id=agent.agent_id,
-                miner_hotkey=miner_hotkey,
-                miner_coldkey=coldkey,
+                agent_id=agent_id,
             )
 
-        logger.info(f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}.")
+        logger.info(f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}.")
 
         # Record successful upload
-        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent.agent_id, **upload_data)
+        await record_upload_attempt(upload_type="agent", success=True, agent_id=agent_id, **upload_data)
 
         return AgentUploadResponse(
-            status="success", message=f"Successfully uploaded agent {agent.agent_id} for miner {miner_hotkey}."
+            status="success", message=f"Successfully uploaded agent {agent_id} for miner {miner_hotkey}."
         )
+
+    except DuplicateAgentIDError as e:
+        logger.warning(f"Agent upload failed, duplicate agent ID found: {e}")
+        raise PaymentAlreadyUsedError() from e
+
+    except PlatformFrozenError as e:
+        logger.warning(f"Upload attempt rejected due to platform freeze: {e}")
+        raise
 
     except HTTPException as e:
         # Determine error type and get ban reason if applicable
@@ -376,8 +410,8 @@ async def get_upload_price() -> UploadPriceResponse:
     return UploadPriceResponse(amount_rao=amount_rao, send_address=config.UPLOAD_SEND_ADDRESS)
 
 
-def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = subtensor.substrate.get_events(block_hash=block_hash)
+async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
+    events = await subtensor_client.get_events(block_hash=block_hash)
 
     for event in events:
         if event.get("extrinsic_idx") != extrinsic_index:
