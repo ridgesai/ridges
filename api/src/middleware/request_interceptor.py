@@ -21,6 +21,15 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 
+_COMPACT_BODY_KEYS_BY_PATH = {
+    "/validator/update-evaluation-run": (
+        "evaluation_run_id",
+        "updated_status",
+        "verifier_reward",
+        "error_code",
+    ),
+}
+
 
 def _redact(obj: Any) -> Any:
     if isinstance(obj, dict):
@@ -28,6 +37,13 @@ def _redact(obj: Any) -> Any:
     if isinstance(obj, list):
         return [_redact(item) for item in obj]
     return obj
+
+
+def _body_for_log(path: str, parsed: Any) -> Any:
+    keys = _COMPACT_BODY_KEYS_BY_PATH.get(path)
+    if keys and isinstance(parsed, dict):
+        return {key: _redact(parsed.get(key)) for key in keys}
+    return _redact(parsed)
 
 
 class RequestInterceptorMiddleware(BaseHTTPMiddleware):
@@ -49,7 +65,7 @@ class RequestInterceptorMiddleware(BaseHTTPMiddleware):
         if "application/json" in content_type and body_bytes:
             try:
                 parsed = json.loads(body_bytes)
-                body_log = json.dumps(_redact(parsed), default=str)
+                body_log = json.dumps(_body_for_log(request.url.path, parsed), default=str)
             except json.JSONDecodeError:
                 body_log = body_bytes.decode("utf-8", errors="replace")[:500]
         elif "multipart/form-data" in content_type:
