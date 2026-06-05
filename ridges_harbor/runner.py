@@ -16,10 +16,7 @@ from ridges_harbor.docker_runtime import (
     build_enable_verifier_egress_hook,
     docker_environment_env,
 )
-from ridges_harbor.progress_logging import install_logging_harbor_progress
 from ridges_harbor.shared import DEFAULT_RESULTS_DIR, HarborRunSummary, resolve_inference_gateway
-
-install_logging_harbor_progress()
 
 DEFAULT_AGENT_SANDBOX_PROXY_URL = "http://sandbox-proxy:80"
 

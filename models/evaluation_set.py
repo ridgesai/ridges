@@ -5,8 +5,6 @@ from uuid import UUID
 
 from pydantic import AfterValidator, BaseModel, Field
 
-from models.agent import AgentStatus
-
 
 def _r4(v: float) -> float:
     return round(float(v), 4)
@@ -116,21 +114,20 @@ class EvaluationSetDetailEfficiency(BaseModel):
     average_agent_runtime_seconds: Float4 | None
 
 
-class EvaluationSetDetailLeaderboardAgent(BaseModel):
+class EvaluationSetDetailAgent(BaseModel):
     rank: int | None
     agent_id: UUID
     miner_hotkey: str
     name: str
     version_num: int
-    status: AgentStatus
-    approved: bool
+    agent_status: str
+    approved_for_emission: bool
     final_score: Float4 | None
+    validator_count: int | None
     average_cost_usd: Float4 | None
     average_runtime_seconds: Float4 | None
-    validator_count: int | None
     validator_hotkeys: list[str]
-    created_at: datetime.datetime
-    set_id: int
+    submitted_at: datetime.datetime
 
 
 class EvaluationSetDetail(BaseModel):

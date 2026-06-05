@@ -10,10 +10,10 @@ from utils.system_metrics import SystemMetrics
 
 
 class ValidatorStatus(str, Enum):
-    available = "available"
-    screening = "screening"
-    evaluating = "evaluating"
-    paused = "paused"
+    available = "Available"
+    screening = "Screening"
+    evaluating = "Evaluating"
+    paused = "Paused"
 
 
 class ConnectedValidatorInfo(BaseModel):

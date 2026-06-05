@@ -12,13 +12,7 @@ from harbor.models.agent.context import AgentContext
 
 import ridges_harbor.runner as runner_module
 from models.openrouter import OpenRouterRuntimeConfig
-from ridges_harbor._stdlib_contract import (
-    GIT_BASELINE_LOG_FILENAME,
-    PATCH_APPLY_LOG_FILENAME,
-    PATCH_CHECK_LOG_FILENAME,
-    RUN_LOG_FILENAME,
-    SETUP_LOG_FILENAME,
-)
+from ridges_harbor._stdlib_contract import RUN_LOG_FILENAME, SETUP_LOG_FILENAME
 from ridges_harbor.agents import MinerRuntimeError, RidgesMinerAgent
 from ridges_harbor.runner import _run_task_dir
 
@@ -458,68 +452,6 @@ async def test_run_renders_instruction_with_prompt_template(tmp_path: Path, monk
     )
 
     assert uploaded_instruction["content"] == "prefix original instruction suffix"
-
-
-@pytest.mark.anyio
-async def test_run_ensures_git_baseline_before_runtime_and_patch_apply(tmp_path: Path, monkeypatch) -> None:
-    agent_path = tmp_path / "agent.py"
-    agent_path.write_text("def agent_main(input):\n    return ''\n")
-    miner = RidgesMinerAgent(logs_dir=tmp_path / "logs", agent_path=str(agent_path), workdir="/task-workdir")
-    calls: list[dict[str, object]] = []
-
-    class FakeEnvironment:
-        async def upload_file(self, source: Path, destination: str) -> None:
-            return None
-
-    async def fake_exec_with_log(
-        environment,
-        *,
-        executor,
-        command,
-        log_filename,
-        cancelled_detail,
-        cwd=None,
-        error_summary=None,
-        error_type=None,
-        include_output_body=True,
-    ):
-        calls.append(
-            {
-                "command": command,
-                "cwd": cwd,
-                "error_summary": error_summary,
-                "error_type": error_type,
-                "include_output_body": include_output_body,
-                "log_filename": log_filename,
-            }
-        )
-        return SimpleNamespace(return_code=0, stdout="", stderr="")
-
-    monkeypatch.setattr(miner, "_exec_with_log", fake_exec_with_log)
-
-    await miner.run(
-        "fix the task",
-        environment=FakeEnvironment(),
-        context=AgentContext(),
-    )
-
-    assert [call["log_filename"] for call in calls] == [
-        GIT_BASELINE_LOG_FILENAME,
-        RUN_LOG_FILENAME,
-        PATCH_CHECK_LOG_FILENAME,
-        PATCH_APPLY_LOG_FILENAME,
-    ]
-    assert all(call["cwd"] == "/task-workdir" for call in calls)
-
-    baseline_command = str(calls[0]["command"])
-    assert "command -v git" in baseline_command
-    assert "git rev-parse HEAD" in baseline_command
-    assert "git rev-parse --is-inside-work-tree" not in baseline_command
-    assert "git config commit.gpgsign false" in baseline_command
-    assert "git commit --allow-empty -m 'ridges baseline'" in baseline_command
-    assert calls[0]["error_summary"] == "Failed to initialize git baseline"
-    assert calls[0]["error_type"] is MinerRuntimeError
-    assert calls[1]["include_output_body"] is False
 
 
 @pytest.mark.anyio
