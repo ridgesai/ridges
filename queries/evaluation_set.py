@@ -98,7 +98,6 @@ def _sql_ranked_scores_cte(extra_select_columns: str, materialized: bool) -> str
         f"    JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id\n"
         f"    LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id\n"
         f"    WHERE ass.set_id = $1\n"
-        f"      AND ass.status::text <> 'cancelled'\n"
         f")"
     )
 
@@ -405,15 +404,82 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
 
 
 @db_operation
-async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
+async def get_evaluation_set_leaderboard_agents(
+    conn: DatabaseConnection, set_id: int, expected_validator_count: int
+) -> list[asyncpg.Record]:
     """Return all competition-window agents with leaderboard fields for an evaluation set."""
-
     return await conn.fetch(
         f"""
         WITH {_SQL_SET_WINDOW_CTE},
         {_sql_agents_in_window_cte("a.agent_id, a.miner_hotkey, a.name, a.version_num, a.status::text, a.created_at")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
-        {_sql_ranked_scores_cte(",\n        ass.final_score,\n        ass.validator_count", materialized=False)}
+        tentative_scores AS (
+            WITH tentative_runs AS (
+                SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name, erh.solved
+                FROM evaluations_hydrated eh
+                JOIN agents_in_window aiw
+                    ON aiw.agent_id = eh.agent_id AND aiw.agent_status = 'evaluating'
+                JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
+                WHERE eh.set_id = $1
+                  AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
+                  AND eh.status IN ('success'::EvaluationStatus, 'running'::EvaluationStatus)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM agent_scores ass
+                      WHERE ass.agent_id = eh.agent_id AND ass.set_id = $1
+                  )
+            ),
+            per_problem AS (
+                SELECT
+                    agent_id,
+                    problem_name,
+                    COUNT(DISTINCT validator_hotkey) FILTER (WHERE solved IS TRUE)
+                        AS solved_validator_count
+                FROM tentative_runs
+                GROUP BY agent_id, problem_name
+            ),
+            problem_count AS (
+                SELECT COUNT(*)::float AS n
+                FROM evaluation_sets
+                WHERE set_id = $1 AND set_group = 'validator'::EvaluationSetGroup
+            )
+            SELECT
+                pp.agent_id,
+                COUNT(*) FILTER (WHERE pp.solved_validator_count >= $2)::float
+                    / NULLIF((SELECT n FROM problem_count), 0) AS final_score,
+                (
+                    SELECT COUNT(DISTINCT tr.validator_hotkey)
+                    FROM tentative_runs tr
+                    WHERE tr.agent_id = pp.agent_id
+                )::int AS validator_count
+            FROM per_problem pp
+            GROUP BY pp.agent_id
+            HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= $2) > 0
+        ),
+        scored_agents AS (
+            SELECT ass.agent_id, ass.final_score, ass.validator_count
+            FROM agent_scores ass
+            JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
+            WHERE ass.set_id = $1
+            UNION ALL
+            SELECT ts.agent_id, ts.final_score, ts.validator_count
+            FROM tentative_scores ts
+        ),
+        ranked_scores AS (
+            SELECT
+                sa.agent_id,
+                sa.final_score,
+                sa.validator_count,
+                ROW_NUMBER() OVER (
+                    ORDER BY
+                        ROUND(sa.final_score::numeric, 6) DESC,
+                        vm.average_cost_usd ASC NULLS LAST,
+                        aiw.submitted_at ASC,
+                        sa.agent_id ASC
+                )::int AS rank
+            FROM scored_agents sa
+            JOIN agents_in_window aiw ON aiw.agent_id = sa.agent_id
+            LEFT JOIN validator_metrics vm ON vm.agent_id = sa.agent_id
+        )
         SELECT
             rs.rank,
             aiw.agent_id,
@@ -440,6 +506,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aiw.agent_id ASC
         """,
         set_id,
+        expected_validator_count,
     )
 
 
