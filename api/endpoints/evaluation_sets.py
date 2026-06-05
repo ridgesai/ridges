@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import api.config as config
 from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
@@ -228,7 +229,7 @@ async def evaluation_set_detail(
 # GET evaluation-sets/{set_id}/leaderboard
 #
 async def _build_leaderboard(set_id: int) -> list[EvaluationSetDetailLeaderboardAgent]:
-    agent_rows = await get_evaluation_set_leaderboard_agents(set_id)
+    agent_rows = await get_evaluation_set_leaderboard_agents(set_id, config.NUM_EVALS_PER_AGENT)
     return [EvaluationSetDetailLeaderboardAgent(**dict(row), set_id=set_id) for row in agent_rows]
 
 
