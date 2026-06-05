@@ -410,9 +410,7 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
 
 
 @db_operation
-async def get_evaluation_set_leaderboard_agents(
-    conn: DatabaseConnection, set_id: int, expected_validator_count: int
-) -> list[asyncpg.Record]:
+async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
     """Return all competition-window agents with leaderboard fields for an evaluation set."""
     return await conn.fetch(
         f"""
@@ -447,19 +445,23 @@ async def get_evaluation_set_leaderboard_agents(
                 SELECT COUNT(*)::float AS n
                 FROM evaluation_sets
                 WHERE set_id = $1 AND set_group = 'validator'::EvaluationSetGroup
+            ),
+            validator_counts AS (
+                SELECT
+                    agent_id,
+                    COUNT(DISTINCT validator_hotkey)::int AS validator_count
+                FROM tentative_runs
+                GROUP BY agent_id
             )
             SELECT
                 pp.agent_id,
-                COUNT(*) FILTER (WHERE pp.solved_validator_count >= $2)::float
+                COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count)::float
                     / NULLIF((SELECT n FROM problem_count), 0) AS final_score,
-                (
-                    SELECT COUNT(DISTINCT tr.validator_hotkey)
-                    FROM tentative_runs tr
-                    WHERE tr.agent_id = pp.agent_id
-                )::int AS validator_count
+                vc.validator_count
             FROM per_problem pp
-            GROUP BY pp.agent_id
-            HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= $2) > 0
+            JOIN validator_counts vc ON vc.agent_id = pp.agent_id
+            GROUP BY pp.agent_id, vc.validator_count
+            HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
         ),
         scored_agents AS (
             SELECT ass.agent_id, ass.final_score, ass.validator_count
@@ -512,7 +514,6 @@ async def get_evaluation_set_leaderboard_agents(
             aiw.agent_id ASC
         """,
         set_id,
-        expected_validator_count,
     )
 
 
