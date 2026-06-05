@@ -418,7 +418,7 @@ async def get_evaluation_set_leaderboard_agents(
                 SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name, erh.solved
                 FROM evaluations_hydrated eh
                 JOIN agents_in_window aiw
-                    ON aiw.agent_id = eh.agent_id AND aiw.agent_status = 'evaluating'
+                    ON aiw.agent_id = eh.agent_id AND aiw.status = 'evaluating'
                 JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
                 WHERE eh.set_id = $1
                   AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
@@ -473,7 +473,7 @@ async def get_evaluation_set_leaderboard_agents(
                     ORDER BY
                         ROUND(sa.final_score::numeric, 6) DESC,
                         vm.average_cost_usd ASC NULLS LAST,
-                        aiw.submitted_at ASC,
+                        aiw.created_at ASC,
                         sa.agent_id ASC
                 )::int AS rank
             FROM scored_agents sa
