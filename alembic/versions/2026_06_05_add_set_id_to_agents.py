@@ -1,0 +1,29 @@
+"""Add set_id column to agents table
+
+Revision ID: a1b2c3d4e5f6
+Revises: b1d5e8a3f902
+Create Date: 2026-06-05 00:00:00.000000
+"""
+
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+
+from alembic import op
+
+revision: str = "a1b2c3d4e5f6"
+down_revision: Union[str, Sequence[str], None] = "b1d5e8a3f902"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.add_column("agents", sa.Column("set_id", sa.Integer(), nullable=True))
+    op.create_foreign_key("fk_agents_set_id", "agents", "competitions", ["set_id"], ["set_id"])
+    op.create_index("idx_agents_set_id", "agents", ["set_id"])
+
+
+def downgrade() -> None:
+    op.drop_index("idx_agents_set_id", table_name="agents")
+    op.drop_constraint("fk_agents_set_id", "agents", type_="foreignkey")
+    op.drop_column("agents", "set_id")

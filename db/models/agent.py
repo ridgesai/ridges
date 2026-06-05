@@ -22,6 +22,7 @@ class Agent(Base):
     created_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
     ip_address: Mapped[str] = mapped_column(sa.Text, nullable=False)
     source_sha256: Mapped[Optional[str]] = mapped_column(sa.Text)
+    set_id: Mapped[Optional[int]] = mapped_column(sa.Integer, sa.ForeignKey("competitions.set_id"), nullable=True)
 
     __table_args__ = (
         sa.Index("idx_agents_miner_hotkey_version", "miner_hotkey", "agent_id"),
