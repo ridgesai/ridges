@@ -80,7 +80,6 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
         f"    JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id\n"
         f"    WHERE eh.set_id = $1\n"
         f"      AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
-        f"      AND eh.status = 'success'::EvaluationStatus\n"
         f"    GROUP BY eh.agent_id\n"
         f")"
     )
@@ -422,11 +421,11 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                 SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name, erh.solved
                 FROM evaluations_hydrated eh
                 JOIN agents_in_window aiw
-                    ON aiw.agent_id = eh.agent_id AND aiw.status = 'evaluating'
+                    ON aiw.agent_id = eh.agent_id AND aiw.status in ('evaluating','cancelled')
                 JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
                 WHERE eh.set_id = $1
                   AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
-                  AND eh.status IN ('success'::EvaluationStatus, 'running'::EvaluationStatus)
+                  AND erh.status != 'error'
                   AND NOT EXISTS (
                       SELECT 1 FROM agent_scores ass
                       WHERE ass.agent_id = eh.agent_id AND ass.set_id = $1
@@ -449,7 +448,8 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             validator_counts AS (
                 SELECT
                     agent_id,
-                    COUNT(DISTINCT validator_hotkey)::int AS validator_count
+                    COUNT(DISTINCT validator_hotkey)::int AS validator_count,
+                    ARRAY_AGG(DISTINCT validator_hotkey ORDER BY validator_hotkey) AS validator_hotkeys
                 FROM tentative_runs
                 GROUP BY agent_id
             )
@@ -457,19 +457,22 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                 pp.agent_id,
                 COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count)::float
                     / NULLIF((SELECT n FROM problem_count), 0) AS final_score,
-                vc.validator_count
+                vc.validator_count,
+                vc.validator_hotkeys
             FROM per_problem pp
             JOIN validator_counts vc ON vc.agent_id = pp.agent_id
-            GROUP BY pp.agent_id, vc.validator_count
+            GROUP BY pp.agent_id, vc.validator_count, vc.validator_hotkeys
             HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
         ),
         scored_agents AS (
-            SELECT ass.agent_id, ass.final_score, ass.validator_count
+            SELECT ass.agent_id, ass.final_score, ass.validator_count,
+                   COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys
             FROM agent_scores ass
             JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
+            LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
             WHERE ass.set_id = $1
             UNION ALL
-            SELECT ts.agent_id, ts.final_score, ts.validator_count
+            SELECT ts.agent_id, ts.final_score, ts.validator_count, ts.validator_hotkeys
             FROM tentative_scores ts
         ),
         ranked_scores AS (
@@ -477,6 +480,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                 sa.agent_id,
                 sa.final_score,
                 sa.validator_count,
+                sa.validator_hotkeys,
                 ROW_NUMBER() OVER (
                     ORDER BY
                         ROUND(sa.final_score::numeric, 6) DESC,
@@ -500,7 +504,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             rs.validator_count,
             vm.average_cost_usd,
             vm.average_runtime_seconds,
-            COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
+            COALESCE(rs.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
             aiw.created_at
         FROM agents_in_window aiw
         LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
