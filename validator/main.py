@@ -754,6 +754,8 @@ async def main():
             continue
 
         await _run_evaluation(ValidatorRequestEvaluationResponse(**request_evaluation_response_data))
+        logger.info(f"Evaluation complete. Waiting for {config.REQUEST_EVALUATION_INTERVAL_SECONDS} seconds...")
+        await asyncio.sleep(config.REQUEST_EVALUATION_INTERVAL_SECONDS)
 
 
 if __name__ == "__main__":
