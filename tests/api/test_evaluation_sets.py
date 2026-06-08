@@ -350,7 +350,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
     lower_cost_tie_agent = uuid4()
     higher_cost_tie_agent = uuid4()
     earlier_time_tie_agent = uuid4()
-    later_time_tie_agent = uuid4()
+    later_time_tie_agent_less_runtime = uuid4()
     unscored_agent = uuid4()
 
     async with _db.pool.acquire() as conn:
@@ -391,7 +391,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
         )
         await _insert_agent(
             conn,
-            agent_id=later_time_tie_agent,
+            agent_id=later_time_tie_agent_less_runtime,
             miner_hotkey="miner-later-time",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=30),
@@ -411,7 +411,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             lower_cost_tie_agent: (1.0, 80),
             higher_cost_tie_agent: (2.0, 20),
             earlier_time_tie_agent: (4.0, 40),
-            later_time_tie_agent: (4.0, 10),
+            later_time_tie_agent_less_runtime: (4.0, 10),
         }
         for agent_id, (cost_usd, runtime_seconds) in cost_and_runtime.items():
             evaluation_id = await _insert_evaluation(
@@ -433,7 +433,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             (lower_cost_tie_agent, "miner-lower-cost", 0.8),
             (higher_cost_tie_agent, "miner-higher-cost", 0.8),
             (earlier_time_tie_agent, "miner-earlier-time", 0.7),
-            (later_time_tie_agent, "miner-later-time", 0.7),
+            (later_time_tie_agent_less_runtime, "miner-later-time", 0.7),
         ]:
             await _insert_agent_score(
                 conn,
@@ -450,8 +450,8 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
         high_score_agent,
         lower_cost_tie_agent,
         higher_cost_tie_agent,
+        later_time_tie_agent_less_runtime,
         earlier_time_tie_agent,
-        later_time_tie_agent,
     ]
 
     agents_by_id = {agent.agent_id: agent for agent in leaderboard}
