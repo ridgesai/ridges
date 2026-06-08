@@ -63,7 +63,7 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
 
 
 def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
-    """This method returns a CTE that computes average validator cost and runtime per agent, over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' (i.e. all runs finished successfully or with only "valid" errors, or else at least one run is still in progress) or an evaluation set to "failure", but with non zero cost (i.e. it ran, but eventually got cancelled).
+    """This method returns a CTE that computes average validator cost and runtime per agent, over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' or that it was cancelled.
 
 
     Optionally includes an array of validator hotkeys for those 3 evaluations.
