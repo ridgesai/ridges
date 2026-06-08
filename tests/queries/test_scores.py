@@ -185,7 +185,7 @@ async def test_expired_top_scored_agent_burns_instead_of_falling_through():
 
 
 @pytest.mark.anyio
-async def test_unapproved_top_scored_agent_burns_instead_of_falling_through():
+async def test_unapproved_top_scored_agent_is_skipped():
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn)
@@ -207,7 +207,7 @@ async def test_unapproved_top_scored_agent_burns_instead_of_falling_through():
             created_at=SET_CREATED_AT + timedelta(hours=2),
         )
 
-    assert await get_weight_receiving_agent_hotkey() is None
+    assert await get_weight_receiving_agent_hotkey() == "eligible-second"
 
 
 @pytest.mark.anyio
