@@ -60,27 +60,85 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
 
 
 def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
+    """This method returns a CTE that computes average validator cost and runtime per agent, over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' (i.e. all runs finished successfully or with only "valid" errors, or else at least one run is still in progress) or an evaluation set to "failure", but with non zero cost (i.e. it ran, but eventually got cancelled).
+
+
+    Optionally includes an array of validator hotkeys for those 3 evaluations.
+
+    Parameters
+    ----------
+    include_validator_hotkeys : bool
+        Whether to include an array of validator hotkeys for the evaluations considered in the averages.
+
+    Returns
+    -------
+    str
+        The SQL string for the CTE.
+    """
     hotkeys_col = (
-        ",\n        COALESCE(\n"
-        "            ARRAY_AGG(DISTINCT eh.validator_hotkey ORDER BY eh.validator_hotkey)\n"
-        "                FILTER (WHERE eh.validator_hotkey IS NOT NULL),\n"
-        "            ARRAY[]::text[]\n"
-        "        ) AS validator_hotkeys"
-        if include_validator_hotkeys
-        else ""
+        ",\n        ARRAY_AGG(sample.validator_hotkey) AS validator_hotkeys" if include_validator_hotkeys else ""
     )
     return (
         f"validator_metrics AS MATERIALIZED (\n"
         f"    SELECT\n"
-        f"        eh.agent_id,\n"
-        f"        AVG(eh.avg_cost_usd) AS average_cost_usd,\n"
-        f"        AVG(eh.avg_running_secs) AS average_runtime_seconds"
+        f"        sample.agent_id,\n"
+        f"        AVG(sample.avg_cost_usd) AS average_cost_usd,\n"
+        f"        AVG(sample.avg_running_secs) AS average_runtime_seconds"
         f"{hotkeys_col}\n"
-        f"    FROM evaluations_hydrated eh\n"
-        f"    JOIN agents_in_window aiw ON aiw.agent_id = eh.agent_id\n"
-        f"    WHERE eh.set_id = $1\n"
-        f"      AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
-        f"    GROUP BY eh.agent_id\n"
+        f"    FROM (\n"
+        f"        SELECT\n"
+        f"            ranked.agent_id,\n"
+        f"            ranked.evaluation_id,\n"
+        f"            ranked.validator_hotkey,\n"
+        f"            ranked.avg_running_secs,\n"
+        f"            ranked.avg_cost_usd,\n"
+        f"            ranked.status,\n"
+        f"            ROW_NUMBER() OVER (\n"
+        f"                PARTITION BY ranked.agent_id\n"
+        f"                ORDER BY ranked.status\n"
+        f"            ) AS rn\n"
+        f"        FROM (\n"
+        f"            SELECT\n"
+        f"                evaluations.agent_id,\n"
+        f"                evaluations.evaluation_id,\n"
+        f"                evaluations.validator_hotkey,\n"
+        f"                AVG(\n"
+        f"                    EXTRACT(\n"
+        f"                        EPOCH\n"
+        f"                        FROM\n"
+        f"                            erh.finished_or_errored_at - erh.started_running_agent_at\n"
+        f"                    )\n"
+        f"                ) AS avg_running_secs,\n"
+        f"                AVG(COALESCE(erh.cost_usd, 0)) AS avg_cost_usd,\n"
+        f"                CASE\n"
+        f"                    WHEN EVERY(\n"
+        f"                        erh.status = 'finished'::evaluationrunstatus\n"
+        f"                        OR erh.status = 'error'::evaluationrunstatus\n"
+        f"                        AND erh.error_code >= 1000\n"
+        f"                        AND erh.error_code <= 1999\n"
+        f"                    ) THEN 'success'::text\n"
+        f"                    WHEN EVERY(\n"
+        f"                        erh.status = ANY (\n"
+        f"                            ARRAY ['finished'::evaluationrunstatus, 'error'::evaluationrunstatus]\n"
+        f"                        )\n"
+        f"                    ) THEN 'failure'::text\n"
+        f"                    ELSE 'running'::text\n"
+        f"                END::evaluationstatus AS status\n"
+        f"            FROM\n"
+        f"                evaluations\n"
+        f"                JOIN evaluation_runs_hydrated erh USING (evaluation_id)\n"
+        f"            WHERE\n"
+        f"                evaluations.evaluation_set_group = 'validator'::EvaluationSetGroup\n"
+        f"                AND evaluations.set_id = $1\n"
+        f"            GROUP BY\n"
+        f"                evaluations.agent_id,\n"
+        f"                evaluations.evaluation_id\n"
+        f"        ) AS ranked\n"
+        f"        JOIN agents_in_window aiw ON aiw.agent_id = ranked.agent_id\n"
+        f"        WHERE ranked.avg_cost_usd > 0\n"
+        f"    ) AS sample\n"
+        f"    WHERE sample.rn <= 3\n"
+        f"    GROUP BY sample.agent_id\n"
         f")"
     )
 
@@ -485,6 +543,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                     ORDER BY
                         ROUND(sa.final_score::numeric, 6) DESC,
                         vm.average_cost_usd ASC NULLS LAST,
+                        vm.average_runtime_seconds ASC NULLS LAST,
                         aiw.created_at ASC,
                         sa.agent_id ASC
                 )::int AS rank
