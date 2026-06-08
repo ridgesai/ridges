@@ -235,8 +235,6 @@ async def post_agent(
             coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(block_number))
             payment_extrinsic = payment_block["extrinsics"][int(payment_extrinsic_index)]
 
-            payment_cost = await get_upload_price(cache_time=payment_time)
-
             # Example payment extrinsic:
             """
             <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>
@@ -252,8 +250,12 @@ async def post_agent(
             ):
                 raise HTTPException(status_code=402, detail="Payment value not found")
 
-            if payment_value != payment_cost.amount_rao:
-                raise HTTPException(status_code=402, detail="Payment amount does not match")
+            # Only validate the paid amount against the spot price for a payment we haven't seen before.
+            # If it was already reserved (existing_payment with no agent_id), it passed this check when first reserved.
+            if existing_payment is None:
+                payment_cost = await get_upload_price(cache_time=payment_time)
+                if payment_value != payment_cost.amount_rao:
+                    raise HTTPException(status_code=402, detail="Payment amount does not match")
 
             # Make sure coldkey is the same as hotkeys owner coldkey
             if coldkey != payment_extrinsic["address"]:
