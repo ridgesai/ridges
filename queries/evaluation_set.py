@@ -56,7 +56,7 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
         f"    AND NOT EXISTS (\n"
         f"        SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id)\n"
         f"    AND NOT EXISTS (\n"
-        f"        SELECT 1 FROM agent_approval_states c WHERE c.agent_id = a.agent_id AND published_verdict='rejected'\n"
+        f"        SELECT 1 FROM agent_final_review_statuses c WHERE c.agent_id = a.agent_id AND set_id=$1 AND approval_review_status ='rejected'\n"
         f"    )\n"
         f")"
     )
