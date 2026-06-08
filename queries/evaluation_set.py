@@ -4,6 +4,7 @@ from typing import List
 
 import asyncpg
 
+from api.config import NUM_EVALS_PER_AGENT
 from models.evaluation_set import (
     EvaluationSet,
     EvaluationSetGroup,
@@ -125,7 +126,11 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
         f"                        )\n"
         f"                    ) THEN 'failure'::text\n"
         f"                    ELSE 'running'::text\n"
-        f"                END::evaluationstatus AS status\n"
+        f"                END::evaluationstatus AS status,\n"
+        f"                CASE\n"
+        f"                    WHEN bool_or(erh.status = 'error'::evaluationrunstatus and erh.error_code = 3060) THEN true\n"
+        f"                    ELSE false\n"
+        f"                END AS cancelled\n"
         f"            FROM\n"
         f"                evaluations\n"
         f"                JOIN evaluation_runs_hydrated erh USING (evaluation_id)\n"
@@ -137,9 +142,9 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
         f"                evaluations.evaluation_id\n"
         f"        ) AS ranked\n"
         f"        JOIN agents_in_window aiw ON aiw.agent_id = ranked.agent_id\n"
-        f"        WHERE ranked.avg_cost_usd > 0\n"
+        f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
-        f"    WHERE sample.rn <= 3\n"
+        f"    WHERE sample.rn <= {NUM_EVALS_PER_AGENT}\n"
         f"    GROUP BY sample.agent_id\n"
         f")"
     )
@@ -562,10 +567,10 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aiw.status,
             (aa.agent_id IS NOT NULL) AS approved,
             rs.final_score,
-            rs.validator_count,
+            COALESCE(ARRAY_LENGTH(vm.validator_hotkeys,1), 0) AS validator_count,
             vm.average_cost_usd,
             vm.average_runtime_seconds,
-            COALESCE(rs.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
+            COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
             aiw.created_at
         FROM agents_in_window aiw
         LEFT JOIN ranked_scores rs ON rs.agent_id = aiw.agent_id
