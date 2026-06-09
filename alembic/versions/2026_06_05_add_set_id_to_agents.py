@@ -1,7 +1,7 @@
 """Add set_id column to agents table
 
 Revision ID: a1b2c3d4e5f6
-Revises: b1d5e8a3f902
+Revises: c4d9a2e7f813
 Create Date: 2026-06-05 00:00:00.000000
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "a1b2c3d4e5f6"
-down_revision: Union[str, Sequence[str], None] = "b1d5e8a3f902"
+down_revision: Union[str, Sequence[str], None] = "c4d9a2e7f813"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
