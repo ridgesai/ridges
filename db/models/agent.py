@@ -30,6 +30,12 @@ class Agent(Base):
             "status",
             postgresql_where=sa.text("status = 'evaluating'"),
         ),
+        sa.Index(
+            "idx_agents_screening_status_created_at",
+            "status",
+            "created_at",
+            postgresql_where=sa.text("status IN ('screening_1', 'screening_2')"),
+        ),
         sa.Index("idx_agents_source_sha256", "source_sha256"),
     )
 
