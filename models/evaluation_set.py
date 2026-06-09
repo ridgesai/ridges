@@ -131,6 +131,7 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     validator_hotkeys: list[str]
     created_at: datetime.datetime
     set_id: int
+    disqualified: bool
 
 
 class EvaluationSetDetail(BaseModel):
