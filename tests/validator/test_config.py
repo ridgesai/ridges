@@ -42,4 +42,4 @@ def test_request_evaluation_interval_is_hardcoded(monkeypatch) -> None:
     monkeypatch.setenv("REQUEST_EVALUATION_INTERVAL_SECONDS", "10")
     config = _load_config(monkeypatch, mode="screener", ridges_max_cost_usd="9")
 
-    assert config.REQUEST_EVALUATION_INTERVAL_SECONDS == 30
+    assert config.REQUEST_EVALUATION_INTERVAL_SECONDS == 60

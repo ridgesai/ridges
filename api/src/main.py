@@ -89,7 +89,10 @@ async def lifespan(app: FastAPI):
     if config.AUTO_APPROVAL_RUN_LOOP:
         _start_background_task(background_tasks, "approval_projector_loop", approval_projector_loop())
 
-    await set_all_unfinished_evaluation_runs_to_errored(error_message="Platform crashed while running this evaluation")
+    if config.SHOULD_RUN_LOOPS:
+        await set_all_unfinished_evaluation_runs_to_errored(
+            error_message="Platform crashed while running this evaluation"
+        )
 
     yield
 
