@@ -69,6 +69,21 @@ def check_rate_limit(latest_agent_created_at_in_latest_set_id: datetime) -> None
     logger.debug("Miner is not rate limited.")
 
 
+def timestamp_ms_to_utc_datetime(timestamp_ms: int | None) -> datetime:
+    if timestamp_ms is None:
+        raise HTTPException(status_code=402, detail="Payment block timestamp not found")
+    try:
+        return datetime.fromtimestamp(int(timestamp_ms) / 1000, timezone.utc)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=402, detail="Payment block timestamp could not be decoded") from None
+
+
+def as_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def check_signature(public_key: str, file_info: str, signature: str, miner_hotkey: str) -> None:
     logger.debug("Checking if the signature is valid...")
     logger.debug(f"Public key: {public_key}, File info: {file_info}, Signature: {signature}.")
