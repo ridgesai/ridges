@@ -512,11 +512,10 @@ def team_upload(
     "--openrouter-management-key",
     help="OpenRouter management key. Falls back to RIDGES_OPENROUTER_MANAGEMENT_KEY or an interactive prompt.",
 )
-@click.option("--quote-id", required=True, help="Payment Quote ID printed after the original payment.")
-@click.option("--payment-block-hash", required=True, help="Payment Block Hash printed after the original payment.")
+@click.option("--quote-id", help="Payment Quote ID printed after the original payment.")
+@click.option("--payment-block-hash", help="Payment Block Hash printed after the original payment.")
 @click.option(
     "--payment-extrinsic-index",
-    required=True,
     type=int,
     help="Payment Extrinsic Index printed after the original payment.",
 )
@@ -528,9 +527,9 @@ def resume_upload(
     hotkey_name: Optional[str],
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
-    quote_id: str,
-    payment_block_hash: str,
-    payment_extrinsic_index: int,
+    quote_id: Optional[str],
+    payment_block_hash: Optional[str],
+    payment_extrinsic_index: Optional[int],
 ):
     """Resume a failed upload using an existing payment receipt."""
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
@@ -539,6 +538,11 @@ def resume_upload(
         openrouter_management_key=openrouter_management_key,
     )
     _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
+
+    quote_id = quote_id or Prompt.ask("Payment Quote ID")
+    payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
+    if payment_extrinsic_index is None:
+        payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
 
     receipt = PaymentReceipt(
         block_hash=payment_block_hash,
