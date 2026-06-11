@@ -284,21 +284,25 @@ async def post_agent(
                 raise HTTPException(status_code=402, detail="Payment block not found")
 
             coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
-            payment_extrinsic_index_int = int(payment_extrinsic_index)
-            payment_extrinsic = payment_block_info.extrinsics[payment_extrinsic_index_int]
-            payment_extrinsic_value = payment_extrinsic.value_serialized
-            payment_call = payment_extrinsic_value["call"]
+            try:
+                payment_extrinsic_index_int = int(payment_extrinsic_index)
+                if payment_extrinsic_index_int < 0:
+                    raise ValueError
+                payment_extrinsic = payment_block_info.extrinsics[payment_extrinsic_index_int]
+                payment_extrinsic_value = payment_extrinsic.value_serialized
+                payment_call = payment_extrinsic_value["call"]
+                call_args = {arg["name"]: arg["value"] for arg in payment_call["call_args"]}
+                payment_value = call_args.get("value")
+                destination = call_args.get("dest")
+                payment_address = payment_extrinsic_value["address"]
+            except (ValueError, TypeError, IndexError, KeyError, AttributeError):
+                raise HTTPException(status_code=402, detail="Payment extrinsic could not be decoded") from None
 
             if (
                 payment_call.get("call_module") != "Balances"
                 or payment_call.get("call_function") != "transfer_keep_alive"
             ):
                 raise HTTPException(status_code=402, detail="Payment extrinsic is not a TAO transfer")
-
-            call_args = {arg["name"]: arg["value"] for arg in payment_call["call_args"]}
-            payment_value = call_args.get("value")
-            destination = call_args.get("dest")
-            payment_address = payment_extrinsic_value["address"]
 
             if payment_value is None or await check_if_extrinsic_failed(
                 payment_block_hash, payment_extrinsic_index_int
