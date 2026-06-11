@@ -542,7 +542,10 @@ def resume_upload(
     quote_id = quote_id or Prompt.ask("Payment Quote ID")
     payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
     if payment_extrinsic_index is None:
-        payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
+        try:
+            payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
+        except ValueError:
+            raise click.ClickException("Payment Extrinsic Index must be an integer") from None
 
     receipt = PaymentReceipt(
         block_hash=payment_block_hash,
