@@ -51,11 +51,14 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
         CROSS JOIN set_window sw
         LEFT JOIN agent_final_review_statuses review
             ON review.agent_id = a.agent_id
-            AND review.set_id = $1
+            AND review.set_id = $1  
         WHERE (
-
-                a.created_at >= sw.set_start
-                AND (sw.set_end IS NULL OR a.created_at < sw.set_end)
+                a.set_id = $1
+                OR (
+                    a.set_id is NULL
+                    AND a.created_at >= sw.set_start
+                    AND (sw.set_end IS NULL OR a.created_at < sw.set_end)
+                )
         )
         AND NOT EXISTS (
             SELECT 1 FROM benchmark_agent_ids b WHERE b.agent_id = a.agent_id)
@@ -175,6 +178,7 @@ def _sql_top_agent_for_summary() -> str:
             FROM agent_scores sa
             JOIN agents_in_window aiw ON aiw.agent_id = sa.agent_id
             LEFT JOIN validator_metrics vm ON vm.agent_id = sa.agent_id
+            WHERE sa.set_id = $1
             ORDER BY rank
             LIMIT 1
         )
