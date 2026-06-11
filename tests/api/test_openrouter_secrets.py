@@ -152,7 +152,16 @@ def _patch_upload_dependencies(
         return None
 
     async def fake_get_upload_price(*args, **kwargs):
-        return SimpleNamespace(amount_rao=1)
+        return SimpleNamespace(amount_rao=1, send_address="send-address")
+
+    async def fake_create_payment_quote(*, miner_hotkey: str, amount_rao: int, send_address: str, expires_at):
+        return SimpleNamespace(
+            quote_id=uuid4(),
+            miner_hotkey=miner_hotkey,
+            amount_rao=amount_rao,
+            send_address=send_address,
+            expires_at=expires_at,
+        )
 
     monkeypatch.setattr(upload_endpoint, "validate_openrouter_keys", fake_validate_openrouter_keys)
     monkeypatch.setattr(upload_endpoint, "get_hotkey_lock", fake_get_hotkey_lock)
@@ -166,6 +175,7 @@ def _patch_upload_dependencies(
     monkeypatch.setattr(upload_endpoint, "check_hotkey_registered", fake_check_hotkey_registered)
     monkeypatch.setattr(upload_endpoint, "check_agent_banned", fake_check_agent_banned)
     monkeypatch.setattr(upload_endpoint, "get_upload_price", fake_get_upload_price)
+    monkeypatch.setattr(upload_endpoint, "create_payment_quote", fake_create_payment_quote)
     monkeypatch.setattr(upload_endpoint, "create_agent", create_agent_impl)
     return upload_endpoint
 
@@ -428,7 +438,6 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         name="Agent",
         payment_block_hash="block",
         payment_extrinsic_index="0",
-        payment_time=0.0,
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
     )
@@ -466,7 +475,6 @@ async def test_check_agent_uses_shared_openrouter_validation(monkeypatch) -> Non
         file_info="miner-hotkey:1",
         signature="sig",
         name="Agent",
-        payment_time=0.0,
         openrouter_api_key="sk-or-v1-runtime",
         openrouter_management_key="sk-or-v1-management",
     )
