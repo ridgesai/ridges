@@ -6,13 +6,13 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
 
 from api import config
 from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenError
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
+    as_utc,
     check_agent_banned,
     check_file_size,
     check_hotkey_registered,
@@ -21,8 +21,10 @@ from api.src.utils.upload_agent_helpers import (
     check_signature,
     get_miner_hotkey,
     get_tao_price,
+    timestamp_ms_to_utc_datetime,
 )
 from models.agent import Agent, AgentCreate, AgentStatus
+from models.upload import AgentCheckResponse, AgentUploadResponse, ErrorResponse, UploadPriceResponse
 from queries.agent import (
     create_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
@@ -58,50 +60,6 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
         if hotkey not in hotkey_locks:
             hotkey_locks[hotkey] = asyncio.Lock()
         return hotkey_locks[hotkey]
-
-
-class AgentUploadResponse(BaseModel):
-    """Response model for successful agent upload"""
-
-    status: str = Field(..., description="Status of the upload operation")
-    message: str = Field(..., description="Detailed message about the upload result")
-
-
-class UploadPriceResponse(BaseModel):
-    """Response model for upload pricing"""
-
-    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
-    send_address: str = Field(..., description="TAO address to send evaluation payment to")
-
-
-class AgentCheckResponse(AgentUploadResponse):
-    """Response model for successful agent upload preflight checks"""
-
-    quote_id: UUID = Field(..., description="Quote ID to include when uploading or resuming")
-    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
-    send_address: str = Field(..., description="TAO address to send evaluation payment to")
-    expires_at: datetime = Field(..., description="Latest on-chain payment timestamp accepted for this quote")
-
-
-class ErrorResponse(BaseModel):
-    """Error response model"""
-
-    detail: str = Field(..., description="Error message describing what went wrong")
-
-
-def _timestamp_ms_to_utc_datetime(timestamp_ms: int | None) -> datetime:
-    if timestamp_ms is None:
-        raise HTTPException(status_code=402, detail="Payment block timestamp not found")
-    try:
-        return datetime.fromtimestamp(int(timestamp_ms) / 1000, timezone.utc)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=402, detail="Payment block timestamp could not be decoded") from None
-
-
-def _as_utc(dt: datetime) -> datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 router = APIRouter()
@@ -323,8 +281,8 @@ async def post_agent(
             if payment_value != quote.amount_rao:
                 raise HTTPException(status_code=402, detail="Payment amount does not match")
 
-            payment_block_time = _timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
-            if not (_as_utc(quote.created_at) <= payment_block_time <= _as_utc(quote.expires_at)):
+            payment_block_time = timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
+            if not (as_utc(quote.created_at) <= payment_block_time <= as_utc(quote.expires_at)):
                 raise HTTPException(status_code=402, detail="Payment was made outside the quote validity window")
 
         validated_openrouter_keys = await validate_openrouter_keys(
