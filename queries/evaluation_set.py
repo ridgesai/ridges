@@ -170,7 +170,6 @@ def _sql_top_agent_for_summary() -> str:
                         ORDER BY
                             ROUND(sa.final_score::numeric, 6) DESC,
                             vm.average_cost_usd ASC NULLS LAST,
-                            vm.average_runtime_seconds ASC NULLS LAST,
                             aiw.created_at ASC,
                             sa.agent_id ASC
                     )::int
@@ -179,6 +178,8 @@ def _sql_top_agent_for_summary() -> str:
             JOIN agents_in_window aiw ON aiw.agent_id = sa.agent_id
             LEFT JOIN validator_metrics vm ON vm.agent_id = sa.agent_id
             WHERE sa.set_id = $1
+              AND aiw.status = 'finished'
+              AND NOT aiw.disqualified
             ORDER BY rank
             LIMIT 1
         )
@@ -570,7 +571,6 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                         ORDER BY
                             ROUND(sa.final_score::numeric, 6) DESC,
                             vm.average_cost_usd ASC NULLS LAST,
-                            vm.average_runtime_seconds ASC NULLS LAST,
                             sa.created_at ASC,
                             sa.agent_id ASC
                     )::int
