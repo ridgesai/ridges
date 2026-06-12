@@ -560,7 +560,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             SELECT
                 sa.agent_id,
                 sa.final_score,
-                COALESCE(ARRAY_LENGTH(vm.validator_hotkeys,1), 0) AS validator_count,
+                sa.validator_count,
                 vm.average_cost_usd,
                 vm.average_runtime_seconds,
                 COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
