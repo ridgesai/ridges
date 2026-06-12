@@ -42,9 +42,13 @@ def test_resolve_openrouter_upload_credentials_uses_env_then_prompt(monkeypatch)
 
 
 class _FakeResponse:
-    def __init__(self, status_code: int, text: str = "ok") -> None:
+    def __init__(self, status_code: int, text: str = "ok", json_data: dict | None = None) -> None:
         self.status_code = status_code
         self.text = text
+        self._json_data = json_data or {}
+
+    def json(self) -> dict:
+        return self._json_data
 
 
 class _FakeClient:
@@ -52,13 +56,19 @@ class _FakeClient:
         self.response = response
         self.calls: list[dict] = []
 
-    def post(self, url: str, *, files, data, timeout):
-        self.calls.append({"url": url, "files": files, "data": data, "timeout": timeout})
+    def post(self, url: str, *, files=None, data=None, json=None, timeout=None):
+        self.calls.append({"url": url, "files": files, "data": data, "json": json, "timeout": timeout})
         return self.response
 
 
 def test_check_upload_allowed_sends_both_openrouter_keys(tmp_path: Path) -> None:
-    client = _FakeClient(_FakeResponse(200))
+    quote_response = {
+        "quote_id": "quote-123",
+        "amount_rao": 123,
+        "send_address": "5Send",
+        "expires_at": "2026-06-10T00:00:00Z",
+    }
+    client = _FakeClient(_FakeResponse(200, json_data=quote_response))
     target = upload_module.UploadTarget(
         api_url="https://agent-upload.ridges.ai",
         agent_path=tmp_path / "agent.py",
@@ -77,11 +87,13 @@ def test_check_upload_allowed_sends_both_openrouter_keys(tmp_path: Path) -> None
         management_key="sk-or-v1-management",
     )
 
-    upload_module._check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
+    quote = upload_module._check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
 
+    assert quote == quote_response
     assert len(client.calls) == 1
     assert client.calls[0]["data"]["openrouter_api_key"] == "sk-or-v1-runtime"
     assert client.calls[0]["data"]["openrouter_management_key"] == "sk-or-v1-management"
+    assert "payment_time" not in client.calls[0]["data"]
 
 
 def test_upload_payload_includes_both_openrouter_keys() -> None:
@@ -95,7 +107,7 @@ def test_upload_payload_includes_both_openrouter_keys() -> None:
     receipt = upload_module.PaymentReceipt(
         block_hash="0xabc",
         extrinsic_index=5,
-        payment_time=123.45,
+        quote_id="quote-123",
     )
     credentials = upload_module.OpenRouterUploadCredentials(
         runtime_api_key="sk-or-v1-runtime",
@@ -110,3 +122,5 @@ def test_upload_payload_includes_both_openrouter_keys() -> None:
 
     assert payload["openrouter_api_key"] == "sk-or-v1-runtime"
     assert payload["openrouter_management_key"] == "sk-or-v1-management"
+    assert payload["quote_id"] == "quote-123"
+    assert "payment_time" not in payload

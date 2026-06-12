@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import time
 import uuid as _uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +47,7 @@ class PendingUpload:
 class PaymentReceipt:
     block_hash: str
     extrinsic_index: int
-    payment_time: float
+    quote_id: Optional[str] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,13 +159,12 @@ def _check_upload_allowed(
     target: UploadTarget,
     pending: PendingUpload,
     credentials: OpenRouterUploadCredentials,
-) -> None:
+) -> dict:
     check_payload = {
         "public_key": pending.public_key,
         "file_info": pending.file_info,
         "signature": pending.signature,
         "name": pending.name,
-        "payment_time": time.time(),
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
@@ -178,13 +176,21 @@ def _check_upload_allowed(
     )
     if response.status_code != 200:
         raise click.ClickException(f"Error checking agent: {response.text}")
-
-
-def _fetch_eval_pricing(client: httpx.Client, *, api_url: str) -> dict:
-    response = client.get(f"{api_url}/upload/eval-pricing")
-    if response.status_code != 200:
-        raise click.ClickException("Error fetching evaluation cost")
     return response.json()
+
+
+def _unlock_coldkey(wallet) -> None:
+    """Unlock the coldkey, re-prompting on incorrect password."""
+    from bittensor_wallet.errors import KeyFileError, PasswordError
+
+    while True:
+        try:
+            wallet.unlock_coldkey()
+            return
+        except PasswordError:
+            console.print("[bold red]Failed:[/bold red] The password used to decrypt your Coldkey keyfile is invalid.")
+        except KeyFileError as exc:
+            raise click.ClickException(str(exc)) from exc
 
 
 def _confirm_payment(payment_method_details: dict) -> bool:
@@ -204,7 +210,6 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
     from bittensor import Subtensor
 
     subtensor = Subtensor(network=os.environ.get("SUBTENSOR_NETWORK", "finney"))
-    payment_time = time.time()
     payment_payload = subtensor.substrate.compose_call(
         call_module="Balances",
         call_function="transfer_keep_alive",
@@ -222,7 +227,7 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
     return PaymentReceipt(
         block_hash=receipt.block_hash,
         extrinsic_index=receipt.extrinsic_idx,
-        payment_time=payment_time,
+        quote_id=payment_method_details["quote_id"],
     )
 
 
@@ -231,6 +236,8 @@ def _print_payment_receipt(receipt: PaymentReceipt) -> None:
         "\n[yellow]Payment extrinsic submitted. If something goes wrong with the upload, "
         "you can use this information to get a refund[/yellow]"
     )
+    if receipt.quote_id:
+        console.print(f"[cyan]Payment Quote ID:[/cyan] {receipt.quote_id}")
     console.print(f"[cyan]Payment Block Hash:[/cyan] {receipt.block_hash}")
     console.print(f"[cyan]Payment Extrinsic Index:[/cyan] {receipt.extrinsic_index}\n")
 
@@ -240,23 +247,23 @@ def _upload_payload(
     pending: PendingUpload,
     receipt: PaymentReceipt,
     credentials: OpenRouterUploadCredentials,
-) -> dict[str, str | int | float]:
-    return {
+) -> dict[str, str | int]:
+    payload: dict[str, str | int] = {
         "public_key": pending.public_key,
         "file_info": pending.file_info,
         "signature": pending.signature,
         "name": pending.name,
         "payment_block_hash": receipt.block_hash,
         "payment_extrinsic_index": receipt.extrinsic_index,
-        "payment_time": receipt.payment_time,
         "openrouter_api_key": credentials.runtime_api_key,
         "openrouter_management_key": credentials.management_key,
     }
+    if receipt.quote_id is not None:
+        payload["quote_id"] = receipt.quote_id
+    return payload
 
 
-def _submit_upload(
-    client: httpx.Client, *, target: UploadTarget, payload: dict[str, str | int | float]
-) -> httpx.Response:
+def _submit_upload(client: httpx.Client, *, target: UploadTarget, payload: dict[str, str | int]) -> httpx.Response:
     files = {"agent_file": ("agent.py", target.file_content, "text/plain")}
     with Progress(
         SpinnerColumn(),
@@ -292,6 +299,18 @@ def _handle_upload_result(response: httpx.Response, *, name: str) -> None:
     raise click.ClickException(f"Upload failed ({response.status_code}): {error}")
 
 
+def _prepare_pending_upload(*, client: httpx.Client, wallet: Wallet, target: UploadTarget) -> PendingUpload:
+    name, version_num = _resolve_upload_name_and_version(
+        client, api_url=target.api_url, hotkey=wallet.hotkey.ss58_address
+    )
+    return _build_pending_upload(
+        wallet=wallet,
+        name=name,
+        version_num=version_num,
+        content_hash=target.content_hash,
+    )
+
+
 def _execute_upload(
     client: httpx.Client,
     *,
@@ -299,6 +318,7 @@ def _execute_upload(
     target: UploadTarget,
     credentials: OpenRouterUploadCredentials,
     receipt: PaymentReceipt,
+    pending: Optional[PendingUpload] = None,
     run_check: bool = True,
 ) -> None:
     """Shared post-payment upload steps used by both upload and resume-upload.
@@ -318,20 +338,13 @@ def _execute_upload(
     run_check : bool, optional
         If True validate if upload is allowed, by default True
     """
-    name, version_num = _resolve_upload_name_and_version(
-        client, api_url=target.api_url, hotkey=wallet.hotkey.ss58_address
-    )
-    pending = _build_pending_upload(
-        wallet=wallet,
-        name=name,
-        version_num=version_num,
-        content_hash=target.content_hash,
-    )
+    if pending is None:
+        pending = _prepare_pending_upload(client=client, wallet=wallet, target=target)
     if run_check:
         _check_upload_allowed(client, target=target, pending=pending, credentials=credentials)
     payload = _upload_payload(pending=pending, receipt=receipt, credentials=credentials)
     response = _submit_upload(client, target=target, payload=payload)
-    _handle_upload_result(response, name=name)
+    _handle_upload_result(response, name=pending.name)
 
 
 def _resolve_wallet_and_target(
@@ -392,7 +405,11 @@ def upload(
 
     try:
         with httpx.Client() as client:
-            payment_method_details = _fetch_eval_pricing(client, api_url=target.api_url)
+            pending = _prepare_pending_upload(client=client, wallet=wallet, target=target)
+            payment_method_details = _check_upload_allowed(
+                client, target=target, pending=pending, credentials=credentials
+            )
+            _unlock_coldkey(wallet)
             if not _confirm_payment(payment_method_details):
                 console.print("[bold red]Payment cancelled by user. Upload aborted.[/bold red]")
                 return
@@ -400,7 +417,15 @@ def upload(
             receipt = _submit_eval_payment(wallet=wallet, payment_method_details=payment_method_details)
             _print_payment_receipt(receipt)
 
-            _execute_upload(client, wallet=wallet, target=target, credentials=credentials, receipt=receipt)
+            _execute_upload(
+                client,
+                wallet=wallet,
+                target=target,
+                credentials=credentials,
+                receipt=receipt,
+                pending=pending,
+                run_check=False,
+            )
 
     except click.ClickException:
         raise
@@ -452,7 +477,6 @@ def team_upload(
     receipt = PaymentReceipt(
         block_hash=_uuid.uuid4().hex,
         extrinsic_index=0,
-        payment_time=time.time(),
     )
 
     try:
@@ -473,8 +497,8 @@ def team_upload(
     short_help="Resume a failed upload using an existing payment receipt.",
     help=format_help(
         "Resume an upload that failed after payment was already submitted on-chain. "
-        "Provide the Payment Block Hash and Payment Extrinsic Index printed after the original payment.",
-        "ridges resume-upload --file agent.py --payment-block-hash 0x87d2... --payment-extrinsic-index 7",
+        "Provide the Payment Quote ID, Payment Block Hash, and Payment Extrinsic Index printed after the original payment.",
+        "ridges resume-upload --file agent.py --quote-id 2f3b... --payment-block-hash 0x87d2... --payment-extrinsic-index 7",
     ),
 )
 @click.option("--file", help="Path to agent.py file")
@@ -488,10 +512,10 @@ def team_upload(
     "--openrouter-management-key",
     help="OpenRouter management key. Falls back to RIDGES_OPENROUTER_MANAGEMENT_KEY or an interactive prompt.",
 )
-@click.option("--payment-block-hash", required=True, help="Payment Block Hash printed after the original payment.")
+@click.option("--quote-id", help="Payment Quote ID printed after the original payment.")
+@click.option("--payment-block-hash", help="Payment Block Hash printed after the original payment.")
 @click.option(
     "--payment-extrinsic-index",
-    required=True,
     type=int,
     help="Payment Extrinsic Index printed after the original payment.",
 )
@@ -503,8 +527,9 @@ def resume_upload(
     hotkey_name: Optional[str],
     openrouter_api_key: Optional[str],
     openrouter_management_key: Optional[str],
-    payment_block_hash: str,
-    payment_extrinsic_index: int,
+    quote_id: Optional[str],
+    payment_block_hash: Optional[str],
+    payment_extrinsic_index: Optional[int],
 ):
     """Resume a failed upload using an existing payment receipt."""
     wallet, target = _resolve_wallet_and_target(ctx, file=file, coldkey_name=coldkey_name, hotkey_name=hotkey_name)
@@ -514,15 +539,25 @@ def resume_upload(
     )
     _print_upload_preview(hotkey=wallet.hotkey.ss58_address, target=target)
 
+    quote_id = quote_id or Prompt.ask("Payment Quote ID")
+    payment_block_hash = payment_block_hash or Prompt.ask("Payment Block Hash")
+    if payment_extrinsic_index is None:
+        try:
+            payment_extrinsic_index = int(Prompt.ask("Payment Extrinsic Index"))
+        except ValueError:
+            raise click.ClickException("Payment Extrinsic Index must be an integer") from None
+
     receipt = PaymentReceipt(
         block_hash=payment_block_hash,
         extrinsic_index=payment_extrinsic_index,
-        payment_time=time.time(),
+        quote_id=quote_id,
     )
 
     try:
         with httpx.Client() as client:
-            _execute_upload(client, wallet=wallet, target=target, credentials=credentials, receipt=receipt)
+            _execute_upload(
+                client, wallet=wallet, target=target, credentials=credentials, receipt=receipt, run_check=False
+            )
 
     except click.ClickException:
         raise
