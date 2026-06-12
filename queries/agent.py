@@ -226,8 +226,8 @@ async def create_agent(
 
         result = await conn.fetchval(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256)
-            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7)
+            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256, set_id)
+            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8)
             ON CONFLICT (agent_id) DO NOTHING
             RETURNING agent_id
             """,
@@ -238,6 +238,7 @@ async def create_agent(
             agent.status.value,
             agent.ip_address,
             source_sha256,
+            current_set_id if current_set_id != 0 else None,
         )
 
         if result is None:
