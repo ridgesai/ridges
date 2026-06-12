@@ -35,17 +35,6 @@ AGENT_TS_SET_2 = datetime(2026, 5, 22, 1, tzinfo=timezone.utc)  # 1 h after SET_
 AGENT_TS_SET_1 = datetime(2026, 5, 1, 1, tzinfo=timezone.utc)  # 1 h after SET_1_CREATED
 
 
-async def _insert_competition(conn, set_id: int, created_at: datetime) -> None:
-    await conn.execute(
-        "INSERT INTO competitions (set_id, name, start_date, end_date, created_at) VALUES ($1, $2, $3, $4, $5)",
-        set_id,
-        f"competition-{set_id}",
-        created_at,
-        created_at + timedelta(days=7),
-        created_at,
-    )
-
-
 async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
     await conn.execute(
         "INSERT INTO evaluation_sets (set_id, set_group, problem_name, created_at) VALUES ($1, $2, $3, $4)",
@@ -195,9 +184,7 @@ async def test_evaluation_set_detail_happy_path():
     async with _db.pool.acquire() as conn:
         # Two evaluation sets; set 2 is the target
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
-        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
 
         # Agents inside set-2 window
         await _insert_agent(
@@ -355,7 +342,6 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
-        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
 
         await _insert_agent(
             conn,
@@ -469,7 +455,6 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
 async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_25_only():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
-        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
 
         for index in range(26):
             agent_id = uuid4()
@@ -530,7 +515,6 @@ async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_a,
@@ -562,7 +546,6 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
-        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_a,
@@ -607,7 +590,6 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     agent_id_b = uuid4()
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_id_a,
@@ -648,9 +630,7 @@ async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
     async with _db.pool.acquire() as conn:
         # Two sets exist; set 2 is the latest (highest set_id)
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
-        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
-        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_a,
