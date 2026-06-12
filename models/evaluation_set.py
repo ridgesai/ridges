@@ -89,8 +89,8 @@ class EvaluationSetDetailBenchmarkThreshold(BaseModel):
 class EvaluationSetDetailScores(BaseModel):
     """Detailed score information for an evaluation set, including the best score, average score, and how many agents exceeded certain benchmark thresholds."""
 
-    best: Float2 | None
-    average: Float2 | None
+    best: float | None
+    average: float | None
     benchmark_thresholds: list[EvaluationSetDetailBenchmarkThreshold]
 
 
