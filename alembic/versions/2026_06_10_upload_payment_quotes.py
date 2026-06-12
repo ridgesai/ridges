@@ -1,7 +1,7 @@
 """Add upload payment quotes
 
-Revision ID: f0a1b2c3d4e5
-Revises: c4d9a2e7f813
+Revision ID: 353d6b475738
+Revises: d4cb2c9dc03c
 Create Date: 2026-06-10 00:00:00.000000
 
 """
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "f0a1b2c3d4e5"
-down_revision: Union[str, Sequence[str], None] = "c4d9a2e7f813"
+revision: str = "353d6b475738"
+down_revision: Union[str, Sequence[str], None] = "d4cb2c9dc03c"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
