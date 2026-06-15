@@ -417,8 +417,10 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
         - agents_beating_previous_best: The count of agents in the current set that beat the previous best score.
     """
     return await conn.fetchrow(
-        """
-        WITH prev_best AS (
+        f"""
+        WITH {_SQL_SET_WINDOW_CTE},
+        {_sql_agents_in_window_cte("a.agent_id, a.status")},
+        prev_best AS (
             SELECT
                 MAX(final_score) AS score
             FROM
@@ -471,15 +473,11 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
             ) :: int AS agents_beating_previous_best
         FROM
             agent_scores s
+            JOIN agents_in_window aiw ON aiw.agent_id = s.agent_id
         WHERE
             s.set_id = $1
-            AND s.agent_id NOT IN (
-                SELECT
-                    agent_id
-                FROM
-                    benchmark_agent_ids
-            )
-            AND s.status = 'finished'
+            AND aiw.status = 'finished'
+            AND NOT aiw.disqualified
         """,
         set_id,
     )
