@@ -1,17 +1,18 @@
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from pydantic import BaseModel, Field
 
 from api import config
 from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenError
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
+    as_utc,
     check_agent_banned,
     check_file_size,
     check_hotkey_registered,
@@ -20,8 +21,10 @@ from api.src.utils.upload_agent_helpers import (
     check_signature,
     get_miner_hotkey,
     get_tao_price,
+    timestamp_ms_to_utc_datetime,
 )
 from models.agent import Agent, AgentCreate, AgentStatus
+from models.upload import AgentCheckResponse, AgentUploadResponse, ErrorResponse, UploadPriceResponse
 from queries.agent import (
     create_agent,
     get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id,
@@ -32,8 +35,10 @@ from queries.banned_hotkey import get_banned_hotkey
 from queries.errors import DuplicateAgentIDError
 from queries.payments import (
     complete_payment,
+    create_payment_quote,
     reserve_payment,
     retrieve_payment_by_hash,
+    retrieve_payment_quote,
 )
 from queries.refund import is_payment_refunded
 from utils.agent_secrets import encrypt_agent_secret
@@ -41,6 +46,9 @@ from utils.bittensor import subtensor_client
 from utils.debug_lock import DebugLock
 
 logger = logging.getLogger(__name__)
+
+UPLOAD_PAYMENT_QUOTE_TTL_SECONDS = 60 * 60
+OUTDATED_UPLOAD_CLIENT_MESSAGE = "This upload client is outdated. Please upgrade Ridges CLI and retry."
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -54,23 +62,10 @@ async def get_hotkey_lock(hotkey: str) -> asyncio.Lock:
         return hotkey_locks[hotkey]
 
 
-class AgentUploadResponse(BaseModel):
-    """Response model for successful agent upload"""
-
-    status: str = Field(..., description="Status of the upload operation")
-    message: str = Field(..., description="Detailed message about the upload result")
-
-
-class ErrorResponse(BaseModel):
-    """Error response model"""
-
-    detail: str = Field(..., description="Error message describing what went wrong")
-
-
 router = APIRouter()
 
 
-@router.post("/agent/check", tags=["upload"], response_model=AgentUploadResponse)
+@router.post("/agent/check", tags=["upload"], response_model=AgentCheckResponse)
 async def check_agent_post(
     request: Request,
     agent_file: UploadFile = File(..., description="Python file containing the agent code (must be named agent.py)"),
@@ -80,12 +75,11 @@ async def check_agent_post(
     ),
     signature: str = Form(..., description="Signature to verify the authenticity of the upload"),
     name: str = Form(..., description="Name of the agent"),
-    payment_time: float = Form(..., description="Timestamp of the payment"),
     openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
     ),
-) -> AgentUploadResponse:
+) -> AgentCheckResponse:
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
     miner_hotkey = get_miner_hotkey(file_info)
@@ -101,7 +95,7 @@ async def check_agent_post(
     await check_file_size(agent_file)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
     miner_balance = (await subtensor_client.get_balance(coldkey)).rao
-    payment_cost = await get_upload_price(cache_time=payment_time)
+    payment_cost = await get_upload_price()
     if payment_cost.amount_rao > miner_balance:
         raise HTTPException(
             status_code=402,
@@ -111,7 +105,21 @@ async def check_agent_post(
         openrouter_api_key=openrouter_api_key,
         openrouter_management_key=openrouter_management_key,
     )
-    return AgentUploadResponse(status="success", message="Agent check successful")
+    expires_at = datetime.now(timezone.utc) + timedelta(seconds=UPLOAD_PAYMENT_QUOTE_TTL_SECONDS)
+    quote = await create_payment_quote(
+        miner_hotkey=miner_hotkey,
+        amount_rao=payment_cost.amount_rao,
+        send_address=payment_cost.send_address,
+        expires_at=expires_at,
+    )
+    return AgentCheckResponse(
+        status="success",
+        message="Agent check successful",
+        quote_id=quote.quote_id,
+        amount_rao=quote.amount_rao,
+        send_address=quote.send_address,
+        expires_at=quote.expires_at,
+    )
 
 
 @router.post(
@@ -138,7 +146,7 @@ async def post_agent(
     name: str = Form(..., description="Name of the agent"),
     payment_block_hash: str = Form(..., description="Block hash in which payment was made"),
     payment_extrinsic_index: str = Form(..., description="Index in the block for payment extrinsic"),
-    payment_time: float = Form(..., description="Timestamp of the payment"),
+    quote_id: Optional[str] = Form(None, description="Server-issued upload payment quote ID"),
     openrouter_api_key: str = Form(..., description="OpenRouter API key for inference during evaluation"),
     openrouter_management_key: str = Form(
         ..., description="OpenRouter management key used to validate workspace privacy settings"
@@ -194,13 +202,28 @@ async def post_agent(
         source_sha256 = hashlib.sha256(agent_bytes).hexdigest()
 
         if prod and not is_owner_upload:
-            # Verify payment
-            # Check if payment has already been used for an agent
+            if quote_id is None:
+                raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
+
+            try:
+                quote_uuid = UUID(quote_id)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid payment quote ID") from None
+
+            quote = await retrieve_payment_quote(quote_uuid)
+            if quote is None:
+                raise HTTPException(status_code=400, detail="Invalid payment quote ID")
+
+            if quote.miner_hotkey != miner_hotkey:
+                raise HTTPException(status_code=402, detail="Payment quote does not match upload hotkey")
+
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
             if existing_payment is not None and existing_payment.agent_id is not None:
                 raise DuplicateAgentIDError(agent_id=existing_payment.agent_id)
+            if existing_payment is not None and existing_payment.quote_id != quote.quote_id:
+                raise HTTPException(status_code=409, detail="Payment is already reserved for a different quote")
 
             if await is_payment_refunded(
                 upload_block_hash=payment_block_hash, upload_extrinsic_index=payment_extrinsic_index
@@ -210,68 +233,57 @@ async def post_agent(
 
             # Retrieve payment details from the chain
             try:
-                payment_block = await subtensor_client.get_block(block_hash=payment_block_hash)
+                payment_block_info = await subtensor_client.get_block_info(block_hash=payment_block_hash)
             except Exception as e:
                 logger.error(f"Error retrieving payment block: {e}")
                 raise HTTPException(status_code=402, detail="Payment could not be verified")
 
-            if payment_block is None:
+            if payment_block_info is None:
                 raise HTTPException(status_code=402, detail="Payment block not found")
 
-            # example payment block:
-            """
-            {'extrinsics': [<GenericExtrinsic(value={'extrinsic_hash': '0x6b6f2be8e0d0e7721fab46da881d894dafa221b4df73ebb2b69a8c0aa5aeb01b', 'extrinsic_length': 10, 'call': {'call_index': '0x0200', 'call_function': 'set', 'call_module': 'Timestamp', 'call_args': [{'name': 'now', 'type': 'Moment', 'value': 1763573265504}], 'call_hash': '0x5cad44676af19a09d4ae5354e08570778c06b75257a932db8183b90910d0c33e'}})>,
-                    <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>],
-     'header': {'digest': {'logs': [<scale_info::17(value={'PreRuntime': ('0x61757261', '0x46f877a401000000')})>,
-                                    <scale_info::17(value={'Consensus': ('0x66726f6e', '0x012f7e87441378c60d18e9b676246e74ca17064ff510b10dfed2a48191648a1a9400')})>,
-                                    <scale_info::17(value={'Seal': ('0x61757261', '0x44729c195bda22d4e9dce35ed7e43fd1652e7782cb38cf27cc8489fb0460af1f4c97621e5e29c19e730051df736441d3359799c7002eb81350e169bb9fcecb80')})>]},
-                'extrinsicsRoot': '0x980d155f4b5a6f08d287c54e0a32380839cdfc0a5977200e33aa5787b48ec669',
-                'hash': '0xb9958e4374c182785bfa4467ceb971e23882079f48524e27c08e8f5b95d8b8d8',
-                'number': 13579,
-                'parentHash': '0x1065e83a02ff961d45ac34a6990477de3cba102bbba2322950815e5d59f23135',
-                'stateRoot': '0x301a04303fb97143649e44ca9c1d674606c8004082d11973c816ff67f2a13998'}}
-            """
-            block_number = payment_block["header"]["number"]
-            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(block_number))
-            payment_extrinsic = payment_block["extrinsics"][int(payment_extrinsic_index)]
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
+            try:
+                payment_extrinsic_index_int = int(payment_extrinsic_index)
+                if payment_extrinsic_index_int < 0:
+                    raise ValueError
+                payment_extrinsic = payment_block_info.extrinsics[payment_extrinsic_index_int]
+                payment_extrinsic_value = payment_extrinsic.value_serialized
+                payment_call = payment_extrinsic_value["call"]
+                call_args = {arg["name"]: arg["value"] for arg in payment_call["call_args"]}
+                payment_value = call_args.get("value")
+                destination = call_args.get("dest")
+                payment_address = payment_extrinsic_value["address"]
+            except (ValueError, TypeError, IndexError, KeyError, AttributeError):
+                raise HTTPException(status_code=402, detail="Payment extrinsic could not be decoded") from None
 
-            # Example payment extrinsic:
-            """
-            <GenericExtrinsic(value={'extrinsic_hash': '0x350253844e42eda50ed13c043c6124db65189bf00a968467c763d54861492295', 'extrinsic_length': 142, 'address': '5DhaT8U7LVwnnJNUU8VL1XEipicatoaDVVq7cHo227gogVZm', 'signature': {'Sr25519': '0x2eb063251883f68aa6fad463f32d31c7f8635ec4550e1197ce1a0913b6182a065880ea5af1b68026ad996beedb803685d6d67e56e097a4d7666c7e075da2778f'}, 'era': '00', 'nonce': 14, 'tip': 0, 'mode': {'mode': 'Disabled'}, 'call': {'call_index': '0x0503', 'call_function': 'transfer_keep_alive', 'call_module': 'Balances', 'call_args': [{'name': 'dest', 'type': 'AccountIdLookupOf', 'value': '5F4Thj3LRZdjSAnUhymAVVq2X2czSAKD4uGNCnqW8JrCHWE4'}, {'name': 'value', 'type': 'Balance', 'value': 271449345}], 'call_hash': '0x20f54967ae95d9b4304d5582d8343469894c637d2d1c557c7bb0ad1f27797797'}})>
-            """
-            payment_value = None
-            for arg in payment_extrinsic.value["call"]["call_args"]:
-                if arg["name"] == "value":
-                    payment_value = arg["value"]
-                    break
+            if (
+                payment_call.get("call_module") != "Balances"
+                or payment_call.get("call_function") != "transfer_keep_alive"
+            ):
+                raise HTTPException(status_code=402, detail="Payment extrinsic is not a TAO transfer")
 
             if payment_value is None or await check_if_extrinsic_failed(
-                payment_block_hash, int(payment_extrinsic_index)
+                payment_block_hash, payment_extrinsic_index_int
             ):
                 raise HTTPException(status_code=402, detail="Payment value not found")
 
-            # Only validate the paid amount against the spot price for a payment we haven't seen before.
-            # If it was already reserved (existing_payment with no agent_id), it passed this check when first reserved.
-            if existing_payment is None:
-                payment_cost = await get_upload_price(cache_time=payment_time)
-                if payment_value != payment_cost.amount_rao:
-                    raise HTTPException(status_code=402, detail="Payment amount does not match")
-
             # Make sure coldkey is the same as hotkeys owner coldkey
-            if coldkey != payment_extrinsic["address"]:
+            if coldkey != payment_address:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
 
             # Make sure destination is our upload send address
-            destination = None
-            for arg in payment_extrinsic.value["call"]["call_args"]:
-                if arg["name"] == "dest":
-                    destination = arg["value"]
-                    break
-            if destination != config.UPLOAD_SEND_ADDRESS:
+            if destination != quote.send_address:
                 raise HTTPException(
                     status_code=402,
-                    detail=f"Destination does not match. The payment should be sent to {config.UPLOAD_SEND_ADDRESS}",
+                    detail=f"Destination does not match. The payment should be sent to {quote.send_address}",
                 )
+
+            if payment_value != quote.amount_rao:
+                raise HTTPException(status_code=402, detail="Payment amount does not match")
+
+            payment_block_time = timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
+            if not (as_utc(quote.created_at) <= payment_block_time <= as_utc(quote.expires_at)):
+                raise HTTPException(status_code=402, detail="Payment was made outside the quote validity window")
 
         validated_openrouter_keys = await validate_openrouter_keys(
             openrouter_api_key=openrouter_api_key,
@@ -296,10 +308,17 @@ async def post_agent(
                     miner_hotkey=miner_hotkey,
                     miner_coldkey=coldkey,
                     amount_rao=payment_value,
+                    quote_id=quote.quote_id,
                 )
+
+                if payment_row is None:
+                    raise HTTPException(status_code=409, detail="Payment or quote is already reserved")
 
                 if payment_row.agent_id is not None:
                     raise DuplicateAgentIDError(agent_id=payment_row.agent_id)
+
+                if payment_row.quote_id != quote.quote_id:
+                    raise HTTPException(status_code=409, detail="Payment is already reserved for a different quote")
 
             encrypted_openrouter_api_key = encrypt_agent_secret(validated_openrouter_keys.runtime_api_key)
             encrypted_openrouter_management_key = encrypt_agent_secret(validated_openrouter_keys.management_api_key)
@@ -387,13 +406,6 @@ async def post_agent(
             **upload_data,
         )
         raise
-
-
-class UploadPriceResponse(BaseModel):
-    """Response model for successful agent upload"""
-
-    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
-    send_address: str = Field(..., description="TAO address to send evaluation payment to")
 
 
 @router.get("/eval-pricing", tags=["eval-pricing"], response_model=UploadPriceResponse)

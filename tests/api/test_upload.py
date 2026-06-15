@@ -6,7 +6,8 @@ One container starts per module; tables are truncated between tests.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,6 +27,7 @@ FAKE_COLDKEY = "5FColdKey456"
 FAKE_AMOUNT_RAO = 100_000_000
 FAKE_SEND_ADDRESS = "5FUploadWalletAddress"
 FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
+FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
@@ -47,7 +49,7 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_payments, agents, failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
         )
 
 
@@ -84,16 +86,34 @@ def _make_upload_file(
     return f
 
 
+def _make_fake_timestamp_extrinsic() -> MagicMock:
+    ext = MagicMock()
+    ext.value_serialized = {
+        "call": {
+            "call_module": "Timestamp",
+            "call_function": "set",
+            "call_args": [
+                {"name": "now", "value": int(FAKE_BLOCK_TIME.timestamp() * 1000)},
+            ],
+        }
+    }
+    return ext
+
+
 def _make_fake_extrinsic(coldkey: str, amount_rao: int, dest: str) -> MagicMock:
     ext = MagicMock()
-    ext.value = {
+    ext.value_serialized = {
+        "address": coldkey,
         "call": {
+            "call_module": "Balances",
+            "call_function": "transfer_keep_alive",
             "call_args": [
                 {"name": "dest", "value": dest},
                 {"name": "value", "value": amount_rao},
-            ]
-        }
+            ],
+        },
     }
+    ext.value = ext.value_serialized
     ext.__getitem__ = MagicMock(side_effect=lambda key: coldkey if key == "address" else None)
     return ext
 
@@ -110,15 +130,16 @@ def _install_mocks(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
-        "get_block",
+        "get_block_info",
         AsyncMock(
-            return_value={
-                "header": {"number": 42},
-                "extrinsics": [
-                    MagicMock(),
+            return_value=SimpleNamespace(
+                number=42,
+                timestamp=int(FAKE_BLOCK_TIME.timestamp() * 1000),
+                extrinsics=[
+                    _make_fake_timestamp_extrinsic(),
                     _make_fake_extrinsic(FAKE_COLDKEY, FAKE_AMOUNT_RAO, FAKE_SEND_ADDRESS),
                 ],
-            }
+            )
         ),
     )
     monkeypatch.setattr(
@@ -127,9 +148,14 @@ def _install_mocks(monkeypatch) -> None:
         AsyncMock(return_value=FAKE_COLDKEY),
     )
     monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_balance",
+        AsyncMock(return_value=MagicMock(rao=FAKE_AMOUNT_RAO * 10)),
+    )
+    monkeypatch.setattr(
         upload_module,
         "get_upload_price",
-        AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO)),
+        AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO, send_address=FAKE_SEND_ADDRESS)),
     )
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     response_validate_open_router_keys = MagicMock()
@@ -146,7 +172,38 @@ def _install_mocks(monkeypatch) -> None:
     )
 
 
-async def _call_post_agent(hotkey: str = FAKE_HOTKEY, name: str = "test-agent") -> AgentUploadResponse:
+async def _insert_quote(
+    *,
+    hotkey: str = FAKE_HOTKEY,
+    amount_rao: int = FAKE_AMOUNT_RAO,
+    send_address: str = FAKE_SEND_ADDRESS,
+    created_at: datetime = FAKE_BLOCK_TIME - timedelta(minutes=1),
+    expires_at: datetime = FAKE_BLOCK_TIME + timedelta(minutes=15),
+) -> uuid.UUID:
+    quote_id = uuid.uuid4()
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO upload_payment_quotes
+                (quote_id, miner_hotkey, amount_rao, send_address, created_at, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            """,
+            quote_id,
+            hotkey,
+            amount_rao,
+            send_address,
+            created_at,
+            expires_at,
+        )
+    return quote_id
+
+
+async def _call_post_agent(
+    hotkey: str = FAKE_HOTKEY,
+    name: str = "test-agent",
+    quote_id: uuid.UUID | None = None,
+    include_quote: bool = True,
+) -> AgentUploadResponse:
     """Call the post agent endpoint with the given hotkey and name, using default mocks for all blockchain and S3 interactions.
 
     Parameters
@@ -161,6 +218,9 @@ async def _call_post_agent(hotkey: str = FAKE_HOTKEY, name: str = "test-agent") 
     AgentUploadResponse
         The response from the agent upload endpoint.
     """
+    if quote_id is None and include_quote and hotkey != FAKE_OWNER_HOTKEY:
+        quote_id = await _insert_quote(hotkey=hotkey)
+
     return await upload_module.post_agent(
         request=_make_request(),
         agent_file=_make_upload_file(),
@@ -170,7 +230,9 @@ async def _call_post_agent(hotkey: str = FAKE_HOTKEY, name: str = "test-agent") 
         name=name,
         payment_block_hash=FAKE_BLOCK_HASH,
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
-        payment_time=0.0,
+        quote_id=str(quote_id) if quote_id is not None else None,
+        openrouter_api_key="sk-or-v1-runtime",
+        openrouter_management_key="sk-or-v1-management",
     )
 
 
@@ -192,9 +254,43 @@ async def _call_post_agent_as_owner() -> AgentUploadResponse:
 
 
 @pytest.mark.anyio
+async def test_check_agent_persists_payment_quote():
+    """Preflight stores the server-side amount and destination for later payment validation."""
+    response = await upload_module.check_agent_post(
+        request=_make_request(),
+        agent_file=_make_upload_file(),
+        public_key="deadbeef",
+        file_info=f"{FAKE_HOTKEY}:0",
+        signature="fakesig",
+        name="test-agent",
+        openrouter_api_key="sk-or-v1-runtime",
+        openrouter_management_key="sk-or-v1-management",
+    )
+
+    assert response.status == "success"
+    assert response.amount_rao == FAKE_AMOUNT_RAO
+    assert response.send_address == FAKE_SEND_ADDRESS
+
+    async with _db.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT miner_hotkey, amount_rao, send_address, expires_at, created_at
+            FROM upload_payment_quotes
+            WHERE quote_id = $1
+            """,
+            response.quote_id,
+        )
+    assert row["miner_hotkey"] == FAKE_HOTKEY
+    assert row["amount_rao"] == FAKE_AMOUNT_RAO
+    assert row["send_address"] == FAKE_SEND_ADDRESS
+    assert row["expires_at"] > row["created_at"]
+
+
+@pytest.mark.anyio
 async def test_fresh_upload_creates_completed_payment():
     """Happy path: payment row is created and linked to the deterministic agent_id."""
-    response = await _call_post_agent()
+    quote_id = await _insert_quote()
+    response = await _call_post_agent(quote_id=quote_id)
 
     assert response.status == "success"
     payment = await retrieve_payment_by_hash(
@@ -203,6 +299,7 @@ async def test_fresh_upload_creates_completed_payment():
     )
     assert payment is not None
     assert payment.agent_id == _deterministic_id()
+    assert payment.quote_id == quote_id
 
 
 @pytest.mark.anyio
@@ -210,10 +307,11 @@ async def test_same_receipt_twice_raises_402():
     """A payment receipt already linked to an agent is rejected with 402."""
     from fastapi import HTTPException
 
-    await _call_post_agent()
+    quote_id = await _insert_quote()
+    await _call_post_agent(quote_id=quote_id)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _call_post_agent()
+        await _call_post_agent(quote_id=quote_id)
 
     assert exc_info.value.status_code == 402
 
@@ -224,21 +322,23 @@ async def test_partial_failure_retry_succeeds():
     A prior attempt reserved the payment (agent_id=NULL) but crashed before
     creating the agent. The retry detects the incomplete row and finishes the upload.
     """
+    quote_id = await _insert_quote()
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO evaluation_payments
-                (payment_block_hash, payment_extrinsic_index, agent_id, miner_hotkey, miner_coldkey, amount_rao)
-            VALUES ($1, $2, NULL, $3, $4, $5)
+                (payment_block_hash, payment_extrinsic_index, agent_id, miner_hotkey, miner_coldkey, amount_rao, quote_id)
+            VALUES ($1, $2, NULL, $3, $4, $5, $6)
             """,
             FAKE_BLOCK_HASH,
             FAKE_EXTRINSIC_INDEX,
             FAKE_HOTKEY,
             FAKE_COLDKEY,
             FAKE_AMOUNT_RAO,
+            quote_id,
         )
 
-    response = await _call_post_agent()
+    response = await _call_post_agent(quote_id=quote_id)
 
     assert response.status == "success"
     payment = await retrieve_payment_by_hash(
@@ -288,14 +388,10 @@ async def test_amount_mismatch_raises_402(monkeypatch):
     """A payment with the wrong on-chain amount is rejected before reservation."""
     from fastapi import HTTPException
 
-    monkeypatch.setattr(
-        upload_module,
-        "get_upload_price",
-        AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO + 1)),
-    )
+    quote_id = await _insert_quote(amount_rao=FAKE_AMOUNT_RAO + 1)
 
     with pytest.raises(HTTPException) as exc_info:
-        await _call_post_agent()
+        await _call_post_agent(quote_id=quote_id)
 
     assert exc_info.value.status_code == 402
     payment = await retrieve_payment_by_hash(
@@ -303,6 +399,48 @@ async def test_amount_mismatch_raises_402(monkeypatch):
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
     )
     assert payment is None
+
+
+@pytest.mark.anyio
+async def test_missing_quote_id_raises_clean_400():
+    """Old clients are rejected with a clear error instead of stale pricing behavior."""
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(include_quote=False)
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == upload_module.OUTDATED_UPLOAD_CLIENT_MESSAGE
+
+
+@pytest.mark.anyio
+async def test_quote_for_different_hotkey_raises_402():
+    """A quote is bound to the miner hotkey that requested it."""
+    from fastapi import HTTPException
+
+    quote_id = await _insert_quote(hotkey="5OtherHotkey")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 402
+
+
+@pytest.mark.anyio
+async def test_payment_outside_quote_window_raises_402():
+    """The on-chain payment timestamp, not upload wall-clock time, must fit the quote window."""
+    from fastapi import HTTPException
+
+    quote_id = await _insert_quote(
+        created_at=FAKE_BLOCK_TIME + timedelta(minutes=1),
+        expires_at=FAKE_BLOCK_TIME + timedelta(minutes=15),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail == "Payment was made outside the quote validity window"
 
 
 @pytest.mark.anyio

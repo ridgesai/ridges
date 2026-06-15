@@ -7,6 +7,7 @@ from bittensor_wallet.keypair import Keypair
 import api.config as config
 
 if TYPE_CHECKING:
+    from bittensor.core.types import BlockInfo
     from bittensor.utils.balance import Balance
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,11 @@ class SubtensorClient:
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.substrate.get_block(block_hash=block_hash)
+
+    async def get_block_info(self, block_hash: str) -> "BlockInfo | None":
+        """Retrieve decoded block information by its hash."""
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.get_block_info(block_hash=block_hash)
 
     async def get_events(self, block_hash: str) -> list:
         """Retrieve events for a given block hash.

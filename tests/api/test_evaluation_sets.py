@@ -56,10 +56,12 @@ async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
     )
 
 
-async def _insert_agent(conn, *, agent_id, miner_hotkey: str, status: str, created_at: datetime) -> None:
+async def _insert_agent(
+    conn, *, agent_id, miner_hotkey: str, status: str, created_at: datetime, set_id: int | None = None
+) -> None:
     await conn.execute(
-        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
         agent_id,
         miner_hotkey,
         miner_hotkey,
@@ -67,6 +69,7 @@ async def _insert_agent(conn, *, agent_id, miner_hotkey: str, status: str, creat
         status,
         created_at,
         "127.0.0.1",
+        set_id,
     )
 
 
@@ -203,6 +206,7 @@ async def test_evaluation_set_detail_happy_path():
             miner_hotkey="miner-a",
             status="finished",
             created_at=AGENT_TS_SET_2,
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -210,6 +214,7 @@ async def test_evaluation_set_detail_happy_path():
             miner_hotkey="miner-b",
             status="failed_screening_2",
             created_at=AGENT_TS_SET_2,
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -217,6 +222,7 @@ async def test_evaluation_set_detail_happy_path():
             miner_hotkey="miner-c",
             status="failed_pre_screening",
             created_at=AGENT_TS_SET_2,
+            set_id=2,
         )
         # Agent outside window (in set-1 window)
         await _insert_agent(
@@ -225,6 +231,7 @@ async def test_evaluation_set_detail_happy_path():
             miner_hotkey="miner-d",
             status="finished",
             created_at=AGENT_TS_SET_1,
+            set_id=1,
         )
 
         # Evaluations for set 2
@@ -356,6 +363,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-high-score",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=5),
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -363,6 +371,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-lower-cost",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=10),
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -370,6 +379,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-higher-cost",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=1),
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -377,6 +387,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-earlier-time",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=20),
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -384,6 +395,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-later-time",
             status="finished",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=30),
+            set_id=2,
         )
         await _insert_agent(
             conn,
@@ -391,6 +403,7 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
             miner_hotkey="miner-unscored",
             status="failed_pre_screening",
             created_at=AGENT_TS_SET_2 + timedelta(minutes=40),
+            set_id=2,
         )
 
         cost_and_runtime = {
@@ -471,6 +484,7 @@ async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_2
                 miner_hotkey=miner_hotkey,
                 status="finished",
                 created_at=AGENT_TS_SET_2 + timedelta(minutes=index),
+                set_id=2,
             )
             evaluation_id = await _insert_evaluation(
                 conn,
@@ -516,12 +530,14 @@ async def test_evaluation_set_detail_no_previous_set_returns_null_vs_previous():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_a,
             miner_hotkey="miner-a",
             status="finished",
             created_at=AGENT_TS_SET_2,
+            set_id=1,
         )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=1, set_group="screener_1")
         await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_2")
@@ -546,12 +562,14 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_competition(conn, set_id=2, created_at=SET_2_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_a,
             miner_hotkey="miner-a",
             status="failed_screening_1",
             created_at=AGENT_TS_SET_2,
+            set_id=2,
         )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_1")
         # No agent_scores rows inserted
@@ -589,12 +607,14 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     agent_id_b = uuid4()
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
+        await _insert_competition(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_agent(
             conn,
             agent_id=agent_id_a,
             miner_hotkey="hotkey-a",
             status="finished",
             created_at=AGENT_TS_SET_1,
+            set_id=1,
         )
         await _insert_agent(
             conn,
@@ -602,6 +622,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
             miner_hotkey="hotkey-b",
             status="finished",
             created_at=AGENT_TS_SET_1,
+            set_id=1,
         )
         await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1)
         await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1)
@@ -636,6 +657,7 @@ async def test_evaluation_set_detail_minus_one_resolves_to_latest_set():
             miner_hotkey="miner-a",
             status="failed_screening_1",
             created_at=AGENT_TS_SET_2,
+            set_id=2,
         )
         await _insert_evaluation(conn, agent_id=agent_a, set_id=2, set_group="screener_1")
 
