@@ -493,14 +493,15 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
         {_sql_validator_metrics_cte(include_validator_hotkeys=True)},
         tentative_scores AS (
             WITH tentative_runs AS (
-                SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name, erh.solved, aiw.disqualified, aiw.created_at
+                SELECT eh.agent_id, eh.validator_hotkey, erh.problem_name,
+                       (erh.solved IS TRUE OR erh.error_code = 3060) AS solved_effective,
+                       aiw.disqualified, aiw.created_at, aiw.status AS agent_status
                 FROM evaluations_hydrated eh
                 JOIN agents_in_window aiw
                     ON aiw.agent_id = eh.agent_id AND aiw.status in ('evaluating','cancelled')
                 JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = eh.evaluation_id
                 WHERE eh.set_id = $1
                   AND eh.evaluation_set_group = 'validator'::EvaluationSetGroup
-                  AND erh.status != 'error'
                   AND NOT EXISTS (
                       SELECT 1 FROM agent_scores ass
                       WHERE ass.agent_id = eh.agent_id AND ass.set_id = $1
@@ -512,10 +513,11 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                     problem_name,
                     disqualified,
                     created_at,
-                    COUNT(DISTINCT validator_hotkey) FILTER (WHERE solved IS TRUE)
+                    agent_status,
+                    COUNT(DISTINCT validator_hotkey) FILTER (WHERE solved_effective)
                         AS solved_validator_count
                 FROM tentative_runs
-                GROUP BY agent_id, problem_name, disqualified, created_at
+                GROUP BY agent_id, problem_name, disqualified, created_at, agent_status
             ),
             problem_count AS (
                 SELECT COUNT(*)::float AS n
@@ -537,21 +539,24 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                 vc.validator_count,
                 vc.validator_hotkeys,
                 pp.disqualified,
-                pp.created_at
+                pp.created_at,
+                pp.agent_status
             FROM per_problem pp
             JOIN validator_counts vc ON vc.agent_id = pp.agent_id
-            GROUP BY pp.agent_id, vc.validator_count, vc.validator_hotkeys, pp.disqualified, pp.created_at
+            GROUP BY pp.agent_id, vc.validator_count, vc.validator_hotkeys, pp.disqualified, pp.created_at, pp.agent_status
             HAVING COUNT(*) FILTER (WHERE pp.solved_validator_count >= vc.validator_count) > 0
         ),
         scored_agents AS (
             SELECT ass.agent_id, ass.final_score, ass.validator_count,
-                   COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys, aiw.disqualified, aiw.created_at
+                   COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys, aiw.disqualified, aiw.created_at,
+                   aiw.status AS agent_status
             FROM agent_scores ass
             JOIN agents_in_window aiw ON aiw.agent_id = ass.agent_id
             LEFT JOIN validator_metrics vm ON vm.agent_id = ass.agent_id
             WHERE ass.set_id = $1
             UNION ALL
-            SELECT ts.agent_id, ts.final_score, ts.validator_count, ts.validator_hotkeys, ts.disqualified, ts.created_at
+            SELECT ts.agent_id, ts.final_score, ts.validator_count, ts.validator_hotkeys, ts.disqualified, ts.created_at,
+                   ts.agent_status
             FROM tentative_scores ts
         ),
         ranked_scores AS (
@@ -563,9 +568,9 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
                 vm.average_runtime_seconds,
                 COALESCE(vm.validator_hotkeys, ARRAY[]::text[]) AS validator_hotkeys,
                 CASE
-                    WHEN sa.disqualified THEN NULL
+                    WHEN sa.disqualified OR sa.agent_status = 'cancelled' THEN NULL
                     ELSE ROW_NUMBER() OVER (
-                        PARTITION BY sa.disqualified
+                        PARTITION BY (sa.disqualified OR sa.agent_status = 'cancelled')
                         ORDER BY
                             ROUND(sa.final_score::numeric, 6) DESC,
                             vm.average_cost_usd ASC NULLS LAST,
@@ -616,27 +621,47 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
         {_sql_agents_in_window_cte("a.agent_id, a.name, a.version_num, a.created_at, a.status")},
         {_sql_validator_metrics_cte(include_validator_hotkeys=False)},
         {_sql_top_agent_for_summary()},
-        efficiency AS (
+        efficiency_averages AS (
             SELECT
-                MIN(vm.average_cost_usd) AS lowest_average_cost_usd_top_agents,
-                MIN(vm.average_runtime_seconds) AS lowest_average_runtime_seconds_top_agents,
                 AVG(vm.average_cost_usd) AS average_agent_cost_usd,
                 AVG(vm.average_runtime_seconds) AS average_agent_runtime_seconds
             FROM validator_metrics vm
-            LEFT JOIN agents_in_window aa on vm.agent_id=aa.agent_id
-            where not aa.disqualified and aa.status = 'finished'
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            WHERE NOT aa.disqualified AND aa.status = 'finished'
+        ),
+        lowest_cost_agent AS (
+            SELECT vm.agent_id, vm.average_cost_usd AS value
+            FROM validator_metrics vm
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            WHERE NOT aa.disqualified AND aa.status = 'finished'
+              AND vm.average_cost_usd IS NOT NULL
+            ORDER BY vm.average_cost_usd ASC
+            LIMIT 1
+        ),
+        lowest_runtime_agent AS (
+            SELECT vm.agent_id, vm.average_runtime_seconds AS value
+            FROM validator_metrics vm
+            JOIN agents_in_window aa ON vm.agent_id = aa.agent_id
+            WHERE NOT aa.disqualified AND aa.status = 'finished'
+              AND vm.average_runtime_seconds IS NOT NULL
+            ORDER BY vm.average_runtime_seconds ASC
+            LIMIT 1
         )
         SELECT
             ta.agent_id AS top_agent_id,
             ta.name AS top_agent_name,
             ta.version_num AS top_agent_version_num,
             ta.final_score AS top_agent_final_score,
-            e.lowest_average_cost_usd_top_agents,
-            e.lowest_average_runtime_seconds_top_agents,
-            e.average_agent_cost_usd,
-            e.average_agent_runtime_seconds
-        FROM efficiency e
+            lca.agent_id AS lowest_cost_agent_id,
+            lca.value AS lowest_average_cost_usd_top_agents,
+            lra.agent_id AS lowest_runtime_agent_id,
+            lra.value AS lowest_average_runtime_seconds_top_agents,
+            ea.average_agent_cost_usd,
+            ea.average_agent_runtime_seconds
+        FROM efficiency_averages ea
         LEFT JOIN top_agent ta ON TRUE
+        LEFT JOIN lowest_cost_agent lca ON TRUE
+        LEFT JOIN lowest_runtime_agent lra ON TRUE
         """,
         set_id,
     )
