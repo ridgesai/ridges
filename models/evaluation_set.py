@@ -109,9 +109,14 @@ class EvaluationSetDetailTopAgent(BaseModel):
     emission: float | None = None
 
 
+class EvaluationSetDetailEfficiencyAgent(BaseModel):
+    agent_id: UUID | None
+    value: Float4 | None
+
+
 class EvaluationSetDetailEfficiency(BaseModel):
-    lowest_average_cost_usd_top_agents: Float4 | None
-    lowest_average_runtime_seconds_top_agents: Float4 | None
+    lowest_average_cost_usd_top_agents: EvaluationSetDetailEfficiencyAgent | None
+    lowest_average_runtime_seconds_top_agents: EvaluationSetDetailEfficiencyAgent | None
     average_agent_cost_usd: Float4 | None
     average_agent_runtime_seconds: Float4 | None
 
