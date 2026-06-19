@@ -323,8 +323,12 @@ async def test_evaluation_set_detail_happy_path():
     assert result.top_agent.version_num == 1
     assert result.top_agent.final_score == 0.8
 
-    assert result.efficiency.lowest_average_cost_usd_top_agents == 0.2
-    assert result.efficiency.lowest_average_runtime_seconds_top_agents == 75
+    assert result.efficiency.lowest_average_cost_usd_top_agents is not None
+    assert result.efficiency.lowest_average_cost_usd_top_agents.agent_id == agent_a
+    assert result.efficiency.lowest_average_cost_usd_top_agents.value == 0.2
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents is not None
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents.agent_id == agent_a
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents.value == 75
     assert result.efficiency.average_agent_cost_usd == 0.2
     assert result.efficiency.average_agent_runtime_seconds == 75
 
@@ -459,8 +463,12 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
     assert agents_by_id[unscored_agent].final_score is None
 
     result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
-    assert result.efficiency.lowest_average_cost_usd_top_agents == 1.0
-    assert result.efficiency.lowest_average_runtime_seconds_top_agents == 10
+    assert result.efficiency.lowest_average_cost_usd_top_agents is not None
+    assert result.efficiency.lowest_average_cost_usd_top_agents.agent_id == lower_cost_tie_agent
+    assert result.efficiency.lowest_average_cost_usd_top_agents.value == 1.0
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents is not None
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents.agent_id == later_time_tie_agent
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents.value == 10
     assert result.efficiency.average_agent_cost_usd == 2.8
     assert result.efficiency.average_agent_runtime_seconds == 36
 
@@ -511,8 +519,10 @@ async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_2
     assert len([agent for agent in leaderboard if agent.rank is not None]) == 26
 
     result = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
-    assert result.efficiency.lowest_average_cost_usd_top_agents == 0.1
-    assert result.efficiency.lowest_average_runtime_seconds_top_agents == 1
+    assert result.efficiency.lowest_average_cost_usd_top_agents is not None
+    assert result.efficiency.lowest_average_cost_usd_top_agents.value == 0.1
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents is not None
+    assert result.efficiency.lowest_average_runtime_seconds_top_agents.value == 1
 
 
 @pytest.mark.anyio
