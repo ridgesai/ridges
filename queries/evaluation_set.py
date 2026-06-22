@@ -649,27 +649,37 @@ async def get_evaluation_set_leaderboard_summary(conn: DatabaseConnection, set_i
 @db_operation
 async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> list[asyncpg.Record]:
     return await conn.fetch(
-        """
-        -- agent_scores has one row per agent; set_id tracks the most recent set.
-        -- Agents approved for this set but re-scored in a later set will not appear here.
+        f"""
+        WITH
+        approved_agent_ids AS (
+            SELECT aa.agent_id
+            FROM approved_agents aa
+            WHERE aa.set_id = $1
+              AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+        ),
+        {_sql_validator_metrics_cte(include_validator_hotkeys=False, agent_filter_cte="approved_agent_ids")}
         SELECT
             a.agent_id,
             a.miner_hotkey,
             a.name,
             a.version_num,
             a.created_at,
-            ass.final_score
+            ass.final_score,
+            aa.approved_at,
+            vm.average_cost_usd,
+            vm.average_runtime_seconds
         FROM approved_agents aa
         JOIN agents a ON a.agent_id = aa.agent_id
         JOIN agent_scores ass ON ass.agent_id = aa.agent_id AND ass.set_id = $1
         LEFT JOIN agent_final_review_statuses review
-        ON review.agent_id = aa.agent_id
-        AND review.set_id = aa.set_id
+            ON review.agent_id = aa.agent_id
+            AND review.set_id = aa.set_id
+        LEFT JOIN validator_metrics vm ON vm.agent_id = aa.agent_id
         WHERE aa.set_id = $1
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
           AND ass.status = 'finished'
           AND review.approval_review_status is distinct from 'rejected'
-        ORDER BY ass.final_score DESC
+        ORDER BY aa.approved_at ASC
         """,
         set_id,
     )
