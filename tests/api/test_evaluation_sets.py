@@ -613,8 +613,8 @@ async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
 async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatch):
     agent_id_a = uuid4()
     agent_id_b = uuid4()
-    approved_at_a = datetime(2026, 5, 1, 10, tzinfo=timezone.utc)
-    approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)  # earlier — should appear first
+    approved_at_a = datetime(2026, 5, 1, 10, tzinfo=timezone.utc)  # latest approved appears first
+    approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
@@ -652,21 +652,21 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
 
     assert len(result) == 2
-    # Ordered by approved_at ASC (agent_b was approved earlier)
-    assert result[0].id == agent_id_b
-    assert result[0].miner_hotkey == "hotkey-b"
-    assert result[0].final_score == 70.0
-    assert result[0].emission == 0.0
-    assert result[0].approved_at == approved_at_b
-    assert result[0].average_cost_usd == 0.3
-    assert result[0].average_runtime_seconds == 60
+    # Ordered by approved_at DESC (agent_a was the latest approved)
+    assert result[0].id == agent_id_a
+    assert result[0].miner_hotkey == "hotkey-a"
+    assert result[0].final_score == 90.0
+    assert result[0].approved_at == approved_at_a
+    assert result[0].average_cost_usd == 0.5
+    assert result[0].average_runtime_seconds == 120
 
-    assert result[1].id == agent_id_a
-    assert result[1].miner_hotkey == "hotkey-a"
-    assert result[1].final_score == 90.0
-    assert result[1].approved_at == approved_at_a
-    assert result[1].average_cost_usd == 0.5
-    assert result[1].average_runtime_seconds == 120
+    assert result[1].id == agent_id_b
+    assert result[1].miner_hotkey == "hotkey-b"
+    assert result[1].final_score == 70.0
+    assert result[1].emission == 0.0
+    assert result[1].approved_at == approved_at_b
+    assert result[1].average_cost_usd == 0.3
+    assert result[1].average_runtime_seconds == 60
 
 
 @pytest.mark.anyio

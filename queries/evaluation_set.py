@@ -658,6 +658,8 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
               AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         ),
         {_sql_validator_metrics_cte(include_validator_hotkeys=False, agent_filter_cte="approved_agent_ids")}
+        -- agent_scores has one row per agent; set_id tracks the most recent set.
+        -- Agents approved for this set but re-scored in a later set will not appear here.
         SELECT
             a.agent_id,
             a.miner_hotkey,
@@ -679,7 +681,7 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
           AND ass.status = 'finished'
           AND review.approval_review_status is distinct from 'rejected'
-        ORDER BY aa.approved_at ASC
+        ORDER BY aa.approved_at DESC
         """,
         set_id,
     )
