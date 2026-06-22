@@ -66,7 +66,7 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
     """
 
 
-def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
+def _sql_validator_metrics_cte(include_validator_hotkeys: bool, agent_filter_cte: str = "agents_in_window") -> str:
     """This method returns a CTE that computes average validator cost and runtime per agent, over their 3 "valid" evaluations. A valid evaluation is one with the status set to 'success' or 'running' or that it was cancelled.
 
 
@@ -76,6 +76,8 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
     ----------
     include_validator_hotkeys : bool
         Whether to include an array of validator hotkeys for the evaluations considered in the averages.
+    agent_filter_cte : str
+        Name of the CTE providing agent_id values to filter against. Defaults to "agents_in_window".
 
     Returns
     -------
@@ -145,7 +147,7 @@ def _sql_validator_metrics_cte(include_validator_hotkeys: bool) -> str:
         f"                evaluations.agent_id,\n"
         f"                evaluations.evaluation_id\n"
         f"        ) AS ranked\n"
-        f"        JOIN agents_in_window aiw ON aiw.agent_id = ranked.agent_id\n"
+        f"        JOIN {agent_filter_cte} aiw ON aiw.agent_id = ranked.agent_id\n"
         f"        where ranked.status in ('running', 'success') or ranked.cancelled is true\n"
         f"    ) AS sample\n"
         f"    WHERE sample.rn <= {NUM_EVALS_PER_AGENT}\n"
