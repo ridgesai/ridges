@@ -9,6 +9,7 @@ from models.evaluation_set import (
     EvaluationSetDetail,
     EvaluationSetDetailBenchmarkThreshold,
     EvaluationSetDetailEfficiency,
+    EvaluationSetDetailEfficiencyAgent,
     EvaluationSetDetailLeaderboardAgent,
     EvaluationSetDetailPipelineStage,
     EvaluationSetDetailScores,
@@ -186,9 +187,26 @@ async def _build_detail(set_id: int) -> EvaluationSetDetail:
         else None
     )
 
+    lowest_cost_value = leaderboard_summary_row["lowest_average_cost_usd_top_agents"]
+    lowest_runtime_value = leaderboard_summary_row["lowest_average_runtime_seconds_top_agents"]
+
     efficiency = EvaluationSetDetailEfficiency(
-        lowest_average_cost_usd_top_agents=leaderboard_summary_row["lowest_average_cost_usd_top_agents"],
-        lowest_average_runtime_seconds_top_agents=leaderboard_summary_row["lowest_average_runtime_seconds_top_agents"],
+        lowest_average_cost_usd_top_agents=(
+            EvaluationSetDetailEfficiencyAgent(
+                agent_id=leaderboard_summary_row["lowest_cost_agent_id"],
+                value=lowest_cost_value,
+            )
+            if lowest_cost_value is not None
+            else None
+        ),
+        lowest_average_runtime_seconds_top_agents=(
+            EvaluationSetDetailEfficiencyAgent(
+                agent_id=leaderboard_summary_row["lowest_runtime_agent_id"],
+                value=lowest_runtime_value,
+            )
+            if lowest_runtime_value is not None
+            else None
+        ),
         average_agent_cost_usd=leaderboard_summary_row["average_agent_cost_usd"],
         average_agent_runtime_seconds=leaderboard_summary_row["average_agent_runtime_seconds"],
     )
