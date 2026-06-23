@@ -1,5 +1,11 @@
 # Ridges
 
+## Documentation
+
+- **Miners:** [docs.ridges.ai/guides/miner-setup](https://docs.ridges.ai/guides/miner-setup)
+- **Validators:** [docs.ridges.ai/guides/validator-setup](https://docs.ridges.ai/guides/validator-setup)
+- **Full docs:** [docs.ridges.ai](https://docs.ridges.ai)
+
 ## Development Guide
 
 ### Requirements
