@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -204,31 +205,145 @@ async def get_approved_validator_leader_score_for_set(
     )
 
 
+@dataclass(slots=True, frozen=True)
+class AgentRankingProfile:
+    final_score: float
+    avg_cost_usd: Optional[float]
+    created_at: datetime
+
+    def beats(self, other: "AgentRankingProfile") -> bool:
+        """Check if an AgentRankingProfile instance can beat
+        another one.
+
+        It checks the following parameters in order:
+        - Final score
+        - Average cost throughout all eval runs
+        - Agent creation datetime
+
+        Parameters
+        ----------
+        other : AgentRankingProfile
+            Another AgentRankingProfile instance.
+        Returns
+        -------
+        bool
+            True if this instance beats the `other`, False if not.
+        """
+        if self.final_score > other.final_score:
+            return True
+        if self.final_score < other.final_score:
+            return False
+
+        s_cost = self.avg_cost_usd
+        o_cost = other.avg_cost_usd
+        if s_cost is not None and o_cost is not None:
+            if s_cost < o_cost:
+                return True
+            if s_cost > o_cost:
+                return False
+        elif s_cost is not None and o_cost is None:
+            return True
+        elif s_cost is None and o_cost is not None:
+            return False
+
+        if self.created_at < other.created_at:
+            return True
+
+        return False
+
+
+@db_operation
+async def get_approved_leader_ranking_for_set(
+    conn: DatabaseConnection,
+    set_id: int,
+    excluded_agent_id: UUID,
+    required_validator_count: int = config.NUM_EVALS_PER_AGENT,
+) -> Optional[AgentRankingProfile]:
+    row = await conn.fetchrow(
+        """
+        SELECT
+            ass.final_score,
+            rt.avg_cost_usd,
+            ass.created_at
+        FROM agent_scores ass
+        LEFT JOIN LATERAL (
+            SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
+            FROM evaluations_hydrated eh
+            WHERE eh.agent_id             = ass.agent_id
+              AND eh.set_id               = ass.set_id
+              AND eh.evaluation_set_group  = 'validator'::EvaluationSetGroup
+              AND eh.status               = 'success'::EvaluationStatus
+        ) rt ON true
+        WHERE ass.set_id = $1
+          AND ass.approved IS TRUE
+          AND ass.approved_at <= NOW()
+          AND ass.validator_count = $2
+          AND ass.status::text <> 'cancelled'
+          AND ass.agent_id <> $3
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark_agent
+              WHERE benchmark_agent.agent_id = ass.agent_id
+          )
+        ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
+        LIMIT 1
+        """,
+        set_id,
+        required_validator_count,
+        excluded_agent_id,
+    )
+    if row is None:
+        return None
+    return AgentRankingProfile(
+        final_score=row["final_score"],
+        avg_cost_usd=row["avg_cost_usd"],
+        created_at=row["created_at"],
+    )
+
+
 @db_operation
 async def get_validator_agent_score_for_set(
     conn: DatabaseConnection,
     agent_id: UUID,
     set_id: int,
     required_validator_count: int = config.NUM_EVALS_PER_AGENT,
-) -> Optional[float]:
-    return await conn.fetchval(
+) -> Optional[AgentRankingProfile]:
+    row = await conn.fetchrow(
         """
-        SELECT agent_score.final_score
-        FROM agent_scores agent_score
-        WHERE agent_score.agent_id = $1
-          AND agent_score.set_id = $2
-          AND agent_score.validator_count = $3
-          AND agent_score.status::text <> 'cancelled'
+        SELECT
+            ass.final_score,
+            rt.avg_cost_usd,
+            ass.created_at
+        FROM agent_scores ass
+        LEFT JOIN LATERAL (
+            SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
+            FROM evaluations_hydrated eh
+            WHERE eh.agent_id             = ass.agent_id
+              AND eh.set_id               = ass.set_id
+              AND eh.evaluation_set_group  = 'validator'::EvaluationSetGroup
+              AND eh.status               = 'success'::EvaluationStatus
+        ) rt ON true
+        WHERE ass.agent_id = $1
+          AND ass.set_id = $2
+          AND ass.validator_count = $3
+          AND ass.status::text <> 'cancelled'
           AND NOT EXISTS (
               SELECT 1
               FROM benchmark_agent_ids benchmark_agent
-              WHERE benchmark_agent.agent_id = agent_score.agent_id
+              WHERE benchmark_agent.agent_id = ass.agent_id
           )
         LIMIT 1
         """,
         agent_id,
         set_id,
         required_validator_count,
+    )
+    if row is None:
+        return None
+    return AgentRankingProfile(
+        final_score=row["final_score"],
+        avg_cost_usd=row["avg_cost_usd"],
+        created_at=row["created_at"],
     )
 
 

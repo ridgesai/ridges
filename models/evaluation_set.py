@@ -161,3 +161,6 @@ class ApprovedAgent(BaseModel):
     created_at: datetime.datetime
     final_score: Float4
     emission: float
+    approved_at: datetime.datetime
+    average_runtime_seconds: Float4 | None
+    average_cost_usd: Float4 | None

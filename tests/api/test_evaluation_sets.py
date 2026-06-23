@@ -122,12 +122,20 @@ async def _insert_evaluations(conn, *, agent_id, set_id: int, set_groups: list[s
         await _insert_evaluation(conn, agent_id=agent_id, set_id=set_id, set_group=group)
 
 
-async def _insert_approved_agent(conn, *, agent_id, set_id: int) -> None:
-    await conn.execute(
-        "INSERT INTO approved_agents (agent_id, set_id) VALUES ($1, $2)",
-        agent_id,
-        set_id,
-    )
+async def _insert_approved_agent(conn, *, agent_id, set_id: int, approved_at: datetime | None = None) -> None:
+    if approved_at is not None:
+        await conn.execute(
+            "INSERT INTO approved_agents (agent_id, set_id, approved_at) VALUES ($1, $2, $3)",
+            agent_id,
+            set_id,
+            approved_at,
+        )
+    else:
+        await conn.execute(
+            "INSERT INTO approved_agents (agent_id, set_id) VALUES ($1, $2)",
+            agent_id,
+            set_id,
+        )
 
 
 async def _insert_agent_score(conn, *, agent_id, miner_hotkey: str, set_id: int, final_score: float) -> None:
@@ -598,6 +606,9 @@ async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
 async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatch):
     agent_id_a = uuid4()
     agent_id_b = uuid4()
+    approved_at_a = datetime(2026, 5, 1, 10, tzinfo=timezone.utc)  # latest approved appears first
+    approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)
+
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
         await _insert_agent(
@@ -616,21 +627,38 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
             created_at=AGENT_TS_SET_1,
             set_id=1,
         )
-        await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1)
-        await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1)
+        await _insert_approved_agent(conn, agent_id=agent_id_a, set_id=1, approved_at=approved_at_a)
+        await _insert_approved_agent(conn, agent_id=agent_id_b, set_id=1, approved_at=approved_at_b)
+
+        # Insert validator evaluations + runs so validator_metrics CTE can compute cost/runtime
+        eval_id_a = await _insert_evaluation(conn, agent_id=agent_id_a, set_id=1, set_group="validator")
+        await _insert_finished_evaluation_run(conn, evaluation_id=eval_id_a, cost_usd=0.5, runtime_seconds=120)
+        eval_id_b = await _insert_evaluation(conn, agent_id=agent_id_b, set_id=1, set_group="validator")
+        await _insert_finished_evaluation_run(conn, evaluation_id=eval_id_b, cost_usd=0.3, runtime_seconds=60)
+
+        # Insert agent_scores AFTER evaluations to avoid trigger-based refresh overwriting them
+        # (the refresh_agent_scores trigger fires on evaluation INSERT and clears manual scores)
         await _insert_agent_score(conn, agent_id=agent_id_a, miner_hotkey="hotkey-a", set_id=1, final_score=90.0)
         await _insert_agent_score(conn, agent_id=agent_id_b, miner_hotkey="hotkey-b", set_id=1, final_score=70.0)
 
     result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
 
     assert len(result) == 2
-    # Ordered by final_score DESC
+    # Ordered by approved_at DESC (agent_a was the latest approved)
+    assert result[0].id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
     assert result[0].final_score == 90.0
-    assert result[0].emission == 0.0
-    assert result[0].id == agent_id_a
+    assert result[0].approved_at == approved_at_a
+    assert result[0].average_cost_usd == 0.5
+    assert result[0].average_runtime_seconds == 120
+
+    assert result[1].id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
+    assert result[1].emission == 0.0
+    assert result[1].approved_at == approved_at_b
+    assert result[1].average_cost_usd == 0.3
+    assert result[1].average_runtime_seconds == 60
 
 
 @pytest.mark.anyio

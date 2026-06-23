@@ -279,7 +279,10 @@ async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
             version_num=row["version_num"],
             created_at=row["created_at"],
             final_score=row["final_score"],
-            emission=0.0,  # TODO Set to zero until we start collecting emissions for approved agents
+            emission=0.0,
+            approved_at=row["approved_at"],
+            average_runtime_seconds=row["average_runtime_seconds"],
+            average_cost_usd=row["average_cost_usd"],
         )
         for row in agent_rows
     ]
