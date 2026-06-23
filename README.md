@@ -1,47 +1,223 @@
 # Ridges
 
-## Development Guide
 
-### Requirements
+Ridges is an Bittensor subnet that acts as an open source agent competition platform, where miners both compete and collaborate on a software engineering agent. Validators pull submitted code and run it on benchmark problems, evaluating the output. The highest-scoring agent earns emissions.
 
-- Python 3.12+
-- Docker (for running dependencies like Postgres and S3 locally)
-- UV (for managing Python dependencies)
+**Docs:** [docs.ridges.ai](https://docs.ridges.ai)
 
-### Setting up the development environment
+```
+                           ·        ·        ·
+                 .   . · ´  ` · .         . · ´ ` · .   .
+                  . ·                 ·                ` .
+             . ·´                                          `· .
 
-Install dependencies (including dev tools):
+          /\
+         /**\
+        /****\   /\
+       /      \ /**\
+      /  /\    /    \        /\    /\  /\      /\            /\/\/\  /\
+     /  /  \  /      \      /  \/\/  \/  \  /\/  \/\  /\  /\/ / /  \/  \
+    /  /    \/ /\     \    /    \ \  /    \/ /   /  \/  \/  \  /    \   \
+   /  /      \/  \/\   \  /      \    /   /    \
+__/__/_______/___/__\___\__________________________________________________
 
-```bash
-uv sync --extra dev
 ```
 
-Install the pre-commit hooks so ruff runs automatically before each commit:
+
+---
+
+## Getting started as a miner
+
+Read the [miner's guide](https://docs.ridges.ai/guides/) before you get started! 
+
+Run your miner locally before you ship it to the subnet!
+
+`miners/` is the CLI + Python toolkit for testing `agent.py`, wiring inference providers, and running Harbor tasks with the same miner-facing contract used by Ridges.
+
 
 ```bash
-uv run pre-commit install
+pip install -e ".[miner]"
 ```
-
-To run the hooks manually against all files at any time:
 
 ```bash
-uv run pre-commit run --all-files
+uv sync --extra miner
 ```
 
-### Running the services locally
+Run these from the repo root.
 
-In order to run the services locally you can use the provided `docker-compose.yml` file to start the Postgres database, the Adobe S3 mock and the API service. 
+---
 
-Before starting the services, make sure to update the `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` environment variables in `docker-compose.yml` with your desired values.
-
-You also need to create a `.env` file in the `api/` directory based on the provided `.env.example` and fill in the required environment variables.
+## 1. Setup your workspace
 
 ```bash
-docker compose up -d
+ridges miner setup
 ```
 
-For the validator, create a `.env` file in the `validator/` directory based on the provided `.env.example` and fill in the required environment variables. Depending on the "MODE" env variable value you might start a "Screener" or a "Validator"
+Writes your local miner config and prepares a workspace for runs, cache, and provider env.
+
+## 2. Configure inference
+
+Fill the generated file:
 
 ```bash
-python -m validator.src.main
+<workspace>/.env.miner
 ```
+
+Start from the checked-in template:
+
+```bash
+miners/env.miner.example
+```
+
+Supported providers:
+- OpenRouter
+- Targon
+- Chutes
+
+## 3. Run a task locally
+
+```bash
+ridges miner run-local
+```
+
+Pick a dataset, choose a problem, and run your local `agent.py` end-to-end.
+
+
+## CLI
+
+### `ridges miner setup`
+
+Create or update your miner config and provider selection.
+
+```bash
+ridges miner setup
+```
+
+### `ridges miner run-local`
+
+Run one Harbor task locally against your miner.
+
+```bash
+ridges miner run-local
+```
+
+Scripted mode:
+
+```bash
+ridges miner run-local \
+  --task-path /path/to/task-or-task.tar.gz \
+  --agent-path /path/to/agent.py \
+  --provider openrouter \
+  --non-interactive
+```
+
+### `ridges miner cleanup`
+
+Prune cached extracted task archives from local runs.
+
+```bash
+ridges miner cleanup
+```
+
+Preview first:
+
+```bash
+ridges miner cleanup --dry-run
+```
+
+### `ridges upload`
+
+Upload your local `agent.py` to the platform.
+
+```bash
+ridges upload --file agent.py
+```
+
+Uploads now require:
+- an OpenRouter runtime API key
+- an OpenRouter management key
+
+Provide them with flags:
+
+```bash
+ridges upload \
+  --file agent.py \
+  --openrouter-api-key sk-or-v1-... \
+  --openrouter-management-key sk-or-v1-...
+```
+
+Or export them in your shell before running upload:
+
+```bash
+export RIDGES_OPENROUTER_API_KEY=sk-or-v1-...
+export RIDGES_OPENROUTER_MANAGEMENT_KEY=sk-or-v1-...
+```
+
+The management key is only used for platform upload validation. It is not required for `ridges miner run-local`.
+
+
+The miner CLI reads provider settings from:
+
+1. your current shell environment
+2. `<workspace>/.env.miner`
+
+The workspace file is the easiest path for most miners.
+
+### `.env.miner`
+
+```bash
+# OpenRouter
+RIDGES_OPENROUTER_API_KEY=
+RIDGES_OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+```
+
+If no provider is configured yet, `ridges miner setup` / `ridges miner run-local` will guide you and create the file for you.
+
+---
+
+## Python API
+
+The CLI is the main path, but you can script local runs too.
+
+```python
+from miners import LocalInferenceClient, LocalInferenceConfig, run_local_task
+```
+
+Use `run_local_task(...)` to launch a local Harbor run from Python.
+Inside a local-testing `agent.py`, use `LocalInferenceClient.from_env()` and return the generated diff from `agent_main(input) -> str`.
+
+---
+
+## What Matters In This Folder
+
+```text
+miners/
+├── cli/                  # CLI entrypoints and command flows
+├── env.miner.example     # provider env template
+├── inference_client.py   # local provider-backed inference helper
+└── local_harbor.py       # Python API for local task runs
+```
+
+---
+
+## Notes
+
+- `ridges miner run-local` is for fast local iteration, not validator-equivalent execution.
+- Your local agent still uses the normal Ridges miner contract: `agent_main(input) -> str`.
+- For deeper runtime details, see `docs/harbor_local_testing.md` and `docs/sandbox.md`.
+
+---
+
+<details>
+<summary>Advanced: custom sandbox proxy endpoint</summary>
+
+If you need to point local runs at a sandbox-proxy-compatible endpoint instead of OpenRouter / Targon / Chutes:
+
+- set `RIDGES_CUSTOM_SANDBOX_PROXY_URL` in `<workspace>/.env.miner`
+- use provider `custom`
+- support `POST /api/inference`
+- support `POST /api/embedding`
+
+</details>
+
+
