@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -9,6 +9,7 @@ from api.endpoints import validator as validator_endpoint
 from models.agent import Agent, AgentStatus
 from models.evaluation import EvaluationStatus, HydratedEvaluation
 from models.evaluation_set import EvaluationSetGroup
+from queries.evaluation import AgentRankingProfile
 
 
 def _hydrated_evaluation(*, agent_id, set_id: int = 7) -> HydratedEvaluation:
@@ -150,41 +151,44 @@ async def test_handle_evaluation_finished_skips_auto_approval_for_non_leader_can
 @pytest.mark.anyio
 async def test_should_run_auto_approval_judge_when_no_approved_leader(monkeypatch) -> None:
     agent_id = uuid4()
+    now = datetime.now(timezone.utc)
 
     async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
-        return 0.61
+        return AgentRankingProfile(final_score=0.61, avg_cost_usd=0.05, created_at=now)
 
-    async def fake_get_approved_validator_leader_score_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
         return None
 
     monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
     monkeypatch.setattr(
         validator_endpoint,
-        "get_approved_validator_leader_score_for_set",
-        fake_get_approved_validator_leader_score_for_set,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
     )
 
     assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is True
 
 
 @pytest.mark.anyio
-async def test_should_run_auto_approval_judge_allows_candidate_to_tie_approved_leader(monkeypatch) -> None:
+async def test_should_run_auto_approval_judge_rejects_full_tie_with_leader(monkeypatch) -> None:
     agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+    profile = AgentRankingProfile(final_score=0.75, avg_cost_usd=0.05, created_at=now)
 
     async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
-        return 0.75
+        return profile
 
-    async def fake_get_approved_validator_leader_score_for_set(_set_id, _excluded_agent_id, _required_validator_count):
-        return 0.75
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return profile
 
     monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
     monkeypatch.setattr(
         validator_endpoint,
-        "get_approved_validator_leader_score_for_set",
-        fake_get_approved_validator_leader_score_for_set,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
     )
 
-    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is True
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
 
 
 @pytest.mark.anyio
@@ -230,3 +234,67 @@ async def test_handle_evaluation_finished_updates_status_without_auto_approval(m
         "agent_id": agent_id,
         "status": AgentStatus.finished,
     }
+
+
+@pytest.mark.anyio
+async def test_should_run_auto_approval_judge_accepts_candidate_with_lower_cost(monkeypatch) -> None:
+    agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.03, created_at=now)
+
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.05, created_at=now)
+
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
+    )
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is True
+
+
+@pytest.mark.anyio
+async def test_should_run_auto_approval_judge_rejects_candidate_with_higher_cost(monkeypatch) -> None:
+    agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.08, created_at=now)
+
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.05, created_at=now)
+
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
+    )
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
+
+
+@pytest.mark.anyio
+async def test_should_run_auto_approval_judge_rejects_newer_candidate_same_score_and_cost(monkeypatch) -> None:
+    agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+    earlier = now - timedelta(hours=1)
+
+    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.05, created_at=now)
+
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.75, avg_cost_usd=0.05, created_at=earlier)
+
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
+    )
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
