@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import signal
 import time
 from pathlib import Path
 
@@ -108,14 +109,13 @@ async def _run_one(
     }
 
 
-async def _prune_build_cache(until: str) -> None:
-    """Best-effort BuildKit cache prune to bound disk during long runs.
+async def _prune_docker(until: str) -> None:
+    """Best-effort Docker prune to bound disk during long runs.
 
-    Harbor builds each task environment via BuildKit, so reclaimable space
-    accumulates in the *build cache* — which `docker image prune` never touches.
-    `until=<age>` keeps recently-used (reusable) cache and evicts older entries.
+    Harbor leaves a tagged image PER task (~GBs each) plus BuildKit cache.
+    `docker system prune -af` reclaims unused images and build cache
     """
-    command = ["docker", "builder", "prune", "-f", "--filter", f"until={until}"]
+    command = ["docker", "system", "prune", "-af", "--filter", f"until={until}"]
     try:
         process = await asyncio.create_subprocess_exec(
             *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
@@ -150,9 +150,28 @@ async def _run_all(
     total = len(problem_ids)
     completed = 0
 
-    async def worker(problem_id: str) -> dict:
+    # Graceful shutdown:
+    stop_event = asyncio.Event()
+
+    def _request_stop(signame: str) -> None:
+        if not stop_event.is_set():
+            print(f"\n{signame} received — draining in-flight tasks, not starting new ones.", flush=True)
+            stop_event.set()
+
+    loop = asyncio.get_running_loop()
+    for signame in ("SIGINT", "SIGTERM"):
+        try:
+            loop.add_signal_handler(getattr(signal, signame), _request_stop, signame)
+        except (NotImplementedError, AttributeError):
+            pass
+
+    async def worker(problem_id: str) -> dict | None:
         nonlocal completed
+        if stop_event.is_set():
+            return None
         async with semaphore:
+            if stop_event.is_set():
+                return None
             started = time.time()
             record = await _run_one(
                 adapter,
@@ -176,12 +195,18 @@ async def _run_all(
 
         # Prune outside the write lock so it doesn't block other workers' result writes.
         if should_prune:
-            await _prune_build_cache(prune_until)
+            await _prune_docker(prune_until)
 
         return record
 
     results = await asyncio.gather(*(worker(problem_id) for problem_id in problem_ids))
-    _print_summary(results)
+    completed_results = [record for record in results if record is not None]
+    if stop_event.is_set():
+        print(
+            f"\nStopped early: {len(completed_results)} done, {len(results) - len(completed_results)} not started (resume will continue).",
+            flush=True,
+        )
+    _print_summary(completed_results)
 
 
 def _print_summary(results: list[dict]) -> None:
@@ -223,12 +248,12 @@ def main() -> None:
         "--prune-every",
         type=int,
         default=5,
-        help="Run `docker builder prune` after every N completed tasks to bound disk; 0 disables (default: %(default)s)",
+        help="Run `docker system prune` after every N completed tasks to bound disk; 0 disables (default: %(default)s)",
     )
     parser.add_argument(
         "--prune-until",
         default="10m",
-        help="Keep build cache newer than this; older is evicted (docker --filter until=) (default: %(default)s)",
+        help="Keep images/build cache newer than this; older unused is evicted (docker --filter until=) (default: %(default)s)",
     )
     args = parser.parse_args()
 
