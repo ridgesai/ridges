@@ -212,7 +212,7 @@ APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POL
 # the test pass-rate information is incorrect. We will just exclude
 # these sets since they came before the Problem Info viewer anyway,
 # which is the only feature uses this endpoint.
-EARLIEST_SET_ID_WITH_GOOD_DATA = 7
+EARLIEST_SET_ID_WITH_GOOD_DATA = int(os.getenv("EARLIEST_SET_ID_WITH_GOOD_DATA", "7"))
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
@@ -273,5 +273,6 @@ logger.info(f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_PO
 logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
+logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
 
 logger.info("=========================")
