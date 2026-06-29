@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA
 from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
@@ -52,7 +53,7 @@ async def resolve_set_id(set_id: int) -> int:
     int
         Parsed and validated set ID, with -1 resolved to the latest set ID.
     """
-    if set_id < -1:
+    if set_id != -1 and set_id < EARLIEST_SET_ID_WITH_GOOD_DATA:
         raise HTTPException(status_code=404, detail="No evaluation sets found.")
 
     resolved_set_id = None

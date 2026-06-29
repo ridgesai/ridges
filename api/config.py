@@ -206,6 +206,12 @@ AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 
+# Old note from ADAM: Set IDs 6 and earlier still
+# included the validator optimization
+# of skipping all tests after the first failure, which means that
+# the test pass-rate information is incorrect. We will just exclude
+# these sets since they came before the Problem Info viewer anyway,
+# which is the only feature uses this endpoint.
 EARLIEST_SET_ID_WITH_GOOD_DATA = 7
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
