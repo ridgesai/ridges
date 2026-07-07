@@ -18,8 +18,6 @@ from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
 from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.retrieval import router as retrieval_router
-from api.endpoints.scoring import router as scoring_router
-from api.endpoints.statistics import router as statistics_router
 from api.endpoints.scaling import router as scaling_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
