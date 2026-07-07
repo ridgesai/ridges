@@ -9,7 +9,9 @@ from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
 
-import utils.logger as logger
+import logging
+
+logger = logging.getLogger(__name__)
 
 _core_api: Optional[k8s_client.CoreV1Api] = None
 
