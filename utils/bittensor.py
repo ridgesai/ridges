@@ -7,6 +7,7 @@ from bittensor_wallet.keypair import Keypair
 import api.config as config
 
 if TYPE_CHECKING:
+    from bittensor.core.chain_data.neuron_info_lite import NeuronInfoLite
     from bittensor.core.types import BlockInfo
     from bittensor.utils.balance import Balance
 
@@ -161,6 +162,21 @@ class SubtensorClient:
         if neuron is None or neuron.is_null:
             return 0.0
         return float(neuron.emission)
+
+    async def get_neurons_lite(self, netuid: int) -> list["NeuronInfoLite"]:
+        """Retrieve all neurons (lite) for a given subnet."""
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.neurons_lite(netuid=netuid)
+
+    async def get_blocks_until_next_epoch(self, netuid: int) -> int | None:
+        """Return the number of blocks until the next epoch for a given subnet."""
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.blocks_until_next_epoch(netuid=netuid)
+
+    async def get_current_block(self) -> int:
+        """Return the current block number."""
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        return await self._subtensor.get_current_block()
 
 
 def validate_signed_timestamp(timestamp: int, signed_timestamp: str, hotkey: str) -> bool:
