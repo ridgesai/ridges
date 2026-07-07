@@ -104,48 +104,6 @@ async def _run_startup_tasks() -> None:
     )
 
 
-# A loop that sends periodic heartbeats to the Ridges platform
-async def send_heartbeat_loop():
-    logger.info("Starting send heartbeat loop...")
-    try:
-        while True:
-            logger.info("Sending heartbeat...")
-            system_metrics = await get_system_metrics()
-            await retry_with_backoff(
-                lambda: post_ridges_platform(
-                    "/validator/heartbeat",
-                    ValidatorHeartbeatRequest(system_metrics=system_metrics),
-                    bearer_token=session_id,
-                    quiet=2,
-                    timeout=5,
-                ),
-                max_attempts=config.MAX_HEARTBEAT_FAILURES,
-            )
-            await asyncio.sleep(config.SEND_HEARTBEAT_INTERVAL_SECONDS)
-    except Exception as e:
-        logger.error(f"Heartbeat failed after all retries, exiting: {type(e).__name__}: {e}")
-        logger.error(traceback.format_exc())
-        os._exit(1)
-
-
-# A loop that periodically sets weights
-async def set_weights_loop():
-    logger.info("Starting set weights loop...")
-    while True:
-        weights_mapping = await retry_with_backoff(
-            lambda: get_ridges_platform("/scoring/weights", quiet=1),
-        )
-
-        try:
-            await asyncio.wait_for(
-                set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS
-            )
-        except asyncio.TimeoutError as e:
-            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
-
-        await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
-
-
 # Sends an update-evaluation-run request to the Ridges platform. The extra
 # parameter is for fields that are not sent in all requests, such as agent_logs
 # and eval_logs, which are only sent on some state transitions.
@@ -676,6 +634,8 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     cancellation_event = asyncio.Event()
     cancellation_reason: dict[str, str | None] = {"reason": None}
     poll_task: asyncio.Task | None = None
+    cancellation_wait_task: asyncio.Task | None = None
+    run_tasks_task: asyncio.Task | None = None
 
     _log_received_evaluation(request_evaluation_response)
     logger.info("Starting evaluation...")
@@ -692,7 +652,21 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
     )
 
     try:
-        await asyncio.gather(*tasks)
+        run_tasks_task, cancellation_wait_task = await _wait_for_runs_or_cancellation(tasks, cancellation_event)
+
+        if cancellation_event.is_set():
+            reason = cancellation_reason["reason"] or "The platform cancelled this evaluation."
+            logger.info(f"Platform requested evaluation cancellation: {reason}")
+            await _cancel_evaluation_run_tasks(tasks, run_tasks_task)
+            await _acknowledge_platform_cancellation(request_evaluation_response, reason)
+            logger.info("Cancelled evaluation")
+            return
+
+        if poll_task is not None:
+            await _cancel_background_tasks(poll_task)
+            poll_task = None
+
+        await run_tasks_task
 
         logger.info("Finished evaluation")
 
@@ -700,7 +674,7 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
             "/validator/finish-evaluation", ValidatorFinishEvaluationRequest(), bearer_token=session_id, quiet=1
         )
     finally:
-        await _cancel_background_tasks(poll_task)
+        await _cancel_background_tasks(cancellation_wait_task, poll_task)
         if config.RIDGES_ENVIRONMENT_TYPE == "docker":
             await asyncio.to_thread(prune_docker_disk_resources)
         elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
