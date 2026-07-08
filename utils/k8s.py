@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Optional
 
 from kubernetes import client as k8s_client
 from kubernetes import config as k8s_config
 from kubernetes.client.rest import ApiException
-
-import logging
 
 logger = logging.getLogger(__name__)
 
