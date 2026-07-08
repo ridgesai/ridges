@@ -25,6 +25,4 @@ class OpenRouterRuntimeConfig(BaseModel):
             "RIDGES_OPENROUTER_MANAGEMENT_KEY": self.management_key,
             "RIDGES_OPENROUTER_WORKSPACE_ID": self.workspace_id,
             "RIDGES_OPENROUTER_EXPECTED_API_KEY_SHA256": self.expected_api_key_sha256,
-            "RIDGES_PROVIDER_ORDER": "Chutes",
-            "RIDGES_PROVIDER_ALLOW_FALLBACKS": "true",
         }
