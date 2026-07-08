@@ -2,13 +2,13 @@ import logging
 from typing import TYPE_CHECKING
 
 from bittensor.core.async_subtensor import AsyncSubtensor
+from bittensor.utils.balance import Balance
 from bittensor_wallet.keypair import Keypair
 
 import api.config as config
 
 if TYPE_CHECKING:
     from bittensor.core.types import BlockInfo
-    from bittensor.utils.balance import Balance
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +105,29 @@ class SubtensorClient:
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.get_balance(address=address)
+
+    async def get_alpha_stake(self, coldkey: str, block: int | None = None) -> Balance:
+        """Return the total alpha a coldkey holds staked on the configured subnet.
+
+        Parameters
+        ----------
+        coldkey : str
+            Coldkey ss58 address whose alpha stake to sum.
+        block : int | None, optional
+            Block at which to read, by default latest.
+
+        Returns
+        -------
+        Balance
+            Total alpha staked by the coldkey on the subnet.
+        """
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        stake_info = await self._subtensor.get_stake_info_for_coldkey(coldkey_ss58=coldkey, block=block)
+        total = sum(
+            (info.stake for info in stake_info if info.netuid == config.NETUID),
+            start=Balance.from_rao(0).set_unit(config.NETUID),
+        )
+        return total
 
     async def get_alpha_price_tao(self, block: int | None = None) -> float:
         """Return the current alpha price (in TAO) for the configured subnet.
