@@ -60,11 +60,15 @@ KUBECTL     := kubectl --context=$(K8S_CTX)
 
 .PHONY: k8s-up k8s-down k8s-images k8s-network k8s-setup k8s-screener
 
-## Create kind cluster with Calico CNI and ridges namespace
+## Create kind cluster with Calico CNI and ridges namespace (skip if already running)
 k8s-up:
-	kind create cluster --name $(K8S_CLUSTER) --config k8s/kind-config.yaml
-	$(KUBECTL) apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml
-	$(KUBECTL) wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=180s
+	@if kind get clusters 2>/dev/null | grep -qx '$(K8S_CLUSTER)'; then \
+	    echo "Kind cluster '$(K8S_CLUSTER)' already exists — reusing"; \
+	else \
+	    kind create cluster --name $(K8S_CLUSTER) --config k8s/kind-config.yaml; \
+	    $(KUBECTL) apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.0/manifests/calico.yaml; \
+	    $(KUBECTL) wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=180s; \
+	fi
 	$(KUBECTL) create namespace $(K8S_NS) --dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 ## Destroy the kind cluster
@@ -74,15 +78,15 @@ k8s-down:
 ## Build and load the validator/screener image into every kind node.
 ## Re-run this after any code change to pick up the new image.
 k8s-images:
-	docker build -t ridges-validator:latest -f Dockerfile.validator .
+	docker build -t ridges-validator:latest -f Dockerfile.validator \
+	    --build-arg GIT_COMMIT=$$(git rev-parse HEAD) .
 	kind load docker-image ridges-validator:latest --name $(K8S_CLUSTER)
 
 ## Apply all k8s/ manifests (NetworkPolicies, RBAC, registry, dockerhost).
 ## Re-run this after editing any file under k8s/.
 k8s-network:
-	$(KUBECTL) apply -f k8s/registry.yaml
-	$(KUBECTL) wait --for=condition=ready pod -l app=registry -n $(K8S_NS) --timeout=120s
 	kustomize build k8s/local | $(KUBECTL) apply -f -
+	$(KUBECTL) wait --for=condition=ready pod -l app=registry -n $(K8S_NS) --timeout=120s
 
 ## Full setup: cluster → registry creds → images → manifests → secrets.
 ## Run once after k8s-up (or after k8s-down to start fresh).
