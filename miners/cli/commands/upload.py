@@ -197,7 +197,7 @@ def _confirm_payment(payment_method_details: dict) -> bool:
     amount_alpha = payment_method_details["amount_alpha_rao"] / 1e9
     confirm_payment = Prompt.ask(
         (
-            f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha} alpha "
+            f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha:,.4f} alpha "
             f"({payment_method_details['amount_alpha_rao']} in 1e9 units) on SN62?[/bold yellow]"
         ),
         choices=["y", "n"],

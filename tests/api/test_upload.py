@@ -124,7 +124,7 @@ def _fake_events(extrinsic_idx: int, coldkey: str, netuid: int, amount: int) -> 
 
 
 def _install_mocks(monkeypatch) -> None:
-    """Patch blockchain + S3. prod flag and UPLOAD_SEND_ADDRESS are set by upload_prod_mode."""
+    """Patch blockchain + S3. prod flag is set by upload_prod_mode."""
     monkeypatch.setattr(upload_module, "check_signature", MagicMock())
     monkeypatch.setattr(upload_module, "check_hotkey_registered", AsyncMock())
     monkeypatch.setattr(upload_module, "check_agent_banned", AsyncMock())
