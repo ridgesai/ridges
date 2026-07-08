@@ -194,11 +194,11 @@ def _unlock_coldkey(wallet) -> None:
 
 
 def _confirm_payment(payment_method_details: dict) -> bool:
+    amount_alpha = payment_method_details["amount_alpha_rao"] / 1e9
     confirm_payment = Prompt.ask(
         (
-            f"\n[bold yellow]Proceed with payment of {payment_method_details['amount_rao']} RAO "
-            f"({payment_method_details['amount_rao'] / 1e9} TAO) to "
-            f"{payment_method_details['send_address']}?[/bold yellow]"
+            f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha} alpha "
+            f"({payment_method_details['amount_alpha_rao']} in 1e9 units) on SN62?[/bold yellow]"
         ),
         choices=["y", "n"],
         default="n",
@@ -211,11 +211,12 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
 
     subtensor = Subtensor(network=os.environ.get("SUBTENSOR_NETWORK", "finney"))
     payment_payload = subtensor.substrate.compose_call(
-        call_module="Balances",
-        call_function="transfer_keep_alive",
+        call_module="SubtensorModule",
+        call_function="burn_alpha",
         call_params={
-            "dest": payment_method_details["send_address"],
-            "value": payment_method_details["amount_rao"],
+            "hotkey": wallet.hotkey.ss58_address,
+            "amount": payment_method_details["amount_alpha_rao"],
+            "netuid": 62,
         },
     )
 
@@ -233,8 +234,8 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
 
 def _print_payment_receipt(receipt: PaymentReceipt) -> None:
     console.print(
-        "\n[yellow]Payment extrinsic submitted. If something goes wrong with the upload, "
-        "you can use this information to get a refund[/yellow]"
+        "\n[yellow]Burn extrinsic submitted. Burns are irreversible; if the upload fails, "
+        "use this info with `ridges resume-upload` to retry (not for a refund)[/yellow]"
     )
     if receipt.quote_id:
         console.print(f"[cyan]Payment Quote ID:[/cyan] {receipt.quote_id}")
