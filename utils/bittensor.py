@@ -106,13 +106,11 @@ class SubtensorClient:
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.get_balance(address=address)
 
-    async def get_alpha_price_tao(self, netuid: int = 62, block: int | None = None) -> float:
-        """Return the current alpha price (in TAO) for the given subnet.
+    async def get_alpha_price_tao(self, block: int | None = None) -> float:
+        """Return the current alpha price (in TAO) for the configured subnet.
 
         Parameters
         ----------
-        netuid : int, optional
-            Subnet whose alpha price to read, by default 62.
         block : int | None, optional
             Block at which to read, by default latest.
 
@@ -122,7 +120,7 @@ class SubtensorClient:
             Alpha price denominated in TAO.
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
-        price = await self._subtensor.get_subnet_price(netuid=netuid, block=block)
+        price = await self._subtensor.get_subnet_price(netuid=config.NETUID, block=block)
         return float(price.tao)
 
     async def get_block(self, block_hash: str) -> dict | None:

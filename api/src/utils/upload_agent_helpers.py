@@ -156,6 +156,6 @@ SN62_NETUID = 62
 
 async def get_alpha_price() -> float:
     """Return the SN62 alpha price in USD: (alpha price in TAO from chain) * (TAO price in USD)."""
-    alpha_tao = await subtensor_client.get_alpha_price_tao(netuid=SN62_NETUID)
+    alpha_tao = await subtensor_client.get_alpha_price_tao()
     tao_usd = await get_tao_price()
     return alpha_tao * tao_usd
