@@ -19,10 +19,12 @@ Pod spec:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Callable
 from typing import Any
 
-import utils.logger as logger
+logger = logging.getLogger(__name__)
 
 
 async def serve(
@@ -51,9 +53,6 @@ async def serve(
     site = web.TCPSite(runner, host, port)
     await site.start()
     logger.info(f"Health endpoint listening on {host}:{port}/healthz")
-
-    # Keep running until cancelled
-    import asyncio
 
     try:
         while True:
