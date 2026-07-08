@@ -76,8 +76,6 @@ async def run_task(
     openrouter_config: OpenRouterRuntimeConfig | None = None,
     max_cost_usd: float | None = None,
     fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
-    proxy_version: str | None = None,
-    proxy_source_url: str | None = None,
     inference_seed: int | None = None,
     on_agent_started: TrialHook | None = None,
     on_verification_started: TrialHook | None = None,
@@ -117,8 +115,6 @@ async def run_task(
         openrouter_config=openrouter_config,
         max_cost_usd=max_cost_usd,
         fetch_task_url=fetch_task_url,
-        proxy_version=proxy_version,
-        proxy_source_url=proxy_source_url,
         inference_seed=inference_seed,
         on_agent_started=on_agent_started,
         on_verification_started=on_verification_started,
@@ -187,16 +183,17 @@ async def _run_task_dir(
         from kubernetes import client as k8s_client_mod
         from kubernetes import config as k8s_config_mod
 
-        K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "ridges")
-        K8S_REGISTRY = os.getenv("K8S_REGISTRY", "registry.ridges.svc:5000")
-        K8S_CONTEXT = os.getenv("K8S_CONTEXT")
-        _node_selector_raw = os.getenv("K8S_NODE_SELECTOR")
-        K8S_NODE_SELECTOR = (
-            dict(kv.split("=", 1) for kv in _node_selector_raw.split(",")) if _node_selector_raw else None
+        from validator.config import (
+            K8S_CONTEXT,
+            K8S_NAMESPACE,
+            K8S_NODE_SELECTOR,
+            K8S_REGISTRY,
+            K8S_REGISTRY_INSECURE,
+            K8S_REGISTRY_PASSWORD,
+            K8S_REGISTRY_SECRET,
+            PROXY_IMAGE,
         )
-        K8S_REGISTRY_SECRET = os.getenv("K8S_REGISTRY_SECRET")
-        K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")
-        K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
+
         K8S_OWNER_POD_NAME = os.getenv("MY_POD_NAME")
         K8S_OWNER_POD_UID = os.getenv("MY_POD_UID")
 
@@ -209,10 +206,6 @@ async def _run_task_dir(
             raise RuntimeError("fetch_task_url callback is required in Kubernetes mode")
         presigned_url = await fetch_task_url(task_digest)
 
-        from validator.config import PROXY_IMAGE
-
-        proxy_image = PROXY_IMAGE
-
         environment_config = EnvironmentConfig(
             import_path="ridges_harbor.k8s_environment:RidgesKubernetesEnvironment",
             env={},
@@ -222,7 +215,7 @@ async def _run_task_dir(
                 "task_name": task_name,
                 "digest_tag": digest_tag,
                 "task_archive_presigned_url": presigned_url,
-                "proxy_image": proxy_image,
+                "proxy_image": PROXY_IMAGE,
                 "evaluation_run_id": evaluation_run_id,
                 "max_cost_usd": str(max_cost_usd) if max_cost_usd is not None else "999999",
                 "openrouter_sidecar_env": openrouter_config.sidecar_env_vars() if openrouter_config else {},
@@ -284,7 +277,6 @@ async def _run_task_dir(
             )
         ],
     )
-    enable_verifier_egress = build_enable_verifier_egress_hook(ridges_trial_id=ridges_trial_id)
 
     try:
         EnvironmentFactory.run_preflight(
