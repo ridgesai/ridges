@@ -896,15 +896,12 @@ class RidgesKubernetesEnvironment(KubernetesEnvironment):
 
     async def _image_exists_in_registry(self, image_ref: str) -> bool:
         """HEAD-check the task image (self.task_name:self.digest_tag) in the registry."""
-        return await self._image_exists_in_registry_by_ref(self.task_name, self.digest_tag)
-
-    async def _image_exists_in_registry_by_ref(self, name: str, tag: str) -> bool:
-        """HEAD-check an arbitrary image name:tag in the in-cluster registry."""
         import base64
         import http.client
         import ssl
         import urllib.parse
 
+        name, tag = self.task_name, self.digest_tag
         try:
             scheme = "http" if self._registry_insecure else "https"
             default_port = 5000 if self._registry_insecure else 443
