@@ -24,8 +24,7 @@ FAKE_BLOCK_HASH = "0xdeadbeef1234"
 FAKE_EXTRINSIC_INDEX = "1"
 FAKE_HOTKEY = "5FHneTesthKey123"
 FAKE_COLDKEY = "5FColdKey456"
-FAKE_AMOUNT_RAO = 100_000_000
-FAKE_SEND_ADDRESS = "5FUploadWalletAddress"
+FAKE_AMOUNT_ALPHA_RAO = 120_344_620_287_164
 FAKE_OWNER_HOTKEY = upload_module.config.OWNER_HOTKEY
 FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
 
@@ -36,12 +35,9 @@ FAKE_BLOCK_TIME = datetime(2026, 6, 9, 18, 0, tzinfo=timezone.utc)
 def upload_prod_mode():
     """Run all tests in this module against the prod code path."""
     original_env = upload_module.config.ENV
-    original_send_address = upload_module.config.UPLOAD_SEND_ADDRESS
     upload_module.config.ENV = "prod"
-    upload_module.config.UPLOAD_SEND_ADDRESS = FAKE_SEND_ADDRESS
     yield
     upload_module.config.ENV = original_env
-    upload_module.config.UPLOAD_SEND_ADDRESS = original_send_address
 
 
 @pytest.fixture(autouse=True)
@@ -100,22 +96,31 @@ def _make_fake_timestamp_extrinsic() -> MagicMock:
     return ext
 
 
-def _make_fake_extrinsic(coldkey: str, amount_rao: int, dest: str) -> MagicMock:
+def _make_fake_burn_extrinsic(coldkey: str) -> MagicMock:
     ext = MagicMock()
     ext.value_serialized = {
         "address": coldkey,
-        "call": {
-            "call_module": "Balances",
-            "call_function": "transfer_keep_alive",
-            "call_args": [
-                {"name": "dest", "value": dest},
-                {"name": "value", "value": amount_rao},
-            ],
-        },
+        "call": {"call_module": "SubtensorModule", "call_function": "burn_alpha", "call_args": []},
     }
-    ext.value = ext.value_serialized
-    ext.__getitem__ = MagicMock(side_effect=lambda key: coldkey if key == "address" else None)
     return ext
+
+
+def _fake_events(extrinsic_idx: int, coldkey: str, netuid: int, amount: int) -> list:
+    return [
+        {
+            "extrinsic_idx": extrinsic_idx,
+            "event": {
+                "module_id": "SubtensorModule",
+                "event_id": "AlphaBurned",
+                "attributes": {
+                    "Coldkey": coldkey,
+                    "Hotkey": FAKE_HOTKEY,
+                    "Actual Alpha Decrease": amount,
+                    "Netuid": netuid,
+                },
+            },
+        }
+    ]
 
 
 def _install_mocks(monkeypatch) -> None:
@@ -137,10 +142,15 @@ def _install_mocks(monkeypatch) -> None:
                 timestamp=int(FAKE_BLOCK_TIME.timestamp() * 1000),
                 extrinsics=[
                     _make_fake_timestamp_extrinsic(),
-                    _make_fake_extrinsic(FAKE_COLDKEY, FAKE_AMOUNT_RAO, FAKE_SEND_ADDRESS),
+                    _make_fake_burn_extrinsic(FAKE_COLDKEY),
                 ],
             )
         ),
+    )
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_events",
+        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO)),
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
@@ -149,13 +159,13 @@ def _install_mocks(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
-        "get_balance",
-        AsyncMock(return_value=MagicMock(rao=FAKE_AMOUNT_RAO * 10)),
+        "get_alpha_stake",
+        AsyncMock(return_value=MagicMock(rao=FAKE_AMOUNT_ALPHA_RAO * 10)),
     )
     monkeypatch.setattr(
         upload_module,
         "get_upload_price",
-        AsyncMock(return_value=MagicMock(amount_rao=FAKE_AMOUNT_RAO, send_address=FAKE_SEND_ADDRESS)),
+        AsyncMock(return_value=MagicMock(amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO)),
     )
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     response_validate_open_router_keys = MagicMock()
@@ -175,8 +185,7 @@ def _install_mocks(monkeypatch) -> None:
 async def _insert_quote(
     *,
     hotkey: str = FAKE_HOTKEY,
-    amount_rao: int = FAKE_AMOUNT_RAO,
-    send_address: str = FAKE_SEND_ADDRESS,
+    amount_alpha_rao: int = FAKE_AMOUNT_ALPHA_RAO,
     created_at: datetime = FAKE_BLOCK_TIME - timedelta(minutes=1),
     expires_at: datetime = FAKE_BLOCK_TIME + timedelta(minutes=15),
 ) -> uuid.UUID:
@@ -184,14 +193,12 @@ async def _insert_quote(
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO upload_payment_quotes
-                (quote_id, miner_hotkey, amount_rao, send_address, created_at, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
+            VALUES ($1, $2, $3, $4, $5)
             """,
             quote_id,
             hotkey,
-            amount_rao,
-            send_address,
+            amount_alpha_rao,
             created_at,
             expires_at,
         )
@@ -268,21 +275,19 @@ async def test_check_agent_persists_payment_quote():
     )
 
     assert response.status == "success"
-    assert response.amount_rao == FAKE_AMOUNT_RAO
-    assert response.send_address == FAKE_SEND_ADDRESS
+    assert response.amount_alpha_rao == FAKE_AMOUNT_ALPHA_RAO
 
     async with _db.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT miner_hotkey, amount_rao, send_address, expires_at, created_at
+            SELECT miner_hotkey, amount_alpha_rao, expires_at, created_at
             FROM upload_payment_quotes
             WHERE quote_id = $1
             """,
             response.quote_id,
         )
     assert row["miner_hotkey"] == FAKE_HOTKEY
-    assert row["amount_rao"] == FAKE_AMOUNT_RAO
-    assert row["send_address"] == FAKE_SEND_ADDRESS
+    assert row["amount_alpha_rao"] == FAKE_AMOUNT_ALPHA_RAO
     assert row["expires_at"] > row["created_at"]
 
 
@@ -327,14 +332,14 @@ async def test_partial_failure_retry_succeeds():
         await conn.execute(
             """
             INSERT INTO evaluation_payments
-                (payment_block_hash, payment_extrinsic_index, agent_id, miner_hotkey, miner_coldkey, amount_rao, quote_id)
+                (payment_block_hash, payment_extrinsic_index, agent_id, miner_hotkey, miner_coldkey, amount_alpha_rao, quote_id)
             VALUES ($1, $2, NULL, $3, $4, $5, $6)
             """,
             FAKE_BLOCK_HASH,
             FAKE_EXTRINSIC_INDEX,
             FAKE_HOTKEY,
             FAKE_COLDKEY,
-            FAKE_AMOUNT_RAO,
+            FAKE_AMOUNT_ALPHA_RAO,
             quote_id,
         )
 
@@ -363,13 +368,13 @@ async def test_refunded_payment_raises_402():
             uuid.uuid4(),
             "0xdeadbeef1235",
             "1",
-            FAKE_AMOUNT_RAO,
+            FAKE_AMOUNT_ALPHA_RAO,
             "0xrefundtxhash",
             "0xuploadtxhash",
             FAKE_BLOCK_HASH,
             FAKE_EXTRINSIC_INDEX,
             FAKE_COLDKEY,
-            FAKE_AMOUNT_RAO,
+            FAKE_AMOUNT_ALPHA_RAO,
         )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -384,11 +389,16 @@ async def test_refunded_payment_raises_402():
 
 
 @pytest.mark.anyio
-async def test_amount_mismatch_raises_402(monkeypatch):
-    """A payment with the wrong on-chain amount is rejected before reservation."""
+async def test_burn_below_quote_raises_402(monkeypatch):
+    """A burn event with an amount below the quoted amount is rejected before reservation."""
     from fastapi import HTTPException
 
-    quote_id = await _insert_quote(amount_rao=FAKE_AMOUNT_RAO + 1)
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_events",
+        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO - 1)),
+    )
+    quote_id = await _insert_quote(amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO)
 
     with pytest.raises(HTTPException) as exc_info:
         await _call_post_agent(quote_id=quote_id)
@@ -399,6 +409,24 @@ async def test_amount_mismatch_raises_402(monkeypatch):
         payment_extrinsic_index=FAKE_EXTRINSIC_INDEX,
     )
     assert payment is None
+
+
+@pytest.mark.anyio
+async def test_burn_wrong_coldkey_raises_402(monkeypatch):
+    """A burn event signed/attributed to a different coldkey than the miner's is rejected."""
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_events",
+        AsyncMock(return_value=_fake_events(1, "5Fimposter", upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO)),
+    )
+    quote_id = await _insert_quote()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 402
 
 
 @pytest.mark.anyio

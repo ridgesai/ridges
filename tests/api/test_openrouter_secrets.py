@@ -122,10 +122,17 @@ def _patch_upload_dependencies(
     async def _fake_get_balance(*args, **kwargs):
         return SimpleNamespace(rao=10**12)
 
+    async def _fake_get_alpha_stake(*args, **kwargs):
+        return SimpleNamespace(rao=10**12)
+
     monkeypatch.setattr(
         upload_endpoint,
         "subtensor_client",
-        SimpleNamespace(get_hotkey_owner=_fake_get_hotkey_owner, get_balance=_fake_get_balance),
+        SimpleNamespace(
+            get_hotkey_owner=_fake_get_hotkey_owner,
+            get_balance=_fake_get_balance,
+            get_alpha_stake=_fake_get_alpha_stake,
+        ),
     )
 
     async def fake_validate_openrouter_keys(*, openrouter_api_key: str | None, openrouter_management_key: str | None):
@@ -152,14 +159,13 @@ def _patch_upload_dependencies(
         return None
 
     async def fake_get_upload_price(*args, **kwargs):
-        return SimpleNamespace(amount_rao=1, send_address="send-address")
+        return SimpleNamespace(amount_alpha_rao=1)
 
-    async def fake_create_payment_quote(*, miner_hotkey: str, amount_rao: int, send_address: str, expires_at):
+    async def fake_create_payment_quote(*, miner_hotkey: str, amount_alpha_rao: int, expires_at):
         return SimpleNamespace(
             quote_id=uuid4(),
             miner_hotkey=miner_hotkey,
-            amount_rao=amount_rao,
-            send_address=send_address,
+            amount_alpha_rao=amount_alpha_rao,
             expires_at=expires_at,
         )
 

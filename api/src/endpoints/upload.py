@@ -12,6 +12,7 @@ from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenE
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
+    SN62_NETUID,
     as_utc,
     check_agent_banned,
     check_file_size,
@@ -19,8 +20,8 @@ from api.src.utils.upload_agent_helpers import (
     check_if_python_file,
     check_rate_limit,
     check_signature,
+    get_alpha_price,
     get_miner_hotkey,
-    get_tao_price,
     timestamp_ms_to_utc_datetime,
 )
 from models.agent import Agent, AgentCreate, AgentStatus
@@ -102,12 +103,15 @@ async def check_agent_post(
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
-    miner_balance = (await subtensor_client.get_balance(coldkey)).rao
+    miner_alpha_stake = (await subtensor_client.get_alpha_stake(coldkey)).rao
     payment_cost = await get_upload_price()
-    if payment_cost.amount_rao > miner_balance:
+    if payment_cost.amount_alpha_rao > miner_alpha_stake:
         raise HTTPException(
             status_code=402,
-            detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO.",
+            detail=(
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
+                f"staked on SN{SN62_NETUID} to upload. You have {miner_alpha_stake}."
+            ),
         )
     await validate_openrouter_keys(
         openrouter_api_key=openrouter_api_key,
@@ -116,16 +120,14 @@ async def check_agent_post(
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=UPLOAD_PAYMENT_QUOTE_TTL_SECONDS)
     quote = await create_payment_quote(
         miner_hotkey=miner_hotkey,
-        amount_rao=payment_cost.amount_rao,
-        send_address=payment_cost.send_address,
+        amount_alpha_rao=payment_cost.amount_alpha_rao,
         expires_at=expires_at,
     )
     return AgentCheckResponse(
         status="success",
         message="Agent check successful",
         quote_id=quote.quote_id,
-        amount_rao=quote.amount_rao,
-        send_address=quote.send_address,
+        amount_alpha_rao=quote.amount_alpha_rao,
         expires_at=quote.expires_at,
     )
 
@@ -239,7 +241,7 @@ async def post_agent(
                 logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
                 raise PaymentRefunded()
 
-            # Retrieve payment details from the chain
+            # Retrieve the burn block + events from the chain
             try:
                 payment_block_info = await subtensor_client.get_block_info(block_hash=payment_block_hash)
             except Exception as e:
@@ -249,45 +251,42 @@ async def post_agent(
             if payment_block_info is None:
                 raise HTTPException(status_code=402, detail="Payment block not found")
 
-            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
             try:
                 payment_extrinsic_index_int = int(payment_extrinsic_index)
                 if payment_extrinsic_index_int < 0:
                     raise ValueError
                 payment_extrinsic = payment_block_info.extrinsics[payment_extrinsic_index_int]
-                payment_extrinsic_value = payment_extrinsic.value_serialized
-                payment_call = payment_extrinsic_value["call"]
-                call_args = {arg["name"]: arg["value"] for arg in payment_call["call_args"]}
-                payment_value = call_args.get("value")
-                destination = call_args.get("dest")
-                payment_address = payment_extrinsic_value["address"]
-            except (ValueError, TypeError, IndexError, KeyError, AttributeError):
-                raise HTTPException(status_code=402, detail="Payment extrinsic could not be decoded") from None
+            except (ValueError, TypeError, IndexError, AttributeError):
+                raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
 
-            if (
-                payment_call.get("call_module") != "Balances"
-                or payment_call.get("call_function") != "transfer_keep_alive"
-            ):
-                raise HTTPException(status_code=402, detail="Payment extrinsic is not a TAO transfer")
+            if await check_if_extrinsic_failed(payment_block_hash, payment_extrinsic_index_int):
+                raise HTTPException(status_code=402, detail="Burn extrinsic failed on-chain")
 
-            if payment_value is None or await check_if_extrinsic_failed(
-                payment_block_hash, payment_extrinsic_index_int
-            ):
-                raise HTTPException(status_code=402, detail="Payment value not found")
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
 
-            # Make sure coldkey is the same as hotkeys owner coldkey
-            if coldkey != payment_address:
+            # Cross-check the extrinsic: recognized burn call signed by the miner coldkey.
+            verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
+
+            # Event is the source of truth for amount, netuid, and burner.
+            events = await subtensor_client.get_events(block_hash=payment_block_hash)
+            burn_attrs = find_alpha_burned_event(events, payment_extrinsic_index_int)
+
+            event_netuid = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["netuid"])
+            if event_netuid != SN62_NETUID:
+                raise HTTPException(status_code=402, detail=f"Burn is not on SN{SN62_NETUID}")
+
+            event_coldkey = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["coldkey"])
+            if event_coldkey != coldkey:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
 
-            # Make sure destination is our upload send address
-            if destination != quote.send_address:
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Destination does not match. The payment should be sent to {quote.send_address}",
-                )
+            burned_alpha_rao = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["amount"])
+            if burned_alpha_rao is None:
+                raise HTTPException(status_code=402, detail="Burn amount not found")
+            burned_alpha_rao = int(burned_alpha_rao)
+            if burned_alpha_rao < quote.amount_alpha_rao:
+                raise HTTPException(status_code=402, detail="Burn amount too low")
 
-            if payment_value != quote.amount_rao:
-                raise HTTPException(status_code=402, detail="Payment amount does not match")
+            payment_value = burned_alpha_rao
 
             payment_block_time = timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
             if not (as_utc(quote.created_at) <= payment_block_time <= as_utc(quote.expires_at)):
@@ -315,7 +314,7 @@ async def post_agent(
                     payment_extrinsic_index=payment_extrinsic_index,
                     miner_hotkey=miner_hotkey,
                     miner_coldkey=coldkey,
-                    amount_rao=payment_value,
+                    amount_alpha_rao=payment_value,
                     quote_id=quote.quote_id,
                 )
 
@@ -419,17 +418,18 @@ async def post_agent(
 @router.get("/eval-pricing", tags=["eval-pricing"], response_model=UploadPriceResponse)
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
-    TAO_PRICE = await get_tao_price()
+    ALPHA_PRICE = await get_alpha_price()
     eval_cost_usd = 5
 
-    # Get the amount of tao required per eval
-    eval_cost_tao = eval_cost_usd / TAO_PRICE
+    # Alpha required to cover the eval cost at the current alpha price.
+    eval_cost_alpha = eval_cost_usd / ALPHA_PRICE
 
-    # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
-    # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
-    amount_rao = int(eval_cost_tao * 1e9 * 1.4)
+    # Keep the 1.4x buffer. Burned alpha is destroyed (not reclaimable), so the buffer now
+    # absorbs alpha-price movement between quote and burn and keeps prod uploads meaningfully
+    # more expensive than local testing to discourage variance farming.
+    amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.4)
 
-    return UploadPriceResponse(amount_rao=amount_rao, send_address=config.UPLOAD_SEND_ADDRESS)
+    return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao)
 
 
 async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
