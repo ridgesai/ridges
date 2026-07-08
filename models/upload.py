@@ -14,17 +14,15 @@ class AgentUploadResponse(BaseModel):
 class UploadPriceResponse(BaseModel):
     """Response model for upload pricing"""
 
-    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
-    send_address: str = Field(..., description="TAO address to send evaluation payment to")
+    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
 
 
 class AgentCheckResponse(AgentUploadResponse):
     """Response model for successful agent upload preflight checks"""
 
     quote_id: UUID = Field(..., description="Quote ID to include when uploading or resuming")
-    amount_rao: int = Field(..., description="Amount to send for evaluation (in RAO)")
-    send_address: str = Field(..., description="TAO address to send evaluation payment to")
-    expires_at: datetime = Field(..., description="Latest on-chain payment timestamp accepted for this quote")
+    amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
+    expires_at: datetime = Field(..., description="Latest on-chain burn timestamp accepted for this quote")
 
 
 class ErrorResponse(BaseModel):
