@@ -55,6 +55,7 @@ max_evaluation_run_log_size_bytes = None
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
 _shutdown_requested = False
+_healthz_task: asyncio.Task | None = None
 
 # Task-cache digests of in-flight evaluation runs. The cleanup loop excludes these
 # so it never deletes a cached task a live run is still reading (a task is read for
@@ -87,18 +88,19 @@ async def _handle_sigterm() -> None:
 
 async def _run_startup_tasks() -> None:
     """Run environment-specific startup tasks before entering the main loop."""
+    global _healthz_task
     if config.RIDGES_ENVIRONMENT_TYPE == "docker":
         cleanup_harbor_docker_resources()
         prune_docker_disk_resources(include_build_cache=True)
     elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
         import validator.healthz as healthz
 
-        asyncio.create_task(healthz.serve(get_session_id=lambda: session_id))
+        _healthz_task = asyncio.create_task(healthz.serve(get_session_id=lambda: session_id))
         from utils.k8s import cleanup_harbor_k8s_resources
 
         await asyncio.to_thread(cleanup_harbor_k8s_resources)
 
-    asyncio.get_event_loop().add_signal_handler(
+    asyncio.get_running_loop().add_signal_handler(
         signal.SIGTERM,
         lambda: asyncio.create_task(_handle_sigterm()),
     )
