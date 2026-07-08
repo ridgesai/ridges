@@ -50,6 +50,14 @@ logger = logging.getLogger(__name__)
 UPLOAD_PAYMENT_QUOTE_TTL_SECONDS = 60 * 60
 OUTDATED_UPLOAD_CLIENT_MESSAGE = "This upload client is outdated. Please upgrade Ridges CLI and retry."
 
+BURN_CALL_FUNCTIONS = frozenset({"burn_alpha", "add_stake_burn"})
+# Candidate attribute keys on the AlphaBurned event, in priority order (exact label, then snake_case).
+_ALPHA_BURN_KEYS = {
+    "coldkey": ("Coldkey", "coldkey"),
+    "netuid": ("Netuid", "netuid"),
+    "amount": ("Actual Alpha Decrease", "actual_alpha_decrease", "alpha", "amount"),
+}
+
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
 hotkey_locks_lock = asyncio.Lock()
@@ -438,3 +446,43 @@ async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bo
             return True
 
     return False
+
+
+def _event_attr(attributes, *names):
+    """Read a named attribute from an event's attributes, tolerating dict or [{name,value}] shapes."""
+    if isinstance(attributes, dict):
+        for name in names:
+            if name in attributes:
+                return attributes[name]
+        return None
+    for entry in attributes or []:
+        if isinstance(entry, dict) and entry.get("name") in names:
+            return entry.get("value")
+    return None
+
+
+def find_alpha_burned_event(events: list, extrinsic_index: int) -> dict:
+    """Return the attributes of the SubtensorModule.AlphaBurned event for the given extrinsic index."""
+    for event in events:
+        if event.get("extrinsic_idx") != extrinsic_index:
+            continue
+        inner = event.get("event", {})
+        if inner.get("module_id") == "SubtensorModule" and inner.get("event_id") == "AlphaBurned":
+            return inner.get("attributes", {})
+    raise HTTPException(status_code=402, detail="Burn event not found")
+
+
+def verify_burn_extrinsic(extrinsic, expected_coldkey: str) -> None:
+    """Cross-check the extrinsic at the burn index: recognized burn call, signed by the expected coldkey."""
+    try:
+        value = extrinsic.value_serialized
+        call = value["call"]
+        signer = value["address"]
+    except (KeyError, TypeError, AttributeError):
+        raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
+
+    if call.get("call_module") != "SubtensorModule" or call.get("call_function") not in BURN_CALL_FUNCTIONS:
+        raise HTTPException(status_code=402, detail="Extrinsic is not a recognized alpha burn")
+
+    if signer != expected_coldkey:
+        raise HTTPException(status_code=402, detail="Burn was not signed by the miner coldkey")
