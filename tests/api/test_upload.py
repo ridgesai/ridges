@@ -112,12 +112,7 @@ def _fake_events(extrinsic_idx: int, coldkey: str, netuid: int, amount: int) -> 
             "event": {
                 "module_id": "SubtensorModule",
                 "event_id": "AlphaBurned",
-                "attributes": {
-                    "Coldkey": coldkey,
-                    "Hotkey": FAKE_HOTKEY,
-                    "Actual Alpha Decrease": amount,
-                    "Netuid": netuid,
-                },
+                "attributes": (coldkey, FAKE_HOTKEY, amount, netuid),
             },
         }
     ]
