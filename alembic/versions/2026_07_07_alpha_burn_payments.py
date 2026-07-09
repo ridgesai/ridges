@@ -18,15 +18,23 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+_CHECK_NAME = "ck_amount_rao_xor_amount_alpha_rao"
+_CHECK_SQL = "num_nonnulls(amount_rao, amount_alpha_rao) = 1"
+
+
 def upgrade() -> None:
     op.add_column("evaluation_payments", sa.Column("amount_alpha_rao", sa.BigInteger(), nullable=True))
     op.add_column("upload_payment_quotes", sa.Column("amount_alpha_rao", sa.BigInteger(), nullable=True))
     op.alter_column("evaluation_payments", "amount_rao", existing_type=sa.Integer(), nullable=True)
     op.alter_column("upload_payment_quotes", "amount_rao", existing_type=sa.BigInteger(), nullable=True)
     op.alter_column("upload_payment_quotes", "send_address", existing_type=sa.Text(), nullable=True)
+    op.create_check_constraint(_CHECK_NAME, "evaluation_payments", _CHECK_SQL)
+    op.create_check_constraint(_CHECK_NAME, "upload_payment_quotes", _CHECK_SQL)
 
 
 def downgrade() -> None:
+    op.drop_constraint(_CHECK_NAME, "upload_payment_quotes", type_="check")
+    op.drop_constraint(_CHECK_NAME, "evaluation_payments", type_="check")
     op.alter_column("upload_payment_quotes", "send_address", existing_type=sa.Text(), nullable=False)
     op.alter_column("upload_payment_quotes", "amount_rao", existing_type=sa.BigInteger(), nullable=False)
     op.alter_column("evaluation_payments", "amount_rao", existing_type=sa.Integer(), nullable=False)

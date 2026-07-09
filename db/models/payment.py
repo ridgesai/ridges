@@ -31,7 +31,13 @@ class EvaluationPayment(Base, CreatedAtMixin):
     amount_rao: Mapped[Optional[int]] = mapped_column(sa.Integer, nullable=True)
     amount_alpha_rao: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
 
-    __table_args__ = (sa.PrimaryKeyConstraint("payment_block_hash", "payment_extrinsic_index"),)
+    __table_args__ = (
+        sa.PrimaryKeyConstraint("payment_block_hash", "payment_extrinsic_index"),
+        sa.CheckConstraint(
+            "num_nonnulls(amount_rao, amount_alpha_rao) = 1",
+            name="ck_amount_rao_xor_amount_alpha_rao",
+        ),
+    )
 
 
 class UploadPaymentQuote(Base, CreatedAtMixin):
@@ -47,3 +53,10 @@ class UploadPaymentQuote(Base, CreatedAtMixin):
     amount_alpha_rao: Mapped[Optional[int]] = mapped_column(sa.BigInteger, nullable=True)
     send_address: Mapped[Optional[str]] = mapped_column(sa.Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+
+    __table_args__ = (
+        sa.CheckConstraint(
+            "num_nonnulls(amount_rao, amount_alpha_rao) = 1",
+            name="ck_amount_rao_xor_amount_alpha_rao",
+        ),
+    )
