@@ -12,17 +12,19 @@ from api.errors import PaymentAlreadyUsedError, PaymentRefunded, PlatformFrozenE
 from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
-    SN62_NETUID,
     as_utc,
     check_agent_banned,
     check_file_size,
     check_hotkey_registered,
+    check_if_extrinsic_failed,
     check_if_python_file,
     check_rate_limit,
     check_signature,
+    find_alpha_burned_event,
     get_alpha_price,
     get_miner_hotkey,
     timestamp_ms_to_utc_datetime,
+    verify_burn_extrinsic,
 )
 from models.agent import Agent, AgentCreate, AgentStatus
 from models.upload import AgentCheckResponse, AgentUploadResponse, ErrorResponse, UploadPriceResponse
@@ -50,14 +52,6 @@ logger = logging.getLogger(__name__)
 
 UPLOAD_PAYMENT_QUOTE_TTL_SECONDS = 60 * 60
 OUTDATED_UPLOAD_CLIENT_MESSAGE = "This upload client is outdated. Please upgrade Ridges CLI and retry."
-
-BURN_CALL_FUNCTIONS = frozenset({"burn_alpha", "add_stake_burn"})
-# Candidate attribute keys on the AlphaBurned event, in priority order (exact label, then snake_case).
-_ALPHA_BURN_KEYS = {
-    "coldkey": ("Coldkey", "coldkey"),
-    "netuid": ("Netuid", "netuid"),
-    "amount": ("Actual Alpha Decrease", "actual_alpha_decrease", "alpha", "amount"),
-}
 
 # We use a lock per hotkey to prevent multiple agents being uploaded at the same time for the same hotkey
 hotkey_locks: dict[str, asyncio.Lock] = {}
@@ -110,7 +104,7 @@ async def check_agent_post(
             status_code=402,
             detail=(
                 f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
-                f"staked on SN{SN62_NETUID} to upload. You have {miner_alpha_stake}."
+                f"staked on SN{config.NETUID} to upload. You have {miner_alpha_stake}."
             ),
         )
     await validate_openrouter_keys(
@@ -259,7 +253,8 @@ async def post_agent(
             except (ValueError, TypeError, IndexError, AttributeError):
                 raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
 
-            if await check_if_extrinsic_failed(payment_block_hash, payment_extrinsic_index_int):
+            events = await subtensor_client.get_events(block_hash=payment_block_hash)
+            if await check_if_extrinsic_failed(payment_extrinsic_index_int, events):
                 raise HTTPException(status_code=402, detail="Burn extrinsic failed on-chain")
 
             coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
@@ -268,25 +263,18 @@ async def post_agent(
             verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
 
             # Event is the source of truth for amount, netuid, and burner.
-            events = await subtensor_client.get_events(block_hash=payment_block_hash)
-            burn_attrs = find_alpha_burned_event(events, payment_extrinsic_index_int)
+            burn_event = find_alpha_burned_event(events, payment_extrinsic_index_int)
 
-            event_netuid = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["netuid"])
-            if event_netuid != SN62_NETUID:
-                raise HTTPException(status_code=402, detail=f"Burn is not on SN{SN62_NETUID}")
+            if burn_event.netuid != config.NETUID:
+                raise HTTPException(status_code=402, detail=f"Burn is not on SN{config.NETUID}")
 
-            event_coldkey = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["coldkey"])
-            if event_coldkey != coldkey:
+            if burn_event.coldkey != coldkey:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
 
-            burned_alpha_rao = _event_attr(burn_attrs, *_ALPHA_BURN_KEYS["amount"])
-            if burned_alpha_rao is None:
-                raise HTTPException(status_code=402, detail="Burn amount not found")
-            burned_alpha_rao = int(burned_alpha_rao)
-            if burned_alpha_rao < quote.amount_alpha_rao:
+            if burn_event.alpha_decrease < quote.amount_alpha_rao:
                 raise HTTPException(status_code=402, detail="Burn amount too low")
 
-            payment_value = burned_alpha_rao
+            payment_value = burn_event.alpha_decrease
 
             payment_block_time = timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
             if not (as_utc(quote.created_at) <= payment_block_time <= as_utc(quote.expires_at)):
@@ -430,59 +418,3 @@ async def get_upload_price() -> UploadPriceResponse:
     amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.4)
 
     return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao)
-
-
-async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = await subtensor_client.get_events(block_hash=block_hash)
-
-    for event in events:
-        if event.get("extrinsic_idx") != extrinsic_index:
-            continue
-
-        module = event["event"]["module_id"]
-        event_id = event["event"]["event_id"]
-
-        if module == "System" and event_id == "ExtrinsicFailed":
-            return True
-
-    return False
-
-
-def _event_attr(attributes, *names):
-    """Read a named attribute from an event's attributes, tolerating dict or [{name,value}] shapes."""
-    if isinstance(attributes, dict):
-        for name in names:
-            if name in attributes:
-                return attributes[name]
-        return None
-    for entry in attributes or []:
-        if isinstance(entry, dict) and entry.get("name") in names:
-            return entry.get("value")
-    return None
-
-
-def find_alpha_burned_event(events: list, extrinsic_index: int) -> dict:
-    """Return the attributes of the SubtensorModule.AlphaBurned event for the given extrinsic index."""
-    for event in events:
-        if event.get("extrinsic_idx") != extrinsic_index:
-            continue
-        inner = event.get("event", {})
-        if inner.get("module_id") == "SubtensorModule" and inner.get("event_id") == "AlphaBurned":
-            return inner.get("attributes", {})
-    raise HTTPException(status_code=402, detail="Burn event not found")
-
-
-def verify_burn_extrinsic(extrinsic, expected_coldkey: str) -> None:
-    """Cross-check the extrinsic at the burn index: recognized burn call, signed by the expected coldkey."""
-    try:
-        value = extrinsic.value_serialized
-        call = value["call"]
-        signer = value["address"]
-    except (KeyError, TypeError, AttributeError):
-        raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
-
-    if call.get("call_module") != "SubtensorModule" or call.get("call_function") not in BURN_CALL_FUNCTIONS:
-        raise HTTPException(status_code=402, detail="Extrinsic is not a recognized alpha burn")
-
-    if signer != expected_coldkey:
-        raise HTTPException(status_code=402, detail="Burn was not signed by the miner coldkey")

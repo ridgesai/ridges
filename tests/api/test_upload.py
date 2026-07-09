@@ -150,7 +150,7 @@ def _install_mocks(monkeypatch) -> None:
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO)),
+        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO)),
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
@@ -396,7 +396,7 @@ async def test_burn_below_quote_raises_402(monkeypatch):
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO - 1)),
+        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO - 1)),
     )
     quote_id = await _insert_quote(amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO)
 
@@ -419,7 +419,7 @@ async def test_burn_wrong_coldkey_raises_402(monkeypatch):
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, "5Fimposter", upload_module.SN62_NETUID, FAKE_AMOUNT_ALPHA_RAO)),
+        AsyncMock(return_value=_fake_events(1, "5Fimposter", upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO)),
     )
     quote_id = await _insert_quote()
 

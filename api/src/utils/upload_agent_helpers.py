@@ -1,5 +1,7 @@
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 from bittensor_wallet.keypair import Keypair
@@ -10,6 +12,17 @@ from queries.banned_hotkey import get_banned_hotkey
 from utils.bittensor import subtensor_client
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, frozen=True)
+class BurnEvent:
+    coldkey: str
+    hotkey: str
+    alpha_decrease: int
+    netuid: int
+
+
+BURN_CALL_FUNCTIONS = frozenset({"burn_alpha", "add_stake_burn"})
 
 
 def get_miner_hotkey(file_info: str) -> str:
@@ -47,7 +60,9 @@ async def check_agent_banned(miner_hotkey: str) -> None:
     logger.debug(f"Miner hotkey {miner_hotkey} is not banned.")
 
 
-def check_rate_limit(latest_agent_created_at_in_latest_set_id: datetime) -> None:
+def check_rate_limit(
+    latest_agent_created_at_in_latest_set_id: datetime,
+) -> None:
     logger.debug("Checking if miner is rate limited...")
 
     earliest_allowed_time = latest_agent_created_at_in_latest_set_id + timedelta(
@@ -75,7 +90,10 @@ def timestamp_ms_to_utc_datetime(timestamp_ms: int | None) -> datetime:
     try:
         return datetime.fromtimestamp(int(timestamp_ms) / 1000, timezone.utc)
     except (TypeError, ValueError):
-        raise HTTPException(status_code=402, detail="Payment block timestamp could not be decoded") from None
+        raise HTTPException(
+            status_code=402,
+            detail="Payment block timestamp could not be decoded",
+        ) from None
 
 
 def as_utc(dt: datetime) -> datetime:
@@ -93,7 +111,10 @@ def check_signature(public_key: str, file_info: str, signature: str, miner_hotke
         logger.error(
             f"Attempt to upload an agent with a public key that does not correspond to the miner hotkey. Public key ss58 address: {keypair.ss58_address}, Miner hotkey: {miner_hotkey}."
         )
-        raise HTTPException(status_code=400, detail="Public key does not correspond to miner hotkey")
+        raise HTTPException(
+            status_code=400,
+            detail="Public key does not correspond to miner hotkey",
+        )
 
     if not keypair.verify(file_info, bytes.fromhex(signature)):
         logger.error(
@@ -151,11 +172,124 @@ async def get_tao_price() -> float:
     return data["bittensor"]["usd"]
 
 
-SN62_NETUID = 62
-
-
 async def get_alpha_price() -> float:
     """Return the SN62 alpha price in USD: (alpha price in TAO from chain) * (TAO price in USD)."""
     alpha_tao = await subtensor_client.get_alpha_price_tao()
     tao_usd = await get_tao_price()
     return alpha_tao * tao_usd
+
+
+async def check_if_extrinsic_failed(extrinsic_index: int, events: list) -> bool:
+    """Validate if the extrinsic failed based on the events.
+
+    Parameters
+    ----------
+    extrinsic_index : int
+        Index of the extrinsic in the block.
+    events : list
+        List of events to check.
+
+    Returns
+    -------
+    bool
+        True if the extrinsic failed, False otherwise.
+    """
+    logger.debug(f"Checking if extrinsic at index {extrinsic_index} failed based on events...")
+    for event in events:
+        if event.get("extrinsic_idx") != extrinsic_index:
+            continue
+
+        module = event["event"]["module_id"]
+        event_id = event["event"]["event_id"]
+
+        if module == "System" and event_id == "ExtrinsicFailed":
+            return True
+
+    return False
+
+
+def _parse_alpha_burned_attributes(attributes: list | tuple | dict) -> BurnEvent:
+    """Parse SubtensorModule.AlphaBurned event attributes into a BurnEvent.
+
+    AsyncSubtensor/substrate-interface decodes this event as a positional tuple/list (coldkey, hotkey, actual_alpha_decrease, netuid) rather than named attributes.
+
+    Named attributes are also supported as a fallback.
+
+    Parameters
+    ----------
+    attributes : list|tuple|dict
+        Event attributes, either as a tuple/list or a dict.
+
+    Returns
+    -------
+    BurnEvent
+        Parsed burn event with coldkey, hotkey, alpha_decrease, and netuid.
+
+    """
+    if isinstance(attributes, (tuple, list)) and len(attributes) >= 4:
+        coldkey, hotkey, alpha_decrease, netuid = attributes[:4]
+        return BurnEvent(coldkey=coldkey, hotkey=hotkey, alpha_decrease=int(alpha_decrease), netuid=int(netuid))
+    if isinstance(attributes, dict):
+        try:
+            return BurnEvent(
+                coldkey=attributes["Coldkey"],
+                hotkey=attributes["Hotkey"],
+                alpha_decrease=int(attributes["Actual Alpha Decrease"]),
+                netuid=int(attributes["Netuid"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(status_code=402, detail="Burn event attributes could not be decoded") from None
+    raise HTTPException(status_code=402, detail="Burn event attributes could not be decoded")
+
+
+def find_alpha_burned_event(events: list, extrinsic_index: int) -> BurnEvent:
+    """Find the AlphaBurned event in the events list and returned a parsed
+    BurnEvent.
+
+    Parameters
+    ----------
+    events : list
+        List of events to search for the AlphaBurned event.
+    extrinsic_index : int
+        Index of the extrinsic to search for.
+
+    Returns
+    -------
+    BurnEvent
+        Parsed burn event with coldkey, hotkey, alpha_decrease, and netuid.
+    """
+    for event in events:
+        if event.get("extrinsic_idx") != extrinsic_index:
+            continue
+        inner = event.get("event", {})
+        if inner.get("module_id") == "SubtensorModule" and inner.get("event_id") == "AlphaBurned":
+            alpha_burned_event = _parse_alpha_burned_attributes(inner.get("attributes", {}))
+            logger.debug(f"Found AlphaBurned event: {alpha_burned_event}")
+            return alpha_burned_event
+    raise HTTPException(status_code=402, detail="Burn event not found")
+
+
+def verify_burn_extrinsic(extrinsic: Any, expected_coldkey: str) -> None:
+    """Validate that the extrinsic is a recognized alpha burn and that it was signed by the expected miner coldkey.
+
+    Parameters
+    ----------
+    extrinsic : Any
+        Extrinsic data to validate.
+    expected_coldkey : str
+        The expected coldkey of the miner.
+    """
+    try:
+        value = extrinsic.value_serialized
+        call = value["call"]
+        signer = value["address"]
+    except (KeyError, TypeError, AttributeError):
+        raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
+    logger.debug("Verifying call module and function for burn extrinsic...")
+    if call.get("call_module") != "SubtensorModule" or call.get("call_function") not in BURN_CALL_FUNCTIONS:
+        raise HTTPException(status_code=402, detail="Extrinsic is not a recognized alpha burn")
+
+    logger.debug("Verifying that the burn extrinsic was signed by the expected miner coldkey...")
+    if signer != expected_coldkey:
+        raise HTTPException(status_code=402, detail="Burn was not signed by the miner coldkey")
+    logger.debug("Burn extrinsic is valid and signed by the expected miner coldkey.")

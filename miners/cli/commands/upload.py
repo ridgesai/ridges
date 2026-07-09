@@ -235,7 +235,7 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
 def _print_payment_receipt(receipt: PaymentReceipt) -> None:
     console.print(
         "\n[yellow]Burn extrinsic submitted. Burns are irreversible; if the upload fails, "
-        "use this info with `ridges resume-upload` to retry (not for a refund)[/yellow]"
+        "use this info with `ridges resume-upload` to retry[/yellow]"
     )
     if receipt.quote_id:
         console.print(f"[cyan]Payment Quote ID:[/cyan] {receipt.quote_id}")
