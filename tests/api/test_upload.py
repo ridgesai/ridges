@@ -105,14 +105,20 @@ def _make_fake_burn_extrinsic(coldkey: str) -> MagicMock:
     return ext
 
 
-def _fake_events(extrinsic_idx: int, coldkey: str, netuid: int, amount: int) -> list:
+def _fake_events(
+    extrinsic_idx: int,
+    coldkey: str,
+    netuid: int,
+    amount: int,
+    hotkey: str = FAKE_HOTKEY,
+) -> list:
     return [
         {
             "extrinsic_idx": extrinsic_idx,
             "event": {
                 "module_id": "SubtensorModule",
                 "event_id": "AlphaBurned",
-                "attributes": (coldkey, FAKE_HOTKEY, amount, netuid),
+                "attributes": (coldkey, hotkey, amount, netuid),
             },
         }
     ]
@@ -145,7 +151,14 @@ def _install_mocks(monkeypatch) -> None:
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO)),
+        AsyncMock(
+            return_value=_fake_events(
+                1,
+                FAKE_COLDKEY,
+                upload_module.config.NETUID,
+                FAKE_AMOUNT_ALPHA_RAO,
+            )
+        ),
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
@@ -154,13 +167,25 @@ def _install_mocks(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         upload_module.subtensor_client,
-        "get_alpha_stake",
-        AsyncMock(return_value=MagicMock(rao=FAKE_AMOUNT_ALPHA_RAO * 10)),
+        "get_alpha_stake_availability",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                position_rao=FAKE_AMOUNT_ALPHA_RAO * 10,
+                total_rao=FAKE_AMOUNT_ALPHA_RAO * 10,
+                locked_rao=0,
+                burnable_rao=FAKE_AMOUNT_ALPHA_RAO * 10,
+            )
+        ),
     )
     monkeypatch.setattr(
         upload_module,
         "get_upload_price",
-        AsyncMock(return_value=MagicMock(amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO)),
+        AsyncMock(
+            return_value=MagicMock(
+                amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO,
+                payment_netuid=upload_module.config.NETUID,
+            )
+        ),
     )
     monkeypatch.setattr("queries.agent.upload_text_file_to_s3", AsyncMock())
     response_validate_open_router_keys = MagicMock()
@@ -188,7 +213,8 @@ async def _insert_quote(
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO upload_payment_quotes (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
+            INSERT INTO upload_payment_quotes
+                (quote_id, miner_hotkey, amount_alpha_rao, created_at, expires_at)
             VALUES ($1, $2, $3, $4, $5)
             """,
             quote_id,
@@ -271,6 +297,12 @@ async def test_check_agent_persists_payment_quote():
 
     assert response.status == "success"
     assert response.amount_alpha_rao == FAKE_AMOUNT_ALPHA_RAO
+    assert response.payment_netuid == upload_module.config.NETUID
+    upload_module.subtensor_client.get_alpha_stake_availability.assert_awaited_once_with(
+        coldkey=FAKE_COLDKEY,
+        hotkey=FAKE_HOTKEY,
+        netuid=upload_module.config.NETUID,
+    )
 
     async with _db.pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -284,6 +316,59 @@ async def test_check_agent_persists_payment_quote():
     assert row["miner_hotkey"] == FAKE_HOTKEY
     assert row["amount_alpha_rao"] == FAKE_AMOUNT_ALPHA_RAO
     assert row["expires_at"] > row["created_at"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("position_rao", "total_rao", "locked_rao", "burnable_rao"),
+    [
+        (FAKE_AMOUNT_ALPHA_RAO - 1, FAKE_AMOUNT_ALPHA_RAO * 10, 0, FAKE_AMOUNT_ALPHA_RAO - 1),
+        (
+            FAKE_AMOUNT_ALPHA_RAO * 10,
+            FAKE_AMOUNT_ALPHA_RAO * 10,
+            FAKE_AMOUNT_ALPHA_RAO * 10 - FAKE_AMOUNT_ALPHA_RAO + 1,
+            FAKE_AMOUNT_ALPHA_RAO - 1,
+        ),
+    ],
+)
+async def test_check_agent_rejects_position_or_lock_limited_alpha(
+    monkeypatch,
+    position_rao: int,
+    total_rao: int,
+    locked_rao: int,
+    burnable_rao: int,
+):
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_alpha_stake_availability",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                position_rao=position_rao,
+                total_rao=total_rao,
+                locked_rao=locked_rao,
+                burnable_rao=burnable_rao,
+            )
+        ),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+        )
+
+    assert exc_info.value.status_code == 402
+    assert f"Position: {position_rao}" in exc_info.value.detail
+    assert f"locked: {locked_rao}" in exc_info.value.detail
+    assert f"burnable: {burnable_rao}" in exc_info.value.detail
 
 
 @pytest.mark.anyio
@@ -391,7 +476,14 @@ async def test_burn_below_quote_raises_402(monkeypatch):
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO - 1)),
+        AsyncMock(
+            return_value=_fake_events(
+                1,
+                FAKE_COLDKEY,
+                upload_module.config.NETUID,
+                FAKE_AMOUNT_ALPHA_RAO - 1,
+            )
+        ),
     )
     quote_id = await _insert_quote(amount_alpha_rao=FAKE_AMOUNT_ALPHA_RAO)
 
@@ -414,7 +506,14 @@ async def test_burn_wrong_coldkey_raises_402(monkeypatch):
     monkeypatch.setattr(
         upload_module.subtensor_client,
         "get_events",
-        AsyncMock(return_value=_fake_events(1, "5Fimposter", upload_module.config.NETUID, FAKE_AMOUNT_ALPHA_RAO)),
+        AsyncMock(
+            return_value=_fake_events(
+                1,
+                "5Fimposter",
+                upload_module.config.NETUID,
+                FAKE_AMOUNT_ALPHA_RAO,
+            )
+        ),
     )
     quote_id = await _insert_quote()
 
@@ -422,6 +521,33 @@ async def test_burn_wrong_coldkey_raises_402(monkeypatch):
         await _call_post_agent(quote_id=quote_id)
 
     assert exc_info.value.status_code == 402
+
+
+@pytest.mark.anyio
+async def test_burn_wrong_hotkey_raises_402(monkeypatch):
+    """A burn from another stake position cannot pay for this miner hotkey's upload."""
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_events",
+        AsyncMock(
+            return_value=_fake_events(
+                1,
+                FAKE_COLDKEY,
+                upload_module.config.NETUID,
+                FAKE_AMOUNT_ALPHA_RAO,
+                hotkey="5FOtherHotkey",
+            )
+        ),
+    )
+    quote_id = await _insert_quote()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 402
+    assert exc_info.value.detail == "Hotkey does not match"
 
 
 @pytest.mark.anyio
@@ -442,6 +568,24 @@ async def test_quote_for_different_hotkey_raises_402():
     from fastapi import HTTPException
 
     quote_id = await _insert_quote(hotkey="5OtherHotkey")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 402
+
+
+@pytest.mark.anyio
+async def test_burn_on_different_subnet_raises_402(monkeypatch):
+    """The AlphaBurned event must match the subnet persisted on the quote."""
+    from fastapi import HTTPException
+
+    monkeypatch.setattr(
+        upload_module.subtensor_client,
+        "get_events",
+        AsyncMock(return_value=_fake_events(1, FAKE_COLDKEY, 63, FAKE_AMOUNT_ALPHA_RAO)),
+    )
+    quote_id = await _insert_quote()
 
     with pytest.raises(HTTPException) as exc_info:
         await _call_post_agent(quote_id=quote_id)

@@ -122,8 +122,13 @@ def _patch_upload_dependencies(
     async def _fake_get_balance(*args, **kwargs):
         return SimpleNamespace(rao=10**12)
 
-    async def _fake_get_alpha_stake(*args, **kwargs):
-        return SimpleNamespace(rao=10**12)
+    async def _fake_get_alpha_stake_availability(*args, **kwargs):
+        return SimpleNamespace(
+            position_rao=10**12,
+            total_rao=10**12,
+            locked_rao=0,
+            burnable_rao=10**12,
+        )
 
     monkeypatch.setattr(
         upload_endpoint,
@@ -131,7 +136,7 @@ def _patch_upload_dependencies(
         SimpleNamespace(
             get_hotkey_owner=_fake_get_hotkey_owner,
             get_balance=_fake_get_balance,
-            get_alpha_stake=_fake_get_alpha_stake,
+            get_alpha_stake_availability=_fake_get_alpha_stake_availability,
         ),
     )
 
@@ -159,7 +164,7 @@ def _patch_upload_dependencies(
         return None
 
     async def fake_get_upload_price(*args, **kwargs):
-        return SimpleNamespace(amount_alpha_rao=1)
+        return SimpleNamespace(amount_alpha_rao=1, payment_netuid=upload_endpoint.config.NETUID)
 
     async def fake_create_payment_quote(*, miner_hotkey: str, amount_alpha_rao: int, expires_at):
         return SimpleNamespace(

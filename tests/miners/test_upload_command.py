@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import miners.cli.commands.upload as upload_module
 
 
@@ -65,6 +67,7 @@ def test_check_upload_allowed_sends_both_openrouter_keys(tmp_path: Path) -> None
     quote_response = {
         "quote_id": "quote-123",
         "amount_alpha_rao": 120_344_620_287_164,
+        "payment_netuid": 62,
         "expires_at": "2026-06-10T00:00:00Z",
     }
     client = _FakeClient(_FakeResponse(200, json_data=quote_response))
@@ -133,7 +136,9 @@ def test_submit_eval_payment_composes_burn_alpha(monkeypatch):
     fake_substrate = MagicMock()
     fake_substrate.compose_call = MagicMock(side_effect=lambda **kw: calls.update(kw) or "payload")
     fake_substrate.create_signed_extrinsic = MagicMock(return_value="signed")
-    fake_substrate.submit_extrinsic = MagicMock(return_value=MagicMock(block_hash="0xblock", extrinsic_idx=4))
+    fake_substrate.submit_extrinsic = MagicMock(
+        return_value=MagicMock(block_hash="0xblock", extrinsic_idx=4, is_success=True)
+    )
     fake_subtensor = MagicMock(substrate=fake_substrate)
     monkeypatch.setattr(upload_module, "Subtensor", MagicMock(return_value=fake_subtensor), raising=False)
 
@@ -147,13 +152,45 @@ def test_submit_eval_payment_composes_burn_alpha(monkeypatch):
     wallet.coldkey = "ck"
     wallet.hotkey.ss58_address = "5FHhot"
 
-    details = {"amount_alpha_rao": 120_344_620_287_164, "quote_id": "q1"}
+    details = {"amount_alpha_rao": 120_344_620_287_164, "payment_netuid": 777, "quote_id": "q1"}
     receipt = upload_module._submit_eval_payment(wallet=wallet, payment_method_details=details)
 
     assert calls["call_module"] == "SubtensorModule"
     assert calls["call_function"] == "burn_alpha"
-    assert calls["call_params"]["netuid"] == 62
+    assert calls["call_params"]["netuid"] == 777
     assert calls["call_params"]["amount"] == 120_344_620_287_164
     assert receipt.block_hash == "0xblock"
     assert receipt.extrinsic_index == 4
     assert receipt.quote_id == "q1"
+
+
+def test_submit_eval_payment_surfaces_failed_extrinsic(monkeypatch):
+    from unittest.mock import MagicMock
+
+    fake_substrate = MagicMock()
+    fake_substrate.compose_call.return_value = "payload"
+    fake_substrate.create_signed_extrinsic.return_value = "signed"
+    fake_substrate.submit_extrinsic.return_value = MagicMock(
+        block_hash="0xblock",
+        extrinsic_idx=4,
+        is_success=False,
+        error_message="NotEnoughBalanceToPayFees",
+    )
+    fake_subtensor = MagicMock(substrate=fake_substrate)
+
+    import sys
+
+    fake_bt = MagicMock()
+    fake_bt.Subtensor.return_value = fake_subtensor
+    monkeypatch.setitem(sys.modules, "bittensor", fake_bt)
+
+    wallet = MagicMock()
+    wallet.coldkey = "ck"
+    wallet.hotkey.ss58_address = "5FHhot"
+    details = {"amount_alpha_rao": 1_000, "payment_netuid": 62, "quote_id": "q1"}
+
+    with pytest.raises(
+        upload_module.click.ClickException,
+        match="Alpha burn failed on-chain: NotEnoughBalanceToPayFees",
+    ):
+        upload_module._submit_eval_payment(wallet=wallet, payment_method_details=details)

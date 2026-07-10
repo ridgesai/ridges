@@ -42,9 +42,10 @@ async def test_get_alpha_price_composes_chain_and_tao(monkeypatch) -> None:
     )
     monkeypatch.setattr(upload_agent_helpers, "get_tao_price", AsyncMock(return_value=400.0))
 
-    price = await upload_agent_helpers.get_alpha_price()
+    price = await upload_agent_helpers.get_alpha_price(netuid=62)
 
     assert price == pytest.approx(0.8)  # 0.002 TAO/alpha * 400 USD/TAO
+    upload_agent_helpers.subtensor_client.get_alpha_price_tao.assert_awaited_once_with(netuid=62)
 
 
 # ── AlphaBurned event parsing + burn extrinsic verification ────────────────────
