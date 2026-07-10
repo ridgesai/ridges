@@ -33,6 +33,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    alpha_row_count = op.get_bind().scalar(
+        sa.text(
+            """
+            SELECT
+                (SELECT count(*) FROM upload_payment_quotes WHERE amount_alpha_rao IS NOT NULL)
+                +
+                (SELECT count(*) FROM evaluation_payments WHERE amount_alpha_rao IS NOT NULL)
+            """
+        )
+    )
+    if alpha_row_count:
+        raise RuntimeError(
+            "Cannot downgrade alpha burn payments while alpha-denominated quotes or payments exist; "
+            "the legacy schema cannot represent those rows."
+        )
+
     op.drop_constraint(_CHECK_NAME, "upload_payment_quotes", type_="check")
     op.drop_constraint(_CHECK_NAME, "evaluation_payments", type_="check")
     op.alter_column("upload_payment_quotes", "send_address", existing_type=sa.Text(), nullable=False)
