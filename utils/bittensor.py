@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from bittensor.core.async_subtensor import AsyncSubtensor
@@ -11,6 +12,18 @@ if TYPE_CHECKING:
     from bittensor.core.types import BlockInfo
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class AlphaStakeAvailability:
+    """Alpha that can be burned from one stake position at a single chain head."""
+
+    block_hash: str
+    position_rao: int
+    total_rao: int
+    locked_rao: int
+    available_rao: int
+    burnable_rao: int
 
 
 class SubtensorClient:
@@ -89,7 +102,7 @@ class SubtensorClient:
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.get_hotkey_owner(hotkey_ss58=hotkey, block=block)
 
-    async def get_balance(self, address: str) -> "Balance":
+    async def get_balance(self, address: str) -> Balance:
         """Retrieve the balance of a wallet with a specific
         address.
 
@@ -106,31 +119,77 @@ class SubtensorClient:
         assert self._subtensor is not None, "Subtensor client is not initialized"
         return await self._subtensor.get_balance(address=address)
 
-    async def get_alpha_stake(self, coldkey: str, block: int | None = None) -> Balance:
-        """Return the total alpha a coldkey holds staked on the configured subnet.
+    async def get_alpha_stake_availability(
+        self,
+        coldkey: str,
+        hotkey: str,
+        netuid: int,
+    ) -> AlphaStakeAvailability:
+        """Return burnable alpha for an exact ``(coldkey, hotkey, netuid)`` position.
+
+        Subtensor's alpha lock applies to the coldkey's total stake on a subnet,
+        while ``burn_alpha`` is capped by the selected hotkey position. All values
+        are therefore read at one chain head and both limits are applied.
 
         Parameters
         ----------
         coldkey : str
-            Coldkey ss58 address whose alpha stake to sum.
-        block : int | None, optional
-            Block at which to read, by default latest.
+            Coldkey ss58 address which owns the stake.
+        hotkey : str
+            Hotkey ss58 address identifying the stake position to burn from.
+        netuid : int
+            Subnet whose alpha will be burned.
 
         Returns
         -------
-        Balance
-            Total alpha staked by the coldkey on the subnet.
+        AlphaStakeAvailability
+            Position, subnet-wide, locked, available, and burnable amounts in rao.
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
-        stake_info = await self._subtensor.get_stake_info_for_coldkey(coldkey_ss58=coldkey, block=block)
-        total = sum(
-            (info.stake for info in stake_info if info.netuid == config.NETUID),
-            start=Balance.from_rao(0).set_unit(config.NETUID),
-        )
-        return total
 
-    async def get_alpha_price_tao(self, block: int | None = None) -> float:
-        """Return the current alpha price (in TAO) for the configured subnet.
+        block_hash = await self._subtensor.substrate.get_chain_head()
+        position = await self._subtensor.get_stake(
+            coldkey_ss58=coldkey,
+            hotkey_ss58=hotkey,
+            netuid=netuid,
+            block_hash=block_hash,
+        )
+        availability = await self._subtensor.get_stake_availability_for_coldkeys(
+            [coldkey],
+            netuids=[netuid],
+            block_hash=block_hash,
+        )
+
+        if not isinstance(availability, dict):
+            raise ValueError("Invalid stake availability response")
+        by_netuid = availability.get(coldkey)
+        if not isinstance(by_netuid, dict):
+            raise ValueError(f"Missing stake availability for {coldkey}")
+        raw = by_netuid.get(netuid)
+        if raw is None:
+            total_rao = 0
+            locked_rao = 0
+            available_rao = 0
+        elif not isinstance(raw, dict) or not {"total", "locked", "available"}.issubset(raw):
+            raise ValueError(f"Invalid stake availability for {coldkey} on subnet {netuid}")
+        else:
+            total_rao = int(raw["total"])
+            locked_rao = int(raw["locked"])
+            available_rao = int(raw["available"])
+
+        position_rao = position.rao
+
+        return AlphaStakeAvailability(
+            block_hash=block_hash,
+            position_rao=position_rao,
+            total_rao=total_rao,
+            locked_rao=locked_rao,
+            available_rao=available_rao,
+            burnable_rao=min(position_rao, available_rao),
+        )
+
+    async def get_alpha_price_tao(self, netuid: int, block: int | None = None) -> float:
+        """Return the current alpha price (in TAO) for a subnet.
 
         Parameters
         ----------
@@ -143,7 +202,7 @@ class SubtensorClient:
             Alpha price denominated in TAO.
         """
         assert self._subtensor is not None, "Subtensor client is not initialized"
-        price = await self._subtensor.get_subnet_price(netuid=config.NETUID, block=block)
+        price = await self._subtensor.get_subnet_price(netuid=netuid, block=block)
         return float(price.tao)
 
     async def get_block(self, block_hash: str) -> dict | None:
