@@ -263,10 +263,7 @@ async def post_agent(
             verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
 
             # Event is the source of truth for amount, netuid, and burner.
-            burn_event = find_alpha_burned_event(events, payment_extrinsic_index_int)
-
-            if burn_event.netuid != config.NETUID:
-                raise HTTPException(status_code=402, detail=f"Burn is not on SN{config.NETUID}")
+            burn_event = find_alpha_burned_event(events, payment_extrinsic_index_int, netuid=config.NETUID)
 
             if burn_event.coldkey != coldkey:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
@@ -412,9 +409,9 @@ async def get_upload_price() -> UploadPriceResponse:
     # Alpha required to cover the eval cost at the current alpha price.
     eval_cost_alpha = eval_cost_usd / ALPHA_PRICE
 
-    # Keep the 1.4x buffer. Burned alpha is destroyed (not reclaimable), so the buffer now
-    # absorbs alpha-price movement between quote and burn and keeps prod uploads meaningfully
-    # more expensive than local testing to discourage variance farming.
-    amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.4)
+    # 1.1x buffer. Burned alpha is destroyed (not reclaimable), so the buffer absorbs
+    # alpha-price movement between quote and burn while keeping prod uploads a bit more
+    # expensive than local testing to discourage variance farming.
+    amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.1)
 
     return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao)

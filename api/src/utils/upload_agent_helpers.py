@@ -242,7 +242,7 @@ def _parse_alpha_burned_attributes(attributes: list | tuple | dict) -> BurnEvent
     raise HTTPException(status_code=402, detail="Burn event attributes could not be decoded")
 
 
-def find_alpha_burned_event(events: list, extrinsic_index: int) -> BurnEvent:
+def find_alpha_burned_event(events: list, extrinsic_index: int, netuid: int) -> BurnEvent:
     """Find the AlphaBurned event in the events list and returned a parsed
     BurnEvent.
 
@@ -252,6 +252,8 @@ def find_alpha_burned_event(events: list, extrinsic_index: int) -> BurnEvent:
         List of events to search for the AlphaBurned event.
     extrinsic_index : int
         Index of the extrinsic to search for.
+    netuid : int
+        Netuid the burn must be on.
 
     Returns
     -------
@@ -264,6 +266,8 @@ def find_alpha_burned_event(events: list, extrinsic_index: int) -> BurnEvent:
         inner = event.get("event", {})
         if inner.get("module_id") == "SubtensorModule" and inner.get("event_id") == "AlphaBurned":
             alpha_burned_event = _parse_alpha_burned_attributes(inner.get("attributes", {}))
+            if alpha_burned_event.netuid != netuid:
+                continue
             logger.debug(f"Found AlphaBurned event: {alpha_burned_event}")
             return alpha_burned_event
     raise HTTPException(status_code=402, detail="Burn event not found")
