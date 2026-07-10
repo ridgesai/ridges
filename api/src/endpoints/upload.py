@@ -97,14 +97,28 @@ async def check_agent_post(
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
-    miner_alpha_stake = (await subtensor_client.get_alpha_stake(coldkey)).rao
+    if coldkey is None:
+        raise HTTPException(status_code=400, detail="Hotkey owner not found")
+
+    try:
+        alpha_stake = await subtensor_client.get_alpha_stake_availability(
+            coldkey=coldkey,
+            hotkey=miner_hotkey,
+            netuid=config.NETUID,
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving burnable alpha stake: {e}")
+        raise HTTPException(status_code=503, detail="Burnable alpha stake could not be verified") from e
+
     payment_cost = await get_upload_price()
-    if payment_cost.amount_alpha_rao > miner_alpha_stake:
+    if payment_cost.amount_alpha_rao > alpha_stake.burnable_rao:
         raise HTTPException(
             status_code=402,
             detail=(
                 f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
-                f"staked on SN{config.NETUID} to upload. You have {miner_alpha_stake}."
+                f"burnable from the miner hotkey position on SN{config.NETUID}. "
+                f"Position: {alpha_stake.position_rao}; subnet total: {alpha_stake.total_rao}; "
+                f"locked: {alpha_stake.locked_rao}; burnable: {alpha_stake.burnable_rao}."
             ),
         )
     await validate_openrouter_keys(
@@ -122,6 +136,7 @@ async def check_agent_post(
         message="Agent check successful",
         quote_id=quote.quote_id,
         amount_alpha_rao=quote.amount_alpha_rao,
+        payment_netuid=config.NETUID,
         expires_at=quote.expires_at,
     )
 
@@ -221,6 +236,9 @@ async def post_agent(
             if quote.miner_hotkey != miner_hotkey:
                 raise HTTPException(status_code=402, detail="Payment quote does not match upload hotkey")
 
+            if quote.amount_alpha_rao is None:
+                raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
+
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
@@ -263,10 +281,17 @@ async def post_agent(
             verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
 
             # Event is the source of truth for amount, netuid, and burner.
-            burn_event = find_alpha_burned_event(events, payment_extrinsic_index_int, netuid=config.NETUID)
+            burn_event = find_alpha_burned_event(
+                events,
+                payment_extrinsic_index_int,
+                netuid=config.NETUID,
+            )
 
             if burn_event.coldkey != coldkey:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
+
+            if burn_event.hotkey != miner_hotkey:
+                raise HTTPException(status_code=402, detail="Hotkey does not match")
 
             if burn_event.alpha_decrease < quote.amount_alpha_rao:
                 raise HTTPException(status_code=402, detail="Burn amount too low")
@@ -403,7 +428,7 @@ async def post_agent(
 @router.get("/eval-pricing", tags=["eval-pricing"], response_model=UploadPriceResponse)
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
-    ALPHA_PRICE = await get_alpha_price()
+    ALPHA_PRICE = await get_alpha_price(config.NETUID)
     eval_cost_usd = 5
 
     # Alpha required to cover the eval cost at the current alpha price.
@@ -414,4 +439,4 @@ async def get_upload_price() -> UploadPriceResponse:
     # expensive than local testing to discourage variance farming.
     amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.1)
 
-    return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao)
+    return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao, payment_netuid=config.NETUID)
