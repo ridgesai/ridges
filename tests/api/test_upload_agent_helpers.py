@@ -92,7 +92,7 @@ def _extrinsic(coldkey=COLDKEY, call_function="burn_alpha", call_module="Subtens
 def test_find_alpha_burned_event_parses_tuple_shape():
     """Confirmed live shape: a positional tuple (coldkey, hotkey, actual_alpha_decrease, netuid)."""
     events = [_burn_event_tuple(2, amount=115_259_028_589, netuid=62)]
-    burn_event = find_alpha_burned_event(events, 2)
+    burn_event = find_alpha_burned_event(events, 2, netuid=62)
     assert burn_event.coldkey == COLDKEY
     assert burn_event.hotkey == HOTKEY
     assert burn_event.alpha_decrease == 115_259_028_589
@@ -102,7 +102,7 @@ def test_find_alpha_burned_event_parses_tuple_shape():
 def test_find_alpha_burned_event_parses_dict_shape():
     """Dict-shaped attributes are supported as a fallback."""
     events = [_burn_event_dict(2, amount=120_344_620_287_164, netuid=62)]
-    burn_event = find_alpha_burned_event(events, 2)
+    burn_event = find_alpha_burned_event(events, 2, netuid=62)
     assert burn_event.coldkey == COLDKEY
     assert burn_event.hotkey == HOTKEY
     assert burn_event.alpha_decrease == 120_344_620_287_164
@@ -112,8 +112,19 @@ def test_find_alpha_burned_event_parses_dict_shape():
 def test_find_alpha_burned_event_missing_raises_402():
     events = [_burn_event_tuple(2)]
     with pytest.raises(HTTPException) as exc:
-        find_alpha_burned_event(events, 5)
+        find_alpha_burned_event(events, 5, netuid=62)
     assert exc.value.status_code == 402
+
+
+def test_find_alpha_burned_event_skips_wrong_netuid():
+    """Events on a different netuid are ignored; only the matching netuid is returned."""
+    events = [
+        _burn_event_tuple(2, amount=111, netuid=1),
+        _burn_event_tuple(2, amount=222, netuid=62),
+    ]
+    burn_event = find_alpha_burned_event(events, 2, netuid=62)
+    assert burn_event.netuid == 62
+    assert burn_event.alpha_decrease == 222
 
 
 def test_verify_burn_extrinsic_accepts_burn_alpha():
