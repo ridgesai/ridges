@@ -25,10 +25,7 @@ PORT = int(PORT)
 
 
 # Load Bittensor configuration
-NETUID = os.getenv("NETUID")
-if not NETUID:
-    logger.fatal("NETUID is not set in .env")
-NETUID = int(NETUID)
+NETUID = int(os.getenv("NETUID") or "62")
 
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
 if not SUBTENSOR_ADDRESS:
