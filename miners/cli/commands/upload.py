@@ -195,10 +195,12 @@ def _unlock_coldkey(wallet) -> None:
 
 def _confirm_payment(payment_method_details: dict) -> bool:
     amount_alpha = payment_method_details["amount_alpha_rao"] / 1e9
+    payment_netuid = payment_method_details["payment_netuid"]
     confirm_payment = Prompt.ask(
         (
             f"\n[bold yellow]Proceed with an IRREVERSIBLE burn of {amount_alpha:,.4f} alpha "
-            f"({payment_method_details['amount_alpha_rao']} in 1e9 units) on SN62?[/bold yellow]"
+            f"({payment_method_details['amount_alpha_rao']} in 1e9 units) "
+            f"on SN{payment_netuid}?[/bold yellow]"
         ),
         choices=["y", "n"],
         default="n",
@@ -216,7 +218,7 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
         call_params={
             "hotkey": wallet.hotkey.ss58_address,
             "amount": payment_method_details["amount_alpha_rao"],
-            "netuid": 62,
+            "netuid": payment_method_details["payment_netuid"],
         },
     )
 
@@ -225,6 +227,10 @@ def _submit_eval_payment(*, wallet, payment_method_details: dict) -> PaymentRece
         keypair=wallet.coldkey,
     )
     receipt = subtensor.substrate.submit_extrinsic(payment_extrinsic, wait_for_finalization=True)
+    if not receipt.is_success:
+        error_message = receipt.error_message or "Unknown chain error"
+        raise click.ClickException(f"Alpha burn failed on-chain: {error_message}")
+
     return PaymentReceipt(
         block_hash=receipt.block_hash,
         extrinsic_index=receipt.extrinsic_idx,

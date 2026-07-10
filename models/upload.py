@@ -15,6 +15,7 @@ class UploadPriceResponse(BaseModel):
     """Response model for upload pricing"""
 
     amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
+    payment_netuid: int = Field(..., description="Subnet whose alpha must be burned")
 
 
 class AgentCheckResponse(AgentUploadResponse):
@@ -22,6 +23,7 @@ class AgentCheckResponse(AgentUploadResponse):
 
     quote_id: UUID = Field(..., description="Quote ID to include when uploading or resuming")
     amount_alpha_rao: int = Field(..., description="Amount of SN62 alpha to burn (in 1e9 units)")
+    payment_netuid: int = Field(..., description="Subnet whose alpha must be burned")
     expires_at: datetime = Field(..., description="Latest on-chain burn timestamp accepted for this quote")
 
 
