@@ -106,6 +106,26 @@ class EvaluationRunStatus(str, Enum):
     error = "error"
 
 
+class EvaluationRunAttempt(BaseModel):
+    """One attempt at executing an evaluation run. The evaluation_runs row mirrors the latest attempt."""
+
+    attempt_id: UUID
+    evaluation_run_id: UUID
+    attempt_number: int
+    status: EvaluationRunStatus
+
+    error_code: Optional[int] = None
+    error_message: Optional[str] = None
+    cost_usd: Optional[float] = None
+
+    created_at: datetime
+    started_initializing_agent_at: Optional[datetime] = None
+    started_running_agent_at: Optional[datetime] = None
+    started_initializing_eval_at: Optional[datetime] = None
+    started_running_eval_at: Optional[datetime] = None
+    finished_or_errored_at: Optional[datetime] = None
+
+
 class EvaluationRun(BaseModel):
     """Persisted state for one problem run inside a broader evaluation."""
 

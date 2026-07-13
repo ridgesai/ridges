@@ -223,21 +223,31 @@ async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: 
 async def create_evaluation_run(conn: DatabaseConnection, evaluation_id: UUID, problem_name: str) -> UUID:
     evaluation_run_id = uuid4()
 
-    await conn.execute(
-        """
-        INSERT INTO evaluation_runs (
+    async with conn.conn.transaction():
+        await conn.execute(
+            """
+            INSERT INTO evaluation_runs (
+                evaluation_run_id,
+                evaluation_id,
+                problem_name,
+                status,
+                created_at
+            ) VALUES ($1, $2, $3, $4, NOW())
+            """,
             evaluation_run_id,
             evaluation_id,
             problem_name,
-            status,
-            created_at
-        ) VALUES ($1, $2, $3, $4, NOW())
-        """,
-        evaluation_run_id,
-        evaluation_id,
-        problem_name,
-        EvaluationRunStatus.pending.value,
-    )
+            EvaluationRunStatus.pending.value,
+        )
+        await conn.execute(
+            """
+            INSERT INTO evaluation_run_attempts (attempt_id, evaluation_run_id, attempt_number, status, created_at)
+            VALUES ($1, $2, 1, $3, NOW())
+            """,
+            uuid4(),
+            evaluation_run_id,
+            EvaluationRunStatus.pending.value,
+        )
 
     logger.debug(
         f"Created evaluation run {evaluation_run_id} for evaluation {evaluation_id} with problem name {problem_name}"
@@ -250,30 +260,40 @@ async def create_evaluation_run(conn: DatabaseConnection, evaluation_id: UUID, p
 async def create_evaluation_runs(
     conn: DatabaseConnection, evaluation_id: UUID, evaluation_set_problems: List[EvaluationSetProblem]
 ) -> None:
-    await conn.executemany(
-        """
-        INSERT INTO evaluation_runs (
-            evaluation_run_id,
+    run_rows = [
+        (
+            uuid4(),
             evaluation_id,
-            problem_name,
-            benchmark_family,
-            execution_spec,
-            status,
-            created_at
-        ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
-        """,
-        [
-            (
-                uuid4(),
+            problem.problem_name,
+            problem.benchmark_family,
+            json.dumps(problem.execution_spec) if problem.execution_spec is not None else None,
+            EvaluationRunStatus.pending.value,
+        )
+        for problem in evaluation_set_problems
+    ]
+
+    async with conn.conn.transaction():
+        await conn.executemany(
+            """
+            INSERT INTO evaluation_runs (
+                evaluation_run_id,
                 evaluation_id,
-                problem.problem_name,
-                problem.benchmark_family,
-                json.dumps(problem.execution_spec) if problem.execution_spec is not None else None,
-                EvaluationRunStatus.pending.value,
-            )
-            for problem in evaluation_set_problems
-        ],
-    )
+                problem_name,
+                benchmark_family,
+                execution_spec,
+                status,
+                created_at
+            ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, NOW())
+            """,
+            run_rows,
+        )
+        await conn.executemany(
+            """
+            INSERT INTO evaluation_run_attempts (attempt_id, evaluation_run_id, attempt_number, status, created_at)
+            VALUES ($1, $2, 1, $3, NOW())
+            """,
+            [(uuid4(), row[0], EvaluationRunStatus.pending.value) for row in run_rows],
+        )
 
     logger.debug(f"Created {len(evaluation_set_problems)} evaluation runs for evaluation {evaluation_id}")
 
