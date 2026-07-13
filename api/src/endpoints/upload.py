@@ -13,7 +13,7 @@ from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     as_utc,
-    check_agent_banned,
+    check_coldkey_banned,
     check_file_size,
     check_hotkey_registered,
     check_if_extrinsic_failed,
@@ -34,8 +34,8 @@ from queries.agent import (
     get_latest_agent_for_miner_hotkey,
     record_upload_attempt,
 )
-from queries.banned_hotkey import get_banned_hotkey
-from queries.errors import DuplicateAgentIDError
+from queries.banned_coldkey import get_banned_coldkey
+from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
 from queries.payments import (
     complete_payment,
     create_payment_quote,
@@ -86,6 +86,7 @@ async def check_agent_post(
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
     miner_hotkey = get_miner_hotkey(file_info)
+    is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
     latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
         miner_hotkey=miner_hotkey
     )
@@ -93,12 +94,13 @@ async def check_agent_post(
         check_rate_limit(latest_agent_created_at_in_latest_set_id)
     check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
-    await check_agent_banned(miner_hotkey=miner_hotkey)
-    check_if_python_file(agent_file.filename)
-    await check_file_size(agent_file)
     coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
     if coldkey is None:
         raise HTTPException(status_code=400, detail="Hotkey owner not found")
+    if not is_owner_upload:
+        await check_coldkey_banned(coldkey)
+    check_if_python_file(agent_file.filename)
+    await check_file_size(agent_file)
 
     try:
         alpha_stake = await subtensor_client.get_alpha_stake_availability(
@@ -186,6 +188,7 @@ async def post_agent(
     prod = config.ENV == "prod"
 
     miner_hotkey = get_miner_hotkey(file_info)
+    coldkey: Optional[str] = None
 
     # Extract upload attempt data for tracking
     agent_file.file.seek(0, 2)
@@ -214,7 +217,6 @@ async def post_agent(
 
         if prod:
             await check_hotkey_registered(miner_hotkey)
-            await check_agent_banned(miner_hotkey=miner_hotkey)
 
         check_if_python_file(agent_file.filename)
         agent_bytes, agent_text = await check_file_size(agent_file)
@@ -271,11 +273,14 @@ async def post_agent(
             except (ValueError, TypeError, IndexError, AttributeError):
                 raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
 
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
+            if coldkey is None:
+                raise HTTPException(status_code=402, detail="Hotkey owner not found at payment block")
+            await check_coldkey_banned(coldkey)
+
             events = await subtensor_client.get_events(block_hash=payment_block_hash)
             if await check_if_extrinsic_failed(payment_extrinsic_index_int, events):
                 raise HTTPException(status_code=402, detail="Burn extrinsic failed on-chain")
-
-            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
 
             # Cross-check the extrinsic: recognized burn call signed by the miner coldkey.
             verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
@@ -352,18 +357,22 @@ async def post_agent(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
             )
-            agent_id = await create_agent(
-                agent,
-                agent_text,
-                source_sha256=source_sha256,
-                runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
-                management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
-                openrouter_workspace_id=validated_openrouter_keys.workspace_id,
-                openrouter_api_key_label=validated_openrouter_keys.api_key_label,
-                openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
-                openrouter_validated_at=validated_openrouter_keys.validated_at,
-                create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
-            )
+            try:
+                agent_id = await create_agent(
+                    agent,
+                    agent_text,
+                    source_sha256=source_sha256,
+                    runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                    management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                    openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                    openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                    openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                    openrouter_validated_at=validated_openrouter_keys.validated_at,
+                    miner_coldkey=coldkey if prod else None,
+                    create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                )
+            except ColdkeyBannedError as e:
+                raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e
 
         if prod and not is_owner_upload:
             await complete_payment(
@@ -398,7 +407,7 @@ async def post_agent(
             if e.status_code == 429
             else "validation_error"
         )
-        banned_hotkey = await get_banned_hotkey(miner_hotkey) if error_type == "banned" and miner_hotkey else None
+        banned_coldkey = await get_banned_coldkey(coldkey) if error_type == "banned" and coldkey else None
 
         # Record failed upload attempt
         await record_upload_attempt(
@@ -406,7 +415,7 @@ async def post_agent(
             success=False,
             error_type=error_type,
             error_message=e.detail,
-            ban_reason=banned_hotkey.banned_reason if banned_hotkey else None,
+            ban_reason=banned_coldkey.banned_reason if banned_coldkey else None,
             http_status_code=e.status_code,
             **upload_data,
         )
