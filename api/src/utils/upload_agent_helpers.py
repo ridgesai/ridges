@@ -8,7 +8,7 @@ from bittensor_wallet.keypair import Keypair
 from fastapi import HTTPException, UploadFile
 
 from api.config import MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS
-from queries.banned_hotkey import get_banned_hotkey
+from queries.banned_coldkey import get_banned_coldkey
 from utils.bittensor import subtensor_client
 
 logger = logging.getLogger(__name__)
@@ -47,17 +47,17 @@ def check_if_python_file(filename: str) -> None:
     logger.debug("The file is a python file.")
 
 
-async def check_agent_banned(miner_hotkey: str) -> None:
-    logger.debug(f"Checking if miner hotkey {miner_hotkey} is banned...")
+async def check_coldkey_banned(miner_coldkey: str) -> None:
+    logger.debug(f"Checking if miner coldkey {miner_coldkey} is banned...")
 
-    if await get_banned_hotkey(miner_hotkey) is not None:
-        logger.error(f"A miner attempted to upload an agent with a banned hotkey: {miner_hotkey}.")
+    if await get_banned_coldkey(miner_coldkey) is not None:
+        logger.warning(f"A miner attempted to upload an agent with a banned coldkey: {miner_coldkey}.")
         raise HTTPException(
             status_code=403,
-            detail="Your miner hotkey has been banned for attempting to obfuscate code or otherwise cheat. If this is in error, please contact us on Discord",
+            detail="Your miner coldkey has been banned. If this is in error, please contact us on Discord",
         )
 
-    logger.debug(f"Miner hotkey {miner_hotkey} is not banned.")
+    logger.debug(f"Miner coldkey {miner_coldkey} is not banned.")
 
 
 def check_rate_limit(
