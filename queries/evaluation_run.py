@@ -137,12 +137,12 @@ async def _get_evaluation_run_metrics_by_ids(
                         JOIN evaluation_runs er2 ON er2.evaluation_id = e2.evaluation_id
                         AND er2.problem_name = dp.problem_name
                         JOIN agents a ON a.agent_id = e2.agent_id
-                        LEFT JOIN banned_hotkeys bh ON bh.miner_hotkey = a.miner_hotkey
+                        LEFT JOIN banned_coldkeys bc ON bc.miner_coldkey = a.miner_coldkey
                         LEFT JOIN unapproved_agent_ids uai ON uai.agent_id = a.agent_id
                         LEFT JOIN benchmark_agent_ids bai ON bai.agent_id = a.agent_id
                     WHERE
                         e2.set_id = dp.set_id
-                        AND bh.miner_hotkey IS NULL
+                        AND bc.miner_coldkey IS NULL
                         AND uai.agent_id IS NULL
                         AND bai.agent_id IS NULL
                 ) agg
