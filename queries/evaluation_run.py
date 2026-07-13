@@ -179,44 +179,76 @@ async def get_evaluation_run_metrics_by_id(conn: DatabaseConnection, evaluation_
 
 @db_operation
 async def update_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run: EvaluationRun) -> None:
-    await conn.execute(
-        """
-        UPDATE evaluation_runs SET 
-            status = $2,
-            patch = $3,
-            test_results = $4,
-            verifier_reward = $5,
-            error_code = $6,
-            error_message = $7,
-            started_initializing_agent_at = $8,
-            started_running_agent_at = $9,
-            started_initializing_eval_at = $10,
-            started_running_eval_at = $11,
-            finished_or_errored_at = $12,
-            cost_usd = $13
-        WHERE evaluation_run_id = $1
-        """,
-        evaluation_run.evaluation_run_id,
-        evaluation_run.status.value,
-        evaluation_run.patch,
-        json.dumps(
-            [
-                test_result.model_dump(exclude={"test_alias"}, exclude_none=True)
-                for test_result in evaluation_run.test_results
-            ]
+    async with conn.conn.transaction():
+        await conn.execute(
+            """
+            UPDATE evaluation_runs SET
+                status = $2,
+                patch = $3,
+                test_results = $4,
+                verifier_reward = $5,
+                error_code = $6,
+                error_message = $7,
+                started_initializing_agent_at = $8,
+                started_running_agent_at = $9,
+                started_initializing_eval_at = $10,
+                started_running_eval_at = $11,
+                finished_or_errored_at = $12,
+                cost_usd = $13
+            WHERE evaluation_run_id = $1
+            """,
+            evaluation_run.evaluation_run_id,
+            evaluation_run.status.value,
+            evaluation_run.patch,
+            json.dumps(
+                [
+                    test_result.model_dump(exclude={"test_alias"}, exclude_none=True)
+                    for test_result in evaluation_run.test_results
+                ]
+            )
+            if evaluation_run.test_results is not None
+            else None,
+            evaluation_run.verifier_reward,
+            evaluation_run.error_code,
+            evaluation_run.error_message,
+            evaluation_run.started_initializing_agent_at,
+            evaluation_run.started_running_agent_at,
+            evaluation_run.started_initializing_eval_at,
+            evaluation_run.started_running_eval_at,
+            evaluation_run.finished_or_errored_at,
+            evaluation_run.cost_usd,
         )
-        if evaluation_run.test_results is not None
-        else None,
-        evaluation_run.verifier_reward,
-        evaluation_run.error_code,
-        evaluation_run.error_message,
-        evaluation_run.started_initializing_agent_at,
-        evaluation_run.started_running_agent_at,
-        evaluation_run.started_initializing_eval_at,
-        evaluation_run.started_running_eval_at,
-        evaluation_run.finished_or_errored_at,
-        evaluation_run.cost_usd,
-    )
+
+        # Mirror lifecycle fields onto the current (highest-numbered) attempt.
+        # No-op for legacy runs that have no attempt rows.
+        await conn.execute(
+            """
+            UPDATE evaluation_run_attempts SET
+                status = $2,
+                error_code = $3,
+                error_message = $4,
+                cost_usd = $5,
+                started_initializing_agent_at = $6,
+                started_running_agent_at = $7,
+                started_initializing_eval_at = $8,
+                started_running_eval_at = $9,
+                finished_or_errored_at = $10
+            WHERE evaluation_run_id = $1
+              AND attempt_number = (
+                  SELECT MAX(attempt_number) FROM evaluation_run_attempts WHERE evaluation_run_id = $1
+              )
+            """,
+            evaluation_run.evaluation_run_id,
+            evaluation_run.status.value,
+            int(evaluation_run.error_code) if evaluation_run.error_code is not None else None,
+            evaluation_run.error_message,
+            evaluation_run.cost_usd,
+            evaluation_run.started_initializing_agent_at,
+            evaluation_run.started_running_agent_at,
+            evaluation_run.started_initializing_eval_at,
+            evaluation_run.started_running_eval_at,
+            evaluation_run.finished_or_errored_at,
+        )
 
 
 @db_operation
