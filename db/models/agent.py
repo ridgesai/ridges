@@ -15,6 +15,7 @@ class Agent(Base):
 
     agent_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     miner_hotkey: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    miner_coldkey: Mapped[Optional[str]] = mapped_column(sa.Text)
     name: Mapped[str] = mapped_column(sa.Text, nullable=False)
     version_num: Mapped[int] = mapped_column(sa.Integer, nullable=False)
     status: Mapped[Optional[AgentStatus]] = mapped_column(sa.Enum(AgentStatus, name="agentstatus"))
@@ -53,6 +54,18 @@ class BannedHotkey(Base):
     )
 
     __table_args__ = (sa.Index("idx_banned_hotkeys_miner_hotkey", "miner_hotkey"),)
+
+
+class BannedColdkey(Base):
+    __tablename__ = "banned_coldkeys"
+
+    miner_coldkey: Mapped[str] = mapped_column(sa.Text, primary_key=True)
+    banned_reason: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    banned_at: Mapped[datetime] = mapped_column(
+        sa.TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=sa.text("NOW()"),
+    )
 
 
 class BenchmarkAgentId(Base):
