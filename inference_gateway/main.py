@@ -26,7 +26,7 @@ from inference_gateway.providers.provider import Provider
 from inference_gateway.providers.targon import TargonProvider
 from models.evaluation_run import EvaluationRunStatus
 from queries.embedding import create_new_embedding, update_embedding_by_id
-from queries.evaluation_run import get_evaluation_run_status_by_id
+from queries.evaluation_run import get_evaluation_run_status_and_attempt_by_id
 from queries.inference import create_new_inference, update_inference_by_id
 from utils.database import deinitialize_database, get_debug_query_info, initialize_database
 from utils.logger import setup_logging
@@ -127,16 +127,19 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             status_code=422, detail="If you specify a tool mode of REQUIRED, you must specify at least one tool."
         )
 
+    cost_key = (request.evaluation_run_id, 1)
     if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
-        # Get the status of the evaluation run
-        evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
+        status_and_attempt = await get_evaluation_run_status_and_attempt_by_id(request.evaluation_run_id)
 
         # Make sure the evaluation run actually exists
-        if evaluation_run_status is None:
+        if status_and_attempt is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}.",
             )
+
+        evaluation_run_status, attempt_number = status_and_attempt
+        cost_key = (request.evaluation_run_id, attempt_number)
 
         # Make sure the evaluation run is in the running_agent state
         if evaluation_run_status != EvaluationRunStatus.running_agent:
@@ -146,7 +149,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
             )
 
         # Make sure the evaluation run has not reached or exceeded its cost limit
-        cost = cost_hash_map.get_cost(request.evaluation_run_id)
+        cost = cost_hash_map.get_cost(cost_key)
         if cost >= config.MAX_COST_PER_EVALUATION_RUN_USD:
             raise HTTPException(
                 status_code=429,
@@ -188,7 +191,7 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
         )
 
     if response.cost_usd is not None:
-        cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+        cost_hash_map.add_cost(cost_key, response.cost_usd)
 
     if response.status_code == 200:
         return InferenceResponse(content=response.content, tool_calls=response.tool_calls)
@@ -202,16 +205,19 @@ async def inference(request: InferenceRequest) -> InferenceResponse:
 @app.post("/api/embedding")
 @handle_http_exceptions
 async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
+    cost_key = (request.evaluation_run_id, 1)
     if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
-        # Get the status of the evaluation run
-        evaluation_run_status = await get_evaluation_run_status_by_id(request.evaluation_run_id)
+        status_and_attempt = await get_evaluation_run_status_and_attempt_by_id(request.evaluation_run_id)
 
         # Make sure the evaluation run actually exists
-        if evaluation_run_status is None:
+        if status_and_attempt is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"No evaluation run exists with the given evaluation run ID {request.evaluation_run_id}.",
             )
+
+        evaluation_run_status, attempt_number = status_and_attempt
+        cost_key = (request.evaluation_run_id, attempt_number)
 
         # Make sure the evaluation run is in the running_agent state
         if evaluation_run_status != EvaluationRunStatus.running_agent:
@@ -221,7 +227,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
             )
 
         # Make sure the evaluation run has not reached or exceeded its cost limit
-        cost = cost_hash_map.get_cost(request.evaluation_run_id)
+        cost = cost_hash_map.get_cost(cost_key)
         if cost >= config.MAX_COST_PER_EVALUATION_RUN_USD:
             raise HTTPException(
                 status_code=429,
@@ -255,7 +261,7 @@ async def embedding(request: EmbeddingRequest) -> EmbeddingResponse:
         )
 
         if response.cost_usd is not None:
-            cost_hash_map.add_cost(request.evaluation_run_id, response.cost_usd)
+            cost_hash_map.add_cost(cost_key, response.cost_usd)
 
     if response.status_code == 200:
         return EmbeddingResponse(embedding=response.embedding)
@@ -272,7 +278,13 @@ class UsageResponse(BaseModel):
 @app.get("/api/usage")
 @handle_http_exceptions
 async def usage(evaluation_run_id: UUID) -> UsageResponse:
-    used_cost_usd = cost_hash_map.get_cost(evaluation_run_id)
+    attempt_number = 1
+    if config.USE_DATABASE and config.CHECK_EVALUATION_RUNS:
+        status_and_attempt = await get_evaluation_run_status_and_attempt_by_id(evaluation_run_id)
+        if status_and_attempt is not None:
+            attempt_number = status_and_attempt[1]
+
+    used_cost_usd = cost_hash_map.get_cost((evaluation_run_id, attempt_number))
     return UsageResponse(
         used_cost_usd=used_cost_usd,
         remaining_cost_usd=config.MAX_COST_PER_EVALUATION_RUN_USD - used_cost_usd,

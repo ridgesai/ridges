@@ -52,6 +52,32 @@ async def get_evaluation_run_status_by_id(
 
 
 @db_operation
+async def get_evaluation_run_status_and_attempt_by_id(
+    conn: DatabaseConnection, evaluation_run_id: UUID
+) -> Optional[tuple[EvaluationRunStatus, int]]:
+    """Return the run's mirrored status and its current attempt number (1 for legacy runs)."""
+    row = await conn.fetchrow(
+        """
+        SELECT
+            er.status,
+            COALESCE(
+                (SELECT MAX(era.attempt_number) FROM evaluation_run_attempts era
+                 WHERE era.evaluation_run_id = er.evaluation_run_id),
+                1
+            )::int AS attempt_number
+        FROM evaluation_runs er
+        WHERE er.evaluation_run_id = $1
+        """,
+        evaluation_run_id,
+    )
+
+    if row is None:
+        return None
+
+    return EvaluationRunStatus(row["status"]), row["attempt_number"]
+
+
+@db_operation
 async def get_all_evaluation_runs_in_evaluation_id(
     conn: DatabaseConnection, evaluation_id: UUID
 ) -> List[EvaluationRun]:

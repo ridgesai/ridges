@@ -15,6 +15,7 @@ from queries.evaluation_run import (
     get_evaluation_run_by_id,
     get_evaluation_run_logs_by_id,
     get_evaluation_run_metrics_by_id,
+    get_evaluation_run_status_and_attempt_by_id,
     update_evaluation_run_by_id,
 )
 from queries.evaluation_run_attempt import (
@@ -249,3 +250,27 @@ async def test_metrics_attempt_count_defaults_to_one_for_legacy_run(postgres_db)
 
     metrics = await get_evaluation_run_metrics_by_id(legacy_run_id)
     assert metrics["attempt_count"] == 1
+
+
+async def test_status_and_attempt_lookup(postgres_db):
+    async with _db.pool.acquire() as conn:
+        _, run = await _seed_single_run(conn)
+
+    assert await get_evaluation_run_status_and_attempt_by_id(run.evaluation_run_id) == (
+        EvaluationRunStatus.pending,
+        1,
+    )
+
+    run.status = EvaluationRunStatus.error
+    run.error_code = 2000
+    run.error_message = "boom"
+    run.finished_or_errored_at = datetime.now(timezone.utc)
+    await update_evaluation_run_by_id(run)
+    await create_next_attempt_and_reset_evaluation_run(run.evaluation_run_id)
+
+    assert await get_evaluation_run_status_and_attempt_by_id(run.evaluation_run_id) == (
+        EvaluationRunStatus.pending,
+        2,
+    )
+
+    assert await get_evaluation_run_status_and_attempt_by_id(uuid4()) is None
