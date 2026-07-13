@@ -4,13 +4,16 @@ from uuid import uuid4
 import pytest
 
 import utils.database as _db
-from models.evaluation_run import EvaluationRunStatus
+from models.evaluation_run import EvaluationRunLogType, EvaluationRunStatus
 from models.evaluation_set import EvaluationSetGroup, EvaluationSetProblem
 from queries.evaluation import update_unfinished_evaluation_runs_in_evaluation_id_to_errored
 from queries.evaluation_run import (
+    check_if_evaluation_run_logs_exist,
+    create_evaluation_run_log,
     create_evaluation_runs,
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
+    get_evaluation_run_logs_by_id,
     update_evaluation_run_by_id,
 )
 from queries.evaluation_run_attempt import (
@@ -185,3 +188,30 @@ async def test_bulk_error_update_mirrors_current_attempt(postgres_db):
     assert attempt.error_code == 3000  # PLATFORM_RESTARTED_WHILE_PENDING
     assert attempt.error_message == "validator died"
     assert attempt.finished_or_errored_at is not None
+
+
+async def test_logs_are_attempt_scoped(postgres_db):
+    async with _db.pool.acquire() as conn:
+        _, run = await _seed_single_run(conn)
+
+    await create_evaluation_run_log(run.evaluation_run_id, EvaluationRunLogType.agent, "attempt 1 logs")
+    assert await check_if_evaluation_run_logs_exist(run.evaluation_run_id, EvaluationRunLogType.agent) is True
+
+    run.status = EvaluationRunStatus.error
+    run.error_code = 2000
+    run.error_message = "boom"
+    run.finished_or_errored_at = datetime.now(timezone.utc)
+    await update_evaluation_run_by_id(run)
+    await create_next_attempt_and_reset_evaluation_run(run.evaluation_run_id)
+
+    # A fresh attempt has no logs yet, so the insert-once guard must allow a new insert.
+    assert await check_if_evaluation_run_logs_exist(run.evaluation_run_id, EvaluationRunLogType.agent) is False
+    await create_evaluation_run_log(run.evaluation_run_id, EvaluationRunLogType.agent, "attempt 2 logs")
+
+    # Reads return the latest attempt's logs; attempt 1 logs remain in the table.
+    assert await get_evaluation_run_logs_by_id(run.evaluation_run_id, EvaluationRunLogType.agent) == "attempt 2 logs"
+    async with _db.pool.acquire() as conn:
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM evaluation_run_logs WHERE evaluation_run_id = $1", run.evaluation_run_id
+        )
+    assert count == 2

@@ -338,9 +338,17 @@ async def create_evaluation_run_log(
         """
         INSERT INTO evaluation_run_logs (
             evaluation_run_id,
+            attempt_number,
             type,
             logs
-        ) VALUES ($1, $2, $3)
+        ) VALUES (
+            $1,
+            COALESCE(
+                (SELECT MAX(attempt_number) FROM evaluation_run_attempts WHERE evaluation_run_id = $1), 1
+            ),
+            $2,
+            $3
+        )
         """,
         evaluation_run_id,
         type,
@@ -361,7 +369,11 @@ async def check_if_evaluation_run_logs_exist(
         """
         SELECT EXISTS (
             SELECT 1 FROM evaluation_run_logs
-            WHERE evaluation_run_id = $1 AND type = $2
+            WHERE evaluation_run_id = $1
+              AND type = $2
+              AND attempt_number = COALESCE(
+                  (SELECT MAX(attempt_number) FROM evaluation_run_attempts WHERE evaluation_run_id = $1), 1
+              )
         )
         """,
         evaluation_run_id,
@@ -378,6 +390,8 @@ async def get_evaluation_run_logs_by_id(
         SELECT logs FROM evaluation_run_logs
         WHERE type = $1
         and evaluation_run_id = $2
+        ORDER BY attempt_number DESC
+        LIMIT 1
         """,
         type,
         evaluation_run_id,
