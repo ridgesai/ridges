@@ -27,6 +27,7 @@ from api.endpoints.validator_models import (
     ValidatorRequestEvaluationResponse,
     ValidatorTaskDownloadUrlRequest,
     ValidatorUpdateEvaluationRunRequest,
+    ValidatorUpdateEvaluationRunResponse,
 )
 from execution.artifacts import _read_proxy_cost
 from execution.engine import ExecutionEngine
@@ -87,7 +88,7 @@ async def update_evaluation_run(
     extra: Dict[str, Any] | None = None,
     *,
     timeout: int | None = None,
-):
+) -> ValidatorUpdateEvaluationRunResponse:
     logger.info(f"Updating evaluation run {evaluation_run_id} for problem {problem_name} to {updated_status.value}...")
     clean_extra = {k: v for k, v in (extra or {}).items() if v is not None}
 
@@ -101,11 +102,12 @@ async def update_evaluation_run(
     request = ValidatorUpdateEvaluationRunRequest(
         evaluation_run_id=evaluation_run_id, updated_status=updated_status, **clean_extra
     )
-    await retry_with_backoff(
+    response_data = await retry_with_backoff(
         lambda: post_ridges_platform("/validator/update-evaluation-run", request, **post_kwargs),
         max_attempts=3,
         base_delay=2.0,
     )
+    return ValidatorUpdateEvaluationRunResponse(**(response_data or {}))
 
 
 # Truncates a log if required
@@ -237,7 +239,155 @@ async def _run_evaluation_run_with_semaphore(
         )
 
 
-# Run an evaluation run
+async def _run_single_attempt(
+    evaluation_run,
+    agent_code: str,
+    attempt_number: int,
+    artifact_upload_url: str | None,
+    openrouter_config: OpenRouterRuntimeConfig | None,
+) -> ValidatorUpdateEvaluationRunResponse:
+    """Run one attempt of an evaluation run and report its terminal status.
+
+    Returns the platform's response to the terminal update; response.retry
+    signals that a fresh attempt should be started.
+    """
+    global execution_engine
+    assert execution_engine is not None
+
+    evaluation_run_id = evaluation_run.evaluation_run_id
+    problem_name = evaluation_run.problem_name
+    job_dir = None
+    terminal_response = ValidatorUpdateEvaluationRunResponse()
+
+    try:
+        # Move from pending -> initializing_agent
+        await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
+
+        async def _on_agent_started() -> None:
+            await update_evaluation_run(
+                evaluation_run_id,
+                problem_name,
+                EvaluationRunStatus.running_agent,
+                timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+            )
+
+        async def _on_verification_started(snapshot: TrialSnapshot) -> None:
+            await update_evaluation_run(
+                evaluation_run_id,
+                problem_name,
+                EvaluationRunStatus.initializing_eval,
+                {
+                    "patch": snapshot.patch,
+                    "agent_logs": truncate_logs_if_required(snapshot.agent_logs),
+                },
+                timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+            )
+
+            await update_evaluation_run(
+                evaluation_run_id,
+                problem_name,
+                EvaluationRunStatus.running_eval,
+                timeout=STATUS_HOOK_TIMEOUT_SECONDS,
+            )
+
+        result = await execution_engine.evaluate(
+            evaluation_run_id=evaluation_run_id,
+            problem_name=problem_name,
+            execution_spec=evaluation_run.execution_spec,
+            agent_path=None,
+            agent_code=agent_code,
+            openrouter_config=openrouter_config,
+            fetch_task_url=_fetch_task_download_url,
+            on_agent_started=_on_agent_started,
+            on_verification_started=_on_verification_started,
+            attempt_number=attempt_number,
+        )
+        job_dir = result.job_dir
+
+        logger.info(
+            f"Finished {result.backend} execution for problem {problem_name}: "
+            f"{len(result.patch.splitlines())} lines of patch, "
+            f"{len(result.agent_logs.splitlines())} lines of agent logs, "
+            f"{len(result.eval_logs.splitlines())} lines of eval logs"
+        )
+
+        num_passed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.PASS)
+        num_failed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.FAIL)
+        num_skipped = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.SKIP)
+        logger.info(
+            f"Finished running evaluation for problem {problem_name}: "
+            f"reward={result.verifier_reward}, {len(result.test_results)} test results "
+            f"({num_passed} passed, {num_failed} failed, {num_skipped} skipped), "
+            f"{len(result.eval_logs.splitlines())} lines of eval logs"
+        )
+
+        # Move from running_eval -> finished
+        terminal_response = await update_evaluation_run(
+            evaluation_run_id,
+            problem_name,
+            EvaluationRunStatus.finished,
+            {
+                "patch": result.patch,
+                "agent_logs": truncate_logs_if_required(result.agent_logs),
+                "verifier_reward": result.verifier_reward,
+                "test_results": [
+                    test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
+                ],
+                "eval_logs": truncate_logs_if_required(result.eval_logs),
+                "cost_usd": result.cost_usd,
+            },
+        )
+
+    except EvaluationRunException as e:
+        logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
+        extra = dict(e.extra or {})
+        job_dir = extra.pop("job_dir", None)
+        for key in ("agent_logs", "eval_logs"):
+            if key in extra:
+                extra[key] = truncate_logs_if_required(extra[key])
+
+        cost_usd = _read_proxy_cost(job_dir) if job_dir else None
+
+        terminal_response = await update_evaluation_run(
+            evaluation_run_id,
+            problem_name,
+            EvaluationRunStatus.error,
+            {
+                "error_code": e.error_code.value,
+                "error_message": e.error_message,
+                "cost_usd": cost_usd,
+                **extra,
+            },
+        )
+
+    except Exception as e:
+        logger.error(
+            f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}"
+        )
+        logger.error(traceback.format_exc())
+
+        terminal_response = await update_evaluation_run(
+            evaluation_run_id,
+            problem_name,
+            EvaluationRunStatus.error,
+            {
+                "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
+                "error_message": (
+                    f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\n"
+                    f"Traceback:\n{traceback.format_exc()}"
+                ),
+            },
+        )
+
+    # Upload artifacts for both success and error cases (per attempt; the run's
+    # S3 key always holds the latest attempt's artifacts)
+    if artifact_upload_url and job_dir:
+        await _upload_job_artifacts(job_dir, artifact_upload_url)
+
+    return terminal_response
+
+
+# Run an evaluation run (all of its attempts)
 async def _run_evaluation_run(
     evaluation_run,
     agent_code: str,
@@ -251,135 +401,21 @@ async def _run_evaluation_run(
         _active_task_digests.add(task_digest)
 
     try:
-        global execution_engine
-        assert execution_engine is not None
-
         logger.info(f"Starting evaluation run {evaluation_run_id} for problem {problem_name}...")
 
-        job_dir = None
-
-        try:
-            # Move from pending -> initializing_agent
-            await update_evaluation_run(evaluation_run_id, problem_name, EvaluationRunStatus.initializing_agent)
-
-            async def _on_agent_started() -> None:
-                await update_evaluation_run(
-                    evaluation_run_id,
-                    problem_name,
-                    EvaluationRunStatus.running_agent,
-                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
-                )
-
-            async def _on_verification_started(snapshot: TrialSnapshot) -> None:
-                await update_evaluation_run(
-                    evaluation_run_id,
-                    problem_name,
-                    EvaluationRunStatus.initializing_eval,
-                    {
-                        "patch": snapshot.patch,
-                        "agent_logs": truncate_logs_if_required(snapshot.agent_logs),
-                    },
-                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
-                )
-
-                await update_evaluation_run(
-                    evaluation_run_id,
-                    problem_name,
-                    EvaluationRunStatus.running_eval,
-                    timeout=STATUS_HOOK_TIMEOUT_SECONDS,
-                )
-
-            result = await execution_engine.evaluate(
-                evaluation_run_id=evaluation_run_id,
-                problem_name=problem_name,
-                execution_spec=evaluation_run.execution_spec,
-                agent_path=None,
-                agent_code=agent_code,
-                openrouter_config=openrouter_config,
-                fetch_task_url=_fetch_task_download_url,
-                on_agent_started=_on_agent_started,
-                on_verification_started=_on_verification_started,
+        attempt_number = 1
+        while True:
+            response = await _run_single_attempt(
+                evaluation_run, agent_code, attempt_number, artifact_upload_url, openrouter_config
             )
-            job_dir = result.job_dir
-
+            if not response.retry:
+                break
+            attempt_number = response.attempt_number or attempt_number + 1
+            artifact_upload_url = response.artifact_upload_url or artifact_upload_url
             logger.info(
-                f"Finished {result.backend} execution for problem {problem_name}: "
-                f"{len(result.patch.splitlines())} lines of patch, "
-                f"{len(result.agent_logs.splitlines())} lines of agent logs, "
-                f"{len(result.eval_logs.splitlines())} lines of eval logs"
+                f"Platform granted a retry for evaluation run {evaluation_run_id} "
+                f"(problem {problem_name}); starting attempt {attempt_number}"
             )
-
-            num_passed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.PASS)
-            num_failed = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.FAIL)
-            num_skipped = sum(1 for test in result.test_results if test.status == ProblemTestResultStatus.SKIP)
-            logger.info(
-                f"Finished running evaluation for problem {problem_name}: "
-                f"reward={result.verifier_reward}, {len(result.test_results)} test results "
-                f"({num_passed} passed, {num_failed} failed, {num_skipped} skipped), "
-                f"{len(result.eval_logs.splitlines())} lines of eval logs"
-            )
-
-            # Move from running_eval -> finished
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.finished,
-                {
-                    "patch": result.patch,
-                    "agent_logs": truncate_logs_if_required(result.agent_logs),
-                    "verifier_reward": result.verifier_reward,
-                    "test_results": [
-                        test.model_dump(exclude={"test_alias"}, exclude_none=True) for test in result.test_results
-                    ],
-                    "eval_logs": truncate_logs_if_required(result.eval_logs),
-                    "cost_usd": result.cost_usd,
-                },
-            )
-
-        except EvaluationRunException as e:
-            logger.error(f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {e}")
-            extra = dict(e.extra or {})
-            job_dir = extra.pop("job_dir", None)
-            for key in ("agent_logs", "eval_logs"):
-                if key in extra:
-                    extra[key] = truncate_logs_if_required(extra[key])
-
-            cost_usd = _read_proxy_cost(job_dir) if job_dir else None
-
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.error,
-                {
-                    "error_code": e.error_code.value,
-                    "error_message": e.error_message,
-                    "cost_usd": cost_usd,
-                    **extra,
-                },
-            )
-
-        except Exception as e:
-            logger.error(
-                f"Evaluation run {evaluation_run_id} for problem {problem_name} errored: {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}"
-            )
-            logger.error(traceback.format_exc())
-
-            await update_evaluation_run(
-                evaluation_run_id,
-                problem_name,
-                EvaluationRunStatus.error,
-                {
-                    "error_code": EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value,
-                    "error_message": (
-                        f"{EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.get_error_message()}: {e}\n\n"
-                        f"Traceback:\n{traceback.format_exc()}"
-                    ),
-                },
-            )
-
-        # Upload artifacts for both success and error cases
-        if artifact_upload_url and job_dir:
-            await _upload_job_artifacts(job_dir, artifact_upload_url)
 
         logger.info(f"Finished evaluation run {evaluation_run_id} for problem {problem_name}")
 
