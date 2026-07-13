@@ -190,6 +190,7 @@ class EvaluationRunDetail(EvaluationRun):
     problem_total_runs: int | None = None
     problem_average_time_seconds: float | None = None
     problem_average_cost_usd: float | None = None
+    attempt_count: int = 1
 
 
 class EvaluationRunLogType(str, Enum):

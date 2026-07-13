@@ -73,6 +73,7 @@ def _parse_metrics_row(row: asyncpg.Record) -> dict:
         "problem_total_runs": row["problem_total_runs"],
         "problem_average_time_seconds": row["problem_average_time_seconds"],
         "problem_average_cost_usd": row["problem_average_cost_usd"],
+        "attempt_count": row["attempt_count"],
     }
 
 
@@ -94,7 +95,12 @@ async def _get_evaluation_run_metrics_by_ids(
                      AND er.finished_or_errored_at IS NOT NULL
                     THEN EXTRACT(EPOCH FROM (er.finished_or_errored_at - er.started_initializing_agent_at))
                     ELSE NULL
-                END AS run_time_seconds
+                END AS run_time_seconds,
+                GREATEST(
+                    (SELECT COUNT(*) FROM evaluation_run_attempts era
+                     WHERE era.evaluation_run_id = er.evaluation_run_id),
+                    1
+                )::int AS attempt_count
             FROM evaluation_runs er
             JOIN evaluations e ON e.evaluation_id = er.evaluation_id
             WHERE er.evaluation_run_id = ANY($1::uuid[])
@@ -150,6 +156,7 @@ async def _get_evaluation_run_metrics_by_ids(
         SELECT
             tr.evaluation_run_id,
             tr.run_time_seconds,
+            tr.attempt_count,
             COALESCE(pa.problem_total_runs, 0) AS problem_total_runs,
             pa.problem_average_time_seconds,
             pa.problem_average_cost_usd

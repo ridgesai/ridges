@@ -14,6 +14,7 @@ from queries.evaluation_run import (
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
     get_evaluation_run_logs_by_id,
+    get_evaluation_run_metrics_by_id,
     update_evaluation_run_by_id,
 )
 from queries.evaluation_run_attempt import (
@@ -215,3 +216,36 @@ async def test_logs_are_attempt_scoped(postgres_db):
             "SELECT COUNT(*) FROM evaluation_run_logs WHERE evaluation_run_id = $1", run.evaluation_run_id
         )
     assert count == 2
+
+
+async def test_metrics_include_attempt_count(postgres_db):
+    async with _db.pool.acquire() as conn:
+        _, run = await _seed_single_run(conn)
+
+    metrics = await get_evaluation_run_metrics_by_id(run.evaluation_run_id)
+    assert metrics["attempt_count"] == 1
+
+    run.status = EvaluationRunStatus.error
+    run.error_code = 2000
+    run.error_message = "boom"
+    run.finished_or_errored_at = datetime.now(timezone.utc)
+    await update_evaluation_run_by_id(run)
+    await create_next_attempt_and_reset_evaluation_run(run.evaluation_run_id)
+
+    metrics = await get_evaluation_run_metrics_by_id(run.evaluation_run_id)
+    assert metrics["attempt_count"] == 2
+
+
+async def test_metrics_attempt_count_defaults_to_one_for_legacy_run(postgres_db):
+    async with _db.pool.acquire() as conn:
+        _, evaluation_id = await _seed_evaluation(conn)
+        legacy_run_id = uuid4()
+        await conn.execute(
+            "INSERT INTO evaluation_runs (evaluation_run_id, evaluation_id, problem_name, status, created_at)"
+            " VALUES ($1, $2, 'prob-1', 'pending', NOW())",
+            legacy_run_id,
+            evaluation_id,
+        )
+
+    metrics = await get_evaluation_run_metrics_by_id(legacy_run_id)
+    assert metrics["attempt_count"] == 1
