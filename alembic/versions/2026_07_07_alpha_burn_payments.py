@@ -1,6 +1,6 @@
 """Add alpha burn payment columns
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: c8f41e9a2b37
 Revises: e7f3a1b2c905
 Create Date: 2026-07-07 00:00:00.000000
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision: str = "a1b2c3d4e5f6"
+revision: str = "c8f41e9a2b37"
 down_revision: Union[str, Sequence[str], None] = "e7f3a1b2c905"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
