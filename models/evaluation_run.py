@@ -94,6 +94,35 @@ class EvaluationRunErrorCode(IntEnum):
         return 3000 <= self.value < 4000
 
 
+# Non-agent errors that must never trigger an in-session retry: score-bound
+# pruning is terminal by definition, PLATFORM_RESTARTED_* are only set by bulk
+# cleanup after the owning session is already gone, and an unknown problem
+# fails identically on every attempt.
+NON_RETRYABLE_PLATFORM_ERROR_CODES = frozenset(
+    {
+        EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_PENDING.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_AGENT.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_EVAL.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_EVAL.value,
+        EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.value,
+    }
+)
+
+
+def is_retryable_error_code(error_code: int | None) -> bool:
+    """Whether an errored run may be retried in-session with a fresh attempt.
+
+    Agent errors (1xxx) already count toward evaluation success and are never
+    retried; only validator/platform faults outside the denylist qualify.
+    """
+    if error_code is None:
+        return False
+    code = int(error_code)
+    return 2000 <= code < 4000 and code not in NON_RETRYABLE_PLATFORM_ERROR_CODES
+
+
 class EvaluationRunStatus(str, Enum):
     """Lifecycle states for one problem inside an evaluation."""
 
