@@ -41,7 +41,13 @@ from api.endpoints.validator_models import (
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_run import (
+    EvaluationRun,
+    EvaluationRunErrorCode,
+    EvaluationRunLogType,
+    EvaluationRunStatus,
+    is_retryable_error_code,
+)
 from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
 from models.openrouter import OpenRouterRuntimeConfig
@@ -74,6 +80,10 @@ from queries.evaluation_run import (
     get_all_evaluation_runs_in_evaluation_id,
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
+)
+from queries.evaluation_run_attempt import (
+    create_next_attempt_and_reset_evaluation_run,
+    get_attempt_count_for_evaluation_run,
 )
 from queries.internal_flag import get_internal_flags_parsed
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
@@ -682,6 +692,60 @@ async def _maybe_stop_agent_by_score_bound(evaluation: Evaluation) -> bool:
     return stopped
 
 
+async def _maybe_grant_retry(
+    validator: Validator, evaluation_run: EvaluationRun
+) -> Optional[ValidatorUpdateEvaluationRunResponse]:
+    """Grant an in-session retry for an errored run when policy allows it.
+
+    Returns a directive response when a fresh attempt was created, or None to
+    leave the run errored (falling back to the whole-evaluation restart path).
+    Never raises: any failure here just means no retry.
+    """
+
+    if not is_retryable_error_code(int(evaluation_run.error_code) if evaluation_run.error_code is not None else None):
+        return None
+
+    try:
+        attempt_count = await get_attempt_count_for_evaluation_run(evaluation_run.evaluation_run_id)
+        # Legacy runs (created before attempt tracking) have no attempt rows; their
+        # logs already occupy attempt slot 1, so retrying them would collide.
+        if attempt_count == 0:
+            return None
+        if attempt_count >= config.MAX_ATTEMPTS_PER_EVALUATION_RUN:
+            return None
+
+        evaluation = _get_current_evaluation_for_request(validator, evaluation_run.evaluation_id)
+        agent = await get_agent_by_id(evaluation.agent_id)
+        if agent is None or agent.status != _score_bound_active_status(evaluation.evaluation_set_group):
+            return None
+
+        # Mint the fresh upload URL before creating the attempt so a presign
+        # failure aborts cleanly with no dangling pending attempt.
+        artifact_upload_url = await generate_presigned_upload_url(
+            f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
+        )
+
+        new_attempt = await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)
+    except Exception as exc:
+        logger.error(
+            f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}"
+        )
+        logger.error(traceback.format_exc())
+        return None
+
+    logger.info(f"Granted retry for evaluation run {evaluation_run.evaluation_run_id}")
+    logger.info(f"  Evaluation ID: {evaluation_run.evaluation_id}")
+    logger.info(f"  Problem: {evaluation_run.problem_name}")
+    logger.info(f"  Error code: {evaluation_run.error_code}")
+    logger.info(f"  New attempt number: {new_attempt.attempt_number}")
+
+    return ValidatorUpdateEvaluationRunResponse(
+        retry=True,
+        attempt_number=new_attempt.attempt_number,
+        artifact_upload_url=artifact_upload_url,
+    )
+
+
 async def _is_stale_update_for_score_stopped_evaluation(validator: Validator, evaluation_run: EvaluationRun) -> bool:
     """Return true when a late run update belongs to this validator's already-closed stopped evaluation."""
 
@@ -1030,11 +1094,17 @@ async def validator_update_evaluation_run(
                 )
                 logger.error(traceback.format_exc())
 
+    response = ValidatorUpdateEvaluationRunResponse()
+    if request.updated_status == EvaluationRunStatus.error:
+        retry_directive = await _maybe_grant_retry(validator, evaluation_run)
+        if retry_directive is not None:
+            response = retry_directive
+
     logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
     logger.info(f"  Updated status: {request.updated_status}")
 
-    return ValidatorUpdateEvaluationRunResponse()
+    return response
 
 
 # /validator/disconnect

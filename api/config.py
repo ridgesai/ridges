@@ -187,6 +187,8 @@ if not NUM_EVALS_PER_AGENT:
     logger.fatal("NUM_EVALS_PER_AGENT is not set in .env")
 NUM_EVALS_PER_AGENT = int(NUM_EVALS_PER_AGENT)
 
+MAX_ATTEMPTS_PER_EVALUATION_RUN = int(os.getenv("MAX_ATTEMPTS_PER_EVALUATION_RUN", "3"))
+
 AGENT_UUID_NAMESPACE = os.getenv("AGENT_UUID_NAMESPACE")
 if not AGENT_UUID_NAMESPACE:
     logger.fatal("AGENT_UUID_NAMESPACE is not set in .env")
