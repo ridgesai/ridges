@@ -40,6 +40,10 @@ OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
     logger.fatal("OWNER_HOTKEY is not set in .env")
 
+COLDKEY_BAN_ADMIN_API_KEY = os.getenv("COLDKEY_BAN_ADMIN_API_KEY")
+if not COLDKEY_BAN_ADMIN_API_KEY:
+    logger.warning("COLDKEY_BAN_ADMIN_API_KEY is not set; coldkey ban administration will be unavailable")
+
 UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:
     logger.fatal("UPLOAD_SEND_ADDRESS is not set in .env")
