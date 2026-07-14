@@ -14,6 +14,7 @@ from models.approval import (
 )
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
+from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
 from utils.database import DatabaseConnection, db_operation
 
 logger = logging.getLogger(__name__)
@@ -58,21 +59,34 @@ async def finish_agent_and_enqueue_approval(
     set_id: int,
     policy_version: str,
 ) -> bool:
-    """Atomically move an agent to finished and enqueue its approval job."""
+    """Finish an agent and enqueue approval unless its coldkey is banned."""
 
     async with conn.conn.transaction():
-        update_result = await conn.execute(
+        agent = await conn.fetchrow(
             """
-            UPDATE agents
-            SET status = $2
+            SELECT miner_coldkey
+            FROM agents
             WHERE agent_id = $1
-              AND status = $3
+              AND status = $2
+            FOR UPDATE
             """,
             agent_id,
-            AgentStatus.finished.value,
             AgentStatus.evaluating.value,
         )
-        if update_result == "UPDATE 0":
+        if agent is None:
+            return False
+
+        miner_coldkey = agent["miner_coldkey"]
+        if miner_coldkey is not None:
+            await lock_coldkey_ban_state(conn, miner_coldkey)
+
+        await conn.execute(
+            "UPDATE agents SET status = $2 WHERE agent_id = $1",
+            agent_id,
+            AgentStatus.finished.value,
+        )
+
+        if miner_coldkey is not None and await get_banned_coldkey(miner_coldkey) is not None:
             return False
 
         snapshot = await _build_approval_input_snapshot(conn, agent_id=agent_id, set_id=set_id)
