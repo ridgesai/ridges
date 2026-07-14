@@ -2,12 +2,26 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import wraps
-from typing import Any, Callable, Dict, Tuple, TypeAlias
+from typing import Any, Callable, Dict, List, Tuple, TypeAlias
 
 from pydantic import BaseModel, ConfigDict
 
 logger = logging.getLogger(__name__)
 TTLCacheKey: TypeAlias = Tuple[Any, ...]
+
+# Registry of every ttl_cache's cache_clear, so callers can invalidate all caches
+# at once after a mutation that can change any cached, network-wide data.
+_ALL_CACHE_CLEARERS: List[Callable[[], None]] = []
+
+
+def clear_all_ttl_caches() -> None:
+    """Invalidate every ttl_cache in the process.
+
+    Call after admin-triggered mutations (e.g. coldkey bans) that can change any
+    cached data. This removes the need to maintain a hand-curated list of ban-sensitive caches.
+    """
+    for clear in _ALL_CACHE_CLEARERS:
+        clear()
 
 
 def _args_and_kwargs_to_ttl_cache_key(args: Tuple, kwargs: Dict) -> TTLCacheKey:
@@ -131,6 +145,7 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
                 return value
 
         wrapper.cache_clear = cache_clear
+        _ALL_CACHE_CLEARERS.append(cache_clear)
         return wrapper
 
     return decorator

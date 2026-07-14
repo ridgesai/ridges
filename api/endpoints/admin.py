@@ -7,9 +7,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, StringConstraints
 
 import api.config as config
-from api.endpoints import evaluation_sets, retrieval, scoring, statistics
 from models.banned_coldkey import BannedColdkey
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from utils.ttl import clear_all_ttl_caches
 
 router = APIRouter(tags=["admin"])
 admin_bearer = HTTPBearer(auto_error=False)
@@ -40,24 +40,6 @@ def validate_coldkey(miner_coldkey: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid coldkey SS58 address") from None
 
 
-def clear_coldkey_sensitive_caches() -> None:
-
-    cached_functions = (
-        evaluation_sets._cached_build_detail,
-        evaluation_sets._cached_build_leaderboard,
-        evaluation_sets._cached_build_approved_agents,
-        retrieval.queue,
-        retrieval.top_agents,
-        retrieval.top_scores_over_time,
-        retrieval.perfectly_solved_over_time,
-        retrieval.network_statistics,
-        scoring.screener_info,
-        statistics.problem_statistics,
-    )
-    for cached_function in cached_functions:
-        cached_function.cache_clear()
-
-
 @router.put(
     "/banned-coldkeys/{miner_coldkey}",
     response_model=BannedColdkey,
@@ -66,7 +48,7 @@ def clear_coldkey_sensitive_caches() -> None:
 async def put_banned_coldkey(miner_coldkey: str, request: ColdkeyBanRequest) -> BannedColdkey:
     validate_coldkey(miner_coldkey)
     banned_coldkey = await ban_coldkey(miner_coldkey, request.reason)
-    clear_coldkey_sensitive_caches()
+    clear_all_ttl_caches()
     return banned_coldkey
 
 
@@ -78,5 +60,5 @@ async def put_banned_coldkey(miner_coldkey: str, request: ColdkeyBanRequest) -> 
 async def delete_banned_coldkey(miner_coldkey: str) -> Response:
     validate_coldkey(miner_coldkey)
     await unban_coldkey(miner_coldkey)
-    clear_coldkey_sensitive_caches()
+    clear_all_ttl_caches()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
