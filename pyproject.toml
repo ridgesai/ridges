@@ -9,7 +9,7 @@ dependencies = [
     "alembic>=1.13",
     "asgi-correlation-id>=4.3.4",
     "asyncpg>=0.30.0",
-    "bittensor==10.2.1",
+    "bittensor==10.5.0",
     "click>=8.1.0",
     "cryptography==46.0.0",
     "docker>=7.1.0",
