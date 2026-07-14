@@ -23,25 +23,37 @@ OTHER_HOTKEY = "validator-hotkey-2"
 async def clean_tables(postgres_db):
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, agents RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, banned_coldkeys, banned_hotkeys, "
+            "agents RESTART IDENTITY CASCADE"
         )
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, agents RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_runs, evaluations, benchmark_agent_ids, banned_coldkeys, banned_hotkeys, "
+            "agents RESTART IDENTITY CASCADE"
         )
 
 
-async def _insert_agent(*, status: str = "evaluating", created_at: datetime | None = None) -> uuid.UUID:
+async def _insert_agent(
+    *,
+    status: str = "evaluating",
+    created_at: datetime | None = None,
+    miner_coldkey: str | None = None,
+    miner_hotkey: str = "test-hotkey",
+) -> uuid.UUID:
     agent_id = uuid.uuid4()
     async with _db.pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)
-            VALUES ($1, $2, $3, $4, $5::agentstatus, $6, $7)
+            INSERT INTO agents (
+                agent_id, miner_hotkey, miner_coldkey, name, version_num,
+                status, created_at, ip_address
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::agentstatus, $7, $8)
             """,
             agent_id,
-            "test-hotkey",
+            miner_hotkey,
+            miner_coldkey,
             "test-agent",
             1,
             status,
@@ -117,6 +129,59 @@ async def test_returns_agent_with_no_evaluations():
     agent_id = await _insert_agent()
     result = await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY)
     assert result == agent_id
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("status", "queue_view"),
+    [
+        ("pre_screening", "pre_screening_queue"),
+        ("screening_1", "screener_1_queue"),
+        ("screening_2", "screener_2_queue"),
+    ],
+)
+async def test_stage_queues_exclude_banned_coldkeys_but_keep_null_coldkeys(status: str, queue_view: str):
+    banned_agent = await _insert_agent(status=status, miner_coldkey="banned-coldkey", miner_hotkey="banned-hotkey")
+    null_coldkey_agent = await _insert_agent(status=status, miner_coldkey=None, miner_hotkey="owner-hotkey")
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ('banned-coldkey', 'test ban')"
+        )
+        queued = await conn.fetch(f"SELECT agent_id FROM {queue_view}")
+
+    assert {row["agent_id"] for row in queued} == {null_coldkey_agent}
+    assert banned_agent not in {row["agent_id"] for row in queued}
+
+
+@pytest.mark.anyio
+async def test_validator_queue_excludes_banned_coldkey():
+    banned_agent = await _insert_agent(miner_coldkey="banned-coldkey", miner_hotkey="banned-hotkey")
+    eligible_agent = await _insert_agent(miner_coldkey="eligible-coldkey", miner_hotkey="eligible-hotkey")
+    for agent_id in (banned_agent, eligible_agent):
+        evaluation_id = await _insert_evaluation(agent_id, group="screener_2")
+        await _insert_run(evaluation_id, status="finished", verifier_reward=1.0)
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ('banned-coldkey', 'test ban')"
+        )
+        queued = await conn.fetch("SELECT agent_id FROM validator_queue")
+
+    assert {row["agent_id"] for row in queued} == {eligible_agent}
+
+
+@pytest.mark.anyio
+async def test_legacy_hotkey_ban_no_longer_removes_agent_from_validator_queue():
+    agent_id = await _insert_agent(miner_coldkey="eligible-coldkey", miner_hotkey="legacy-banned-hotkey")
+    evaluation_id = await _insert_evaluation(agent_id, group="screener_2")
+    await _insert_run(evaluation_id, status="finished", verifier_reward=1.0)
+
+    async with _db.pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO banned_hotkeys (miner_hotkey, banned_reason) VALUES ('legacy-banned-hotkey', 'legacy ban')"
+        )
+
+    assert await get_next_agent_id_awaiting_evaluation_for_validator_hotkey(HOTKEY) == agent_id
 
 
 @pytest.mark.anyio

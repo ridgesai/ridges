@@ -13,7 +13,8 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, benchmark_agent_ids RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, "
+            "benchmark_agent_ids, banned_coldkeys RESTART IDENTITY CASCADE"
         )
 
 
@@ -46,13 +47,24 @@ async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
 
 
 async def _insert_agent(
-    conn, *, agent_id, miner_hotkey: str, status: str, created_at: datetime, set_id: int | None = None
+    conn,
+    *,
+    agent_id,
+    miner_hotkey: str,
+    status: str,
+    created_at: datetime,
+    set_id: int | None = None,
+    miner_coldkey: str | None = None,
 ) -> None:
     await conn.execute(
-        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+        """INSERT INTO agents (
+               agent_id, miner_hotkey, miner_coldkey, name, version_num,
+               status, created_at, ip_address, set_id
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
         agent_id,
         miner_hotkey,
+        miner_coldkey,
         miner_hotkey,
         1,
         status,
@@ -465,6 +477,68 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
     assert result.efficiency.lowest_average_runtime_seconds_top_agents.value == 10
     assert result.efficiency.average_agent_cost_usd == 2.8
     assert result.efficiency.average_agent_runtime_seconds == 36
+
+
+@pytest.mark.anyio
+async def test_coldkey_ban_disqualifies_competitor_and_removes_approved_output():
+    banned_agent = uuid4()
+    eligible_agent = uuid4()
+
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=banned_agent,
+            miner_hotkey="banned-hotkey",
+            miner_coldkey="banned-coldkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=eligible_agent,
+            miner_hotkey="eligible-hotkey",
+            miner_coldkey="eligible-coldkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=1),
+            set_id=2,
+        )
+        await _insert_approved_agent(conn, agent_id=banned_agent, set_id=2)
+        await _insert_approved_agent(conn, agent_id=eligible_agent, set_id=2)
+        await _insert_agent_score(
+            conn,
+            agent_id=banned_agent,
+            miner_hotkey="banned-hotkey",
+            set_id=2,
+            final_score=0.9,
+        )
+        await _insert_agent_score(
+            conn,
+            agent_id=eligible_agent,
+            miner_hotkey="eligible-hotkey",
+            set_id=2,
+            final_score=0.8,
+        )
+        await conn.execute(
+            "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ('banned-coldkey', 'test ban')"
+        )
+
+    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    by_id = {agent.agent_id: agent for agent in leaderboard}
+    assert by_id[banned_agent].disqualified is True
+    assert by_id[banned_agent].rank is None
+    assert by_id[eligible_agent].disqualified is False
+    assert by_id[eligible_agent].rank == 1
+
+    detail = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
+    assert detail.scores.best == 0.8
+    assert detail.submissions.approved_emission_count == 1
+    assert detail.top_agent is not None
+    assert detail.top_agent.agent_id == eligible_agent
+
+    approved_agents = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=2)
+    assert [agent.id for agent in approved_agents] == [eligible_agent]
 
 
 @pytest.mark.anyio

@@ -160,7 +160,7 @@ def _patch_upload_dependencies(
     async def fake_check_hotkey_registered(_hotkey: str) -> None:
         return None
 
-    async def fake_check_agent_banned(*, miner_hotkey: str) -> None:
+    async def fake_check_coldkey_banned(_miner_coldkey: str) -> None:
         return None
 
     async def fake_get_upload_price(*args, **kwargs):
@@ -184,7 +184,7 @@ def _patch_upload_dependencies(
     )
     monkeypatch.setattr(upload_endpoint, "record_upload_attempt", fake_record_upload_attempt)
     monkeypatch.setattr(upload_endpoint, "check_hotkey_registered", fake_check_hotkey_registered)
-    monkeypatch.setattr(upload_endpoint, "check_agent_banned", fake_check_agent_banned)
+    monkeypatch.setattr(upload_endpoint, "check_coldkey_banned", fake_check_coldkey_banned)
     monkeypatch.setattr(upload_endpoint, "get_upload_price", fake_get_upload_price)
     monkeypatch.setattr(upload_endpoint, "create_payment_quote", fake_create_payment_quote)
     monkeypatch.setattr(upload_endpoint, "create_agent", create_agent_impl)
@@ -422,6 +422,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         openrouter_api_key_label=None,
         openrouter_api_key_creator_user_id=None,
         openrouter_validated_at=None,
+        miner_coldkey=None,
         create_pre_screening_job=False,
     ) -> None:
         captured["agent"] = agent
@@ -432,6 +433,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
         captured["api_key_label"] = openrouter_api_key_label
         captured["api_key_creator_user_id"] = openrouter_api_key_creator_user_id
         captured["validated_at"] = openrouter_validated_at
+        captured["miner_coldkey"] = miner_coldkey
         captured["create_pre_screening_job"] = create_pre_screening_job
 
     upload_endpoint = _patch_upload_dependencies(
@@ -461,6 +463,7 @@ async def test_post_agent_encrypts_both_openrouter_keys_and_persists_metadata(mo
     assert captured["api_key_label"] == validated_keys.api_key_label
     assert captured["api_key_creator_user_id"] == validated_keys.api_key_creator_user_id
     assert captured["validated_at"] == validated_keys.validated_at
+    assert captured["miner_coldkey"] is None
     assert captured["create_pre_screening_job"] is False
 
 

@@ -5,6 +5,7 @@ All DB calls are real (Postgres via testcontainer). Blockchain and S3 are mocked
 One container starts per module; tables are truncated between tests.
 """
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -15,7 +16,10 @@ import pytest
 import utils.database as _db
 from api.src.endpoints import upload as upload_module
 from api.src.endpoints.upload import AgentUploadResponse
-from queries.agent import _derive_agent_id
+from models.agent import AgentCreate, AgentStatus
+from queries.agent import _derive_agent_id, create_agent
+from queries.banned_coldkey import COLDKEY_BAN_LOCK_NAMESPACE, ban_coldkey
+from queries.errors import ColdkeyBannedError
 from queries.payments import retrieve_payment_by_hash
 
 # ── constants ─────────────────────────────────────────────────────────────────
@@ -45,7 +49,8 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_payments, upload_payment_quotes, agents, banned_coldkeys, "
+            "failed_upload_refunds, upload_attempts RESTART IDENTITY CASCADE"
         )
 
 
@@ -128,7 +133,6 @@ def _install_mocks(monkeypatch) -> None:
     """Patch blockchain + S3. prod flag is set by upload_prod_mode."""
     monkeypatch.setattr(upload_module, "check_signature", MagicMock())
     monkeypatch.setattr(upload_module, "check_hotkey_registered", AsyncMock())
-    monkeypatch.setattr(upload_module, "check_agent_banned", AsyncMock())
     monkeypatch.setattr(
         upload_module,
         "check_if_extrinsic_failed",
@@ -319,6 +323,47 @@ async def test_check_agent_persists_payment_quote():
 
 
 @pytest.mark.anyio
+async def test_check_agent_rejects_banned_coldkey_before_stake_lookup():
+    from fastapi import HTTPException
+
+    await ban_coldkey(FAKE_COLDKEY, "test ban")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await upload_module.check_agent_post(
+            request=_make_request(),
+            agent_file=_make_upload_file(),
+            public_key="deadbeef",
+            file_info=f"{FAKE_HOTKEY}:0",
+            signature="fakesig",
+            name="test-agent",
+            openrouter_api_key="sk-or-v1-runtime",
+            openrouter_management_key="sk-or-v1-management",
+        )
+
+    assert exc_info.value.status_code == 403
+    upload_module.subtensor_client.get_alpha_stake_availability.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_check_agent_owner_bypasses_coldkey_ban(monkeypatch):
+    monkeypatch.setattr(upload_module.config, "OWNER_HOTKEY", FAKE_HOTKEY)
+    await ban_coldkey(FAKE_COLDKEY, "test ban")
+
+    response = await upload_module.check_agent_post(
+        request=_make_request(),
+        agent_file=_make_upload_file(),
+        public_key="deadbeef",
+        file_info=f"{FAKE_HOTKEY}:0",
+        signature="fakesig",
+        name="owner-agent",
+        openrouter_api_key="sk-or-v1-runtime",
+        openrouter_management_key="sk-or-v1-management",
+    )
+
+    assert response.status == "success"
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     ("position_rao", "total_rao", "locked_rao", "burnable_rao"),
     [
@@ -385,6 +430,93 @@ async def test_fresh_upload_creates_completed_payment():
     assert payment is not None
     assert payment.agent_id == _deterministic_id()
     assert payment.quote_id == quote_id
+    async with _db.pool.acquire() as conn:
+        stored_coldkey = await conn.fetchval(
+            "SELECT miner_coldkey FROM agents WHERE agent_id = $1",
+            _deterministic_id(),
+        )
+    assert stored_coldkey == FAKE_COLDKEY
+
+
+@pytest.mark.anyio
+async def test_final_upload_rejects_coldkey_banned_after_quote():
+    from fastapi import HTTPException
+
+    quote_id = await _insert_quote()
+    await ban_coldkey(FAKE_COLDKEY, "banned after quote")
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 403
+    upload_module.subtensor_client.get_events.assert_not_awaited()
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+
+
+@pytest.mark.anyio
+async def test_agent_insert_rechecks_coldkey_ban_transactionally(monkeypatch):
+    from fastapi import HTTPException
+
+    quote_id = await _insert_quote()
+    await ban_coldkey(FAKE_COLDKEY, "authoritative ban")
+    monkeypatch.setattr(upload_module, "check_coldkey_banned", AsyncMock())
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _call_post_agent(quote_id=quote_id)
+
+    assert exc_info.value.status_code == 403
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
+
+
+@pytest.mark.anyio
+async def test_agent_insert_waits_for_concurrent_coldkey_ban():
+    agent = AgentCreate(
+        miner_hotkey=FAKE_HOTKEY,
+        name="test-agent",
+        version_num=0,
+        status=AgentStatus.screening_1,
+        created_at=datetime.now(timezone.utc),
+        ip_address="127.0.0.1",
+        payment_block_hash="concurrent-ban-block",
+        payment_extrinsic_index="1",
+    )
+
+    async with _db.pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1, hashtext($2))",
+                COLDKEY_BAN_LOCK_NAMESPACE,
+                FAKE_COLDKEY,
+            )
+            create_task = asyncio.create_task(
+                create_agent(
+                    agent,
+                    "print('test')",
+                    source_sha256="concurrent-ban-source",
+                    runtime_openrouter_api_key_ciphertext=b"runtime",
+                    management_openrouter_api_key_ciphertext=b"management",
+                    openrouter_workspace_id="workspace",
+                    openrouter_api_key_label="label",
+                    openrouter_api_key_creator_user_id="creator",
+                    openrouter_validated_at=datetime.now(timezone.utc),
+                    miner_coldkey=FAKE_COLDKEY,
+                )
+            )
+            await asyncio.sleep(0.05)
+            assert not create_task.done()
+            await conn.execute(
+                "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ($1, $2)",
+                FAKE_COLDKEY,
+                "concurrent ban",
+            )
+
+    with pytest.raises(ColdkeyBannedError):
+        await asyncio.wait_for(create_task, timeout=2)
+
+    async with _db.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT count(*) FROM agents") == 0
 
 
 @pytest.mark.anyio
@@ -645,10 +777,11 @@ async def test_owner_bypasses_payment_creates_agent_without_payment_row():
 
     async with _db.pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT agent_id FROM agents WHERE miner_hotkey = $1",
+            "SELECT agent_id, miner_coldkey FROM agents WHERE miner_hotkey = $1",
             FAKE_OWNER_HOTKEY,
         )
     assert row is not None
+    assert row["miner_coldkey"] is None
 
 
 @pytest.mark.anyio

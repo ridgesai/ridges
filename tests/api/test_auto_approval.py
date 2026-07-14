@@ -12,6 +12,14 @@ from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation import AgentRankingProfile
 
 
+@pytest.fixture(autouse=True)
+def default_candidate_is_not_banned(monkeypatch):
+    async def not_banned(_agent_id) -> bool:
+        return False
+
+    monkeypatch.setattr(validator_endpoint, "is_agent_coldkey_banned", not_banned)
+
+
 def _hydrated_evaluation(*, agent_id, set_id: int = 7) -> HydratedEvaluation:
     return HydratedEvaluation(
         evaluation_id=uuid4(),
@@ -167,6 +175,23 @@ async def test_should_run_auto_approval_judge_when_no_approved_leader(monkeypatc
     )
 
     assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is True
+
+
+@pytest.mark.anyio
+async def test_should_run_auto_approval_judge_rejects_banned_candidate_before_scoring(monkeypatch) -> None:
+    agent_id = uuid4()
+
+    async def is_banned(_agent_id) -> bool:
+        assert _agent_id == agent_id
+        return True
+
+    async def unexpected_score_lookup(*_args):
+        raise AssertionError("A banned candidate should be rejected before score lookup")
+
+    monkeypatch.setattr(validator_endpoint, "is_agent_coldkey_banned", is_banned)
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", unexpected_score_lookup)
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
 
 
 @pytest.mark.anyio

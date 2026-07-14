@@ -26,6 +26,7 @@ TEST_ENV_DEFAULTS = {
     "AWS_REGION": "us-east-1",
     "AWS_SECRET_ACCESS_KEY": "test",
     "BURN": "false",
+    "COLDKEY_BAN_ADMIN_API_KEY": "test-coldkey-ban-admin-key",
     "DATABASE_HOST": "localhost",
     "DATABASE_NAME": "ridges_test",
     "DATABASE_PASSWORD": "ridges",
