@@ -14,6 +14,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
                 ass.approved AS approved,
                 ass.approved_at AS approved_at
             FROM agent_scores ass
+            INNER JOIN agents a ON a.agent_id = ass.agent_id
             LEFT JOIN LATERAL (
                 SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
                 FROM evaluations_hydrated eh
@@ -28,6 +29,11 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
                 AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ass.status::text <> 'cancelled'
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
         )
@@ -55,6 +61,7 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
                 ass.approved AS approved,
                 ass.approved_at AS approved_at
             FROM agent_scores ass
+            INNER JOIN agents a ON a.agent_id = ass.agent_id
             LEFT JOIN LATERAL (
                 SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
                 FROM evaluations_hydrated eh
@@ -69,6 +76,11 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
                 AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ass.status::text <> 'cancelled'
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
         )
