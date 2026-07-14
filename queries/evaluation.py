@@ -187,6 +187,7 @@ async def get_approved_validator_leader_score_for_set(
         """
         SELECT MAX(agent_score.final_score)
         FROM agent_scores agent_score
+        INNER JOIN agents agent ON agent.agent_id = agent_score.agent_id
         WHERE agent_score.set_id = $1
           AND agent_score.approved IS TRUE
           AND agent_score.approved_at <= NOW()
@@ -197,6 +198,11 @@ async def get_approved_validator_leader_score_for_set(
               SELECT 1
               FROM benchmark_agent_ids benchmark_agent
               WHERE benchmark_agent.agent_id = agent_score.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned_coldkey
+              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
           )
         """,
         set_id,
@@ -266,6 +272,7 @@ async def get_approved_leader_ranking_for_set(
             rt.avg_cost_usd,
             ass.created_at
         FROM agent_scores ass
+        INNER JOIN agents agent ON agent.agent_id = ass.agent_id
         LEFT JOIN LATERAL (
             SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
             FROM evaluations_hydrated eh
@@ -284,6 +291,11 @@ async def get_approved_leader_ranking_for_set(
               SELECT 1
               FROM benchmark_agent_ids benchmark_agent
               WHERE benchmark_agent.agent_id = ass.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned_coldkey
+              WHERE banned_coldkey.miner_coldkey = agent.miner_coldkey
           )
         ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
         LIMIT 1
