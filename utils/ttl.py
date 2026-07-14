@@ -51,6 +51,7 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
     def decorator(func: Callable):
         cache: Dict[TTLCacheKey, TTLCacheEntry] = {}
         recalculating_locks: Dict[TTLCacheKey, asyncio.Lock] = {}
+        cache_generation = 0
 
         def _evict_expired():
             """Remove all expired entries and their locks."""
@@ -98,25 +99,38 @@ def ttl_cache(ttl_seconds: int, max_entries: int = 200):
                         logger.debug(
                             f"[TTLCache] {func.__name__}(): First request, already calculating, stopped waiting"
                         )
+                    if key in cache:
                         return cache[key].value
-                else:
-                    logger.debug(f"[TTLCache] {func.__name__}(): First request, triggering calculation")
-                    await _recalculate(args, kwargs)
-                    return cache[key].value
+
+                logger.debug(f"[TTLCache] {func.__name__}(): First request, triggering calculation")
+                return await _recalculate(args, kwargs)
+
+        def cache_clear() -> None:
+            nonlocal cache_generation
+            cache_generation += 1
+            cache.clear()
+            for key, lock in list(recalculating_locks.items()):
+                if not lock.locked():
+                    recalculating_locks.pop(key, None)
 
         async def _recalculate(args: Tuple, kwargs: Dict):
             key = _args_and_kwargs_to_ttl_cache_key(args, kwargs)
+            lock = recalculating_locks.setdefault(key, asyncio.Lock())
 
-            async with recalculating_locks[key]:
+            async with lock:
                 if key in cache and datetime.now(timezone.utc) < cache[key].expires_at:
-                    return
+                    return cache[key].value
 
+                calculation_generation = cache_generation
                 value = await func(*args, **kwargs)
-                cache[key] = TTLCacheEntry(
-                    expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds), value=value
-                )
-                logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
+                if calculation_generation == cache_generation:
+                    cache[key] = TTLCacheEntry(
+                        expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds), value=value
+                    )
+                    logger.debug(f"[TTLCache] {func.__name__}(): Calculation completed")
+                return value
 
+        wrapper.cache_clear = cache_clear
         return wrapper
 
     return decorator
