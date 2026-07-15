@@ -1,9 +1,9 @@
 import logging
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from bittensor.core.async_subtensor import AsyncSubtensor
+from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 from bittensor.utils.balance import Balance
 from bittensor_wallet.keypair import Keypair
 
@@ -25,6 +25,12 @@ class AlphaStakeAvailability:
     locked_rao: int
     available_rao: int
     burnable_rao: int
+
+
+@dataclass(frozen=True, slots=True)
+class HotkeySubnetInfo:
+    uid: int
+    emission: float | None
 
 
 class SubtensorClient:
@@ -85,37 +91,34 @@ class SubtensorClient:
         logger.info(f"Hotkey {hotkey} is {'registered' if result else 'not registered'} on subnet {config.NETUID}")
         return result
 
-    async def get_uids_for_hotkeys_on_subnet(
+    async def get_subnet_hotkey_info(
         self,
-        hotkeys: Sequence[str],
         *,
         netuid: int = config.NETUID,
-    ) -> dict[str, int | None]:
-        """Return each hotkey's UID using one exact-key storage query."""
-
-        unique_hotkeys = list(dict.fromkeys(hotkeys))
-        if not unique_hotkeys:
-            return {}
+    ) -> dict[str, HotkeySubnetInfo]:
+        """Return every subnet hotkey's UID and emission from one selective metagraph call."""
 
         assert self._subtensor is not None, "Subtensor client is not initialized"
-        storage_keys = await self._subtensor.substrate.create_storage_keys(
-            pallet="SubtensorModule",
-            storage_function="Uids",
-            params=[[netuid, hotkey] for hotkey in unique_hotkeys],
+        metagraph = await self._subtensor.get_metagraph_info(
+            netuid=netuid,
+            selected_indices=[
+                SelectiveMetagraphIndex.Hotkeys,
+                SelectiveMetagraphIndex.Emission,
+            ],
         )
-        hotkey_by_storage_key = {
-            storage_key.to_hex(): hotkey for storage_key, hotkey in zip(storage_keys, unique_hotkeys, strict=True)
+        if metagraph is None or metagraph.hotkeys is None:
+            raise RuntimeError(f"Could not retrieve hotkeys for subnet {netuid}")
+
+        emissions = metagraph.emission or []
+        result = {
+            hotkey: HotkeySubnetInfo(
+                uid=uid,
+                emission=float(emissions[uid].tao) if uid < len(emissions) else None,
+            )
+            for uid, hotkey in enumerate(metagraph.hotkeys)
         }
-        uids: dict[str, int | None] = {hotkey: None for hotkey in unique_hotkeys}
-
-        for storage_key, uid in await self._subtensor.substrate.query_multi(storage_keys):
-            hotkey = hotkey_by_storage_key[storage_key.to_hex()]
-            uids[hotkey] = None if uid is None else int(uid)
-
-        logger.info(
-            f"Found {sum(uid is not None for uid in uids.values())}/{len(uids)} hotkeys registered on subnet {netuid}"
-        )
-        return uids
+        logger.info(f"Fetched UID and emission data for {len(result)} hotkeys on subnet {netuid}")
+        return result
 
     async def get_hotkey_owner(self, hotkey: str, block: int | None = None) -> str | None:
         """Retrieve the owner of a given hotkey at a specific block (or latest if block is None).
