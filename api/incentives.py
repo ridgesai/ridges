@@ -4,14 +4,14 @@ from uuid import UUID
 import api.config as config
 from queries.evaluation_set import get_latest_set_id
 from queries.scores import get_incentive_reward_candidates, get_weight_receiving_agent_info
-from utils.bittensor import subtensor_client
+from utils.bittensor import HotkeySubnetInfo, subtensor_client
 from utils.incentives import normalize_reward_weights, rank_reward_candidates
 from utils.ttl import ttl_cache
 
 
-@ttl_cache(ttl_seconds=60, max_entries=8)
-async def _get_reward_hotkey_uids(hotkeys: tuple[str, ...]) -> dict[str, int | None]:
-    return await subtensor_client.get_uids_for_hotkeys_on_subnet(hotkeys)
+@ttl_cache(ttl_seconds=60, max_entries=1)
+async def get_subnet_hotkey_info() -> dict[str, HotkeySubnetInfo]:
+    return await subtensor_client.get_subnet_hotkey_info()
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,8 +33,8 @@ async def get_current_allocations() -> list[CurrentAllocation]:
         legacy_receiver = await get_weight_receiving_agent_info()
         if legacy_receiver is not None:
             hotkey = legacy_receiver["miner_hotkey"]
-            uids = await _get_reward_hotkey_uids((hotkey,))
-            if uids[hotkey] is None:
+            subnet_hotkeys = await get_subnet_hotkey_info()
+            if hotkey not in subnet_hotkeys:
                 return [_owner_allocation()]
             return [
                 CurrentAllocation(
@@ -52,10 +52,11 @@ async def get_current_allocations() -> list[CurrentAllocation]:
         bonus_half_life_hours=config.INCENTIVE_IMPROVEMENT_BONUS_HALF_LIFE_HOURS,
         bonus_cap=config.INCENTIVE_IMPROVEMENT_BONUS_CAP,
     )
+    if not ranked:
+        return [_owner_allocation()]
 
-    hotkeys = tuple(sorted(candidate.candidate.miner_hotkey for candidate in ranked))
-    uids = await _get_reward_hotkey_uids(hotkeys)
-    selected = [candidate for candidate in ranked if uids[candidate.candidate.miner_hotkey] is not None][
+    subnet_hotkeys = await get_subnet_hotkey_info()
+    selected = [candidate for candidate in ranked if candidate.candidate.miner_hotkey in subnet_hotkeys][
         : config.INCENTIVE_TOP_K
     ]
 

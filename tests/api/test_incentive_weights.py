@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from api import incentives
+from utils.bittensor import HotkeySubnetInfo
 from utils.incentives import RewardCandidate
 
 
@@ -19,12 +20,12 @@ def _candidate(hotkey: str, score: float, bonus: float = 0) -> RewardCandidate:
 
 @pytest.fixture(autouse=True)
 def incentive_config(monkeypatch):
-    incentives._get_reward_hotkey_uids.cache_clear()
+    incentives.get_subnet_hotkey_info.cache_clear()
     monkeypatch.setattr(incentives.config, "BURN", False)
     monkeypatch.setattr(incentives.config, "INCENTIVE_START_SET_ID", 10)
     monkeypatch.setattr(incentives.config, "INCENTIVE_TOP_K", 3)
     yield
-    incentives._get_reward_hotkey_uids.cache_clear()
+    incentives.get_subnet_hotkey_info.cache_clear()
 
 
 @pytest.mark.anyio
@@ -43,12 +44,14 @@ async def test_active_weights_skip_unregistered_and_fill_all_three_slots(monkeyp
     async def reward_candidates(_set_id):
         return candidates, observed_at
 
-    async def get_uids(hotkeys):
-        return {hotkey: None if hotkey == "unregistered" else 1 for hotkey in hotkeys}
+    async def get_subnet_info():
+        return {
+            hotkey: HotkeySubnetInfo(uid=index, emission=0.0) for index, hotkey in enumerate(("hk-1", "hk-2", "hk-3"))
+        }
 
     monkeypatch.setattr(incentives, "get_latest_set_id", latest_set_id)
     monkeypatch.setattr(incentives, "get_incentive_reward_candidates", reward_candidates)
-    monkeypatch.setattr(incentives.subtensor_client, "get_uids_for_hotkeys_on_subnet", get_uids)
+    monkeypatch.setattr(incentives.subtensor_client, "get_subnet_hotkey_info", get_subnet_info)
 
     allocations = await incentives.get_current_allocations()
 
@@ -65,12 +68,12 @@ async def test_active_weights_burn_only_when_no_candidate_is_registered(monkeypa
     async def reward_candidates(_set_id):
         return [_candidate("missing", 0.6)], datetime.now(timezone.utc)
 
-    async def get_uids(hotkeys):
-        return dict.fromkeys(hotkeys)
+    async def get_subnet_info():
+        return {}
 
     monkeypatch.setattr(incentives, "get_latest_set_id", latest_set_id)
     monkeypatch.setattr(incentives, "get_incentive_reward_candidates", reward_candidates)
-    monkeypatch.setattr(incentives.subtensor_client, "get_uids_for_hotkeys_on_subnet", get_uids)
+    monkeypatch.setattr(incentives.subtensor_client, "get_subnet_hotkey_info", get_subnet_info)
 
     allocations = await incentives.get_current_allocations()
 
@@ -78,10 +81,10 @@ async def test_active_weights_burn_only_when_no_candidate_is_registered(monkeypa
 
 
 @pytest.mark.anyio
-async def test_registration_checks_are_batched_and_cached(monkeypatch) -> None:
+async def test_subnet_snapshot_is_cached(monkeypatch) -> None:
     observed_at = datetime.now(timezone.utc)
     candidates = [_candidate("hk-1", 0.6), _candidate("hk-2", 0.5)]
-    registration_calls = []
+    snapshot_calls = 0
 
     async def latest_set_id():
         return 10
@@ -89,19 +92,23 @@ async def test_registration_checks_are_batched_and_cached(monkeypatch) -> None:
     async def reward_candidates(_set_id):
         return candidates, observed_at
 
-    async def get_uids(hotkeys):
-        registration_calls.append(hotkeys)
-        return {hotkey: index for index, hotkey in enumerate(hotkeys)}
+    async def get_subnet_info():
+        nonlocal snapshot_calls
+        snapshot_calls += 1
+        return {
+            "hk-1": HotkeySubnetInfo(uid=0, emission=1.0),
+            "hk-2": HotkeySubnetInfo(uid=1, emission=2.0),
+        }
 
     monkeypatch.setattr(incentives, "get_latest_set_id", latest_set_id)
     monkeypatch.setattr(incentives, "get_incentive_reward_candidates", reward_candidates)
-    monkeypatch.setattr(incentives.subtensor_client, "get_uids_for_hotkeys_on_subnet", get_uids)
+    monkeypatch.setattr(incentives.subtensor_client, "get_subnet_hotkey_info", get_subnet_info)
 
     first = await incentives.get_current_allocations()
     second = await incentives.get_current_allocations()
 
     assert second == first
-    assert registration_calls == [("hk-1", "hk-2")]
+    assert snapshot_calls == 1
 
 
 @pytest.mark.anyio
@@ -112,12 +119,12 @@ async def test_registration_rpc_failure_is_not_converted_to_burn(monkeypatch) ->
     async def reward_candidates(_set_id):
         return [_candidate("hk", 0.6)], datetime.now(timezone.utc)
 
-    async def fail_registration(_hotkeys):
+    async def fail_registration():
         raise RuntimeError("rpc unavailable")
 
     monkeypatch.setattr(incentives, "get_latest_set_id", latest_set_id)
     monkeypatch.setattr(incentives, "get_incentive_reward_candidates", reward_candidates)
-    monkeypatch.setattr(incentives.subtensor_client, "get_uids_for_hotkeys_on_subnet", fail_registration)
+    monkeypatch.setattr(incentives.subtensor_client, "get_subnet_hotkey_info", fail_registration)
 
     with pytest.raises(RuntimeError, match="rpc unavailable"):
         await incentives.get_current_allocations()
@@ -133,11 +140,11 @@ async def test_pre_activation_set_uses_legacy_receiver(monkeypatch) -> None:
     async def legacy_receiver():
         return {"agent_id": agent_id, "miner_hotkey": "legacy-hk"}
 
-    async def get_uids(hotkeys):
-        return {hotkey: 1 for hotkey in hotkeys}
+    async def get_subnet_info():
+        return {"legacy-hk": HotkeySubnetInfo(uid=1, emission=1.0)}
 
     monkeypatch.setattr(incentives, "get_latest_set_id", latest_set_id)
     monkeypatch.setattr(incentives, "get_weight_receiving_agent_info", legacy_receiver)
-    monkeypatch.setattr(incentives.subtensor_client, "get_uids_for_hotkeys_on_subnet", get_uids)
+    monkeypatch.setattr(incentives.subtensor_client, "get_subnet_hotkey_info", get_subnet_info)
 
     assert await incentives.get_current_allocations() == [incentives.CurrentAllocation(agent_id, "legacy-hk", 1.0)]
