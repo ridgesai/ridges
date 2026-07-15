@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -83,6 +84,38 @@ class SubtensorClient:
         result = await self._subtensor.is_hotkey_registered(hotkey_ss58=hotkey, netuid=config.NETUID)
         logger.info(f"Hotkey {hotkey} is {'registered' if result else 'not registered'} on subnet {config.NETUID}")
         return result
+
+    async def get_uids_for_hotkeys_on_subnet(
+        self,
+        hotkeys: Sequence[str],
+        *,
+        netuid: int = config.NETUID,
+    ) -> dict[str, int | None]:
+        """Return each hotkey's UID using one exact-key storage query."""
+
+        unique_hotkeys = list(dict.fromkeys(hotkeys))
+        if not unique_hotkeys:
+            return {}
+
+        assert self._subtensor is not None, "Subtensor client is not initialized"
+        storage_keys = await self._subtensor.substrate.create_storage_keys(
+            pallet="SubtensorModule",
+            storage_function="Uids",
+            params=[[netuid, hotkey] for hotkey in unique_hotkeys],
+        )
+        hotkey_by_storage_key = {
+            storage_key.to_hex(): hotkey for storage_key, hotkey in zip(storage_keys, unique_hotkeys, strict=True)
+        }
+        uids: dict[str, int | None] = {hotkey: None for hotkey in unique_hotkeys}
+
+        for storage_key, uid in await self._subtensor.substrate.query_multi(storage_keys):
+            hotkey = hotkey_by_storage_key[storage_key.to_hex()]
+            uids[hotkey] = None if uid is None else int(uid)
+
+        logger.info(
+            f"Found {sum(uid is not None for uid in uids.values())}/{len(uids)} hotkeys registered on subnet {netuid}"
+        )
+        return uids
 
     async def get_hotkey_owner(self, hotkey: str, block: int | None = None) -> str | None:
         """Retrieve the owner of a given hotkey at a specific block (or latest if block is None).
