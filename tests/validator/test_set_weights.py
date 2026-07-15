@@ -37,8 +37,22 @@ async def test_missing_uid_is_dropped_and_remaining_weights_are_renormalized(moc
 
 
 @pytest.mark.anyio
-async def test_all_missing_uids_preserve_previous_weights(mock_subtensor) -> None:
+async def test_all_missing_uids_fall_back_to_subnet_owner(mock_subtensor) -> None:
+    mock_subtensor.get_uid_for_hotkey_on_subnet.side_effect = [None, 99]
+    mock_subtensor.get_subnet_owner_hotkey.return_value = "owner-hk"
+
+    await set_weights_module.set_weights_from_mapping({"missing": 1.0})
+
+    mock_subtensor.get_subnet_owner_hotkey.assert_awaited_once_with(netuid=set_weights_module.config.NETUID)
+    kwargs = mock_subtensor.set_weights.await_args.kwargs
+    assert kwargs["uids"] == [99]
+    assert kwargs["weights"] == [1.0]
+
+
+@pytest.mark.anyio
+async def test_missing_subnet_owner_preserves_previous_weights(mock_subtensor) -> None:
     mock_subtensor.get_uid_for_hotkey_on_subnet.return_value = None
+    mock_subtensor.get_subnet_owner_hotkey.return_value = None
 
     await set_weights_module.set_weights_from_mapping({"missing": 1.0})
 

@@ -14,6 +14,21 @@ logger = logging.getLogger(__name__)
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=[config.SUBTENSOR_ADDRESS])
 
 
+async def _get_burn_target() -> tuple[str, int] | None:
+    owner_hotkey = await subtensor.get_subnet_owner_hotkey(netuid=config.NETUID)
+    if owner_hotkey is None:
+        return None
+
+    owner_uid = await subtensor.get_uid_for_hotkey_on_subnet(
+        hotkey_ss58=owner_hotkey,
+        netuid=config.NETUID,
+    )
+    if owner_uid is None:
+        return None
+
+    return owner_hotkey, owner_uid
+
+
 async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
     if not isinstance(weights_mapping, dict) or not weights_mapping:
         raise ValueError("Expected a non-empty hotkey-to-weight mapping")
@@ -43,8 +58,10 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
         logger.warning(f"Skipping unregistered weight hotkeys: {', '.join(missing_hotkeys)}")
 
     if not resolved:
-        logger.error("No requested weight hotkeys are registered; using previous on-chain weights")
-        return
+        burn_target = await _get_burn_target()
+        owner_hotkey, owner_uid = burn_target
+        logger.warning(f"No requested hotkeys are registered; burning emissions to subnet owner {owner_hotkey}")
+        resolved = [(owner_hotkey, owner_uid, 1.0)]
 
     total = sum(weight for _hotkey, _uid, weight in resolved)
     normalized_weights = [weight / total for _hotkey, _uid, weight in resolved]
