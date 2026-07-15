@@ -1,6 +1,9 @@
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
+import api.config as config
 from utils.database import DatabaseConnection, db_operation
+from utils.incentives import RewardCandidate
 
 
 @db_operation
@@ -97,3 +100,66 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
     if current_leader is None or "miner_hotkey" not in current_leader or "agent_id" not in current_leader:
         return None
     return current_leader
+
+
+@db_operation
+async def get_incentive_reward_candidates(
+    conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int = config.NUM_EVALS_PER_AGENT,
+) -> tuple[list[RewardCandidate], datetime]:
+    rows = await conn.fetch(
+        """
+        SELECT
+            approved.agent_id,
+            agent.miner_hotkey,
+            score.final_score,
+            approved.initial_improvement_bonus,
+            approved.approved_at,
+            NOW() AS observed_at
+        FROM approved_agents approved
+        INNER JOIN agents agent ON agent.agent_id = approved.agent_id
+        INNER JOIN agent_scores score
+            ON score.agent_id = approved.agent_id
+            AND score.set_id = approved.set_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = approved.agent_id
+            AND review.set_id = approved.set_id
+        WHERE approved.set_id = $1
+          AND score.approved IS TRUE
+          AND score.approved_at <= NOW()
+          AND score.validator_count = $2
+          AND score.status::text = 'finished'
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark
+              WHERE benchmark.agent_id = approved.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned
+              WHERE banned.miner_coldkey = agent.miner_coldkey
+          )
+        """,
+        set_id,
+        required_validator_count,
+    )
+    missing_snapshot_agent_ids = [str(row["agent_id"]) for row in rows if row["initial_improvement_bonus"] is None]
+    if missing_snapshot_agent_ids:
+        raise RuntimeError(
+            f"Active incentive set {set_id} has approved agents without incentive snapshots: "
+            f"{', '.join(missing_snapshot_agent_ids)}"
+        )
+    observed_at = rows[0]["observed_at"] if rows else datetime.now(timezone.utc)
+    candidates = [
+        RewardCandidate(
+            agent_id=row["agent_id"],
+            miner_hotkey=row["miner_hotkey"],
+            final_score=row["final_score"],
+            initial_improvement_bonus=row["initial_improvement_bonus"],
+            approved_at=row["approved_at"],
+        )
+        for row in rows
+    ]
+    return candidates, observed_at

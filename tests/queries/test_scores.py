@@ -9,7 +9,11 @@ import utils.database as _db
 from queries.agent import get_top_agents
 from queries.banned_coldkey import ban_coldkey, unban_coldkey
 from queries.evaluation import get_approved_leader_ranking_for_set, get_approved_validator_leader_score_for_set
-from queries.scores import get_weight_receiving_agent_hotkey, get_weight_receiving_agent_info
+from queries.scores import (
+    get_incentive_reward_candidates,
+    get_weight_receiving_agent_hotkey,
+    get_weight_receiving_agent_info,
+)
 from queries.statistics import score_improvement_24_hrs, top_score
 
 SET_ID = 23
@@ -50,20 +54,23 @@ async def _insert_scored_agent(
     cost_usd: float,
     approved: bool = True,
     approved_at: datetime | None = None,
+    initial_improvement_bonus: float | None = None,
     created_at: datetime,
     miner_coldkey: str | None = None,
+    status: str = "finished",
 ) -> UUID:
     agent_id = uuid4()
     await conn.execute(
         """
         INSERT INTO agents (agent_id, miner_hotkey, miner_coldkey, name, version_num, status, created_at, ip_address)
-        VALUES ($1, $2, $3, $4, 0, 'finished', $5, '127.0.0.1')
+        VALUES ($1, $2, $3, $4, 0, $6, $5, '127.0.0.1')
         """,
         agent_id,
         miner_hotkey,
         miner_coldkey,
         miner_hotkey,
         created_at,
+        status,
     )
     evaluation_id = uuid4()
     await conn.execute(
@@ -93,14 +100,16 @@ async def _insert_scored_agent(
     if approved and approved_at is not None:
         await conn.execute(
             """
-            INSERT INTO approved_agents (agent_id, set_id, approved_at)
-            VALUES ($1, $2, $3)
+            INSERT INTO approved_agents (agent_id, set_id, approved_at, initial_improvement_bonus)
+            VALUES ($1, $2, $3, $4)
             ON CONFLICT (agent_id, set_id) DO UPDATE
-            SET approved_at = EXCLUDED.approved_at
+            SET approved_at = EXCLUDED.approved_at,
+                initial_improvement_bonus = EXCLUDED.initial_improvement_bonus
             """,
             agent_id,
             SET_ID,
             approved_at,
+            initial_improvement_bonus,
         )
     await conn.execute(
         """
@@ -108,7 +117,7 @@ async def _insert_scored_agent(
             agent_id, miner_hotkey, name, version_num, created_at, status,
             set_id, approved, approved_at, validator_count, final_score
         )
-        VALUES ($1, $2, $3, 0, $4, 'finished', $5, $6, $7, 1, $8)
+        VALUES ($1, $2, $3, 0, $4, $5, $6, $7, $8, 1, $9)
         ON CONFLICT (agent_id) DO UPDATE
         SET
             miner_hotkey = EXCLUDED.miner_hotkey,
@@ -126,12 +135,89 @@ async def _insert_scored_agent(
         miner_hotkey,
         miner_hotkey,
         created_at,
+        status,
         SET_ID,
         approved,
         approved_at,
         final_score,
     )
     return agent_id
+
+
+@pytest.mark.anyio
+async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        old_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="old-hotkey",
+            miner_coldkey="old-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(days=30),
+            initial_improvement_bonus=0.40,
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        same_coldkey_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="same-coldkey-hotkey",
+            miner_coldkey="old-coldkey",
+            final_score=0.495,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            initial_improvement_bonus=0.20,
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+        owner_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="owner-hotkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            initial_improvement_bonus=0.20,
+            created_at=SET_CREATED_AT + timedelta(hours=3),
+        )
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="banned-hotkey",
+            miner_coldkey="banned-coldkey",
+            final_score=0.60,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            initial_improvement_bonus=0.30,
+            created_at=SET_CREATED_AT + timedelta(hours=5),
+        )
+
+    await ban_coldkey("banned-coldkey", "test ban")
+
+    candidates, observed_at = await get_incentive_reward_candidates(SET_ID, 1)
+    by_id = {candidate.agent_id: candidate for candidate in candidates}
+
+    assert set(by_id) == {old_agent_id, same_coldkey_agent_id, owner_agent_id}
+    assert by_id[old_agent_id].initial_improvement_bonus == pytest.approx(0.40)
+    assert observed_at >= now
+
+
+@pytest.mark.anyio
+async def test_active_incentive_candidates_require_snapshots():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="missing-snapshot-hotkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+
+    with pytest.raises(
+        RuntimeError,
+        match=rf"Active incentive set {SET_ID} has approved agents without incentive snapshots: {agent_id}",
+    ):
+        await get_incentive_reward_candidates(SET_ID, 1)
 
 
 @pytest.mark.anyio
@@ -281,6 +367,74 @@ async def test_banned_coldkey_is_not_used_as_validator_leader_bar():
         )
 
     await ban_coldkey("banned-leader-coldkey", "test ban")
+
+    excluded_agent_id = uuid4()
+    assert await get_approved_validator_leader_score_for_set(SET_ID, excluded_agent_id, 1) == 0.49
+    leader = await get_approved_leader_ranking_for_set(SET_ID, excluded_agent_id, 1)
+    assert leader is not None
+    assert leader.final_score == 0.49
+
+
+@pytest.mark.anyio
+async def test_review_rejected_agent_is_not_used_as_validator_leader_bar():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        rejected_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="rejected-leader-hotkey",
+            miner_coldkey="rejected-leader-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        await conn.execute(
+            """
+            INSERT INTO agent_approval_states (
+                agent_id, set_id, processing_status, system_verdict, published_verdict
+            ) VALUES ($1, $2, 'completed', 'rejected', 'rejected')
+            """,
+            rejected_agent_id,
+            SET_ID,
+        )
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-second-hotkey",
+            miner_coldkey="eligible-second-coldkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+
+    assert await get_approved_validator_leader_score_for_set(SET_ID, uuid4(), 1) == 0.49
+
+
+@pytest.mark.anyio
+async def test_non_finished_agent_is_not_used_as_validator_leader_bar():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="evaluating-leader-hotkey",
+            miner_coldkey="evaluating-leader-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+            status="evaluating",
+        )
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-second-hotkey",
+            miner_coldkey="eligible-second-coldkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
 
     excluded_agent_id = uuid4()
     assert await get_approved_validator_leader_score_for_set(SET_ID, excluded_agent_id, 1) == 0.49
