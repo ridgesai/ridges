@@ -5,14 +5,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 import api.config as config
+from api.incentives import get_current_allocations
 from models.evaluation_set import EvaluationSetGroup
 from queries.evaluation_set import get_latest_set_id, get_set_created_at
-from queries.scores import get_weight_receiving_agent_hotkey
 from queries.statistics import (
     get_average_score_per_evaluation_set_group,
     get_average_wait_time_per_evaluation_set_group,
 )
-from utils.bittensor import subtensor_client
 from utils.ttl import ttl_cache
 
 router = APIRouter()
@@ -21,21 +20,8 @@ router = APIRouter()
 # /scoring/weights
 @router.get("/weights")
 async def weights() -> Dict[str, float]:
-    if config.BURN:
-        # When burning, we assign 100% of emissions to the owner hotkey.
-        return {config.OWNER_HOTKEY: 1.0}
-
-    # Try to get the weight-receiving agent's hotkey (aka. the top agent's
-    # hotkey). Make sure it is registered on the subnet. If so, assign 100% of
-    # emissions to it.
-    weight_receiving_hotkey = await get_weight_receiving_agent_hotkey()
-    if weight_receiving_hotkey:
-        if await subtensor_client.is_hotkey_registered(weight_receiving_hotkey):
-            return {weight_receiving_hotkey: 1.0}
-
-    # If no weight-receiving agent is found, assign 100% of emissions to the
-    # owner hotkey (to burn).
-    return {config.OWNER_HOTKEY: 1.0}
+    allocations = await get_current_allocations()
+    return {allocation.miner_hotkey: allocation.weight for allocation in allocations}
 
 
 # /scoring/screener-info

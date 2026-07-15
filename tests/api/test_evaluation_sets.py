@@ -670,6 +670,10 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
+    async def no_allocations():
+        return []
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", no_allocations)
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
     result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
@@ -682,6 +686,14 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     agent_id_b = uuid4()
     approved_at_a = datetime(2026, 5, 1, 10, tzinfo=timezone.utc)  # latest approved appears first
     approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)
+
+    async def current_allocations():
+        return [
+            evaluation_sets_endpoint.CurrentAllocation(agent_id_a, "hotkey-a", 0.7),
+            evaluation_sets_endpoint.CurrentAllocation(agent_id_b, "hotkey-b", 0.3),
+        ]
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
@@ -722,6 +734,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
     assert result[0].final_score == 90.0
+    assert result[0].emission == pytest.approx(0.7)
     assert result[0].approved_at == approved_at_a
     assert result[0].average_cost_usd == 0.5
     assert result[0].average_runtime_seconds == 120
@@ -729,7 +742,7 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[1].id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
-    assert result[1].emission == 0.0
+    assert result[1].emission == pytest.approx(0.3)
     assert result[1].approved_at == approved_at_b
     assert result[1].average_cost_usd == 0.3
     assert result[1].average_runtime_seconds == 60

@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.incentives import CurrentAllocation, get_current_allocations
 from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
@@ -268,8 +269,14 @@ async def evaluation_set_leaderboard(
 #
 
 
-async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
+async def _build_approved_agents(
+    set_id: int,
+    allocations: list[CurrentAllocation] | None = None,
+) -> list[ApprovedAgent]:
     agent_rows = await get_approved_agents_for_set(set_id)
+    emissions = {
+        allocation.agent_id: allocation.weight for allocation in allocations or [] if allocation.agent_id is not None
+    }
 
     return [
         ApprovedAgent(
@@ -279,7 +286,7 @@ async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
             version_num=row["version_num"],
             created_at=row["created_at"],
             final_score=row["final_score"],
-            emission=0.0,
+            emission=emissions.get(row["agent_id"], 0.0),
             approved_at=row["approved_at"],
             average_runtime_seconds=row["average_runtime_seconds"],
             average_cost_usd=row["average_cost_usd"],
@@ -296,4 +303,4 @@ async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_
     latest = await _get_latest_set_id()
     if set_id != latest:
         return await _cached_build_approved_agents(set_id)
-    return await _build_approved_agents(set_id)
+    return await _build_approved_agents(set_id, await get_current_allocations())
