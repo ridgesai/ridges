@@ -54,5 +54,17 @@ class ApprovedAgent(Base):
         nullable=False,
         server_default=sa.text("NOW()"),
     )
+    baseline_agent_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("agents.agent_id", ondelete="SET NULL"),
+    )
+    performance_delta: Mapped[Optional[float]] = mapped_column(sa.Float)
+    cost_delta: Mapped[Optional[float]] = mapped_column(sa.Float)
+    raw_improvement: Mapped[Optional[float]] = mapped_column(sa.Float)
+    time_multiplier: Mapped[Optional[float]] = mapped_column(sa.Float)
+    initial_improvement_bonus: Mapped[Optional[float]] = mapped_column(sa.Float)
 
-    __table_args__ = (sa.UniqueConstraint("agent_id", "set_id"),)
+    __table_args__ = (
+        sa.UniqueConstraint("agent_id", "set_id"),
+        sa.Index("idx_approved_agents_set_approved_at", "set_id", approved_at.desc()),
+    )
