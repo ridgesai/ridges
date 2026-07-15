@@ -81,6 +81,7 @@ from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigEr
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
+from utils.incentives import calculate_relative_improvement
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
@@ -1216,5 +1217,15 @@ async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> boo
     )
     if leader is None:
         return True
+
+    if set_id >= config.INCENTIVE_START_SET_ID:
+        return calculate_relative_improvement(
+            candidate_score=candidate.final_score,
+            candidate_cost=candidate.avg_cost_usd,
+            leader_score=leader.final_score,
+            leader_cost=leader.avg_cost_usd,
+            performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+            cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        ).qualified
 
     return candidate.beats(leader)
