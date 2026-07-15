@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
+from utils.bittensor import HotkeySubnetInfo
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +21,8 @@ async def clean_tables(postgres_db):
 
 @pytest.fixture(autouse=True)
 async def remove_caching(monkeypatch):
+    clear_hotkey_chain_cache = evaluation_sets_endpoint.get_subnet_hotkey_info.cache_clear
+    clear_hotkey_chain_cache()
     monkeypatch.setattr(evaluation_sets_endpoint, "_get_latest_set_id", evaluation_sets_endpoint.get_latest_set_id)
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
     monkeypatch.setattr(
@@ -28,6 +31,8 @@ async def remove_caching(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
     )
+    yield
+    clear_hotkey_chain_cache()
 
 
 SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -693,7 +698,14 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
             evaluation_sets_endpoint.CurrentAllocation(agent_id_b, "hotkey-b", 0.3),
         ]
 
+    async def subnet_info():
+        return {
+            "hotkey-a": HotkeySubnetInfo(uid=1, emission=147.600823658),
+            "hotkey-b": HotkeySubnetInfo(uid=2, emission=2.037068052),
+        }
+
     monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
@@ -734,7 +746,8 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
     assert result[0].final_score == 90.0
-    assert result[0].emission == pytest.approx(0.7)
+    assert result[0].emission == pytest.approx(147.600823658)
+    assert result[0].reward_weight == pytest.approx(0.7)
     assert result[0].approved_at == approved_at_a
     assert result[0].average_cost_usd == 0.5
     assert result[0].average_runtime_seconds == 120
@@ -742,10 +755,45 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[1].id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
-    assert result[1].emission == pytest.approx(0.3)
+    assert result[1].emission == pytest.approx(2.037068052)
+    assert result[1].reward_weight == pytest.approx(0.3)
     assert result[1].approved_at == approved_at_b
     assert result[1].average_cost_usd == 0.3
     assert result[1].average_runtime_seconds == 60
+
+
+@pytest.mark.anyio
+async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeypatch):
+    agent_id = uuid4()
+    agent = evaluation_sets_endpoint.ApprovedAgent(
+        id=agent_id,
+        miner_hotkey="hotkey",
+        name="agent",
+        version_num=1,
+        created_at=AGENT_TS_SET_1,
+        final_score=0.9,
+        emission=None,
+        reward_weight=None,
+        approved_at=AGENT_TS_SET_1,
+        average_runtime_seconds=None,
+        average_cost_usd=None,
+    )
+
+    async def fail_chain_lookup():
+        raise RuntimeError("chain unavailable")
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", fail_chain_lookup)
+
+    historical = await evaluation_sets_endpoint._add_onchain_approved_agent_data([agent], None)
+    current = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+        [agent],
+        [evaluation_sets_endpoint.CurrentAllocation(agent_id, "hotkey", 0.7)],
+    )
+
+    assert historical[0].emission is None
+    assert historical[0].reward_weight is None
+    assert current[0].emission is None
+    assert current[0].reward_weight == pytest.approx(0.7)
 
 
 @pytest.mark.anyio

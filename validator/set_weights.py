@@ -59,6 +59,9 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
 
     if not resolved:
         burn_target = await _get_burn_target()
+        if burn_target is None:
+            return
+
         owner_hotkey, owner_uid = burn_target
         logger.warning(f"No requested hotkeys are registered; burning emissions to subnet owner {owner_hotkey}")
         resolved = [(owner_hotkey, owner_uid, 1.0)]
