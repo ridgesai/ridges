@@ -1,5 +1,7 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
+import asyncio
 import logging
+import math
 from typing import Dict
 
 from bittensor.core.async_subtensor import AsyncSubtensor
@@ -13,34 +15,54 @@ subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=
 
 
 async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
-    if len(weights_mapping.keys()) != 1:
-        logger.error("Expected one hotkey")
-        return
+    if not isinstance(weights_mapping, dict) or not weights_mapping:
+        raise ValueError("Expected a non-empty hotkey-to-weight mapping")
 
-    weight_receiving_hotkey = list(weights_mapping.keys())[0]
-    if weights_mapping[weight_receiving_hotkey] != 1:
-        logger.error("Expected weight of 1")
-        return
+    requested: list[tuple[str, float]] = []
+    for hotkey, weight in weights_mapping.items():
+        if isinstance(weight, bool):
+            raise ValueError(f"Weight for {hotkey} must be numeric")
 
-    weight_receiving_uid = await subtensor.get_uid_for_hotkey_on_subnet(
-        hotkey_ss58=weight_receiving_hotkey, netuid=config.NETUID
+        weight = float(weight)
+        if not math.isfinite(weight) or weight <= 0:
+            raise ValueError(f"Weight for {hotkey} must be finite and positive")
+
+        requested.append((hotkey, weight))
+
+    resolved_uids = await asyncio.gather(
+        *(
+            subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=hotkey, netuid=config.NETUID)
+            for hotkey, _weight in requested
+        )
     )
-    if weight_receiving_uid is None:
-        logger.error(f"Weight receiving hotkey {weight_receiving_hotkey} not found")
+    resolved = [
+        (hotkey, uid, weight) for (hotkey, weight), uid in zip(requested, resolved_uids, strict=True) if uid is not None
+    ]
+    missing_hotkeys = [hotkey for (hotkey, _weight), uid in zip(requested, resolved_uids, strict=True) if uid is None]
+    if missing_hotkeys:
+        logger.warning(f"Skipping unregistered weight hotkeys: {', '.join(missing_hotkeys)}")
+
+    if not resolved:
+        logger.error("No requested weight hotkeys are registered; using previous on-chain weights")
         return
 
-    logger.info(f"Setting weight of {weight_receiving_hotkey} to 1...")
+    total = sum(weight for _hotkey, _uid, weight in resolved)
+    normalized_weights = [weight / total for _hotkey, _uid, weight in resolved]
+    uids = [uid for _hotkey, uid, _weight in resolved]
+    hotkeys = [hotkey for hotkey, _uid, _weight in resolved]
+
+    logger.info(f"Setting weights for {len(resolved)} hotkey(s): {', '.join(hotkeys)}")
 
     success, message = await subtensor.set_weights(
         wallet=config.VALIDATOR_WALLET,
         netuid=config.NETUID,
-        uids=[weight_receiving_uid],
-        weights=[1],
+        uids=uids,
+        weights=normalized_weights,
         wait_for_inclusion=True,
         wait_for_finalization=True,
     )
 
     if success:
-        logger.info(f"Set weight of hotkey {weight_receiving_hotkey} to 1")
+        logger.info(f"Set weights for {len(resolved)} hotkey(s)")
     else:
-        logger.error(f"Failed to set weight of hotkey {weight_receiving_hotkey} to 1: {message}")
+        logger.error(f"Failed to set weights: {message}")
