@@ -8,6 +8,7 @@ dependencies = [
     "aioboto3>=15.0.0",
     "alembic>=1.13",
     "asgi-correlation-id>=4.3.4",
+    "async-substrate-interface==2.2.1",
     "asyncpg>=0.30.0",
     "bittensor==10.5.0",
     "click>=8.1.0",

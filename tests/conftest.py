@@ -36,6 +36,7 @@ TEST_ENV_DEFAULTS = {
     "ENV": "dev",
     "HOST": "0.0.0.0",
     "INCLUDE_SOLUTIONS": "false",
+    "INCENTIVE_START_SET_ID": "999999",
     "MINER_AGENT_UPLOAD_RATE_LIMIT_SECONDS": "60",
     "MODE": "screener",
     "NETUID": "1",

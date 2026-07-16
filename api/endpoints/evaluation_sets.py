@@ -1,8 +1,10 @@
 import asyncio
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.incentives import CurrentAllocations, get_current_allocations, get_subnet_hotkey_info
 from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
@@ -33,6 +35,7 @@ from queries.evaluation_set import (
 from utils.ttl import ttl_cache
 
 router = APIRouter(tags=["evaluation-sets"])
+logger = logging.getLogger(__name__)
 CACHE_PAST_SET_DATA_TTL_SECONDS = 24 * 60 * 60  # Cache past set data for 24 hours, since it won't change
 
 # Retrieve the latest set ID once and cache it for 30 seconds, since it's used in multiple places in the detail and leaderboard endpoints.
@@ -268,7 +271,9 @@ async def evaluation_set_leaderboard(
 #
 
 
-async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
+async def _build_approved_agents(
+    set_id: int,
+) -> list[ApprovedAgent]:
     agent_rows = await get_approved_agents_for_set(set_id)
 
     return [
@@ -279,7 +284,8 @@ async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
             version_num=row["version_num"],
             created_at=row["created_at"],
             final_score=row["final_score"],
-            emission=0.0,
+            emission=None,
+            reward_weight=None,
             approved_at=row["approved_at"],
             average_runtime_seconds=row["average_runtime_seconds"],
             average_cost_usd=row["average_cost_usd"],
@@ -291,9 +297,43 @@ async def _build_approved_agents(set_id: int) -> list[ApprovedAgent]:
 _cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SECONDS)(_build_approved_agents)
 
 
+async def _add_onchain_approved_agent_data(
+    agents: list[ApprovedAgent],
+    allocations: CurrentAllocations | None,
+) -> list[ApprovedAgent]:
+    if not agents:
+        return []
+
+    try:
+        subnet_info = await get_subnet_hotkey_info()
+    except Exception:
+        logger.exception("Could not retrieve approved-agent emissions from Subtensor")
+        subnet_info = {}
+
+    reward_weights = None if allocations is None else allocations.agent_weights
+    result = []
+    for agent in agents:
+        hotkey_info = subnet_info.get(agent.miner_hotkey)
+        result.append(
+            agent.model_copy(
+                update={
+                    "emission": None if hotkey_info is None else hotkey_info.emission,
+                    "reward_weight": None if reward_weights is None else reward_weights.get(agent.id, 0.0),
+                }
+            )
+        )
+    return result
+
+
 @router.get("/{set_id}/approved-agents")
 async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
     latest = await _get_latest_set_id()
     if set_id != latest:
-        return await _cached_build_approved_agents(set_id)
-    return await _build_approved_agents(set_id)
+        agents = await _cached_build_approved_agents(set_id)
+        return await _add_onchain_approved_agent_data(agents, None)
+
+    agents, allocations = await asyncio.gather(
+        _build_approved_agents(set_id),
+        get_current_allocations(),
+    )
+    return await _add_onchain_approved_agent_data(agents, allocations)

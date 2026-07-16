@@ -323,3 +323,39 @@ async def test_should_run_auto_approval_judge_rejects_newer_candidate_same_score
     )
 
     assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("candidate_score", "candidate_cost", "expected"),
+    [
+        (0.515, 0.20, True),  # Exactly 3% better performance.
+        (0.50, 0.094, True),  # Same performance and exactly 6% lower cost.
+        (0.49, 0.05, False),  # A lower score cannot qualify through cost alone.
+        (0.514, 0.096, False),  # Neither relative threshold is met.
+    ],
+)
+async def test_active_incentive_prefilter_uses_relative_thresholds(
+    monkeypatch,
+    candidate_score: float,
+    candidate_cost: float,
+    expected: bool,
+) -> None:
+    agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
+        return AgentRankingProfile(final_score=candidate_score, avg_cost_usd=candidate_cost, created_at=now)
+
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.50, avg_cost_usd=0.10, created_at=now)
+
+    monkeypatch.setattr(validator_endpoint.config, "INCENTIVE_START_SET_ID", 11)
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
+    )
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is expected

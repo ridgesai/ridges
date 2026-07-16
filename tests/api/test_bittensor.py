@@ -2,8 +2,63 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 
-from utils.bittensor import SubtensorClient
+from utils.bittensor import HotkeySubnetInfo, SubtensorClient
+
+
+@pytest.mark.anyio
+async def test_get_subnet_hotkey_info_uses_selective_metagraph() -> None:
+    metagraph = SimpleNamespace(
+        hotkeys=["registered", "zero-emission"],
+        emission=[SimpleNamespace(tao=147.600823658), SimpleNamespace(tao=0.0)],
+    )
+    subtensor = SimpleNamespace(get_metagraph_info=AsyncMock(return_value=metagraph))
+    client = SubtensorClient()
+    client._subtensor = subtensor
+
+    result = await client.get_subnet_hotkey_info(netuid=62)
+
+    assert result == {
+        "registered": HotkeySubnetInfo(uid=0, emission=147.600823658),
+        "zero-emission": HotkeySubnetInfo(uid=1, emission=0.0),
+    }
+    subtensor.get_metagraph_info.assert_awaited_once_with(
+        netuid=62,
+        selected_indices=[
+            SelectiveMetagraphIndex.Hotkeys,
+            SelectiveMetagraphIndex.Emission,
+        ],
+    )
+
+
+@pytest.mark.anyio
+async def test_get_subnet_hotkey_info_handles_missing_emission_entry() -> None:
+    subtensor = SimpleNamespace(
+        get_metagraph_info=AsyncMock(
+            return_value=SimpleNamespace(
+                hotkeys=["with-emission", "without-emission"],
+                emission=[SimpleNamespace(tao=1.5)],
+            )
+        )
+    )
+    client = SubtensorClient()
+    client._subtensor = subtensor
+
+    assert await client.get_subnet_hotkey_info(netuid=62) == {
+        "with-emission": HotkeySubnetInfo(uid=0, emission=1.5),
+        "without-emission": HotkeySubnetInfo(uid=1, emission=None),
+    }
+
+
+@pytest.mark.anyio
+async def test_get_subnet_hotkey_info_rejects_missing_metagraph() -> None:
+    subtensor = SimpleNamespace(get_metagraph_info=AsyncMock(return_value=None))
+    client = SubtensorClient()
+    client._subtensor = subtensor
+
+    with pytest.raises(RuntimeError, match="Could not retrieve hotkeys"):
+        await client.get_subnet_hotkey_info(netuid=62)
 
 
 @pytest.mark.anyio
