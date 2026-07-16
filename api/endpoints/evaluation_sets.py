@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.incentives import CurrentAllocation, get_current_allocations, get_subnet_hotkey_info
+from api.incentives import CurrentAllocations, get_current_allocations, get_subnet_hotkey_info
 from models.evaluation_set import (
     ApprovedAgent,
     EvaluationSet,
@@ -299,7 +299,7 @@ _cached_build_approved_agents = ttl_cache(ttl_seconds=CACHE_PAST_SET_DATA_TTL_SE
 
 async def _add_onchain_approved_agent_data(
     agents: list[ApprovedAgent],
-    allocations: list[CurrentAllocation] | None,
+    allocations: CurrentAllocations | None,
 ) -> list[ApprovedAgent]:
     if not agents:
         return []
@@ -310,11 +310,7 @@ async def _add_onchain_approved_agent_data(
         logger.exception("Could not retrieve approved-agent emissions from Subtensor")
         subnet_info = {}
 
-    reward_weights = (
-        None
-        if allocations is None
-        else {allocation.agent_id: allocation.weight for allocation in allocations if allocation.agent_id is not None}
-    )
+    reward_weights = None if allocations is None else allocations.agent_weights
     result = []
     for agent in agents:
         hotkey_info = subnet_info.get(agent.miner_hotkey)

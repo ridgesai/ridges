@@ -676,7 +676,7 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
     async def no_allocations():
-        return []
+        return evaluation_sets_endpoint.CurrentAllocations(hotkey_weights={}, agent_weights={})
 
     monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", no_allocations)
     async with _db.pool.acquire() as conn:
@@ -693,10 +693,10 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)
 
     async def current_allocations():
-        return [
-            evaluation_sets_endpoint.CurrentAllocation(agent_id_a, "hotkey-a", 0.7),
-            evaluation_sets_endpoint.CurrentAllocation(agent_id_b, "hotkey-b", 0.3),
-        ]
+        return evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"hotkey-a": 0.7, "hotkey-b": 0.3},
+            agent_weights={agent_id_a: 0.7, agent_id_b: 0.3},
+        )
 
     async def subnet_info():
         return {
@@ -763,6 +763,50 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
 
 
 @pytest.mark.anyio
+async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(monkeypatch):
+    first_agent_id = uuid4()
+    second_agent_id = uuid4()
+    first_agent = evaluation_sets_endpoint.ApprovedAgent(
+        id=first_agent_id,
+        miner_hotkey="shared-hotkey",
+        name="first-agent",
+        version_num=1,
+        created_at=AGENT_TS_SET_1,
+        final_score=0.8,
+        emission=None,
+        reward_weight=None,
+        approved_at=AGENT_TS_SET_1,
+        average_runtime_seconds=None,
+        average_cost_usd=None,
+    )
+    second_agent = first_agent.model_copy(
+        update={
+            "id": second_agent_id,
+            "name": "second-agent",
+            "version_num": 2,
+            "final_score": 0.9,
+        }
+    )
+
+    async def subnet_info():
+        return {"shared-hotkey": HotkeySubnetInfo(uid=1, emission=12.5)}
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
+    allocations = evaluation_sets_endpoint.CurrentAllocations(
+        hotkey_weights={"shared-hotkey": 1.0},
+        agent_weights={first_agent_id: 0.25, second_agent_id: 0.75},
+    )
+
+    result = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+        [first_agent, second_agent],
+        allocations,
+    )
+
+    assert [agent.reward_weight for agent in result] == pytest.approx([0.25, 0.75])
+    assert [agent.emission for agent in result] == pytest.approx([12.5, 12.5])
+
+
+@pytest.mark.anyio
 async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeypatch):
     agent_id = uuid4()
     agent = evaluation_sets_endpoint.ApprovedAgent(
@@ -787,7 +831,10 @@ async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeyp
     historical = await evaluation_sets_endpoint._add_onchain_approved_agent_data([agent], None)
     current = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
         [agent],
-        [evaluation_sets_endpoint.CurrentAllocation(agent_id, "hotkey", 0.7)],
+        evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"hotkey": 0.7},
+            agent_weights={agent_id: 0.7},
+        ),
     )
 
     assert historical[0].emission is None
