@@ -275,6 +275,7 @@ async def _insert_incentive_approval(
             time_multiplier,
             initial_reward_score
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (agent_id, set_id) DO NOTHING
         """,
         agent_id,
         set_id,
