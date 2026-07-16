@@ -9,7 +9,7 @@ from utils.incentives import normalize_agent_reward_weights, rank_reward_candida
 from utils.ttl import ttl_cache
 
 
-@ttl_cache(ttl_seconds=60, max_entries=1)
+@ttl_cache(ttl_seconds=60)
 async def get_subnet_hotkey_info() -> dict[str, HotkeySubnetInfo]:
     return await subtensor_client.get_subnet_hotkey_info()
 
