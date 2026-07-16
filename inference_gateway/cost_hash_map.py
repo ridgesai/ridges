@@ -6,7 +6,7 @@
 #            information is tracked here in memory.
 
 import time
-from typing import Hashable
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -33,22 +33,22 @@ class CostHashMap:
             }
             self.last_cleanup_at = now
 
-    def get_cost(self, key: Hashable) -> float:
+    def get_cost(self, uuid: UUID) -> float:
         self._cleanup()
 
-        if key in self.cost_hash_map:
-            self.cost_hash_map[key].last_accessed_at = time.time()
-            return self.cost_hash_map[key].cost
+        if uuid in self.cost_hash_map:
+            self.cost_hash_map[uuid].last_accessed_at = time.time()
+            return self.cost_hash_map[uuid].cost
         else:
             # TODO ADAM: db
             return 0
 
-    def add_cost(self, key: Hashable, cost: float):
+    def add_cost(self, uuid: UUID, cost: float):
         self._cleanup()
 
-        if key in self.cost_hash_map:
-            entry = self.cost_hash_map[key]
+        if uuid in self.cost_hash_map:
+            entry = self.cost_hash_map[uuid]
             entry.cost += cost
             entry.last_accessed_at = time.time()
         else:
-            self.cost_hash_map[key] = CostHashMapEntry(cost=cost, last_accessed_at=time.time())
+            self.cost_hash_map[uuid] = CostHashMapEntry(cost=cost, last_accessed_at=time.time())

@@ -35,6 +35,23 @@ async def get_evaluation_run_by_id(conn: DatabaseConnection, evaluation_run_id: 
 
 
 @db_operation
+async def get_evaluation_run_status_by_id(
+    conn: DatabaseConnection, evaluation_run_id: UUID
+) -> Optional[EvaluationRunStatus]:
+    status = await conn.fetchval(
+        """
+        SELECT status FROM evaluation_runs WHERE evaluation_run_id = $1
+        """,
+        evaluation_run_id,
+    )
+
+    if status is None:
+        return None
+
+    return EvaluationRunStatus(status)
+
+
+@db_operation
 async def get_evaluation_run_status_and_attempt_by_id(
     conn: DatabaseConnection, evaluation_run_id: UUID
 ) -> Optional[tuple[EvaluationRunStatus, int]]:
