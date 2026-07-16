@@ -54,8 +54,10 @@ from queries.agent import (
     update_agent_status,
 )
 from queries.approval import finish_agent_and_enqueue_approval
+from queries.banned_coldkey import is_agent_coldkey_banned
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
+    get_approved_leader_ranking_for_set,
     get_approved_validator_leader_score_for_set,
     get_evaluation_by_id,
     get_hydrated_evaluation_by_id,
@@ -79,6 +81,7 @@ from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigEr
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
+from utils.incentives import calculate_relative_improvement
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
@@ -1192,23 +1195,37 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
 
 async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
-    candidate_score = await get_validator_agent_score_for_set(
+    if await is_agent_coldkey_banned(agent_id):
+        logger.info(f"Skipping auto approval for agent_id={agent_id}: miner coldkey is banned")
+        return False
+
+    candidate = await get_validator_agent_score_for_set(
         agent_id,
         set_id,
         config.NUM_EVALS_PER_AGENT,
     )
-    if candidate_score is None:
+    if candidate is None:
         logger.warning(
             f"Skipping auto approval for agent_id={agent_id} set_id={set_id}: no complete validator score found"
         )
         return False
 
-    approved_leader_score = await get_approved_validator_leader_score_for_set(
+    leader = await get_approved_leader_ranking_for_set(
         set_id,
         agent_id,
         config.NUM_EVALS_PER_AGENT,
     )
-    if approved_leader_score is None:
+    if leader is None:
         return True
 
-    return candidate_score >= approved_leader_score
+    if set_id >= config.INCENTIVE_START_SET_ID:
+        return calculate_relative_improvement(
+            candidate_score=candidate.final_score,
+            candidate_cost=candidate.avg_cost_usd,
+            leader_score=leader.final_score,
+            leader_cost=leader.avg_cost_usd,
+            performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+            cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        ).qualified
+
+    return candidate.beats(leader)

@@ -13,7 +13,7 @@ async def reserve_payment(
     payment_extrinsic_index: str,
     miner_hotkey: str,
     miner_coldkey: str,
-    amount_rao: int,
+    amount_alpha_rao: int,
     quote_id: Optional[UUID] = None,
 ) -> Optional[Payment]:
     """Reserve a payment for an upload agent operation. It creates a new payment record with the given details, but with a NULL agent_id or it retrieves an existing payment row. The payment is considered reserved until the agent_id is set, which happens when the upload is completed.
@@ -30,8 +30,8 @@ async def reserve_payment(
         Hotkey of the miner.
     miner_coldkey : str
         Coldkey of the miner.
-    amount_rao : int
-        Amount of RAO associated with the payment.
+    amount_alpha_rao : int
+        Amount of SN62 alpha (1e9 units) burned.
     quote_id : Optional[UUID], optional
         Server-issued upload payment quote used to validate the payment.
 
@@ -48,7 +48,7 @@ async def reserve_payment(
             agent_id,
             miner_hotkey,
             miner_coldkey,
-            amount_rao,
+            amount_alpha_rao,
             quote_id
         ) VALUES ($1, $2, NULL, $3, $4, $5, $6)
         ON CONFLICT DO NOTHING
@@ -57,7 +57,7 @@ async def reserve_payment(
         payment_extrinsic_index,
         miner_hotkey,
         miner_coldkey,
-        amount_rao,
+        amount_alpha_rao,
         quote_id,
     )
     return await retrieve_payment_by_hash(
@@ -130,23 +130,20 @@ async def retrieve_payment_by_hash(
 async def create_payment_quote(
     conn: DatabaseConnection,
     miner_hotkey: str,
-    amount_rao: int,
-    send_address: str,
+    amount_alpha_rao: int,
     expires_at: datetime,
 ) -> PaymentQuote:
     result = await conn.fetchrow(
         """
         INSERT INTO upload_payment_quotes (
             miner_hotkey,
-            amount_rao,
-            send_address,
+            amount_alpha_rao,
             expires_at
-        ) VALUES ($1, $2, $3, $4)
+        ) VALUES ($1, $2, $3)
         RETURNING *
         """,
         miner_hotkey,
-        amount_rao,
-        send_address,
+        amount_alpha_rao,
         expires_at,
     )
     return PaymentQuote(**result)

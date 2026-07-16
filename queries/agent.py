@@ -16,7 +16,8 @@ from models.agent import (
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
-from queries.errors import DuplicateAgentIDError
+from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
+from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
@@ -192,6 +193,7 @@ async def create_agent(
     openrouter_api_key_label: str,
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
+    miner_coldkey: Optional[str] = None,
     create_pre_screening_job: bool = False,
     pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
 ) -> UUID:
@@ -224,15 +226,32 @@ async def create_agent(
             source_sha256,
         )
 
+        if miner_coldkey is not None:
+            await lock_coldkey_ban_state(conn, miner_coldkey)
+            if await get_banned_coldkey(miner_coldkey) is not None:
+                raise ColdkeyBannedError(miner_coldkey)
+
         result = await conn.fetchval(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256, set_id)
-            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8)
+            INSERT INTO agents (
+                agent_id,
+                miner_hotkey,
+                miner_coldkey,
+                name,
+                version_num,
+                created_at,
+                status,
+                ip_address,
+                source_sha256,
+                set_id
+            )
+            VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9)
             ON CONFLICT (agent_id) DO NOTHING
             RETURNING agent_id
             """,
             agent_id,
             agent.miner_hotkey,
+            miner_coldkey,
             agent.name,
             agent.version_num,
             agent.status.value,
@@ -489,6 +508,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
             ass.*,
             review.approval_review_status AS approval_review_status
         from agent_scores ass
+        join agents a on a.agent_id = ass.agent_id
         left join agent_final_review_statuses review
             on review.agent_id = ass.agent_id
            and review.set_id = ass.set_id
@@ -502,6 +522,11 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         ) rt on true
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
+        and not exists (
+            select 1
+            from banned_coldkeys bc
+            where bc.miner_coldkey = a.miner_coldkey
+        )
         and ass.status::text <> 'cancelled'
         and (
             ass.approved is true
