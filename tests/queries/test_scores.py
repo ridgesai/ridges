@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -209,24 +210,34 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
 
 
 @pytest.mark.anyio
-async def test_active_incentive_candidates_require_snapshots():
+async def test_active_incentive_candidates_exclude_agents_without_snapshots(caplog, monkeypatch):
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn)
-        agent_id = await _insert_scored_agent(
+        complete_agent_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="snapshot-hotkey",
+            final_score=0.55,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            initial_reward_score=0.40,
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        missing_agent_id = await _insert_scored_agent(
             conn,
             miner_hotkey="missing-snapshot-hotkey",
             final_score=0.50,
             cost_usd=0.10,
             approved_at=now - timedelta(hours=1),
-            created_at=SET_CREATED_AT + timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
         )
 
-    with pytest.raises(
-        RuntimeError,
-        match=rf"Active incentive set {SET_ID} has approved agents without incentive snapshots: {agent_id}",
-    ):
-        await get_incentive_reward_candidates(SET_ID, 1)
+    monkeypatch.setattr(logging.getLogger("queries"), "propagate", True)
+    with caplog.at_level(logging.ERROR, logger="queries.scores"):
+        candidates, _observed_at = await get_incentive_reward_candidates(SET_ID, 1)
+
+    assert [candidate.agent_id for candidate in candidates] == [complete_agent_id]
+    assert str(missing_agent_id) in caplog.text
 
 
 @pytest.mark.anyio
