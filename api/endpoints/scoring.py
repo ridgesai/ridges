@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/weights")
 async def weights() -> Dict[str, float]:
     allocations = await get_current_allocations()
-    return {allocation.miner_hotkey: allocation.weight for allocation in allocations}
+    return allocations.hotkey_weights
 
 
 # /scoring/screener-info
