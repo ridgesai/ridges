@@ -60,9 +60,9 @@ class ApprovedAgent(Base):
     )
     performance_delta: Mapped[Optional[float]] = mapped_column(sa.Float)
     cost_delta: Mapped[Optional[float]] = mapped_column(sa.Float)
-    raw_improvement: Mapped[Optional[float]] = mapped_column(sa.Float)
+    relative_improvement_units: Mapped[Optional[float]] = mapped_column(sa.Float)
     time_multiplier: Mapped[Optional[float]] = mapped_column(sa.Float)
-    initial_improvement_bonus: Mapped[Optional[float]] = mapped_column(sa.Float)
+    initial_reward_score: Mapped[Optional[float]] = mapped_column(sa.Float)
 
     __table_args__ = (
         sa.UniqueConstraint("agent_id", "set_id"),

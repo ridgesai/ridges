@@ -1,10 +1,10 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
-import asyncio
 import logging
 import math
 from typing import Dict
 
 from bittensor.core.async_subtensor import AsyncSubtensor
+from bittensor.core.chain_data.metagraph_info import SelectiveMetagraphIndex
 
 import validator.config as config
 
@@ -14,19 +14,15 @@ logger = logging.getLogger(__name__)
 subtensor = AsyncSubtensor(network=config.SUBTENSOR_NETWORK, fallback_endpoints=[config.SUBTENSOR_ADDRESS])
 
 
-async def _get_burn_target() -> tuple[str, int] | None:
-    owner_hotkey = await subtensor.get_subnet_owner_hotkey(netuid=config.NETUID)
-    if owner_hotkey is None:
-        return None
-
-    owner_uid = await subtensor.get_uid_for_hotkey_on_subnet(
-        hotkey_ss58=owner_hotkey,
+async def _get_registered_uids() -> dict[str, int] | None:
+    metagraph = await subtensor.get_metagraph_info(
         netuid=config.NETUID,
+        selected_indices=[SelectiveMetagraphIndex.Hotkeys],
     )
-    if owner_uid is None:
+    if metagraph is None or metagraph.hotkeys is None:
+        logger.error("Could not retrieve subnet hotkeys; leaving on-chain weights unchanged")
         return None
-
-    return owner_hotkey, owner_uid
+    return {hotkey: uid for uid, hotkey in enumerate(metagraph.hotkeys)}
 
 
 async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
@@ -44,12 +40,11 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
 
         requested.append((hotkey, weight))
 
-    resolved_uids = await asyncio.gather(
-        *(
-            subtensor.get_uid_for_hotkey_on_subnet(hotkey_ss58=hotkey, netuid=config.NETUID)
-            for hotkey, _weight in requested
-        )
-    )
+    registered_uids = await _get_registered_uids()
+    if registered_uids is None:
+        return
+
+    resolved_uids = [registered_uids.get(hotkey) for hotkey, _weight in requested]
     resolved = [
         (hotkey, uid, weight) for (hotkey, weight), uid in zip(requested, resolved_uids, strict=True) if uid is not None
     ]
@@ -58,11 +53,16 @@ async def set_weights_from_mapping(weights_mapping: Dict[str, float]) -> None:
         logger.warning(f"Skipping unregistered weight hotkeys: {', '.join(missing_hotkeys)}")
 
     if not resolved:
-        burn_target = await _get_burn_target()
-        if burn_target is None:
+        owner_hotkey = await subtensor.get_subnet_owner_hotkey(netuid=config.NETUID)
+        if owner_hotkey is None:
+            logger.error("Could not resolve the subnet owner; leaving on-chain weights unchanged")
             return
 
-        owner_hotkey, owner_uid = burn_target
+        owner_uid = registered_uids.get(owner_hotkey)
+        if owner_uid is None:
+            logger.error("Subnet owner is not registered; leaving on-chain weights unchanged")
+            return
+
         logger.warning(f"No requested hotkeys are registered; burning emissions to subnet owner {owner_hotkey}")
         resolved = [(owner_hotkey, owner_uid, 1.0)]
 
