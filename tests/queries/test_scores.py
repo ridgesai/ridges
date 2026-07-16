@@ -54,7 +54,9 @@ async def _insert_scored_agent(
     cost_usd: float,
     approved: bool = True,
     approved_at: datetime | None = None,
-    initial_improvement_bonus: float | None = None,
+    relative_improvement_units: float | None = 1,
+    time_multiplier: float | None = 1,
+    initial_reward_score: float | None = None,
     created_at: datetime,
     miner_coldkey: str | None = None,
     status: str = "finished",
@@ -100,16 +102,23 @@ async def _insert_scored_agent(
     if approved and approved_at is not None:
         await conn.execute(
             """
-            INSERT INTO approved_agents (agent_id, set_id, approved_at, initial_improvement_bonus)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO approved_agents (
+                agent_id, set_id, approved_at,
+                relative_improvement_units, time_multiplier, initial_reward_score
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (agent_id, set_id) DO UPDATE
             SET approved_at = EXCLUDED.approved_at,
-                initial_improvement_bonus = EXCLUDED.initial_improvement_bonus
+                relative_improvement_units = EXCLUDED.relative_improvement_units,
+                time_multiplier = EXCLUDED.time_multiplier,
+                initial_reward_score = EXCLUDED.initial_reward_score
             """,
             agent_id,
             SET_ID,
             approved_at,
-            initial_improvement_bonus,
+            relative_improvement_units,
+            time_multiplier,
+            initial_reward_score,
         )
     await conn.execute(
         """
@@ -156,7 +165,7 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
             final_score=0.50,
             cost_usd=0.10,
             approved_at=now - timedelta(days=30),
-            initial_improvement_bonus=0.40,
+            initial_reward_score=0.40,
             created_at=SET_CREATED_AT + timedelta(hours=1),
         )
         same_coldkey_agent_id = await _insert_scored_agent(
@@ -166,7 +175,7 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
             final_score=0.495,
             cost_usd=0.10,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.20,
+            initial_reward_score=0.20,
             created_at=SET_CREATED_AT + timedelta(hours=2),
         )
         owner_agent_id = await _insert_scored_agent(
@@ -175,7 +184,7 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
             final_score=0.49,
             cost_usd=0.10,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.20,
+            initial_reward_score=0.20,
             created_at=SET_CREATED_AT + timedelta(hours=3),
         )
         await _insert_scored_agent(
@@ -185,7 +194,7 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
             final_score=0.60,
             cost_usd=0.10,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.30,
+            initial_reward_score=0.30,
             created_at=SET_CREATED_AT + timedelta(hours=5),
         )
 
@@ -195,7 +204,7 @@ async def test_active_incentive_candidates_use_snapshots_without_legacy_expiry()
     by_id = {candidate.agent_id: candidate for candidate in candidates}
 
     assert set(by_id) == {old_agent_id, same_coldkey_agent_id, owner_agent_id}
-    assert by_id[old_agent_id].initial_improvement_bonus == pytest.approx(0.40)
+    assert by_id[old_agent_id].initial_reward_score == pytest.approx(0.40)
     assert observed_at >= now
 
 

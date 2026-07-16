@@ -113,8 +113,9 @@ async def get_incentive_reward_candidates(
         SELECT
             approved.agent_id,
             agent.miner_hotkey,
-            score.final_score,
-            approved.initial_improvement_bonus,
+            approved.relative_improvement_units,
+            approved.time_multiplier,
+            approved.initial_reward_score,
             approved.approved_at,
             NOW() AS observed_at
         FROM approved_agents approved
@@ -145,7 +146,10 @@ async def get_incentive_reward_candidates(
         set_id,
         required_validator_count,
     )
-    missing_snapshot_agent_ids = [str(row["agent_id"]) for row in rows if row["initial_improvement_bonus"] is None]
+    snapshot_fields = ("relative_improvement_units", "time_multiplier", "initial_reward_score")
+    missing_snapshot_agent_ids = [
+        str(row["agent_id"]) for row in rows if any(row[field] is None for field in snapshot_fields)
+    ]
     if missing_snapshot_agent_ids:
         raise RuntimeError(
             f"Active incentive set {set_id} has approved agents without incentive snapshots: "
@@ -156,8 +160,7 @@ async def get_incentive_reward_candidates(
         RewardCandidate(
             agent_id=row["agent_id"],
             miner_hotkey=row["miner_hotkey"],
-            final_score=row["final_score"],
-            initial_improvement_bonus=row["initial_improvement_bonus"],
+            initial_reward_score=row["initial_reward_score"],
             approved_at=row["approved_at"],
         )
         for row in rows
