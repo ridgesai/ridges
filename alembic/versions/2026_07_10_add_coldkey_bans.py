@@ -7,7 +7,7 @@ Create Date: 2026-07-10 00:00:00.000000
 """
 
 import re
-from typing import Match, Sequence, Union
+from typing import Sequence, Union
 
 import sqlalchemy as sa
 
@@ -25,14 +25,6 @@ _COLDKEY_BAN_CONDITION = """NOT EXISTS (
             FROM banned_coldkeys
             WHERE banned_coldkeys.miner_coldkey = agents.miner_coldkey
           )"""
-
-_REFRESH_AGENT_HOTKEY_FILTER = "          AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n"
-_REFRESH_AGENT_UNAPPROVED_FILTER = "          AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)\n"
-_POPULATE_HOTKEY_FILTER = (
-    "        WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n"
-    "          AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)"
-)
-_POPULATE_UNAPPROVED_FILTER = "        WHERE agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)"
 
 
 def _replace_queue_views(ban_condition: str) -> None:
@@ -117,121 +109,327 @@ def _replace_queue_views(ban_condition: str) -> None:
     """)
 
 
-def _replace_function_fragment(signature: str, old: str, new: str) -> None:
+def _live_cutoff_set_id() -> int:
     definition = (
         op.get_bind()
-        .execute(
-            sa.text("SELECT pg_get_functiondef(to_regprocedure(:signature))"),
-            {"signature": signature},
-        )
-        .scalar_one()
-    )
-    if definition is None or definition.count(old) != 1:
-        raise RuntimeError(f"Unexpected definition for {signature}")
-    op.execute(definition.replace(old, new))
-
-
-def _replace_function_pattern(signature: str, pattern: str, replacement: str) -> None:
-    definition = (
-        op.get_bind()
-        .execute(
-            sa.text("SELECT pg_get_functiondef(to_regprocedure(:signature))"),
-            {"signature": signature},
-        )
+        .execute(sa.text("SELECT pg_get_functiondef(to_regprocedure('populate_agent_scores()'))"))
         .scalar_one()
     )
     if definition is None:
-        raise RuntimeError(f"Missing function {signature}")
-    updated, replacement_count = re.subn(pattern, replacement, definition, flags=re.MULTILINE)
-    if replacement_count != 1:
-        raise RuntimeError(f"Unexpected definition for {signature}")
-    op.execute(updated)
+        raise RuntimeError("Missing function populate_agent_scores()")
+    cutoffs = {int(match) for match in re.findall(r"set_id > (\d+)", definition)}
+    if len(cutoffs) != 1:
+        raise RuntimeError(
+            f"Could not determine the consensus cutoff from populate_agent_scores():\n{definition}"
+        )
+    return cutoffs.pop()
 
 
-def _hotkey_trigger_branch_pattern(row: str) -> str:
+def _banned_hotkeys_trigger_branch(row: str, include_hotkey_bans: bool) -> str:
+    if not include_hotkey_bans:
+        return ""
     return (
-        rf"^(?P<indent>[ \t]*)ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN\n"
-        rf"(?P=indent)    DELETE FROM agent_scores\n"
-        rf"(?P=indent)    WHERE agent_id IN "
-        rf"\(SELECT agent_id FROM agents WHERE miner_hotkey = {row}\.miner_hotkey\);\n"
-        rf"(?P=indent)    RETURN {row};\n"
+        f"                ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN\n"
+        f"                    DELETE FROM agent_scores\n"
+        f"                    WHERE agent_id IN (SELECT agent_id FROM agents WHERE miner_hotkey = {row}.miner_hotkey);\n"
+        f"                    RETURN {row};\n"
     )
 
 
-def _restore_hotkey_trigger_branch(row: str) -> None:
-    signature = "refresh_agent_scores()"
-    definition = (
-        op.get_bind()
-        .execute(
-            sa.text("SELECT pg_get_functiondef(to_regprocedure(:signature))"),
-            {"signature": signature},
-        )
-        .scalar_one()
-    )
-    if definition is None:
-        raise RuntimeError(f"Missing function {signature}")
+def _refresh_agent_scores_trigger_sql(include_hotkey_bans: bool) -> str:
+    old_branch = _banned_hotkeys_trigger_branch("OLD", include_hotkey_bans)
+    new_branch = _banned_hotkeys_trigger_branch("NEW", include_hotkey_bans)
+    return f"""
+        CREATE OR REPLACE FUNCTION refresh_agent_scores()
+        RETURNS TRIGGER AS $$
+        DECLARE
+            affected_agent_id UUID;
+        BEGIN
+            IF TG_OP = 'DELETE' THEN
+                IF TG_TABLE_NAME = 'evaluations' THEN
+                    affected_agent_id := OLD.agent_id;
+                ELSIF TG_TABLE_NAME = 'agents' THEN
+                    DELETE FROM agent_scores WHERE agent_id = OLD.agent_id;
+                    RETURN OLD;
+                ELSIF TG_TABLE_NAME = 'approved_agents' THEN
+                    affected_agent_id := OLD.agent_id;
+{old_branch}                ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN
+                    affected_agent_id := OLD.agent_id;
+                END IF;
+            ELSIF TG_OP = 'TRUNCATE' THEN
+                PERFORM populate_agent_scores();
+                RETURN NULL;
+            ELSE
+                IF TG_TABLE_NAME = 'evaluations' THEN
+                    affected_agent_id := NEW.agent_id;
+                ELSIF TG_TABLE_NAME = 'agents' THEN
+                    affected_agent_id := NEW.agent_id;
+                ELSIF TG_TABLE_NAME = 'approved_agents' THEN
+                    affected_agent_id := NEW.agent_id;
+{new_branch}                ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN
+                    DELETE FROM agent_scores WHERE agent_id = NEW.agent_id;
+                    RETURN NEW;
+                END IF;
+            END IF;
 
-    pattern = (
-        rf"^(?P<indent>[ \t]*)ELSIF TG_TABLE_NAME = 'approved_agents' THEN\n"
-        rf"(?P=indent)    affected_agent_id := {row}\.agent_id;\n"
-        rf"(?P=indent)ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN\n"
-    )
+            IF affected_agent_id IS NOT NULL THEN
+                PERFORM refresh_agent_scores_for_agent(affected_agent_id);
+            END IF;
 
-    def add_branch(match: Match[str]) -> str:
-        indent = match.group("indent")
-        return (
-            f"{indent}ELSIF TG_TABLE_NAME = 'approved_agents' THEN\n"
-            f"{indent}    affected_agent_id := {row}.agent_id;\n"
-            f"{indent}ELSIF TG_TABLE_NAME = 'banned_hotkeys' THEN\n"
-            f"{indent}    DELETE FROM agent_scores\n"
-            f"{indent}    WHERE agent_id IN "
-            f"(SELECT agent_id FROM agents WHERE miner_hotkey = {row}.miner_hotkey);\n"
-            f"{indent}    RETURN {row};\n"
-            f"{indent}ELSIF TG_TABLE_NAME = 'unapproved_agent_ids' THEN\n"
-        )
-
-    updated, replacement_count = re.subn(pattern, add_branch, definition, flags=re.MULTILINE)
-    if replacement_count != 1:
-        raise RuntimeError(f"Unexpected definition for {signature}")
-    op.execute(updated)
-
-
-def _remove_hotkey_score_behavior() -> None:
-    _replace_function_fragment(
-        "refresh_agent_scores_for_agent(uuid)",
-        _REFRESH_AGENT_HOTKEY_FILTER,
-        "",
-    )
-    _replace_function_fragment(
-        "populate_agent_scores()",
-        _POPULATE_HOTKEY_FILTER,
-        _POPULATE_UNAPPROVED_FILTER,
-    )
-    _replace_function_pattern(
-        "refresh_agent_scores()",
-        _hotkey_trigger_branch_pattern("OLD"),
-        "",
-    )
-    _replace_function_pattern(
-        "refresh_agent_scores()",
-        _hotkey_trigger_branch_pattern("NEW"),
-        "",
-    )
+            IF TG_OP = 'DELETE' THEN
+                RETURN OLD;
+            ELSE
+                RETURN NEW;
+            END IF;
+        END;
+        $$ LANGUAGE plpgsql;
+    """
 
 
-def _restore_hotkey_score_behavior() -> None:
-    _replace_function_fragment(
-        "refresh_agent_scores_for_agent(uuid)",
-        _REFRESH_AGENT_UNAPPROVED_FILTER,
-        _REFRESH_AGENT_HOTKEY_FILTER + _REFRESH_AGENT_UNAPPROVED_FILTER,
+def _refresh_agent_scores_for_agent_sql(cutoff_set_id: int, include_hotkey_bans: bool) -> str:
+    hotkey_filter = (
+        "          AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n"
+        if include_hotkey_bans
+        else ""
     )
-    _replace_function_fragment(
-        "populate_agent_scores()",
-        _POPULATE_UNAPPROVED_FILTER,
-        _POPULATE_HOTKEY_FILTER,
+    return f"""
+CREATE OR REPLACE FUNCTION refresh_agent_scores_for_agent(target_agent_id UUID)
+RETURNS VOID AS $$
+BEGIN
+    DELETE FROM agent_scores
+    WHERE agent_id = target_agent_id
+      AND set_id > {cutoff_set_id};
+
+    INSERT INTO agent_scores (
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
     )
-    _restore_hotkey_trigger_branch("OLD")
-    _restore_hotkey_trigger_branch("NEW")
+    WITH eligible_agents AS (
+        SELECT a.agent_id, a.miner_hotkey, a.name, a.version_num, a.created_at, a.status
+        FROM agents a
+        WHERE a.agent_id = target_agent_id
+{hotkey_filter}          AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
+    ),
+    validator_evaluations AS (
+        SELECT
+            ea.agent_id, ea.miner_hotkey, ea.name, ea.version_num, ea.created_at, ea.status,
+            e.evaluation_id, e.set_id, e.validator_hotkey,
+            (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) AS approved,
+            avi.approved_at
+        FROM eligible_agents ea
+        INNER JOIN evaluations_hydrated e ON ea.agent_id = e.agent_id
+            AND e.status = 'success'
+            AND e.evaluation_set_group = 'validator'::evaluationsetgroup
+            AND e.set_id > {cutoff_set_id}
+        LEFT JOIN approved_agents avi ON ea.agent_id = avi.agent_id AND e.set_id = avi.set_id
+    ),
+    validator_counts AS (
+        SELECT
+            agent_id, miner_hotkey, name, version_num, created_at, status, set_id,
+            BOOL_OR(approved) AS approved,
+            MAX(approved_at) AS approved_at,
+            COUNT(DISTINCT validator_hotkey) AS validator_count
+        FROM validator_evaluations
+        GROUP BY agent_id, miner_hotkey, name, version_num, created_at, status, set_id
+    ),
+    set_problem_counts AS (
+        SELECT set_id, COUNT(*) AS problem_count
+        FROM evaluation_sets
+        WHERE set_group = 'validator'::evaluationsetgroup
+          AND set_id > {cutoff_set_id}
+        GROUP BY set_id
+    ),
+    consensus_by_problem AS (
+        SELECT
+            ve.agent_id,
+            ve.set_id,
+            es.problem_name,
+            COUNT(DISTINCT ve.validator_hotkey) FILTER (WHERE erh.solved IS TRUE) AS solved_validator_count
+        FROM validator_evaluations ve
+        INNER JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = ve.evaluation_id
+        INNER JOIN evaluation_sets es ON es.set_id = ve.set_id
+            AND es.set_group = 'validator'::evaluationsetgroup
+            AND es.problem_name = erh.problem_name
+        GROUP BY ve.agent_id, ve.set_id, es.problem_name
+    ),
+    consensus_scores AS (
+        SELECT
+            vc.agent_id,
+            vc.miner_hotkey,
+            vc.name,
+            vc.version_num,
+            vc.created_at,
+            vc.status,
+            vc.set_id,
+            vc.approved,
+            vc.approved_at,
+            vc.validator_count::int AS validator_count,
+            (
+                COUNT(*) FILTER (WHERE cbp.solved_validator_count = vc.validator_count)::float
+                / spc.problem_count
+            ) AS final_score
+        FROM validator_counts vc
+        INNER JOIN set_problem_counts spc ON spc.set_id = vc.set_id
+        INNER JOIN consensus_by_problem cbp ON cbp.agent_id = vc.agent_id AND cbp.set_id = vc.set_id
+        WHERE spc.problem_count > 0
+        GROUP BY
+            vc.agent_id, vc.miner_hotkey, vc.name, vc.version_num, vc.created_at, vc.status,
+            vc.set_id, vc.approved, vc.approved_at, vc.validator_count, spc.problem_count
+        HAVING
+            vc.validator_count >= 2
+            AND COUNT(*) FILTER (WHERE cbp.solved_validator_count = vc.validator_count) > 0
+    ),
+    ranked_scores AS (
+        SELECT
+            consensus_scores.*,
+            ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY set_id DESC) AS score_rank
+        FROM consensus_scores
+    )
+    SELECT
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
+    FROM ranked_scores
+    WHERE score_rank = 1
+    ON CONFLICT (agent_id) DO UPDATE SET
+        miner_hotkey = EXCLUDED.miner_hotkey,
+        name = EXCLUDED.name,
+        version_num = EXCLUDED.version_num,
+        created_at = EXCLUDED.created_at,
+        status = EXCLUDED.status,
+        set_id = EXCLUDED.set_id,
+        approved = EXCLUDED.approved,
+        approved_at = EXCLUDED.approved_at,
+        validator_count = EXCLUDED.validator_count,
+        final_score = EXCLUDED.final_score;
+END;
+$$ LANGUAGE plpgsql;
+"""
+
+
+def _populate_agent_scores_sql(cutoff_set_id: int, include_hotkey_bans: bool) -> str:
+    all_agents_filter = (
+        "        WHERE miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n"
+        "          AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)"
+        if include_hotkey_bans
+        else "        WHERE agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)"
+    )
+    return f"""
+CREATE OR REPLACE FUNCTION populate_agent_scores()
+RETURNS VOID AS $$
+BEGIN
+    DELETE FROM agent_scores
+    WHERE set_id > {cutoff_set_id};
+
+    INSERT INTO agent_scores (
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
+    )
+    WITH all_agents AS (
+        SELECT agent_id, miner_hotkey, name, version_num, created_at, status
+        FROM agents
+{all_agents_filter}
+    ),
+    validator_evaluations AS (
+        SELECT
+            aa.agent_id, aa.miner_hotkey, aa.name, aa.version_num, aa.created_at, aa.status,
+            e.evaluation_id, e.set_id, e.validator_hotkey,
+            (avi.agent_id IS NOT NULL AND avi.approved_at <= NOW()) AS approved,
+            avi.approved_at
+        FROM all_agents aa
+        INNER JOIN evaluations_hydrated e ON aa.agent_id = e.agent_id
+            AND e.status = 'success'
+            AND e.evaluation_set_group = 'validator'::evaluationsetgroup
+            AND e.set_id > {cutoff_set_id}
+        LEFT JOIN approved_agents avi ON aa.agent_id = avi.agent_id AND e.set_id = avi.set_id
+    ),
+    validator_counts AS (
+        SELECT
+            agent_id, miner_hotkey, name, version_num, created_at, status, set_id,
+            BOOL_OR(approved) AS approved,
+            MAX(approved_at) AS approved_at,
+            COUNT(DISTINCT validator_hotkey) AS validator_count
+        FROM validator_evaluations
+        GROUP BY agent_id, miner_hotkey, name, version_num, created_at, status, set_id
+    ),
+    set_problem_counts AS (
+        SELECT set_id, COUNT(*) AS problem_count
+        FROM evaluation_sets
+        WHERE set_group = 'validator'::evaluationsetgroup
+          AND set_id > {cutoff_set_id}
+        GROUP BY set_id
+    ),
+    consensus_by_problem AS (
+        SELECT
+            ve.agent_id,
+            ve.set_id,
+            es.problem_name,
+            COUNT(DISTINCT ve.validator_hotkey) FILTER (WHERE erh.solved IS TRUE) AS solved_validator_count
+        FROM validator_evaluations ve
+        INNER JOIN evaluation_runs_hydrated erh ON erh.evaluation_id = ve.evaluation_id
+        INNER JOIN evaluation_sets es ON es.set_id = ve.set_id
+            AND es.set_group = 'validator'::evaluationsetgroup
+            AND es.problem_name = erh.problem_name
+        GROUP BY ve.agent_id, ve.set_id, es.problem_name
+    ),
+    consensus_scores AS (
+        SELECT
+            vc.agent_id,
+            vc.miner_hotkey,
+            vc.name,
+            vc.version_num,
+            vc.created_at,
+            vc.status,
+            vc.set_id,
+            vc.approved,
+            vc.approved_at,
+            vc.validator_count::int AS validator_count,
+            (
+                COUNT(*) FILTER (WHERE cbp.solved_validator_count = vc.validator_count)::float
+                / spc.problem_count
+            ) AS final_score
+        FROM validator_counts vc
+        INNER JOIN set_problem_counts spc ON spc.set_id = vc.set_id
+        INNER JOIN consensus_by_problem cbp ON cbp.agent_id = vc.agent_id AND cbp.set_id = vc.set_id
+        WHERE spc.problem_count > 0
+        GROUP BY
+            vc.agent_id, vc.miner_hotkey, vc.name, vc.version_num, vc.created_at, vc.status,
+            vc.set_id, vc.approved, vc.approved_at, vc.validator_count, spc.problem_count
+        HAVING
+            vc.validator_count >= 2
+            AND COUNT(*) FILTER (WHERE cbp.solved_validator_count = vc.validator_count) > 0
+    ),
+    ranked_scores AS (
+        SELECT
+            consensus_scores.*,
+            ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY set_id DESC) AS score_rank
+        FROM consensus_scores
+    )
+    SELECT
+        agent_id, miner_hotkey, name, version_num, created_at, status,
+        set_id, approved, approved_at, validator_count, final_score
+    FROM ranked_scores
+    WHERE score_rank = 1
+    ON CONFLICT (agent_id) DO UPDATE SET
+        miner_hotkey = EXCLUDED.miner_hotkey,
+        name = EXCLUDED.name,
+        version_num = EXCLUDED.version_num,
+        created_at = EXCLUDED.created_at,
+        status = EXCLUDED.status,
+        set_id = EXCLUDED.set_id,
+        approved = EXCLUDED.approved,
+        approved_at = EXCLUDED.approved_at,
+        validator_count = EXCLUDED.validator_count,
+        final_score = EXCLUDED.final_score;
+END;
+$$ LANGUAGE plpgsql;
+"""
+
+
+def _replace_agent_score_functions(include_hotkey_bans: bool) -> None:
+    cutoff_set_id = _live_cutoff_set_id()
+    op.execute(_refresh_agent_scores_for_agent_sql(cutoff_set_id, include_hotkey_bans))
+    op.execute(_populate_agent_scores_sql(cutoff_set_id, include_hotkey_bans))
+    op.execute(_refresh_agent_scores_trigger_sql(include_hotkey_bans))
 
 
 def upgrade() -> None:
@@ -250,12 +448,12 @@ def upgrade() -> None:
     op.add_column("agents", sa.Column("miner_coldkey", sa.Text(), nullable=True))
 
     _replace_queue_views(_COLDKEY_BAN_CONDITION)
-    _remove_hotkey_score_behavior()
+    _replace_agent_score_functions(include_hotkey_bans=False)
     op.execute("DROP TRIGGER IF EXISTS tr_refresh_agent_scores_banned_hotkeys ON banned_hotkeys;")
 
 
 def downgrade() -> None:
-    _restore_hotkey_score_behavior()
+    _replace_agent_score_functions(include_hotkey_bans=True)
     op.execute("""
         CREATE TRIGGER tr_refresh_agent_scores_banned_hotkeys
         AFTER INSERT OR UPDATE OR DELETE ON banned_hotkeys
