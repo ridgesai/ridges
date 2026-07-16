@@ -570,7 +570,7 @@ class KubernetesEnvironment(BaseEnvironment):
                     raise
         raise RuntimeError(f"Container not ready for exec after {max_attempts} attempts")
 
-    async def _wait_for_pod_ready(self, timeout_sec: int = 300) -> None:
+    async def _wait_for_pod_ready(self, timeout_sec: int = 600) -> None:
         self.logger.debug(f"Waiting for Pod {self.pod_name} to be ready...")
         for attempt in range(timeout_sec):
             try:
