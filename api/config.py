@@ -223,17 +223,9 @@ INCENTIVE_START_SET_ID = int(_incentive_start_set_id)
 if INCENTIVE_START_SET_ID <= 0:
     raise ValueError("INCENTIVE_START_SET_ID must be positive")
 
-INCENTIVE_TOP_K = int(os.getenv("INCENTIVE_TOP_K", "3"))
-if INCENTIVE_TOP_K <= 0:
-    raise ValueError("INCENTIVE_TOP_K must be positive")
-
 INCENTIVE_PERFORMANCE_THRESHOLD = _positive_float_setting("INCENTIVE_PERFORMANCE_THRESHOLD", "0.03")
-INCENTIVE_COST_THRESHOLD = _positive_float_setting("INCENTIVE_COST_THRESHOLD", "0.05")
-INCENTIVE_IMPROVEMENT_BONUS_AT_THRESHOLD = _positive_float_setting("INCENTIVE_IMPROVEMENT_BONUS_AT_THRESHOLD", "0.25")
-INCENTIVE_IMPROVEMENT_BONUS_HALF_LIFE_HOURS = _positive_float_setting(
-    "INCENTIVE_IMPROVEMENT_BONUS_HALF_LIFE_HOURS", "72"
-)
-INCENTIVE_IMPROVEMENT_BONUS_CAP = _positive_float_setting("INCENTIVE_IMPROVEMENT_BONUS_CAP", "0.50")
+INCENTIVE_COST_THRESHOLD = _positive_float_setting("INCENTIVE_COST_THRESHOLD", "0.06")
+INCENTIVE_REWARD_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_REWARD_HALF_LIFE_HOURS", "336")
 INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS", "72")
 INCENTIVE_TIME_MULTIPLIER_MAX = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_MAX", "2.0")
 if INCENTIVE_TIME_MULTIPLIER_MAX < 1:
@@ -300,11 +292,9 @@ logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
 logger.info(
-    f"Incentives: top_k={INCENTIVE_TOP_K} performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
+    f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
     f"cost_threshold={INCENTIVE_COST_THRESHOLD} "
-    f"improvement_bonus_at_threshold={INCENTIVE_IMPROVEMENT_BONUS_AT_THRESHOLD} "
-    f"improvement_bonus_half_life_hours={INCENTIVE_IMPROVEMENT_BONUS_HALF_LIFE_HOURS} "
-    f"improvement_bonus_cap={INCENTIVE_IMPROVEMENT_BONUS_CAP} "
+    f"reward_half_life_hours={INCENTIVE_REWARD_HALF_LIFE_HOURS} "
     f"time_multiplier_half_life_hours={INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS} "
     f"time_multiplier_max={INCENTIVE_TIME_MULTIPLIER_MAX}"
 )
