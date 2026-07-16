@@ -13,15 +13,18 @@ from api.src.utils.openrouter_validation import validate_openrouter_keys
 from api.src.utils.request_cache import hourly_cache
 from api.src.utils.upload_agent_helpers import (
     as_utc,
-    check_agent_banned,
+    check_coldkey_banned,
     check_file_size,
     check_hotkey_registered,
+    check_if_extrinsic_failed,
     check_if_python_file,
     check_rate_limit,
     check_signature,
+    find_alpha_burned_event,
+    get_alpha_price,
     get_miner_hotkey,
-    get_tao_price,
     timestamp_ms_to_utc_datetime,
+    verify_burn_extrinsic,
 )
 from models.agent import Agent, AgentCreate, AgentStatus
 from models.upload import AgentCheckResponse, AgentUploadResponse, ErrorResponse, UploadPriceResponse
@@ -31,8 +34,8 @@ from queries.agent import (
     get_latest_agent_for_miner_hotkey,
     record_upload_attempt,
 )
-from queries.banned_hotkey import get_banned_hotkey
-from queries.errors import DuplicateAgentIDError
+from queries.banned_coldkey import get_banned_coldkey
+from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
 from queries.payments import (
     complete_payment,
     create_payment_quote,
@@ -83,6 +86,7 @@ async def check_agent_post(
     if config.DISALLOW_UPLOADS:
         raise HTTPException(status_code=503, detail=config.DISALLOW_UPLOADS_REASON)
     miner_hotkey = get_miner_hotkey(file_info)
+    is_owner_upload = miner_hotkey == config.OWNER_HOTKEY
     latest_agent_created_at_in_latest_set_id = await get_latest_agent_created_at_for_miner_hotkey_in_latest_set_id(
         miner_hotkey=miner_hotkey
     )
@@ -90,16 +94,34 @@ async def check_agent_post(
         check_rate_limit(latest_agent_created_at_in_latest_set_id)
     check_signature(public_key, file_info, signature, miner_hotkey)
     await check_hotkey_registered(miner_hotkey)
-    await check_agent_banned(miner_hotkey=miner_hotkey)
+    coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
+    if coldkey is None:
+        raise HTTPException(status_code=400, detail="Hotkey owner not found")
+    if not is_owner_upload:
+        await check_coldkey_banned(coldkey)
     check_if_python_file(agent_file.filename)
     await check_file_size(agent_file)
-    coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey)
-    miner_balance = (await subtensor_client.get_balance(coldkey)).rao
+
+    try:
+        alpha_stake = await subtensor_client.get_alpha_stake_availability(
+            coldkey=coldkey,
+            hotkey=miner_hotkey,
+            netuid=config.NETUID,
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving burnable alpha stake: {e}")
+        raise HTTPException(status_code=503, detail="Burnable alpha stake could not be verified") from e
+
     payment_cost = await get_upload_price()
-    if payment_cost.amount_rao > miner_balance:
+    if payment_cost.amount_alpha_rao > alpha_stake.burnable_rao:
         raise HTTPException(
             status_code=402,
-            detail=f"Insufficient balance. You need {payment_cost.amount_rao} RAO to upload this agent. You have {miner_balance} RAO.",
+            detail=(
+                f"Insufficient alpha. You need {payment_cost.amount_alpha_rao} alpha (1e9 units) "
+                f"burnable from the miner hotkey position on SN{config.NETUID}. "
+                f"Position: {alpha_stake.position_rao}; subnet total: {alpha_stake.total_rao}; "
+                f"locked: {alpha_stake.locked_rao}; burnable: {alpha_stake.burnable_rao}."
+            ),
         )
     await validate_openrouter_keys(
         openrouter_api_key=openrouter_api_key,
@@ -108,16 +130,15 @@ async def check_agent_post(
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=UPLOAD_PAYMENT_QUOTE_TTL_SECONDS)
     quote = await create_payment_quote(
         miner_hotkey=miner_hotkey,
-        amount_rao=payment_cost.amount_rao,
-        send_address=payment_cost.send_address,
+        amount_alpha_rao=payment_cost.amount_alpha_rao,
         expires_at=expires_at,
     )
     return AgentCheckResponse(
         status="success",
         message="Agent check successful",
         quote_id=quote.quote_id,
-        amount_rao=quote.amount_rao,
-        send_address=quote.send_address,
+        amount_alpha_rao=quote.amount_alpha_rao,
+        payment_netuid=config.NETUID,
         expires_at=quote.expires_at,
     )
 
@@ -167,6 +188,7 @@ async def post_agent(
     prod = config.ENV == "prod"
 
     miner_hotkey = get_miner_hotkey(file_info)
+    coldkey: Optional[str] = None
 
     # Extract upload attempt data for tracking
     agent_file.file.seek(0, 2)
@@ -195,7 +217,6 @@ async def post_agent(
 
         if prod:
             await check_hotkey_registered(miner_hotkey)
-            await check_agent_banned(miner_hotkey=miner_hotkey)
 
         check_if_python_file(agent_file.filename)
         agent_bytes, agent_text = await check_file_size(agent_file)
@@ -217,6 +238,9 @@ async def post_agent(
             if quote.miner_hotkey != miner_hotkey:
                 raise HTTPException(status_code=402, detail="Payment quote does not match upload hotkey")
 
+            if quote.amount_alpha_rao is None:
+                raise HTTPException(status_code=400, detail=OUTDATED_UPLOAD_CLIENT_MESSAGE)
+
             existing_payment = await retrieve_payment_by_hash(
                 payment_block_hash=payment_block_hash, payment_extrinsic_index=payment_extrinsic_index
             )
@@ -231,7 +255,7 @@ async def post_agent(
                 logger.warning(f"Payment with block hash {payment_block_hash} has been refunded. Rejecting upload.")
                 raise PaymentRefunded()
 
-            # Retrieve payment details from the chain
+            # Retrieve the burn block + events from the chain
             try:
                 payment_block_info = await subtensor_client.get_block_info(block_hash=payment_block_hash)
             except Exception as e:
@@ -241,45 +265,43 @@ async def post_agent(
             if payment_block_info is None:
                 raise HTTPException(status_code=402, detail="Payment block not found")
 
-            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
             try:
                 payment_extrinsic_index_int = int(payment_extrinsic_index)
                 if payment_extrinsic_index_int < 0:
                     raise ValueError
                 payment_extrinsic = payment_block_info.extrinsics[payment_extrinsic_index_int]
-                payment_extrinsic_value = payment_extrinsic.value_serialized
-                payment_call = payment_extrinsic_value["call"]
-                call_args = {arg["name"]: arg["value"] for arg in payment_call["call_args"]}
-                payment_value = call_args.get("value")
-                destination = call_args.get("dest")
-                payment_address = payment_extrinsic_value["address"]
-            except (ValueError, TypeError, IndexError, KeyError, AttributeError):
-                raise HTTPException(status_code=402, detail="Payment extrinsic could not be decoded") from None
+            except (ValueError, TypeError, IndexError, AttributeError):
+                raise HTTPException(status_code=402, detail="Burn extrinsic could not be decoded") from None
 
-            if (
-                payment_call.get("call_module") != "Balances"
-                or payment_call.get("call_function") != "transfer_keep_alive"
-            ):
-                raise HTTPException(status_code=402, detail="Payment extrinsic is not a TAO transfer")
+            coldkey = await subtensor_client.get_hotkey_owner(miner_hotkey, block=int(payment_block_info.number))
+            if coldkey is None:
+                raise HTTPException(status_code=402, detail="Hotkey owner not found at payment block")
+            await check_coldkey_banned(coldkey)
 
-            if payment_value is None or await check_if_extrinsic_failed(
-                payment_block_hash, payment_extrinsic_index_int
-            ):
-                raise HTTPException(status_code=402, detail="Payment value not found")
+            events = await subtensor_client.get_events(block_hash=payment_block_hash)
+            if await check_if_extrinsic_failed(payment_extrinsic_index_int, events):
+                raise HTTPException(status_code=402, detail="Burn extrinsic failed on-chain")
 
-            # Make sure coldkey is the same as hotkeys owner coldkey
-            if coldkey != payment_address:
+            # Cross-check the extrinsic: recognized burn call signed by the miner coldkey.
+            verify_burn_extrinsic(payment_extrinsic, expected_coldkey=coldkey)
+
+            # Event is the source of truth for amount, netuid, and burner.
+            burn_event = find_alpha_burned_event(
+                events,
+                payment_extrinsic_index_int,
+                netuid=config.NETUID,
+            )
+
+            if burn_event.coldkey != coldkey:
                 raise HTTPException(status_code=402, detail="Coldkey does not match")
 
-            # Make sure destination is our upload send address
-            if destination != quote.send_address:
-                raise HTTPException(
-                    status_code=402,
-                    detail=f"Destination does not match. The payment should be sent to {quote.send_address}",
-                )
+            if burn_event.hotkey != miner_hotkey:
+                raise HTTPException(status_code=402, detail="Hotkey does not match")
 
-            if payment_value != quote.amount_rao:
-                raise HTTPException(status_code=402, detail="Payment amount does not match")
+            if burn_event.alpha_decrease < quote.amount_alpha_rao:
+                raise HTTPException(status_code=402, detail="Burn amount too low")
+
+            payment_value = burn_event.alpha_decrease
 
             payment_block_time = timestamp_ms_to_utc_datetime(payment_block_info.timestamp)
             if not (as_utc(quote.created_at) <= payment_block_time <= as_utc(quote.expires_at)):
@@ -307,7 +329,7 @@ async def post_agent(
                     payment_extrinsic_index=payment_extrinsic_index,
                     miner_hotkey=miner_hotkey,
                     miner_coldkey=coldkey,
-                    amount_rao=payment_value,
+                    amount_alpha_rao=payment_value,
                     quote_id=quote.quote_id,
                 )
 
@@ -335,18 +357,22 @@ async def post_agent(
                 payment_block_hash=payment_block_hash,
                 payment_extrinsic_index=payment_extrinsic_index,
             )
-            agent_id = await create_agent(
-                agent,
-                agent_text,
-                source_sha256=source_sha256,
-                runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
-                management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
-                openrouter_workspace_id=validated_openrouter_keys.workspace_id,
-                openrouter_api_key_label=validated_openrouter_keys.api_key_label,
-                openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
-                openrouter_validated_at=validated_openrouter_keys.validated_at,
-                create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
-            )
+            try:
+                agent_id = await create_agent(
+                    agent,
+                    agent_text,
+                    source_sha256=source_sha256,
+                    runtime_openrouter_api_key_ciphertext=encrypted_openrouter_api_key,
+                    management_openrouter_api_key_ciphertext=encrypted_openrouter_management_key,
+                    openrouter_workspace_id=validated_openrouter_keys.workspace_id,
+                    openrouter_api_key_label=validated_openrouter_keys.api_key_label,
+                    openrouter_api_key_creator_user_id=validated_openrouter_keys.api_key_creator_user_id,
+                    openrouter_validated_at=validated_openrouter_keys.validated_at,
+                    miner_coldkey=coldkey if prod else None,
+                    create_pre_screening_job=config.PRE_SCREENING_JUDGE_ENABLED,
+                )
+            except ColdkeyBannedError as e:
+                raise HTTPException(status_code=403, detail="Your miner coldkey has been banned") from e
 
         if prod and not is_owner_upload:
             await complete_payment(
@@ -381,7 +407,7 @@ async def post_agent(
             if e.status_code == 429
             else "validation_error"
         )
-        banned_hotkey = await get_banned_hotkey(miner_hotkey) if error_type == "banned" and miner_hotkey else None
+        banned_coldkey = await get_banned_coldkey(coldkey) if error_type == "banned" and coldkey else None
 
         # Record failed upload attempt
         await record_upload_attempt(
@@ -389,7 +415,7 @@ async def post_agent(
             success=False,
             error_type=error_type,
             error_message=e.detail,
-            ban_reason=banned_hotkey.banned_reason if banned_hotkey else None,
+            ban_reason=banned_coldkey.banned_reason if banned_coldkey else None,
             http_status_code=e.status_code,
             **upload_data,
         )
@@ -411,30 +437,15 @@ async def post_agent(
 @router.get("/eval-pricing", tags=["eval-pricing"], response_model=UploadPriceResponse)
 @hourly_cache()
 async def get_upload_price() -> UploadPriceResponse:
-    TAO_PRICE = await get_tao_price()
+    ALPHA_PRICE = await get_alpha_price(config.NETUID)
     eval_cost_usd = 5
 
-    # Get the amount of tao required per eval
-    eval_cost_tao = eval_cost_usd / TAO_PRICE
+    # Alpha required to cover the eval cost at the current alpha price.
+    eval_cost_alpha = eval_cost_usd / ALPHA_PRICE
 
-    # Add a buffer against price fluctuations and eval cost variance. If this is over, we burn the difference. Determined EoD by net eval charges - net amount received
-    # This also makes production evals more expensive than local by a good margin to discourage testing in production and variance farming
-    amount_rao = int(eval_cost_tao * 1e9 * 1.4)
+    # 1.1x buffer. Burned alpha is destroyed (not reclaimable), so the buffer absorbs
+    # alpha-price movement between quote and burn while keeping prod uploads a bit more
+    # expensive than local testing to discourage variance farming.
+    amount_alpha_rao = int(eval_cost_alpha * 1e9 * 1.1)
 
-    return UploadPriceResponse(amount_rao=amount_rao, send_address=config.UPLOAD_SEND_ADDRESS)
-
-
-async def check_if_extrinsic_failed(block_hash: str, extrinsic_index: int) -> bool:
-    events = await subtensor_client.get_events(block_hash=block_hash)
-
-    for event in events:
-        if event.get("extrinsic_idx") != extrinsic_index:
-            continue
-
-        module = event["event"]["module_id"]
-        event_id = event["event"]["event_id"]
-
-        if module == "System" and event_id == "ExtrinsicFailed":
-            return True
-
-    return False
+    return UploadPriceResponse(amount_alpha_rao=amount_alpha_rao, payment_netuid=config.NETUID)

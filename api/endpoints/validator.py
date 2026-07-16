@@ -60,6 +60,7 @@ from queries.agent import (
     update_agent_status,
 )
 from queries.approval import finish_agent_and_enqueue_approval
+from queries.banned_coldkey import is_agent_coldkey_banned
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
     get_approved_leader_ranking_for_set,
@@ -1263,6 +1264,10 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
 
 
 async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
+    if await is_agent_coldkey_banned(agent_id):
+        logger.info(f"Skipping auto approval for agent_id={agent_id}: miner coldkey is banned")
+        return False
+
     candidate = await get_validator_agent_score_for_set(
         agent_id,
         set_id,

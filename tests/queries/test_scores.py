@@ -6,13 +6,17 @@ from uuid import UUID, uuid4
 import pytest
 
 import utils.database as _db
+from queries.agent import get_top_agents
+from queries.banned_coldkey import ban_coldkey, unban_coldkey
+from queries.evaluation import get_approved_leader_ranking_for_set, get_approved_validator_leader_score_for_set
 from queries.scores import get_weight_receiving_agent_hotkey, get_weight_receiving_agent_info
+from queries.statistics import score_improvement_24_hrs, top_score
 
 SET_ID = 23
 SET_CREATED_AT = datetime(2026, 6, 1, tzinfo=timezone.utc)
 TRUNCATE_SCORE_TEST_TABLES = (
     "TRUNCATE evaluation_runs, evaluations, agent_scores, evaluation_sets, "
-    "benchmark_agent_ids, agents RESTART IDENTITY CASCADE"
+    "benchmark_agent_ids, banned_coldkeys, banned_hotkeys, agents RESTART IDENTITY CASCADE"
 )
 
 # TODO: Add more edge cases to scoring tests
@@ -47,15 +51,17 @@ async def _insert_scored_agent(
     approved: bool = True,
     approved_at: datetime | None = None,
     created_at: datetime,
+    miner_coldkey: str | None = None,
 ) -> UUID:
     agent_id = uuid4()
     await conn.execute(
         """
-        INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address)
-        VALUES ($1, $2, $3, 0, 'finished', $4, '127.0.0.1')
+        INSERT INTO agents (agent_id, miner_hotkey, miner_coldkey, name, version_num, status, created_at, ip_address)
+        VALUES ($1, $2, $3, $4, 0, 'finished', $5, '127.0.0.1')
         """,
         agent_id,
         miner_hotkey,
+        miner_coldkey,
         miner_hotkey,
         created_at,
     )
@@ -156,6 +162,131 @@ async def test_weight_receiver_is_top_scored_agent_when_eligible():
     assert info is not None
     assert info["miner_hotkey"] == "leader-hotkey"
     assert info["agent_id"] == leader_id
+
+
+@pytest.mark.anyio
+async def test_banned_coldkey_is_skipped_for_incentive():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="banned-leader-hotkey",
+            miner_coldkey="banned-leader-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        second_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-second-hotkey",
+            miner_coldkey="eligible-second-coldkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+
+    await ban_coldkey("banned-leader-coldkey", "test ban")
+
+    assert await get_weight_receiving_agent_hotkey() == "eligible-second-hotkey"
+    assert await top_score() == 0.49
+    assert await score_improvement_24_hrs() == 0
+    info = await get_weight_receiving_agent_info()
+    assert info is not None
+    assert info["agent_id"] == second_id
+
+    await unban_coldkey("banned-leader-coldkey")
+    assert await get_weight_receiving_agent_hotkey() == "banned-leader-hotkey"
+
+
+@pytest.mark.anyio
+async def test_top_agents_uses_coldkey_bans_at_read_time():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="banned-leader-hotkey",
+            miner_coldkey="banned-leader-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        eligible_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-second-hotkey",
+            miner_coldkey="eligible-second-coldkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+
+    await ban_coldkey("banned-leader-coldkey", "test ban")
+    assert [agent.agent_id for agent in await get_top_agents()] == [eligible_id]
+
+    await unban_coldkey("banned-leader-coldkey")
+    assert [agent.miner_hotkey for agent in await get_top_agents()] == [
+        "banned-leader-hotkey",
+        "eligible-second-hotkey",
+    ]
+
+
+@pytest.mark.anyio
+async def test_legacy_hotkey_ban_does_not_remove_top_agent_or_delete_score():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        leader_id = await _insert_scored_agent(
+            conn,
+            miner_hotkey="legacy-banned-hotkey",
+            miner_coldkey="eligible-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        await conn.execute(
+            "INSERT INTO banned_hotkeys (miner_hotkey, banned_reason) VALUES ('legacy-banned-hotkey', 'legacy ban')"
+        )
+
+    assert [agent.agent_id for agent in await get_top_agents()] == [leader_id]
+
+
+@pytest.mark.anyio
+async def test_banned_coldkey_is_not_used_as_validator_leader_bar():
+    now = datetime.now(timezone.utc)
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn)
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="banned-leader-hotkey",
+            miner_coldkey="banned-leader-coldkey",
+            final_score=0.50,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=1),
+        )
+        await _insert_scored_agent(
+            conn,
+            miner_hotkey="eligible-second-hotkey",
+            miner_coldkey="eligible-second-coldkey",
+            final_score=0.49,
+            cost_usd=0.10,
+            approved_at=now - timedelta(hours=1),
+            created_at=SET_CREATED_AT + timedelta(hours=2),
+        )
+
+    await ban_coldkey("banned-leader-coldkey", "test ban")
+
+    excluded_agent_id = uuid4()
+    assert await get_approved_validator_leader_score_for_set(SET_ID, excluded_agent_id, 1) == 0.49
+    leader = await get_approved_leader_ranking_for_set(SET_ID, excluded_agent_id, 1)
+    assert leader is not None
+    assert leader.final_score == 0.49
 
 
 @pytest.mark.anyio

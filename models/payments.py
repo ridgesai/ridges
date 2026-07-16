@@ -14,7 +14,8 @@ class Payment(BaseModel):
 
     miner_hotkey: str
     miner_coldkey: str
-    amount_rao: int
+    amount_rao: Optional[int] = None
+    amount_alpha_rao: Optional[int] = None
 
     created_at: datetime
 
@@ -22,7 +23,8 @@ class Payment(BaseModel):
 class PaymentQuote(BaseModel):
     quote_id: UUID
     miner_hotkey: str
-    amount_rao: int
-    send_address: str
+    amount_rao: Optional[int] = None
+    amount_alpha_rao: Optional[int] = None
+    send_address: Optional[str] = None
     created_at: datetime
     expires_at: datetime

@@ -25,10 +25,7 @@ PORT = int(PORT)
 
 
 # Load Bittensor configuration
-NETUID = os.getenv("NETUID")
-if not NETUID:
-    logger.fatal("NETUID is not set in .env")
-NETUID = int(NETUID)
+NETUID = int(os.getenv("NETUID") or "62")
 
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
 if not SUBTENSOR_ADDRESS:
@@ -42,6 +39,10 @@ if not SUBTENSOR_NETWORK:
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
     logger.fatal("OWNER_HOTKEY is not set in .env")
+
+COLDKEY_BAN_ADMIN_API_KEY = os.getenv("COLDKEY_BAN_ADMIN_API_KEY")
+if not COLDKEY_BAN_ADMIN_API_KEY:
+    logger.warning("COLDKEY_BAN_ADMIN_API_KEY is not set; coldkey ban administration will be unavailable")
 
 UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:

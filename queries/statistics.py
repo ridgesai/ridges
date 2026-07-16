@@ -11,9 +11,15 @@ from utils.database import DatabaseConnection, db_operation
 @db_operation
 async def top_score(conn: DatabaseConnection) -> Optional[float]:
     return await conn.fetchval("""
-        SELECT MAX(final_score) FROM agent_scores 
-        WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-        AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+        SELECT MAX(agent_scores.final_score)
+        FROM agent_scores
+        JOIN agents a ON a.agent_id = agent_scores.agent_id
+        WHERE agent_scores.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+        AND agent_scores.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+        AND NOT EXISTS (
+            SELECT 1 FROM banned_coldkeys bc
+            WHERE bc.miner_coldkey = a.miner_coldkey
+        )
     """)
 
 
@@ -22,7 +28,10 @@ async def agents_created_24_hrs(conn: DatabaseConnection) -> int:
     return await conn.fetchval("""
         SELECT COUNT(*) FROM agents 
         WHERE created_at >= NOW() - INTERVAL '24 hours'
-        AND miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+        AND NOT EXISTS (
+            SELECT 1 FROM banned_coldkeys bc
+            WHERE bc.miner_coldkey = agents.miner_coldkey
+        )
         AND agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
         AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
     """)
@@ -34,11 +43,18 @@ async def score_improvement_24_hrs(conn: DatabaseConnection) -> float:
         """
         WITH score_data AS (
             SELECT
-                MAX(final_score) as max_score,
-                MAX(final_score) FILTER (WHERE created_at <= NOW() - INTERVAL '24 hours') as max_score_24_hrs_ago
+                MAX(agent_scores.final_score) as max_score,
+                MAX(agent_scores.final_score) FILTER (
+                    WHERE agent_scores.created_at <= NOW() - INTERVAL '24 hours'
+                ) as max_score_24_hrs_ago
             FROM agent_scores
-            WHERE set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+            JOIN agents a ON a.agent_id = agent_scores.agent_id
+            WHERE agent_scores.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
+            AND agent_scores.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+            AND NOT EXISTS (
+                SELECT 1 FROM banned_coldkeys bc
+                WHERE bc.miner_coldkey = a.miner_coldkey
+            )
         )
         SELECT
             COALESCE(max_score - max_score_24_hrs_ago, 0)
@@ -72,7 +88,10 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                 WHERE
                     agent_scores.final_score IS NOT NULL
                     AND agent_scores.set_id = (SELECT set_id FROM max_set)
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 ),
@@ -94,7 +113,10 @@ async def get_top_scores_over_time(conn: DatabaseConnection) -> list[TopScoreOve
                 agent_scores.final_score IS NOT NULL
                 AND agent_scores.created_at <= ts.hour
                 AND agent_scores.set_id = (SELECT set_id FROM max_set)
-                AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                AND NOT EXISTS (
+                    SELECT 1 FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             ),
@@ -139,7 +161,10 @@ async def get_perfectly_solved_over_time(conn: DatabaseConnection) -> list[Perfe
                     AND erh.benchmark_family IS NOT NULL
                     AND erh.benchmark_family <> ''
                     AND erh.benchmark_family <> 'custom'
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
                     AND e.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND e.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY erh.benchmark_family, erh.problem_name
@@ -196,7 +221,10 @@ async def get_average_score_per_evaluation_set_group(
             JOIN agents a on a.agent_id = eh.agent_id 
         WHERE eh.status = 'success'
             AND eh.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND NOT EXISTS (
+                SELECT 1 FROM banned_coldkeys bc
+                WHERE bc.miner_coldkey = a.miner_coldkey
+            )
             AND eh.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND eh.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
         GROUP BY validator_type
@@ -232,7 +260,10 @@ async def get_average_wait_time_per_evaluation_set_group(
         WHERE e.status = 'success'
             AND e.evaluation_set_group = '{EvaluationSetGroup.screener_1.value}'::EvaluationSetGroup
             AND e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND NOT EXISTS (
+                SELECT 1 FROM banned_coldkeys bc
+                WHERE bc.miner_coldkey = a.miner_coldkey
+            )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND e.finished_at >= NOW() - INTERVAL '6 hours'
@@ -251,7 +282,10 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND sc2_e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
             AND sc1_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
-            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND NOT EXISTS (
+                SELECT 1 FROM banned_coldkeys bc
+                WHERE bc.miner_coldkey = a.miner_coldkey
+            )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND sc2_e.finished_at >= NOW() - INTERVAL '6 hours'
@@ -279,7 +313,10 @@ async def get_average_wait_time_per_evaluation_set_group(
             AND sc2_e.evaluation_set_group = '{EvaluationSetGroup.screener_2.value}'::EvaluationSetGroup
             AND sc2_e.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
             AND v_e.validator_count = {config.NUM_EVALS_PER_AGENT}
-            AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+            AND NOT EXISTS (
+                SELECT 1 FROM banned_coldkeys bc
+                WHERE bc.miner_coldkey = a.miner_coldkey
+            )
             AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
             AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             AND v_e.finished_at >= NOW() - INTERVAL '6 hours'
