@@ -216,6 +216,13 @@ def _positive_float_setting(name: str, default: str) -> float:
     return value
 
 
+def _fraction_setting(name: str, default: str) -> float:
+    value = _positive_float_setting(name, default)
+    if value >= 1:
+        raise ValueError(f"{name} must be less than 1")
+    return value
+
+
 _incentive_start_set_id = os.getenv("INCENTIVE_START_SET_ID")
 if not _incentive_start_set_id:
     raise ValueError("INCENTIVE_START_SET_ID must be set")
@@ -223,8 +230,8 @@ INCENTIVE_START_SET_ID = int(_incentive_start_set_id)
 if INCENTIVE_START_SET_ID <= 0:
     raise ValueError("INCENTIVE_START_SET_ID must be positive")
 
-INCENTIVE_PERFORMANCE_THRESHOLD = _positive_float_setting("INCENTIVE_PERFORMANCE_THRESHOLD", "0.03")
-INCENTIVE_COST_THRESHOLD = _positive_float_setting("INCENTIVE_COST_THRESHOLD", "0.06")
+INCENTIVE_PERFORMANCE_THRESHOLD = _fraction_setting("INCENTIVE_PERFORMANCE_THRESHOLD", "0.03")
+INCENTIVE_COST_THRESHOLD = _fraction_setting("INCENTIVE_COST_THRESHOLD", "0.06")
 INCENTIVE_REWARD_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_REWARD_HALF_LIFE_HOURS", "336")
 INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS", "72")
 INCENTIVE_TIME_MULTIPLIER_MAX = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_MAX", "2.0")
