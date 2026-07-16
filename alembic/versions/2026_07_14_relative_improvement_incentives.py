@@ -1,4 +1,4 @@
-"""Add top-k incentive snapshots to approved agents.
+"""Add relative-improvement incentive snapshots to approved agents.
 
 Revision ID: d2a7f4c9e318
 Revises: b7e4d2c9a106
@@ -30,9 +30,9 @@ def upgrade() -> None:
     )
     op.add_column("approved_agents", sa.Column("performance_delta", sa.Float(), nullable=True))
     op.add_column("approved_agents", sa.Column("cost_delta", sa.Float(), nullable=True))
-    op.add_column("approved_agents", sa.Column("raw_improvement", sa.Float(), nullable=True))
+    op.add_column("approved_agents", sa.Column("relative_improvement_units", sa.Float(), nullable=True))
     op.add_column("approved_agents", sa.Column("time_multiplier", sa.Float(), nullable=True))
-    op.add_column("approved_agents", sa.Column("initial_improvement_bonus", sa.Float(), nullable=True))
+    op.add_column("approved_agents", sa.Column("initial_reward_score", sa.Float(), nullable=True))
     op.create_index(
         "idx_approved_agents_set_approved_at",
         "approved_agents",
@@ -42,9 +42,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index("idx_approved_agents_set_approved_at", table_name="approved_agents")
-    op.drop_column("approved_agents", "initial_improvement_bonus")
+    op.drop_column("approved_agents", "initial_reward_score")
     op.drop_column("approved_agents", "time_multiplier")
-    op.drop_column("approved_agents", "raw_improvement")
+    op.drop_column("approved_agents", "relative_improvement_units")
     op.drop_column("approved_agents", "cost_delta")
     op.drop_column("approved_agents", "performance_delta")
     op.drop_column("approved_agents", "baseline_agent_id")
