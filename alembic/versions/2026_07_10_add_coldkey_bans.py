@@ -119,9 +119,7 @@ def _live_cutoff_set_id() -> int:
         raise RuntimeError("Missing function populate_agent_scores()")
     cutoffs = {int(match) for match in re.findall(r"set_id > (\d+)", definition)}
     if len(cutoffs) != 1:
-        raise RuntimeError(
-            f"Could not determine the consensus cutoff from populate_agent_scores():\n{definition}"
-        )
+        raise RuntimeError(f"Could not determine the consensus cutoff from populate_agent_scores():\n{definition}")
     return cutoffs.pop()
 
 
@@ -188,9 +186,7 @@ def _refresh_agent_scores_trigger_sql(include_hotkey_bans: bool) -> str:
 
 def _refresh_agent_scores_for_agent_sql(cutoff_set_id: int, include_hotkey_bans: bool) -> str:
     hotkey_filter = (
-        "          AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n"
-        if include_hotkey_bans
-        else ""
+        "          AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)\n" if include_hotkey_bans else ""
     )
     return f"""
 CREATE OR REPLACE FUNCTION refresh_agent_scores_for_agent(target_agent_id UUID)
