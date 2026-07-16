@@ -310,7 +310,7 @@ async def _add_onchain_approved_agent_data(
         logger.exception("Could not retrieve approved-agent emissions from Subtensor")
         subnet_info = {}
 
-    reward_weights = None if allocations is None else allocations.agent_weights
+    reward_weights = allocations.agent_weights if allocations is not None and allocations.agent_weights else None
     result = []
     for agent in agents:
         hotkey_info = subnet_info.get(agent.miner_hotkey)
@@ -325,6 +325,14 @@ async def _add_onchain_approved_agent_data(
     return result
 
 
+async def _safe_current_allocations() -> CurrentAllocations | None:
+    try:
+        return await get_current_allocations()
+    except Exception:
+        logger.exception("Could not compute current allocations for approved agents")
+        return None
+
+
 @router.get("/{set_id}/approved-agents")
 async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_set_id)]) -> list[ApprovedAgent]:
     latest = await _get_latest_set_id()
@@ -334,6 +342,6 @@ async def evaluation_set_approved_agents(set_id: Annotated[int, Depends(resolve_
 
     agents, allocations = await asyncio.gather(
         _build_approved_agents(set_id),
-        get_current_allocations(),
+        _safe_current_allocations(),
     )
     return await _add_onchain_approved_agent_data(agents, allocations)
