@@ -24,7 +24,7 @@ from queries.evaluation import (
 )
 from utils.database import DatabaseConnection, db_operation
 from utils.incentives import (
-    calculate_initial_improvement_bonus,
+    calculate_initial_reward_score,
     calculate_relative_improvement,
     calculate_time_multiplier,
 )
@@ -257,10 +257,9 @@ async def _insert_incentive_approval(
         maximum=config.INCENTIVE_TIME_MULTIPLIER_MAX,
     )
 
-    initial_improvement_bonus = calculate_initial_improvement_bonus(
-        raw_improvement=improvement.raw_improvement,
+    initial_reward_score = calculate_initial_reward_score(
+        relative_improvement_units=improvement.relative_improvement_units,
         time_multiplier=time_multiplier,
-        bonus_at_threshold=config.INCENTIVE_IMPROVEMENT_BONUS_AT_THRESHOLD,
     )
 
     await conn.execute(
@@ -272,9 +271,9 @@ async def _insert_incentive_approval(
             baseline_agent_id,
             performance_delta,
             cost_delta,
-            raw_improvement,
+            relative_improvement_units,
             time_multiplier,
-            initial_improvement_bonus
+            initial_reward_score
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         """,
         agent_id,
@@ -283,9 +282,9 @@ async def _insert_incentive_approval(
         None if leader is None else leader.agent_id,
         improvement.performance_delta,
         improvement.cost_delta,
-        improvement.raw_improvement,
+        improvement.relative_improvement_units,
         time_multiplier,
-        initial_improvement_bonus,
+        initial_reward_score,
     )
     return None
 

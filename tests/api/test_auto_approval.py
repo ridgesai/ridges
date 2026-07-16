@@ -330,7 +330,7 @@ async def test_should_run_auto_approval_judge_rejects_newer_candidate_same_score
     ("candidate_score", "candidate_cost", "expected"),
     [
         (0.515, 0.20, True),  # Exactly 3% better performance.
-        (0.50, 0.095, True),  # Same performance and exactly 5% lower cost.
+        (0.50, 0.094, True),  # Same performance and exactly 6% lower cost.
         (0.49, 0.05, False),  # A lower score cannot qualify through cost alone.
         (0.514, 0.096, False),  # Neither relative threshold is met.
     ],

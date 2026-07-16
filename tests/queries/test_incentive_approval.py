@@ -1,4 +1,5 @@
 import asyncio
+import math
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
@@ -31,7 +32,7 @@ async def _insert_agent_score(
     final_score: float,
     approved: bool,
     approved_at: datetime | None = None,
-    initial_improvement_bonus: float | None = None,
+    initial_reward_score: float | None = None,
     status: str = "finished",
     validator_count: int = config.NUM_EVALS_PER_AGENT,
 ) -> UUID:
@@ -54,13 +55,13 @@ async def _insert_agent_score(
         await conn.execute(
             """
             INSERT INTO approved_agents (
-                agent_id, set_id, approved_at, raw_improvement, time_multiplier, initial_improvement_bonus
+                agent_id, set_id, approved_at, relative_improvement_units, time_multiplier, initial_reward_score
             ) VALUES ($1, $2, $3, 1, 1, $4)
             """,
             agent_id,
             SET_ID,
             approved_at,
-            initial_improvement_bonus,
+            initial_reward_score,
         )
     await conn.execute(
         """
@@ -129,7 +130,7 @@ async def test_projector_stores_time_adjusted_incentive_snapshot() -> None:
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=72),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         candidate_id = await _insert_agent_score(
             conn,
@@ -150,16 +151,17 @@ async def test_projector_stores_time_adjusted_incentive_snapshot() -> None:
     assert approved is not None
     assert approved["baseline_agent_id"] == leader_id
     assert approved["performance_delta"] == pytest.approx(0.04)
-    assert approved["raw_improvement"] == pytest.approx(4 / 3)
+    expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
+    assert approved["relative_improvement_units"] == pytest.approx(expected_units)
     assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
-    assert approved["initial_improvement_bonus"] == pytest.approx(0.5, rel=1e-3)
+    assert approved["initial_reward_score"] == pytest.approx(expected_units * 1.5, rel=1e-3)
     assert state["system_verdict"] == "approved"
     assert state["published_verdict"] == "approved"
     assert projected_at is not None
 
 
 @pytest.mark.anyio
-async def test_projector_does_not_inherit_bonus_from_previous_agent() -> None:
+async def test_projector_does_not_inherit_reward_score_from_previous_agent() -> None:
     now = datetime.now(timezone.utc)
     async with _db.pool.acquire() as conn:
         await _insert_agent_score(
@@ -169,7 +171,7 @@ async def test_projector_does_not_inherit_bonus_from_previous_agent() -> None:
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=72),
-            initial_improvement_bonus=0.8,
+            initial_reward_score=0.8,
         )
         candidate_id = await _insert_agent_score(
             conn,
@@ -186,9 +188,9 @@ async def test_projector_does_not_inherit_bonus_from_previous_agent() -> None:
         approved = await conn.fetchrow("SELECT * FROM approved_agents WHERE agent_id = $1", candidate_id)
 
     assert approved is not None
-    assert approved["raw_improvement"] == pytest.approx(1)
+    assert approved["relative_improvement_units"] == pytest.approx(1)
     assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
-    assert approved["initial_improvement_bonus"] == pytest.approx(0.375, rel=1e-3)
+    assert approved["initial_reward_score"] == pytest.approx(1.5, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -202,7 +204,7 @@ async def test_projector_excludes_banned_approvals_from_elapsed_time() -> None:
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=72),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         await _insert_agent_score(
             conn,
@@ -211,7 +213,7 @@ async def test_projector_excludes_banned_approvals_from_elapsed_time() -> None:
             final_score=0.51,
             approved=True,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         await conn.execute(
             "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ($1, 'test ban')",
@@ -233,7 +235,8 @@ async def test_projector_excludes_banned_approvals_from_elapsed_time() -> None:
 
     assert approved is not None
     assert approved["time_multiplier"] == pytest.approx(1.5, rel=1e-3)
-    assert approved["initial_improvement_bonus"] == pytest.approx(0.5, rel=1e-3)
+    expected_units = math.log1p(0.04) / math.log1p(config.INCENTIVE_PERFORMANCE_THRESHOLD)
+    assert approved["initial_reward_score"] == pytest.approx(expected_units * 1.5, rel=1e-3)
 
 
 @pytest.mark.anyio
@@ -247,7 +250,7 @@ async def test_projector_excludes_review_rejected_approval_from_leader_and_elaps
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=72),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         rejected_agent_id = await _insert_agent_score(
             conn,
@@ -256,7 +259,7 @@ async def test_projector_excludes_review_rejected_approval_from_leader_and_elaps
             final_score=0.6,
             approved=True,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         await _mark_review_rejected(conn, rejected_agent_id)
         candidate_id = await _insert_agent_score(
@@ -290,7 +293,7 @@ async def test_projector_excludes_non_reward_candidates_from_elapsed_time(inelig
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=72),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         recent_agent_id = await _insert_agent_score(
             conn,
@@ -299,7 +302,7 @@ async def test_projector_excludes_non_reward_candidates_from_elapsed_time(inelig
             final_score=0.6,
             approved=True,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
             status="cancelled" if ineligible_kind == "cancelled" else "finished",
             validator_count=(
                 config.NUM_EVALS_PER_AGENT - 1
@@ -343,7 +346,7 @@ async def test_projector_rechecks_leader_after_concurrent_ban() -> None:
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         candidate_id = await _insert_agent_score(
             conn,
@@ -385,6 +388,9 @@ async def test_projector_rechecks_leader_after_concurrent_ban() -> None:
 
     assert approved is not None
     assert approved["baseline_agent_id"] is None
+    assert approved["relative_improvement_units"] == pytest.approx(1)
+    assert approved["time_multiplier"] == pytest.approx(1)
+    assert approved["initial_reward_score"] == pytest.approx(1)
 
 
 @pytest.mark.anyio
@@ -398,7 +404,7 @@ async def test_projector_rejects_stale_candidate_without_overwriting_judge_verdi
             final_score=0.5,
             approved=True,
             approved_at=now - timedelta(hours=1),
-            initial_improvement_bonus=0.25,
+            initial_reward_score=0.25,
         )
         candidate_id = await _insert_agent_score(
             conn,
