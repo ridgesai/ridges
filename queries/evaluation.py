@@ -296,7 +296,7 @@ async def get_approved_leader_ranking_for_set(
         ) rt ON true
         WHERE ass.set_id = $1
           AND ass.approved IS TRUE
-          AND ass.approved_at <= NOW()
+          AND ass.approved_at <= clock_timestamp()
           AND ass.validator_count = $2
           AND ass.status::text = 'finished'
           AND ass.agent_id <> $3

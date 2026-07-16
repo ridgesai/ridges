@@ -36,3 +36,4 @@ subnet_hotkeys_cache.json
 utils/registered_hotkeys.json
 
 .idea/
+/scripts/

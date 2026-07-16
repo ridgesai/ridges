@@ -1,9 +1,12 @@
+import logging
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
 import api.config as config
 from utils.database import DatabaseConnection, db_operation
 from utils.incentives import RewardCandidate
+
+logger = logging.getLogger(__name__)
 
 
 @db_operation
@@ -147,13 +150,14 @@ async def get_incentive_reward_candidates(
         required_validator_count,
     )
     snapshot_fields = ("relative_improvement_units", "time_multiplier", "initial_reward_score")
+    complete_rows = [row for row in rows if all(row[field] is not None for field in snapshot_fields)]
     missing_snapshot_agent_ids = [
         str(row["agent_id"]) for row in rows if any(row[field] is None for field in snapshot_fields)
     ]
     if missing_snapshot_agent_ids:
-        raise RuntimeError(
-            f"Active incentive set {set_id} has approved agents without incentive snapshots: "
-            f"{', '.join(missing_snapshot_agent_ids)}"
+        logger.error(
+            f"Active incentive set {set_id} has approved agents without incentive snapshots; "
+            f"excluding them from reward candidates: {', '.join(missing_snapshot_agent_ids)}"
         )
     observed_at = rows[0]["observed_at"] if rows else datetime.now(timezone.utc)
     candidates = [
@@ -163,6 +167,6 @@ async def get_incentive_reward_candidates(
             initial_reward_score=row["initial_reward_score"],
             approved_at=row["approved_at"],
         )
-        for row in rows
+        for row in complete_rows
     ]
     return candidates, observed_at
