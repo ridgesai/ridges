@@ -31,3 +31,4 @@ analyzer/
 # OLD
 subnet_hotkeys_cache.json
 .python-version
+/scripts/

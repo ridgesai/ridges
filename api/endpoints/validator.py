@@ -51,7 +51,6 @@ from queries.agent import (
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
     get_openrouter_secrets_for_agent_id,
     get_top_agents,
-    update_agent_status,
 )
 from queries.approval import finish_agent_and_enqueue_approval
 from queries.banned_coldkey import is_agent_coldkey_banned
@@ -1191,7 +1190,11 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
             )
         else:
-            await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+            await transition_agent_status_if_matches(
+                hydrated_evaluation.agent_id,
+                agent.status,
+                new_agent_status,
+            )
 
 
 async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
