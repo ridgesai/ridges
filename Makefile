@@ -107,6 +107,8 @@ k8s-setup: k8s-up
 	else \
 	    echo "Registry credentials already exist — skipping"; \
 	fi
+	$(MAKE) k8s-images
+	$(MAKE) k8s-network
 	@# --- Configure Kind nodes for plain-HTTP pulls from the in-cluster registry ---
 	@REGISTRY_IP=$$($(KUBECTL) get svc registry -n $(K8S_NS) -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo ""); \
 	for node in $$(kind get nodes --name $(K8S_CLUSTER)); do \
@@ -114,10 +116,8 @@ k8s-setup: k8s-up
 	    printf '[host."http://registry.$(K8S_NS).svc:5000"]\n' | \
 	        docker exec -i $$node tee /etc/containerd/certs.d/registry.$(K8S_NS).svc:5000/hosts.toml > /dev/null; \
 	    docker exec $$node sh -c \
-	        "grep -q 'registry.$(K8S_NS).svc' /etc/hosts || echo '$$REGISTRY_IP registry.$(K8S_NS).svc' >> /etc/hosts"; \
+	        "sed -i '/registry.$(K8S_NS).svc/d' /etc/hosts; echo '$$REGISTRY_IP registry.$(K8S_NS).svc' >> /etc/hosts"; \
 	done
-	$(MAKE) k8s-images
-	$(MAKE) k8s-network
 	@# --- Screener secrets from validator/.env ---
 	@if [ ! -f validator/.env ]; then \
 	    echo "ERROR: validator/.env not found. Copy validator/.env.example and fill in values."; \
