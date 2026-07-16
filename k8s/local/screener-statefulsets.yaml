@@ -91,6 +91,8 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.uid
+            - name: PROXY_IMAGE
+              value: "ghcr.io/ridgesai/sandbox-proxy:pr-1"
           envFrom:
             - secretRef:
                 name: ridges-screener-secrets
