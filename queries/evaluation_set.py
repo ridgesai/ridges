@@ -4,7 +4,7 @@ from typing import List
 
 import asyncpg
 
-from api.config import NUM_EVALS_PER_AGENT
+from api.config import EARLIEST_SET_ID_WITH_GOOD_DATA, NUM_EVALS_PER_AGENT
 from models.evaluation_set import (
     EvaluationSet,
     EvaluationSetGroup,
@@ -299,7 +299,8 @@ async def create_evaluation_set_problems(
 async def get_all_evaluation_sets(
     conn: DatabaseConnection,
 ) -> list[EvaluationSet]:
-    results = await conn.fetch("""
+    results = await conn.fetch(
+        """
         SELECT
             es.set_id,
             MIN(es.created_at) AS created_at,
@@ -308,9 +309,12 @@ async def get_all_evaluation_sets(
             c.end_date AS competition_end_date
         FROM evaluation_sets es
         LEFT JOIN competitions c ON c.set_id = es.set_id
+        WHERE es.set_id >= $1
         GROUP BY es.set_id, c.name, c.start_date, c.end_date
         ORDER BY es.set_id
-        """)
+        """,
+        EARLIEST_SET_ID_WITH_GOOD_DATA,
+    )
     return [EvaluationSet(**row) for row in results]
 
 

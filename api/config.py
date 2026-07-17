@@ -208,6 +208,14 @@ AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 
+# Old note from ADAM: Set IDs 6 and earlier still
+# included the validator optimization
+# of skipping all tests after the first failure, which means that
+# the test pass-rate information is incorrect. We will just exclude
+# these sets since they came before the Problem Info viewer anyway,
+# which is the only feature uses this endpoint.
+EARLIEST_SET_ID_WITH_GOOD_DATA = int(os.getenv("EARLIEST_SET_ID_WITH_GOOD_DATA", "7"))
+
 
 def _positive_float_setting(name: str, default: str) -> float:
     value = float(os.getenv(name, default))
@@ -297,6 +305,7 @@ logger.info(f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_PO
 logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
+logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
 logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
 logger.info(
     f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
