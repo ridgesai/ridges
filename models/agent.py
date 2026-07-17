@@ -57,6 +57,15 @@ class AgentCreate(AgentBase):
 class PossiblyBenchmarkAgent(Agent):
     is_benchmark_agent: bool
     benchmark_description: Optional[str] = None
+    approved: bool = False
+    performance_delta: Optional[float] = None
+    cost_delta: Optional[float] = None
+    relative_improvement_units: Optional[float] = None
+    time_multiplier: Optional[float] = None
+    initial_reward_score: Optional[float] = None
+    baseline_agent_id: Optional[UUID] = None
+    baseline_agent_name: Optional[str] = None
+    baseline_agent_version_num: Optional[int] = None
 
 
 # TODO ADAM: need to look into this more

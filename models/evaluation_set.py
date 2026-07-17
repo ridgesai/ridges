@@ -129,6 +129,14 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     version_num: int
     status: AgentStatus
     approved: bool
+    approval_review_status: str | None
+    performance_delta: Float4 | None
+    cost_delta: Float4 | None
+    relative_improvement_units: Float4 | None
+    time_multiplier: Float4 | None
+    initial_reward_score: Float4 | None
+    baseline_agent_name: str | None
+    baseline_agent_version_num: int | None
     final_score: Float4 | None
     average_cost_usd: Float4 | None
     average_runtime_seconds: Float4 | None
