@@ -216,6 +216,7 @@ APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POL
 # which is the only feature uses this endpoint.
 EARLIEST_SET_ID_WITH_GOOD_DATA = int(os.getenv("EARLIEST_SET_ID_WITH_GOOD_DATA", "7"))
 
+
 def _positive_float_setting(name: str, default: str) -> float:
     value = float(os.getenv(name, default))
     if not math.isfinite(value) or value <= 0:
