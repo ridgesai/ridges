@@ -15,6 +15,25 @@ from utils.database import DatabaseConnection, db_operation
 
 logger = logging.getLogger(__name__)
 
+# Copies terminal error state from just-updated evaluation_runs mirrors onto their
+# current attempts. $1 narrowing differs per caller; see usages below.
+_MIRROR_ERRORED_RUNS_TO_CURRENT_ATTEMPTS = """
+    UPDATE evaluation_run_attempts era
+    SET
+        status = er.status,
+        error_code = er.error_code,
+        error_message = er.error_message,
+        finished_or_errored_at = er.finished_or_errored_at
+    FROM evaluation_runs er
+    WHERE er.evaluation_run_id = era.evaluation_run_id
+      AND er.status = 'error'
+      AND era.attempt_number = (
+          SELECT MAX(a2.attempt_number) FROM evaluation_run_attempts a2
+          WHERE a2.evaluation_run_id = era.evaluation_run_id
+      )
+      AND era.status NOT IN ('finished', 'error')
+"""
+
 
 @dataclass(slots=True, frozen=True)
 class LocalEvaluationScoreBound:
@@ -441,74 +460,91 @@ async def transition_agent_status_if_matches(
 async def set_unfinished_evaluation_runs_to_score_pruned(
     conn: DatabaseConnection, evaluation_id: UUID, error_message: str
 ) -> int:
-    return await conn.fetchval(
-        f"""
-        WITH updated AS (
-            UPDATE evaluation_runs
-            SET
-                status = '{EvaluationRunStatus.error.value}',
-                error_code = {EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.value},
-                error_message = $2,
-                finished_or_errored_at = NOW()
-            WHERE evaluation_id = $1
-              AND status NOT IN (
-                  '{EvaluationRunStatus.finished.value}'::evaluationrunstatus,
-                  '{EvaluationRunStatus.error.value}'::evaluationrunstatus
-              )
-            RETURNING 1
+    async with conn.conn.transaction():
+        count = await conn.fetchval(
+            f"""
+            WITH updated AS (
+                UPDATE evaluation_runs
+                SET
+                    status = '{EvaluationRunStatus.error.value}',
+                    error_code = {EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.value},
+                    error_message = $2,
+                    finished_or_errored_at = NOW()
+                WHERE evaluation_id = $1
+                  AND status NOT IN (
+                      '{EvaluationRunStatus.finished.value}'::evaluationrunstatus,
+                      '{EvaluationRunStatus.error.value}'::evaluationrunstatus
+                  )
+                RETURNING 1
+            )
+            SELECT COUNT(*)::int FROM updated
+            """,
+            evaluation_id,
+            error_message,
         )
-        SELECT COUNT(*)::int FROM updated
-        """,
-        evaluation_id,
-        error_message,
-    )
+
+        await conn.execute(
+            _MIRROR_ERRORED_RUNS_TO_CURRENT_ATTEMPTS + " AND er.evaluation_id = $1",
+            evaluation_id,
+        )
+
+    return count
 
 
 @db_operation
 async def set_all_unfinished_evaluation_runs_to_errored(conn: DatabaseConnection, error_message: str) -> None:
-    await conn.execute(
-        f"""
-        UPDATE evaluation_runs
-        SET
-            status = '{EvaluationRunStatus.error.value}',
-            error_code = CASE
-                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}
-                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
-                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
-                ELSE {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value}
-            END,
-            error_message = $1,
-            finished_or_errored_at = NOW()
-        WHERE
-            status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
-        """,
-        error_message,
-    )
+    async with conn.conn.transaction():
+        await conn.execute(
+            f"""
+            UPDATE evaluation_runs
+            SET
+                status = '{EvaluationRunStatus.error.value}',
+                error_code = CASE
+                    WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_PENDING.value}
+                    WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_AGENT.value}
+                    WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_AGENT.value}
+                    WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_INIT_EVAL.value}
+                    WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.VALIDATOR_FAILED_RUNNING_EVAL.value}
+                    ELSE {EvaluationRunErrorCode.VALIDATOR_INTERNAL_ERROR.value}
+                END,
+                error_message = $1,
+                finished_or_errored_at = NOW()
+            WHERE
+                status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
+            """,
+            error_message,
+        )
+
+        await conn.execute(_MIRROR_ERRORED_RUNS_TO_CURRENT_ATTEMPTS)
 
 
 @db_operation
 async def update_unfinished_evaluation_runs_in_evaluation_id_to_errored(
     conn: DatabaseConnection, evaluation_id: UUID, error_message: str
 ) -> None:
-    await conn.execute(
-        f"""
-        UPDATE evaluation_runs
-        SET
-            status = '{EvaluationRunStatus.error.value}',
-            error_code = CASE
-                WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_PENDING.value}
-                WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_AGENT.value}
-                WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_EVAL.value}
-                WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_EVAL.value}
-            END,
-            error_message = $2,
-            finished_or_errored_at = NOW()
-        WHERE evaluation_id = $1
-        AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
-        """,
-        evaluation_id,
-        error_message,
-    )
+    async with conn.conn.transaction():
+        await conn.execute(
+            f"""
+            UPDATE evaluation_runs
+            SET
+                status = '{EvaluationRunStatus.error.value}',
+                error_code = CASE
+                    WHEN status = '{EvaluationRunStatus.pending.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_PENDING.value}
+                    WHEN status = '{EvaluationRunStatus.initializing_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value}
+                    WHEN status = '{EvaluationRunStatus.running_agent.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_AGENT.value}
+                    WHEN status = '{EvaluationRunStatus.initializing_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_EVAL.value}
+                    WHEN status = '{EvaluationRunStatus.running_eval.value}' THEN {EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_EVAL.value}
+                END,
+                error_message = $2,
+                finished_or_errored_at = NOW()
+            WHERE evaluation_id = $1
+            AND status NOT IN ('{EvaluationRunStatus.finished.value}', '{EvaluationRunStatus.error.value}')
+            """,
+            evaluation_id,
+            error_message,
+        )
+
+        await conn.execute(
+            _MIRROR_ERRORED_RUNS_TO_CURRENT_ATTEMPTS + " AND er.evaluation_id = $1",
+            evaluation_id,
+        )

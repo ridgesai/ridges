@@ -110,7 +110,11 @@ class ValidatorUpdateEvaluationRunRequest(BaseModel):
 
 
 class ValidatorUpdateEvaluationRunResponse(BaseModel):
-    pass
+    # Set on error updates when the platform wants this run re-executed as a
+    # fresh attempt instead of failing the whole evaluation.
+    retry: bool = False
+    attempt_number: Optional[int] = None
+    artifact_upload_url: Optional[str] = None
 
 
 class ValidatorDisconnectRequest(BaseModel):
