@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import uuid
 
@@ -25,10 +26,7 @@ PORT = int(PORT)
 
 
 # Load Bittensor configuration
-NETUID = os.getenv("NETUID")
-if not NETUID:
-    logger.fatal("NETUID is not set in .env")
-NETUID = int(NETUID)
+NETUID = int(os.getenv("NETUID") or "62")
 
 SUBTENSOR_ADDRESS = os.getenv("SUBTENSOR_ADDRESS")
 if not SUBTENSOR_ADDRESS:
@@ -42,6 +40,10 @@ if not SUBTENSOR_NETWORK:
 OWNER_HOTKEY = os.getenv("OWNER_HOTKEY")
 if not OWNER_HOTKEY:
     logger.fatal("OWNER_HOTKEY is not set in .env")
+
+COLDKEY_BAN_ADMIN_API_KEY = os.getenv("COLDKEY_BAN_ADMIN_API_KEY")
+if not COLDKEY_BAN_ADMIN_API_KEY:
+    logger.warning("COLDKEY_BAN_ADMIN_API_KEY is not set; coldkey ban administration will be unavailable")
 
 UPLOAD_SEND_ADDRESS = os.getenv("UPLOAD_SEND_ADDRESS")
 if not UPLOAD_SEND_ADDRESS:
@@ -214,6 +216,35 @@ APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POL
 # which is the only feature uses this endpoint.
 EARLIEST_SET_ID_WITH_GOOD_DATA = int(os.getenv("EARLIEST_SET_ID_WITH_GOOD_DATA", "7"))
 
+def _positive_float_setting(name: str, default: str) -> float:
+    value = float(os.getenv(name, default))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be finite and positive")
+    return value
+
+
+def _fraction_setting(name: str, default: str) -> float:
+    value = _positive_float_setting(name, default)
+    if value >= 1:
+        raise ValueError(f"{name} must be less than 1")
+    return value
+
+
+_incentive_start_set_id = os.getenv("INCENTIVE_START_SET_ID")
+if not _incentive_start_set_id:
+    raise ValueError("INCENTIVE_START_SET_ID must be set")
+INCENTIVE_START_SET_ID = int(_incentive_start_set_id)
+if INCENTIVE_START_SET_ID <= 0:
+    raise ValueError("INCENTIVE_START_SET_ID must be positive")
+
+INCENTIVE_PERFORMANCE_THRESHOLD = _fraction_setting("INCENTIVE_PERFORMANCE_THRESHOLD", "0.03")
+INCENTIVE_COST_THRESHOLD = _fraction_setting("INCENTIVE_COST_THRESHOLD", "0.06")
+INCENTIVE_REWARD_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_REWARD_HALF_LIFE_HOURS", "336")
+INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS", "72")
+INCENTIVE_TIME_MULTIPLIER_MAX = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_MAX", "2.0")
+if INCENTIVE_TIME_MULTIPLIER_MAX < 1:
+    raise ValueError("INCENTIVE_TIME_MULTIPLIER_MAX must be at least 1")
+
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
@@ -274,5 +305,13 @@ logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
 logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
+logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
+logger.info(
+    f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
+    f"cost_threshold={INCENTIVE_COST_THRESHOLD} "
+    f"reward_half_life_hours={INCENTIVE_REWARD_HALF_LIFE_HOURS} "
+    f"time_multiplier_half_life_hours={INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS} "
+    f"time_multiplier_max={INCENTIVE_TIME_MULTIPLIER_MAX}"
+)
 
 logger.info("=========================")

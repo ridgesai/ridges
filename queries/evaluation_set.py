@@ -44,7 +44,13 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
         SELECT
             {select_columns},
             CASE
-                WHEN review.approval_review_status = 'rejected' THEN true
+                WHEN review.approval_review_status = 'rejected'
+                    OR EXISTS (
+                        SELECT 1
+                        FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
+                THEN true
                 ELSE false
             END AS disqualified
         FROM agents a
@@ -389,7 +395,7 @@ async def get_evaluation_set_submission_stats(conn: DatabaseConnection, set_id: 
                     and aiw.status = 'finished' then aiw.agent_id
                 end
             ) :: int as finished_at_validator_count,
-            COUNT(distinct aa.agent_id) :: int as approved_emission_count
+            COUNT(distinct aa.agent_id) FILTER (WHERE NOT aiw.disqualified) :: int as approved_emission_count
         from
             agents_in_window aiw
             left join last_evaluation_per_agent e on e.agent_id = aiw.agent_id
@@ -428,11 +434,12 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
         {_sql_agents_in_window_cte("a.agent_id, a.status")},
         prev_best AS (
             SELECT
-                MAX(final_score) AS score
+                MAX(previous_score.final_score) AS score
             FROM
-                agent_scores
+                agent_scores previous_score
+            JOIN agents previous_agent ON previous_agent.agent_id = previous_score.agent_id
             WHERE
-                set_id = (
+                previous_score.set_id = (
                     SELECT
                         MAX(set_id)
                     FROM
@@ -440,11 +447,16 @@ async def get_evaluation_set_score_stats(conn: DatabaseConnection, set_id: int) 
                     WHERE
                         set_id < $1
                 )
-                AND agent_id NOT IN (
+                AND previous_score.agent_id NOT IN (
                     SELECT
                         agent_id
                     FROM
                         benchmark_agent_ids
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = previous_agent.miner_coldkey
                 )
         )
         SELECT
@@ -706,6 +718,11 @@ async def get_approved_agents_for_set(conn: DatabaseConnection, set_id: int) -> 
         LEFT JOIN validator_metrics vm ON vm.agent_id = aa.agent_id
         WHERE aa.set_id = $1
           AND aa.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys bc
+              WHERE bc.miner_coldkey = a.miner_coldkey
+          )
           AND ass.status = 'finished'
           AND review.approval_review_status is distinct from 'rejected'
         ORDER BY aa.approved_at DESC

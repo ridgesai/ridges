@@ -174,7 +174,10 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                 JOIN evaluations e ON erh.evaluation_id = e.evaluation_id
                 JOIN agents a on e.agent_id = a.agent_id
             WHERE e.set_id = $1
-                AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                AND NOT EXISTS (
+                    SELECT 1 FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
                 AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                 AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
             GROUP BY erh.problem_name
@@ -209,7 +212,10 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                 WHERE 
                     er.status = 'finished'
                     AND e.set_id = $1
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY 
@@ -268,7 +274,10 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                         JOIN agents a ON e.agent_id = a.agent_id
                     WHERE er.status = 'error'
                         AND e.set_id = $1
-                        AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                        AND NOT EXISTS (
+                            SELECT 1 FROM banned_coldkeys bc
+                            WHERE bc.miner_coldkey = a.miner_coldkey
+                        )
                         AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                         AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 )
@@ -293,7 +302,10 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                     JOIN evaluations e ON er.evaluation_id = e.evaluation_id 
                     JOIN agents a ON e.agent_id = a.agent_id 
                 WHERE e.set_id = $1
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY er.problem_name, i.model
@@ -332,7 +344,10 @@ async def get_problem_statistics(conn: DatabaseConnection, set_id: int) -> List[
                 WHERE erh.status = 'finished'
                     AND erh.solved
                     AND e.set_id = $1
-                    AND a.miner_hotkey NOT IN (SELECT miner_hotkey FROM banned_hotkeys)
+                    AND NOT EXISTS (
+                        SELECT 1 FROM banned_coldkeys bc
+                        WHERE bc.miner_coldkey = a.miner_coldkey
+                    )
                     AND a.agent_id NOT IN (SELECT agent_id FROM unapproved_agent_ids)
                     AND a.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
                 GROUP BY erh.problem_name, a.agent_id

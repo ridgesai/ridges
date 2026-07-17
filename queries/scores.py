@@ -1,6 +1,12 @@
+import logging
+from datetime import datetime, timezone
 from typing import Dict, Optional
 
+import api.config as config
 from utils.database import DatabaseConnection, db_operation
+from utils.incentives import RewardCandidate
+
+logger = logging.getLogger(__name__)
 
 
 @db_operation
@@ -14,6 +20,7 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
                 ass.approved AS approved,
                 ass.approved_at AS approved_at
             FROM agent_scores ass
+            INNER JOIN agents a ON a.agent_id = ass.agent_id
             LEFT JOIN LATERAL (
                 SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
                 FROM evaluations_hydrated eh
@@ -28,6 +35,11 @@ async def get_weight_receiving_agent_hotkey(conn: DatabaseConnection) -> Optiona
                 AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ass.status::text <> 'cancelled'
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
         )
@@ -55,6 +67,7 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
                 ass.approved AS approved,
                 ass.approved_at AS approved_at
             FROM agent_scores ass
+            INNER JOIN agents a ON a.agent_id = ass.agent_id
             LEFT JOIN LATERAL (
                 SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
                 FROM evaluations_hydrated eh
@@ -69,6 +82,11 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
                 AND ass.set_id = (SELECT MAX(set_id) FROM evaluation_sets)
                 AND ass.status::text <> 'cancelled'
                 AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM banned_coldkeys bc
+                    WHERE bc.miner_coldkey = a.miner_coldkey
+                )
             ORDER BY ass.final_score DESC, rt.avg_cost_usd ASC NULLS LAST, ass.created_at ASC
             LIMIT 1
         )
@@ -85,3 +103,70 @@ async def get_weight_receiving_agent_info(conn: DatabaseConnection) -> Optional[
     if current_leader is None or "miner_hotkey" not in current_leader or "agent_id" not in current_leader:
         return None
     return current_leader
+
+
+@db_operation
+async def get_incentive_reward_candidates(
+    conn: DatabaseConnection,
+    set_id: int,
+    required_validator_count: int = config.NUM_EVALS_PER_AGENT,
+) -> tuple[list[RewardCandidate], datetime]:
+    rows = await conn.fetch(
+        """
+        SELECT
+            approved.agent_id,
+            agent.miner_hotkey,
+            approved.relative_improvement_units,
+            approved.time_multiplier,
+            approved.initial_reward_score,
+            approved.approved_at,
+            NOW() AS observed_at
+        FROM approved_agents approved
+        INNER JOIN agents agent ON agent.agent_id = approved.agent_id
+        INNER JOIN agent_scores score
+            ON score.agent_id = approved.agent_id
+            AND score.set_id = approved.set_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = approved.agent_id
+            AND review.set_id = approved.set_id
+        WHERE approved.set_id = $1
+          AND score.approved IS TRUE
+          AND score.approved_at <= NOW()
+          AND score.validator_count = $2
+          AND score.status::text = 'finished'
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM benchmark_agent_ids benchmark
+              WHERE benchmark.agent_id = approved.agent_id
+          )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM banned_coldkeys banned
+              WHERE banned.miner_coldkey = agent.miner_coldkey
+          )
+        """,
+        set_id,
+        required_validator_count,
+    )
+    snapshot_fields = ("relative_improvement_units", "time_multiplier", "initial_reward_score")
+    complete_rows = [row for row in rows if all(row[field] is not None for field in snapshot_fields)]
+    missing_snapshot_agent_ids = [
+        str(row["agent_id"]) for row in rows if any(row[field] is None for field in snapshot_fields)
+    ]
+    if missing_snapshot_agent_ids:
+        logger.error(
+            f"Active incentive set {set_id} has approved agents without incentive snapshots; "
+            f"excluding them from reward candidates: {', '.join(missing_snapshot_agent_ids)}"
+        )
+    observed_at = rows[0]["observed_at"] if rows else datetime.now(timezone.utc)
+    candidates = [
+        RewardCandidate(
+            agent_id=row["agent_id"],
+            miner_hotkey=row["miner_hotkey"],
+            initial_reward_score=row["initial_reward_score"],
+            approved_at=row["approved_at"],
+        )
+        for row in complete_rows
+    ]
+    return candidates, observed_at

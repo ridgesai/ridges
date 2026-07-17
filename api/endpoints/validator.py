@@ -51,9 +51,9 @@ from queries.agent import (
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
     get_openrouter_secrets_for_agent_id,
     get_top_agents,
-    update_agent_status,
 )
 from queries.approval import finish_agent_and_enqueue_approval
+from queries.banned_coldkey import is_agent_coldkey_banned
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
     get_approved_leader_ranking_for_set,
@@ -80,6 +80,7 @@ from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigEr
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
+from utils.incentives import calculate_relative_improvement
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
@@ -1189,10 +1190,18 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
             )
         else:
-            await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+            await transition_agent_status_if_matches(
+                hydrated_evaluation.agent_id,
+                agent.status,
+                new_agent_status,
+            )
 
 
 async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
+    if await is_agent_coldkey_banned(agent_id):
+        logger.info(f"Skipping auto approval for agent_id={agent_id}: miner coldkey is banned")
+        return False
+
     candidate = await get_validator_agent_score_for_set(
         agent_id,
         set_id,
@@ -1211,5 +1220,15 @@ async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> boo
     )
     if leader is None:
         return True
+
+    if set_id >= config.INCENTIVE_START_SET_ID:
+        return calculate_relative_improvement(
+            candidate_score=candidate.final_score,
+            candidate_cost=candidate.avg_cost_usd,
+            leader_score=leader.final_score,
+            leader_cost=leader.avg_cost_usd,
+            performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+            cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        ).qualified
 
     return candidate.beats(leader)

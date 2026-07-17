@@ -409,10 +409,10 @@ async def test_local_upper_bound_only_reduces_for_unsolved_or_agent_errors() -> 
 
 
 @pytest.mark.anyio
-async def test_approved_validator_leader_ignores_cancelled_agents() -> None:
+async def test_approved_validator_leader_uses_only_finished_agents() -> None:
     conn = _FakeLeaderConn()
 
     await get_approved_validator_leader_score_for_set.__wrapped__(conn, 21, uuid4(), 3)
 
     assert conn.query is not None
-    assert "agent_score.status::text <> 'cancelled'" in conn.query
+    assert "agent_score.status::text = 'finished'" in conn.query

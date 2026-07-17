@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 import api.endpoints.evaluation_sets as evaluation_sets_endpoint
 import utils.database as _db
+from utils.bittensor import HotkeySubnetInfo
 
 
 @pytest.fixture(autouse=True)
@@ -13,12 +14,15 @@ async def clean_tables(postgres_db):
     yield
     async with _db.pool.acquire() as conn:
         await conn.execute(
-            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, benchmark_agent_ids RESTART IDENTITY CASCADE"
+            "TRUNCATE evaluation_sets, agents, agent_scores, evaluations, approved_agents, competitions, "
+            "benchmark_agent_ids, banned_coldkeys RESTART IDENTITY CASCADE"
         )
 
 
 @pytest.fixture(autouse=True)
 async def remove_caching(monkeypatch):
+    clear_hotkey_chain_cache = evaluation_sets_endpoint.get_subnet_hotkey_info.cache_clear
+    clear_hotkey_chain_cache()
     monkeypatch.setattr(evaluation_sets_endpoint, "_get_latest_set_id", evaluation_sets_endpoint.get_latest_set_id)
     monkeypatch.setattr(evaluation_sets_endpoint, "_cached_build_detail", evaluation_sets_endpoint._build_detail)
     monkeypatch.setattr(
@@ -27,6 +31,8 @@ async def remove_caching(monkeypatch):
     monkeypatch.setattr(
         evaluation_sets_endpoint, "_cached_build_approved_agents", evaluation_sets_endpoint._build_approved_agents
     )
+    yield
+    clear_hotkey_chain_cache()
 
 
 SET_1_CREATED = datetime(2026, 5, 1, tzinfo=timezone.utc)
@@ -46,13 +52,24 @@ async def _insert_eval_set(conn, set_id: int, created_at: datetime) -> None:
 
 
 async def _insert_agent(
-    conn, *, agent_id, miner_hotkey: str, status: str, created_at: datetime, set_id: int | None = None
+    conn,
+    *,
+    agent_id,
+    miner_hotkey: str,
+    status: str,
+    created_at: datetime,
+    set_id: int | None = None,
+    miner_coldkey: str | None = None,
 ) -> None:
     await conn.execute(
-        """INSERT INTO agents (agent_id, miner_hotkey, name, version_num, status, created_at, ip_address, set_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)""",
+        """INSERT INTO agents (
+               agent_id, miner_hotkey, miner_coldkey, name, version_num,
+               status, created_at, ip_address, set_id
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
         agent_id,
         miner_hotkey,
+        miner_coldkey,
         miner_hotkey,
         1,
         status,
@@ -468,6 +485,68 @@ async def test_evaluation_set_leaderboard_ranks_by_score_cost_then_submission_ti
 
 
 @pytest.mark.anyio
+async def test_coldkey_ban_disqualifies_competitor_and_removes_approved_output():
+    banned_agent = uuid4()
+    eligible_agent = uuid4()
+
+    async with _db.pool.acquire() as conn:
+        await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
+        await _insert_agent(
+            conn,
+            agent_id=banned_agent,
+            miner_hotkey="banned-hotkey",
+            miner_coldkey="banned-coldkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2,
+            set_id=2,
+        )
+        await _insert_agent(
+            conn,
+            agent_id=eligible_agent,
+            miner_hotkey="eligible-hotkey",
+            miner_coldkey="eligible-coldkey",
+            status="finished",
+            created_at=AGENT_TS_SET_2 + timedelta(minutes=1),
+            set_id=2,
+        )
+        await _insert_approved_agent(conn, agent_id=banned_agent, set_id=2)
+        await _insert_approved_agent(conn, agent_id=eligible_agent, set_id=2)
+        await _insert_agent_score(
+            conn,
+            agent_id=banned_agent,
+            miner_hotkey="banned-hotkey",
+            set_id=2,
+            final_score=0.9,
+        )
+        await _insert_agent_score(
+            conn,
+            agent_id=eligible_agent,
+            miner_hotkey="eligible-hotkey",
+            set_id=2,
+            final_score=0.8,
+        )
+        await conn.execute(
+            "INSERT INTO banned_coldkeys (miner_coldkey, banned_reason) VALUES ('banned-coldkey', 'test ban')"
+        )
+
+    leaderboard = await evaluation_sets_endpoint.evaluation_set_leaderboard(set_id=2)
+    by_id = {agent.agent_id: agent for agent in leaderboard}
+    assert by_id[banned_agent].disqualified is True
+    assert by_id[banned_agent].rank is None
+    assert by_id[eligible_agent].disqualified is False
+    assert by_id[eligible_agent].rank == 1
+
+    detail = await evaluation_sets_endpoint.evaluation_set_detail(set_id=2)
+    assert detail.scores.best == 0.8
+    assert detail.submissions.approved_emission_count == 1
+    assert detail.top_agent is not None
+    assert detail.top_agent.agent_id == eligible_agent
+
+    approved_agents = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=2)
+    assert [agent.id for agent in approved_agents] == [eligible_agent]
+
+
+@pytest.mark.anyio
 async def test_evaluation_set_detail_efficiency_uses_all_ranked_agents_not_top_25_only():
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=2, created_at=SET_2_CREATED)
@@ -596,6 +675,10 @@ async def test_evaluation_set_detail_no_scores_returns_null_best_and_average():
 
 @pytest.mark.anyio
 async def test_evaluation_set_approved_agents_returns_empty_list(monkeypatch):
+    async def no_allocations():
+        return evaluation_sets_endpoint.CurrentAllocations(hotkey_weights={}, agent_weights={})
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", no_allocations)
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
     result = await evaluation_sets_endpoint.evaluation_set_approved_agents(set_id=1)
@@ -608,6 +691,21 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     agent_id_b = uuid4()
     approved_at_a = datetime(2026, 5, 1, 10, tzinfo=timezone.utc)  # latest approved appears first
     approved_at_b = datetime(2026, 5, 1, 8, tzinfo=timezone.utc)
+
+    async def current_allocations():
+        return evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"hotkey-a": 0.7, "hotkey-b": 0.3},
+            agent_weights={agent_id_a: 0.7, agent_id_b: 0.3},
+        )
+
+    async def subnet_info():
+        return {
+            "hotkey-a": HotkeySubnetInfo(uid=1, emission=147.600823658),
+            "hotkey-b": HotkeySubnetInfo(uid=2, emission=2.037068052),
+        }
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_current_allocations", current_allocations)
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
 
     async with _db.pool.acquire() as conn:
         await _insert_eval_set(conn, set_id=1, created_at=SET_1_CREATED)
@@ -648,6 +746,8 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[0].id == agent_id_a
     assert result[0].miner_hotkey == "hotkey-a"
     assert result[0].final_score == 90.0
+    assert result[0].emission == pytest.approx(147.600823658)
+    assert result[0].reward_weight == pytest.approx(0.7)
     assert result[0].approved_at == approved_at_a
     assert result[0].average_cost_usd == 0.5
     assert result[0].average_runtime_seconds == 120
@@ -655,10 +755,92 @@ async def test_evaluation_set_approved_agents_returns_approved_agents(monkeypatc
     assert result[1].id == agent_id_b
     assert result[1].miner_hotkey == "hotkey-b"
     assert result[1].final_score == 70.0
-    assert result[1].emission == 0.0
+    assert result[1].emission == pytest.approx(2.037068052)
+    assert result[1].reward_weight == pytest.approx(0.3)
     assert result[1].approved_at == approved_at_b
     assert result[1].average_cost_usd == 0.3
     assert result[1].average_runtime_seconds == 60
+
+
+@pytest.mark.anyio
+async def test_live_approved_agents_show_individual_weights_for_shared_hotkey(monkeypatch):
+    first_agent_id = uuid4()
+    second_agent_id = uuid4()
+    first_agent = evaluation_sets_endpoint.ApprovedAgent(
+        id=first_agent_id,
+        miner_hotkey="shared-hotkey",
+        name="first-agent",
+        version_num=1,
+        created_at=AGENT_TS_SET_1,
+        final_score=0.8,
+        emission=None,
+        reward_weight=None,
+        approved_at=AGENT_TS_SET_1,
+        average_runtime_seconds=None,
+        average_cost_usd=None,
+    )
+    second_agent = first_agent.model_copy(
+        update={
+            "id": second_agent_id,
+            "name": "second-agent",
+            "version_num": 2,
+            "final_score": 0.9,
+        }
+    )
+
+    async def subnet_info():
+        return {"shared-hotkey": HotkeySubnetInfo(uid=1, emission=12.5)}
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", subnet_info)
+    allocations = evaluation_sets_endpoint.CurrentAllocations(
+        hotkey_weights={"shared-hotkey": 1.0},
+        agent_weights={first_agent_id: 0.25, second_agent_id: 0.75},
+    )
+
+    result = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+        [first_agent, second_agent],
+        allocations,
+    )
+
+    assert [agent.reward_weight for agent in result] == pytest.approx([0.25, 0.75])
+    assert [agent.emission for agent in result] == pytest.approx([12.5, 12.5])
+
+
+@pytest.mark.anyio
+async def test_live_approved_agent_data_degrades_when_chain_lookup_fails(monkeypatch):
+    agent_id = uuid4()
+    agent = evaluation_sets_endpoint.ApprovedAgent(
+        id=agent_id,
+        miner_hotkey="hotkey",
+        name="agent",
+        version_num=1,
+        created_at=AGENT_TS_SET_1,
+        final_score=0.9,
+        emission=None,
+        reward_weight=None,
+        approved_at=AGENT_TS_SET_1,
+        average_runtime_seconds=None,
+        average_cost_usd=None,
+    )
+
+    async def fail_chain_lookup():
+        raise RuntimeError("chain unavailable")
+
+    monkeypatch.setattr(evaluation_sets_endpoint, "get_subnet_hotkey_info", fail_chain_lookup)
+
+    historical = await evaluation_sets_endpoint._add_onchain_approved_agent_data([agent], None)
+    current = await evaluation_sets_endpoint._add_onchain_approved_agent_data(
+        [agent],
+        evaluation_sets_endpoint.CurrentAllocations(
+            hotkey_weights={"hotkey": 0.7},
+            agent_weights={agent_id: 0.7},
+        ),
+    )
+
+    assert historical[0].emission is None
+    assert historical[0].reward_weight is None
+    assert current[0].emission is None
+    assert current[0].reward_weight == pytest.approx(0.7)
 
 
 @pytest.mark.anyio
