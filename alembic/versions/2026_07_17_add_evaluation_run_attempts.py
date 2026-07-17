@@ -1,8 +1,8 @@
 """Add evaluation_run_attempts and per-attempt logs
 
 Revision ID: b3f1a9c4d210
-Revises: b7e4d2c9a106
-Create Date: 2026-07-13 00:00:00.000000
+Revises: d2a7f4c9e318
+Create Date: 2026-07-17 00:00:00.000000
 
 """
 
@@ -11,7 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "b3f1a9c4d210"
-down_revision: Union[str, Sequence[str], None] = "b7e4d2c9a106"
+down_revision: Union[str, Sequence[str], None] = "d2a7f4c9e318"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
