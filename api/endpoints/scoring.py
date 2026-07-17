@@ -29,6 +29,8 @@ class ScoringScreenerInfoResponse(BaseModel):
     screener_1_threshold: float
     screener_2_threshold: float
     prune_threshold: float
+    incentive_performance_threshold: float
+    incentive_cost_threshold: float
 
     screener_1_average_score: Optional[float] = None
     screener_2_average_score: Optional[float] = None
@@ -49,6 +51,8 @@ async def screener_info() -> ScoringScreenerInfoResponse:
         screener_1_threshold=config.SCREENER_1_THRESHOLD,
         screener_2_threshold=config.SCREENER_2_THRESHOLD,
         prune_threshold=config.PRUNE_THRESHOLD,
+        incentive_performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+        incentive_cost_threshold=config.INCENTIVE_COST_THRESHOLD,
         screener_1_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_1],
         screener_2_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.screener_2],
         validator_average_score=average_score_per_evaluation_set_group[EvaluationSetGroup.validator],

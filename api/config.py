@@ -248,6 +248,9 @@ INCENTIVE_TIME_MULTIPLIER_MAX = _positive_float_setting("INCENTIVE_TIME_MULTIPLI
 if INCENTIVE_TIME_MULTIPLIER_MAX < 1:
     raise ValueError("INCENTIVE_TIME_MULTIPLIER_MAX must be at least 1")
 
+CODE_HIDE_TOP_AGENT_COUNT = int(os.getenv("CODE_HIDE_TOP_AGENT_COUNT", "10"))
+CODE_HIDE_TOP_SCORE_COUNT = int(os.getenv("CODE_HIDE_TOP_SCORE_COUNT", "3"))
+
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")

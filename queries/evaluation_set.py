@@ -43,6 +43,7 @@ def _sql_agents_in_window_cte(select_columns: str) -> str:
     agents_in_window AS MATERIALIZED (
         SELECT
             {select_columns},
+            review.approval_review_status AS approval_review_status,
             CASE
                 WHEN review.approval_review_status = 'rejected'
                     OR EXISTS (
@@ -607,6 +608,14 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
             aiw.version_num,
             aiw.status,
             (aa.agent_id IS NOT NULL) AS approved,
+            aiw.approval_review_status,
+            aa.performance_delta,
+            aa.cost_delta,
+            aa.relative_improvement_units,
+            aa.time_multiplier,
+            aa.initial_reward_score,
+            baseline.name AS baseline_agent_name,
+            baseline.version_num AS baseline_agent_version_num,
             rs.final_score,
             COALESCE(rs.validator_count, 0) AS validator_count,
             rs.average_cost_usd,
@@ -619,6 +628,7 @@ async def get_evaluation_set_leaderboard_agents(conn: DatabaseConnection, set_id
         LEFT JOIN approved_agents aa
             ON aa.agent_id = aiw.agent_id
            AND aa.set_id = $1
+        LEFT JOIN agents baseline ON baseline.agent_id = aa.baseline_agent_id
         ORDER BY
             rs.rank ASC NULLS LAST,
             rs.final_score DESC NULLS LAST,
