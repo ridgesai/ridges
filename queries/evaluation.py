@@ -207,12 +207,16 @@ async def get_approved_validator_leader_score_for_set(
         SELECT MAX(agent_score.final_score)
         FROM agent_scores agent_score
         INNER JOIN agents agent ON agent.agent_id = agent_score.agent_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = agent_score.agent_id
+            AND review.set_id = agent_score.set_id
         WHERE agent_score.set_id = $1
           AND agent_score.approved IS TRUE
           AND agent_score.approved_at <= NOW()
           AND agent_score.validator_count = $2
-          AND agent_score.status::text <> 'cancelled'
+          AND agent_score.status::text = 'finished'
           AND agent_score.agent_id <> $3
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
           AND NOT EXISTS (
               SELECT 1
               FROM benchmark_agent_ids benchmark_agent
@@ -235,6 +239,9 @@ class AgentRankingProfile:
     final_score: float
     avg_cost_usd: Optional[float]
     created_at: datetime
+    agent_id: UUID | None = None
+    approved_at: datetime | None = None
+    miner_coldkey: str | None = None
 
     def beats(self, other: "AgentRankingProfile") -> bool:
         """Check if an AgentRankingProfile instance can beat
@@ -287,11 +294,17 @@ async def get_approved_leader_ranking_for_set(
     row = await conn.fetchrow(
         """
         SELECT
+            ass.agent_id,
             ass.final_score,
             rt.avg_cost_usd,
-            ass.created_at
+            ass.created_at,
+            ass.approved_at,
+            agent.miner_coldkey
         FROM agent_scores ass
         INNER JOIN agents agent ON agent.agent_id = ass.agent_id
+        LEFT JOIN agent_final_review_statuses review
+            ON review.agent_id = ass.agent_id
+            AND review.set_id = ass.set_id
         LEFT JOIN LATERAL (
             SELECT AVG(eh.avg_cost_usd) AS avg_cost_usd
             FROM evaluations_hydrated eh
@@ -302,10 +315,11 @@ async def get_approved_leader_ranking_for_set(
         ) rt ON true
         WHERE ass.set_id = $1
           AND ass.approved IS TRUE
-          AND ass.approved_at <= NOW()
+          AND ass.approved_at <= clock_timestamp()
           AND ass.validator_count = $2
-          AND ass.status::text <> 'cancelled'
+          AND ass.status::text = 'finished'
           AND ass.agent_id <> $3
+          AND review.approval_review_status IS DISTINCT FROM 'rejected'
           AND NOT EXISTS (
               SELECT 1
               FROM benchmark_agent_ids benchmark_agent
@@ -329,6 +343,9 @@ async def get_approved_leader_ranking_for_set(
         final_score=row["final_score"],
         avg_cost_usd=row["avg_cost_usd"],
         created_at=row["created_at"],
+        agent_id=row["agent_id"],
+        approved_at=row["approved_at"],
+        miner_coldkey=row["miner_coldkey"],
     )
 
 
@@ -342,6 +359,7 @@ async def get_validator_agent_score_for_set(
     row = await conn.fetchrow(
         """
         SELECT
+            ass.agent_id,
             ass.final_score,
             rt.avg_cost_usd,
             ass.created_at
@@ -375,6 +393,7 @@ async def get_validator_agent_score_for_set(
         final_score=row["final_score"],
         avg_cost_usd=row["avg_cost_usd"],
         created_at=row["created_at"],
+        agent_id=row["agent_id"],
     )
 
 

@@ -75,8 +75,8 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
         recorded["approval_candidate_set_id"] = set_id
         return True
 
-    async def fake_update_agent_status(*_args, **_kwargs) -> None:
-        raise AssertionError("update_agent_status should not be called when auto approval is enabled")
+    async def fake_transition_agent_status_if_matches(*_args, **_kwargs) -> bool:
+        raise AssertionError("transition_agent_status_if_matches should not be called when auto approval is enabled")
 
     monkeypatch.setattr(validator_endpoint, "update_evaluation_finished_at", fake_update_evaluation_finished_at)
     monkeypatch.setattr(validator_endpoint, "get_hydrated_evaluation_by_id", fake_get_hydrated_evaluation_by_id)
@@ -88,7 +88,9 @@ async def test_handle_evaluation_finished_enqueues_auto_approval(monkeypatch) ->
     )
     monkeypatch.setattr(validator_endpoint, "finish_agent_and_enqueue_approval", fake_finish_agent_and_enqueue_approval)
     monkeypatch.setattr(validator_endpoint, "_should_run_auto_approval_judge", fake_should_run_auto_approval_judge)
-    monkeypatch.setattr(validator_endpoint, "update_agent_status", fake_update_agent_status)
+    monkeypatch.setattr(
+        validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
+    )
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_ENABLED", True)
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 
@@ -129,9 +131,11 @@ async def test_handle_evaluation_finished_skips_auto_approval_for_non_leader_can
     async def fake_finish_agent_and_enqueue_approval(**_kwargs):
         raise AssertionError("finish_agent_and_enqueue_approval should not be called for non-leader candidates")
 
-    async def fake_update_agent_status(_agent_id, new_status) -> None:
+    async def fake_transition_agent_status_if_matches(_agent_id, expected_status, new_status) -> bool:
         recorded["agent_id"] = _agent_id
+        recorded["expected_status"] = expected_status
         recorded["status"] = new_status
+        return True
 
     monkeypatch.setattr(validator_endpoint, "update_evaluation_finished_at", fake_update_evaluation_finished_at)
     monkeypatch.setattr(validator_endpoint, "get_hydrated_evaluation_by_id", fake_get_hydrated_evaluation_by_id)
@@ -143,7 +147,9 @@ async def test_handle_evaluation_finished_skips_auto_approval_for_non_leader_can
     )
     monkeypatch.setattr(validator_endpoint, "_should_run_auto_approval_judge", fake_should_run_auto_approval_judge)
     monkeypatch.setattr(validator_endpoint, "finish_agent_and_enqueue_approval", fake_finish_agent_and_enqueue_approval)
-    monkeypatch.setattr(validator_endpoint, "update_agent_status", fake_update_agent_status)
+    monkeypatch.setattr(
+        validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
+    )
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_ENABLED", True)
 
     await validator_endpoint.handle_evaluation_if_finished(uuid4())
@@ -152,6 +158,7 @@ async def test_handle_evaluation_finished_skips_auto_approval_for_non_leader_can
         "approval_candidate_agent_id": agent_id,
         "approval_candidate_set_id": 11,
         "agent_id": agent_id,
+        "expected_status": AgentStatus.evaluating,
         "status": AgentStatus.finished,
     }
 
@@ -237,9 +244,11 @@ async def test_handle_evaluation_finished_updates_status_without_auto_approval(m
     async def fake_finish_agent_and_enqueue_approval(**_kwargs):
         raise AssertionError("finish_agent_and_enqueue_approval should not be called when auto approval is disabled")
 
-    async def fake_update_agent_status(_agent_id, new_status) -> None:
+    async def fake_transition_agent_status_if_matches(_agent_id, expected_status, new_status) -> bool:
         recorded["agent_id"] = _agent_id
+        recorded["expected_status"] = expected_status
         recorded["status"] = new_status
+        return True
 
     monkeypatch.setattr(validator_endpoint, "update_evaluation_finished_at", fake_update_evaluation_finished_at)
     monkeypatch.setattr(validator_endpoint, "get_hydrated_evaluation_by_id", fake_get_hydrated_evaluation_by_id)
@@ -250,13 +259,16 @@ async def test_handle_evaluation_finished_updates_status_without_auto_approval(m
         fake_get_num_successful_validator_evaluations_for_agent_id,
     )
     monkeypatch.setattr(validator_endpoint, "finish_agent_and_enqueue_approval", fake_finish_agent_and_enqueue_approval)
-    monkeypatch.setattr(validator_endpoint, "update_agent_status", fake_update_agent_status)
+    monkeypatch.setattr(
+        validator_endpoint, "transition_agent_status_if_matches", fake_transition_agent_status_if_matches
+    )
     monkeypatch.setattr(validator_endpoint.config, "AUTO_APPROVAL_ENABLED", False)
 
     await validator_endpoint.handle_evaluation_if_finished(uuid4())
 
     assert recorded == {
         "agent_id": agent_id,
+        "expected_status": AgentStatus.evaluating,
         "status": AgentStatus.finished,
     }
 
@@ -323,3 +335,39 @@ async def test_should_run_auto_approval_judge_rejects_newer_candidate_same_score
     )
 
     assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("candidate_score", "candidate_cost", "expected"),
+    [
+        (0.515, 0.20, True),  # Exactly 3% better performance.
+        (0.50, 0.094, True),  # Same performance and exactly 6% lower cost.
+        (0.49, 0.05, False),  # A lower score cannot qualify through cost alone.
+        (0.514, 0.096, False),  # Neither relative threshold is met.
+    ],
+)
+async def test_active_incentive_prefilter_uses_relative_thresholds(
+    monkeypatch,
+    candidate_score: float,
+    candidate_cost: float,
+    expected: bool,
+) -> None:
+    agent_id = uuid4()
+    now = datetime.now(timezone.utc)
+
+    async def fake_get_validator_agent_score_for_set(_agent_id, _set_id, _required_validator_count):
+        return AgentRankingProfile(final_score=candidate_score, avg_cost_usd=candidate_cost, created_at=now)
+
+    async def fake_get_approved_leader_ranking_for_set(_set_id, _excluded_agent_id, _required_validator_count):
+        return AgentRankingProfile(final_score=0.50, avg_cost_usd=0.10, created_at=now)
+
+    monkeypatch.setattr(validator_endpoint.config, "INCENTIVE_START_SET_ID", 11)
+    monkeypatch.setattr(validator_endpoint, "get_validator_agent_score_for_set", fake_get_validator_agent_score_for_set)
+    monkeypatch.setattr(
+        validator_endpoint,
+        "get_approved_leader_ranking_for_set",
+        fake_get_approved_leader_ranking_for_set,
+    )
+
+    assert await validator_endpoint._should_run_auto_approval_judge(agent_id=agent_id, set_id=11) is expected

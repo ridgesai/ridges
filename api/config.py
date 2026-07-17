@@ -1,4 +1,5 @@
 import logging
+import math
 import os
 import uuid
 
@@ -209,6 +210,44 @@ AUTO_APPROVAL_RUN_LOOP = SHOULD_RUN_LOOPS and AUTO_APPROVAL_ENABLED
 AUTO_APPROVAL_POLICY_VERSION = os.getenv("AUTO_APPROVAL_POLICY_VERSION", "approval-v1")
 APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS = int(os.getenv("APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS", "5"))
 
+# Old note from ADAM: Set IDs 6 and earlier still
+# included the validator optimization
+# of skipping all tests after the first failure, which means that
+# the test pass-rate information is incorrect. We will just exclude
+# these sets since they came before the Problem Info viewer anyway,
+# which is the only feature uses this endpoint.
+EARLIEST_SET_ID_WITH_GOOD_DATA = int(os.getenv("EARLIEST_SET_ID_WITH_GOOD_DATA", "7"))
+
+
+def _positive_float_setting(name: str, default: str) -> float:
+    value = float(os.getenv(name, default))
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be finite and positive")
+    return value
+
+
+def _fraction_setting(name: str, default: str) -> float:
+    value = _positive_float_setting(name, default)
+    if value >= 1:
+        raise ValueError(f"{name} must be less than 1")
+    return value
+
+
+_incentive_start_set_id = os.getenv("INCENTIVE_START_SET_ID")
+if not _incentive_start_set_id:
+    raise ValueError("INCENTIVE_START_SET_ID must be set")
+INCENTIVE_START_SET_ID = int(_incentive_start_set_id)
+if INCENTIVE_START_SET_ID <= 0:
+    raise ValueError("INCENTIVE_START_SET_ID must be positive")
+
+INCENTIVE_PERFORMANCE_THRESHOLD = _fraction_setting("INCENTIVE_PERFORMANCE_THRESHOLD", "0.03")
+INCENTIVE_COST_THRESHOLD = _fraction_setting("INCENTIVE_COST_THRESHOLD", "0.06")
+INCENTIVE_REWARD_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_REWARD_HALF_LIFE_HOURS", "336")
+INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS", "72")
+INCENTIVE_TIME_MULTIPLIER_MAX = _positive_float_setting("INCENTIVE_TIME_MULTIPLIER_MAX", "2.0")
+if INCENTIVE_TIME_MULTIPLIER_MAX < 1:
+    raise ValueError("INCENTIVE_TIME_MULTIPLIER_MAX must be at least 1")
+
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 if not SENTRY_DSN:
     logger.warning("SENTRY_DSN is not set, Sentry will not be configured.")
@@ -268,5 +307,14 @@ logger.info(f"Pre-Screening Projector Poll Interval: {PRE_SCREENING_PROJECTOR_PO
 logger.info(f"Auto Approval Enabled: {AUTO_APPROVAL_ENABLED}")
 logger.info(f"Auto Approval Projector Loop Enabled: {AUTO_APPROVAL_RUN_LOOP}")
 logger.info(f"Approval Projector Poll Interval: {APPROVAL_PROJECTOR_POLL_INTERVAL_SECONDS} second(s)")
+logger.info(f"Earliest SET ID with good data: {EARLIEST_SET_ID_WITH_GOOD_DATA}")
+logger.info(f"Incentive Start Set ID: {INCENTIVE_START_SET_ID}")
+logger.info(
+    f"Incentives: performance_threshold={INCENTIVE_PERFORMANCE_THRESHOLD} "
+    f"cost_threshold={INCENTIVE_COST_THRESHOLD} "
+    f"reward_half_life_hours={INCENTIVE_REWARD_HALF_LIFE_HOURS} "
+    f"time_multiplier_half_life_hours={INCENTIVE_TIME_MULTIPLIER_HALF_LIFE_HOURS} "
+    f"time_multiplier_max={INCENTIVE_TIME_MULTIPLIER_MAX}"
+)
 
 logger.info("=========================")

@@ -55,16 +55,19 @@ async def send_heartbeat_loop(session_id: UUID):
 async def set_weights_loop():
     logger.info("Starting set weights loop...")
     while True:
-        weights_mapping = await retry_with_backoff(
-            lambda: get_ridges_platform("/scoring/weights", quiet=1),
-        )
-
         try:
+            weights_mapping = await retry_with_backoff(
+                lambda: get_ridges_platform("/scoring/weights", quiet=1),
+            )
             await asyncio.wait_for(
                 set_weights_from_mapping(weights_mapping), timeout=config.SET_WEIGHTS_TIMEOUT_SECONDS
             )
-        except asyncio.TimeoutError as e:
-            logger.error(f"asyncio.TimeoutError in set_weights_from_mapping(): {e}")
+        except asyncio.CancelledError:
+            raise
+        except asyncio.TimeoutError:
+            logger.error("Timed out while setting weights; retrying on the next interval")
+        except Exception as e:
+            logger.error(f"Weight-setting tick failed: {type(e).__name__}: {e}")
 
         await asyncio.sleep(config.SET_WEIGHTS_INTERVAL_SECONDS)
 
