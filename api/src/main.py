@@ -12,12 +12,14 @@ from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 
 import api.config as config
+from api.endpoints.admin import router as admin_router
 from api.endpoints.agent import router as agent_router
 from api.endpoints.debug import router as debug_router
 from api.endpoints.evaluation_run import router as evaluation_run_router
 from api.endpoints.evaluation_sets import router as evaluation_sets_router
 from api.endpoints.evaluations import router as evaluations_router
 from api.endpoints.retrieval import router as retrieval_router
+from api.endpoints.scaling import router as scaling_router
 from api.endpoints.scoring import router as scoring_router
 from api.endpoints.statistics import router as statistics_router
 from api.endpoints.validator import router as validator_router
@@ -123,6 +125,7 @@ app.add_middleware(RequestInterceptorMiddleware)
 app.add_middleware(CorrelationIdMiddleware)
 
 app.include_router(upload_router, prefix="/upload")
+app.include_router(admin_router, prefix="/admin")
 app.include_router(retrieval_router, prefix="/retrieval")
 app.include_router(scoring_router, prefix="/scoring")
 app.include_router(validator_router, prefix="/validator")
@@ -132,6 +135,7 @@ app.include_router(agent_router, prefix="/agent")
 app.include_router(evaluation_run_router, prefix="/evaluation-run")
 app.include_router(evaluations_router, prefix="/evaluation")
 app.include_router(statistics_router, prefix="/statistics")
+app.include_router(scaling_router, prefix="/scaling")
 
 
 if __name__ == "__main__":

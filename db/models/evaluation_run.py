@@ -46,13 +46,40 @@ class EvaluationRun(Base):
     )
 
 
+class EvaluationRunAttempt(Base):
+    __tablename__ = "evaluation_run_attempts"
+
+    attempt_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    evaluation_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        sa.ForeignKey("evaluation_runs.evaluation_run_id"),
+        nullable=False,
+    )
+    attempt_number: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    status: Mapped[EvaluationRunStatus] = mapped_column(
+        sa.Enum(EvaluationRunStatus, name="evaluationrunstatus"), nullable=False
+    )
+    error_code: Mapped[Optional[int]] = mapped_column(sa.Integer)
+    error_message: Mapped[Optional[str]] = mapped_column(sa.Text)
+    cost_usd: Mapped[Optional[float]] = mapped_column(sa.Double)
+    created_at: Mapped[datetime] = mapped_column(sa.TIMESTAMP(timezone=True), nullable=False)
+    started_initializing_agent_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    started_running_agent_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    started_initializing_eval_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    started_running_eval_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+    finished_or_errored_at: Mapped[Optional[datetime]] = mapped_column(sa.TIMESTAMP(timezone=True))
+
+    __table_args__ = (sa.UniqueConstraint("evaluation_run_id", "attempt_number"),)
+
+
 class EvaluationRunLog(Base):
     __tablename__ = "evaluation_run_logs"
 
     evaluation_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    attempt_number: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="1")
     logs: Mapped[Optional[str]] = mapped_column(sa.Text)
     type: Mapped[Optional[EvaluationRunLogType]] = mapped_column(
         sa.Enum(EvaluationRunLogType, name="evaluationrunlogtype")
     )
 
-    __table_args__ = (sa.PrimaryKeyConstraint("evaluation_run_id", "type"),)
+    __table_args__ = (sa.PrimaryKeyConstraint("evaluation_run_id", "attempt_number", "type"),)

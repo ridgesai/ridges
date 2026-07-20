@@ -1,0 +1,283 @@
+---
+# Screener class-1 StatefulSet.
+# Each Pod derives its unique SCREENER_NAME from the class + Pod ordinal:
+#   ridges-screener-1-0 → screener-1-0
+#   ridges-screener-1-1 → screener-1-1
+#
+# Scale independently (0 = idle, KEDA scales up on pending work):
+#   kubectl scale sts ridges-screener-1 --replicas=5 -n ridges
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ridges-screener-1
+  namespace: ridges
+  labels:
+    app: ridges-screener
+    ridges.ai/screener-class: "1"
+spec:
+  replicas: 1
+  serviceName: ridges-screener-1
+  selector:
+    matchLabels:
+      app: ridges-screener
+      ridges.ai/screener-class: "1"
+  template:
+    metadata:
+      labels:
+        app: ridges-screener
+        ridges.ai/screener-class: "1"
+    spec:
+      # Required to create Pods (eval jobs) in the same namespace
+      serviceAccountName: ridges-screener
+      initContainers:
+        - name: set-screener-name
+          image: busybox:stable
+          command:
+            - /bin/sh
+            - -c
+            - |
+              ORDINAL=$(echo $HOSTNAME | rev | cut -d'-' -f1 | rev)
+              echo "screener-${SCREENER_CLASS}-${ORDINAL}" > /shared/screener-name
+          env:
+            - name: SCREENER_CLASS
+              value: "1"
+          volumeMounts:
+            - name: shared-env
+              mountPath: /shared
+      containers:
+        - name: screener
+          image: ridges-validator:latest
+          # Never: image is kind-loaded locally, not pulled from a registry.
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - |
+              export SCREENER_NAME=$(cat /shared/screener-name)
+              exec python -m validator.main
+          env:
+            - name: MODE
+              value: screener
+            - name: SCREENER_CLASS
+              value: "1"
+            - name: RIDGES_ENVIRONMENT_TYPE
+              value: kubernetes
+            - name: K8S_NAMESPACE
+              value: ridges
+            - name: K8S_REGISTRY
+              value: registry.ridges.svc:5000
+            - name: MAX_CONCURRENT_EVALUATION_RUNS
+              value: "30"
+            - name: K8S_REGISTRY_SECRET
+              value: registry-creds
+            - name: K8S_REGISTRY_INSECURE
+              value: "true"  # local Kind (plain HTTP); set to "false" in prod with TLS
+            - name: K8S_REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: registry-password
+                  key: password
+            # Override URLs from secret to use the in-cluster dockerhost proxy
+            # so pods can reach the host API and S3mock instead of 127.0.0.1.
+            - name: RIDGES_PLATFORM_URL
+              value: http://dockerhost.ridges.svc:8000
+            - name: S3_ENDPOINT_URL
+              value: http://dockerhost.ridges.svc:9090
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: PROXY_IMAGE
+              value: "ghcr.io/ridgesai/sandbox-proxy:pr-1"
+          envFrom:
+            - secretRef:
+                name: ridges-screener-secrets
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: shared-env
+              mountPath: /shared
+      volumes:
+        - name: shared-env
+          emptyDir: {}
+---
+# Screener class-2 StatefulSet – mirrors class-1 with a different class label.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ridges-screener-2
+  namespace: ridges
+  labels:
+    app: ridges-screener
+    ridges.ai/screener-class: "2"
+spec:
+  replicas: 0
+  serviceName: ridges-screener-2
+  selector:
+    matchLabels:
+      app: ridges-screener
+      ridges.ai/screener-class: "2"
+  template:
+    metadata:
+      labels:
+        app: ridges-screener
+        ridges.ai/screener-class: "2"
+    spec:
+      serviceAccountName: ridges-screener
+      initContainers:
+        - name: set-screener-name
+          image: busybox:stable
+          command:
+            - /bin/sh
+            - -c
+            - |
+              ORDINAL=$(echo $HOSTNAME | rev | cut -d'-' -f1 | rev)
+              echo "screener-${SCREENER_CLASS}-${ORDINAL}" > /shared/screener-name
+          env:
+            - name: SCREENER_CLASS
+              value: "2"
+          volumeMounts:
+            - name: shared-env
+              mountPath: /shared
+      containers:
+        - name: screener
+          image: ridges-validator:latest
+          # Never: image is kind-loaded locally, not pulled from a registry.
+          imagePullPolicy: Never
+          command:
+            - /bin/sh
+            - -c
+            - |
+              export SCREENER_NAME=$(cat /shared/screener-name)
+              exec python -m validator.main
+          env:
+            - name: MODE
+              value: screener
+            - name: SCREENER_CLASS
+              value: "2"
+            - name: RIDGES_ENVIRONMENT_TYPE
+              value: kubernetes
+            - name: K8S_NAMESPACE
+              value: ridges
+            - name: K8S_REGISTRY
+              value: registry.ridges.svc:5000
+            - name: MAX_CONCURRENT_EVALUATION_RUNS
+              value: "30"
+            - name: K8S_REGISTRY_SECRET
+              value: registry-creds
+            - name: K8S_REGISTRY_INSECURE
+              value: "true"  # local Kind (plain HTTP); set to "false" in prod with TLS
+            - name: K8S_REGISTRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: registry-password
+                  key: password
+            # Override URLs from secret to use the in-cluster dockerhost proxy
+            # so pods can reach the host API and S3mock instead of 127.0.0.1.
+            - name: RIDGES_PLATFORM_URL
+              value: http://dockerhost.ridges.svc:8000
+            - name: S3_ENDPOINT_URL
+              value: http://dockerhost.ridges.svc:9090
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+          envFrom:
+            - secretRef:
+                name: ridges-screener-secrets
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: shared-env
+              mountPath: /shared
+      volumes:
+        - name: shared-env
+          emptyDir: {}
+---
+# Headless services for stable DNS (required by StatefulSet spec)
+apiVersion: v1
+kind: Service
+metadata:
+  name: ridges-screener-1
+  namespace: ridges
+spec:
+  clusterIP: None
+  selector:
+    app: ridges-screener
+    ridges.ai/screener-class: "1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ridges-screener-2
+  namespace: ridges
+spec:
+  clusterIP: None
+  selector:
+    app: ridges-screener
+    ridges.ai/screener-class: "2"
+---
+# ServiceAccount + RBAC for the screener to manage Pods and Jobs in the ridges namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ridges-screener
+  namespace: ridges
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ridges-screener
+  namespace: ridges
+rules:
+  - apiGroups: [""]
+    resources: [pods, secrets]
+    verbs: [get, list, watch, create, delete, patch]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create, get]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ridges-screener
+  namespace: ridges
+subjects:
+  - kind: ServiceAccount
+    name: ridges-screener
+    namespace: ridges
+roleRef:
+  kind: Role
+  name: ridges-screener
+  apiGroup: rbac.authorization.k8s.io

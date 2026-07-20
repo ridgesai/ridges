@@ -26,12 +26,15 @@ logger = logging.getLogger(__name__)
 _JOB_NAME_FORMAT = "{problem_name}__{evaluation_run_id}"
 
 
-def _format_job_name(problem_name: str, evaluation_run_id: UUID) -> str:
-    """Format the job name Harbor uses for one evaluation run."""
-    return _JOB_NAME_FORMAT.format(
+def _format_job_name(problem_name: str, evaluation_run_id: UUID, attempt_number: int = 1) -> str:
+    """Format the job name Harbor uses for one evaluation run attempt."""
+    job_name = _JOB_NAME_FORMAT.format(
         problem_name=problem_name,
         evaluation_run_id=evaluation_run_id,
     )
+    if attempt_number > 1:
+        job_name = f"{job_name}__a{attempt_number}"
+    return job_name
 
 
 @contextmanager
@@ -100,6 +103,7 @@ class ExecutionEngine:
         fetch_task_url: Callable[[str], Awaitable[str]] | None = None,
         on_agent_started: Callable[[], Awaitable[None]] | None = None,
         on_verification_started: Callable[[TrialSnapshot], Awaitable[None]] | None = None,
+        attempt_number: int = 1,
     ) -> ExecutionResult:
         """Run the task referenced by the evaluation set and normalize the result.
 
@@ -117,6 +121,7 @@ class ExecutionEngine:
             parsed_spec=parsed_spec,
             task_dir=task_dir,
             problem_name=problem_name,
+            attempt_number=attempt_number,
         )
         inference_seed = problem_seed(problem_name)
 
@@ -151,6 +156,7 @@ class ExecutionEngine:
                     openrouter_config=openrouter_config,
                     max_cost_usd=self.max_cost_usd,
                     inference_seed=inference_seed,
+                    fetch_task_url=fetch_task_url,
                     on_agent_started=harbor_on_agent_started if on_agent_started is not None else None,
                     on_verification_started=(
                         harbor_on_verification_started if on_verification_started is not None else None
@@ -204,9 +210,12 @@ class ExecutionEngine:
         parsed_spec: HarborRemoteTaskExecutionSpec,
         task_dir: Path,
         problem_name: str,
+        attempt_number: int = 1,
     ) -> ExecutionRunRequest:
         """Bundle the resolved inputs needed to invoke the Harbor runner."""
-        job_name = _format_job_name(problem_name=problem_name, evaluation_run_id=evaluation_run_id)
+        job_name = _format_job_name(
+            problem_name=problem_name, evaluation_run_id=evaluation_run_id, attempt_number=attempt_number
+        )
         results_dir = Path(self.results_dir or DEFAULT_RESULTS_DIR).expanduser().resolve()
 
         # If the Engine specifies a max agent timeout, compare it with the task

@@ -223,6 +223,33 @@ if CLEANUP_ENABLED:
     logger.info(f"Cleanup Artifact Retention: {CLEANUP_ARTIFACT_RETENTION_HOURS} hour(s)")
     logger.info(f"Cleanup Task Cache Retention: {CLEANUP_TASK_CACHE_RETENTION_HOURS} hour(s)")
 
-logger.info("Execution Backend: harbor")
+# --- Environment Backend ---
+RIDGES_ENVIRONMENT_TYPE = os.getenv("RIDGES_ENVIRONMENT_TYPE", "docker")
+if RIDGES_ENVIRONMENT_TYPE not in ("docker", "kubernetes"):
+    logger.fatal("RIDGES_ENVIRONMENT_TYPE must be 'docker' or 'kubernetes'")
+
+# K8s-only config (only evaluated when RIDGES_ENVIRONMENT_TYPE=kubernetes)
+K8S_NAMESPACE: str = "ridges"
+K8S_REGISTRY: str = "registry.ridges.svc:5000"
+K8S_CONTEXT: str | None = None
+K8S_NODE_SELECTOR: dict[str, str] | None = None
+K8S_REGISTRY_SECRET: str | None = None
+K8S_REGISTRY_PASSWORD: str | None = None
+K8S_REGISTRY_INSECURE: bool = True
+
+PROXY_IMAGE: str = os.getenv("PROXY_IMAGE", "ghcr.io/ridgesai/sandbox-proxy:latest")
+
+if RIDGES_ENVIRONMENT_TYPE == "kubernetes":
+    K8S_NAMESPACE = os.getenv("K8S_NAMESPACE", "ridges")
+    K8S_REGISTRY = os.getenv("K8S_REGISTRY", "registry.ridges.svc:5000")
+    K8S_CONTEXT = os.getenv("K8S_CONTEXT")  # None = use current/in-cluster context
+    _node_selector_raw = os.getenv("K8S_NODE_SELECTOR")  # e.g. "pool=sandbox,arch=amd64"
+    if _node_selector_raw:
+        K8S_NODE_SELECTOR = dict(kv.split("=", 1) for kv in _node_selector_raw.split(","))
+    K8S_REGISTRY_SECRET = os.getenv("K8S_REGISTRY_SECRET")  # e.g. "registry-creds"
+    K8S_REGISTRY_PASSWORD = os.getenv("K8S_REGISTRY_PASSWORD")  # for HEAD check Basic Auth
+    K8S_REGISTRY_INSECURE = os.getenv("K8S_REGISTRY_INSECURE", "true").lower() == "true"
+
+logger.info(f"Execution Backend: {RIDGES_ENVIRONMENT_TYPE}")
 
 logger.info("===============================")

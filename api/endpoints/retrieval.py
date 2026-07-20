@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+import api.config as config
 from models.agent import Agent, AgentScored, AgentStatus, BenchmarkAgentScored, PossiblyBenchmarkAgent
 from models.evaluation import Evaluation, EvaluationWithRuns
 from models.queue import QueueStage
@@ -13,12 +14,15 @@ from queries.agent import (
     get_agents_in_queue,
     get_all_agents_by_miner_hotkey,
     get_benchmark_agents,
+    get_code_hiding_candidate_score,
+    get_code_hiding_score_cutoff,
     get_latest_agent_for_miner_hotkey,
     get_possibly_benchmark_agent_by_id,
     get_top_agents,
 )
 from queries.evaluation import get_evaluations_for_agent_id
 from queries.evaluation_run import get_all_evaluation_runs_in_evaluation_id
+from queries.evaluation_set import get_latest_set_id
 from queries.statistics import (
     PerfectlySolvedOverTime,
     ProblemSetCreationTime,
@@ -117,6 +121,20 @@ async def evaluations_for_agent(agent_id: UUID) -> List[EvaluationWithRuns]:
     return [EvaluationWithRuns(**e.model_dump(), runs=runs) for e, runs in zip(evaluations, enriched_runs)]
 
 
+_get_latest_set_id = ttl_cache(ttl_seconds=30)(get_latest_set_id)
+
+
+async def _code_hiding_score_cutoff(set_id: int) -> Optional[float]:
+    return await get_code_hiding_score_cutoff(
+        top_agent_count=config.CODE_HIDE_TOP_AGENT_COUNT,
+        top_score_count=config.CODE_HIDE_TOP_SCORE_COUNT,
+        set_id=set_id,
+    )
+
+
+_cached_code_hiding_score_cutoff = ttl_cache(ttl_seconds=60)(_code_hiding_score_cutoff)
+
+
 # /retrieval/agent-code?agent_id=
 @router.get("/agent-code")
 async def agent_code(agent_id: UUID) -> str:
@@ -135,6 +153,14 @@ async def agent_code(agent_id: UUID) -> str:
     ]
     if agent.status in hidden_statuses:
         raise HTTPException(status_code=403, detail=f"Agent {agent.agent_id} is still being screened/evaluated")
+
+    latest_set_id = await _get_latest_set_id()
+    if latest_set_id is not None:
+        candidate_score = await get_code_hiding_candidate_score(agent_id=agent_id, set_id=latest_set_id)
+        if candidate_score is not None:
+            cutoff = await _cached_code_hiding_score_cutoff(latest_set_id)
+            if cutoff is not None and candidate_score >= cutoff:
+                raise HTTPException(status_code=403, detail="Agent code is hidden for top agents")
 
     return await download_text_file_from_s3(f"{agent_id}/agent.py")
 

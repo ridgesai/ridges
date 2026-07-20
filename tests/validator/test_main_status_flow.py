@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 import validator.main as validator_main
-from api.endpoints.validator_models import ValidatorUpdateEvaluationRunRequest
+from api.endpoints.validator_models import ValidatorUpdateEvaluationRunRequest, ValidatorUpdateEvaluationRunResponse
 from execution.errors import EvaluationRunException
 from execution.types import ExecutionResult, TrialSnapshot
 from models.evaluation_run import EvaluationRunErrorCode, EvaluationRunStatus
@@ -64,6 +64,7 @@ def _install_update_capture(
                 "problem_name": problem_name,
             }
         )
+        return ValidatorUpdateEvaluationRunResponse()
 
     monkeypatch.setattr(validator_main, "update_evaluation_run", fake_update)
     return capture

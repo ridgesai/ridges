@@ -94,6 +94,35 @@ class EvaluationRunErrorCode(IntEnum):
         return 3000 <= self.value < 4000
 
 
+# Non-agent errors that must never trigger an in-session retry: score-bound
+# pruning is terminal by definition, PLATFORM_RESTARTED_* are only set by bulk
+# cleanup after the owning session is already gone, and an unknown problem
+# fails identically on every attempt.
+NON_RETRYABLE_PLATFORM_ERROR_CODES = frozenset(
+    {
+        EvaluationRunErrorCode.VALIDATOR_UNKNOWN_PROBLEM.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_PENDING.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_AGENT.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_AGENT.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_INIT_EVAL.value,
+        EvaluationRunErrorCode.PLATFORM_RESTARTED_WHILE_RUNNING_EVAL.value,
+        EvaluationRunErrorCode.PLATFORM_PRUNED_BY_SCORE_BOUND.value,
+    }
+)
+
+
+def is_retryable_error_code(error_code: int | None) -> bool:
+    """Whether an errored run may be retried in-session with a fresh attempt.
+
+    Agent errors (1xxx) already count toward evaluation success and are never
+    retried; only validator/platform faults outside the denylist qualify.
+    """
+    if error_code is None:
+        return False
+    code = int(error_code)
+    return 2000 <= code < 4000 and code not in NON_RETRYABLE_PLATFORM_ERROR_CODES
+
+
 class EvaluationRunStatus(str, Enum):
     """Lifecycle states for one problem inside an evaluation."""
 
@@ -104,6 +133,26 @@ class EvaluationRunStatus(str, Enum):
     running_eval = "running_eval"
     finished = "finished"
     error = "error"
+
+
+class EvaluationRunAttempt(BaseModel):
+    """One attempt at executing an evaluation run. The evaluation_runs row mirrors the latest attempt."""
+
+    attempt_id: UUID
+    evaluation_run_id: UUID
+    attempt_number: int
+    status: EvaluationRunStatus
+
+    error_code: Optional[int] = None
+    error_message: Optional[str] = None
+    cost_usd: Optional[float] = None
+
+    created_at: datetime
+    started_initializing_agent_at: Optional[datetime] = None
+    started_running_agent_at: Optional[datetime] = None
+    started_initializing_eval_at: Optional[datetime] = None
+    started_running_eval_at: Optional[datetime] = None
+    finished_or_errored_at: Optional[datetime] = None
 
 
 class EvaluationRun(BaseModel):
@@ -141,6 +190,7 @@ class EvaluationRunDetail(EvaluationRun):
     problem_total_runs: int | None = None
     problem_average_time_seconds: float | None = None
     problem_average_cost_usd: float | None = None
+    attempt_count: int = 1
 
 
 class EvaluationRunLogType(str, Enum):

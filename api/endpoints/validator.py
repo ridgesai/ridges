@@ -41,7 +41,13 @@ from api.endpoints.validator_models import (
 from db.models import InternalFlagName
 from models.agent import Agent, AgentStatus
 from models.evaluation import Evaluation, EvaluationStatus
-from models.evaluation_run import EvaluationRun, EvaluationRunErrorCode, EvaluationRunLogType, EvaluationRunStatus
+from models.evaluation_run import (
+    EvaluationRun,
+    EvaluationRunErrorCode,
+    EvaluationRunLogType,
+    EvaluationRunStatus,
+    is_retryable_error_code,
+)
 from models.evaluation_set import EvaluationSetGroup
 from models.harbor_task import read_execution_spec_metadata
 from models.openrouter import OpenRouterRuntimeConfig
@@ -51,11 +57,12 @@ from queries.agent import (
     get_next_agent_id_awaiting_evaluation_for_validator_hotkey,
     get_openrouter_secrets_for_agent_id,
     get_top_agents,
-    update_agent_status,
 )
 from queries.approval import finish_agent_and_enqueue_approval
+from queries.banned_coldkey import is_agent_coldkey_banned
 from queries.evaluation import (
     create_new_evaluation_and_evaluation_runs,
+    get_approved_leader_ranking_for_set,
     get_approved_validator_leader_score_for_set,
     get_evaluation_by_id,
     get_hydrated_evaluation_by_id,
@@ -74,11 +81,16 @@ from queries.evaluation_run import (
     get_evaluation_run_by_id,
     update_evaluation_run_by_id,
 )
+from queries.evaluation_run_attempt import (
+    create_next_attempt_and_reset_evaluation_run,
+    get_attempt_count_for_evaluation_run,
+)
 from queries.internal_flag import get_internal_flags_parsed
 from utils.agent_secrets import AgentKeyDecryptError, AgentKeyEncryptionConfigError, sha256_hex
 from utils.bittensor import validate_signed_timestamp
 from utils.debug_lock import DebugLock
 from utils.git import COMMIT_HASH
+from utils.incentives import calculate_relative_improvement
 from utils.s3 import download_text_file_from_s3, generate_presigned_upload_url, generate_presigned_url
 from utils.system_metrics import SystemMetrics
 from utils.validator_hotkeys import is_validator_hotkey_whitelisted, validator_hotkey_to_name
@@ -681,6 +693,60 @@ async def _maybe_stop_agent_by_score_bound(evaluation: Evaluation) -> bool:
     return stopped
 
 
+async def _maybe_grant_retry(
+    validator: Validator, evaluation_run: EvaluationRun
+) -> Optional[ValidatorUpdateEvaluationRunResponse]:
+    """Grant an in-session retry for an errored run when policy allows it.
+
+    Returns a directive response when a fresh attempt was created, or None to
+    leave the run errored (falling back to the whole-evaluation restart path).
+    Never raises: any failure here just means no retry.
+    """
+
+    if not is_retryable_error_code(int(evaluation_run.error_code) if evaluation_run.error_code is not None else None):
+        return None
+
+    try:
+        attempt_count = await get_attempt_count_for_evaluation_run(evaluation_run.evaluation_run_id)
+        # Legacy runs (created before attempt tracking) have no attempt rows; their
+        # logs already occupy attempt slot 1, so retrying them would collide.
+        if attempt_count == 0:
+            return None
+        if attempt_count >= config.MAX_ATTEMPTS_PER_EVALUATION_RUN:
+            return None
+
+        evaluation = _get_current_evaluation_for_request(validator, evaluation_run.evaluation_id)
+        agent = await get_agent_by_id(evaluation.agent_id)
+        if agent is None or agent.status != _score_bound_active_status(evaluation.evaluation_set_group):
+            return None
+
+        # Mint the fresh upload URL before creating the attempt so a presign
+        # failure aborts cleanly with no dangling pending attempt.
+        artifact_upload_url = await generate_presigned_upload_url(
+            f"artifacts/{evaluation_run.evaluation_run_id}.tar.gz"
+        )
+
+        new_attempt = await create_next_attempt_and_reset_evaluation_run(evaluation_run.evaluation_run_id)
+    except Exception as exc:
+        logger.error(
+            f"Failed to grant retry for evaluation run {evaluation_run.evaluation_run_id}: {type(exc).__name__}: {exc}"
+        )
+        logger.error(traceback.format_exc())
+        return None
+
+    logger.info(f"Granted retry for evaluation run {evaluation_run.evaluation_run_id}")
+    logger.info(f"  Evaluation ID: {evaluation_run.evaluation_id}")
+    logger.info(f"  Problem: {evaluation_run.problem_name}")
+    logger.info(f"  Error code: {evaluation_run.error_code}")
+    logger.info(f"  New attempt number: {new_attempt.attempt_number}")
+
+    return ValidatorUpdateEvaluationRunResponse(
+        retry=True,
+        attempt_number=new_attempt.attempt_number,
+        artifact_upload_url=artifact_upload_url,
+    )
+
+
 async def _is_stale_update_for_score_stopped_evaluation(validator: Validator, evaluation_run: EvaluationRun) -> bool:
     """Return true when a late run update belongs to this validator's already-closed stopped evaluation."""
 
@@ -1029,11 +1095,17 @@ async def validator_update_evaluation_run(
                 )
                 logger.error(traceback.format_exc())
 
+    response = ValidatorUpdateEvaluationRunResponse()
+    if request.updated_status == EvaluationRunStatus.error:
+        retry_directive = await _maybe_grant_retry(validator, evaluation_run)
+        if retry_directive is not None:
+            response = retry_directive
+
     logger.info(f"Validator '{validator.name}' updated an evaluation run")
     logger.info(f"  Evaluation run ID: {request.evaluation_run_id}")
     logger.info(f"  Updated status: {request.updated_status}")
 
-    return ValidatorUpdateEvaluationRunResponse()
+    return response
 
 
 # /validator/disconnect
@@ -1188,27 +1260,45 @@ async def handle_evaluation_if_finished(evaluation_id: UUID) -> None:
                 policy_version=config.AUTO_APPROVAL_POLICY_VERSION,
             )
         else:
-            await update_agent_status(hydrated_evaluation.agent_id, new_agent_status)
+            await transition_agent_status_if_matches(
+                hydrated_evaluation.agent_id,
+                agent.status,
+                new_agent_status,
+            )
 
 
 async def _should_run_auto_approval_judge(*, agent_id: UUID, set_id: int) -> bool:
-    candidate_score = await get_validator_agent_score_for_set(
+    if await is_agent_coldkey_banned(agent_id):
+        logger.info(f"Skipping auto approval for agent_id={agent_id}: miner coldkey is banned")
+        return False
+
+    candidate = await get_validator_agent_score_for_set(
         agent_id,
         set_id,
         config.NUM_EVALS_PER_AGENT,
     )
-    if candidate_score is None:
+    if candidate is None:
         logger.warning(
             f"Skipping auto approval for agent_id={agent_id} set_id={set_id}: no complete validator score found"
         )
         return False
 
-    approved_leader_score = await get_approved_validator_leader_score_for_set(
+    leader = await get_approved_leader_ranking_for_set(
         set_id,
         agent_id,
         config.NUM_EVALS_PER_AGENT,
     )
-    if approved_leader_score is None:
+    if leader is None:
         return True
 
-    return candidate_score >= approved_leader_score
+    if set_id >= config.INCENTIVE_START_SET_ID:
+        return calculate_relative_improvement(
+            candidate_score=candidate.final_score,
+            candidate_cost=candidate.avg_cost_usd,
+            leader_score=leader.final_score,
+            leader_cost=leader.avg_cost_usd,
+            performance_threshold=config.INCENTIVE_PERFORMANCE_THRESHOLD,
+            cost_threshold=config.INCENTIVE_COST_THRESHOLD,
+        ).qualified
+
+    return candidate.beats(leader)

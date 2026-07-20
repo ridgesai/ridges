@@ -16,7 +16,8 @@ from models.agent import (
 from models.evaluation import EvaluationStatus
 from models.evaluation_set import EvaluationSetGroup
 from models.queue import QueueStage
-from queries.errors import DuplicateAgentIDError
+from queries.banned_coldkey import get_banned_coldkey, lock_coldkey_ban_state
+from queries.errors import ColdkeyBannedError, DuplicateAgentIDError
 from utils.agent_secrets import decrypt_agent_secret
 from utils.database import DatabaseConnection, db_operation
 from utils.s3 import upload_text_file_to_s3
@@ -82,10 +83,28 @@ async def get_possibly_benchmark_agent_by_id(
             a.*,
             latest_review.approval_review_status AS approval_review_status,
             (bai.agent_id IS NOT NULL) AS is_benchmark_agent,
-            bai.description AS benchmark_description
+            bai.description AS benchmark_description,
+            (latest_approval.agent_id IS NOT NULL) AS approved,
+            latest_approval.performance_delta,
+            latest_approval.cost_delta,
+            latest_approval.relative_improvement_units,
+            latest_approval.time_multiplier,
+            latest_approval.initial_reward_score,
+            latest_approval.baseline_agent_id,
+            baseline.name AS baseline_agent_name,
+            baseline.version_num AS baseline_agent_version_num
         FROM agents a
         LEFT JOIN benchmark_agent_ids bai ON a.agent_id = bai.agent_id
         {LATEST_AGENT_APPROVAL_JOINS}
+        LEFT JOIN LATERAL (
+            SELECT aa.agent_id, aa.baseline_agent_id, aa.performance_delta, aa.cost_delta,
+                   aa.relative_improvement_units, aa.time_multiplier, aa.initial_reward_score
+            FROM approved_agents aa
+            WHERE aa.agent_id = a.agent_id
+            ORDER BY aa.set_id DESC
+            LIMIT 1
+        ) latest_approval ON TRUE
+        LEFT JOIN agents baseline ON baseline.agent_id = latest_approval.baseline_agent_id
         WHERE a.agent_id = $1
         LIMIT 1
         """,
@@ -192,6 +211,7 @@ async def create_agent(
     openrouter_api_key_label: str,
     openrouter_api_key_creator_user_id: str,
     openrouter_validated_at: datetime,
+    miner_coldkey: Optional[str] = None,
     create_pre_screening_job: bool = False,
     pre_screening_policy_version: str = DEFAULT_PRE_SCREENING_POLICY_VERSION,
 ) -> UUID:
@@ -224,15 +244,32 @@ async def create_agent(
             source_sha256,
         )
 
+        if miner_coldkey is not None:
+            await lock_coldkey_ban_state(conn, miner_coldkey)
+            if await get_banned_coldkey(miner_coldkey) is not None:
+                raise ColdkeyBannedError(miner_coldkey)
+
         result = await conn.fetchval(
             """
-            INSERT INTO agents (agent_id, miner_hotkey, name, version_num, created_at, status, ip_address, source_sha256, set_id)
-            VALUES ($1, $2, $3, $4, NOW(), $5, $6, $7, $8)
+            INSERT INTO agents (
+                agent_id,
+                miner_hotkey,
+                miner_coldkey,
+                name,
+                version_num,
+                created_at,
+                status,
+                ip_address,
+                source_sha256,
+                set_id
+            )
+            VALUES ($1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9)
             ON CONFLICT (agent_id) DO NOTHING
             RETURNING agent_id
             """,
             agent_id,
             agent.miner_hotkey,
+            miner_coldkey,
             agent.name,
             agent.version_num,
             agent.status.value,
@@ -489,6 +526,7 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
             ass.*,
             review.approval_review_status AS approval_review_status
         from agent_scores ass
+        join agents a on a.agent_id = ass.agent_id
         left join agent_final_review_statuses review
             on review.agent_id = ass.agent_id
            and review.set_id = ass.set_id
@@ -502,6 +540,11 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
         ) rt on true
         where ass.set_id = (select max(set_id) from evaluation_sets)
         and ass.agent_id not in (select agent_id from benchmark_agent_ids)
+        and not exists (
+            select 1
+            from banned_coldkeys bc
+            where bc.miner_coldkey = a.miner_coldkey
+        )
         and ass.status::text <> 'cancelled'
         and (
             ass.approved is true
@@ -518,6 +561,64 @@ async def get_top_agents(conn: DatabaseConnection, number_of_agents: int = 10, p
     )
 
     return [AgentScored(**agent) for agent in results]
+
+
+@db_operation
+async def get_code_hiding_score_cutoff(
+    conn: DatabaseConnection, top_agent_count: int, top_score_count: int, set_id: int
+) -> Optional[float]:
+    """
+    Return the lowest rounded final score whose code is hidden, or None if no agents qualify.
+    """
+    return await conn.fetchval(
+        """
+        WITH qualified AS (
+            SELECT
+                ROUND(ass.final_score::numeric, 6) AS score,
+                ROW_NUMBER() OVER (ORDER BY ROUND(ass.final_score::numeric, 6) DESC) AS agent_rank,
+                DENSE_RANK() OVER (ORDER BY ROUND(ass.final_score::numeric, 6) DESC) AS score_rank
+            FROM agent_scores ass
+            JOIN agents a ON a.agent_id = ass.agent_id
+            LEFT JOIN agent_final_review_statuses review
+                ON review.agent_id = ass.agent_id
+               AND review.set_id = ass.set_id
+            WHERE ass.set_id = $3
+              AND ass.status = 'finished'
+              AND ass.final_score IS NOT NULL
+              AND ass.agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM banned_coldkeys bc
+                  WHERE bc.miner_coldkey = a.miner_coldkey
+              )
+              AND review.approval_review_status IS DISTINCT FROM 'rejected'
+        )
+        SELECT LEAST(
+            (SELECT MIN(score) FROM qualified WHERE agent_rank <= $1),
+            (SELECT MIN(score) FROM qualified WHERE score_rank <= $2)
+        )::float
+        """,
+        top_agent_count,
+        top_score_count,
+        set_id,
+    )
+
+
+@db_operation
+async def get_code_hiding_candidate_score(conn: DatabaseConnection, agent_id: UUID, set_id: int) -> Optional[float]:
+    """Return the agent's rounded final score in the given set, or None if unscored or a benchmark agent."""
+    return await conn.fetchval(
+        """
+        SELECT ROUND(final_score::numeric, 6)::float
+        FROM agent_scores
+        WHERE agent_id = $1
+          AND set_id = $2
+          AND final_score IS NOT NULL
+          AND agent_id NOT IN (SELECT agent_id FROM benchmark_agent_ids)
+        """,
+        agent_id,
+        set_id,
+    )
 
 
 @db_operation
@@ -684,3 +785,16 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
         return None
 
     return result["agent_id"]
+
+
+@db_operation
+async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
+    row = await conn.fetchrow("""
+        SELECT
+            (SELECT COUNT(*) FROM screener_1_queue) AS screener_1_pending,
+            (SELECT COUNT(*) FROM screener_2_queue) AS screener_2_pending
+    """)
+    return {
+        "screener_1_pending": row["screener_1_pending"],
+        "screener_2_pending": row["screener_2_pending"],
+    }

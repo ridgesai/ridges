@@ -215,8 +215,12 @@ def parse_execution_artifacts(
 
     cost_usd = _read_proxy_cost(summary.job_dir) if summary.job_dir else None
 
+    from validator.config import RIDGES_ENVIRONMENT_TYPE
+
+    backend_label = "harbor-k8s" if RIDGES_ENVIRONMENT_TYPE == "kubernetes" else "harbor"
+
     return ExecutionResult(
-        backend="harbor",
+        backend=backend_label,
         patch=patch,
         verifier_reward=reward,
         test_results=test_results,

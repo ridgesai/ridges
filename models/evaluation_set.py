@@ -109,9 +109,14 @@ class EvaluationSetDetailTopAgent(BaseModel):
     emission: float | None = None
 
 
+class EvaluationSetDetailEfficiencyAgent(BaseModel):
+    agent_id: UUID | None
+    value: Float4 | None
+
+
 class EvaluationSetDetailEfficiency(BaseModel):
-    lowest_average_cost_usd_top_agents: Float4 | None
-    lowest_average_runtime_seconds_top_agents: Float4 | None
+    lowest_average_cost_usd_top_agents: EvaluationSetDetailEfficiencyAgent | None
+    lowest_average_runtime_seconds_top_agents: EvaluationSetDetailEfficiencyAgent | None
     average_agent_cost_usd: Float4 | None
     average_agent_runtime_seconds: Float4 | None
 
@@ -124,6 +129,14 @@ class EvaluationSetDetailLeaderboardAgent(BaseModel):
     version_num: int
     status: AgentStatus
     approved: bool
+    approval_review_status: str | None
+    performance_delta: Float4 | None
+    cost_delta: Float4 | None
+    relative_improvement_units: Float4 | None
+    time_multiplier: Float4 | None
+    initial_reward_score: Float4 | None
+    baseline_agent_name: str | None
+    baseline_agent_version_num: int | None
     final_score: Float4 | None
     average_cost_usd: Float4 | None
     average_runtime_seconds: Float4 | None
@@ -155,4 +168,8 @@ class ApprovedAgent(BaseModel):
     version_num: int
     created_at: datetime.datetime
     final_score: Float4
-    emission: float
+    emission: float | None
+    reward_weight: float | None
+    approved_at: datetime.datetime
+    average_runtime_seconds: Float4 | None
+    average_cost_usd: Float4 | None
