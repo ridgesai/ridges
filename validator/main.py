@@ -11,6 +11,32 @@ import traceback
 from typing import Any, Dict
 from uuid import UUID
 
+
+def _purge_orphaned_scalecodec() -> None:
+    """Self-heal after the bittensor cyscale migration"""
+    import importlib.metadata
+    import shutil
+    import subprocess
+
+    try:
+        importlib.metadata.distribution("scalecodec")
+    except importlib.metadata.PackageNotFoundError:
+        return
+    try:
+        uv = shutil.which("uv") or "uv"
+        project_root = str(pathlib.Path(__file__).resolve().parent.parent)
+        subprocess.run(
+            [uv, "sync", "--reinstall-package", "cyscale", "--project", project_root],
+            check=True,
+            timeout=600,
+        )
+        print("Removed orphaned scalecodec and reinstalled cyscale", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 - failed heal falls through to the original import error
+        print(f"scalecodec self-heal failed ({exc}); run `uv sync` manually", file=sys.stderr)
+
+
+_purge_orphaned_scalecodec()
+
 import httpx
 
 import validator.config as config
