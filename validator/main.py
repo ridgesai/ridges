@@ -4,6 +4,7 @@ import logging
 import os
 import pathlib
 import random
+import signal
 import sys
 import time
 import traceback
@@ -54,6 +55,8 @@ max_evaluation_run_log_size_bytes = None
 
 execution_engine = None
 STATUS_HOOK_TIMEOUT_SECONDS = 5
+_shutdown_requested = False
+_healthz_task: asyncio.Task | None = None
 
 # Task-cache digests of in-flight evaluation runs. The cleanup loop excludes these
 # so it never deletes a cached task a live run is still reading (a task is read for
@@ -76,6 +79,32 @@ async def disconnect(reason: str):
         logger.error(f"Error in disconnect(): {type(e).__name__}: {e}")
         logger.error(traceback.format_exc())
         os._exit(1)
+
+
+async def _handle_sigterm() -> None:
+    global _shutdown_requested
+    logger.warning("SIGTERM received — will shut down after current evaluation finishes")
+    _shutdown_requested = True
+
+
+async def _run_startup_tasks() -> None:
+    """Run environment-specific startup tasks before entering the main loop."""
+    global _healthz_task
+    if config.RIDGES_ENVIRONMENT_TYPE == "docker":
+        cleanup_harbor_docker_resources()
+        prune_docker_disk_resources(include_build_cache=True)
+    elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
+        import validator.healthz as healthz
+
+        _healthz_task = asyncio.create_task(healthz.serve(get_session_id=lambda: session_id))
+        from utils.k8s import cleanup_harbor_k8s_resources
+
+        await asyncio.to_thread(cleanup_harbor_k8s_resources)
+
+    asyncio.get_running_loop().add_signal_handler(
+        signal.SIGTERM,
+        lambda: asyncio.create_task(_handle_sigterm()),
+    )
 
 
 # Sends an update-evaluation-run request to the Ridges platform. The extra
@@ -684,7 +713,12 @@ async def _run_evaluation(request_evaluation_response: ValidatorRequestEvaluatio
         )
     finally:
         await _cancel_background_tasks(cancellation_wait_task, poll_task)
-        await asyncio.to_thread(prune_docker_disk_resources)
+        if config.RIDGES_ENVIRONMENT_TYPE == "docker":
+            await asyncio.to_thread(prune_docker_disk_resources)
+        elif config.RIDGES_ENVIRONMENT_TYPE == "kubernetes":
+            from utils.k8s import cleanup_completed_k8s_eval_pods
+
+            await asyncio.to_thread(cleanup_completed_k8s_eval_pods)
 
 
 # Main loop
@@ -696,8 +730,7 @@ async def main():
     global execution_engine
 
     setup_logging()
-    cleanup_harbor_docker_resources()
-    prune_docker_disk_resources(include_build_cache=True)
+    await _run_startup_tasks()
 
     # Register with the Ridges platform, yielding us a session ID
     logger.info("Registering validator...")
@@ -775,6 +808,11 @@ async def main():
 
     # Loop forever, just keep requesting evaluations and running them
     while True:
+        if _shutdown_requested:
+            logger.info("Shutdown requested — disconnecting gracefully")
+            await disconnect("SIGTERM (graceful)")
+            os._exit(0)
+
         logger.info("Requesting an evaluation...")
 
         request_evaluation_response_data = await post_ridges_platform(

@@ -785,3 +785,16 @@ async def get_next_agent_id_awaiting_evaluation_for_validator_hotkey(
         return None
 
     return result["agent_id"]
+
+
+@db_operation
+async def get_pending_work_counts(conn: DatabaseConnection) -> dict[str, int]:
+    row = await conn.fetchrow("""
+        SELECT
+            (SELECT COUNT(*) FROM screener_1_queue) AS screener_1_pending,
+            (SELECT COUNT(*) FROM screener_2_queue) AS screener_2_pending
+    """)
+    return {
+        "screener_1_pending": row["screener_1_pending"],
+        "screener_2_pending": row["screener_2_pending"],
+    }

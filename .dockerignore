@@ -1,0 +1,32 @@
+# Runtime artifacts that must never be baked into the image
+harbor_test_agent_results/
+
+# Local evaluator with 2 GB of cloned SWE-bench repos — never needed in K8s
+evaluator/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.python-version
+
+# Local dev / secrets
+.env
+**/.env
+*.env.local
+
+# Dev scripts and notebooks
+hack/
+docs/
+
+# .git is excluded: COMMIT_HASH is injected as GIT_COMMIT build arg at image build time.
+# For local dev without a built image, utils/git.py falls back to git rev-parse HEAD.
+.git
+
+# Editor
+.cursor/
+.vscode/
+*.swp

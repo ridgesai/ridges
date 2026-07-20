@@ -333,4 +333,32 @@ def get_local_repo_commit_hash(local_repo_dir: str) -> str:
     ).stdout.strip()
 
 
-COMMIT_HASH = get_local_repo_commit_hash(pathlib.Path(__file__).parent.parent)
+def _read_git_head(repo_dir: pathlib.Path) -> str:
+    """Resolve HEAD to a commit SHA by reading .git/HEAD directly (no git binary needed)."""
+    head_file = repo_dir / ".git" / "HEAD"
+    content = head_file.read_text().strip()
+    if content.startswith("ref: "):
+        ref_path = repo_dir / ".git" / content[5:]
+        return ref_path.read_text().strip()
+    return content
+
+
+# Resolution order:
+# 1. GIT_COMMIT env var (baked in at CI build time as the real SHA)
+# 2. git rev-parse HEAD (local dev outside Docker, where git is available)
+# 3. Pure-Python .git/HEAD reader (local dev inside Docker container where the
+#    .git dir is volume-mounted but the git binary is not installed)
+_git_commit_env = os.environ.get("GIT_COMMIT", "")
+
+
+def _resolve_commit_hash() -> str:
+    repo_dir = pathlib.Path(__file__).parent.parent
+    if _git_commit_env not in ("", "unknown"):
+        return _git_commit_env
+    try:
+        return get_local_repo_commit_hash(repo_dir)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return _read_git_head(repo_dir)
+
+
+COMMIT_HASH = _resolve_commit_hash()
