@@ -1,5 +1,6 @@
 # NOTE ADAM: Subtensor bug (self.disable_third_party_loggers())
 import asyncio
+import concurrent.futures
 import logging
 import os
 import pathlib
@@ -730,6 +731,12 @@ async def main():
     global execution_engine
 
     setup_logging()
+    asyncio.get_running_loop().set_default_executor(
+        concurrent.futures.ThreadPoolExecutor(
+            max_workers=max(64, config.MAX_CONCURRENT_EVALUATION_RUNS * 2 + 32),
+            thread_name_prefix="validator-worker",
+        )
+    )
     await _run_startup_tasks()
 
     # Register with the Ridges platform, yielding us a session ID
